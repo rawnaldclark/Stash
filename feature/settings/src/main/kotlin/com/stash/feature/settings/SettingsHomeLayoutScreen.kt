@@ -1,28 +1,40 @@
 package com.stash.feature.settings
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.prefs.HomeSection
+import com.stash.core.ui.components.rememberReorderableColumnState
+import com.stash.core.ui.components.reorderHandle
+import com.stash.core.ui.components.reorderableColumn
+import com.stash.core.ui.components.reorderableRow
 import com.stash.feature.settings.components.SettingsGroupCard
 import com.stash.feature.settings.components.SettingsValueRow
 import com.stash.feature.settings.components.SettingsSectionLabel
@@ -35,6 +47,7 @@ import androidx.compose.runtime.mutableStateOf
 import com.stash.feature.settings.components.SettingsRowPadH
 import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsToggleRow
+import com.stash.feature.settings.components.settingsDivider
 
 /** How many of Home's sections are showing (Community has its own switch, not the hidden set). */
 internal fun SettingsUiState.homeSectionsShown(): Int = homeSectionOrder.count { section ->
@@ -42,9 +55,9 @@ internal fun SettingsUiState.homeSectionsShown(): Int = homeSectionOrder.count {
 }
 
 /**
- * One movable entry of the Home layout editor: [section] with its movers' state, and [under], the section that goes wherever
- * it goes (Your record's mixes, always directly under the card: [com.stash.core.data.prefs.movedHomeSectionOrder]), shown
- * indented beneath it with a switch and no movers.
+ * One movable entry of the Home layout editor: [section], whether it can go up or down a place (TalkBack's Move up / Move
+ * down), and [under], the section that goes wherever it goes (Your record's mixes, always directly under the card:
+ * [com.stash.core.data.prefs.movedHomeSectionOrder]), shown indented beneath it with a switch and no handle.
  */
 internal data class HomeLayoutEntry(
     val section: HomeSection,
@@ -54,7 +67,7 @@ internal data class HomeLayoutEntry(
 )
 
 /**
- * [order] as the editor's entries. The movers count only the sections with a place of their own, so "Your record" just
+ * [order] as the editor's entries. The moves count only the sections with a place of their own, so "Your record" just
  * above its own mixes can still move down (past the next section, with them) and is never offered a move that does nothing.
  */
 internal fun homeLayoutEntries(order: List<HomeSection>): List<HomeLayoutEntry> {
@@ -70,10 +83,10 @@ internal fun homeLayoutEntries(order: List<HomeSection>): List<HomeLayoutEntry> 
 }
 
 /**
- * Settings > Appearance > Home layout: Home's sections in order, each with
- * up/down movers and a show switch, then Show Liked Songs. Its own page so
- * Appearance stays one screen. Your record's mixes sit indented under
- * Your record with a switch only: they go wherever the card goes.
+ * Settings > Appearance > Home layout: Home's sections in order, each with a
+ * show switch and a handle to drag it, the queue's way, then Show Liked
+ * Songs. Its own page so Appearance stays one screen. Your record's mixes sit
+ * indented under Your record with a switch only: they go wherever the card goes.
  */
 @Composable
 fun SettingsHomeLayoutScreen(
@@ -86,43 +99,89 @@ fun SettingsHomeLayoutScreen(
     val rotation by rotationViewModel.rotation.collectAsStateWithLifecycle()
     val unplayedFirst by rotationViewModel.unplayedFirst.collectAsStateWithLifecycle()
     var showRotationSheet by rememberSaveable { mutableStateOf(false) }
-    SettingsScaffold(title = stringResource(R.string.settings_home_layout_section), onBack = onBack, modifier = modifier) {
+    // The page's own scroll, so holding a dragged section near the top or bottom can scroll it.
+    val scrollState = rememberScrollState()
+    SettingsScaffold(
+        title = stringResource(R.string.settings_home_layout_section),
+        onBack = onBack,
+        modifier = modifier,
+        scrollState = scrollState,
+    ) {
         Text(
             text = stringResource(R.string.settings_home_layout_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
         )
+        val order = uiState.homeSectionOrder
+        // Dragged by the handle like a song in the queue; the drop saves the order once, as one move.
+        val reorder = rememberReorderableColumnState(
+            keys = homeLayoutEntries(order).map { it.section },
+            scrollState = scrollState,
+            onMove = viewModel::onHomeSectionDropped,
+        )
+        // The rows as shown, a drag's moves included, with the record's mixes under the card when the order has them.
+        val entries = homeLayoutEntries(
+            if (HomeSection.RECORD_MIXES in order) reorder.rows + HomeSection.RECORD_MIXES else reorder.rows,
+        )
         SettingsGroupCard(
-            rows = homeLayoutEntries(uiState.homeSectionOrder).map { entry ->
+            rows = listOf(
                 {
-                    val section = entry.section
-                    // Community's switch is its own, off by default (spec 2026-09-26 §3), not the hidden set.
-                    val community = section == HomeSection.COMMUNITY
-                    HomeSectionRow(
-                        label = section.displayLabel(),
-                        subtitle = section.subtitle(),
-                        shown = if (community) uiState.communityOn else section !in uiState.homeSectionsHidden,
-                        canMoveUp = entry.canMoveUp,
-                        canMoveDown = entry.canMoveDown,
-                        onMoveUp = { viewModel.onHomeSectionMoved(section, up = true) },
-                        onMoveDown = { viewModel.onHomeSectionMoved(section, up = false) },
-                        onShownChange = { shown ->
-                            if (community) viewModel.onCommunityOnChanged(shown) else viewModel.onHomeSectionHiddenChanged(section, hide = !shown)
-                        },
-                    )
-                    // Your record's mixes: in the same row group (no divider), indented, a switch only. They go where the
-                    // card goes, and stay on Home when the card is switched off.
-                    entry.under?.let { under ->
-                        HomeSectionUnderRow(
-                            label = under.displayLabel(),
-                            subtitle = under.subtitle(),
-                            shown = under !in uiState.homeSectionsHidden,
-                            onShownChange = { shown -> viewModel.onHomeSectionHiddenChanged(under, hide = !shown) },
-                        )
+                    // All the sections in one of the card's rows, each drawing its own hairline above it, so the
+                    // hairlines move with the rows as they slide.
+                    Column(modifier = Modifier.fillMaxWidth().reorderableColumn(reorder)) {
+                        entries.forEachIndexed { i, entry ->
+                            key(entry.section) {
+                                val section = entry.section
+                                val held = reorder.isDragging(section)
+                                // Community's switch is its own, off by default (spec 2026-09-26 §3), not the hidden set.
+                                val community = section == HomeSection.COMMUNITY
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .reorderableRow(reorder, section)
+                                        // The queue's held row: opaque, so the rows it passes over don't show through.
+                                        .then(
+                                            if (held) Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
+                                            else Modifier,
+                                        ),
+                                ) {
+                                    // Always laid out, so a row is the same height wherever it goes; none shows above
+                                    // the first row or on the held one.
+                                    HorizontalDivider(
+                                        color = if (i > 0 && !held) settingsDivider else Color.Transparent,
+                                        thickness = 1.dp,
+                                    )
+                                    HomeSectionRow(
+                                        label = section.displayLabel(),
+                                        subtitle = section.subtitle(),
+                                        shown = if (community) uiState.communityOn else section !in uiState.homeSectionsHidden,
+                                        held = held,
+                                        canMoveUp = entry.canMoveUp && !reorder.isDragging,
+                                        canMoveDown = entry.canMoveDown && !reorder.isDragging,
+                                        onMoveUp = { viewModel.onHomeSectionMoved(section, up = true) },
+                                        onMoveDown = { viewModel.onHomeSectionMoved(section, up = false) },
+                                        onShownChange = { shown ->
+                                            if (community) viewModel.onCommunityOnChanged(shown) else viewModel.onHomeSectionHiddenChanged(section, hide = !shown)
+                                        },
+                                        handleModifier = Modifier.reorderHandle(reorder, section),
+                                    )
+                                    // Your record's mixes: in the same row (no hairline), indented, a switch only. They go
+                                    // where the card goes, dragged with it, and stay on Home when the card is switched off.
+                                    entry.under?.let { under ->
+                                        HomeSectionUnderRow(
+                                            label = under.displayLabel(),
+                                            subtitle = under.subtitle(),
+                                            shown = under !in uiState.homeSectionsHidden,
+                                            onShownChange = { shown -> viewModel.onHomeSectionHiddenChanged(under, hide = !shown) },
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
-                }
-            },
+                },
+            ),
         )
         SettingsGroupCard(
             rows = listOf(
@@ -213,7 +272,7 @@ private fun HomeSection.subtitle(): String? = when (this) {
 
 /**
  * A section that hangs off the row above it (Your record's mixes under the card): indented under its name, with the show
- * switch and no movers, since it goes wherever the row above goes.
+ * switch and no handle, since it goes wherever the row above goes.
  */
 @Composable
 private fun HomeSectionUnderRow(
@@ -227,7 +286,8 @@ private fun HomeSectionUnderRow(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
-            // One step in from the name above; the same end padding as HomeSectionRow, so both switches line up.
+            // One step in from the name above; the same end padding as HomeSectionRow and a handle's room after the
+            // switch, so both switches line up.
             .padding(start = SettingsRowPadH + UnderRowIndent, end = 6.dp, top = 2.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -250,32 +310,51 @@ private fun HomeSectionUnderRow(
             onCheckedChange = onShownChange,
             modifier = Modifier.semantics { contentDescription = showDesc },
         )
+        Spacer(modifier = Modifier.size(HandleSize))
     }
 }
 
 /** How far the record's mixes sit in from the card's row in the Home layout editor. */
 private val UnderRowIndent = 20.dp
 
-/** One row of the Home layout editor: name, up/down movers, show switch. */
+/** The drag handle's touch target: the queue's. */
+private val HandleSize = 48.dp
+
+/**
+ * One row of the Home layout editor: name, show switch, and the queue's drag handle at the end ([handleModifier] makes it
+ * drag the row). The drag is touch only, so TalkBack and switch access move the row with its Move up / Move down actions,
+ * one place at a time, as the arrows did.
+ */
 @Composable
 private fun HomeSectionRow(
     label: String,
     subtitle: String? = null,
     shown: Boolean,
+    held: Boolean,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
     onShownChange: (Boolean) -> Unit,
+    handleModifier: Modifier,
 ) {
     val showDesc = stringResource(R.string.settings_home_section_show_desc, label)
+    val moveUp = stringResource(R.string.settings_home_section_move_up, label)
+    val moveDown = stringResource(R.string.settings_home_section_move_down, label)
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // One stop for TalkBack (the name and the line under it, with the moves); the switch stays a stop of its own.
+            .semantics(mergeDescendants = true) {
+                customActions = buildList {
+                    if (canMoveUp) add(CustomAccessibilityAction(moveUp) { onMoveUp(); true })
+                    if (canMoveDown) add(CustomAccessibilityAction(moveDown) { onMoveDown(); true })
+                }
+            }
             .padding(start = SettingsRowPadH, end = 6.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodyMedium,
@@ -289,33 +368,22 @@ private fun HomeSectionRow(
                 )
             }
         }
-        IconButton(onClick = onMoveUp, enabled = canMoveUp) {
-            Icon(
-                imageVector = Icons.Filled.KeyboardArrowUp,
-                contentDescription = stringResource(R.string.settings_home_section_move_up, label),
-                tint = if (canMoveUp) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-                },
-            )
-        }
-        IconButton(onClick = onMoveDown, enabled = canMoveDown) {
-            Icon(
-                imageVector = Icons.Filled.KeyboardArrowDown,
-                contentDescription = stringResource(R.string.settings_home_section_move_down, label),
-                tint = if (canMoveDown) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-                },
-            )
-        }
         com.stash.core.ui.components.StashSwitch(
             checked = shown,
             onCheckedChange = onShownChange,
             modifier = Modifier.semantics { contentDescription = showDesc },
         )
+        Box(
+            modifier = Modifier.size(HandleSize).then(handleModifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Default.DragHandle,
+                contentDescription = null, // TalkBack moves the row with its Move up / Move down actions
+                tint = if (held) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier.size(24.dp),
+            )
+        }
     }
 }
 

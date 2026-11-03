@@ -46,8 +46,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.model.share.SharedTrack
+import com.stash.core.ui.components.DragAutoScrollEdge
+import com.stash.core.ui.components.DragAutoScrollMaxStep
+import com.stash.core.ui.components.autoScrollStep
 import com.stash.core.ui.theme.StashTheme
-import com.stash.feature.nowplaying.ui.autoScrollStep
 import java.util.Collections
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -207,7 +209,7 @@ internal class UpNextState(
 internal fun rememberUpNextState(listState: LazyListState, queue: List<SharedTrack>, onEdit: (List<SharedTrack>) -> Unit): UpNextState {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
-    val state = remember { UpNextState(listState, scope, with(density) { 64.dp.toPx() }, with(density) { 6.dp.toPx() }, queue) }
+    val state = remember { UpNextState(listState, scope, with(density) { DragAutoScrollEdge.toPx() }, with(density) { DragAutoScrollMaxStep.toPx() }, queue) }
     SideEffect {
         state.queue = queue
         state.onEdit = onEdit

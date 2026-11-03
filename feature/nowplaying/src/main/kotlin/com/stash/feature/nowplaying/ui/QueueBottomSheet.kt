@@ -79,6 +79,9 @@ import coil3.compose.AsyncImage
 import com.stash.core.common.primaryArtist
 import com.stash.core.model.PlaybackSource
 import com.stash.core.model.Track
+import com.stash.core.ui.components.DragAutoScrollEdge
+import com.stash.core.ui.components.DragAutoScrollMaxStep
+import com.stash.core.ui.components.autoScrollStep
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
@@ -207,8 +210,8 @@ fun QueueBottomSheet(
             // can carry a track from deep in the queue to the top.
             val scope = rememberCoroutineScope()
             val density = LocalDensity.current
-            val edgePx = with(density) { 64.dp.toPx() }
-            val maxStepPx = with(density) { 6.dp.toPx() }
+            val edgePx = with(density) { DragAutoScrollEdge.toPx() }
+            val maxStepPx = with(density) { DragAutoScrollMaxStep.toPx() }
             var autoScrollJob by remember { mutableStateOf<Job?>(null) }
             var settleJob by remember { mutableStateOf<Job?>(null) }
 
@@ -706,33 +709,6 @@ private fun QueueTrackArt(track: Track) {
         } else {
             Icon(Icons.Default.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
         }
-    }
-}
-
-/**
- * Auto-scroll velocity for a drag near the viewport edges (issue #319):
- * zero while the dragged row rides mid-viewport, ramping linearly toward
- * ±[maxStepPx] per frame as the row's edge sinks into the top or bottom
- * [edgePx] zone. Negative scrolls toward the start of the list.
- */
-internal fun autoScrollStep(
-    visualTop: Float,
-    visualBottom: Float,
-    viewportPx: Float,
-    edgePx: Float,
-    maxStepPx: Float,
-): Float {
-    if (edgePx <= 0f || viewportPx <= 0f) return 0f
-    return when {
-        visualTop < edgePx -> {
-            val depth = ((edgePx - visualTop) / edgePx).coerceIn(0f, 1f)
-            -maxStepPx * depth
-        }
-        visualBottom > viewportPx - edgePx -> {
-            val depth = ((visualBottom - (viewportPx - edgePx)) / edgePx).coerceIn(0f, 1f)
-            maxStepPx * depth
-        }
-        else -> 0f
     }
 }
 

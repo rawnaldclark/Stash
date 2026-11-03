@@ -1815,9 +1815,14 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { nowPlayingPreference.setAmbientStyle(style) }
     }
 
-    /** Move a Home section one slot up/down (Settings > Appearance > Home layout). */
+    /** Move a Home section one slot up/down (Settings > Appearance > Home layout: TalkBack's Move up / Move down). */
     fun onHomeSectionMoved(section: com.stash.core.data.prefs.HomeSection, up: Boolean) {
         viewModelScope.launch { homeSectionsPreference.move(section, up) }
+    }
+
+    /** A Home section dragged to [to] among the sections with a place of their own (Settings > Appearance > Home layout). */
+    fun onHomeSectionDropped(section: com.stash.core.data.prefs.HomeSection, to: Int) {
+        viewModelScope.launch { homeSectionsPreference.move(section, to) }
     }
 
     /** Show/hide a Home section without forgetting its position. */
