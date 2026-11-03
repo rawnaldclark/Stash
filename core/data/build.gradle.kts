@@ -55,6 +55,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
+    // ProcessLifecycleOwner: AppUpdater opens Android's install confirm only while a Stash screen is started.
+    implementation(libs.lifecycle.process)
     // DocumentFile: SAF-aware deletion of tracks stored on external SD card /
     // USB-OTG via the user's ACTION_OPEN_DOCUMENT_TREE grant. See the
     // deleteTrackFile helper in MusicRepositoryImpl.

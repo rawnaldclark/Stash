@@ -239,9 +239,8 @@ fun StashScaffold(
     // Process notification deep-link extras handed in from MainActivity.
     // Only one target right now (the captcha verifier); easy to extend
     // when more deep-link surfaces show up.
-    // The update sheet, over every screen (in-app updates).
+    // The update sheet, over every screen (in-app updates): shown inside the album colours below.
     val updateViewModel: com.stash.feature.settings.update.UpdateViewModel = androidx.hilt.navigation.compose.hiltViewModel()
-    com.stash.feature.settings.update.UpdateSheetHost(updateViewModel)
 
     LaunchedEffect(pendingDeepLink) {
         when (pendingDeepLink) {
@@ -315,6 +314,9 @@ fun StashScaffold(
     }
     // The album colours wrap everything below, the posting and Drive hosts' sheets and dialogs included.
     ProvideAlbumColours(albumColors, followSong = albumColoursFollowSong) {
+
+    // Inside the album colours, so Update now wears the song's colour as the Support card's Donate does.
+    com.stash.feature.settings.update.UpdateSheetHost(updateViewModel)
 
     // The one-time duplicate cleanup merged songs that were in the library twice: say so once, on
     // any screen. Marked shown after the snackbar goes, so a closed app shows it at the next open.
