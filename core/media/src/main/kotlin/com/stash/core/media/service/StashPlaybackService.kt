@@ -2457,7 +2457,10 @@ class StashPlaybackService : MediaLibraryService() {
                     ALBUMS_ID -> {
                         // Library > Albums in Download mode: one entry per album, once every song
                         // is on the phone (the car plays what's downloaded, as its Playlists do).
-                        albumsForAuto(playlistDao.observeSavedAlbums().first()).map { album ->
+                        // Merging copies over a big library is real work: off the main thread,
+                        // as Library does it.
+                        val rows = playlistDao.observeSavedAlbums().first()
+                        kotlinx.coroutines.withContext(Dispatchers.Default) { albumsForAuto(rows) }.map { album ->
                             MediaItem.Builder()
                                 .setMediaId("$PLAYLIST_PREFIX${album.playlistId}")
                                 .setMediaMetadata(

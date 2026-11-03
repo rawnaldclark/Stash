@@ -61,10 +61,14 @@ internal fun PlaylistEntity.isSavedAlbumForAuto(): Boolean = SavedAlbums.isSaved
 /**
  * The car's Albums: Library > Albums as Download mode lists it, one entry per album (copies saved on
  * two services merged), and only an album with every song on the phone, since the car plays what's
- * downloaded ([SavedAlbums.forLibrary]).
+ * downloaded ([SavedAlbums.forLibrary]). Newest saved first, at most [limit]: a car list of
+ * thousands is no use to a driver, and every entry is a row the head unit has to take.
  */
-internal fun albumsForAuto(rows: List<SavedAlbumRow>): List<SavedAlbum> =
-    SavedAlbums.forLibrary(rows.map { it.toSavedAlbum() }, streamOnly = false)
+internal fun albumsForAuto(rows: List<SavedAlbumRow>, limit: Int = MAX_AUTO_ALBUMS): List<SavedAlbum> =
+    SavedAlbums.forLibrary(rows.map { it.toSavedAlbum() }, streamOnly = false).take(limit)
+
+/** The most albums the car's Albums lists ([albumsForAuto]). */
+internal const val MAX_AUTO_ALBUMS = 500
 
 /**
  * A playlist's rows ([tracks], in order) for the car: a saved album's one per song, a song's own

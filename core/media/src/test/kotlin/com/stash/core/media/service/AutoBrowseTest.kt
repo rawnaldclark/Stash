@@ -219,6 +219,15 @@ class AutoBrowseTest {
     }
 
     @Test
+    fun `the car's Albums stop at the cap, newest saved first`() {
+        // Rows come newest saved first (observeSavedAlbums); each a different album, all on the phone.
+        val rows = (1L..5L).map { albumRow(it, "album:spotify:Alb$it", tracks = 1, downloaded = 1).copy(name = "Album $it") }
+
+        assertThat(albumsForAuto(rows, limit = 3).map { it.playlistId }).containsExactly(1L, 2L, 3L).inOrder()
+        assertThat(MAX_AUTO_ALBUMS).isAtMost(1000)
+    }
+
+    @Test
     fun `an album's song and the copy linked beside it are one row in the car, in album order`() {
         val own = track(id = 10).copy(title = "One")
         val copy = track(id = 11, downloaded = true, filePath = "/m/one.flac").copy(title = "One")
