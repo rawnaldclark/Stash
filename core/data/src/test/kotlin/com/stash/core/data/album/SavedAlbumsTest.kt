@@ -49,6 +49,15 @@ class SavedAlbumsTest {
     private fun pinOnDiscoveryForTest(type: PlaylistType, source: MusicSource, sourceId: String) =
         pinOnDiscovery(type, streamingMode = true, pinNewPlaylists = true, source = source, sourceId = sourceId)
 
+    @Test fun `Remove hides a synced copy and a pasted Spotify one, and deletes any other saved in Stash`() {
+        assertThat(SavedAlbums.removeHides(MusicSource.SPOTIFY, "album:spotify:FakeAlb1xxxxxxxxxxxxxx")).isTrue()
+        assertThat(SavedAlbums.removeHides(MusicSource.YOUTUBE, "MPREb_fake")).isTrue()
+        // Deleted, its key would be free for the Spotify sync to bring the album back.
+        assertThat(SavedAlbums.removeHides(MusicSource.BOTH, "album:spotify:FakeAlb1xxxxxxxxxxxxxx")).isTrue()
+        assertThat(SavedAlbums.removeHides(MusicSource.BOTH, "album:qobuz:0886446224536")).isFalse()
+        assertThat(SavedAlbums.removeHides(MusicSource.BOTH, "album:youtube:MPREb_fake")).isFalse()
+    }
+
     @Test fun `Home never pins a synced saved album`() {
         assertThat(pinOnDiscoveryForTest(PlaylistType.CUSTOM, MusicSource.YOUTUBE, "MPREb_abc")).isFalse()
         assertThat(pinOnDiscoveryForTest(PlaylistType.CUSTOM, MusicSource.SPOTIFY, "album:spotify:x")).isFalse()

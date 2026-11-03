@@ -85,6 +85,18 @@ object SavedAlbums {
     fun isSavedAlbum(playlist: Playlist): Boolean = isSavedAlbum(playlist.type, playlist.source, playlist.sourceId)
 
     /**
+     * Whether Remove hides this copy of an album rather than deleting it: any synced copy, and a copy
+     * saved in Stash under a key a sync files albums by too (a pasted Spotify link, `album:spotify:`).
+     * Deleted, that key would be free again, and the Spotify sync would bring the album straight
+     * back from the account's saved albums; hidden, the sync leaves it out.
+     */
+    fun removeHides(source: MusicSource, sourceId: String): Boolean =
+        source != MusicSource.BOTH || sourceId.startsWith(SPOTIFY_KEY_PREFIX, ignoreCase = true)
+
+    /** The key prefix of a Spotify album, pasted ([MusicSource.BOTH]) or synced ([MusicSource.SPOTIFY]). */
+    private const val SPOTIFY_KEY_PREFIX = "${PREFIX}spotify:"
+
+    /**
      * The album as "service:id", whichever way it was saved: `album:youtube:MPREb_x` and a synced
      * `MPREb_x` are both "youtube:MPREb_x". The id keeps its case (catalog ids are case-sensitive).
      * Null for a row that isn't a saved album's.

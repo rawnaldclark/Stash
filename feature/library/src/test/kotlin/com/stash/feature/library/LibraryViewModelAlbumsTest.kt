@@ -106,6 +106,19 @@ class LibraryViewModelAlbumsTest {
         verify(music, never()).hidePlaylist(1L)
     }
 
+    @Test fun `Remove hides a pasted Spotify album, so the Spotify sync can't bring it back`() = runTest {
+        // Saved in Stash from a Spotify link: the same key the Spotify sync files the album under.
+        val pasted = Playlist(id = 1, name = "Repeater", source = MusicSource.BOTH, sourceId = "album:spotify:FakeAlb1xxxxxxxxxxxxxx", type = PlaylistType.CUSTOM)
+        val music = repo(albums = listOf(repeater)).stub { on { observePlaylist(1L) } doReturn flowOf(pasted) }
+        val vm = buildVm(music)
+
+        vm.removeAlbum(vm.uiState.first { !it.isLoading }.albums.single())
+        advanceUntilIdle()
+
+        verify(music).hidePlaylist(1L)
+        verify(music, never()).removePlaylist(pasted)
+    }
+
     @Test fun `the empty Albums tab says how to fill it`() {
         assertThat(albumsEmptyMessage(downloadMode = false)).contains("Tap Save on any album")
         assertThat(albumsEmptyMessage(downloadMode = true)).contains("once every song is on your phone")
