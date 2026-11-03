@@ -96,8 +96,8 @@ class CommunityRepository @Inject constructor(
 
     /**
      * A ±1 sends the post's heard mark first if it's still waiting (a Worker that wants a listen before a vote must
-     * have it). When it can't go (offline, busy, a Worker without the route yet), the vote isn't sent either:
-     * [VOTE_NOT_NOW], and the mark keeps waiting, since the listen is real. A `listen_first` answer forgets a mark the
+     * have it). When it can't go for now (offline, a timeout, busy), the vote isn't sent either: [VOTE_NOT_NOW], and the
+     * mark keeps waiting, since the listen is real. A Worker without the route yet can't want it: the vote goes. A `listen_first` answer forgets a mark the
      * Worker had taken (it really has no record); one it hadn't is kept, and that's [VOTE_NOT_NOW] too.
      */
     suspend fun vote(id: String, value: Int): CommunityResult<VoteCounts> = whileOn {

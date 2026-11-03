@@ -17,15 +17,25 @@ import com.stash.core.model.Track
 import com.stash.core.model.community.CommunityMe
 import com.stash.core.model.community.CommunityPost
 import com.stash.core.model.community.PostTarget
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import java.io.File
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import okhttp3.mockwebserver.QueueDispatcher
 import org.junit.After
 import org.junit.Before
@@ -67,10 +77,53 @@ class CommunityRepositoryTest {
         coEvery { existingKey() } returns existingKey
     }
 
-    private fun repository(keys: CommunityKeyStore, on: Boolean = true): CommunityRepository {
-        val api = CommunityApiClient(OkHttpClient()).apply { baseUrls = listOf(server.url("/").toString().removeSuffix("/")) }
+    private fun repository(keys: CommunityKeyStore, on: Boolean = true, marks: CommunityHeard = heard, http: OkHttpClient = OkHttpClient()): CommunityRepository {
+        val api = CommunityApiClient(http).apply { baseUrls = listOf(server.url("/").toString().removeSuffix("/")) }
         val homeSections = mockk<HomeSectionsPreference> { every { communityOn } returns flowOf(on) }
-        return CommunityRepository(api, keys, shared, db.playlistDao(), db.trackDao(), prefs, homeSections, heard)
+        return CommunityRepository(api, keys, shared, db.playlistDao(), db.trackDao(), prefs, homeSections, marks)
+    }
+
+    /** This phone's real marks over [http], kept in a file of their own; [scope] runs their background sends. */
+    private fun realMarks(keys: CommunityKeyStore, http: OkHttpClient, scope: CoroutineScope): CommunityHeard {
+        val file = File.createTempFile("community_heard", ".preferences_pb").also { it.delete(); it.deleteOnExit() }
+        val api = CommunityApiClient(http).apply { baseUrls = listOf(server.url("/").toString().removeSuffix("/")) }
+        return CommunityHeard(PreferenceDataStoreFactory.create { file }, api, keys, MutableStateFlow(true), scope)
+    }
+
+    @Test fun `a Worker without the heard route can't want a listen, so the vote goes and the mark stays queued`() = runBlocking<Unit> {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val keys = keyStore(existingKey = key)
+        val marks = realMarks(keys, OkHttpClient(), scope)
+        val repo = repository(keys, marks = marks)
+        server.enqueue(MockResponse().setResponseCode(404).setBody("""{"error":"not_found"}""")) // the listen's own send
+        marks.mark("AAAAAAAA")
+        scope.coroutineContext.job.children.forEach { it.join() }
+        server.enqueue(MockResponse().setResponseCode(404).setBody("""{"error":"not_found"}""")) // again before the vote
+        server.enqueue(MockResponse().setBody("""{"up":1,"down":0,"myVote":1}"""))
+        assertThat(repo.vote("AAAAAAAA", 1)).isEqualTo(CommunityResult.Ok(VoteCounts(up = 1, down = 0, myVote = 1)))
+        assertThat(List(3) { server.takeRequest().path }).containsExactly(
+            "/v1/community/posts/AAAAAAAA/heard", "/v1/community/posts/AAAAAAAA/heard", "/v1/community/posts/AAAAAAAA/vote",
+        ).inOrder()
+        // Still queued: the next read sends it.
+        server.enqueue(MockResponse().setResponseCode(204))
+        marks.retry()
+        scope.coroutineContext.job.children.forEach { it.join() }
+        assertThat(server.takeRequest().path).isEqualTo("/v1/community/posts/AAAAAAAA/heard")
+    }
+
+    @Test fun `a heard mark that times out holds the vote back`() = runBlocking<Unit> {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val keys = keyStore(existingKey = key)
+        val slow = OkHttpClient.Builder().readTimeout(300, TimeUnit.MILLISECONDS).build()
+        val marks = realMarks(keys, slow, scope)
+        val repo = repository(keys, marks = marks, http = slow)
+        server.enqueue(MockResponse().setResponseCode(503)) // the listen's own send fails: it waits
+        marks.mark("AAAAAAAA")
+        scope.coroutineContext.job.children.forEach { it.join() }
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        assertThat(repo.vote("AAAAAAAA", 1)).isEqualTo(CommunityResult.Rejected(CommunityRepository.VOTE_NOT_NOW))
+        assertThat(server.requestCount).isEqualTo(2) // the two heard sends; no vote
+        assertThat(marks.ids.first()).containsExactly("AAAAAAAA")
     }
 
     private suspend fun playlist(type: PlaylistType, songs: Int): Long {

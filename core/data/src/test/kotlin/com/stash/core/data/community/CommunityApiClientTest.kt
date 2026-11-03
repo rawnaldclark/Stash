@@ -151,8 +151,10 @@ class CommunityApiClientTest {
         assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.RETRY)
         answer(403)
         assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.RETRY)
-        // A Worker without the route yet answers not_found for any path it doesn't know: it comes later.
+        // A Worker without the route yet answers not_found for any path it doesn't know: no route (later, and no vote held).
         answer(404, """{"error":"not_found"}""")
+        assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.NO_ROUTE)
+        answer(404, "<html>Not Found</html>")
         assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.RETRY)
         answer(503, """{"error":"unavailable"}""")
         assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.RETRY)

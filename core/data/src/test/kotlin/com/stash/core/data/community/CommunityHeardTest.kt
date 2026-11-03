@@ -19,6 +19,7 @@ import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -137,14 +138,16 @@ class CommunityHeardTest {
         existingKey = null
         heard.mark(A); settle()
         existingKey = key
-        answer(404, """{"error":"not_found"}""")
-        assertThat(heard.beforeVote(A)).isFalse()
         answer(503)
+        assertThat(heard.beforeVote(A)).isFalse()
+        answer(429)
+        assertThat(heard.beforeVote(A)).isFalse()
+        answer(403, "<!DOCTYPE html><title>Just a moment...</title>")
         assertThat(heard.beforeVote(A)).isFalse()
         assertThat(heard.ids.first()).containsExactly(A)
         answer(204)
         heard.retry(); settle()
-        assertThat(server.requestCount).isEqualTo(3)
+        assertThat(server.requestCount).isEqualTo(4)
         // Refused for good (the post is gone): the vote goes, and gets the Worker's own answer.
         existingKey = null
         heard.mark(B); settle()
@@ -153,7 +156,39 @@ class CommunityHeardTest {
         assertThat(heard.beforeVote(B)).isTrue()
         // No mark here at all (the Worker's own heard: true): nothing to send.
         assertThat(heard.beforeVote("CCCCCCCC")).isTrue()
-        assertThat(server.requestCount).isEqualTo(4)
+        assertThat(server.requestCount).isEqualTo(5)
+    }
+
+    @Test fun `a Worker without the route yet (not_found) can't want a listen, so the vote goes and the mark keeps waiting`() = runBlocking<Unit> {
+        existingKey = null
+        heard.mark(A); settle()
+        existingKey = key
+        answer(404, """{"error":"not_found"}""")
+        assertThat(heard.beforeVote(A)).isTrue()
+        assertThat(server.takeRequest().path).isEqualTo("/v1/community/posts/$A/heard")
+        // Still waiting: a Worker that has the route gets it on the next read.
+        answer(204)
+        heard.retry(); settle()
+        assertThat(server.takeRequest().path).isEqualTo("/v1/community/posts/$A/heard")
+        heard.retry(); settle()
+        assertThat(server.requestCount).isEqualTo(2)
+    }
+
+    @Test fun `a timeout holds the vote back, and the mark keeps waiting`() = runBlocking<Unit> {
+        val slow = CommunityApiClient(OkHttpClient.Builder().readTimeout(300, TimeUnit.MILLISECONDS).build())
+            .apply { baseUrls = listOf(server.url("/").toString().removeSuffix("/")) }
+        val keys = mockk<CommunityKeyStore> { coEvery { existingKey() } answers { existingKey } }
+        val own = File.createTempFile("community_heard_slow", ".preferences_pb").also { it.delete(); it.deleteOnExit() }
+        val timing = CommunityHeard(PreferenceDataStoreFactory.create { own }, slow, keys, on, scope, clock = { now })
+        existingKey = null
+        timing.mark(A); settle()
+        existingKey = key
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        assertThat(timing.beforeVote(A)).isFalse()
+        assertThat(timing.ids.first()).containsExactly(A)
+        answer(204)
+        timing.retry(); settle()
+        assertThat(server.requestCount).isEqualTo(2)
     }
 
     @Test fun `a vote doesn't wait behind a round stuck on another post`() = runBlocking<Unit> {

@@ -40,7 +40,8 @@ private const val TAG = "CommunityHeard"
  *  - Only once this phone has a key. Listening never makes one (the README: "the first time you post or vote"); the
  *    first vote does, and [beforeVote] sends that post's mark ahead of it. A vote whose mark can't go yet isn't sent.
  *  - Offline, a 5xx, rate limited, or a Worker without the route yet (404 `not_found`): the mark waits, and goes again
- *    on the next Community read ([retry]). Gone or refused (404 `gone`, the Worker's own 403): it's dropped.
+ *    on the next Community read ([retry]). Gone or refused (404 `gone`, the Worker's own 403): it's dropped. A Worker
+ *    without the route can't want a listen, so a vote goes all the same; any other failure holds the vote back.
  *  - One request per post at a time, shared by a vote and a background round: a mark never goes out twice, and a
  *    vote never waits behind a round's other posts.
  *  - Never while Community is off.
@@ -104,10 +105,11 @@ class CommunityHeard internal constructor(
 
     /**
      * Before a ±1 vote on [id], once the vote has made the key: its mark goes now if it's still waiting, on its own
-     * (never behind a background round's other posts). False when it couldn't go (offline, busy, a Worker without the
-     * route yet): then the vote isn't sent, since a Worker that wants a listen would refuse it although the listen is
-     * real. The mark keeps waiting. True otherwise: sent now or before, refused (the vote gets the real answer), or no
-     * mark here at all (the Worker's own `heard: true`).
+     * (never behind a background round's other posts). False when it couldn't go for now (offline, a timeout, busy,
+     * rate limited, an edge page): then the vote isn't sent, since a Worker that wants a listen would refuse it
+     * although the listen is real. The mark keeps waiting. True otherwise: sent now or before, refused (the vote gets
+     * the real answer), a Worker without the route yet (404 `not_found`: it can't want a listen; the mark keeps
+     * waiting for one that can), or no mark here at all (the Worker's own `heard: true`).
      */
     suspend fun beforeVote(id: String): Boolean =
         try {
@@ -142,7 +144,10 @@ class CommunityHeard internal constructor(
             val key = keys.existingKey() ?: return@withLock
             for (id in waitingIds()) {
                 // Offline, or a Worker without the route yet: the rest would fail alike.
-                if (sendOne(id, key) == HeardSend.RETRY) return@withLock
+                when (sendOne(id, key)) {
+                    HeardSend.RETRY, HeardSend.NO_ROUTE -> return@withLock
+                    HeardSend.SENT, HeardSend.DROPPED -> Unit
+                }
             }
         } catch (e: CancellationException) {
             throw e
@@ -153,7 +158,7 @@ class CommunityHeard internal constructor(
 
     /**
      * [id]'s mark, sent, or the request already out for it awaited: one per post at a time, and none once the mark has
-     * left the waiting list. Sent or refused, it leaves the list; otherwise it stays for the next round. The request
+     * left the waiting list. Sent or refused, it leaves the list; otherwise (and with no route yet) it stays. The request
      * runs in [scope], so a vote's screen closing doesn't cut it short for anyone sharing it.
      */
     private suspend fun sendOne(id: String, key: String): HeardSend {
@@ -169,7 +174,7 @@ class CommunityHeard internal constructor(
                 var outcome = HeardSend.RETRY
                 try {
                     outcome = api.heard(id, key)
-                    if (outcome != HeardSend.RETRY) edit { prefs, now ->
+                    if (outcome == HeardSend.SENT || outcome == HeardSend.DROPPED) edit { prefs, now ->
                         prefs[waitingPref] = live(prefs[waitingPref], now).filterNot { it.substringBefore(':') == id }.toSet()
                     }
                 } finally {

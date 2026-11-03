@@ -43,14 +43,17 @@ enum class HeardSend {
     /** Recorded (204), or recorded before: done. */
     SENT,
 
-    /** The post is gone (404 `gone`), or the Worker refuses it for good (any 403, e.g. your own post): never send it again. */
+    /** The post is gone (404 `gone`), or the Worker refuses it for good (its own 403, e.g. your own post): never send it again. */
     DROPPED,
 
-    /**
-     * Try again later: offline, a timeout, a 5xx, rate limited, or any other answer. That includes a 404 `not_found`,
-     * which is a Worker without the route yet (it answers that for any path it doesn't know).
-     */
+    /** Try again later: offline, a timeout, a 5xx, rate limited, a 403 that isn't the Worker's, or any other answer. */
     RETRY,
+
+    /**
+     * 404 `not_found`: a Worker without the route yet (it answers that for any path it doesn't know), from before the
+     * heard contract. It can't want a listen before a vote either, so a vote goes; the mark waits for a Worker that has it.
+     */
+    NO_ROUTE,
 }
 
 /** A vote's answer: the post's counted votes and this phone's vote. */
@@ -106,7 +109,8 @@ class CommunityApiClient @Inject constructor(okHttpClient: OkHttpClient) {
                 when {
                     code in 200..299 -> HeardSend.SENT
                     code == 403 && workerCode(text) != null -> HeardSend.DROPPED
-                    code == 404 && errorCode(code, text) == "gone" -> HeardSend.DROPPED
+                    code == 404 && workerCode(text) == "gone" -> HeardSend.DROPPED
+                    code == 404 && workerCode(text) == "not_found" -> HeardSend.NO_ROUTE
                     else -> HeardSend.RETRY
                 }
             }
