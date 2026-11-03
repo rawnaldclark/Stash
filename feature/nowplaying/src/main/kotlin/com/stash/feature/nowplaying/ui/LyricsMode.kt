@@ -25,6 +25,13 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.SyncAlt
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -120,52 +127,97 @@ internal fun LyricsPane(
         onDispose { view.keepScreenOn = wasKeepingScreenOn }
     }
 
-    BoxWithConstraints(modifier = modifier.lyricsEdgeFade()) {
-        val density = LocalDensity.current
-        val fontSp = lyricFontSizeSp(maxWidth.value)
-        val viewportHeight = maxHeight
-        val look = remember(fontSp, viewportHeight, ink, light, density) {
-            with(density) {
-                val anchor = lyricAnchorPx(fontSp.sp.toPx(), viewportHeight.toPx()).toDp()
-                LyricsLook(
-                    fontSize = fontSp.sp,
-                    // The web's inks: lit .85 on the dark ambient, full plum on the light wash; dim .35.
-                    bright = if (light) ink else ink.copy(alpha = 0.85f),
-                    dim = ink.copy(alpha = if (light) 0.38f else 0.35f),
-                    ink = ink,
-                    sidePadding = LYRICS_SIDE_PAD_DP.dp,
-                    lineGap = (fontSp.sp.toPx() * 0.2f).toDp(),
-                    anchor = anchor,
-                    bottomRoom = (viewportHeight - anchor).coerceAtLeast(0.dp),
-                )
+    val attribution = lyricsAttributionOf(state)
+
+    Box(modifier = modifier) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize().lyricsEdgeFade()) {
+            val density = LocalDensity.current
+            val fontSp = lyricFontSizeSp(maxWidth.value)
+            val viewportHeight = maxHeight
+            val look = remember(fontSp, viewportHeight, ink, light, density) {
+                with(density) {
+                    val anchor = lyricAnchorPx(fontSp.sp.toPx(), viewportHeight.toPx()).toDp()
+                    LyricsLook(
+                        fontSize = fontSp.sp,
+                        // The web's inks: lit .85 on the dark ambient, full plum on the light wash; dim .35.
+                        bright = if (light) ink else ink.copy(alpha = 0.85f),
+                        dim = ink.copy(alpha = if (light) 0.38f else 0.35f),
+                        ink = ink,
+                        sidePadding = LYRICS_SIDE_PAD_DP.dp,
+                        lineGap = (fontSp.sp.toPx() * 0.2f).toDp(),
+                        anchor = anchor,
+                        bottomRoom = (viewportHeight - anchor).coerceAtLeast(0.dp),
+                    )
+                }
+            }
+            val body = remember(state) { lyricsBodyFor(state) }
+            Crossfade(targetState = body, animationSpec = tween(250), label = "lyrics-body") { b ->
+                when (b) {
+                    LyricsBody.Loading -> LyricsMessage("Looking for lyrics", look, quiet = true)
+                    is LyricsBody.Words -> LyricsSyllableRenderer(
+                        lyrics = b.lyrics,
+                        currentPositionMs = currentPositionMs(),
+                        onLineTap = onSeek,
+                        look = look,
+                        isPlaying = isPlaying,
+                        playbackSpeed = playbackSpeed,
+                    )
+                    is LyricsBody.Lines -> LyricsLineRenderer(
+                        b.lines, currentPositionMs(), onSeek, look,
+                        isPlaying = isPlaying,
+                        playbackSpeed = playbackSpeed,
+                    )
+                    is LyricsBody.Plain -> LyricsPlainRenderer(b.text, look)
+                    is LyricsBody.Message -> LyricsMessage(
+                        text = b.text,
+                        look = look,
+                        accent = accent,
+                        onRetry = if (b.canRetry) onRetry else null,
+                    )
+                }
             }
         }
-        val body = remember(state) { lyricsBodyFor(state) }
-        Crossfade(targetState = body, animationSpec = tween(250), label = "lyrics-body") { b ->
-            when (b) {
-                LyricsBody.Loading -> LyricsMessage("Looking for lyrics", look, quiet = true)
-                is LyricsBody.Words -> LyricsSyllableRenderer(
-                    lyrics = b.lyrics,
-                    currentPositionMs = currentPositionMs(),
-                    onLineTap = onSeek,
-                    look = look,
-                    isPlaying = isPlaying,
-                    playbackSpeed = playbackSpeed,
-                )
-                is LyricsBody.Lines -> LyricsLineRenderer(
-                    b.lines, currentPositionMs(), onSeek, look,
-                    isPlaying = isPlaying,
-                    playbackSpeed = playbackSpeed,
-                )
-                is LyricsBody.Plain -> LyricsPlainRenderer(b.text, look)
-                is LyricsBody.Message -> LyricsMessage(
-                    text = b.text,
-                    look = look,
-                    accent = accent,
-                    onRetry = if (b.canRetry) onRetry else null,
-                )
+        if (attribution != null) {
+            LyricsAttributionFooter(attribution, ink, Modifier.align(Alignment.BottomStart))
+        }
+    }
+}
+
+/** Spicy Lyrics' attribution: the provider always, uploader and maker (linked) when its own catalogue answered. */
+@Composable
+private fun LyricsAttributionFooter(
+    attribution: LyricsAttribution,
+    ink: Color,
+    modifier: Modifier = Modifier,
+) {
+    val text = remember(attribution) {
+        buildAnnotatedString {
+            append("Lyrics by ${attribution.provider}")
+            attribution.credits?.let {
+                person("Uploaded by", it.uploaderName, it.uploaderUrl)
+                person("Made by", it.makerName, it.makerUrl)
             }
         }
+    }
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = ink.copy(alpha = 0.55f),
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier.padding(horizontal = LYRICS_SIDE_PAD_DP.dp, vertical = 10.dp),
+    )
+}
+
+private fun AnnotatedString.Builder.person(label: String, name: String?, url: String?) {
+    if (name == null) return
+    append(" · $label ")
+    if (url != null) {
+        withLink(LinkAnnotation.Url(url, TextLinkStyles(SpanStyle(textDecoration = TextDecoration.Underline)))) {
+            append(name)
+        }
+    } else {
+        append(name)
     }
 }
 

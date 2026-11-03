@@ -128,7 +128,7 @@ import kotlinx.serialization.json.Json
         com.stash.core.data.db.entity.TrackMergeLogEntity::class,
         com.stash.core.data.db.entity.DuplicateDismissalEntity::class,
     ],
-    version = 76,
+    version = 77,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1973,6 +1973,16 @@ abstract class StashDatabase : RoomDatabase() {
             }
         }
 
+        /** v76 -> v77: who uploaded/made a Spicy Lyrics sync, shown as attribution. Nullable, so existing rows read as "no credits". */
+        val MIGRATION_76_77 = object : Migration(76, 77) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `lyrics` ADD COLUMN `credit_uploader_name` TEXT")
+                db.execSQL("ALTER TABLE `lyrics` ADD COLUMN `credit_uploader_url` TEXT")
+                db.execSQL("ALTER TABLE `lyrics` ADD COLUMN `credit_maker_name` TEXT")
+                db.execSQL("ALTER TABLE `lyrics` ADD COLUMN `credit_maker_url` TEXT")
+            }
+        }
+
         /** Edit order tables start empty, so existing playlists retain their native order. */
         val MIGRATION_73_74 = object : Migration(73, 74) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -2126,6 +2136,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_73_74,
                 MIGRATION_74_75,
                 MIGRATION_75_76,
+                MIGRATION_76_77,
             )
         }
     }

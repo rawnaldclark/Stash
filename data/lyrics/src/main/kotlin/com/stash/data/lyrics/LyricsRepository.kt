@@ -14,6 +14,8 @@ import com.stash.data.lyrics.source.IsrcTtmlLyricsSource
 import com.stash.data.lyrics.source.LyricsQuery
 import com.stash.data.lyrics.source.LyricsResult
 import com.stash.data.lyrics.source.LyricsSource
+import com.stash.data.lyrics.source.SpicyLyricsSource
+import com.stash.data.lyrics.source.SpotifyTrackId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
@@ -87,8 +89,8 @@ private class WalkOutcome(val result: LyricsResult?, val appleCleanMiss: Boolean
  * Sole entrypoint for the lyrics subsystem. Both UI (Now Playing sheet)
  * and workers (post-download + backfill) go through this class.
  *
- * `resolveAndStore` walks the [sources] chain in priority order (Apple TTML -> LRCLIB -> KuGou ->
- * InnerTube -> lrc.red -> Binimum; ordering enforced in `LyricsModule.provideLyricsSources`. The
+ * `resolveAndStore` walks the [sources] chain in priority order (lrc.red -> Binimum -> Spicy ->
+ * Apple TTML -> LRCLIB -> KuGou -> InnerTube; ordering enforced in `LyricsModule.provideLyricsSources`. The
  * last two are [LyricsSource.onDemandOnly]: asked only for a [LyricsQuery.onDemand] lookup (a
  * track being played or just downloaded), after every other source, and their failures count as
  * misses. When an earlier source answers without word timing, they get one follow-up try in the
@@ -188,7 +190,7 @@ class LyricsRepository @Inject constructor(
         query: LyricsQuery,
         fresh: Boolean = false,
         skipIfStamped: Boolean = false,
-        onDemandFollowUp: Boolean = true,
+        onDemandFollowUp: Boolean = false,
     ): LyricsEntity? {
         if (skipIfStamped && isStamped(query.trackId)) return lyricsDao.get(query.trackId)
         val outcome = sharedWalk(query, fresh)
@@ -241,6 +243,10 @@ class LyricsRepository @Inject constructor(
                 else -> null
             },
             syncOffsetMs = previousRow?.syncOffsetMs ?: 0L,
+            creditUploaderName = result.credits?.uploaderName,
+            creditUploaderUrl = result.credits?.uploaderUrl,
+            creditMakerName = result.credits?.makerName,
+            creditMakerUrl = result.credits?.makerUrl,
         )
         lyricsDao.upsert(entity)
         trackDao.setLyricsFetchedAt(query.trackId, now)
@@ -413,6 +419,7 @@ class LyricsRepository @Inject constructor(
             durationMs = track.durationMs.takeIf { it > 0 },
             youtubeVideoId = track.youtubeId,
             isrc = track.isrc?.takeIf { it.isNotBlank() },
+            spotifyTrackId = SpotifyTrackId.parse(track.spotifyUri),
             onDemand = true,
         )
         return try {
@@ -502,6 +509,7 @@ class LyricsRepository @Inject constructor(
             durationMs = track.durationMs.takeIf { it > 0 },
             youtubeVideoId = track.youtubeId,
             isrc = track.isrc?.takeIf { it.isNotBlank() },
+            spotifyTrackId = SpotifyTrackId.parse(track.spotifyUri),
             interactive = interactive,
             onDemand = sources != TtmlUpgradeSources.APPLE,
         )
@@ -548,6 +556,10 @@ class LyricsRepository @Inject constructor(
                     ttml = result.ttml,
                     ttmlCheckedAt = now,
                     syncOffsetMs = current.syncOffsetMs,
+                    creditUploaderName = result.credits?.uploaderName,
+                    creditUploaderUrl = result.credits?.uploaderUrl,
+                    creditMakerName = result.credits?.makerName,
+                    creditMakerUrl = result.credits?.makerUrl,
                 )
                 lyricsDao.upsert(entity)
                 trackDao.setLyricsFetchedAt(trackId, now)
@@ -680,6 +692,7 @@ class LyricsRepository @Inject constructor(
             AppleTtmlLyricsSource.SOURCE_ID,
             IsrcTtmlLyricsSource.LRC_RED_ID,
             IsrcTtmlLyricsSource.BINIMUM_ID,
+            SpicyLyricsSource.SOURCE_ID,
         )
 
         /** Tracks remembered as having had their on-demand follow-up this process. */

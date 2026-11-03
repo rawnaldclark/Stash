@@ -8,6 +8,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.data.lyrics.LyricsRepository
 import com.stash.data.lyrics.source.LyricsQuery
+import com.stash.data.lyrics.source.SpotifyTrackId  
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
@@ -64,6 +65,7 @@ class LyricsFetchWorker @AssistedInject constructor(
             durationMs = track.durationMs.takeIf { it > 0L },
             youtubeVideoId = extractYoutubeVideoId(track),
             isrc = track.isrc?.takeIf { it.isNotBlank() },
+            spotifyTrackId = SpotifyTrackId.parse(track.spotifyUri),
             // Post-download fetch: a track just downloaded, so the on-demand sources may be asked.
             onDemand = true,
         )

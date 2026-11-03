@@ -45,4 +45,8 @@ data class LyricsEntity(
     @ColumnInfo("ttml_checked_at")             val ttmlCheckedAt: Long? = null,
     /** Signed ms; positive delays lyrics, negative shows them earlier. */
     @ColumnInfo("sync_offset_ms")              val syncOffsetMs: Long = 0L,
+    @ColumnInfo("credit_uploader_name")        val creditUploaderName: String? = null,
+    @ColumnInfo("credit_uploader_url")         val creditUploaderUrl: String? = null,
+    @ColumnInfo("credit_maker_name")           val creditMakerName: String? = null,
+    @ColumnInfo("credit_maker_url")            val creditMakerUrl: String? = null,
 )

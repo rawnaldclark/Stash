@@ -12,6 +12,7 @@ import com.stash.data.lyrics.source.IsrcTtmlLyricsSource
 import com.stash.data.lyrics.source.KugouLyricsSource
 import com.stash.data.lyrics.source.LrclibLyricsSource
 import com.stash.data.lyrics.source.LyricsSource
+import com.stash.data.lyrics.source.SpicyLyricsSource
 import com.stash.data.lyrics.source.YtMusicLyricsSource
 import dagger.Binds
 import dagger.Module
@@ -67,15 +68,10 @@ abstract class LyricsModule {
     companion object {
 
         /**
-         * Ordered source chain consumed by `LyricsRepository`. The order
-         * defines fallback priority: Apple TTML (word-synced), LRCLIB (synced
-         * LRC), KuGou, InnerTube (plain text), then lrc.red and Binimum.
-         *
-         * lrc.red and Binimum come LAST on purpose: they are on-demand-only
-         * extras (see `LyricsSource.onDemandOnly`) and must never delay lyrics
-         * an existing source would return. When an earlier source answers
-         * without word timing, the repository gives them one background
-         * follow-up try instead.
+         * Ordered source chain consumed by `LyricsRepository`. The order defines fallback
+         * priority: lrc.red, Binimum, Spicy Lyrics, Apple TTML (paxsenix), LRCLIB, KuGou, InnerTube.
+         * lrc.red and Binimum are `onDemandOnly`: asked only for on-demand lookups, and their
+         * failures count as misses.
          */
         @Provides
         @Singleton
@@ -84,6 +80,7 @@ abstract class LyricsModule {
             lrclib: LrclibLyricsSource,
             kugou: KugouLyricsSource,
             ytmusic: YtMusicLyricsSource,
+            spicy: SpicyLyricsSource,
             okHttpClient: OkHttpClient,
             @ApplicationContext context: Context,
             isrcResolver: IsrcResolver,
@@ -91,10 +88,6 @@ abstract class LyricsModule {
         ): List<@JvmSuppressWildcards LyricsSource> {
             val versionName = versionName(context)
             return listOf(
-                appleTtml,
-                lrclib,
-                kugou,
-                ytmusic,
                 IsrcTtmlLyricsSource(
                     okHttpClient, versionName, IsrcTtmlLyricsSource.LRC_RED_ID,
                     "lrc.red (word-synced)", IsrcTtmlLyricsSource.LRC_RED_URL, isrcResolver, breaker,
@@ -103,8 +96,25 @@ abstract class LyricsModule {
                     okHttpClient, versionName, IsrcTtmlLyricsSource.BINIMUM_ID,
                     "Binimum (word-synced)", IsrcTtmlLyricsSource.BINIMUM_URL, isrcResolver, breaker,
                 ),
+                spicy,
+                appleTtml, // lyrics.paxsenix.org
+                lrclib,
+                kugou,
+                ytmusic,
             )
         }
+
+        @Provides
+        @Singleton
+        fun provideSpicyLyricsSource(
+            okHttpClient: OkHttpClient,
+            @ApplicationContext context: Context,
+            clock: Clock,
+        ): SpicyLyricsSource = SpicyLyricsSource(
+            client = okHttpClient,
+            appVersionName = versionName(context),
+            // Later: baseUrl = your Cloudflare worker URL, apiKey left blank (the worker adds the key).
+        )
 
         /** title/artist -> ISRC for the lrc.red/Binimum sources; same DNS, User-Agent and breaker as they use. */
         @Provides

@@ -38,6 +38,9 @@ data class LyricsQuery(
      * library-wide pass leaves it false so it never fans out to them.
      */
     val onDemand: Boolean = false,
+
+    /** Spotify track id (22 chars), when known. Read by [SpicyLyricsSource]; null skips that source. */
+    val spotifyTrackId: String? = null,
 )
 
 data class LyricsResult(
@@ -49,4 +52,11 @@ data class LyricsResult(
     val sourceLyricsId: String?,
     /** Raw word-synced TTML when the source has one; null for LRC/plain-only sources. */
     val ttml: String? = null,
+    val credits: LyricsCredits? = null,
+)
+
+/** Who made a lyrics sync; only Spicy Lyrics' own catalogue has these. */
+data class LyricsCredits(
+    val uploaderName: String?, val uploaderUrl: String?,
+    val makerName: String?, val makerUrl: String?,
 )

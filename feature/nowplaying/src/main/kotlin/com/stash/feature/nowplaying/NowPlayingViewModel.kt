@@ -29,6 +29,7 @@ import com.stash.core.data.backcover.BackCoverAlbum
 import com.stash.data.lyrics.LyricsRepository
 import com.stash.data.lyrics.sidecar.LyricsSidecarWriter
 import com.stash.data.lyrics.source.LyricsQuery
+import com.stash.data.lyrics.source.SpotifyTrackId
 import com.stash.feature.nowplaying.ui.LyricsOutputOffset
 import com.stash.feature.nowplaying.ui.LyricsViewState
 import com.stash.feature.nowplaying.ui.backCoverRequest
@@ -788,6 +789,7 @@ class NowPlayingViewModel @Inject constructor(
         durationMs = track.durationMs.takeIf { it > 0 },
         youtubeVideoId = track.youtubeId,
         isrc = track.isrc?.takeIf { it.isNotBlank() },
+        spotifyTrackId = SpotifyTrackId.parse(track.spotifyUri),
         interactive = true,
         // The playing track (Now Playing, its prefetch): the on-demand lyrics sources may be asked.
         onDemand = true,
