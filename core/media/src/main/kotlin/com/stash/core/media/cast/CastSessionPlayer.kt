@@ -37,25 +37,32 @@ import kotlin.math.roundToInt
  *
  * One instance per service, re-pointed with [attach]/[detach]:
  * ForwardingSimpleBasePlayer listens to the wrapped player from construction
- * and has no detach short of release().
+ * and has no detach short of release(). What a receiver loads comes with each
+ * [attach] ([CastFeed]): a speaker a LAN URL, a linked browser (Remote v2,
+ * spec 2026-11-03 §2.2) the song to find, stepping over the songs it can't
+ * take.
  *
  * Main thread only.
  */
 @OptIn(UnstableApi::class)
 class CastSessionPlayer(
     local: Player,
-    /** Builds what the speaker loads for an item, or null when it can't be served. */
-    private val mediaFor: (item: MediaItem, contentId: String) -> CastMedia?,
-    /**
-     * Gets [item]'s bytes ready to serve (resolves a stream that hasn't been
-     * yet), then calls back on the main thread: true when it can be served.
-     * Immediate for local files.
-     */
-    private val prepare: (item: MediaItem, done: (Boolean) -> Unit) -> Unit = { _, done -> done(true) },
+    /** The [CastFeed.mediaFor] of an [attach] without a feed of its own. */
+    mediaFor: (item: MediaItem, contentId: String) -> CastMedia? = { _, _ -> null },
+    /** The [CastFeed.prepare] of an [attach] without a feed of its own. */
+    prepare: (item: MediaItem, done: (Boolean) -> Unit) -> Unit = { _, done -> done(true) },
     private val clock: () -> Long = SystemClock::elapsedRealtime,
 ) : ForwardingSimpleBasePlayer(local) {
 
+    private val defaultFeed = CastFeed(mediaFor, prepare)
+
+    /** How the attached receiver's songs are made, set by [attach]. */
+    private var feed: CastFeed = defaultFeed
+
     private var remote: CastRemote? = null
+
+    /** Songs stepped over in a row because the receiver can't take them ([CastFeed.skipsUnsendable]); reported once a run. */
+    private var skippedRun = 0
 
     /** What the user wants: the session's playWhenReady. The local player stays paused regardless. */
     private var wantPlay = false
@@ -133,10 +140,11 @@ class CastSessionPlayer(
      * already stopped [local]; [positionMs] and [playWhenReady] are what it
      * was doing before.
      */
-    fun attach(local: Player, remote: CastRemote, positionMs: Long, playWhenReady: Boolean) {
+    fun attach(local: Player, remote: CastRemote, positionMs: Long, playWhenReady: Boolean, feed: CastFeed = defaultFeed) {
         if (local !== player) setPlayer(local)
         detachRemote()
         this.remote = remote
+        this.feed = feed
         wantPlay = playWhenReady
         playWhenReadyReason = Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE
         ended = false
@@ -173,6 +181,7 @@ class CastSessionPlayer(
     private fun detachRemote() {
         remote?.removeListener(remoteListener)
         remote = null
+        skippedRun = 0
     }
 
     // ── Loading ─────────────────────────────────────────────────────────
@@ -201,15 +210,17 @@ class CastSessionPlayer(
         notePosition(positionMs.coerceAtLeast(0), advancing = false)
         ended = false
         error = null
-        prepare(item) { ready ->
-            if (remote === target && loadedContentId == contentId) send(target, item, contentId, ready)
+        val feed = feed
+        feed.prepare(item) { ready ->
+            if (remote === target && loadedContentId == contentId) send(target, feed, item, contentId, ready)
         }
         invalidateState()
     }
 
-    private fun send(target: CastRemote, item: MediaItem, contentId: String, ready: Boolean) {
-        val media = if (ready) mediaFor(item, contentId) else null
+    private fun send(target: CastRemote, feed: CastFeed, item: MediaItem, contentId: String, ready: Boolean) {
+        val media = if (ready) feed.mediaFor(item, contentId) else null
         if (media == null) {
+            if (ready && feed.skipsUnsendable) return skipUnsendable(target)
             error = if (ready) {
                 PlaybackException("This song can't be sent to the speaker", null, PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND)
             } else {
@@ -219,8 +230,37 @@ class CastSessionPlayer(
             // wantPlay as it is now: a pause may have arrived while the song was prepared.
             target.load(media, lastPositionMs, wantPlay)
             lastCommandAtMs = clock()
+            endSkippedRun()
         }
         invalidateState()
+    }
+
+    /**
+     * The current song is one the receiver can't take (a browser, and a song only this phone has): step over it the way a
+     * finished song moves on, never an error. With nothing left it can take (the queue's end, repeat one, or a whole queue of
+     * them on repeat all), the receiver stops and playback ends there. The run is reported once ([endSkippedRun]).
+     */
+    private fun skipUnsendable(target: CastRemote) {
+        skippedRun++
+        val local = player
+        val next = if (local.repeatMode == Player.REPEAT_MODE_ONE) C.INDEX_UNSET else local.nextMediaItemIndex
+        if (next == C.INDEX_UNSET || skippedRun >= local.mediaItemCount) {
+            target.stop() // it may still hold the song before: nothing of ours plays there now
+            loadedContentId = null
+            ended = true
+            notePosition(0L, advancing = false)
+            endSkippedRun()
+            invalidateState()
+            return
+        }
+        seekLocalAndLoad(next, 0L)
+    }
+
+    /** A run of stepped-over songs ended (a song loaded, or nothing was left): one report, with how many. */
+    private fun endSkippedRun() {
+        val n = skippedRun
+        skippedRun = 0
+        if (n > 0) feed.onSkipped(n)
     }
 
     /**
@@ -242,9 +282,11 @@ class CastSessionPlayer(
         if (item == null) return
         val request = nextRequest
         val contentId = "${item.mediaId}#n${++nextCounter}"
-        prepare(item) { ready ->
+        val feed = feed
+        feed.prepare(item) { ready ->
             if (remote !== target || request != nextRequest || !ready) return@prepare
-            val media = mediaFor(item, contentId) ?: return@prepare
+            // One it can't take isn't queued: when the song before it ends, it is stepped over then (skipUnsendable).
+            val media = feed.mediaFor(item, contentId) ?: return@prepare
             queued = Queued(contentId, item.mediaId, nextIndex)
             target.setNext(media)
         }
@@ -445,15 +487,19 @@ class CastSessionPlayer(
         }
 
         // The deprecated, flag-less volume commands too: controllers built
-        // against older media3 versions still send those.
+        // against older media3 versions still send those. A receiver that
+        // can't set its volume (a browser on iOS) gets none of them, so the
+        // volume keys leave it alone.
+        @Suppress("DEPRECATION")
+        val deviceVolume = intArrayOf(
+            Player.COMMAND_GET_DEVICE_VOLUME,
+            Player.COMMAND_SET_DEVICE_VOLUME, Player.COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS,
+            Player.COMMAND_ADJUST_DEVICE_VOLUME, Player.COMMAND_ADJUST_DEVICE_VOLUME_WITH_FLAGS,
+        )
         @Suppress("DEPRECATION")
         val commands = base.availableCommands.buildUpon()
             .removeAll(Player.COMMAND_SET_SPEED_AND_PITCH, Player.COMMAND_SET_VOLUME)
-            .addAll(
-                Player.COMMAND_GET_DEVICE_VOLUME,
-                Player.COMMAND_SET_DEVICE_VOLUME, Player.COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS,
-                Player.COMMAND_ADJUST_DEVICE_VOLUME, Player.COMMAND_ADJUST_DEVICE_VOLUME_WITH_FLAGS,
-            )
+            .apply { if (status.canSetVolume) addAll(*deviceVolume) else removeAll(*deviceVolume) }
             .build()
 
         val builder = base.buildUpon()
@@ -636,3 +682,23 @@ class CastSessionPlayer(
         private val REMOTE_DEVICE = DeviceInfo.Builder(DeviceInfo.PLAYBACK_TYPE_REMOTE).setMaxVolume(MAX_VOLUME).build()
     }
 }
+
+/**
+ * How [CastSessionPlayer] turns a queue item into what a receiver loads, given with each [CastSessionPlayer.attach]: a speaker
+ * gets a LAN URL from the phone's media server, a linked browser (Remote v2) the song it finds the music by.
+ */
+class CastFeed(
+    /** Builds what the receiver loads for an item, or null when it can't be sent. */
+    val mediaFor: (item: MediaItem, contentId: String) -> CastMedia?,
+    /**
+     * Gets [item] ready before the receiver is asked (a speaker: resolves a stream that hasn't been yet; a browser: looks up its
+     * song), then calls back on the main thread: true when it can be sent. Immediate when nothing needs doing.
+     */
+    val prepare: (item: MediaItem, done: (Boolean) -> Unit) -> Unit = { _, done -> done(true) },
+    /**
+     * A browser: an item it can't take ([mediaFor] null, a song only this phone has) is stepped over, not an error, and a run of
+     * them is reported once to [onSkipped] with how many. A speaker: such an item is an error the queue's recovery skips.
+     */
+    val skipsUnsendable: Boolean = false,
+    val onSkipped: (count: Int) -> Unit = {},
+)
