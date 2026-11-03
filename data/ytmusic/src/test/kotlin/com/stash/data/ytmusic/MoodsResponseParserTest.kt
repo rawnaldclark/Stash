@@ -186,6 +186,9 @@ class MoodsResponseParserTest {
         assertEquals(listOf(3, 3), page.shelves.subList(1, 3).map { it.playlists.size })
         assertTrue(page.shelves.subList(1, 3).all { shelf -> shelf.playlists.all { it.id.startsWith("VL") } && shelf.songs.isEmpty() })
         assertEquals("relaxing oldies", page.shelves[2].playlists.first().title)
+        // A Featured playlist names its artists, a Community one its maker and views: one line each, read whole
+        assertEquals("Ladrones, Enjambre, Segundos auxilios, Nelly Burguette", page.shelves[1].playlists.first().subtitle)
+        assertEquals("Jessica Fisher • 53K views", page.shelves[2].playlists.first().subtitle)
 
         val albums = page.shelves[3].albums
         assertEquals(listOf("MPREb_qMlbe7gLeuH", "MPREb_1SbgcDGdrT4", "MPREb_7o4jrr5Ossj", "MPREb_zU3TA0orkvV"), albums.map { it.id })

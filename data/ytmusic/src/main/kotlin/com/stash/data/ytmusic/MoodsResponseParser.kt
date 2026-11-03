@@ -147,10 +147,13 @@ internal object MoodsResponseParser {
         val id = browseId(card) ?: return null
         if (!id.startsWith("VL")) return null
         val title = runsText(card.navigatePath("title", "runs")).takeIf { it.isNotBlank() } ?: return null
-        val subtitle = card.navigatePath("subtitle", "runs")?.asArray().orEmpty()
-            .mapNotNull { it.asObject()?.get("text")?.asString()?.trim() }
+        // Read as one line, then split on its dots: a genre's Featured playlist names its artists in runs of their
+        // own ("Ladrones", ", ", "Enjambre"), which read run by run came out "Ladrones • , • Enjambre"
+        val subtitle = runsText(card.navigatePath("subtitle", "runs"))
+            .split("•")
+            .map { it.trim() }
             // "Playlist • YouTube Music": the kind is the same on every card here, the rest says who made it
-            .filterNot { it.isEmpty() || it == "•" || it.equals("Playlist", ignoreCase = true) }
+            .filterNot { it.isEmpty() || it.equals("Playlist", ignoreCase = true) }
             .joinToString(" • ")
         val thumbnail = card.navigatePath("thumbnailRenderer", "musicThumbnailRenderer", "thumbnail", "thumbnails")
             ?.asArray()
