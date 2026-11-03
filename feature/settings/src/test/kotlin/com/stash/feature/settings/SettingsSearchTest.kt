@@ -64,6 +64,15 @@ class SettingsSearchTest {
         assertThat(app.single { it.title == title }.page).isEqualTo(SettingsPage.APPEARANCE)
     }
 
+    @Test fun `the real index finds the app language on Appearance`() {
+        val title = "App language"
+        val app = settingsSearchIndex { id -> if (id == R.string.settings_language_title) title else "zz$id" }
+        fun found(q: String) = searchSettings(q, app) { "Appearance" }.map { it.title }
+        for (q in listOf("language", "app language")) assertThat(found(q).first()).isEqualTo(title)
+        for (q in listOf("locale", "translation")) assertThat(found(q)).contains(title)
+        assertThat(app.single { it.title == title }.page).isEqualTo(SettingsPage.APPEARANCE)
+    }
+
     @Test fun `case and punctuation do not matter`() {
         assertThat(search("HI-RES")).containsExactly("Hi-Res output")
         assertThat(search("amoled")).containsExactly("Pure black (AMOLED)")
