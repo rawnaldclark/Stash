@@ -30,7 +30,7 @@ class HandoffViewModel @Inject constructor(
     /** No card for the browser this phone's queue plays on (Remote v2 §6): the mini player is its remote. */
     private val driven = browsers.session.map { it?.device }.distinctUntilChanged()
 
-    val offer: StateFlow<HandoffOffer?> = combine(offers.offer, playing, driven) { o, p, d -> o.takeUnless { p || it.device == d } }
+    val offer: StateFlow<HandoffOffer?> = combine(offers.offer, playing, driven) { o, p, d -> o?.takeUnless { p || it.device == d } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val note: StateFlow<String?> = offers.note

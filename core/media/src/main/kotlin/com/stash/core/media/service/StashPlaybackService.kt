@@ -1241,9 +1241,15 @@ class StashPlaybackService : MediaLibraryService() {
         }
         serviceScope.launch {
             val song = kotlinx.coroutines.withContext(Dispatchers.IO) {
-                val row = runCatching {
+                // A failed lookup goes by the words the item carries (cancellation still cancels).
+                val row = try {
                     com.stash.core.media.cast.BrowserSongs.rowId(item)?.let { trackDao.getById(it) }
-                }.getOrNull()
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    android.util.Log.w("StashPlayback", "browser: song lookup failed", e)
+                    null
+                }
                 com.stash.core.media.cast.BrowserSongs.songFor(item, row?.toDomain())
             }
             browserSongs[key] = song
