@@ -2,6 +2,7 @@ package com.stash.feature.search
 
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.home.MoodsRepository
+import com.stash.core.data.prefs.HomeSectionsPreference
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.data.ytmusic.model.MoodGrids
@@ -31,7 +32,8 @@ import org.mockito.kotlin.whenever
 
 /**
  * [MoodBrowseViewModel], Search's grid: the saved tiles and covers paint at once and today's follow; covers are read
- * only for the tiles on screen, once a visit; Offline there is no grid and nothing is read.
+ * only for the tiles on screen, once a visit; Offline, or with Settings' Moods & genres in Search off, there is no grid
+ * and nothing is read.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class MoodBrowseViewModelTest {
@@ -49,6 +51,7 @@ class MoodBrowseViewModelTest {
     private val today = MoodGrids(listOf(chill, focus), listOf(rock, pop))
 
     private val online = MutableStateFlow(true)
+    private val switchOn = MutableStateFlow(true)
     private val moods = mock<MoodsRepository> {
         onBlocking { cached() } doReturn saved
         onBlocking { savedCovers() } doReturn mapOf("p1" to listOf("old1", "old2"))
@@ -57,7 +60,12 @@ class MoodBrowseViewModelTest {
     }
     private val connectivity = mock<ConnectivityMonitor> { on { isConnected() } doReturn true }
 
-    private fun viewModel() = MoodBrowseViewModel(moods, mock<StreamingPreference> { on { enabled } doReturn online }, connectivity)
+    private fun viewModel() = MoodBrowseViewModel(
+        moods,
+        mock<StreamingPreference> { on { enabled } doReturn online },
+        connectivity,
+        mock<HomeSectionsPreference> { on { searchBrowseOn } doReturn switchOn },
+    )
 
     @Test
     fun `Online, the saved tiles and covers paint first, then today's tiles`() = runTest(dispatcher) {
@@ -260,5 +268,74 @@ class MoodBrowseViewModelTest {
         val unconnected = viewModel()
         runCurrent()
         assertThat(unconnected.state.value.showsGrid).isFalse()
+    }
+
+    @Test
+    fun `switched off in Settings, Search is as it was before the grid - known at once, and nothing is read`() = runTest(dispatcher) {
+        switchOn.value = false
+        val vm = viewModel()
+        runCurrent()
+        // False, not null: the screen shows the recent searches and focuses the field on the first open, as before #823
+        assertThat(vm.state.value.showsGrid).isFalse()
+        assertThat(vm.state.value.hasTiles).isFalse()
+        assertThat(vm.state.value).isEqualTo(MoodBrowseState(online = true, switchedOff = true))
+        // The screen's reports and resumes read nothing either: not the day's grids, not a cover, not the saved files
+        vm.onTilesVisible(listOf(chill, rock))
+        vm.onResume()
+        runCurrent()
+        verifyBlocking(moods, never()) { cached() }
+        verifyBlocking(moods, never()) { savedCovers() }
+        verifyBlocking(moods, never()) { grids() }
+        verifyBlocking(moods, never()) { covers(any(), any(), any()) }
+    }
+
+    @Test
+    fun `switched off while showing, the grid goes and a cover read stops - on again, it comes back`() = runTest(dispatcher) {
+        val never = CompletableDeferred<List<String>?>()
+        var cancelled = false
+        whenever(moods.covers(eq("p1"), any(), any())).doSuspendableAnswer {
+            try {
+                never.await()
+            } finally {
+                cancelled = true
+            }
+        }
+        val vm = viewModel()
+        runCurrent()
+        vm.onTilesVisible(listOf(chill))
+        runCurrent()
+        assertThat(vm.state.value.showsGrid).isTrue()
+
+        switchOn.value = false
+        runCurrent()
+        assertThat(cancelled).isTrue()
+        assertThat(vm.state.value.showsGrid).isFalse()
+        vm.onTilesVisible(listOf(focus))
+        vm.onResume()
+        runCurrent()
+        verifyBlocking(moods, never()) { covers(eq("p2"), anyOrNull(), any()) }
+        verifyBlocking(moods, times(1)) { grids() }
+
+        // On again (Online all along): the saved tiles paint, today's are read, and the tiles on screen get covers
+        switchOn.value = true
+        runCurrent()
+        assertThat(vm.state.value.showsGrid).isTrue()
+        verifyBlocking(moods, times(2)) { cached() }
+        verifyBlocking(moods, times(2)) { grids() }
+        verifyBlocking(moods, times(1)) { covers(eq("p2"), any(), any()) }
+    }
+
+    @Test
+    fun `Offline with the switch off is still no grid, and the switch on again Offline reads nothing`() = runTest(dispatcher) {
+        switchOn.value = false
+        online.value = false
+        val vm = viewModel()
+        runCurrent()
+        assertThat(vm.state.value.showsGrid).isFalse()
+        switchOn.value = true
+        runCurrent()
+        assertThat(vm.state.value).isEqualTo(MoodBrowseState(online = false))
+        verifyBlocking(moods, never()) { cached() }
+        verifyBlocking(moods, never()) { grids() }
     }
 }

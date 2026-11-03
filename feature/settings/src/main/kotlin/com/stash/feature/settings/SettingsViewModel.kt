@@ -1854,6 +1854,17 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { homeSectionsPreference.setStartTab(tab) }
     }
 
+    /** Settings > Appearance > Moods & genres in Search: on unless turned off. Its own StateFlow, as [startTab]. */
+    val searchBrowseOn: StateFlow<Boolean> = homeSectionsPreference.searchBrowseOn.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        true,
+    )
+
+    fun onSearchBrowseChanged(on: Boolean) {
+        viewModelScope.launch { homeSectionsPreference.setSearchBrowseOn(on) }
+    }
+
     /** Clear the kill-switch after PROTOCOL_BROKEN. Exposed to the Settings
      *  UI's "Retry YouTube sync" button on the red health badge. */
     fun onRetryYouTubeHistory() {

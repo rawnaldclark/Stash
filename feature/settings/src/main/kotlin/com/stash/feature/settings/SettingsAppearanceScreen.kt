@@ -64,7 +64,8 @@ private val ThemeOptions = listOf(ThemeMode.DARK, ThemeMode.LIGHT, ThemeMode.SYS
 /**
  * Settings > Appearance, one screen: theme (Dark / Light / System, with Pure
  * black under it while a dark theme can show), display size, the Now Playing
- * backdrop, the tab Stash opens on, and Home layout (its own page).
+ * backdrop, the tab Stash opens on, Home layout (its own page), and whether
+ * Search shows its mood and genre tiles.
  */
 @Composable
 fun SettingsAppearanceScreen(
@@ -89,6 +90,7 @@ fun SettingsAppearanceScreen(
     val titleButton by viewModel.titleButton.collectAsStateWithLifecycle()
     val fullArtBlend by viewModel.fullArtBlend.collectAsStateWithLifecycle()
     val albumColours by viewModel.albumColours.collectAsStateWithLifecycle()
+    val searchBrowseOn by viewModel.searchBrowseOn.collectAsStateWithLifecycle()
     var titleButtonSheet by rememberSaveable { mutableStateOf(false) }
     // As the display size: the slider moves a draft, stored once on release.
     var draftZoom by remember(fullArtZoom) { mutableFloatStateOf(fullArtZoom) }
@@ -316,6 +318,21 @@ fun SettingsAppearanceScreen(
                             uiState.homeSectionOrder.size,
                         ),
                         onClick = onOpenHomeLayout,
+                    )
+                },
+            ),
+        )
+
+        // Search's Moods & moments and Genres tiles (#823), which not everyone wants (owner 2026-11-03).
+        SettingsSectionLabel(stringResource(R.string.settings_search_section))
+        SettingsGroupCard(
+            rows = listOf(
+                {
+                    SettingsToggleRow(
+                        title = stringResource(R.string.settings_search_browse_title),
+                        subtitle = stringResource(R.string.settings_search_browse_subtitle),
+                        checked = searchBrowseOn,
+                        onCheckedChange = viewModel::onSearchBrowseChanged,
                     )
                 },
             ),

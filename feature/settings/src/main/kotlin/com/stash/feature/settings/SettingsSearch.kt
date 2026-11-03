@@ -147,6 +147,7 @@ internal fun settingsSearchIndex(s: (Int) -> String): List<SettingsSearchEntry> 
         SettingsSearchEntry(s(R.string.settings_mix_rotation_title), SettingsPage.HOME_LAYOUT, listOf("rotate", "rotation", "shuffle", "made for you", "mood", "decades", "mixes")),
         SettingsSearchEntry(s(R.string.settings_unplayed_mixes_first_title), SettingsPage.HOME_LAYOUT, listOf("discover", "new", "rotation")),
         SettingsSearchEntry(s(R.string.settings_open_stash_on_section), SettingsPage.APPEARANCE, listOf("start tab", "launch", "startup")),
+        SettingsSearchEntry(s(R.string.settings_search_browse_title), SettingsPage.APPEARANCE, listOf("moods", "moments", "genres", "browse", "tiles", "search tab")),
         // About & Help
         SettingsSearchEntry(s(R.string.settings_check_updates), SettingsPage.ABOUT, listOf("update", "version", "new version")),
         SettingsSearchEntry(s(R.string.settings_share_diagnostics_bundle), SettingsPage.ABOUT, listOf("logs", "bug", "report", "problem")),

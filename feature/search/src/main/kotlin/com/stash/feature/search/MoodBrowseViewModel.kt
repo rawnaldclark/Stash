@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.home.MoodsRepository
+import com.stash.core.data.prefs.HomeSectionsPreference
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.data.ytmusic.model.MoodTile
@@ -13,6 +14,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -21,26 +23,29 @@ import javax.inject.Inject
 /**
  * What Search shows before anything is typed: YouTube Music's [moods] and [genres] tiles, each with the [covers]
  * saved or read for it (by params). [online] is null until the Online/Offline switch is read; Offline there are no
- * tiles. [loaded] turns true once Search knows whether it has tiles: at once when some were saved, else when today's
+ * tiles. [switchedOff] is Settings > Appearance > Moods & genres in Search turned off: no tiles either, as Offline.
+ * [loaded] turns true once Search knows whether it has tiles: at once when some were saved, else when today's
  * read is over (answered, failed, or no network to try), so a fresh install waits for its first tiles rather than
  * deciding there are none.
  */
 data class MoodBrowseState(
     val online: Boolean? = null,
+    val switchedOff: Boolean = false,
     val loaded: Boolean = false,
     val moods: List<MoodTile> = emptyList(),
     val genres: List<MoodTile> = emptyList(),
     val covers: Map<String, List<String>> = emptyMap(),
 ) {
-    /** The grid has something to show: Online, with tiles in either section. */
-    val hasTiles: Boolean get() = online == true && (moods.isNotEmpty() || genres.isNotEmpty())
+    /** The grid has something to show: Online with the switch on, with tiles in either section. */
+    val hasTiles: Boolean get() = online == true && !switchedOff && (moods.isNotEmpty() || genres.isNotEmpty())
 
     /**
-     * Whether Search shows the grid before anything is typed: true with tiles, false Offline or once it's known
-     * there are none (a fresh install without network, YouTube not answering), null while that isn't known yet.
+     * Whether Search shows the grid before anything is typed: true with tiles, false Offline, with the switch off, or
+     * once it's known there are none (a fresh install without network, YouTube not answering), null while that isn't
+     * known yet. False is Search as it was before the grid: the recent searches, the field focused on the first open.
      */
     val showsGrid: Boolean? get() = when {
-        online == false -> false
+        online == false || switchedOff -> false
         hasTiles -> true
         online == true && loaded -> false
         else -> null
@@ -55,13 +60,16 @@ data class MoodBrowseState(
  * at a time and leaves a metered network alone while Data saver is on.
  *
  * Follows the Online/Offline switch like Home's shelves: Offline there are no tiles, nothing is read, and what was
- * being read stops at once. With no network the saved tiles show and no read is tried.
+ * being read stops at once. With no network the saved tiles show and no read is tried. The Settings switch
+ * ([HomeSectionsPreference.searchBrowseOn]) turned off does the same as Offline: no tiles, and nothing is read for
+ * them, not the day's grids, not a cover, not even the saved ones.
  */
 @HiltViewModel
 class MoodBrowseViewModel @Inject constructor(
     private val moods: MoodsRepository,
     streamingPreference: StreamingPreference,
     private val connectivity: ConnectivityMonitor,
+    homeSections: HomeSectionsPreference,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(MoodBrowseState())
@@ -80,25 +88,30 @@ class MoodBrowseViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            streamingPreference.enabled.distinctUntilChanged().collect { online ->
-                if (online) {
-                    _state.update { it.copy(online = true) }
-                    refresh()
-                    onTilesVisible(lastVisible)
-                } else {
-                    stop()
-                    _state.value = MoodBrowseState(online = false)
+            combine(streamingPreference.enabled, homeSections.searchBrowseOn, ::Pair)
+                .distinctUntilChanged()
+                .collect { (online, on) ->
+                    if (online && on) {
+                        _state.update { it.copy(online = true, switchedOff = false) }
+                        refresh()
+                        onTilesVisible(lastVisible)
+                    } else {
+                        stop()
+                        _state.value = MoodBrowseState(online = online, switchedOff = !on)
+                    }
                 }
-            }
         }
     }
+
+    /** Online with the switch on: the only time tiles show or anything is read for them. */
+    private val active: Boolean get() = _state.value.online == true && !_state.value.switchedOff
 
     /**
      * Search is back in view: today's tiles if a read is due, and the tiles on screen asked for their covers again
      * (the saved ones answer without a request until they're a week old).
      */
     fun onResume() {
-        if (_state.value.online != true) return
+        if (!active) return
         answered.clear()
         held.clear()
         refresh()
@@ -109,7 +122,7 @@ class MoodBrowseViewModel @Inject constructor(
     fun onTilesVisible(tiles: List<MoodTile>) {
         lastVisible = tiles
         onScreen = tiles.mapTo(HashSet()) { it.params }
-        if (_state.value.online != true) return
+        if (!active) return
         for (tile in tiles) {
             val params = tile.params
             if (params in answered || params in held || coverReads[params]?.isActive == true) continue
@@ -162,7 +175,7 @@ class MoodBrowseViewModel @Inject constructor(
         }
     }
 
-    /** Offline: everything being read stops, and the next Online starts the visit afresh. */
+    /** Offline or switched off: everything being read stops, and the next Online with the switch on starts afresh. */
     private fun stop() {
         loading?.cancel()
         loading = null

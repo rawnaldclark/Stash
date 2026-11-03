@@ -116,7 +116,8 @@ import com.stash.core.ui.components.bottomChromePadding
  * its page ([onOpenMood]). The recent searches show once the field is
  * tapped, and Back from there returns to the grid. So the keyboard doesn't
  * cover the grid, the field no longer takes focus on the first open while
- * Online; Offline, where there is no grid, the tab is as it always was.
+ * Online; Offline, where there is no grid, the tab is as it always was, and
+ * so it is with Settings > Appearance > Moods & genres in Search turned off.
  */
 @Composable
 fun SearchScreen(
@@ -153,9 +154,10 @@ fun SearchScreen(
     val browseListState = rememberLazyListState()
 
     // The first open takes the field's focus (and raises the keyboard) only where no grid shows for the keyboard to
-    // cover: Offline, as the tab always did, or Online with no tiles (a fresh install without network, YouTube not
-    // answering). Decided once that's known. Saveable so it survives the back stack: focusing on every return (Back
-    // from an artist, switching back to the tab) popped the keyboard over the very results the user came back to.
+    // cover: Offline or with the grid's switch off, as the tab always did, or Online with no tiles (a fresh install
+    // without network, YouTube not answering). Decided once that's known. Saveable so it survives the back stack:
+    // focusing on every return (Back from an artist, switching back to the tab) popped the keyboard over the very
+    // results the user came back to.
     var autoFocused by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(browse.showsGrid) {
         val showsGrid = browse.showsGrid ?: return@LaunchedEffect

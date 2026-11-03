@@ -52,6 +52,18 @@ class SettingsSearchTest {
         assertThat(search("appearance")).containsExactly("Theme", "Pure black (AMOLED)").inOrder()
     }
 
+    @Test fun `the real index finds Search's mood and genre switch on Appearance`() {
+        // Its name in English, every other setting a placeholder no query here can match (as YourStashSearchTest)
+        val title = "Moods & genres in Search"
+        val app = settingsSearchIndex { id -> if (id == R.string.settings_search_browse_title) title else "zz$id" }
+        fun found(q: String) = searchSettings(q, app) { "Appearance" }.map { it.title }
+        // By its name it comes first ("moods" also finds Home layout, by its words)
+        for (q in listOf("moods", "genres", "search", "moods genres")) assertThat(found(q).first()).isEqualTo(title)
+        // By its other words it's among the results ("browse" also finds Your Stash's "browser")
+        for (q in listOf("browse", "moments", "genre tiles")) assertThat(found(q)).contains(title)
+        assertThat(app.single { it.title == title }.page).isEqualTo(SettingsPage.APPEARANCE)
+    }
+
     @Test fun `case and punctuation do not matter`() {
         assertThat(search("HI-RES")).containsExactly("Hi-Res output")
         assertThat(search("amoled")).containsExactly("Pure black (AMOLED)")
