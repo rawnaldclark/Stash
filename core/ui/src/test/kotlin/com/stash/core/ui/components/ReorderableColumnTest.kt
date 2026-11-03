@@ -4,6 +4,7 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -47,8 +48,11 @@ class ReorderableColumnTest {
     private val moves = mutableListOf<Pair<String, Int>>()
     private lateinit var scroll: ScrollState
 
-    /** The rows in a page [pageHeight] tall; each drop is saved the way a screen would, and comes back as the order. */
-    private fun start(pageHeight: Dp = 400.dp) {
+    /**
+     * The rows in a page [pageHeight] tall, with [below] more of the page after them (a Settings page's other cards); each
+     * drop is saved the way a screen would, and comes back as the order.
+     */
+    private fun start(pageHeight: Dp = 400.dp, below: Dp = 0.dp) {
         rule.setContent {
             scroll = rememberScrollState()
             Column(Modifier.size(width = 200.dp, height = pageHeight).verticalScroll(scroll)) {
@@ -70,6 +74,7 @@ class ReorderableColumnTest {
                         }
                     }
                 }
+                Spacer(Modifier.height(below))
             }
         }
         rule.waitForIdle()
@@ -155,5 +160,20 @@ class ReorderableColumnTest {
         // Carried further down by the scroll than the finger went on its own
         assertEquals("a", moves.single().first)
         assertTrue("dropped at ${moves.single().second}", moves.single().second >= 3)
+    }
+
+    @Test
+    fun `with more page below the list, the edge scroll stops at the list's end and the row stays in it`() {
+        // 260dp of rows in a 150dp page, with 400dp of other cards after them
+        start(pageHeight = 150.dp, below = 400.dp)
+        drag("a", 110.dp, lift = false)
+        rule.mainClock.advanceTimeBy(2_000)
+        // Scrolled just far enough to show the list's last row, not on into the cards below
+        assertEquals(px(110.dp), scroll.value.toFloat(), 2f)
+        val held = rule.onNodeWithTag("row-a").fetchSemanticsNode()
+        assertTrue("drawn at ${held.positionInRoot.y}", held.positionInRoot.y + held.size.height <= px(150.dp) + 1.5f)
+        rule.onNodeWithTag("handle-a").performTouchInput { up() }
+        rule.waitForIdle()
+        assertEquals(listOf("a" to 4), moves)
     }
 }

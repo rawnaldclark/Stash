@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import java.util.Collections
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
@@ -101,6 +102,30 @@ fun heldRowSwap(index: Int, offsetY: Float, heights: List<Int>): Int {
 }
 
 /**
+ * The held row's offset as drawn: with the finger, but never out of the Column ([heights] in the order shown). The card
+ * around a Settings list clips it, so past the first or last row it waits at that end until the finger comes back.
+ */
+fun heldRowOffsetInColumn(index: Int, offsetY: Float, heights: List<Int>): Float {
+    if (index !in heights.indices) return offsetY
+    var above = 0
+    for (i in 0 until index) above += heights[i]
+    var below = 0
+    for (i in index + 1 until heights.size) below += heights[i]
+    return offsetY.coerceIn(-above.toFloat(), below.toFloat())
+}
+
+/**
+ * An edge-scroll [step] cut to what still shows more of the list, which runs [listTop]..[listBottom] on screen in a viewport
+ * [viewTop]..[viewBottom]: once the list's end is in view the page stays put, though there's more page past it (the queue's
+ * list is its whole viewport, so it stops there by itself).
+ */
+fun edgeScrollWithinList(step: Float, listTop: Float, listBottom: Float, viewTop: Float, viewBottom: Float): Float = when {
+    step > 0f -> min(step, listBottom - viewBottom).coerceAtLeast(0f)
+    step < 0f -> max(step, listTop - viewTop).coerceAtMost(0f)
+    else -> 0f
+}
+
+/**
  * The rows of a reorderable Column and the drag, kept while the screen is up. [rows] is what to show: the caller's order
  * ([rememberReorderableColumnState]'s keys) plus a drag's moves until the drop, which sends one `onMove(key, to)` and keeps
  * showing the dropped order until the caller's order comes back with it. Give the Column [reorderableColumn], each row
@@ -147,7 +172,12 @@ class ReorderableColumnState<K : Any> internal constructor(
     fun isDragging(key: K): Boolean = rows.getOrNull(draggedIdx) == key
 
     /** How far [key]'s row is drawn from its slot right now. Read at placement, so the drag never recomposes the rows. */
-    internal fun offsetOf(key: K): Float = if (isDragging(key)) offsetY else slides[key] ?: 0f
+    internal fun offsetOf(key: K): Float = if (isDragging(key)) heldOffset() else slides[key] ?: 0f
+
+    private fun shownHeights(): List<Int> = rows.map { heights[it] ?: 0 }
+
+    /** The held row's offset as drawn, inside the Column ([heldRowOffsetInColumn]). */
+    private fun heldOffset(): Float = heldRowOffsetInColumn(draggedIdx, offsetY, shownHeights())
 
     internal fun measured(key: K, height: Int) {
         heights[key] = height
@@ -207,6 +237,7 @@ class ReorderableColumnState<K : Any> internal constructor(
         val keysAtDrop = keys
         startIdx = -1
         startRows = null
+        offsetY = heldOffset()
         settle = scope.launch {
             animate(offsetY, 0f, animationSpec = tween(150)) { v, _ -> offsetY = v }
             draggedIdx = -1
@@ -243,7 +274,7 @@ class ReorderableColumnState<K : Any> internal constructor(
     /** Past half a neighbour, from the finger or the edge scroll, the held row swaps. */
     private fun normalize() {
         while (true) {
-            val dir = heldRowSwap(draggedIdx, offsetY, rows.map { heights[it] ?: 0 })
+            val dir = heldRowSwap(draggedIdx, offsetY, shownHeights())
             if (dir == 0) return
             swap(dir)
         }
@@ -251,25 +282,28 @@ class ReorderableColumnState<K : Any> internal constructor(
 
     /**
      * This frame's edge scroll ([autoScrollStep]). The viewport is the part of the Column on screen: its bounds clipped by
-     * the scrolling page around it, and above the floating chrome at the bottom.
+     * the scrolling page around it, and above the floating chrome at the bottom. It scrolls only while that shows more of
+     * the list ([edgeScrollWithinList]).
      */
     private fun edgeStep(): Float {
         val column = columnCoords?.takeIf { it.isAttached } ?: return 0f
         val held = rows.getOrNull(draggedIdx) ?: return 0f
         val height = heights[held] ?: return 0f
         val visible = column.boundsInRoot()
-        val bottom = min(visible.bottom, column.findRootCoordinates().size.height - bottomInsetPx)
-        if (bottom <= visible.top) return 0f
-        var top = column.positionInRoot().y + offsetY
+        val viewTop = visible.top
+        val viewBottom = min(visible.bottom, column.findRootCoordinates().size.height - bottomInsetPx)
+        if (viewBottom <= viewTop) return 0f
+        val listTop = column.positionInRoot().y
+        var top = listTop + heldOffset()
         for (i in 0 until draggedIdx) top += heights[rows[i]] ?: 0
-        val visualTop = top - visible.top
-        return autoScrollStep(
-            visualTop = visualTop,
-            visualBottom = visualTop + height,
-            viewportPx = bottom - visible.top,
+        val step = autoScrollStep(
+            visualTop = top - viewTop,
+            visualBottom = top - viewTop + height,
+            viewportPx = viewBottom - viewTop,
             edgePx = edgePx,
             maxStepPx = maxStepPx,
         )
+        return edgeScrollWithinList(step, listTop, listTop + column.size.height, viewTop, viewBottom)
     }
 }
 
