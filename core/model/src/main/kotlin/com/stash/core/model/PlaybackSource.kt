@@ -26,6 +26,12 @@ sealed class PlaybackSource {
      * "History · Sat, Oct 11". Display only, like [Handoff]; the label may contain "|".
      */
     data class Listening(val label: String) : PlaybackSource()
+
+    /**
+     * A Community post's Play or Shuffle: [label] is the post's title. [postId] lets Community count how long
+     * the post's songs played (30 s lets you vote on it); the label may contain "|".
+     */
+    data class Community(val postId: String, val label: String) : PlaybackSource()
     data object Unknown : PlaybackSource()
 
     /** Pipe-delimited encoding for DataStore. Names containing "|" will
@@ -41,6 +47,7 @@ sealed class PlaybackSource {
         is AllSongs -> "ALL_SONGS"
         is Handoff -> "HANDOFF|$label"
         is Listening -> "LISTENING|$label"
+        is Community -> "COMMUNITY|$postId|$label"
         is Unknown -> "UNKNOWN"
     }
 
@@ -60,6 +67,7 @@ sealed class PlaybackSource {
             is AllSongs -> "On this device"
             is Handoff -> label
             is Listening -> label
+            is Community -> label
             is Unknown -> ""
         }
 
@@ -81,6 +89,7 @@ sealed class PlaybackSource {
                 "ALL_SONGS" -> AllSongs
                 "HANDOFF" -> Handoff(parts.drop(1).joinToString("|"))
                 "LISTENING" -> Listening(parts.drop(1).joinToString("|"))
+                "COMMUNITY" -> Community(parts.getOrElse(1) { "" }, parts.drop(2).joinToString("|"))
                 else -> Unknown
             }
         }

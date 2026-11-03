@@ -227,6 +227,14 @@ internal fun YouTag(color: Color = MaterialTheme.colorScheme.primary) {
     )
 }
 
+/** [note]'s line, for [CommunitySnackbar]. */
+@Composable
+internal fun voteNoteText(note: VoteNote?): String? = when (note) {
+    VoteNote.LISTEN_FIRST -> stringResource(R.string.community_listen_first_note)
+    VoteNote.TRY_AGAIN -> stringResource(R.string.community_vote_try_again)
+    null -> null
+}
+
 /**
  * Shows [message] once on the app's snackbar (above the bottom chrome), then clears it. Outside the scaffold
  * (a preview) it falls back to a toast. The snackbar shows from the scaffold's scope, so clearing the message

@@ -154,7 +154,8 @@ internal fun CommunityHero(
                     )
                 }
                 Spacer(Modifier.height(10.dp))
-                VotePill(post, onVote, colors = VotePillDefaults.onArt(roles))
+                // "Listen first" beside the pill: the hero has the room, and stays its height.
+                VotePill(post, onVote, colors = VotePillDefaults.onArt(roles), hintBeside = true)
             }
         }
     }

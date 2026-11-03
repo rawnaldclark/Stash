@@ -38,6 +38,24 @@ data class NewPost(val kind: String, val name: String, val title: String, val bo
     data class Body(val covers: List<String>? = null, val tracks: List<SharedTrack>? = null, val track: SharedTrack? = null)
 }
 
+/** What became of a "heard" mark sent to the Worker ([CommunityApiClient.heard]). */
+enum class HeardSend {
+    /** Recorded (204), or recorded before: done. */
+    SENT,
+
+    /** The post is gone (404 `gone`), or the Worker refuses it for good (its own 403, e.g. your own post): never send it again. */
+    DROPPED,
+
+    /** Try again later: offline, a timeout, a 5xx, rate limited, a 403 that isn't the Worker's, or any other answer. */
+    RETRY,
+
+    /**
+     * 404 `not_found`: a Worker without the route yet (it answers that for any path it doesn't know), from before the
+     * heard contract. It can't want a listen before a vote either, so a vote goes; the mark waits for a Worker that has it.
+     */
+    NO_ROUTE,
+}
+
 /** A vote's answer: the post's counted votes and this phone's vote. */
 @Serializable
 data class VoteCounts(val up: Int, val down: Int, val myVote: Int)
@@ -80,6 +98,28 @@ class CommunityApiClient @Inject constructor(okHttpClient: OkHttpClient) {
             ShareJson.decodeFromString(VoteCounts.serializer(), it)
         }
 
+    /**
+     * `PUT /v1/community/posts/{id}/heard`: this key played the post for 30 s (contract 2026-11-03). Never throws.
+     * Dropped only on the Worker's own refusal: 404 `gone`, or a 403 with its JSON code (`own_post`). A 403 without one
+     * (a Cloudflare challenge page) is the edge, not the Worker: tried again later.
+     */
+    suspend fun heard(id: String, key: String): HeardSend =
+        try {
+            http.exchange(baseUrls, "/v1/community/posts/$id/heard", { header(KEY_HEADER, key); put(EMPTY_BODY) }) { code, text ->
+                when {
+                    code in 200..299 -> HeardSend.SENT
+                    code == 403 && workerCode(text) != null -> HeardSend.DROPPED
+                    code == 404 && workerCode(text) == "gone" -> HeardSend.DROPPED
+                    code == 404 && workerCode(text) == "not_found" -> HeardSend.NO_ROUTE
+                    else -> HeardSend.RETRY
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            HeardSend.RETRY
+        }
+
     suspend fun takeDown(id: String, key: String): CommunityResult<Unit> =
         call("/v1/community/posts/$id", key, { delete() }) { }
 
@@ -106,11 +146,15 @@ class CommunityApiClient @Inject constructor(okHttpClient: OkHttpClient) {
 
     /** The Worker's `error`. A 429 without one is Cloudflare's own rate-limit page. */
     private fun errorCode(status: Int, text: String): String =
-        runCatching { ShareJson.decodeFromString(ErrorBody.serializer(), text).error }.getOrNull()
-            ?: if (status == 429) "rate_limited" else "unknown"
+        workerCode(text) ?: if (status == 429) "rate_limited" else "unknown"
+
+    /** The Worker's JSON error code, or null for any other body (an HTML page from the edge, nothing). */
+    private fun workerCode(text: String): String? =
+        runCatching { ShareJson.decodeFromString(ErrorBody.serializer(), text).error }.getOrNull()?.takeIf { it.isNotBlank() }
 
     companion object {
         const val KEY_HEADER = "X-Stash-Community-Key"
         private val JSON = "application/json".toMediaType()
+        private val EMPTY_BODY = "{}".toRequestBody(JSON)
     }
 }

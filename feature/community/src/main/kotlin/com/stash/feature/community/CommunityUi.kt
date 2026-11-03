@@ -3,6 +3,8 @@ package com.stash.feature.community
 import androidx.annotation.StringRes
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
+import com.stash.core.data.community.CommunityRepository
+import com.stash.core.data.community.CommunityResult
 import com.stash.core.model.community.CommunityPost
 import com.stash.core.ui.ambient.contrastRatio
 import com.stash.feature.community.CommunityViewModel.Tab
@@ -115,10 +117,55 @@ internal fun heroTextContrast(backdrop: Color, textAlpha: Float): Double {
     return contrastRatio(Color.White.copy(alpha = textAlpha).compositeOver(ground), ground)
 }
 
-/** The vote pill as drawn: the score, which arrow is lit (this phone's vote), and whether it takes taps (not on your own post). */
-internal data class VotePillUi(val score: Int, val upLit: Boolean, val downLit: Boolean, val enabled: Boolean)
+/**
+ * The vote pill as drawn: the score, which arrow is lit (this phone's vote), and whether it takes taps (not on your own
+ * post). Until the post is heard ([listenFirst]: 30 s played from it) an arrow that would cast a vote is [upDimmed] or
+ * [downDimmed], and a "Listen first" hint shows; your current vote stays lit and can still be taken back.
+ */
+internal data class VotePillUi(
+    val score: Int,
+    val upLit: Boolean,
+    val downLit: Boolean,
+    val enabled: Boolean,
+    val listenFirst: Boolean = false,
+    val upDimmed: Boolean = false,
+    val downDimmed: Boolean = false,
+)
 
-internal fun CommunityPost.votePill() = VotePillUi(score = up - down, upLit = myVote == 1, downLit = myVote == -1, enabled = !mine)
+internal fun CommunityPost.votePill(): VotePillUi {
+    val listenFirst = !mine && !heard
+    return VotePillUi(
+        score = up - down,
+        upLit = myVote == 1,
+        downLit = myVote == -1,
+        enabled = !mine,
+        listenFirst = listenFirst,
+        upDimmed = listenFirst && myVote != 1,
+        downDimmed = listenFirst && myVote != -1,
+    )
+}
+
+/** [this] as heard when this phone's own marks ([heardHere], by post id) say so; the server's `heard` counts too. */
+internal fun CommunityPost.heardFrom(heardHere: Set<String>): CommunityPost = if (!heard && id in heardHere) copy(heard = true) else this
+
+/** A tap of ▲ (1) or ▼ (-1) waits for a listen: it would cast a vote (not take one back) on a post not heard yet. */
+internal fun CommunityPost.needsListen(tapped: Int): Boolean = !heard && nextVote(tapped) != 0
+
+/** A line about a vote, instead of the usual message: why it didn't go. */
+enum class VoteNote {
+    /** "Play it for 30 seconds to vote": a dimmed arrow was tapped, or the Worker has no listen on record. */
+    LISTEN_FIRST,
+
+    /** "Couldn't vote right now": the post's listen couldn't reach the Worker yet, so the vote wasn't sent. */
+    TRY_AGAIN,
+}
+
+/** The [VoteNote] a failed vote shows instead of its message, or null for the usual message. */
+internal fun voteNoteFor(result: CommunityResult<*>): VoteNote? = when ((result as? CommunityResult.Rejected)?.code) {
+    CommunityRepository.LISTEN_FIRST -> VoteNote.LISTEN_FIRST
+    CommunityRepository.VOTE_NOT_NOW -> VoteNote.TRY_AGAIN
+    else -> null
+}
 
 /** How long ago a post went up, in the unit a list shows it in. */
 internal sealed interface Age {

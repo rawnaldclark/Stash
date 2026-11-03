@@ -42,6 +42,7 @@ fun CommunitySection(
     // the list reloads; the ViewModel throttles the reload.
     LifecycleResumeEffect(Unit) { now = System.currentTimeMillis(); viewModel.onShown(); onPauseOrDispose {} }
     CommunitySnackbar(state.message, viewModel::messageShown)
+    CommunitySnackbar(voteNoteText(state.voteNote), viewModel::voteNoteShown)
     val gutter = Modifier.padding(horizontal = 20.dp)
     Column(Modifier.fillMaxWidth()) {
         // Home's rail rhythm (CardRail): 16 dp, then the header.

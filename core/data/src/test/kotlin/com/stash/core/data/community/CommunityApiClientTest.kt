@@ -126,4 +126,41 @@ class CommunityApiClientTest {
         assertThat(post.track).isNull()
         assertThat(server.takeRequest().path).isEqualTo("/v1/community/posts/AAAAAAAA")
     }
+
+    @Test fun `the server's heard flag is read, and an older Worker without it reads as not heard`() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"posts":[$summary,${summary.replace("AAAAAAAA", "BBBBBBBB").dropLast(1)},"myVote":0,"heard":true}]}"""))
+        val posts = (client.feed(5, key) as CommunityResult.Ok).value
+        assertThat(posts.map { it.heard }).containsExactly(false, true).inOrder()
+    }
+
+    @Test fun `heard is a PUT under the key, gone and 403 drop it, anything else is tried again`() = runBlocking {
+        fun answer(code: Int, body: String = "") = server.enqueue(MockResponse().setResponseCode(code).setBody(body))
+        answer(204)
+        assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.SENT)
+        val put = server.takeRequest()
+        assertThat(put.method).isEqualTo("PUT")
+        assertThat(put.path).isEqualTo("/v1/community/posts/AAAAAAAA/heard")
+        assertThat(put.getHeader(CommunityApiClient.KEY_HEADER)).isEqualTo(key)
+        assertThat(put.body.readUtf8()).isEqualTo("{}")
+        answer(404, """{"error":"gone"}""")
+        assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.DROPPED)
+        answer(403, """{"error":"own_post"}""")
+        assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.DROPPED)
+        // A 403 that isn't the Worker's (Cloudflare's challenge page, a bare 403): the edge, so later.
+        answer(403, "<!DOCTYPE html><title>Just a moment...</title>")
+        assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.RETRY)
+        answer(403)
+        assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.RETRY)
+        // A Worker without the route yet answers not_found for any path it doesn't know: no route (later, and no vote held).
+        answer(404, """{"error":"not_found"}""")
+        assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.NO_ROUTE)
+        answer(404, "<html>Not Found</html>")
+        assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.RETRY)
+        answer(503, """{"error":"unavailable"}""")
+        assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.RETRY)
+        answer(429)
+        assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.RETRY)
+        server.shutdown()
+        assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.RETRY)
+    }
 }

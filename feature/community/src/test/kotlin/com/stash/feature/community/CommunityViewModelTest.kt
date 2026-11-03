@@ -32,9 +32,10 @@ class CommunityViewModelTest {
     private val revision = MutableStateFlow(0)
     private val repo = mockk<CommunityRepository>(relaxed = true)
 
+    /** Heard: the vote rules as they were before the listen rule (CommunityUiTest has that one). */
     private fun post(up: Int = 3, down: Int = 1, myVote: Int = 0, mine: Boolean = false) = CommunityPost(
         id = "AAAAAAAA", kind = "song", title = "garden", name = "Sam", count = 1, createdAt = 1,
-        up = up, down = down, myVote = myVote, mine = mine,
+        up = up, down = down, myVote = myVote, mine = mine, heard = true,
     )
 
     @Before fun setUp() {
