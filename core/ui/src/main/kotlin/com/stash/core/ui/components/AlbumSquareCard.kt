@@ -42,8 +42,8 @@ val AlbumCardSize = 140.dp
  * @param thumbnailUrl Optional cover art URL; passed through [ArtUrlUpgrader] which
  *   asks the CDN for 1024x1024. Coil downsamples to the [size] render target — the
  *   high-res request just guarantees crispness on high-DPI screens.
- * @param year Optional release year. When present the subtitle is `"$year • $artist"`,
- *   otherwise just the artist name.
+ * @param year Optional release year. The subtitle is `"$year • $artist"` ([albumCardSubtitle]),
+ *   or whichever of the two isn't blank: the artist page passes no artist, its cards are all its own.
  * @param modifier Optional layout modifier applied to the root column.
  * @param isLossless When true, overlays a small FLAC badge on the cover art
  *   (Premium Crisp quality signal). Defaults to false so existing callers are unaffected.
@@ -96,7 +96,7 @@ fun AlbumSquareCard(
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            text = if (year != null) "$year • $artist" else artist,
+            text = albumCardSubtitle(year, artist),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -104,3 +104,7 @@ fun AlbumSquareCard(
         )
     }
 }
+
+/** The card's second line: "2010 • Artist", or just the part that isn't blank ("2010", "Artist"), never a lone "•". */
+internal fun albumCardSubtitle(year: String?, artist: String): String =
+    listOfNotNull(year?.takeIf { it.isNotBlank() }, artist.takeIf { it.isNotBlank() }).joinToString(" • ")
