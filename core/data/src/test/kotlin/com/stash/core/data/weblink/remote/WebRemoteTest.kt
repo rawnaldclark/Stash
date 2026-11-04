@@ -513,7 +513,7 @@ class WebRemoteTest {
         assertThat(r.card.value!!.device).isEqualTo(FIREFOX) // the other browser, playing its own music, keeps its card
     }
 
-    @Test fun `a drop while pinned keeps the driven browser's state, marked lost, and what couldn't go out waits for it`() = runTest {
+    @Test fun `a drop while pinned keeps the driven browser's state, marked lost, and nothing waits to go out twice`() = runTest {
         linked(listOf(CHROME to "Chrome on Windows", FIREFOX to "Firefox on Mac"))
         val r = remote()
         r.start()
@@ -526,16 +526,23 @@ class WebRemoteTest {
         runCurrent()
         assertThat(r.live.value.keys).containsExactly(CHROME) // the others are forgotten as before
         assertThat(r.live.value[CHROME]!!.lostAt).isEqualTo(50_000)
-        // Taps while the socket is down wait (they'd be lost on the wire); the reconnect's first word from that browser sends them.
+        // Taps while the socket is down aren't held here: the driver says again what the browser missed once it is heard
+        // (WebCastRemote, sync-v1 §5.7), so they would go out twice.
         r.sendTo(CHROME, RemoteCommand.Pause)
         r.sendTo(CHROME, RemoteCommand.Seek(9_000))
         runCurrent()
         assertThat(sentTo(CHROME)).isEmpty()
         conn.ch.send(LiveEvent.Open)
-        conn.ch.send(stateFrame(CHROME, doc = stateDoc(extra = drive)))
+        conn.ch.send(stateFrame(CHROME, doc = stateDoc(sid = "NewSession01", extra = drive)))
         runCurrent()
         assertThat(r.live.value[CHROME]!!.lostAt).isNull()
-        assertThat(sentTo(CHROME).map { it.command }).containsExactly(RemoteCommand.Pause, RemoteCommand.Seek(9_000)).inOrder()
+        assertThat(r.live.value[CHROME]!!.state.sid).isEqualTo("NewSession01")
+        assertThat(sentTo(CHROME)).isEmpty()
+        // Nor does a browser pinned next ever get what was meant for the one before.
+        r.pin(FIREFOX)
+        conn.ch.send(stateFrame(FIREFOX, doc = stateDoc(sid = "FirefoxSid01", extra = drive)))
+        runCurrent()
+        assertThat(sentTo(FIREFOX)).isEmpty()
         // Unpinned, a drop forgets it as any other.
         r.unpin()
         runCurrent()
@@ -566,6 +573,77 @@ class WebRemoteTest {
         c2.ch.send(stateFrame(CHROME, doc = stateDoc(sid = "OtherSess01", extra = mine)))
         runCurrent()
         assertThat(sentTo(CHROME, c2).map { it.command }).containsExactly(RemoteCommand.Release(pause = false), RemoteCommand.Release(pause = true)).inOrder()
+    }
+
+    @Test fun `a browser let go of that missed it is told again when next heard, paused as it was told`() = runTest {
+        linked()
+        val r = remote()
+        r.start()
+        val mine = "$drive,\"driver\":\"${store.id!!.deviceId}\",\"iid\":\"42#1\",\"phase\":\"playing\""
+        r.pin(CHROME)
+        conn.ch.send(stateFrame(CHROME, doc = stateDoc(extra = mine)))
+        runCurrent()
+        r.release(CHROME, pause = true)
+        r.unpin()
+        runCurrent()
+        // It reconnected before the release landed (sealed for its old session, dropped): a new session, still naming this phone.
+        conn.ch.send(stateFrame(CHROME, doc = stateDoc(sid = "NewSession01", extra = mine)))
+        conn.ch.send(stateFrame(CHROME, doc = stateDoc(sid = "NewSession01", extra = mine)))
+        runCurrent()
+        val told = sentTo(CHROME)
+        assertThat(told.map { it.command }).containsExactly(RemoteCommand.Release(pause = true), RemoteCommand.Release(pause = true)).inOrder()
+        assertThat(told.map { it.sid }).containsExactly(SID, "NewSession01").inOrder()
+        // Once it let go nothing is owed: a later state naming this phone (a service that came back) is told to play on.
+        conn.ch.send(stateFrame(CHROME, doc = stateDoc(sid = "NewSession01", playing = false, extra = drive)))
+        conn.ch.send(stateFrame(CHROME, doc = stateDoc(sid = "NewSession02", extra = mine)))
+        runCurrent()
+        assertThat(sentTo(CHROME).last().command).isEqualTo(RemoteCommand.Release(pause = false))
+    }
+
+    @Test fun `the release that ends a session goes out before the unpin lets a background socket close`() = runTest {
+        linked()
+        val r = remote()
+        r.onForeground()
+        runCurrent()
+        r.pin(CHROME)
+        conn.ch.send(stateFrame(CHROME, doc = stateDoc(extra = drive)))
+        runCurrent()
+        r.onBackground()
+        runCurrent()
+        assertThat(open).hasSize(1)
+        r.release(CHROME, pause = true)
+        r.unpin()
+        runCurrent()
+        assertThat(sentTo(CHROME).map { it.command }).containsExactly(RemoteCommand.Release(pause = true))
+        assertThat(open).isEmpty()
+        // Picked again at once: the unpin still in line is for the pin before, and undoes nothing.
+        r.pin(CHROME)
+        r.unpin()
+        r.pin(CHROME)
+        runCurrent()
+        assertThat(open).hasSize(1)
+    }
+
+    @Test fun `in the background the card's tick sleeps, even with a socket held open for a driven browser`() = runTest {
+        linked(listOf(CHROME to "Chrome on Windows", FIREFOX to "Firefox on Mac"))
+        val r = remote()
+        r.onForeground()
+        runCurrent()
+        r.pin(CHROME)
+        conn.ch.send(stateFrame(FIREFOX)) // playing its own music: the card's
+        runCurrent()
+        assertThat(r.card.value!!.device).isEqualTo(FIREFOX)
+        r.onBackground()
+        runCurrent()
+        clock += RemoteCards.STALE_MS + 1
+        testScheduler.advanceTimeBy(WebRemote.TICK_MS * 3)
+        runCurrent()
+        assertThat(r.card.value).isNotNull() // nothing woke to look at it
+        r.onForeground()
+        runCurrent()
+        testScheduler.advanceTimeBy(WebRemote.TICK_MS + 1)
+        runCurrent()
+        assertThat(r.card.value).isNull()
     }
 
     private companion object {

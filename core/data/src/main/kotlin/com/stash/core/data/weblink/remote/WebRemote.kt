@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -90,8 +91,13 @@ class WebRemote internal constructor(
     private val lock = Mutex()
     /** Taking a number, sealing and sending are one step: commands reach the socket in the order of their numbers. */
     private val sendLock = Mutex()
-    /** A command and its browser (null: the card's). */
-    private class Outgoing(val to: String?, val command: RemoteCommand)
+    private sealed interface Outgoing {
+        /** A command and its browser (null: the card's). */
+        class Command(val to: String?, val command: RemoteCommand) : Outgoing
+
+        /** [unpin] of pin number [pin], after the commands before it: a session's last release goes out before it closes. */
+        class Unpin(val pin: Long) : Outgoing
+    }
 
     /** Taps, in the order they happened (each [send] used to start its own coroutine, which could overtake another). */
     private val outbox = Channel<Outgoing>(Channel.UNLIMITED)
@@ -103,6 +109,9 @@ class WebRemote internal constructor(
     private val wanted = MutableStateFlow<Boolean?>(null)
     /** The browser this phone's queue plays on ([pin]): the socket stays open for it, foreground or not. */
     private val pinned = MutableStateFlow<String?>(null)
+    /** How many times [pin] was called (under [pinLock], with [pinned]): an [unpin] is for the pin it followed only. */
+    private var pins = 0L
+    private val pinLock = Any()
     private var conn: LiveConnection? = null
     /** The space and this phone the open socket said hello for: a different link needs a socket of its own. */
     private var openFor: Pair<String, String>? = null
@@ -113,10 +122,13 @@ class WebRemote internal constructor(
     private val browsers = MutableStateFlow<Map<String, BrowserState>>(emptyMap())
     /** The last command number per browser session. */
     private val sent = ConcurrentHashMap<String, Long>()
-    /** Commands for the pinned browser that couldn't go out while this phone's socket was down, in order (under [sendLock]). */
-    private val parked = ArrayDeque<RemoteCommand>()
     /** Browser sessions this phone has told to let go: a state that still names this phone as driver is in flight, not stale. */
     private val released: MutableSet<String> = Collections.newSetFromMap(ConcurrentHashMap())
+    /**
+     * Browsers this phone let go of ([release]) and whether they were to pause, until a state no longer names this phone as
+     * driver: one that missed the release (a session that changed under it, a socket that was down) is told again, the same.
+     */
+    private val owed = ConcurrentHashMap<String, Boolean>()
 
     private val _card = MutableStateFlow<RemoteCard?>(null)
 
@@ -144,7 +156,14 @@ class WebRemote internal constructor(
                 }
             }
         }
-        scope.launch { for (o in outbox) sendNow(o.to, o.command) }
+        scope.launch {
+            for (o in outbox) {
+                when (o) {
+                    is Outgoing.Command -> sendNow(o.to, o.command)
+                    is Outgoing.Unpin -> unpinNow(o.pin)
+                }
+            }
+        }
     }
 
     /**
@@ -153,19 +172,31 @@ class WebRemote internal constructor(
      */
     override fun pin(device: String) {
         if (!config.enabled) return
+        owed.remove(device)
         browsers.value[device]?.state?.sid?.let(released::remove)
-        pinned.value = device
+        synchronized(pinLock) {
+            pins++
+            pinned.value = device
+        }
     }
 
-    /** The browser no longer plays this phone's queue: the socket follows the foreground again. */
+    /**
+     * The browser no longer plays this phone's queue: the socket follows the foreground again. Taken in order after the commands
+     * sent before it, so the release that ends a session goes out while the socket is still held open for it.
+     */
     override fun unpin() {
-        pinned.value = null
-        scope.launch {
-            sendLock.withLock { parked.clear() }
-            // A lost state kept for the grace is no longer anyone's.
-            browsers.update { all -> all.filterValues { it.lostAt == null } }
-            publish()
+        outbox.trySend(Outgoing.Unpin(synchronized(pinLock) { pins }))
+    }
+
+    /** [unpin], in its turn: nothing changes when a browser was pinned since (the same one picked again included). */
+    private fun unpinNow(pin: Long) {
+        synchronized(pinLock) {
+            if (pin != pins || pinned.value == null) return
+            pinned.value = null
         }
+        // A lost state kept for the grace is no longer anyone's.
+        browsers.update { all -> all.filterValues { it.lostAt == null } }
+        publish()
     }
 
     /**
@@ -173,6 +204,7 @@ class WebRemote internal constructor(
      * phone as driver are then in flight, not a reason to tell it again.
      */
     override fun release(device: String, pause: Boolean) {
+        owed[device] = pause
         browsers.value[device]?.state?.sid?.let(released::add)
         sendTo(device, RemoteCommand.Release(pause))
     }
@@ -231,11 +263,13 @@ class WebRemote internal constructor(
         openFor = target
         jobs = listOf(
             scope.launch { c.events.collect { onEvent(c, it) } },
-            // A frozen tab sends nothing more: the card goes once its last state is a minute old.
+            // A frozen tab sends nothing more: the card goes once its last state is a minute old. The card is a foreground
+            // thing: in the background (a socket kept open for the browser this phone drives) nothing wakes for it.
             scope.launch {
                 while (isActive) {
+                    wanted.first { it != false }
                     delay(tickMs)
-                    if (browsers.value.isNotEmpty()) publish()
+                    if (wanted.value != false && browsers.value.isNotEmpty()) publish()
                 }
             },
         )
@@ -270,16 +304,16 @@ class WebRemote internal constructor(
 
     /** Sends [command] to the browser on the card (if any) and moves the card at once. Taps go out in the order they happened. */
     fun send(command: RemoteCommand) {
-        outbox.trySend(Outgoing(null, command))
+        outbox.trySend(Outgoing.Command(null, command))
     }
 
     /**
      * Sends [command] to the browser [device] (Remote v2: the one this phone's queue plays on), in order with every other
-     * command. One for the pinned browser that can't go out now (this phone's socket is down) waits until that browser is heard
-     * from again.
+     * command. One that can't go out now (this phone's socket is down, the browser isn't live) is dropped: the driver says again
+     * what a browser missed once it is heard from (sync-v1 §5.7 Driving), so nothing waits here to go out twice.
      */
     override fun sendTo(device: String, command: RemoteCommand) {
-        outbox.trySend(Outgoing(device, command))
+        outbox.trySend(Outgoing.Command(device, command))
     }
 
     /** Sends [command] to the card's browser now. */
@@ -290,10 +324,9 @@ class WebRemote internal constructor(
     /** Seals and sends [command] to [to] (null: the card's browser). Under [sendLock]. */
     private suspend fun sendLocked(to: String?, command: RemoteCommand): Boolean {
         val target = to ?: _card.value?.device ?: return false
-        val forPinned = to != null && target == pinned.value
         val c = conn
         val b = browsers.value[target]
-        if (c == null || b == null || b.lostAt != null) return park(forPinned, command)
+        if (c == null || b == null || b.lostAt != null) return false
         val env = guard(null) {
             val sp = store.space() ?: return@guard null
             val key = dataKey(sp, sp.epoch) ?: return@guard null
@@ -306,7 +339,7 @@ class WebRemote internal constructor(
             put("to", target)
             put("env", SyncJson.encodeToJsonElement(SyncEnvelope.serializer(), env))
         }.toString()
-        if (!c.send(frame)) return park(forPinned, command)
+        if (!c.send(frame)) return false
         // The card moves at once. A command to a named browser doesn't touch [live]: that is what the browser said (its driver
         // shows its own commands at once, and judges whether the browser is still there by its states alone).
         if (to == null) {
@@ -314,22 +347,6 @@ class WebRemote internal constructor(
             publish()
         }
         return true
-    }
-
-    /** Holds a command for the pinned browser until it is heard from again (the newest [MAX_PARKED]); any other is dropped. */
-    private fun park(forPinned: Boolean, command: RemoteCommand): Boolean {
-        if (!forPinned) return false
-        if (parked.size >= MAX_PARKED) parked.removeFirst()
-        parked.addLast(command)
-        return false
-    }
-
-    /** The pinned browser was heard from: what waited for it goes out now, in order. */
-    private suspend fun flushParked(device: String) = sendLock.withLock {
-        if (device != pinned.value || parked.isEmpty()) return@withLock
-        val waiting = parked.toList()
-        parked.clear()
-        for (command in waiting) sendLocked(device, command)
     }
 
     // ---------------------------------------------------------------------------------------- frames
@@ -403,12 +420,14 @@ class WebRemote internal constructor(
         } ?: return
         browsers.update { it + (from to BrowserState(from, name, st, clock())) }
         publish()
-        if (from == pinned.value) {
-            flushParked(from)
-        } else if (st.driver != null && st.driver == me && released.add(st.sid)) {
-            // Still driven by this phone, which no longer drives it: the playback service stopped and came back inside the
-            // browser's minute. It lets go and plays on as its own music (spec 2026-11-03 §2.3 "Resume").
-            sendNow(from, RemoteCommand.Release(pause = false))
+        if (from == pinned.value) return
+        if (st.driver == null || st.driver != me) {
+            owed.remove(from) // it let go
+        } else if (released.add(st.sid)) {
+            // Still driven by this phone, which no longer drives it. One this phone let go of missed the release: it is told
+            // again, the same (paused). Otherwise the playback service stopped and came back inside the browser's minute: it
+            // lets go and plays on as its own music (spec 2026-11-03 §2.3 "Resume").
+            sendNow(from, RemoteCommand.Release(pause = owed[from] ?: false))
         }
     }
 
@@ -450,8 +469,5 @@ class WebRemote internal constructor(
 
         /** A state is under 2 KiB of JSON. */
         const val MAX_PLAIN = 64 * 1024
-
-        /** Commands held for the pinned browser while this phone's socket is down (a few taps; the newest win). */
-        const val MAX_PARKED = 16
     }
 }
