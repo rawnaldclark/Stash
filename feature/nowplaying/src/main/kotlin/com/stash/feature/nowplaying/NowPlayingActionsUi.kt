@@ -60,6 +60,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -100,6 +101,11 @@ internal data class ActionVisualState(
     /** The speaker playing, while casting. */
     val castingTo: String? = null,
     /**
+     * The Play on action's words (Remote v2): "Play on", "Playing on Chrome on Windows", "Connecting to Living Room…". From
+     * strings.xml, so the screen resolves them (`cast.playOnLine`); empty only where no label shows (the editor's icon).
+     */
+    val castLabel: String = "",
+    /**
      * A station on air may breathe: the player means to play (playWhenReady) and Now Playing is on
      * screen (not parked under the mini player for its keep-warm span, where it costs no frames).
      */
@@ -119,14 +125,10 @@ internal data class ActionVisual(val icon: ImageVector, val label: String, val a
  * "Downloaded" (its tap is inert, see [isInertPinnedTap]).
  */
 internal fun actionVisual(action: NowPlayingAction, s: ActionVisualState, pinned: Boolean = false): ActionVisual = when (action) {
-    // As a ⋮ row (pinned, the CastButton draws its own state). Both open the speaker sheet.
+    // As a ⋮ row (pinned, the CastButton draws its own state). Both open the Play on sheet.
     NowPlayingAction.CAST -> ActionVisual(
         if (s.castingTo != null) Icons.Default.CastConnected else Icons.Default.Cast,
-        when {
-            s.castingTo != null -> "Casting to ${s.castingTo}"
-            s.castConnectingTo != null -> "Connecting to ${s.castConnectingTo}…"
-            else -> "Cast"
-        },
+        s.castLabel,
         active = s.castingTo != null,
     )
     NowPlayingAction.RADIO -> ActionVisual(
@@ -172,9 +174,12 @@ internal fun actionVisual(action: NowPlayingAction, s: ActionVisualState, pinned
     NowPlayingAction.FLAG_WRONG_MATCH -> ActionVisual(Icons.Default.Flag, "Flag as Wrong Match")
 }
 
-/** The pin editor's name for an action: what it is, not its current state ("Radio", not "Stop radio"). */
+/**
+ * The pin editor's name for an action: what it is, not its current state ("Radio", not "Stop radio"). Play on's is
+ * `R.string.play_on_title` (the editor row reads it), so it has none here.
+ */
 internal fun editorLabel(action: NowPlayingAction): String = when (action) {
-    NowPlayingAction.CAST -> "Cast"
+    NowPlayingAction.CAST -> ""
     NowPlayingAction.RADIO -> "Radio"
     NowPlayingAction.LYRICS -> "Lyrics"
     NowPlayingAction.QUEUE -> "Queue"
@@ -572,7 +577,8 @@ private fun PinRow(
     modifier: Modifier = Modifier,
     onToggle: () -> Unit,
 ) {
-    val label = editorLabel(action)
+    // Play on's name comes from strings.xml (Remote v2); the others are still words here.
+    val label = if (action == NowPlayingAction.CAST) stringResource(R.string.play_on_title) else editorLabel(action)
     val onSurface = MaterialTheme.colorScheme.onSurface
     val pinTint by animateColorAsState(
         when {

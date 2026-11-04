@@ -563,6 +563,8 @@ fun StashScaffold(
 
     // The player's confirmations ("Playing next", "Saved to …"), once, wherever they come from.
     PlayerMessagesToaster()
+    // A browser session that ended by itself, or skipped songs only this phone has (Remote v2 §3): once, on the app's snackbar.
+    com.stash.feature.nowplaying.cast.PlayOnNotices(snackbarHostState)
 
     // Your record's import sheet, over whatever is showing (Home's card, the record's "Bring your Spotify", a zip opened or
     // shared with Stash, Settings). A finished import opens the record (never over itself: openRecord).

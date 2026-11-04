@@ -1,5 +1,6 @@
 package com.stash.feature.nowplaying
 
+import androidx.annotation.StringRes
 import com.stash.core.data.prefs.NowPlayingAction
 
 /*
@@ -20,6 +21,10 @@ internal data class ActionContext(
     val isDownloaded: Boolean = false,
     /** This phone can Cast (Play Services present: the connection is anything but Unavailable). */
     val castSupported: Boolean = false,
+    /** The space has a linked browser to play on (Remote v2): "Play on" shows without Cast too. */
+    val hasBrowser: Boolean = false,
+    /** A linked browser plays the queue: it streams for itself, so this phone's stream quality changes nothing. */
+    val onBrowser: Boolean = false,
     /**
      * The current track is an All Songs file: played where it is, never saved to the library,
      * downloaded, flagged, shared or sent to a room (see [SCANNED_HIDDEN]).
@@ -67,11 +72,11 @@ internal fun isActionAvailable(action: NowPlayingAction, ctx: ActionContext): Bo
 }
 
 private fun isActionAvailableForAnySong(action: NowPlayingAction, ctx: ActionContext): Boolean = when (action) {
-    NowPlayingAction.CAST -> ctx.castSupported && !ctx.inRoom
+    NowPlayingAction.CAST -> (ctx.castSupported || ctx.hasBrowser) && !ctx.inRoom
     NowPlayingAction.RADIO, NowPlayingAction.QUEUE -> !ctx.inRoom
     NowPlayingAction.PLAYBACK_SPEED -> !ctx.inRoom && !ctx.casting
     NowPlayingAction.POST_TO_COMMUNITY -> ctx.communityAvailable
-    NowPlayingAction.STREAM_QUALITY -> ctx.streams
+    NowPlayingAction.STREAM_QUALITY -> ctx.streams && !ctx.onBrowser
     else -> true
 }
 
@@ -174,28 +179,28 @@ internal fun editableActions(pins: Set<NowPlayingAction>, ctx: ActionContext): L
     NowPlayingAction.entries.filter {
         it in pins || when (it) {
             NowPlayingAction.POST_TO_COMMUNITY -> ctx.communityAvailable
-            NowPlayingAction.CAST -> ctx.castSupported
+            NowPlayingAction.CAST -> ctx.castSupported || ctx.hasBrowser
             else -> true
         }
     }
 
-/** Why a pinned action is missing from the row right now, or null when it shows. */
-internal fun hiddenReason(action: NowPlayingAction, ctx: ActionContext): String? = when {
+/** Why a pinned action is missing from the row right now (a string resource), or null when it shows. */
+@StringRes
+internal fun hiddenReason(action: NowPlayingAction, ctx: ActionContext): Int? = when {
     isActionAvailable(action, ctx) -> null
-    // Its only rule, so first: a room or a cast doesn't hide it.
-    action == NowPlayingAction.STREAM_QUALITY -> "Nothing streams in Download mode"
-    ctx.isPreview && action == NowPlayingAction.DOWNLOAD -> "Previews cannot be downloaded"
-    ctx.isSoundCloudSong && action == NowPlayingAction.FLAG_WRONG_MATCH -> "This plays the exact SoundCloud upload"
-    ctx.inRoom && action != NowPlayingAction.POST_TO_COMMUNITY -> "Hidden while listening together"
-    ctx.isScannedSong && action in SCANNED_HIDDEN -> "Not for songs from your folders"
-    ctx.isCloudSong && action in CLOUD_HIDDEN -> "Not for songs from your cloud storage"
-    action == NowPlayingAction.CAST -> "Cast isn't available on this phone"
-    ctx.casting && action == NowPlayingAction.PLAYBACK_SPEED -> "Hidden while casting"
-    else -> "Not available right now"
+    // A browser playing the queue hides it (it streams for itself); otherwise only Download mode does.
+    ctx.onBrowser && action == NowPlayingAction.STREAM_QUALITY -> R.string.np_hidden_casting
+    action == NowPlayingAction.STREAM_QUALITY -> R.string.np_hidden_download_mode
+    ctx.isPreview && action == NowPlayingAction.DOWNLOAD -> R.string.np_hidden_preview
+    ctx.isSoundCloudSong && action == NowPlayingAction.FLAG_WRONG_MATCH -> R.string.np_hidden_soundcloud
+    ctx.inRoom && action != NowPlayingAction.POST_TO_COMMUNITY -> R.string.np_hidden_together
+    ctx.isScannedSong && action in SCANNED_HIDDEN -> R.string.np_hidden_scanned
+    ctx.isCloudSong && action in CLOUD_HIDDEN -> R.string.np_hidden_cloud
+    action == NowPlayingAction.CAST -> R.string.np_hidden_no_cast
+    ctx.casting && action == NowPlayingAction.PLAYBACK_SPEED -> R.string.np_hidden_casting
+    else -> R.string.np_hidden_other
 }
 
-/** The editor's note for a pin that is in the ⋮ menu only because this screen is too narrow. */
-internal const val OVERFLOW_NOTE = "In the menu for now: no room on this screen"
 
 /**
  * True when the row can take no more pins (the editor dims the empty pins and says why). The

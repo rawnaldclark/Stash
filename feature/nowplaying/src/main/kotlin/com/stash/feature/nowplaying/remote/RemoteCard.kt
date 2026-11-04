@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeDown
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
@@ -267,6 +268,26 @@ private fun RemoteSheet(card: RemoteCard, viewModel: RemoteViewModel, onDismiss:
                 }
             }
             card.volume?.let { VolumeBar(it, card.deviceName, onVolume = viewModel::volume) }
+            // Remote v2: a browser that can play this phone's queue offers to (the card is where people look for it).
+            if (card.canDrive) {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                Spacer(Modifier.height(8.dp))
+                com.stash.core.ui.components.SheetOptionRow(
+                    icon = Icons.Default.Cast,
+                    label = androidx.compose.ui.res.stringResource(com.stash.feature.nowplaying.R.string.play_on_remote_play_here),
+                    onClick = {
+                        if (viewModel.playPhoneHere(card)) {
+                            onDismiss()
+                        } else {
+                            android.widget.Toast.makeText(
+                                context,
+                                com.stash.feature.nowplaying.R.string.play_on_browser_unavailable,
+                                android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    },
+                )
+            }
         }
     }
 }
