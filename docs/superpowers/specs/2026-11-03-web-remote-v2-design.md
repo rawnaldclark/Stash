@@ -15,8 +15,13 @@ Protocol: stash-player `docs/sync-v1.md` §5.7 "Driving", vectors `src/lib/sync/
 - While a browser plays: a line under the seek bar ("Playing on Chrome on Windows", or "Starting on…",
   "Reconnecting to Chrome…", "Click the Stash tab once in Chrome"); the mini player shows the device under the title
   (Chromecast too) and a tap opens Play on; the queue sheet says "Playing on …" and dims songs only this phone has;
-  the notification line is "On Chrome on Windows"; speed and Streaming quality are hidden; the volume keys move the
-  browser's volume unless it can't set it (Safari on iOS); no remote card and no handoff card for that browser.
+  the notification line is "On Chrome on Windows"; speed and Streaming quality are hidden; the browser's volume is the
+  "Browser volume" slider in Play on, one tap from the line under the seek bar or the mini player (none when the browser
+  can't set it: Safari on iOS); no remote card and no handoff card for that browser.
+- The phone's own volume keys don't reach the browser on Android 14 (seen on the Pixel 5): the system hands volume keys
+  to a remote media session only when the app holds a MediaRouter2 routing session, which the Cast SDK makes for a
+  Chromecast and nothing makes for a browser yet. They change the phone's volume instead. Follow-up: a
+  MediaRoute2ProviderService, which would also list the browser in the system output picker.
 
 ## Owner decisions (PLAN §8, defaults)
 
@@ -57,8 +62,18 @@ Now Playing / mini player / notification ──► MediaSession ──► CastSe
     volume are the v1 commands (shown at once); never v1 next or prev.
   - Status: `iid` (an id this phone handed it) is the content id; `phase` failed → idle + error (the queue skips it),
     ended → idle + finished, loading or `pendingPlay` → buffering; the position moves on while playing.
-  - Ends by itself: browser gone (closed, or silent 65 s) for 15 s; this phone's socket down for 60 s from the drop; the
-    browser's `driver` no longer this phone, or a new browser session (`sid`); the first song unanswered for 10 s.
+  - A new `sid` (the browser mints one on each reconnect, sync-v1 §5.7) is the same session: the browser is known by its
+    `driver`, and what it missed is said again.
+  - Ends by itself:
+    - the tab says `bye` (a state sent sealed on `pagehide` as it closes or reloads): at once, as closed (paused here,
+      "Chrome on Windows closed" with Play). Nothing else in that state is taken (sealed ahead, its position is old);
+    - the browser gone without a bye (its socket, or silent 65 s) for 30 s, as "Reconnecting to Chrome…". A driven tab
+      tries again after 1 s, then every 2 s; on the device run a 10 s network cut came back at 16.5 s, past the old 15 s;
+    - this phone's socket down for 60 s from the drop;
+    - the browser's `driver` no longer this phone (someone there picked their own music, or a reload with no bye);
+    - the first song unanswered for 10 s.
+  - A tab that said bye is "not open" in Play on (it can't be picked), the remote card leaves it out, and WebRemote doesn't
+    tell it to let go (the next tab is told if it still names this phone).
 - **BrowserOutputs** (`core/media/.../cast`): the browsers Play on lists, `connect` / `disconnect` / `end`, `remote`
   (what the service plays through), `session` (name + link state), `notices`. One output at a time: picking a browser
   disconnects a speaker; a speaker connecting, or Listen Together starting, ends a browser session; Listen Together
@@ -76,5 +91,5 @@ Now Playing / mini player / notification ──► MediaSession ──► CastSe
 
 - The browser's Up next shows the held song only (phase 2 sends the next 50).
 - Editing the queue from the browser (phase 3).
-- The optional v1 sheet row "Play this phone's music here".
+- The phone's volume keys for a browser (above: a MediaRoute2ProviderService).
 - Other languages for the new strings (English only, per the release rules).
