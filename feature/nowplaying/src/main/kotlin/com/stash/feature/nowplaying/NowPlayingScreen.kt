@@ -624,7 +624,10 @@ fun NowPlayingScreen(
     // the mini player (composed for KEEP_WARM_MS after it closes) it holds still and asks for no frames.
     val radioPlaying = (uiState.playWhenReady || uiState.isPlaying) &&
         com.stash.feature.nowplaying.ui.LocalNowPlayingShown.current
-    val visualState = remember(radioLabel != null, radioTuning, radioPlaying, reading, togetherState, playbackSpeed, isDownloaded, castConnectingTo, castingTo) {
+    // The ⋮ row's words: where the music plays (or how a browser session stands), else "Play on".
+    val castLabel = com.stash.feature.nowplaying.cast.playOnLine(playOn)
+        ?: androidx.compose.ui.res.stringResource(R.string.play_on_title)
+    val visualState = remember(radioLabel != null, radioTuning, radioPlaying, reading, togetherState, playbackSpeed, isDownloaded, castConnectingTo, castingTo, castLabel) {
         ActionVisualState(
             radioActive = radioLabel != null,
             radioTuning = radioTuning,
@@ -634,6 +637,7 @@ fun NowPlayingScreen(
             isDownloaded = isDownloaded,
             castConnectingTo = castConnectingTo,
             castingTo = castingTo,
+            castLabel = castLabel,
             radioPlaying = radioPlaying,
         )
     }

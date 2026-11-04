@@ -40,6 +40,8 @@
     <string name="play_on_click_tab">Click the Stash tab once in %1$s</string>
     <string name="play_on_browser_volume">Browser volume</string>
     <string name="play_on_browser_note">The browser plays with its own sound settings: its equalizer and crossfade apply, not this phone\'s.</string>
+    <!-- The v1 remote sheet's row for a browser that can play this phone's queue. -->
+    <string name="play_on_remote_play_here">Play this phone\'s music here</string>
     <string name="play_on_browser_unavailable">That browser\'s tab closed. Open it again to play there.</string>
 
     <!-- What happened to a browser session, as a snackbar. %1$s: the browser ("Chrome on Windows"). -->

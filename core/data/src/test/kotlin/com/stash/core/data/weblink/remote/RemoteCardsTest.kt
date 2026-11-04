@@ -33,6 +33,12 @@ class RemoteCardsTest {
         assertThat(c.positionAt(1_000_000)).isEqualTo(240_000) // never past the end
     }
 
+    @Test fun `only a browser whose caps say drive offers to play this phone's music`() {
+        assertThat(RemoteCards.pick(listOf(browser()), now = 1_000)!!.canDrive).isFalse()
+        val v2 = browser(st = state().copy(caps = listOf("drive")))
+        assertThat(RemoteCards.pick(listOf(v2), now = 1_000)!!.canDrive).isTrue()
+    }
+
     @Test fun `paused, its clock stands still`() {
         val c = RemoteCards.pick(listOf(browser(st = state(playing = false))), now = 1_000)!!
         assertThat(c.status).isEqualTo("Paused on Chrome on Windows")

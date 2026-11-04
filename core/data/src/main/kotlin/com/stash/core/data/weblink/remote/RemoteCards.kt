@@ -32,6 +32,8 @@ data class RemoteCard(
     val needsGesture: Boolean,
     /** This phone's monotonic clock when [positionMs] was true. */
     val readAt: Long,
+    /** It can play this phone's queue (Remote v2, its `caps` say `drive`): the sheet offers "Play this phone's music here". */
+    val canDrive: Boolean = false,
 ) {
     /** "Playing on Chrome on Windows" / "Paused on …", or the one click the browser needs before it can start the music. */
     val status: String
@@ -84,6 +86,7 @@ object RemoteCards {
             canSeek = s.canSeek && s.durationMs > 0,
             needsGesture = s.needsGesture,
             readAt = b.receivedAt,
+            canDrive = s.canDrive,
         )
     }
 
