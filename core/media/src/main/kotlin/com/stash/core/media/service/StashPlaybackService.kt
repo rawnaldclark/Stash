@@ -1056,7 +1056,11 @@ class StashPlaybackService : MediaLibraryService() {
         val playWhenReady = master.playWhenReady
         master.playWhenReady = false
         master.stop() // keeps the queue and position; nothing plays or buffers on the phone
-        val wrapper = castPlayer ?: com.stash.core.media.cast.CastSessionPlayer(master).also { castPlayer = it }
+        val wrapper = castPlayer ?: com.stash.core.media.cast.CastSessionPlayer(
+            master,
+            // Who asked for a volume change (the volume log): read while the session hands the request to the player.
+            caller = { mediaSession?.controllerForCurrentRequest?.packageName },
+        ).also { castPlayer = it }
         castKind = kind
         browserOutputs.noteServed(kind == CastKind.BROWSER)
         wrapper.attach(master, remote, positionMs, playWhenReady, castFeed(kind))

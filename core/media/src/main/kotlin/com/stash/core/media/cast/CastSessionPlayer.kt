@@ -1,6 +1,7 @@
 package com.stash.core.media.cast
 
 import android.os.SystemClock
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.DeviceInfo
@@ -52,6 +53,8 @@ class CastSessionPlayer(
     /** The [CastFeed.prepare] of an [attach] without a feed of its own. */
     prepare: (item: MediaItem, done: (Boolean) -> Unit) -> Unit = { _, done -> done(true) },
     private val clock: () -> Long = SystemClock::elapsedRealtime,
+    /** The package of the controller asking (the session's controllerForCurrentRequest), for the volume log. */
+    private val caller: () -> String? = { null },
 ) : ForwardingSimpleBasePlayer(local) {
 
     private val defaultFeed = CastFeed(mediaFor, prepare)
@@ -152,7 +155,7 @@ class CastSessionPlayer(
         notePosition(positionMs.coerceAtLeast(0), advancing = false)
         remote.addListener(remoteListener)
         local.addListener(localListener)
-        if (local.currentMediaItem != null) load(lastPositionMs) else invalidateState()
+        if (local.currentMediaItem != null) load(lastPositionMs, "attach") else invalidateState()
     }
 
     /**
@@ -191,11 +194,13 @@ class CastSessionPlayer(
      * it ready. Until then the speaker isn't asked; the player reports
      * buffering. A newer load, or the speaker going away, drops this one.
      */
-    private fun load(positionMs: Long) {
+    /** Loads the local current song on the receiver at [positionMs]; [why] goes to the log (which path sent it). */
+    private fun load(positionMs: Long, why: String) {
         val target = remote ?: return
         val item = player.currentMediaItem
         dropQueued() // a load replaces the receiver's whole queue
         if (item == null) {
+            Log.i(TAG, "stop: no song ($why)")
             target.stop()
             loadedMediaId = null
             loadedContentId = null
@@ -203,6 +208,7 @@ class CastSessionPlayer(
             return
         }
         val contentId = "${item.mediaId}#${++loadCounter}"
+        Log.i(TAG, "load $contentId at $positionMs ($why)")
         loadedMediaId = item.mediaId
         loadedContentId = contentId
         finishedContentId = null
@@ -253,7 +259,7 @@ class CastSessionPlayer(
             invalidateState()
             return
         }
-        seekLocalAndLoad(next, 0L)
+        seekLocalAndLoad(next, 0L, "step over a song it can't take")
     }
 
     /** A run of stepped-over songs ended (a song loaded, or nothing was left): one report, with how many. */
@@ -323,20 +329,23 @@ class CastSessionPlayer(
         if (remote == null) return
         val item = player.currentMediaItem
         if (item == null) {
-            if (loadedMediaId != null) load(0L)
+            if (loadedMediaId != null) load(0L, "the queue emptied")
             return
         }
         // Same song (the prefetch swaps a placeholder for a resolved URL in
         // place; a queue edit elsewhere shifts the index): leave it playing.
         if (item.mediaId == loadedMediaId) return
-        load(player.currentPosition.coerceAtLeast(0))
+        load(player.currentPosition.coerceAtLeast(0), loadWhy ?: "the phone's current song changed")
     }
 
-    /** The speaker finished a song: move the local queue on, the way ExoPlayer would. */
-    private fun advance() {
+    /** Why the local queue is being moved, while it is: the load its listener makes says so in the log. */
+    private var loadWhy: String? = null
+
+    /** The speaker finished a song ([why]): move the local queue on, the way ExoPlayer would. */
+    private fun advance(why: String) {
         val local = player
         if (local.repeatMode == Player.REPEAT_MODE_ONE) {
-            load(0L)
+            load(0L, "$why, repeat one")
             return
         }
         val next = local.nextMediaItemIndex
@@ -347,7 +356,7 @@ class CastSessionPlayer(
             return
         }
         wantPlay = true
-        seekLocalAndLoad(next, 0L)
+        seekLocalAndLoad(next, 0L, why)
     }
 
     /**
@@ -356,10 +365,15 @@ class CastSessionPlayer(
      * the new song; when it doesn't (the same song again: repeat-all over one
      * item, a duplicate in the queue) load explicitly.
      */
-    private fun seekLocalAndLoad(index: Int, positionMs: Long) {
+    private fun seekLocalAndLoad(index: Int, positionMs: Long, why: String) {
         val before = loadCounter
-        player.seekTo(index, positionMs)
-        if (loadCounter == before) load(positionMs)
+        loadWhy = why
+        try {
+            player.seekTo(index, positionMs)
+        } finally {
+            loadWhy = null
+        }
+        if (loadCounter == before) load(positionMs, why)
     }
 
     private fun onRemoteStatus() {
@@ -370,7 +384,7 @@ class CastSessionPlayer(
             // left behind in its queue). Our song is over there, so move on the
             // way a finished song does, which loads what the phone has next.
             finishedContentId = loadedContentId
-            advance()
+            advance("the receiver plays ${status.contentId}, not $loadedContentId")
             return
         }
         if (status.contentId != null && status.contentId == loadedContentId) {
@@ -403,7 +417,7 @@ class CastSessionPlayer(
                 CastStatus.PlayerState.IDLE -> when (status.idleReason) {
                     CastStatus.IdleReason.FINISHED -> if (finishedContentId != loadedContentId) {
                         finishedContentId = loadedContentId
-                        advance()
+                        advance("finished $loadedContentId")
                         return
                     }
                     CastStatus.IdleReason.ERROR -> if (error == null) {
@@ -557,7 +571,7 @@ class CastSessionPlayer(
                 lastCommandAtMs = clock()
             }
             // Nothing on the speaker (stopped, failed, or never loaded): play loads it.
-            playWhenReady && !ended && player.currentMediaItem != null -> load(lastPositionMs)
+            playWhenReady && !ended && player.currentMediaItem != null -> load(lastPositionMs, "play with nothing there")
         }
         invalidateState()
         return DONE
@@ -566,7 +580,7 @@ class CastSessionPlayer(
     /** The local player must never prepare while casting; prepare means "load it on the speaker" here. */
     override fun handlePrepare(): ListenableFuture<*> {
         if (remote == null) return super.handlePrepare()
-        if (loadedContentId == null || error != null) load(lastPositionMs)
+        if (loadedContentId == null || error != null) load(lastPositionMs, "prepare")
         return DONE
     }
 
@@ -595,7 +609,7 @@ class CastSessionPlayer(
                 notePosition(position, positionAdvancing)
             } else {
                 // Finished, failed or stopped: seeking starts it again from there.
-                load(position)
+                load(position, "seek in a song that isn't playing there")
             }
             invalidateState()
             return DONE
@@ -613,7 +627,7 @@ class CastSessionPlayer(
             return DONE
         }
         // Another song: move the local queue (stopped, so instant) and load it there.
-        seekLocalAndLoad(mediaItemIndex, position)
+        seekLocalAndLoad(mediaItemIndex, position, "seek to another song")
         return DONE
     }
 
@@ -627,8 +641,13 @@ class CastSessionPlayer(
     override fun handleSetMediaItems(mediaItems: List<MediaItem>, startIndex: Int, startPositionMs: Long): ListenableFuture<*> {
         if (remote == null) return super.handleSetMediaItems(mediaItems, startIndex, startPositionMs)
         val before = loadCounter
-        val result = super.handleSetMediaItems(mediaItems, startIndex, startPositionMs)
-        if (loadCounter == before && player.currentMediaItem != null) load(player.currentPosition.coerceAtLeast(0))
+        loadWhy = "a new queue"
+        val result = try {
+            super.handleSetMediaItems(mediaItems, startIndex, startPositionMs)
+        } finally {
+            loadWhy = null
+        }
+        if (loadCounter == before && player.currentMediaItem != null) load(player.currentPosition.coerceAtLeast(0), "a new queue")
         return result
     }
 
@@ -637,26 +656,35 @@ class CastSessionPlayer(
 
     override fun handleSetDeviceVolume(deviceVolume: Int, flags: Int): ListenableFuture<*> {
         val target = remote ?: return super.handleSetDeviceVolume(deviceVolume, flags)
+        logVolume("set $deviceVolume/$MAX_VOLUME")
         target.setVolume(deviceVolume.coerceIn(0, MAX_VOLUME) / MAX_VOLUME.toFloat())
         return DONE
     }
 
     override fun handleIncreaseDeviceVolume(flags: Int): ListenableFuture<*> {
         val target = remote ?: return super.handleIncreaseDeviceVolume(flags)
+        logVolume("up")
         target.setVolume(((target.status.volume * MAX_VOLUME).roundToInt() + 1).coerceAtMost(MAX_VOLUME) / MAX_VOLUME.toFloat())
         return DONE
     }
 
     override fun handleDecreaseDeviceVolume(flags: Int): ListenableFuture<*> {
         val target = remote ?: return super.handleDecreaseDeviceVolume(flags)
+        logVolume("down")
         target.setVolume(((target.status.volume * MAX_VOLUME).roundToInt() - 1).coerceAtLeast(0) / MAX_VOLUME.toFloat())
         return DONE
     }
 
     override fun handleSetDeviceMuted(muted: Boolean, flags: Int): ListenableFuture<*> {
         val target = remote ?: return super.handleSetDeviceMuted(muted, flags)
+        logVolume("muted=$muted")
         target.setMuted(muted)
         return DONE
+    }
+
+    /** A volume request on the session and who sent it (a package name; the system's volume panel is SystemUI). */
+    private fun logVolume(what: String) {
+        Log.i(TAG, "device volume $what by ${runCatching(caller).getOrNull() ?: "?"}")
     }
 
     /** Never release the service's ExoPlayer from here; the crossfade engine owns it. */
@@ -686,6 +714,7 @@ class CastSessionPlayer(
 
     companion object {
         const val MAX_VOLUME = 20
+        private const val TAG = "CastSessionPlayer"
         private const val ECHO_GRACE_MS = 2_000L
         private val DONE: ListenableFuture<*> = Futures.immediateVoidFuture()
         private val REMOTE_DEVICE = DeviceInfo.Builder(DeviceInfo.PLAYBACK_TYPE_REMOTE).setMaxVolume(MAX_VOLUME).build()

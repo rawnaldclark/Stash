@@ -1,5 +1,6 @@
 package com.stash.core.media.cast
 
+import android.util.Log
 import com.stash.core.data.weblink.remote.BrowserState
 import com.stash.core.data.weblink.remote.RemoteCards
 import com.stash.core.data.weblink.remote.RemoteCommand
@@ -200,6 +201,7 @@ class WebCastRemote(
         val sent = Sent(RemoteItem(wireId(media.contentId), song), startPositionMs.coerceAtLeast(0), autoplay)
         current = sent
         from = media.from
+        log("load ${sent.item.id} at ${sent.startMs} play=${sent.autoplay} (wrapper)")
         send(RemoteCommand.Load(sent.item, sent.startMs, sent.autoplay, from))
         awaitAnswer()
         if (!driving) _link.value = Link.STARTING
@@ -238,6 +240,7 @@ class WebCastRemote(
         val n = next ?: return false
         val s = last?.state ?: return false
         if (s.driver != me || s.next != n.id) return false
+        log("jump ${n.id} (wrapper)")
         send(RemoteCommand.Jump(n.id))
         // A jump keeps the play state: said again as a load, it says the same. What was sent about the song before is over.
         current = Sent(n, 0L, autoplay = s.playing)
@@ -270,17 +273,24 @@ class WebCastRemote(
 
     override fun setVolume(level: Float) {
         unmutedVolume = null
-        command(RemoteCommand.Volume(level.toDouble().coerceIn(0.0, 1.0)))
+        volume(level.toDouble().coerceIn(0.0, 1.0), "setVolume")
     }
 
     override fun setMuted(muted: Boolean) {
         if (muted) {
             unmutedVolume = last?.state?.volume ?: 1.0
-            command(RemoteCommand.Volume(0.0))
+            volume(0.0, "setMuted(true)")
         } else {
-            command(RemoteCommand.Volume(unmutedVolume ?: 1.0))
+            volume(unmutedVolume ?: 1.0, "setMuted(false)")
             unmutedVolume = null
         }
+    }
+
+    /** A volume command, logged with [why] (the next "volume 0" in a diagnostics log says where it came from). */
+    private fun volume(level: Double, why: String) {
+        if (ended) return
+        log("volume $level ($why)")
+        command(RemoteCommand.Volume(level))
     }
 
     /** A v1 command: sent, kept until heard, and taken at once into [status] (the wrapper reads it right after). */
@@ -411,6 +421,7 @@ class WebCastRemote(
     private fun resend(commands: List<RemoteCommand>) {
         unheard.clear()
         for (c in commands) {
+            if (c is RemoteCommand.Volume) log("volume ${c.volume} (catch-up re-send)")
             send(c)
             unheard += c
             last = last?.let { RemoteCards.optimistic(it, c, clock()) }
@@ -493,6 +504,11 @@ class WebCastRemote(
         listeners.toList().forEach { it() }
     }
 
+    /** What went out and why, under the device's id: ids and numbers only, never a song's words. */
+    private fun log(message: String) {
+        Log.i(TAG, "$device: $message")
+    }
+
     companion object {
         /** Queue edits within this window go to the browser as one `upNext` (§4 "Big plays and the limits"). */
         const val UP_NEXT_COALESCE_MS = 300L
@@ -512,6 +528,8 @@ class WebCastRemote(
 
         /** The ids remembered: the current song and the next are all a browser can name. */
         private const val MAX_IDS = 32
+
+        private const val TAG = "WebCastRemote"
 
         private const val ID_MAX = 64
         private val NOT_ID = Regex("[^A-Za-z0-9_.:#-]")
