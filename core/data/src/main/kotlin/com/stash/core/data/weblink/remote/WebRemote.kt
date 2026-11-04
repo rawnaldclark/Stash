@@ -418,6 +418,9 @@ class WebRemote internal constructor(
             val key = dataKey(sp, env.e) ?: return@guard null
             RemoteWire.readState(SyncCrypto.open(key, sp.spaceId, RemoteWire.statePlace(from), env, MAX_PLAIN))
         } ?: return
+        // A bye counts only from the session this phone has the newest state of (sync-v1 §5.7): the relay could replay an
+        // older one, which must not make an open tab look closed.
+        if (st.bye && browsers.value[from]?.let { it.state.sid != st.sid } == true) return
         browsers.update { it + (from to BrowserState(from, name, st, clock())) }
         publish()
         if (from == pinned.value) return

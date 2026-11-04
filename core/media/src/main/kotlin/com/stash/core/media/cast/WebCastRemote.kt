@@ -337,15 +337,16 @@ class WebCastRemote(
      * relay said it is offline), [BrowserState.lostAt] set when it is this phone's socket that is down.
      *
      * A state saying `bye` is the tab's last word as it closes or reloads (sync-v1 §5.7): the session ends at once as
-     * [End.CLOSED], with no grace to wait out, whatever driver it names (the tab is gone either way). It was sealed ahead of
-     * time, so nothing else in it is taken (its position is old).
+     * [End.CLOSED], with no grace to wait out, whatever driver it names (the tab is gone either way). Only from the browser
+     * session last heard: a bye with another session id is one the relay replayed, and is ignored. It was sealed ahead of
+     * time, so nothing else in it is taken (its position can be a heartbeat old; the phone's own estimate stands).
      */
     fun onState(b: BrowserState?) {
         if (ended) return
         when {
             b == null -> startGrace(End.CLOSED, CLOSED_GRACE_MS)
             b.state.bye -> {
-                end(End.CLOSED)
+                if (b.state.sid == sid) end(End.CLOSED)
                 return
             }
             b.lostAt != null -> {

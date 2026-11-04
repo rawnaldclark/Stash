@@ -590,6 +590,25 @@ class WebRemoteTest {
         assertThat(sentTo(CHROME).map { it.sid }).containsExactly("Reloaded0001")
     }
 
+    @Test fun `a bye from an older session of a browser is a replay, and the tab still looks open`() = runTest {
+        linked()
+        val r = remote()
+        r.start()
+        conn.ch.send(stateFrame(CHROME, doc = stateDoc(extra = drive)))
+        conn.ch.send(stateFrame(CHROME, doc = stateDoc(sid = "NewSession01", extra = drive)))
+        runCurrent()
+        conn.ch.send(stateFrame(CHROME, doc = stateDoc(extra = "$drive,\"bye\":true"))) // the old session's, replayed
+        runCurrent()
+        assertThat(r.live.value.getValue(CHROME).state.sid).isEqualTo("NewSession01")
+        assertThat(r.live.value.getValue(CHROME).state.bye).isFalse()
+        assertThat(r.card.value).isNotNull()
+        // Its newest session's bye is taken: the tab is closing, so no card.
+        conn.ch.send(stateFrame(CHROME, doc = stateDoc(sid = "NewSession01", extra = "$drive,\"bye\":true")))
+        runCurrent()
+        assertThat(r.live.value.getValue(CHROME).state.bye).isTrue()
+        assertThat(r.card.value).isNull()
+    }
+
     @Test fun `a browser let go of that missed it is told again when next heard, paused as it was told`() = runTest {
         linked()
         val r = remote()

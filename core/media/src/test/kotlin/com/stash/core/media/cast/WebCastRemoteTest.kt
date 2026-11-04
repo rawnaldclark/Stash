@@ -275,6 +275,7 @@ class WebCastRemoteTest {
     @Test fun `a bye ends it as closed whatever it names, while starting, away, or after the page took over unseen`() = runTest {
         // Before the first song was answered: closed, not "didn't answer" later.
         val starting = remote()
+        starting.onState(state(driver = null, iid = null)) // its own music when picked
         starting.load(media("42#1"), 0, autoplay = true)
         starting.onState(state(driver = null, iid = null, bye = true))
         advanceTimeBy(WebCastRemote.NO_ANSWER_MS * 3)
@@ -296,6 +297,22 @@ class WebCastRemoteTest {
         took.load(media("42#3"), 0, autoplay = true)
         took.onState(state(iid = "42#3"))
         took.onState(state(driver = null, iid = null, bye = true))
+        assertThat(ends).containsExactly(WebCastRemote.End.CLOSED)
+    }
+
+    @Test fun `a bye from an older session of the browser is a replay, and ignored`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1"))
+        r.onState(state(iid = "42#1", sid = "Reconnected01")) // reconnected: a new session
+        sent.clear()
+        r.onState(state(iid = "42#1", bye = true)) // the old session's bye, replayed by the relay
+        assertThat(ends).isEmpty()
+        assertThat(r.link.value).isEqualTo(WebCastRemote.Link.READY)
+        assertThat(sent).isEmpty()
+        assertThat(r.status.contentId).isEqualTo("42#1")
+        // Its own bye ends it.
+        r.onState(state(iid = "42#1", sid = "Reconnected01", bye = true))
         assertThat(ends).containsExactly(WebCastRemote.End.CLOSED)
     }
 
