@@ -97,6 +97,27 @@ class CastViewModelTest {
         assertEquals(listOf(0.25f), remote.volumes)
     }
 
+    @Test fun `Play on this phone plays the song only once the service holds the queue again`() = runTest(dispatcher) {
+        val served = MutableStateFlow(true)
+        val browsers: com.stash.core.media.cast.BrowserOutputs = io.mockk.mockk(relaxed = true) {
+            io.mockk.every { session } returns MutableStateFlow(
+                com.stash.core.media.cast.BrowserSession("d_Chrome", "Chrome on Windows", com.stash.core.media.cast.WebCastRemote.Link.READY),
+            )
+            io.mockk.every { hasBrowser } returns MutableStateFlow(true)
+            io.mockk.every { remote } returns MutableStateFlow(null)
+            io.mockk.every { browsers } returns MutableStateFlow(emptyList())
+            io.mockk.every { this@mockk.served } returns served
+        }
+        var played = 0
+
+        CastViewModel(FakeDevices(), browsers).playHereThen { played++ }
+
+        io.mockk.verify { browsers.disconnect() }
+        assertEquals(0, played) // still on the browser: the song would be stepped over there
+        served.value = false
+        assertEquals(1, played)
+    }
+
     @Test fun `picking a speaker connects to it`() {
         val devices = FakeDevices()
 

@@ -59,5 +59,6 @@
 
     <!-- The queue while a browser plays it. -->
     <string name="play_on_queue_phone_only">Only on this phone</string>
-    <string name="play_on_queue_phone_only_tap">Only on this phone: the browser can\'t play it</string>
+    <string name="play_on_queue_phone_only_tap">“%1$s” is only on your phone</string>
+    <string name="play_on_queue_play_here">Play on this phone</string>
 </resources>

@@ -18,6 +18,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
@@ -129,8 +132,25 @@ class CastViewModel @Inject constructor(
         }
     }
 
+    /**
+     * "Play on this phone" on a song only this phone has (Remote v2 §5): the music comes back here (D2), then [then] runs once the
+     * playback service holds the queue again, so the song plays here instead of being stepped over on the browser.
+     */
+    fun playHereThen(then: () -> Unit) {
+        playHere()
+        viewModelScope.launch {
+            withTimeoutOrNull(BACK_ON_PHONE_MS) { browsers.served.first { !it } }
+            then()
+        }
+    }
+
     override fun onCleared() {
         if (scanning) devices.stopScan()
+    }
+
+    private companion object {
+        /** Coming back is a few calls on the main thread; this only keeps a tap from waiting forever on a stopped service. */
+        const val BACK_ON_PHONE_MS = 3_000L
     }
 }
 

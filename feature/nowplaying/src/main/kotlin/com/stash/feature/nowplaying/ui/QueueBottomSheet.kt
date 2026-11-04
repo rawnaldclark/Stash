@@ -54,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import kotlinx.coroutines.Job
@@ -139,6 +140,11 @@ fun QueueBottomSheet(
      * Its row is dimmed, and a tap says so instead of playing it. Null: everything plays here.
      */
     phoneOnly: ((Track) -> Boolean)? = null,
+    /**
+     * "Play on this phone" on the snackbar a dimmed row's tap shows (Remote v2 §5): the music comes back here and plays that
+     * row ([index] as [onTrackClick] takes it). Null: the snackbar only says why.
+     */
+    onPlayOnPhone: ((index: Int) -> Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // The sheet is its own window, so its snackbar lives in it (see the host at the bottom).
@@ -219,7 +225,8 @@ fun QueueBottomSheet(
             }
 
             val phoneOnlyLabel = stringResource(R.string.play_on_queue_phone_only)
-            val phoneOnlyNote = stringResource(R.string.play_on_queue_phone_only_tap)
+            val resources = LocalContext.current.resources
+            val playOnPhoneLabel = stringResource(R.string.play_on_queue_play_here)
             var dragOffsetY by remember { mutableFloatStateOf(0f) }
             var itemHeight by remember { mutableIntStateOf(0) }
 
@@ -405,7 +412,13 @@ fun QueueBottomSheet(
                                     if (dimmed) {
                                         scope.launch {
                                             snackbarHostState.currentSnackbarData?.dismiss()
-                                            snackbarHostState.showSnackbar(phoneOnlyNote)
+                                            val result = snackbarHostState.showSnackbar(
+                                                message = resources.getString(R.string.play_on_queue_phone_only_tap, track.title),
+                                                actionLabel = playOnPhoneLabel.takeIf { onPlayOnPhone != null },
+                                                withDismissAction = onPlayOnPhone == null,
+                                                duration = SnackbarDuration.Long,
+                                            )
+                                            if (result == SnackbarResult.ActionPerformed) onPlayOnPhone?.invoke(queueIndex)
                                         }
                                     } else {
                                         onTrackClick(queueIndex)

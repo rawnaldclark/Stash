@@ -84,6 +84,10 @@ fun PlayerQueueSheet(
             // A browser plays the queue (Remote v2 §6): its name in the header, songs only here dimmed.
             playingOn = playOn.browser?.name,
             phoneOnly = if (playOn.onBrowser) com.stash.feature.nowplaying.cast.PHONE_ONLY else null,
+            onPlayOnPhone = { index ->
+                cast.playHereThen { viewModel.onSkipToQueueIndex(index) }
+                onDismiss()
+            },
         )
     }
 
