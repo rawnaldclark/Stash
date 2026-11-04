@@ -5,7 +5,9 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.test.core.app.ApplicationProvider
 import io.mockk.mockk
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -107,5 +109,17 @@ class DatabaseBackupIntegrityTest {
         }
 
         assertThrows(Exception::class.java) { manager.verifyDatabaseIntegrity(garbage) }
+    }
+
+    /** The Settings dialog shows the message as is: SQLite's words go to the log through `detail` (#838). */
+    @Test fun `a rejected file is told in plain words and SQLite's stay in the detail`() {
+        val notADatabase = File(tmpDir, "notes.db").apply { writeText("not a database") }
+
+        val e = assertThrows(DatabaseIntegrityException::class.java) {
+            manager.verifyDatabaseIntegrity(notADatabase, repairSearchIndex = true)
+        }
+
+        assertEquals("The backup database is corrupt and was not restored.", e.message)
+        assertTrue(e.detail, e.detail.contains("header"))
     }
 }
