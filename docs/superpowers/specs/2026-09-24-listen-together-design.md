@@ -15,7 +15,7 @@
 | Decision | Choice | Why |
 |---|---|---|
 | Situation | Friends in different places, over the internet | The case nobody else serves well. The same design also covers people in one room. |
-| Control | One host controls play, pause, seek, skip and the queue. The host can hand control to anyone. | Predictable, and nobody fights over the skip button. |
+| Control | One host controls play, pause, seek, skip and the queue. The host can hand control to anyone. **Changed 2026-11-04:** guests can add songs to the queue while the host's "Let guests add songs" switch is on (`2026-11-04-listen-together-guest-adds-design.md`). | Predictable, and nobody fights over the skip button. |
 | Size | Up to 10 people per room | A friend group. One Durable Object can hold every connection cheaply. |
 | Which recording each listener hears | The same recording as the host (matched by ISRC and IDs), at each listener's best available quality. If a listener can't get it, they get the closest match plus a note. | Keeps timing tight without dragging everyone down to the lowest-quality source. |
 | Extras in v1 | Who's listening, song suggestions, emoji reactions. No typed chat. | Social features that need no moderation. |

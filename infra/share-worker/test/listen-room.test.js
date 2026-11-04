@@ -178,3 +178,26 @@ test("setAlarm is only written when the alarm time moves", async () => {
     await connect(ctx, room, {}); // state changes, the 12 h expiry doesn't
     assert.equal(ctx.alarmWrites, writes);
 });
+
+test("a guest's 25 songs in one add are one message: the socket stays open and 20 go in", async () => {
+    const clock = { t: 1_000 };
+    const { ctx, room } = await openRoom(clock);
+    const host = await connect(ctx, room, { hostKey: "KEY", v: 2, guestsAdd: true });
+    const guest = await connect(ctx, room, { name: "Sam", v: 2 });
+    const tracks = Array.from({ length: 25 }, (_, i) => ({ t: `S${i}`, a: "A" }));
+    await room.webSocketMessage(guest, JSON.stringify({ t: "add", tracks, next: true }));
+    assert.equal(guest.closed, false);
+    assert.equal(host.sent.filter((m) => m.t === "queue").at(-1).queue.length, 20);
+    assert.deepEqual(host.sent.filter((m) => m.t === "added").map((m) => m.count), [20]);
+});
+
+test("with guest adds off, an add's songs become suggestions with ids of their own", async () => {
+    const clock = { t: 1_000 };
+    const { ctx, room } = await openRoom(clock);
+    const host = await connect(ctx, room, { hostKey: "KEY", v: 2, guestsAdd: false });
+    const guest = await connect(ctx, room, { v: 2 });
+    await room.webSocketMessage(guest, JSON.stringify({ t: "add", tracks: [{ t: "A", a: "B" }, { t: "C", a: "D" }], next: true }));
+    const ids = host.sent.filter((m) => m.t === "suggestions").at(-1).suggestions.map((x) => x.id);
+    assert.equal(ids.length, 2);
+    assert.notEqual(ids[0], ids[1]);
+});

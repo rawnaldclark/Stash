@@ -85,7 +85,8 @@ export class ListenRoom {
             if (r.reject) ws.close(r.reject.code, r.reject.reason);
             return;
         }
-        await this.apply({ type: "msg", from, msg, newId: msg.t === "suggest" ? randomCode(8) : undefined });
+        // A suggestion's id; an `add` may become suggestions too (guest adds off, or an older host).
+        await this.apply({ type: "msg", from, msg, newId: msg.t === "suggest" || msg.t === "add" ? randomCode(8) : undefined });
     }
 
     async webSocketClose(ws, code, reason) {
