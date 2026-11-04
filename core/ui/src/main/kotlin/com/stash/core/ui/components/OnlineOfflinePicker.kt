@@ -125,7 +125,9 @@ private fun ModeTile(
     // Icon + word on the first line, as before; the caption sits under them so what a
     // mode does is written on the tile you tap. The caption is quieter than the word
     // (onSurfaceVariant) and dims a little more on the tile that isn't picked, but
-    // stays readable there: it is what you read before choosing.
+    // stays readable there: it is what you read before choosing. Content starts at the
+    // top rather than centred, so "Online" and "Offline" stay on one line across the
+    // pair when only one caption wraps.
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
@@ -138,7 +140,6 @@ private fun ModeTile(
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
