@@ -132,6 +132,18 @@ class RemoteVectorsTest {
         }
     }
 
+    @Test fun `the states a browser writes read back as they went in, bye included`() {
+        val states = v["writes"]!!.jsonArray.map { it.jsonObject }.filter { it["doc"]!!.jsonObject.s("kind") == RemoteWire.STATE_KIND }
+        assertThat(states.count { it["in"]!!.jsonObject["bye"]?.jsonPrimitive?.booleanOrNull == true }).isAtLeast(1)
+        for (c in states) {
+            val i = c["in"]!!.jsonObject
+            val s = RemoteWire.readState(c["doc"].toString())
+            assertWithMessage(c.s("name")).that(s.sid).isEqualTo(i.s("sid"))
+            assertWithMessage(c.s("name")).that(s.playing).isEqualTo(i["playing"]!!.jsonPrimitive.booleanOrNull)
+            assertWithMessage(c.s("name")).that(s.bye).isEqualTo(i["bye"]?.jsonPrimitive?.booleanOrNull == true)
+        }
+    }
+
     @Test fun `the phone writes commands exactly as the vectors do`() {
         val cmds = v["writes"]!!.jsonArray.map { it.jsonObject }.filter { it["doc"]!!.jsonObject.s("kind") == RemoteWire.CMD_KIND }
         assertThat(cmds.map { it["in"]!!.jsonObject.s("cmd") }.toSet())
@@ -203,6 +215,6 @@ class RemoteVectorsTest {
          * stash-player `src/lib/sync/remote.test.ts` pins the same bytes (feat/remote-drive e9694691, Remote v2). Change both repos
          * and both pins together, or neither.
          */
-        const val REMOTE_SHA256 = "eee899ddc56c3e02cc8d4a142f27643c2289097fdfd08b5f434dffce3e1053a7"
+        const val REMOTE_SHA256 = "93e7bbc62f193e172c587c8b8102bf83423b6095c3da0609a49443a4086ecf99"
     }
 }

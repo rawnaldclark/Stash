@@ -2,7 +2,7 @@
 
 Date: 2026-11-03. Plan: `~/.stash/release/plan-2026-11-03-remote/PLAN.md` (owner said "go" with every §8 default).
 Protocol: stash-player `docs/sync-v1.md` §5.7 "Driving", vectors `src/lib/sync/fixtures/remote-vectors.json`
-(SHA-256 `eee899dd…53a7`, pinned in `RemoteVectorsTest`).
+(stash-player 3540d03, SHA-256 `93e7bbc6…cf99`, pinned in `RemoteVectorsTest`).
 
 ## What the user gets
 
@@ -66,7 +66,10 @@ Now Playing / mini player / notification ──► MediaSession ──► CastSe
     `driver`, and what it missed is said again.
   - Ends by itself:
     - the tab says `bye` (a state sent sealed on `pagehide` as it closes or reloads): at once, as closed (paused here,
-      "Chrome on Windows closed" with Play). Nothing else in that state is taken (sealed ahead, its position is old);
+      "Chrome on Windows closed" with Play). Only `bye: true` counts, and only with the session id of the newest state from
+      that browser: one with an older id is a replay the relay could make, and is ignored (WebRemote doesn't even keep it).
+      Nothing else in that state is taken (sealed ahead, its position can be a heartbeat old: the phone's own estimate
+      stands);
     - the browser gone without a bye (its socket, or silent 65 s) for 30 s, as "Reconnecting to Chrome…". A driven tab
       tries again after 1 s, then every 2 s; on the device run a 10 s network cut came back at 16.5 s, past the old 15 s;
     - this phone's socket down for 60 s from the drop;
