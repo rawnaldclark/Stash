@@ -41,6 +41,12 @@ import kotlinx.serialization.json.Json
 private val SQLITE_MAGIC: ByteArray = "SQLite format 3".toByteArray(Charsets.US_ASCII) + 0
 
 /**
+ * What the user reads when a file fails [DatabaseBackupManager.verifyDatabaseIntegrity]. SQLite's own
+ * words go in [DatabaseIntegrityException.detail] and the log, never in this message.
+ */
+private const val CORRUPT_BACKUP_MESSAGE = "The backup database is corrupt and was not restored."
+
+/**
  * This phone's Community key (CommunityKeyStore). Never backed up or restored, and matched by prefix so DataStore's
  * leftover `.tmp` copy of it stays out too: a new phone is a new Community identity.
  */
@@ -333,13 +339,13 @@ class DatabaseBackupManager @Inject constructor(
         if (stagedWal.exists() && stagedWal.length() > 0L) {
             throw IllegalStateException("Could not prepare a consistent copy of your library for backup.")
         }
+        // No search-index repair here: this copy is of the live database, which 76 -> 77 already
+        // rebuilt on its first open, so a failure is something else and the user should hear of it.
         try {
             verifyDatabaseIntegrity(target)
-        } catch (e: IllegalStateException) {
-            val detail = e.message?.substringAfter(" [", "")
-                ?.takeIf { it.isNotEmpty() }?.let { " [$it" } ?: ""
-            throw IllegalStateException(
-                "Your library failed its integrity check, so no backup was written.$detail", e,
+        } catch (e: DatabaseIntegrityException) {
+            throw DatabaseIntegrityException(
+                "Your library failed its integrity check, so no backup was written.", e.detail, e,
             )
         }
     }
@@ -430,8 +436,16 @@ class DatabaseBackupManager @Inject constructor(
      * Note no unit test can guard this: Robolectric does not enforce
      * `OPEN_READONLY` (verified 2026-07-26 — a READONLY handle accepts INSERT
      * there), so the read-only failure is only reproducible on a device.
+     *
+     * [repairSearchIndex] is for the import only: when every problem is about
+     * `tracks_fts`, the search index is rebuilt on this staged copy and checked
+     * again ([repairSearchIndexIfOnlyProblem], #838). Anything else fails as
+     * before. Export leaves it off: its copy is of the live database.
+     *
+     * Throws [DatabaseIntegrityException]: a plain message for the user, and
+     * SQLite's own words in `detail`, which are logged here.
      */
-    internal fun verifyDatabaseIntegrity(file: File) {
+    internal fun verifyDatabaseIntegrity(file: File, repairSearchIndex: Boolean = false) {
         // Structural gate FIRST, before SQLite sees the file. Every SQLite
         // database begins with the 16-byte magic "SQLite format 3"; a
         // truncated download or a wrong file picked in the chooser does not.
@@ -447,32 +461,21 @@ class DatabaseBackupManager @Inject constructor(
         val header = ByteArray(SQLITE_MAGIC.size)
         val read = file.inputStream().use { it.read(header) }
         if (read != header.size || !header.contentEquals(SQLITE_MAGIC)) {
-            android.util.Log.e("BackupManager", "bad SQLite header on ${file.name} (read=$read)")
-            throw IllegalStateException("The backup database is corrupt and was not restored. [bad file header]")
+            val detail = "bad SQLite header (read $read bytes)"
+            android.util.Log.e("BackupManager", "$detail on ${file.name}")
+            throw DatabaseIntegrityException(CORRUPT_BACKUP_MESSAGE, detail)
         }
 
         val db = android.database.sqlite.SQLiteDatabase.openDatabase(
             file.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE,
         )
         db.use {
-            val problems = mutableListOf<String>()
-            var rows = 0
-            it.rawQuery("PRAGMA integrity_check", null).use { cursor ->
-                while (cursor.moveToNext() && rows < 20) {
-                    rows++
-                    val row = cursor.getString(0)
-                    if (!row.equals("ok", ignoreCase = true)) problems += row
-                }
-            }
-            if (rows == 0) problems += "integrity_check returned no rows"
+            var problems = integrityProblems(it)
+            if (repairSearchIndex) problems = repairSearchIndexIfOnlyProblem(it, problems, file.name)
             if (problems.isNotEmpty()) {
-                android.util.Log.e(
-                    "BackupManager",
-                    "integrity_check failed on ${file.name}: ${problems.joinToString(" | ")}",
-                )
-                throw IllegalStateException(
-                    "The backup database is corrupt and was not restored. [${problems.first().take(120)}]",
-                )
+                val detail = problems.joinToString(" | ")
+                android.util.Log.e("BackupManager", "integrity_check failed on ${file.name}: $detail")
+                throw DatabaseIntegrityException(CORRUPT_BACKUP_MESSAGE, detail)
             }
         }
     }
@@ -658,17 +661,11 @@ class DatabaseBackupManager @Inject constructor(
                     if (!stagedDb.exists()) {
                         throw IllegalStateException("The selected backup contains no database.")
                     }
-                    verifyDatabaseIntegrity(stagedDb)
-                    if (scope.swapsDatabaseFile) {
-                        rollStagedDatabaseForward(stagedDb)
-                        // TEMP diagnostic: is the index still healthy after the migration chain?
-                        try {
-                            verifyDatabaseIntegrity(stagedDb)
-                            android.util.Log.i("BackupManager", "post-migration integrity: ok")
-                        } catch (e: Exception) {
-                            android.util.Log.e("BackupManager", "post-migration integrity FAILED: ${e.message}")
-                        }
-                    }
+                    // A backup made on schema 67-76 can carry a stale search index, which
+                    // Android 15+ calls corrupt; this check runs before the migration chain
+                    // whose 76 -> 77 would rebuild it, so it repairs the staged copy itself.
+                    verifyDatabaseIntegrity(stagedDb, repairSearchIndex = true)
+                    if (scope.swapsDatabaseFile) rollStagedDatabaseForward(stagedDb)
                 } catch (e: Exception) {
                     cleanupStaging(stagedDb, stagedDatastore)
                     throw e
