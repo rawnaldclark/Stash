@@ -310,6 +310,16 @@ class WebCastRemote(
         unheard.removeAll { kindOf(it) == kindOf(c) } // only the latest of each kind is worth saying again
         unheard += c
         last = last?.let { RemoteCards.optimistic(it, c, clock()) }
+        // Until the browser names the song it was handed, a seek or a play-or-pause is where and whether that song starts: a
+        // load of it sent again (unanswered, or after a reconnect) says that, not what the first load said.
+        val cur = current ?: return
+        if (last?.state?.iid == cur.item.id) return
+        current = when (c) {
+            is RemoteCommand.Seek -> Sent(cur.item, c.positionMs, cur.autoplay)
+            RemoteCommand.Play -> Sent(cur.item, cur.startMs, autoplay = true)
+            RemoteCommand.Pause -> Sent(cur.item, cur.startMs, autoplay = false)
+            else -> cur
+        }
     }
 
     override fun addListener(listener: () -> Unit) {
@@ -493,7 +503,9 @@ class WebCastRemote(
                 return@launch
             }
             val c = current ?: return@launch
-            send(RemoteCommand.Load(c.item, c.startMs, c.autoplay, from))
+            val (position, play) = startOf(c, last)
+            log("load ${c.item.id} at $position play=$play (answer re-send)")
+            send(RemoteCommand.Load(c.item, position, play, from))
             delay(NO_ANSWER_MS)
             failedId = c.item.id
             notifyListeners()

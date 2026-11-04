@@ -499,6 +499,21 @@ class WebCastRemoteTest {
         assertThat(r.status.idleReason).isEqualTo(CastStatus.IdleReason.NONE)
     }
 
+    @Test fun `a later song sent again unanswered goes where and how the phone wants it now, not as its first load said`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1"))
+        r.load(media("50#2", nights), 0, autoplay = true)
+        // A seek and a pause before the browser named it; its states since (still the song before) took them as heard.
+        r.seekTo(45_000)
+        r.pause()
+        r.onState(state(iid = "42#1", positionMs = 45_000, playing = false, phase = RemotePhase.PAUSED))
+        sent.clear()
+        advanceTimeBy(WebCastRemote.NO_ANSWER_MS + 1)
+        runCurrent()
+        assertThat(sent).containsExactly(RemoteCommand.Load(RemoteItem("50#2", nights), 45_000, false, "Blonde"))
+    }
+
     @Test fun `while this phone's connection is down nothing goes unanswered, and what it missed goes out on its return`() = runTest {
         val r = remote()
         r.load(media("42#1"), 0, autoplay = true)
