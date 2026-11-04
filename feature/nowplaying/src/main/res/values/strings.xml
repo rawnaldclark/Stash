@@ -61,4 +61,15 @@
     <string name="play_on_queue_phone_only">Only on this phone</string>
     <string name="play_on_queue_phone_only_tap">“%1$s” is only on your phone</string>
     <string name="play_on_queue_play_here">Play on this phone</string>
+    <!-- Why a pinned action is missing from the Now Playing top bar (the pin editor says so under it). -->
+    <string name="np_hidden_casting">Hidden while casting</string>
+    <string name="np_hidden_download_mode">Nothing streams in Download mode</string>
+    <string name="np_hidden_preview">Previews cannot be downloaded</string>
+    <string name="np_hidden_soundcloud">This plays the exact SoundCloud upload</string>
+    <string name="np_hidden_together">Hidden while listening together</string>
+    <string name="np_hidden_scanned">Not for songs from your folders</string>
+    <string name="np_hidden_cloud">Not for songs from your cloud storage</string>
+    <string name="np_hidden_no_cast">Cast isn\'t available on this phone</string>
+    <string name="np_hidden_other">Not available right now</string>
+    <string name="np_hidden_overflow">In the menu for now: no room on this screen</string>
 </resources>

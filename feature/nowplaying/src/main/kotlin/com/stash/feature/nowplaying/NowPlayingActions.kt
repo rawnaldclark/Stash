@@ -1,5 +1,6 @@
 package com.stash.feature.nowplaying
 
+import androidx.annotation.StringRes
 import com.stash.core.data.prefs.NowPlayingAction
 
 /*
@@ -183,24 +184,23 @@ internal fun editableActions(pins: Set<NowPlayingAction>, ctx: ActionContext): L
         }
     }
 
-/** Why a pinned action is missing from the row right now, or null when it shows. */
-internal fun hiddenReason(action: NowPlayingAction, ctx: ActionContext): String? = when {
+/** Why a pinned action is missing from the row right now (a string resource), or null when it shows. */
+@StringRes
+internal fun hiddenReason(action: NowPlayingAction, ctx: ActionContext): Int? = when {
     isActionAvailable(action, ctx) -> null
     // A browser playing the queue hides it (it streams for itself); otherwise only Download mode does.
-    ctx.onBrowser && action == NowPlayingAction.STREAM_QUALITY -> "Hidden while casting"
-    action == NowPlayingAction.STREAM_QUALITY -> "Nothing streams in Download mode"
-    ctx.isPreview && action == NowPlayingAction.DOWNLOAD -> "Previews cannot be downloaded"
-    ctx.isSoundCloudSong && action == NowPlayingAction.FLAG_WRONG_MATCH -> "This plays the exact SoundCloud upload"
-    ctx.inRoom && action != NowPlayingAction.POST_TO_COMMUNITY -> "Hidden while listening together"
-    ctx.isScannedSong && action in SCANNED_HIDDEN -> "Not for songs from your folders"
-    ctx.isCloudSong && action in CLOUD_HIDDEN -> "Not for songs from your cloud storage"
-    action == NowPlayingAction.CAST -> "Cast isn't available on this phone"
-    ctx.casting && action == NowPlayingAction.PLAYBACK_SPEED -> "Hidden while casting"
-    else -> "Not available right now"
+    ctx.onBrowser && action == NowPlayingAction.STREAM_QUALITY -> R.string.np_hidden_casting
+    action == NowPlayingAction.STREAM_QUALITY -> R.string.np_hidden_download_mode
+    ctx.isPreview && action == NowPlayingAction.DOWNLOAD -> R.string.np_hidden_preview
+    ctx.isSoundCloudSong && action == NowPlayingAction.FLAG_WRONG_MATCH -> R.string.np_hidden_soundcloud
+    ctx.inRoom && action != NowPlayingAction.POST_TO_COMMUNITY -> R.string.np_hidden_together
+    ctx.isScannedSong && action in SCANNED_HIDDEN -> R.string.np_hidden_scanned
+    ctx.isCloudSong && action in CLOUD_HIDDEN -> R.string.np_hidden_cloud
+    action == NowPlayingAction.CAST -> R.string.np_hidden_no_cast
+    ctx.casting && action == NowPlayingAction.PLAYBACK_SPEED -> R.string.np_hidden_casting
+    else -> R.string.np_hidden_other
 }
 
-/** The editor's note for a pin that is in the ⋮ menu only because this screen is too narrow. */
-internal const val OVERFLOW_NOTE = "In the menu for now: no room on this screen"
 
 /**
  * True when the row can take no more pins (the editor dims the empty pins and says why). The

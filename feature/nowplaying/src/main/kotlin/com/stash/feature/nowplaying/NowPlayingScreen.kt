@@ -1505,6 +1505,7 @@ fun NowPlayingScreen(
     }
 
     if (showOptionsSheet && track != null) WithAlbumChrome { sheetChrome ->
+        val appResources = androidx.compose.ui.platform.LocalContext.current.resources
         NowPlayingOptionsSheet(
             // Pins with no room in the row this frame come back here as ordinary rows.
             menu = menuActions(pins, actionCtx, rowFit.overflow),
@@ -1512,7 +1513,9 @@ fun NowPlayingScreen(
             pins = pins,
             visualState = visualState,
             hiddenReason = { action ->
-                hiddenReason(action, actionCtx) ?: OVERFLOW_NOTE.takeIf { action in rowFit.overflow }
+                // The editor's note for a pin in the ⋮ menu only because this screen is too narrow.
+                (hiddenReason(action, actionCtx) ?: R.string.np_hidden_overflow.takeIf { action in rowFit.overflow })
+                    ?.let(appResources::getString)
             },
             accent = sheetChrome.ink,
             onAction = { action -> onAction(action); showOptionsSheet = false },
