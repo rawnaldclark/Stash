@@ -149,6 +149,14 @@ class WebCastRemote(
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > MAX_IDS
     }
 
+    /**
+     * Each id handed to the browser as the next song this session → that song ([songOf]). A queue that shifted while the browser
+     * was away queues the same song again under a new id the browser never got; the id it holds is still that song ([movedOnTo]).
+     */
+    private val nextSongs = object : LinkedHashMap<String, String>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > MAX_IDS
+    }
+
     // ── What the wrapper reads ─────────────────────────────────────────
 
     override val status: CastStatus
@@ -222,6 +230,7 @@ class WebCastRemote(
         val m = nextMedia
         val song = m?.song
         val item = if (m != null && song != null) RemoteItem(wireId(m.contentId), song) else null
+        if (item != null) nextSongs[item.id] = songOf(m!!.contentId)
         next = item
         upNextSent = true
         send(RemoteCommand.UpNext(listOfNotNull(item)))
@@ -360,13 +369,7 @@ class WebCastRemote(
         last = b
         cancelGrace()
         if (s.driver == me && s.iid != null) {
-            val n = next
-            if (n != null && s.iid == n.id && s.iid != current?.item?.id) {
-                // It moved on by itself to the song queued there: that is the song it should be on now.
-                current = Sent(n, 0L, autoplay = true)
-                next = null
-                upNextSent = false
-            }
+            s.iid?.takeIf { it != current?.item?.id }?.let(::movedOnTo)
             if (contentIds.containsKey(s.iid)) driving = true
             if (s.iid == current?.item?.id) {
                 answerJob?.cancel()
@@ -387,6 +390,32 @@ class WebCastRemote(
             startGrace(End.CLOSED, CLOSED_GRACE_MS)
             notifyListeners()
         }
+    }
+
+    /**
+     * The browser plays [iid], not [current]. When [iid] was handed to it as the next song and the wrapper still has that song
+     * next, it moved on to it by itself: that is the song it should be on now. The wrapper may have queued that song again under
+     * a new id the browser never got (the queue shifted while it was away: an edit, the window sliding, a radio splice); [iid]
+     * then stands for the new id, so the wrapper sees the song it queued start, and nothing is loaded again (the song before
+     * from its end, then this one from 0:00).
+     */
+    private fun movedOnTo(iid: String) {
+        val n = next
+        val queued = nextMedia
+        val queuedSong = queued?.song
+        val item = when {
+            queued != null && queuedSong != null && nextSongs[iid] == songOf(queued.contentId) -> {
+                if (contentIds[iid] != queued.contentId) log("moved on to $iid: the song queued now as ${queued.contentId}")
+                contentIds[iid] = queued.contentId
+                dropUpNext() // an upNext still waiting would queue the same song after itself
+                RemoteItem(iid, queuedSong)
+            }
+            n != null && iid == n.id -> n
+            else -> return
+        }
+        current = Sent(item, 0L, autoplay = true)
+        next = null
+        upNextSent = false
     }
 
     /**
@@ -529,6 +558,9 @@ class WebCastRemote(
 
         /** The ids remembered: the current song and the next are all a browser can name. */
         private const val MAX_IDS = 32
+
+        /** The song in a wrapper's content id: its media id, before the `#` and the load counter ([CastMedia.contentId]). */
+        private fun songOf(contentId: String): String = contentId.substringBeforeLast('#')
 
         private const val TAG = "WebCastRemote"
 

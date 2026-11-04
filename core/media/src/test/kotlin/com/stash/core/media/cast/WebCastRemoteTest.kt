@@ -399,6 +399,36 @@ class WebCastRemoteTest {
         assertThat(again.status.contentId).isEqualTo("51#n1")
     }
 
+    @Test fun `a queue that shifted while the browser was away doesn't send it back, the song it held is the one queued now`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1"))
+        r.setNext(media("43#n1", nights))
+        advanceTimeBy(WebCastRemote.UP_NEXT_COALESCE_MS + 1)
+        runCurrent()
+        r.onState(state(iid = "42#1", next = "43#n1"))
+        r.onState(null) // gone for a moment
+        // A queue edit meanwhile shifted the index: the wrapper queues the same song again under a new id, never received.
+        r.setNext(media("43#n2", nights))
+        advanceTimeBy(WebCastRemote.UP_NEXT_COALESCE_MS + 1)
+        runCurrent()
+        sent.clear()
+        // Back on a new session, on the song it held (the one before ended while it was away).
+        r.onState(state(iid = "43#n1", sid = "Reconnected01", positionMs = 4_000))
+        // Not the song before from its end, then this one from 0:00: nothing is loaded.
+        assertThat(sent).isEmpty()
+        // The wrapper sees the song it queued start, so it moves on without a load of its own.
+        assertThat(r.status.contentId).isEqualTo("43#n2")
+        assertThat(r.status.playerState).isEqualTo(CastStatus.PlayerState.PLAYING)
+        assertThat(r.status.positionMs).isEqualTo(4_000)
+        assertThat(r.link.value).isEqualTo(WebCastRemote.Link.READY)
+        // What it queues next goes out as the song after this one.
+        r.setNext(media("44#n3"))
+        advanceTimeBy(WebCastRemote.UP_NEXT_COALESCE_MS + 1)
+        runCurrent()
+        assertThat(sent).containsExactly(RemoteCommand.UpNext(listOf(RemoteItem("44#n3", song))))
+    }
+
     @Test fun `a song the browser should hold but doesn't is loaded where the phone is on it now, not where its load began`() = runTest {
         val r = remote()
         r.load(media("42#1"), 0, autoplay = true)
