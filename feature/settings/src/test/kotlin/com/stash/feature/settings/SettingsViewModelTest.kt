@@ -59,6 +59,7 @@ class SettingsViewModelTest {
     private val tokenManager = mockk<com.stash.core.auth.TokenManager>(relaxed = true)
     private val likeCoordinator = mockk<com.stash.core.data.social.LikeCoordinator>(relaxed = true)
     private val syncStateManager = com.stash.core.data.sync.SyncStateManager()
+    private var syncPreferences: com.stash.core.data.sync.SyncPreferencesManager = mockk(relaxed = true)
 
     private fun newVm(losslessConfigured: Boolean = true) = SettingsViewModel(
         appContext = mockk(relaxed = true),
@@ -113,6 +114,7 @@ class SettingsViewModelTest {
         discordRpcCoordinator = mockk(relaxed = true),
         syncStateManager = syncStateManager,
         likeCoordinator = likeCoordinator,
+        syncPreferences = syncPreferences,
     )
 
     // -- Display size (UI scale) ---------------------------------------------
@@ -453,6 +455,54 @@ class SettingsViewModelTest {
         assertThat(vm.spotifyAccountMismatch.value).isNull()
         assertThat(syncStateManager.authExpiry.value.spotifyExpired).isTrue()
         coVerify(exactly = 0) { likeCoordinator.retry(any()) }
+    }
+
+    @Test fun `Cancel drops a Spotify sign-in still being checked`() = runTest {
+        var dropped = false
+        coEvery { tokenManager.connectSpotifyWithCookie(any(), any()) } coAnswers {
+            try {
+                kotlinx.coroutines.awaitCancellation()
+            } finally {
+                dropped = true
+            }
+        }
+        spotifySessionExpired()
+        val vm = newVm()
+        vm.onConnectSpotifyWithCookie("rawn-cookie", "")
+        advanceUntilIdle()
+
+        vm.onDismissSpotifyCookieDialog()
+        advanceUntilIdle()
+
+        assertThat(dropped).isTrue()
+        // Nothing connected, so nothing is settled.
+        assertThat(syncStateManager.authExpiry.value.spotifyExpired).isTrue()
+        assertThat(vm.spotifyAccountMismatch.value).isNull()
+        coVerify(exactly = 0) { likeCoordinator.retry(any()) }
+    }
+
+    @Test fun `the Disconnect confirmation knows when Spotify syncs in Refresh mode`() = runTest {
+        syncPreferences = mockk(relaxed = true) {
+            every { spotifySyncMode } returns flowOf(com.stash.core.model.SyncMode.REFRESH)
+        }
+        val vm = newVm()
+        val job = launch { vm.spotifyRefreshMode.collect {} }
+        advanceUntilIdle()
+
+        assertThat(vm.spotifyRefreshMode.value).isTrue()
+        job.cancel()
+    }
+
+    @Test fun `in Accumulate mode the Disconnect confirmation stays as it was`() = runTest {
+        syncPreferences = mockk(relaxed = true) {
+            every { spotifySyncMode } returns flowOf(com.stash.core.model.SyncMode.ACCUMULATE)
+        }
+        val vm = newVm()
+        val job = launch { vm.spotifyRefreshMode.collect {} }
+        advanceUntilIdle()
+
+        assertThat(vm.spotifyRefreshMode.value).isFalse()
+        job.cancel()
     }
 
     @Test fun `dismissing the Spotify account message clears it`() = runTest {

@@ -151,7 +151,8 @@ interface TokenManager {
      * Learns and records which Spotify account the stored sign-in belongs to, when that isn't
      * known yet (signed in before Stash recorded it). Without it, a later sign-in as another
      * account couldn't be told apart, so the account-swap guard couldn't refuse it. Called while
-     * the session is known to work (the sync's auth probe). Best-effort, one try per process.
+     * the session is known to work (the sync's auth probe). Best-effort: a failed lookup is tried
+     * again a few hours later.
      */
     suspend fun rememberSpotifyAccount() = Unit
 }

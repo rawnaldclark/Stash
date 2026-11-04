@@ -154,6 +154,7 @@ class SettingsViewModel @Inject constructor(
     private val syncStateManager: com.stash.core.data.sync.SyncStateManager,
     /** The line under each "Like on … too" switch, and its "tap to retry". */
     private val likeCoordinator: com.stash.core.data.social.LikeCoordinator,
+    private val syncPreferences: com.stash.core.data.sync.SyncPreferencesManager,
 ) : ViewModel() {
 
     // ── ListenBrainz ────────────────────────────────────────────────────────
@@ -1317,7 +1318,8 @@ class SettingsViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
+        spotifyConnectJob?.cancel()
+        spotifyConnectJob = viewModelScope.launch {
             _localState.update {
                 it.copy(isSpotifyCookieValidating = true, spotifyCookieError = null)
             }
@@ -1364,6 +1366,9 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** The Spotify sign-in being checked, which Cancel in its dialog drops. */
+    private var spotifyConnectJob: Job? = null
+
     private val _spotifyAccountMismatch = MutableStateFlow<SpotifyAccountMismatch?>(null)
 
     /**
@@ -1379,9 +1384,19 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * Dismisses the Spotify cookie input dialog without connecting.
+     * True while Spotify syncs in Refresh mode, when the Disconnect confirmation says what a
+     * different account's first sync would do. One dialog reads it, so it stays out of [uiState].
+     */
+    val spotifyRefreshMode: StateFlow<Boolean> = syncPreferences.spotifySyncMode
+        .map { it == com.stash.core.model.SyncMode.REFRESH }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /**
+     * Dismisses the Spotify cookie input dialog without connecting. A check still running is
+     * dropped: nothing is saved until its very last step, and this stops it short of that.
      */
     fun onDismissSpotifyCookieDialog() {
+        spotifyConnectJob?.cancel()
         _localState.update {
             it.copy(
                 showSpotifyCookieDialog = false,

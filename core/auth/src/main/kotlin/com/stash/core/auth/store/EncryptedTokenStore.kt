@@ -33,7 +33,7 @@ private val Context.authDataStore by preferencesDataStore(
  * into a single encrypted blob per service.
  */
 @Serializable
-private data class StoredToken(
+internal data class StoredToken(
     val accessToken: String,
     val refreshToken: String,
     val expiresAtEpoch: Long,
@@ -41,13 +41,38 @@ private data class StoredToken(
     val userId: String = "",
     val displayName: String = "",
     val imageUrl: String = "",
-)
+) {
+    /**
+     * This stored sign-in with [refreshed]'s new access token, keeping its user, or null when it
+     * isn't the sign-in that was refreshed (its cookie isn't [spDcCookie]). A token endpoint can
+     * take its time: a Disconnect or a new sign-in landing meanwhile has to win.
+     */
+    fun afterRefresh(spDcCookie: String, refreshed: ServiceToken): StoredToken? =
+        if (refreshToken != spDcCookie) {
+            null
+        } else {
+            copy(
+                accessToken = refreshed.accessToken,
+                refreshToken = refreshed.refreshToken,
+                expiresAtEpoch = refreshed.expiresAtEpoch,
+                scope = refreshed.scope,
+            )
+        }
+}
 
 /** Stored form of [SpotifyProfile]: which account the stored Spotify sign-in belongs to. */
 @Serializable
 private data class StoredSpotifyAccount(
     val userId: String,
     val displayName: String = "",
+)
+
+/** The stored Spotify sign-in and whose account it is, both from one read of the store. */
+data class StoredSpotifySignIn(
+    /** Null when signed out. */
+    val token: ServiceToken?,
+    /** Null when it isn't known: signed out, or signed in before Stash recorded it. */
+    val account: SpotifyProfile?,
 )
 
 /**
@@ -90,18 +115,31 @@ class EncryptedTokenStore @Inject constructor(
         prefs[Keys.SPOTIFY]?.let { decryptUser(it) }
     }
 
-    /** Persists the Spotify token (and optionally user profile) as an encrypted blob. */
-    suspend fun saveSpotifyToken(token: ServiceToken, user: UserInfo? = null) {
-        val stored = token.toStoredToken(user)
-        saveBlob(Keys.SPOTIFY, encryptStored(stored))
+    /**
+     * Saves a refreshed token, keeping the stored user, in ONE write and only while the stored
+     * sign-in is still [spDcCookie], the cookie it was refreshed from. Otherwise a Disconnect or a
+     * new sign-in made during the refresh would be undone, and the old account's token put back
+     * under the new account's record. Returns true when it was written.
+     */
+    suspend fun saveRefreshedSpotifyToken(spDcCookie: String, refreshed: ServiceToken): Boolean {
+        var written = false
+        editSweepingAfterKeysetReset { prefs ->
+            val current = prefs[Keys.SPOTIFY]?.let { runCatching { decryptStored(it) }.getOrNull() }
+            current?.afterRefresh(spDcCookie, refreshed)?.let {
+                prefs[Keys.SPOTIFY] = encryptStored(it)
+                written = true
+            }
+        }
+        return written
     }
 
-    /**
-     * Which Spotify account the stored sign-in belongs to, or null when it isn't known: signed out,
-     * signed in before Stash recorded it (learned at the next sync), or Spotify didn't say.
-     */
-    val spotifyAccount: Flow<SpotifyProfile?> = context.authDataStore.data.map { prefs ->
-        prefs[Keys.SPOTIFY_ACCOUNT]?.let { decryptAccount(it) }
+    /** The stored Spotify sign-in and whose account it is, read together. */
+    suspend fun readSpotifySignIn(): StoredSpotifySignIn {
+        val prefs = context.authDataStore.data.first()
+        return StoredSpotifySignIn(
+            token = prefs[Keys.SPOTIFY]?.let { decryptToken(it) },
+            account = prefs[Keys.SPOTIFY_ACCOUNT]?.let { decryptAccount(it) },
+        )
     }
 
     /**

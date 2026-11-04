@@ -100,7 +100,8 @@ fun SettingsAccountsScreen(
     }
 
     // A sign-in as a different Spotify account than the connected one was refused (nothing was
-    // replaced): say whose account is connected and how to switch on purpose.
+    // replaced). Usually a Reconnect that landed on the wrong account, so it says how to get the
+    // connected account back first, then how to switch on purpose.
     val spotifyMismatch by viewModel.spotifyAccountMismatch.collectAsStateWithLifecycle()
     spotifyMismatch?.let { mismatch ->
         AlertDialog(
@@ -242,8 +243,10 @@ fun SettingsAccountsScreen(
             )
         }
         if (confirmSpotifyDisconnect) {
+            val spotifyRefreshMode by viewModel.spotifyRefreshMode.collectAsStateWithLifecycle()
             com.stash.feature.settings.components.DisconnectAccountDialog(
                 serviceName = "Spotify",
+                note = if (spotifyRefreshMode) stringResource(R.string.settings_disconnect_spotify_refresh_note) else null,
                 onConfirm = {
                     confirmSpotifyDisconnect = false
                     // Also sign the WebView out, or the next Connect re-submits the old sp_dc.
