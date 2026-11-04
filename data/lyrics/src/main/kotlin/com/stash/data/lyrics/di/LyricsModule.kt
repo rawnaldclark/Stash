@@ -39,11 +39,11 @@ annotation class LrclibBaseUrl
  *
  * Three responsibilities:
  * 1. Binds the production [InnerTubeLyricsGateway] implementation.
- * 2. Provides an ordered `List<LyricsSource>` (LRCLIB, then KuGou, then InnerTube)
+ * 2. Provides an ordered `List<LyricsSource>` (see `provideLyricsSources`)
  *    consumed by [com.stash.data.lyrics.LyricsRepository]. Ordering is
- *    semantic — LRCLIB wins because it can return synced LRC, InnerTube
- *    is plain-text fallback — so a multibinding `Set` is deliberately
- *    NOT used (sets do not preserve insertion order).
+ *    semantic — word-synced first, InnerTube's plain text last among the
+ *    existing sources — so a multibinding `Set` is deliberately NOT used
+ *    (sets do not preserve insertion order).
  * 3. Binds [Clock] -> [SystemClock] for the repository's epoch-millis stamps.
  *    Lives here because `:core:common` is currently Hilt-free; if other
  *    modules later need [Clock], lift this binding to a shared module.
@@ -68,10 +68,19 @@ abstract class LyricsModule {
     companion object {
 
         /**
-         * Ordered source chain consumed by `LyricsRepository`. The order defines fallback
-         * priority: lrc.red, Binimum, Spicy Lyrics, Apple TTML (paxsenix), LRCLIB, KuGou, InnerTube.
-         * lrc.red and Binimum are `onDemandOnly`: asked only for on-demand lookups, and their
-         * failures count as misses.
+         * Ordered source chain consumed by `LyricsRepository`. The order
+         * defines fallback priority: Apple TTML (word-synced), Spicy Lyrics
+         * (word- or line-synced), LRCLIB (synced LRC), KuGou, InnerTube (plain
+         * text), then lrc.red and Binimum.
+         *
+         * Spicy Lyrics, lrc.red and Binimum are on-demand-only (see
+         * `LyricsSource.onDemandOnly`): asked only for a track being played or
+         * just downloaded, and their failures count as misses. Spicy sits right
+         * after Apple (owner's decision on #837); lrc.red and Binimum come LAST
+         * on purpose (#671): they must never delay lyrics an existing source
+         * would return. When an earlier source answers without word timing,
+         * the repository gives the on-demand sources one background follow-up
+         * try instead.
          */
         @Provides
         @Singleton
@@ -88,6 +97,11 @@ abstract class LyricsModule {
         ): List<@JvmSuppressWildcards LyricsSource> {
             val versionName = versionName(context)
             return listOf(
+                appleTtml, // lyrics.paxsenix.org
+                spicy,
+                lrclib,
+                kugou,
+                ytmusic,
                 IsrcTtmlLyricsSource(
                     okHttpClient, versionName, IsrcTtmlLyricsSource.LRC_RED_ID,
                     "lrc.red (word-synced)", IsrcTtmlLyricsSource.LRC_RED_URL, isrcResolver, breaker,
@@ -96,20 +110,18 @@ abstract class LyricsModule {
                     okHttpClient, versionName, IsrcTtmlLyricsSource.BINIMUM_ID,
                     "Binimum (word-synced)", IsrcTtmlLyricsSource.BINIMUM_URL, isrcResolver, breaker,
                 ),
-                spicy,
-                appleTtml, // lyrics.paxsenix.org
-                lrclib,
-                kugou,
-                ytmusic,
             )
         }
 
+        /**
+         * Spicy Lyrics through its contributor's proxy, which adds the Spicy key and caches by
+         * track id (so no key is in the APK). Same DNS-over-HTTPS as the other lyrics hosts (`LyricsDns`).
+         */
         @Provides
         @Singleton
         fun provideSpicyLyricsSource(
             okHttpClient: OkHttpClient,
             @ApplicationContext context: Context,
-            clock: Clock,
         ): SpicyLyricsSource = SpicyLyricsSource(
             client = okHttpClient,
             appVersionName = versionName(context),

@@ -6,10 +6,12 @@ import com.stash.core.common.SystemClock
 import com.stash.data.lyrics.parser.TtmlParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Dns
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
 import java.util.Locale
@@ -18,9 +20,19 @@ import kotlin.math.roundToLong
 
 /**
  * Spicy Lyrics (api.spicylyrics.org): best available sync for a Spotify track id.
- * Syllable -> word-synced TTML (built here, parsed like Apple's), Line -> synced LRC, Static -> plain.
+ * Syllable -> word-synced TTML (built here, parsed like Apple's), Line -> synced LRC.
+ * Static (plain text) is a miss: taking it would stop the walk before LRCLIB and KuGou, which
+ * often have the song line-synced.
  * Needs [LyricsQuery.spotifyTrackId]; without one it is a clean miss.
  * Blank [apiKey] + default [baseUrl] -> off. Blank [apiKey] + custom [baseUrl] (a proxy that adds the key) -> no auth header.
+ *
+ * [onDemandOnly]: asked only for a track being played or just downloaded (in its place right after
+ * Apple, see `LyricsModule`), and by the word-synced upgrades that ask the on-demand sources (Now
+ * Playing's action, "Re-check library", the follow-up after a line-synced answer).
+ *
+ * Never throws: 404 is a plain miss; a 429, 401/403, any other failed status, a transport failure
+ * or a 200 that isn't JSON (a Cloudflare challenge page, say) is a miss that also opens a
+ * [SKIP_WINDOW_MS] window, so a host in trouble isn't asked again on every song.
  */
 class SpicyLyricsSource(
     client: OkHttpClient,
@@ -28,14 +40,17 @@ class SpicyLyricsSource(
     private val baseUrl: String = DEFAULT_BASE_URL,
     private val apiKey: String = "",
     private val clock: Clock = SystemClock(),
+    /** [LyricsDns] in the app; tests pass [Dns.SYSTEM] so they never reach Cloudflare. */
+    lyricsDns: Dns = LyricsDns(),
 ) : LyricsSource {
 
     override val id = SOURCE_ID
-    override val displayName = "Spicy Lyrics"
+    override val displayName = DISPLAY_NAME
+    override val onDemandOnly = true
 
     private val userAgent = "Stash/$appVersionName (Android)"
-    private val interactiveHttp = client.newBuilder().callTimeout(4, TimeUnit.SECONDS).build()
-    private val backgroundHttp = client.newBuilder().callTimeout(10, TimeUnit.SECONDS).build()
+    private val interactiveHttp = client.newBuilder().dns(lyricsDns).callTimeout(4, TimeUnit.SECONDS).build()
+    private val backgroundHttp = client.newBuilder().dns(lyricsDns).callTimeout(10, TimeUnit.SECONDS).build()
 
     private var skipUntilMs = 0L
 
@@ -53,10 +68,17 @@ class SpicyLyricsSource(
         }
         if (json == null) return@withContext null
 
-        val result = runCatching { parse(json, trackId) }
+        // Not JSON at all: the host (or something in front of it) is in trouble, not the song.
+        val root = try {
+            JSONObject(json)
+        } catch (e: JSONException) {
+            openSkipWindow("a 200 that isn't JSON (${json.length} chars)")
+            return@withContext null
+        }
+        val result = runCatching { parse(root, trackId) }
             .onFailure { Log.w(TAG, "spicy response for $trackId didn't parse", it) }
             .getOrNull()
-        Log.d(TAG, "spicy $trackId (\"${query.title}\") -> ${result?.let { if (it.ttml != null) "syllable" else "line/static" } ?: "miss"}")
+        Log.d(TAG, "spicy $trackId (\"${query.title}\") -> ${result?.let { if (it.ttml != null) "syllable" else "line" } ?: "miss"}")
         result
     }
 
@@ -85,13 +107,12 @@ class SpicyLyricsSource(
         }
     }
 
-    private fun parse(json: String, trackId: String): LyricsResult? {
-        val root = JSONObject(json)
+    private fun parse(root: JSONObject, trackId: String): LyricsResult? {
         if (root.optInt("Status", 200) != 200) return null
         val body = root.optJSONObject("Body") ?: return null
-        val lyricsId = body.optString("id").ifBlank { trackId }
+        val lyricsId = body.str("id") ?: trackId
         val credits = credits(body)
-        return when (body.optString("Type")) {
+        return when (body.str("Type")) {
             "Syllable" -> {
                 val ttml = buildTtml(body) ?: return null
                 val parsed = TtmlParser.parse(ttml)?.takeIf { it.lines.isNotEmpty() } ?: return null
@@ -107,7 +128,7 @@ class SpicyLyricsSource(
                 val plain = StringBuilder()
                 for (i in 0 until content.length()) {
                     val o = content.optJSONObject(i) ?: continue
-                    val text = o.optString("Text").trim()
+                    val text = o.str("Text")?.trim().orEmpty()
                     if (text.isEmpty()) continue
                     lrc.append(lrcStamp(o.optDouble("StartTime", 0.0))).append(text).append('\n')
                     plain.append(text).append('\n')
@@ -118,29 +139,20 @@ class SpicyLyricsSource(
                     instrumental = false, language = null, sourceLyricsId = lyricsId, credits = credits,
                 )
             }
-            "Static" -> {
-                val lines = body.optJSONArray("Lines") ?: return null
-                val plain = (0 until lines.length())
-                    .mapNotNull { lines.optJSONObject(it)?.optString("Text") }
-                    .joinToString("\n").trim()
-                if (plain.isEmpty()) return null
-                LyricsResult(
-                    sourceId = id, plainText = plain, syncedLrc = null,
-                    instrumental = false, language = null, sourceLyricsId = lyricsId, credits = credits,
-                )
-            }
+            // "Static" (plain text) and anything new: a miss, so the sources after this one get
+            // their turn (see the class KDoc).
             else -> null
         }
     }
 
     /** Only when Spicy's own catalogue answered; other sources carry no uploader/maker. */
     private fun credits(body: JSONObject): LyricsCredits? {
-        if (body.optString("source") != "spicy_lyrics") return null
+        if (body.str("source") != "spicy_lyrics") return null
         val attr = body.optJSONObject("UploadAttribution") ?: return null
         fun person(key: String): Pair<String?, String?> {
             val o = attr.optJSONObject(key) ?: return null to null
-            val name = o.optString("username").ifBlank { null }
-            val url = o.optString("url").takeIf { it.startsWith("https://") }
+            val name = o.str("username")
+            val url = o.str("url")?.takeIf { it.startsWith("https://") }
             return name to url
         }
         val (uName, uUrl) = person("Uploader")
@@ -156,7 +168,7 @@ class SpicyLyricsSource(
         var n = 0
         for (i in 0 until content.length()) {
             val v = content.optJSONObject(i) ?: continue
-            if (v.optString("Type") != "Vocal") continue
+            if (v.str("Type") != "Vocal") continue
             val lead = v.optJSONObject("Lead") ?: continue
             val leadSpans = spans(lead.optJSONArray("Syllables"))
             if (leadSpans.isEmpty()) continue
@@ -194,18 +206,22 @@ class SpicyLyricsSource(
         val sb = StringBuilder()
         for (i in 0 until syllables.length()) {
             val s = syllables.optJSONObject(i) ?: continue
-            val text = s.optString("Text").trim()
+            val text = escape(s.str("Text").orEmpty()).trim()
             if (text.isEmpty()) continue
             val b = s.optDouble("StartTime", 0.0)
             val e = s.optDouble("EndTime", b)
-            sb.append("<span begin=\"${ts(b)}\" end=\"${ts(e)}\">").append(escape(text)).append("</span>")
+            sb.append("<span begin=\"${ts(b)}\" end=\"${ts(e)}\">").append(text).append("</span>")
             if (!s.optBoolean("IsPartOfWord") && i < syllables.length() - 1) sb.append(' ')
         }
         return sb.toString().trimEnd()
     }
 
-    private fun escape(s: String) =
-        s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+    /**
+     * Text for the TTML: the control characters XML 1.0 doesn't allow are dropped (one would make
+     * the whole document unparseable, losing every line), then `& < > "` are escaped.
+     */
+    private fun escape(s: String) = XML_INVALID_CHARS.replace(s, "")
+        .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
     /** Apple TTML clock: `12.345` under a minute, `m:ss.mmm` above. */
     private fun ts(sec: Double): String {
@@ -222,6 +238,9 @@ class SpicyLyricsSource(
         return String.format(Locale.ROOT, "[%02d:%02d.%02d]", cs / 6000, (cs % 6000) / 100, cs % 100)
     }
 
+    /** The string at [key], or null when it's missing, JSON null (which `optString` turns into "null") or blank. */
+    private fun JSONObject.str(key: String): String? = if (isNull(key)) null else optString(key).ifBlank { null }
+
     @Synchronized
     private fun skipWindowOpen() = clock.now() < skipUntilMs
 
@@ -233,8 +252,13 @@ class SpicyLyricsSource(
 
     companion object {
         const val SOURCE_ID = "spicy-lyrics"
+        /** Also the provider named in the lyrics credit ("Lyrics by Spicy Lyrics"). */
+        const val DISPLAY_NAME = "Spicy Lyrics"
         const val DEFAULT_BASE_URL = "https://api.spicylyrics.org"
         private const val TAG = "SpicyLyricsSource"
         internal const val SKIP_WINDOW_MS = 10 * 60_000L
+
+        /** Characters XML 1.0 forbids: C0 controls other than tab, LF and CR, and U+FFFE/U+FFFF. */
+        private val XML_INVALID_CHARS = Regex("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\uFFFE\\uFFFF]")
     }
 }

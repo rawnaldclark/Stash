@@ -8,7 +8,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.data.lyrics.LyricsRepository
 import com.stash.data.lyrics.source.LyricsQuery
-import com.stash.data.lyrics.source.SpotifyTrackId  
+import com.stash.data.lyrics.source.SpotifyTrackId
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException

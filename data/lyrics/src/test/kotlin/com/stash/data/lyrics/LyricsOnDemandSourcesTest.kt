@@ -12,6 +12,7 @@ import com.stash.data.lyrics.source.IsrcTtmlLyricsSource
 import com.stash.data.lyrics.source.LyricsQuery
 import com.stash.data.lyrics.source.LyricsResult
 import com.stash.data.lyrics.source.LyricsSource
+import com.stash.data.lyrics.source.SpicyLyricsSource
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -226,5 +227,68 @@ class LyricsOnDemandSourcesTest {
         val lrcRed = Recording(IsrcTtmlLyricsSource.LRC_RED_ID, onDemandOnly = true) { ttmlResult }
         assertNull(repo(listOf(Recording("lrclib"), lrcRed), lyricsDao(), pref = preference(LyricsSourcePreference.LRC_ONLY)).resolveAndStore(query()))
         assertEquals(0, lrcRed.calls.size)
+    }
+
+    // Spicy Lyrics (#837): on-demand, but in its place right after Apple rather than last.
+
+    private val spicyLineResult = LyricsResult(SpicyLyricsSource.SOURCE_ID, "Hi", "[00:01.00]Hi", false, null, "sl-1")
+
+    /** Master's chain with Spicy right after Apple; each source notes its id in [order] when asked. */
+    private fun chainWithSpicy(order: MutableList<String>): List<Recording> {
+        fun src(id: String, onDemand: Boolean = false, r: LyricsResult? = null) =
+            Recording(id, onDemand) { order += id; r }
+        return listOf(
+            src(AppleTtmlLyricsSource.SOURCE_ID), src(SpicyLyricsSource.SOURCE_ID, onDemand = true),
+            src("lrclib", r = lrcResult), src("kugou"), src("innertube"),
+            src(IsrcTtmlLyricsSource.LRC_RED_ID, onDemand = true), src(IsrcTtmlLyricsSource.BINIMUM_ID, onDemand = true),
+        )
+    }
+
+    @Test fun `an on-demand source right after Apple is asked there on demand, never by a pass`() = runBlocking {
+        val order = Collections.synchronizedList(mutableListOf<String>())
+        val sources = chainWithSpicy(order)
+
+        assertEquals("lrclib", repo(sources, lyricsDao()).resolveAndStore(query())!!.source)
+        assertEquals(listOf(AppleTtmlLyricsSource.SOURCE_ID, SpicyLyricsSource.SOURCE_ID, "lrclib"), order.take(3))
+        // No word timing: the on-demand sources' one follow-up, Spicy, lrc.red and Binimum in order.
+        withTimeout(5_000) { while (order.size < 6) delay(10) }
+        assertEquals(
+            listOf(SpicyLyricsSource.SOURCE_ID, IsrcTtmlLyricsSource.LRC_RED_ID, IsrcTtmlLyricsSource.BINIMUM_ID),
+            order.drop(3),
+        )
+
+        val passOrder = Collections.synchronizedList(mutableListOf<String>())
+        stored.clear()
+        repo(chainWithSpicy(passOrder), lyricsDao()).resolveAndStore(query(onDemand = false))
+        delay(300)
+        assertEquals(listOf(AppleTtmlLyricsSource.SOURCE_ID, "lrclib"), passOrder)
+    }
+
+    @Test fun `a line-synced answer from an on-demand source is no word-sync upgrade`() = runBlocking {
+        val previous = LyricsEntity(1L, "Hi", "[00:01.00]Hi", false, null, "lrclib", "42", 1L)
+        val spicy = Recording(SpicyLyricsSource.SOURCE_ID, onDemandOnly = true) { spicyLineResult }
+
+        val dao = lyricsDao(previous)
+        assertEquals(TtmlUpgradeResult.NO_TTML, repo(listOf(spicy), dao).upgradeToTtml(1L, moveCursor = false, sources = TtmlUpgradeSources.ON_DEMAND))
+        assertEquals("the stored lyrics stay", 0, stored.size)
+
+        // ...and the next source still gets its turn.
+        val lrcRed = Recording(IsrcTtmlLyricsSource.LRC_RED_ID, onDemandOnly = true) { ttmlResult }
+        assertEquals(TtmlUpgradeResult.UPGRADED, repo(listOf(spicy, lrcRed), lyricsDao(previous)).upgradeToTtml(1L, moveCursor = false, sources = TtmlUpgradeSources.ON_DEMAND))
+        assertEquals(IsrcTtmlLyricsSource.LRC_RED_ID, stored.last().source)
+    }
+
+    @Test fun `the Now Playing action asks Spicy after Apple`() = runBlocking {
+        val previous = LyricsEntity(1L, "Hi", "[00:01.00]Hi", false, null, "lrclib", "42", 1L)
+        val apple = Recording(AppleTtmlLyricsSource.SOURCE_ID)
+        val spicyTtml = ttmlResult.copy(sourceId = SpicyLyricsSource.SOURCE_ID)
+        val spicy = Recording(SpicyLyricsSource.SOURCE_ID, onDemandOnly = true) { spicyTtml }
+
+        val result = repo(listOf(apple, spicy, Recording("lrclib")), lyricsDao(previous))
+            .upgradeToTtml(1L, moveCursor = false, interactive = true, sources = TtmlUpgradeSources.APPLE_THEN_ON_DEMAND)
+
+        assertEquals(TtmlUpgradeResult.UPGRADED, result)
+        assertEquals(1, apple.calls.size)
+        assertEquals(SpicyLyricsSource.SOURCE_ID, stored.last().source)
     }
 }

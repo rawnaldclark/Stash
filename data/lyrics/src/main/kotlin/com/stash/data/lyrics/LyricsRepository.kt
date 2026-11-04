@@ -89,12 +89,14 @@ private class WalkOutcome(val result: LyricsResult?, val appleCleanMiss: Boolean
  * Sole entrypoint for the lyrics subsystem. Both UI (Now Playing sheet)
  * and workers (post-download + backfill) go through this class.
  *
- * `resolveAndStore` walks the [sources] chain in priority order (lrc.red -> Binimum -> Spicy ->
- * Apple TTML -> LRCLIB -> KuGou -> InnerTube; ordering enforced in `LyricsModule.provideLyricsSources`. The
- * last two are [LyricsSource.onDemandOnly]: asked only for a [LyricsQuery.onDemand] lookup (a
- * track being played or just downloaded), after every other source, and their failures count as
- * misses. When an earlier source answers without word timing, they get one follow-up try in the
- * background instead ([upgradeOnDemandLater]), so they never delay lyrics. TTML sources are skipped
+ * `resolveAndStore` walks the [sources] chain in priority order (Apple TTML -> Spicy Lyrics ->
+ * LRCLIB -> KuGou -> InnerTube -> lrc.red -> Binimum; ordering enforced in
+ * `LyricsModule.provideLyricsSources`. Spicy Lyrics, lrc.red and Binimum are
+ * [LyricsSource.onDemandOnly]: asked only for a [LyricsQuery.onDemand] lookup (a track being played
+ * or just downloaded), Spicy in its place right after Apple and the last two after every other
+ * source, and their failures count as misses. When an earlier source answers without word timing,
+ * the on-demand sources get one follow-up try in the background ([upgradeOnDemandLater]), so lrc.red
+ * and Binimum never delay lyrics; only a word-synced (TTML) answer counts there. TTML sources are skipped
  * entirely when [LyricsPreference.sourcePreference] is [LyricsSourcePreference.LRC_ONLY] — see
  * [activeSources]), persists the first non-null result to the `lyrics` table, stamps
  * `tracks.lyrics_fetched_at` with the success epoch-millis, and triggers a sidecar write.
@@ -267,8 +269,7 @@ class LyricsRepository @Inject constructor(
         // sources weren't asked (an earlier source answered), so they get one follow-up try.
         val wantsOnDemandUpgrade = query.onDemand && query.trackId > 0L && ttmlActive &&
             entity.ttml == null && !entity.instrumental && previousRow?.ttmlCheckedAt == null &&
-            // Only when an on-demand source sits after the answering one in the chain, i.e. it was never asked.
-            sources.drop(sources.indexOfFirst { it.id == result.sourceId } + 1).any { it.onDemandOnly }
+            sources.any { it.onDemandOnly }
         return Written(entity, wantsOnDemandUpgrade)
     }
 
@@ -360,7 +361,7 @@ class LyricsRepository @Inject constructor(
      * The user's "Re-check library" sweep (Settings → Playback → Lyrics): every stored row still
      * without word timing, newest first, below the track the sweep last finished. Unlike
      * [trackIdsPendingTtml] it keeps rows Apple already checked, because the on-demand sources
-     * (lrc.red, Binimum) were never asked for them. Empty under LRC-only.
+     * (Spicy Lyrics, lrc.red, Binimum) were never asked for them. Empty under LRC-only.
      */
     suspend fun recheckPlan(): RecheckPlan {
         if (lyricsPreference.sourcePreference.first() == LyricsSourcePreference.LRC_ONLY) return RecheckPlan(emptyList(), 0)
@@ -469,7 +470,8 @@ class LyricsRepository @Inject constructor(
      * - hit          -> row upserted (sync offset carried over from [existing]), fetch stamp
      *                   refreshed, sidecar rewritten (keeps the existing .lrc, adds/refreshes .ttml
      *                   beside it) -> UPGRADED
-     * - clean miss   -> `ttml_checked_at` stamped, row untouched -> NO_TTML
+     * - clean miss   -> `ttml_checked_at` stamped, row untouched -> NO_TTML (an answer without
+     *                   TTML, such as Spicy Lyrics' line sync, counts as a miss here)
      * - source threw -> NOTHING written, stays pending -> FAILED (RATE_LIMITED when any asked
      *                   source answered HTTP 429, else by the first failure: PAUSED for a skip
      *                   window, NOT_READY for a timeout)
@@ -519,7 +521,9 @@ class LyricsRepository @Inject constructor(
         val failures = ArrayList<Exception>(ttmlSources.size)
         for (source in ttmlSources) {
             try {
-                found = source.resolve(query)
+                // Word-synced only: Spicy Lyrics can answer line-synced, which is no upgrade (and
+                // would replace the stored lyrics with a row stamped as TTML-checked).
+                found = source.resolve(query)?.takeIf { it.ttml != null }
                 Log.d(TAG, "TTML upgrade: ${source.id} for trackId=$trackId -> ${if (found != null) "hit" else "miss"}")
                 if (found != null) break
                 cleanMisses++
