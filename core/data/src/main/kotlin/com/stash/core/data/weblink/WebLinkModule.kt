@@ -29,6 +29,9 @@ abstract class WebLinkModule {
 
     @Binds abstract fun bindLiveConnector(impl: com.stash.core.data.weblink.remote.OkHttpLiveConnector): com.stash.core.data.weblink.remote.LiveConnector
 
+    /** Remote v2: a browser plays this phone's queue through the remote's socket. */
+    @Binds abstract fun bindBrowserLink(impl: com.stash.core.data.weblink.remote.WebRemote): com.stash.core.data.weblink.remote.BrowserLink
+
     @Binds abstract fun bindMirrorStore(impl: com.stash.core.data.weblink.mirror.FileMirrorStore): com.stash.core.data.weblink.mirror.MirrorStore
 
     @Binds abstract fun bindMirrorScheduler(impl: com.stash.core.data.weblink.mirror.WorkManagerMirrorScheduler): com.stash.core.data.weblink.mirror.MirrorScheduler

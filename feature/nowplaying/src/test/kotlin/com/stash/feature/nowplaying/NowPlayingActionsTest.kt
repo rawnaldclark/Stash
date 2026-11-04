@@ -117,6 +117,25 @@ class NowPlayingActionsTest {
         assertTrue(STREAM_QUALITY in topRowActions(setOf(STREAM_QUALITY), streaming).leading)
     }
 
+    // ── Play on (Remote v2) ──────────────────────────────────────────────────────────────────
+
+    @Test fun `Play on shows with a linked browser on a phone without Cast, never in a room`() {
+        assertFalse(isActionAvailable(CAST, solo))
+        val browser = ActionContext(hasBrowser = true)
+        assertTrue(isActionAvailable(CAST, browser))
+        assertTrue(CAST in editableActions(emptySet(), browser))
+        assertFalse(isActionAvailable(CAST, browser.copy(inRoom = true)))
+    }
+
+    @Test fun `a browser playing the queue hides Speed and Streaming quality, saying why`() {
+        val onBrowser = ActionContext(streams = true, hasBrowser = true, onBrowser = true, casting = true)
+        assertFalse(isActionAvailable(PLAYBACK_SPEED, onBrowser))
+        assertFalse(isActionAvailable(STREAM_QUALITY, onBrowser))
+        assertEquals(R.string.np_hidden_casting, hiddenReason(STREAM_QUALITY, onBrowser))
+        assertTrue(isActionAvailable(RADIO, onBrowser))
+        assertTrue(isActionAvailable(QUEUE, onBrowser))
+    }
+
     // ── the editor ───────────────────────────────────────────────────────────────────────────
 
     @Test fun `the editor lists room-hidden actions so they stay editable, with a reason`() {
@@ -124,16 +143,16 @@ class NowPlayingActionsTest {
         val rows = editableActions(NowPlayingAction.DefaultPins, room)
         assertTrue(RADIO in rows)
         assertTrue(PLAYBACK_SPEED in rows)
-        assertEquals("Hidden while listening together", hiddenReason(RADIO, room))
-        assertEquals("Hidden while casting", hiddenReason(PLAYBACK_SPEED, ActionContext(casting = true)))
+        assertEquals(R.string.np_hidden_together, hiddenReason(RADIO, room))
+        assertEquals(R.string.np_hidden_casting, hiddenReason(PLAYBACK_SPEED, ActionContext(casting = true)))
         assertNull(hiddenReason(SHARE, room))
     }
 
     @Test fun `the editor lists Streaming quality in Download mode and says why it is hidden`() {
         assertTrue(STREAM_QUALITY in editableActions(emptySet(), solo))
-        assertEquals("Nothing streams in Download mode", hiddenReason(STREAM_QUALITY, solo))
+        assertEquals(R.string.np_hidden_download_mode, hiddenReason(STREAM_QUALITY, solo))
         // Download mode is the reason even in a room, not the room.
-        assertEquals("Nothing streams in Download mode", hiddenReason(STREAM_QUALITY, ActionContext(inRoom = true)))
+        assertEquals(R.string.np_hidden_download_mode, hiddenReason(STREAM_QUALITY, ActionContext(inRoom = true)))
         assertNull(hiddenReason(STREAM_QUALITY, ActionContext(streams = true)))
     }
 
@@ -272,8 +291,8 @@ class NowPlayingActionsTest {
         assertFalse(CAST in editableActions(emptySet(), solo))
         assertTrue(CAST in editableActions(emptySet(), canCast))
         assertTrue(CAST in editableActions(setOf(CAST), solo))
-        assertEquals("Cast isn't available on this phone", hiddenReason(CAST, solo))
-        assertEquals("Hidden while listening together", hiddenReason(CAST, canCast.copy(inRoom = true)))
+        assertEquals(R.string.np_hidden_no_cast, hiddenReason(CAST, solo))
+        assertEquals(R.string.np_hidden_together, hiddenReason(CAST, canCast.copy(inRoom = true)))
     }
 
     /** Every shrinking slot is at least 44dp, a pinned Cast gets 48dp, and the row fits the width. */
@@ -292,7 +311,7 @@ class NowPlayingActionsTest {
         val shown = topRowActions(pins, ctx).leading + topRowActions(pins, ctx).trailing + menuActions(pins, ctx)
         for (hidden in SCANNED_HIDDEN) {
             assertTrue("$hidden must not show", hidden !in shown)
-            assertEquals("Not for songs from your folders", hiddenReason(hidden, ctx))
+            assertEquals(R.string.np_hidden_scanned, hiddenReason(hidden, ctx))
         }
         // What still works on a file: its lyrics, the queue, a radio from it, its speed.
         assertTrue(NowPlayingAction.LYRICS in shown)
@@ -306,7 +325,7 @@ class NowPlayingActionsTest {
     @Test fun `a cloud song can't be flagged as a wrong match but keeps download and share`() {
         val ctx = ActionContext(isCloudSong = true, communityAvailable = true)
         assertTrue(!isActionAvailable(NowPlayingAction.FLAG_WRONG_MATCH, ctx))
-        assertEquals("Not for songs from your cloud storage", hiddenReason(NowPlayingAction.FLAG_WRONG_MATCH, ctx))
+        assertEquals(R.string.np_hidden_cloud, hiddenReason(NowPlayingAction.FLAG_WRONG_MATCH, ctx))
         assertTrue(isActionAvailable(NowPlayingAction.DOWNLOAD, ctx))
         assertTrue(isActionAvailable(NowPlayingAction.SHARE, ctx))
         assertTrue(isActionAvailable(NowPlayingAction.SAVE_TO_PLAYLIST, ctx))

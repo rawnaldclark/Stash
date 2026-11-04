@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import com.stash.core.data.weblink.WebLinkConfig
+import okhttp3.ConnectionSpec
 import okhttp3.OkHttpClient
 import okhttp3.Response
 import okhttp3.WebSocket
@@ -86,6 +88,18 @@ class LiveSocketTest {
         Thread.sleep(1_500) // longer than the first backoff
         assertThat(server.requestCount).isEqualTo(1)
         socket.close()
+    }
+
+    @Test fun `a plain-http Worker's socket opens over the app's TLS-only client, an https one stays TLS only`() = runBlocking<Unit> {
+        server.enqueue(MockResponse().withWebSocketUpgrade(EchoClose))
+        // The app's shared client allows TLS only (NetworkModule); a debug build points at `wrangler dev` over plain http.
+        val tlsOnly = OkHttpClient.Builder().connectionSpecs(listOf(ConnectionSpec.MODERN_TLS)).build()
+        val local = OkHttpLiveConnector(tlsOnly, WebLinkConfig("http://127.0.0.1:8795", enabled = true))
+        val socket = local.connect(server.url("/v1/spaces/s_x/ws").toString(), """{"t":"hello"}""", scope)
+        assertThat(withTimeout(10_000) { socket.events.first() }).isEqualTo(LiveEvent.Open)
+        socket.close()
+        val live = OkHttpLiveConnector(tlsOnly, WebLinkConfig("https://sync.stashfm.app", enabled = true))
+        assertThat(live.client.connectionSpecs).containsExactly(ConnectionSpec.MODERN_TLS)
     }
 
     @Test fun `a drop (a server error at the upgrade) reconnects`() = runBlocking {

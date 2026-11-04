@@ -33,6 +33,12 @@ class RemoteCardsTest {
         assertThat(c.positionAt(1_000_000)).isEqualTo(240_000) // never past the end
     }
 
+    @Test fun `only a browser whose caps say drive offers to play this phone's music`() {
+        assertThat(RemoteCards.pick(listOf(browser()), now = 1_000)!!.canDrive).isFalse()
+        val v2 = browser(st = state().copy(caps = listOf("drive")))
+        assertThat(RemoteCards.pick(listOf(v2), now = 1_000)!!.canDrive).isTrue()
+    }
+
     @Test fun `paused, its clock stands still`() {
         val c = RemoteCards.pick(listOf(browser(st = state(playing = false))), now = 1_000)!!
         assertThat(c.status).isEqualTo("Paused on Chrome on Windows")
@@ -55,6 +61,13 @@ class RemoteCardsTest {
         assertThat(RemoteCards.pick(listOf(browser(st = state(title = null))), 1_000)).isNull()
         assertThat(RemoteCards.pick(listOf(browser(at = 0)), RemoteCards.STALE_MS)).isNotNull()
         assertThat(RemoteCards.pick(listOf(browser(at = 0)), RemoteCards.STALE_MS + 1)).isNull()
+    }
+
+    @Test fun `no card for a tab that said bye, closing or reloading`() {
+        assertThat(RemoteCards.pick(listOf(browser(st = state().copy(bye = true))), 1_000)).isNull()
+        // Another browser that plays on is still the card.
+        val other = browser(id = "d_Firefox000001", name = "Firefox on Mac", st = state(title = "Wait"))
+        assertThat(RemoteCards.pick(listOf(browser(st = state().copy(bye = true)), other), 1_000)?.title).isEqualTo("Wait")
     }
 
     @Test fun `of several browsers, the one playing wins, then the newest`() {

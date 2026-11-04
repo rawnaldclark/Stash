@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.CastConnected
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -35,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,6 +57,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -136,8 +139,13 @@ fun MiniPlayer(
     sheet: PlayerSheetState? = null,
     viewModel: NowPlayingViewModel = hiltViewModel(),
     listen: ListenTogetherViewModel = hiltViewModel(),
+    cast: com.stash.feature.nowplaying.cast.CastViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    // Where the music plays (Remote v2 §3): a speaker or a browser shows as a line under the title; a tap opens Play on.
+    val playOn by cast.playOn.collectAsStateWithLifecycle()
+    var showPlayOn by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    if (showPlayOn) com.stash.feature.nowplaying.cast.CastSheet(viewModel = cast, onDismiss = { showPlayOn = false })
     // Kept as a State and read only inside drawBehind below: the progress line redraws per
     // 250ms tick without recomposing the card (which shows on every screen).
     val position = viewModel.positionMs.collectAsStateWithLifecycle()
@@ -304,21 +312,59 @@ fun MiniPlayer(
                             // remember keeps the split off the hot path: this
                             // composable recomposes on every progress tick.
                             val artist = remember(track?.artist) { track?.artist?.primaryArtist() }
+                            val playOnLine = com.stash.feature.nowplaying.cast.playOnLine(playOn)
                             Text(
-                                text = track?.title ?: "",
+                                // Playing elsewhere, the artist joins the title ("Pink + White · Frank Ocean") so the
+                                // device line fits the card's two lines.
+                                text = if (playOnLine == null || artist.isNullOrBlank()) {
+                                    androidx.compose.ui.text.AnnotatedString(track?.title ?: "")
+                                } else {
+                                    androidx.compose.ui.text.buildAnnotatedString {
+                                        append(track?.title ?: "")
+                                        withStyle(
+                                            androidx.compose.ui.text.SpanStyle(
+                                                fontWeight = FontWeight.Normal,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            ),
+                                        ) { append(" · $artist") }
+                                    }
+                                },
                                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 18.sp),
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            Text(
-                                text = artist ?: "",
-                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            if (playOnLine != null) {
+                                // "Chrome on Windows" in the accent, as Spotify's device line; a tap opens Play on.
+                                androidx.compose.foundation.layout.Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.clickable(onClick = { showPlayOn = true }),
+                                ) {
+                                    Icon(
+                                        Icons.Default.CastConnected,
+                                        contentDescription = null,
+                                        tint = chrome.accent,
+                                        modifier = Modifier.size(12.dp),
+                                    )
+                                    Spacer(Modifier.size(4.dp))
+                                    Text(
+                                        text = playOn.playingOn?.takeIf { playOn.browser?.link == com.stash.core.media.cast.WebCastRemote.Link.READY || playOn.browser == null } ?: playOnLine,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
+                                        color = chrome.accent,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            } else {
+                                Text(
+                                    text = artist ?: "",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
                     }
                 }

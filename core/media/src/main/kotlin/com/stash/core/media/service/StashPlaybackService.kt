@@ -25,6 +25,7 @@ import androidx.media3.common.MediaMetadata
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.prefs.CrossfadePreference
@@ -167,6 +168,9 @@ class StashPlaybackService : MediaLibraryService() {
 
     /** Google Cast (spec 2026-10-06). */
     @Inject lateinit var castDevices: com.stash.core.media.cast.CastDevices
+
+    /** Remote v2 (spec 2026-11-03): a linked browser as a speaker, through the same cast wrapper. */
+    @Inject lateinit var browserOutputs: com.stash.core.media.cast.BrowserOutputs
     @Inject lateinit var playbackDiagnosticsLog: com.stash.core.media.diagnostics.PlaybackDiagnosticsLog
     @Inject lateinit var handoffPublisher: com.stash.core.media.handoff.HandoffPublisher
 
@@ -463,6 +467,30 @@ class StashPlaybackService : MediaLibraryService() {
     private var castWifiLock: android.net.wifi.WifiManager.WifiLock? = null
     private val isCasting: Boolean get() = castPlayer?.isAttached == true
 
+    /** What the cast wrapper plays through: a Chromecast, or a linked browser (Remote v2). Null while it plays here. */
+    private enum class CastKind { SPEAKER, BROWSER }
+    private var castKind: CastKind? = null
+
+    /** The kind picked last: when both have a receiver for a moment (a switch), the newest pick wins. */
+    private var newestCastKind: CastKind? = null
+
+    /** Set as the service is destroyed: the outputs it hears about then are its own teardown, not a pick. */
+    private var destroying = false
+
+    /** The browser's songs by mediaId (a Room lookup once per song while a browser plays; null: it can't take that one). */
+    private val browserSongs = HashMap<String, com.stash.core.data.weblink.handoff.WireSong?>()
+
+    /** The queue looked up for the browser ([refreshBrowserPhoneOnly]): the latest edit's lookup replaces one still running. */
+    private var phoneOnlyJob: Job? = null
+
+    /** On the stopped local queue while a browser plays it: an edit looks the new songs up for the queue's dimmed rows. */
+    private val browserQueueListener = object : Player.Listener {
+        override fun onTimelineChanged(timeline: Timeline, reason: Int) = refreshBrowserPhoneOnly()
+    }
+
+    /** A browser plays the queue: nothing is resolved or served on this phone (spec 2026-11-03 §2.3). */
+    private val onBrowser: Boolean get() = isCasting && castKind == CastKind.BROWSER
+
     /** When the cast player last became idle (elapsedRealtime), or null while it plays. */
     private var castIdleSinceMs: Long? = null
 
@@ -632,8 +660,12 @@ class StashPlaybackService : MediaLibraryService() {
         val baseProvider = object : androidx.media3.session.DefaultMediaNotificationProvider(this) {
             override fun getNotificationContentText(metadata: MediaMetadata): CharSequence? {
                 val base = super.getNotificationContentText(metadata)
-                if (!listenTogetherController.active.value) return base
-                return listOfNotNull(togetherLine(listenTogetherController.state.value), base).joinToString(" · ")
+                // "On Chrome on Windows · <artist>" while a browser plays the queue (Remote v2 §6), as Listen Together's line.
+                val browser = browserOutputs.session.value?.takeIf { onBrowser }
+                    ?.let { getString(R.string.cast_on_browser_line, it.name) }
+                if (!listenTogetherController.active.value && browser == null) return base
+                val together = if (listenTogetherController.active.value) togetherLine(listenTogetherController.state.value) else null
+                return listOfNotNull(together, browser, base).joinToString(" · ")
             }
         }
         // Listen Together and casting keep the service in the foreground while paused (onUpdateNotification below), but
@@ -905,10 +937,24 @@ class StashPlaybackService : MediaLibraryService() {
                 .collect { if (listenTogetherController.active.value) triggerNotificationUpdate() }
         }
 
-        // Google Cast (spec 2026-10-06 §3). Logged at the wiring site.
-        android.util.Log.i("StashPlayback", "cast attached")
+        // Google Cast (spec 2026-10-06 §3), and a linked browser through the same wrapper (Remote v2, spec 2026-11-03 §2.2).
+        // Logged at the wiring site.
+        android.util.Log.i("StashPlayback", "cast attached (speakers and browsers)")
         serviceScope.launch {
-            castDevices.remote.collect { remote -> if (remote != null) enterCast(remote) else exitCast() }
+            castDevices.remote.collect { remote ->
+                if (remote != null) newestCastKind = CastKind.SPEAKER
+                followCastOutputs()
+            }
+        }
+        serviceScope.launch {
+            browserOutputs.remote.collect { remote ->
+                if (remote != null) newestCastKind = CastKind.BROWSER
+                followCastOutputs()
+            }
+        }
+        // The notification names the browser ("On Chrome on Windows").
+        serviceScope.launch {
+            browserOutputs.session.map { it?.name }.distinctUntilChanged().collect { if (onBrowser) triggerNotificationUpdate() }
         }
 
         updateCustomLayout()
@@ -924,10 +970,11 @@ class StashPlaybackService : MediaLibraryService() {
             val idle = isPlayerIdle(player.playWhenReady, player.playbackState)
             castIdleSinceMs = if (idle) castIdleSinceMs ?: android.os.SystemClock.elapsedRealtime() else null
             playerIdle.value = idle
-            updateCastLocks(idle)
+            // A browser streams for itself: no locks, and nothing resolved ahead on this phone (it won't play it).
+            if (castKind == CastKind.SPEAKER) updateCastLocks(idle)
             if (events.containsAny(Player.EVENT_IS_PLAYING_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION)) {
                 updateDiscordPresence(player.currentMediaItem, player.isPlaying)
-                if (player.isPlaying) {
+                if (player.isPlaying && castKind == CastKind.SPEAKER) {
                     startPrefetchPoll(player)
                 } else {
                     prefetchPollJob?.cancel()
@@ -938,22 +985,55 @@ class StashPlaybackService : MediaLibraryService() {
     }
 
     /**
-     * Hands playback to a cast speaker: stops the master where it is (the
-     * queue stays on it), serves its songs over the LAN and puts
-     * [com.stash.core.media.cast.CastSessionPlayer] on the session.
+     * Follows the outputs: the newest of a connected speaker and a picked browser plays the queue, and with neither it comes
+     * back to the phone. A browser and a speaker exclude each other (spec 2026-11-03 §2.2); each side ends its own when the
+     * other is picked ([com.stash.core.media.cast.BrowserOutputs]), and while both are briefly set the newest pick wins.
+     */
+    private fun followCastOutputs() {
+        if (destroying) return
+        val speaker = castDevices.remote.value
+        val browser = browserOutputs.remote.value
+        when {
+            browser != null && (speaker == null || newestCastKind == CastKind.BROWSER) -> enterCast(browser, CastKind.BROWSER)
+            speaker != null -> enterCast(speaker, CastKind.SPEAKER)
+            // Back here: "This phone" (or a browser that never answered) carries on, anything else leaves it paused (D2).
+            else -> exitCast(resume = castKind == CastKind.BROWSER && browserOutputs.takeResumeOnPhone())
+        }
+    }
+
+    /**
+     * Hands playback to a cast receiver: stops the master where it is (the
+     * queue stays on it) and puts [com.stash.core.media.cast.CastSessionPlayer]
+     * on the session. A speaker is served the songs over the LAN (with the
+     * locks that needs); a browser finds them itself, so the phone serves,
+     * resolves and holds nothing for it.
      */
     @OptIn(UnstableApi::class)
-    private fun enterCast(remote: com.stash.core.media.cast.CastRemote) {
+    private fun enterCast(remote: com.stash.core.media.cast.CastRemote, kind: CastKind) {
         if (isCasting) {
-            // A new receiver without a disconnect in between (a session the SDK
-            // resumed as a new one): follow it where the old one was, instead of
-            // driving a dead session.
+            // A new receiver without a disconnect in between: a session the SDK
+            // resumed as a new one, or the other kind of output picked. Follow it
+            // where the old one was, playing as it was, instead of driving a dead one.
             val wrapper = castPlayer ?: return
             if (!wrapper.isAttachedTo(remote)) {
                 val master = crossfadeEngine?.masterPlayer ?: return
-                android.util.Log.i("StashPlayback", "cast: receiver changed, moving playback to it")
-                playbackDiagnosticsLog.recordCast("receiver changed")
-                wrapper.attach(master, remote, wrapper.currentPosition, wrapper.playWhenReady)
+                if (kind != castKind && !useCastKind(kind)) return
+                android.util.Log.i("StashPlayback", "cast: receiver changed ($kind), moving playback to it")
+                playbackDiagnosticsLog.recordCast("receiver changed: $kind")
+                wrapper.attach(master, remote, wrapper.currentPosition, wrapper.playWhenReady, castFeed(kind))
+                castKind = kind
+                browserOutputs.noteServed(kind == CastKind.BROWSER)
+                refreshBrowserPhoneOnly()
+                // The speaker's look-ahead (it serves the next song over the LAN) is no browser's business, and a speaker
+                // taking over from a browser starts its own while it plays.
+                prefetchPollJob?.cancel()
+                prefetchPollJob = null
+                if (kind == CastKind.SPEAKER) {
+                    updateCastLocks(isPlayerIdle(wrapper.playWhenReady, wrapper.playbackState))
+                    if (wrapper.isPlaying) startPrefetchPoll(wrapper)
+                }
+                updateCustomLayout()
+                triggerNotificationUpdate()
             }
             return
         }
@@ -961,72 +1041,128 @@ class StashPlaybackService : MediaLibraryService() {
         // The two exclude each other (spec §3): Listen Together owns the player for the session.
         if (listenTogetherController.active.value) {
             android.util.Log.i("StashPlayback", "cast: refused during Listen Together")
-            castDevices.disconnect()
+            if (kind == CastKind.SPEAKER) {
+                castDevices.disconnect()
+            } else {
+                browserOutputs.end(com.stash.core.media.cast.BrowserOutputs.Stop.LISTEN_TOGETHER)
+            }
             return
         }
-        val factory = mediaSourceFactory ?: return
-        val server = castServer ?: com.stash.core.media.cast.CastMediaServer(
-            audioSource = { entry -> factory.dataSourceFactoryFor(entry.payload as MediaItem).createDataSource() },
-            artworkSource = { androidx.media3.datasource.DefaultDataSource.Factory(this).createDataSource() },
-            onEvent = playbackDiagnosticsLog::recordCast,
-        ).also { castServer = it }
-        if (!server.start()) {
-            android.util.Log.w("StashPlayback", "cast: no LAN address, disconnecting")
-            android.widget.Toast.makeText(this, R.string.cast_no_wifi, android.widget.Toast.LENGTH_LONG).show()
-            castDevices.disconnect()
-            return
-        }
+        if (!useCastKind(kind)) return
+        // Crossfade stays suspended while a receiver plays: a role swap would put the bare master back on the session.
         setCrossfadeSuspended(true)
         val master = engine.masterPlayer
         val positionMs = master.currentPosition
         val playWhenReady = master.playWhenReady
         master.playWhenReady = false
         master.stop() // keeps the queue and position; nothing plays or buffers on the phone
-        val wrapper = castPlayer ?: com.stash.core.media.cast.CastSessionPlayer(master, ::castMediaFor, ::prepareForCast)
-            .also { castPlayer = it }
-        wrapper.attach(master, remote, positionMs, playWhenReady)
+        val wrapper = castPlayer ?: com.stash.core.media.cast.CastSessionPlayer(
+            master,
+            // Who asked for a volume change (the volume log): read while the session hands the request to the player.
+            caller = { mediaSession?.controllerForCurrentRequest?.packageName },
+        ).also { castPlayer = it }
+        castKind = kind
+        browserOutputs.noteServed(kind == CastKind.BROWSER)
+        wrapper.attach(master, remote, positionMs, playWhenReady, castFeed(kind))
+        master.addListener(browserQueueListener)
+        refreshBrowserPhoneOnly()
         wrapper.addListener(castListener)
         mediaSession?.player = wrapper
         widgetFeed?.follow(wrapper)
         val idle = isPlayerIdle(wrapper.playWhenReady, wrapper.playbackState)
         castIdleSinceMs = if (idle) android.os.SystemClock.elapsedRealtime() else null
         playerIdle.value = idle
-        updateCastLocks(idle)
-        android.util.Log.i("StashPlayback", "cast: playing on the speaker from ${positionMs}ms")
-        playbackDiagnosticsLog.recordCast("playback moved to the speaker")
+        if (kind == CastKind.SPEAKER) updateCastLocks(idle)
+        // Whatever the prefetch poll was resolving for the phone is no longer wanted: a browser resolves its own songs.
+        if (kind == CastKind.BROWSER) {
+            prefetchPollJob?.cancel()
+            prefetchPollJob = null
+        }
+        android.util.Log.i("StashPlayback", "cast: playing on the $kind from ${positionMs}ms")
+        playbackDiagnosticsLog.recordCast("playback moved to the $kind")
         updateCustomLayout()
         triggerNotificationUpdate()
     }
 
     /**
-     * Takes playback back from the speaker: the master gets the session and
-     * the speaker's position, paused. Stopping a cast must never start the
-     * phone's loudspeaker. Idempotent.
+     * Gets this service ready to play through [kind]: a speaker needs the LAN media server (false, and the speaker let go,
+     * when there is no LAN address); a browser needs none of it, so a server and locks a speaker left are let go.
+     */
+    private fun useCastKind(kind: CastKind): Boolean {
+        when (kind) {
+            CastKind.SPEAKER -> {
+                val factory = mediaSourceFactory ?: return false
+                val server = castServer ?: com.stash.core.media.cast.CastMediaServer(
+                    audioSource = { entry -> factory.dataSourceFactoryFor(entry.payload as MediaItem).createDataSource() },
+                    artworkSource = { androidx.media3.datasource.DefaultDataSource.Factory(this).createDataSource() },
+                    onEvent = playbackDiagnosticsLog::recordCast,
+                ).also { castServer = it }
+                if (!server.start()) {
+                    android.util.Log.w("StashPlayback", "cast: no LAN address, disconnecting")
+                    android.widget.Toast.makeText(this, R.string.cast_no_wifi, android.widget.Toast.LENGTH_LONG).show()
+                    castDevices.disconnect()
+                    return false
+                }
+            }
+            CastKind.BROWSER -> {
+                castServer?.stop()
+                releaseCastLocks()
+            }
+        }
+        return true
+    }
+
+    /** What the wrapper hands [kind]: a speaker a LAN URL for each song; a browser the song, stepping over ones it can't take. */
+    private fun castFeed(kind: CastKind) = when (kind) {
+        CastKind.SPEAKER -> com.stash.core.media.cast.CastFeed(::castMediaFor, ::prepareForCast)
+        CastKind.BROWSER -> com.stash.core.media.cast.CastFeed(
+            mediaFor = ::browserMediaFor,
+            prepare = ::prepareForBrowser,
+            skipsUnsendable = true,
+            onSkipped = browserOutputs::noteSkipped,
+        )
+    }
+
+    /**
+     * Takes playback back from the receiver: the master gets the session and
+     * the receiver's position. Paused unless [resume] (owner's decision D2:
+     * "This phone" carries the music on, if it was playing there); stopping a
+     * cast, or a receiver going away, never starts the phone's loudspeaker by
+     * itself. Idempotent.
      */
     @OptIn(UnstableApi::class)
-    private fun exitCast() {
-        val wrapper = castPlayer?.takeIf { it.isAttached } ?: return
+    private fun exitCast(resume: Boolean = false) {
+        val wrapper = castPlayer?.takeIf { it.isAttached } ?: return browserOutputs.noteServed(false)
+        val play = resume && wrapper.playWhenReady
         val handoff = wrapper.detach()
         wrapper.removeListener(castListener)
         castServer?.stop()
         releaseCastLocks()
         castIdleSinceMs = null
+        val kind = castKind
+        castKind = null
+        browserSongs.clear()
+        phoneOnlyJob?.cancel()
+        phoneOnlyJob = null
         val master = crossfadeEngine?.masterPlayer
+        master?.removeListener(browserQueueListener)
         if (master != null) {
             mediaSession?.player = master
             widgetFeed?.follow(master)
             if (handoff.mediaItemIndex in 0 until master.mediaItemCount) {
                 master.seekTo(handoff.mediaItemIndex, handoff.positionMs)
             }
-            master.playWhenReady = false
+            master.playWhenReady = play
             if (master.mediaItemCount > 0) master.prepare()
         }
         setCrossfadeSuspended(false)
         refreshPlayerIdle()
-        android.util.Log.i("StashPlayback", "cast: back on the phone at ${handoff.positionMs}ms")
+        android.util.Log.i("StashPlayback", "cast: back on the phone at ${handoff.positionMs}ms (from $kind, playing=$play)")
         playbackDiagnosticsLog.recordCast("playback back on the phone")
         updateCustomLayout()
         triggerNotificationUpdate()
+        // Last: what waits for the phone to hold the queue again (the queue's "Play on this phone") may go on at once.
+        browserOutputs.noteServed(false)
     }
 
     /** What the speaker loads for [item]: a LAN URL from [castServer], plus the metadata it shows. */
@@ -1091,6 +1227,92 @@ class StashPlaybackService : MediaLibraryService() {
             }
             if (!ready) playbackDiagnosticsLog.recordCast("song prepare failed: $scheme")
             done(ready)
+        }
+    }
+
+    /**
+     * What a browser loads for [item] (Remote v2 §5): the Song it finds the music by, as the handoff sends it. Null for a song
+     * only this phone has (the wrapper steps over it) or one [prepareForBrowser] hasn't looked up.
+     */
+    private fun browserMediaFor(item: MediaItem, contentId: String): com.stash.core.media.cast.CastMedia? {
+        val song = browserSongs[item.mediaId]?.takeUnless { it.phoneOnly } ?: return null
+        val metadata = item.mediaMetadata
+        return com.stash.core.media.cast.CastMedia(
+            contentId = contentId,
+            url = "",
+            contentType = "",
+            title = metadata.title?.toString(),
+            artist = metadata.artist?.toString(),
+            album = metadata.albumTitle?.toString(),
+            artworkUrl = null,
+            durationMs = metadata.extras?.getLong(EXTRA_TRACK_DURATION_MS, 0L) ?: 0L,
+            song = song,
+            from = browserOutputs.sourceLabel(),
+        )
+    }
+
+    /**
+     * Looks [item]'s song up for a browser: its library row (ISRC, Spotify and YouTube ids), once per song while the browser
+     * plays, else the words it carries. Never a stream: the browser resolves the song itself, the phone resolves nothing.
+     */
+    private fun prepareForBrowser(item: MediaItem, done: (Boolean) -> Unit) {
+        val key = item.mediaId
+        if (browserSongs.containsKey(key)) {
+            done(true)
+            return
+        }
+        serviceScope.launch {
+            val song = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                // A failed lookup goes by the words the item carries (cancellation still cancels).
+                val row = try {
+                    com.stash.core.media.cast.BrowserSongs.rowId(item)?.let { trackDao.getById(it) }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    android.util.Log.w("StashPlayback", "browser: song lookup failed", e)
+                    null
+                }
+                com.stash.core.media.cast.BrowserSongs.songFor(item, row?.toDomain())
+            }
+            browserSongs[key] = song
+            done(true)
+        }
+    }
+
+    /**
+     * Looks every queue song up for the browser (each once while it plays, as [prepareForBrowser] does) and tells the queue which
+     * rows it will step over there (Remote v2 §5). The queue can't work that out from its own rows: they don't carry the download
+     * or the ISRC the library row has, so a downloaded song with no ids would show as playable and then be stepped over.
+     */
+    private fun refreshBrowserPhoneOnly() {
+        if (castKind != CastKind.BROWSER) return
+        val master = crossfadeEngine?.masterPlayer ?: return
+        val items = List(master.mediaItemCount, master::getMediaItemAt)
+        phoneOnlyJob?.cancel()
+        phoneOnlyJob = serviceScope.launch {
+            val missing = items.filterNot { browserSongs.containsKey(it.mediaId) }.distinctBy { it.mediaId }
+            if (missing.isNotEmpty()) {
+                val songs = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                    // A failed lookup goes by the words each item carries, as prepareForBrowser does (cancellation still cancels).
+                    val rows = try {
+                        trackDao.getByIds(missing.mapNotNull(com.stash.core.media.cast.BrowserSongs::rowId).distinct()).associateBy { it.id }
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        android.util.Log.w("StashPlayback", "browser: queue lookup failed", e)
+                        emptyMap()
+                    }
+                    missing.associate { item ->
+                        item.mediaId to com.stash.core.media.cast.BrowserSongs.songFor(
+                            item,
+                            com.stash.core.media.cast.BrowserSongs.rowId(item)?.let(rows::get)?.toDomain(),
+                        )
+                    }
+                }
+                if (castKind != CastKind.BROWSER) return@launch
+                for ((key, song) in songs) if (!browserSongs.containsKey(key)) browserSongs[key] = song
+            }
+            browserOutputs.notePhoneOnly(com.stash.core.media.cast.BrowserSongs.phoneOnlyIds(items, browserSongs))
         }
     }
 
@@ -1919,8 +2141,16 @@ class StashPlaybackService : MediaLibraryService() {
         }
         listenedPlayer?.removeListener(playerListener)
         listenedPlayer = null
-        // The speaker would play out its one song and stop; end the cast cleanly instead.
-        if (isCasting) castDevices.disconnect()
+        // The speaker would play out its one song and stop; end the cast cleanly instead. A browser is told to let go (it pauses);
+        // a web session is never resumed, the phone resumes locally as ever (spec 2026-11-03 §2.3).
+        destroying = true
+        if (isCasting) {
+            if (castKind == CastKind.BROWSER) {
+                browserOutputs.end(com.stash.core.media.cast.BrowserOutputs.Stop.SERVICE)
+            } else {
+                castDevices.disconnect()
+            }
+        }
         castServer?.stop()
         releaseCastLocks()
         serviceScope.cancel()
@@ -1989,10 +2219,15 @@ class StashPlaybackService : MediaLibraryService() {
         }
 
         override fun enterSession(isHost: Boolean, interceptor: com.stash.core.media.listen.SessionInterceptor) {
-            // Cast and Listen Together exclude each other (cast spec §3): the session takes the player back first.
+            // Cast and Listen Together exclude each other (cast spec §3): the session takes the player back first. A browser too.
             if (isCasting) {
+                val kind = castKind
                 exitCast()
-                castDevices.disconnect()
+                if (kind == CastKind.BROWSER) {
+                    browserOutputs.end(com.stash.core.media.cast.BrowserOutputs.Stop.LISTEN_TOGETHER)
+                } else {
+                    castDevices.disconnect()
+                }
             }
             setCrossfadeSuspended(true)
             // Drift correction nudges the speed all session long, and bit-perfect only holds at 1x:

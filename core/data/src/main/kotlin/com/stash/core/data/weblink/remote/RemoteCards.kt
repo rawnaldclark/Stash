@@ -1,7 +1,12 @@
 package com.stash.core.data.weblink.remote
 
-/** A linked browser's last state, as this phone received it ([receivedAt]: this phone's monotonic clock). */
-data class BrowserState(val device: String, val name: String, val state: RemoteState, val receivedAt: Long)
+/**
+ * A linked browser's last state, as this phone received it ([receivedAt]: this phone's monotonic clock).
+ *
+ * @property lostAt set while this phone's own socket is down and it drives this browser (Remote v2): the state is the last one
+ *   heard, kept for the grace instead of forgotten; the browser may well be playing on (spec 2026-11-03 §3).
+ */
+data class BrowserState(val device: String, val name: String, val state: RemoteState, val receivedAt: Long, val lostAt: Long? = null)
 
 /**
  * What the "Playing on Chrome" card and its sheet show (spec 2026-10-10 §6.7): one browser that advertises itself, its song, and
@@ -27,6 +32,8 @@ data class RemoteCard(
     val needsGesture: Boolean,
     /** This phone's monotonic clock when [positionMs] was true. */
     val readAt: Long,
+    /** It can play this phone's queue (Remote v2, its `caps` say `drive`): the sheet offers "Play this phone's music here". */
+    val canDrive: Boolean = false,
 ) {
     /** "Playing on Chrome on Windows" / "Paused on …", or the one click the browser needs before it can start the music. */
     val status: String
@@ -53,12 +60,14 @@ object RemoteCards {
     fun appName(label: String): String = label.substringBefore(" on ").trim().ifEmpty { label }
 
     /**
-     * The card for the browsers that advertise, or null: only fresh states with a song (nothing to control otherwise); a browser
-     * that plays wins over a paused one, then the newest.
+     * The card for the browsers that advertise, or null: only fresh states with a song (nothing to control otherwise), never a
+     * tab's `bye` (it closed or is reloading); a browser that plays wins over a paused one, then the newest. Never a browser this phone plays its own queue on ([driven], or one
+     * whose state names this phone, [me], as its driver): the mini player is that one's remote (Remote v2 §6).
      */
-    fun pick(browsers: Collection<BrowserState>, now: Long): RemoteCard? {
+    fun pick(browsers: Collection<BrowserState>, now: Long, driven: String? = null, me: String? = null): RemoteCard? {
         val b = browsers
-            .filter { now - it.receivedAt <= STALE_MS && it.state.title != null && it.state.artist != null }
+            .filter { now - it.receivedAt <= STALE_MS && !it.state.bye && it.state.title != null && it.state.artist != null }
+            .filter { it.device != driven && (me == null || it.state.driver != me) }
             .maxWithOrNull(compareBy<BrowserState>({ it.state.playing }, { it.receivedAt }))
             ?: return null
         val s = b.state
@@ -77,6 +86,7 @@ object RemoteCards {
             canSeek = s.canSeek && s.durationMs > 0,
             needsGesture = s.needsGesture,
             readAt = b.receivedAt,
+            canDrive = s.canDrive,
         )
     }
 
@@ -92,7 +102,9 @@ object RemoteCards {
             RemoteCommand.Play -> if (s.needsGesture) s else s.copy(playing = true, positionMs = here)
             is RemoteCommand.Seek -> s.copy(positionMs = command.positionMs)
             is RemoteCommand.Volume -> s.copy(volume = command.volume.coerceIn(0.0, 1.0))
-            RemoteCommand.Next, RemoteCommand.Prev -> return b
+            // What these lead to is only known from the browser's next state (the cast wrapper waits for it).
+            RemoteCommand.Next, RemoteCommand.Prev, is RemoteCommand.Load, is RemoteCommand.UpNext, is RemoteCommand.Jump,
+            RemoteCommand.Stop, is RemoteCommand.Release -> return b
         }
         return b.copy(state = next, receivedAt = now)
     }
