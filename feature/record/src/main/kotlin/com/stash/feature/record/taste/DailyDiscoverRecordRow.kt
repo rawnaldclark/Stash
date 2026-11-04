@@ -68,9 +68,6 @@ class DailyDiscoverRecordViewModel @Inject constructor(
 /**
  * The switch row under Daily Discover's Download button, on that page only and only after a Your record import; nothing on any
  * other mix. The library page hands its playlist id in (feature:library doesn't depend on this module: the app passes the row).
- *
- * The page header's glass (12 dp corners, the icon buttons' fill), title and line on the left, the switch on the right, as
- * Settings' row. The whole row toggles; TalkBack reads it as one switch.
  */
 @Composable
 fun DailyDiscoverRecordRow(
@@ -83,12 +80,21 @@ fun DailyDiscoverRecordRow(
     val dailyDiscover by viewModel.dailyDiscoverPlaylistId.collectAsStateWithLifecycle()
     val switchOn = on ?: return
     if (!imported || dailyDiscover != playlistId) return
+    RecordInMixesPageRow(on = switchOn, onChange = viewModel::setOn, modifier = modifier)
+}
+
+/**
+ * The row itself: the page header's glass (12 dp corners, the icon buttons' fill), title and line on the left, the switch on
+ * the right, as Settings' row. The whole row toggles; TalkBack reads it as one switch.
+ */
+@Composable
+internal fun RecordInMixesPageRow(on: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(StashTheme.extendedColors.glassBackground)
-            .toggleable(value = switchOn, role = Role.Switch, onValueChange = viewModel::setOn)
+            .toggleable(value = on, role = Role.Switch, onValueChange = onChange)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -106,6 +112,6 @@ fun DailyDiscoverRecordRow(
         }
         Spacer(Modifier.width(12.dp))
         // The row is the toggle; the switch only shows the state.
-        StashSwitch(checked = switchOn, onCheckedChange = null)
+        StashSwitch(checked = on, onCheckedChange = null)
     }
 }
