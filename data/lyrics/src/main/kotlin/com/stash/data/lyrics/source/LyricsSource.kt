@@ -6,9 +6,11 @@ interface LyricsSource {
 
     /**
      * True for a source asked only for a track someone is playing or just downloaded
-     * ([LyricsQuery.onDemand]), never by a library-wide pass, and only after every other source
-     * (see `LyricsRepository`). Its failures count as misses: it is an extra, never the answer
-     * the other sources depend on.
+     * ([LyricsQuery.onDemand]), never by a library-wide pass. It is asked in its place in the
+     * chain (`LyricsModule`: Spicy Lyrics right after Apple, lrc.red and Binimum after every
+     * other source), and again by the word-synced upgrades that ask the on-demand sources (see
+     * `LyricsRepository`). Its failures count as misses: it is an extra, never the answer the
+     * other sources depend on.
      */
     val onDemandOnly: Boolean get() = false
 
@@ -38,6 +40,9 @@ data class LyricsQuery(
      * library-wide pass leaves it false so it never fans out to them.
      */
     val onDemand: Boolean = false,
+
+    /** Spotify track id (22 chars), when known. Read by [SpicyLyricsSource]; null skips that source. */
+    val spotifyTrackId: String? = null,
 )
 
 data class LyricsResult(
@@ -49,4 +54,12 @@ data class LyricsResult(
     val sourceLyricsId: String?,
     /** Raw word-synced TTML when the source has one; null for LRC/plain-only sources. */
     val ttml: String? = null,
+    /** Who made this sync, when the source names them (Spicy Lyrics' own catalogue only). */
+    val credits: LyricsCredits? = null,
+)
+
+/** Who made a lyrics sync; only Spicy Lyrics' own catalogue has these. */
+data class LyricsCredits(
+    val uploaderName: String?, val uploaderUrl: String?,
+    val makerName: String?, val makerUrl: String?,
 )

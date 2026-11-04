@@ -128,7 +128,7 @@ import kotlinx.serialization.json.Json
         com.stash.core.data.db.entity.TrackMergeLogEntity::class,
         com.stash.core.data.db.entity.DuplicateDismissalEntity::class,
     ],
-    version = 77,
+    version = 78,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1995,6 +1995,29 @@ abstract class StashDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v77 -> v78: who uploaded and who made a Spicy Lyrics sync (#837), shown under the lyrics
+         * as its attribution. Four nullable `lyrics` columns, so every existing row reads as "no
+         * credits" and nothing is backfilled.
+         *
+         * Each column is added only when it's missing: the PR's first build used these same four
+         * columns at v77, and a phone that ran it is already at 77 with them. That 77 never ran
+         * #838's `tracks_fts` rebuild ([MIGRATION_76_77]), so such a phone gets it here instead.
+         */
+        val MIGRATION_77_78 = object : Migration(77, 78) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Frozen here, not shared with the entity: a later rename must not change what 78 adds.
+                val columns = listOf("credit_uploader_name", "credit_uploader_url", "credit_maker_name", "credit_maker_url")
+                val fromPrBuild = columns.any { db.hasColumn("lyrics", it) }
+                for (column in columns) {
+                    if (!db.hasColumn("lyrics", column)) {
+                        db.execSQL("ALTER TABLE `lyrics` ADD COLUMN `$column` TEXT")
+                    }
+                }
+                if (fromPrBuild) db.execSQL("INSERT INTO tracks_fts(tracks_fts) VALUES('rebuild')")
+            }
+        }
+
         /** Edit order tables start empty, so existing playlists retain their native order. */
         val MIGRATION_73_74 = object : Migration(73, 74) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -2158,6 +2181,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_74_75,
                 MIGRATION_75_76,
                 MIGRATION_76_77,
+                MIGRATION_77_78,
             )
         }
     }

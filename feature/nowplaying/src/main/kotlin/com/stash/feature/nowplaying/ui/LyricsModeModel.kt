@@ -47,6 +47,13 @@ internal fun lyricsBodyFor(state: LyricsViewState): LyricsBody = when (state) {
     is LyricsViewState.Error -> LyricsBody.Message(LYRICS_ERROR_MESSAGE, canRetry = state.retryable)
 }
 
+/** The footer credit for what the lyrics area is showing, if any. */
+internal fun lyricsAttributionOf(state: LyricsViewState): LyricsAttribution? = when (state) {
+    is LyricsViewState.Synced -> state.attribution
+    is LyricsViewState.Plain -> state.attribution
+    else -> null
+}
+
 /** The lyrics menu's items for the current state (the "Live line" switch is always there). */
 internal data class LyricsMenuItems(
     val offset: Boolean,

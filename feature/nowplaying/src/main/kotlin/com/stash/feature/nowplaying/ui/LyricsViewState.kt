@@ -7,6 +7,11 @@ import com.stash.data.lyrics.parser.LrcParser
 import com.stash.data.lyrics.parser.TtmlLyrics
 import com.stash.data.lyrics.parser.TtmlParser
 import com.stash.data.lyrics.source.LyricsResult
+import com.stash.data.lyrics.source.LyricsCredits
+import com.stash.data.lyrics.source.SpicyLyricsSource
+
+/** Who a lyrics body is credited to, shown as a footer. Null where the source needs no credit. */
+data class LyricsAttribution(val provider: String, val credits: LyricsCredits?)
 
 /**
  * v0.9.36 Task 12 — Now Playing lyrics view state.
@@ -43,8 +48,9 @@ sealed interface LyricsViewState {
         val plainFallback: String,
         /** Non-null when word-synced TTML is available; the syllable renderer keys off this. */
         val syllables: TtmlLyrics? = null,
+        val attribution: LyricsAttribution? = null,
     ) : LyricsViewState
-    data class Plain(val text: String) : LyricsViewState
+    data class Plain(val text: String, val attribution: LyricsAttribution? = null) : LyricsViewState
     object Instrumental : LyricsViewState
     object None : LyricsViewState
     data class Error(val retryable: Boolean) : LyricsViewState
@@ -67,13 +73,15 @@ internal fun lyricsViewStateFor(track: Track, row: LyricsEntity?): LyricsViewSta
         val synced = row.syncedLrc!!
         val lines = LrcParser.parse(synced)
         val plain = row.plainText
+        val attribution = attributionFor(row.source, row.credits())
         when {
-            lines.isNotEmpty() -> LyricsViewState.Synced(lines, plain.orEmpty(), row.ttml?.let(TtmlParser::parse))
-            !plain.isNullOrBlank() -> LyricsViewState.Plain(plain)
+            lines.isNotEmpty() -> LyricsViewState.Synced(lines, plain.orEmpty(), row.ttml?.let(TtmlParser::parse), attribution)
+            !plain.isNullOrBlank() -> LyricsViewState.Plain(plain, attribution)
             else -> LyricsViewState.None
         }
     }
-    row != null && !row.plainText.isNullOrBlank() -> LyricsViewState.Plain(row.plainText!!)
+    row != null && !row.plainText.isNullOrBlank() ->
+        LyricsViewState.Plain(row.plainText!!, attributionFor(row.source, row.credits()))
     else -> LyricsViewState.None
 }
 
@@ -93,12 +101,25 @@ internal fun lyricsViewStateForResult(result: LyricsResult?): LyricsViewState = 
         val synced = result.syncedLrc!!
         val lines = LrcParser.parse(synced)
         val plain = result.plainText
+        val attribution = attributionFor(result.sourceId, result.credits)
         when {
-            lines.isNotEmpty() -> LyricsViewState.Synced(lines, plain.orEmpty(), result.ttml?.let(TtmlParser::parse))
-            !plain.isNullOrBlank() -> LyricsViewState.Plain(plain)
+            lines.isNotEmpty() -> LyricsViewState.Synced(lines, plain.orEmpty(), result.ttml?.let(TtmlParser::parse), attribution)
+            !plain.isNullOrBlank() -> LyricsViewState.Plain(plain, attribution)
             else -> LyricsViewState.None
         }
     }
-    !result.plainText.isNullOrBlank() -> LyricsViewState.Plain(result.plainText!!)
+    !result.plainText.isNullOrBlank() ->
+        LyricsViewState.Plain(result.plainText!!, attributionFor(result.sourceId, result.credits))
     else -> LyricsViewState.None
 }
+
+/**
+ * Spicy Lyrics' terms: always show the provider; uploader/maker only when its own catalogue answered.
+ * The provider is the source's own name, not translated (it is a name).
+ */
+private fun attributionFor(sourceId: String?, credits: LyricsCredits?): LyricsAttribution? =
+    if (sourceId == SpicyLyricsSource.SOURCE_ID) LyricsAttribution(SpicyLyricsSource.DISPLAY_NAME, credits) else null
+
+private fun LyricsEntity.credits(): LyricsCredits? =
+    if (creditUploaderName == null && creditMakerName == null) null
+    else LyricsCredits(creditUploaderName, creditUploaderUrl, creditMakerName, creditMakerUrl)

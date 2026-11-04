@@ -25,6 +25,14 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.SyncAlt
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.LinkInteractionListener
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -56,7 +64,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -74,6 +84,7 @@ import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.size.Precision
 import com.stash.core.ui.theme.SpaceGrotesk
+import com.stash.feature.nowplaying.R
 import java.util.Locale
 import kotlin.math.roundToLong
 
@@ -120,54 +131,123 @@ internal fun LyricsPane(
         onDispose { view.keepScreenOn = wasKeepingScreenOn }
     }
 
-    BoxWithConstraints(modifier = modifier.lyricsEdgeFade()) {
-        val density = LocalDensity.current
-        val fontSp = lyricFontSizeSp(maxWidth.value)
-        val viewportHeight = maxHeight
-        val look = remember(fontSp, viewportHeight, ink, light, density) {
-            with(density) {
-                val anchor = lyricAnchorPx(fontSp.sp.toPx(), viewportHeight.toPx()).toDp()
-                LyricsLook(
-                    fontSize = fontSp.sp,
-                    // The web's inks: lit .85 on the dark ambient, full plum on the light wash; dim .35.
-                    bright = if (light) ink else ink.copy(alpha = 0.85f),
-                    dim = ink.copy(alpha = if (light) 0.38f else 0.35f),
-                    ink = ink,
-                    sidePadding = LYRICS_SIDE_PAD_DP.dp,
-                    lineGap = (fontSp.sp.toPx() * 0.2f).toDp(),
-                    anchor = anchor,
-                    bottomRoom = (viewportHeight - anchor).coerceAtLeast(0.dp),
-                )
+    val attribution = lyricsAttributionOf(state)
+
+    Box(modifier = modifier) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize().lyricsEdgeFade()) {
+            val density = LocalDensity.current
+            val fontSp = lyricFontSizeSp(maxWidth.value)
+            val viewportHeight = maxHeight
+            val look = remember(fontSp, viewportHeight, ink, light, density) {
+                with(density) {
+                    val anchor = lyricAnchorPx(fontSp.sp.toPx(), viewportHeight.toPx()).toDp()
+                    LyricsLook(
+                        fontSize = fontSp.sp,
+                        // The web's inks: lit .85 on the dark ambient, full plum on the light wash; dim .35.
+                        bright = if (light) ink else ink.copy(alpha = 0.85f),
+                        dim = ink.copy(alpha = if (light) 0.38f else 0.35f),
+                        ink = ink,
+                        sidePadding = LYRICS_SIDE_PAD_DP.dp,
+                        lineGap = (fontSp.sp.toPx() * 0.2f).toDp(),
+                        anchor = anchor,
+                        bottomRoom = (viewportHeight - anchor).coerceAtLeast(0.dp),
+                    )
+                }
+            }
+            val body = remember(state) { lyricsBodyFor(state) }
+            Crossfade(targetState = body, animationSpec = tween(250), label = "lyrics-body") { b ->
+                when (b) {
+                    LyricsBody.Loading -> LyricsMessage("Looking for lyrics", look, quiet = true)
+                    is LyricsBody.Words -> LyricsSyllableRenderer(
+                        lyrics = b.lyrics,
+                        currentPositionMs = currentPositionMs(),
+                        onLineTap = onSeek,
+                        look = look,
+                        isPlaying = isPlaying,
+                        playbackSpeed = playbackSpeed,
+                    )
+                    is LyricsBody.Lines -> LyricsLineRenderer(
+                        b.lines, currentPositionMs(), onSeek, look,
+                        isPlaying = isPlaying,
+                        playbackSpeed = playbackSpeed,
+                    )
+                    is LyricsBody.Plain -> LyricsPlainRenderer(b.text, look)
+                    is LyricsBody.Message -> LyricsMessage(
+                        text = b.text,
+                        look = look,
+                        accent = accent,
+                        onRetry = if (b.canRetry) onRetry else null,
+                    )
+                }
             }
         }
-        val body = remember(state) { lyricsBodyFor(state) }
-        Crossfade(targetState = body, animationSpec = tween(250), label = "lyrics-body") { b ->
-            when (b) {
-                LyricsBody.Loading -> LyricsMessage("Looking for lyrics", look, quiet = true)
-                is LyricsBody.Words -> LyricsSyllableRenderer(
-                    lyrics = b.lyrics,
-                    currentPositionMs = currentPositionMs(),
-                    onLineTap = onSeek,
-                    look = look,
-                    isPlaying = isPlaying,
-                    playbackSpeed = playbackSpeed,
-                )
-                is LyricsBody.Lines -> LyricsLineRenderer(
-                    b.lines, currentPositionMs(), onSeek, look,
-                    isPlaying = isPlaying,
-                    playbackSpeed = playbackSpeed,
-                )
-                is LyricsBody.Plain -> LyricsPlainRenderer(b.text, look)
-                is LyricsBody.Message -> LyricsMessage(
-                    text = b.text,
-                    look = look,
-                    accent = accent,
-                    onRetry = if (b.canRetry) onRetry else null,
-                )
-            }
+        if (attribution != null) {
+            LyricsAttributionFooter(attribution, ink, Modifier.align(Alignment.BottomStart))
         }
     }
 }
+
+/** Spicy Lyrics' attribution: the provider always, uploader and maker (linked) when its own catalogue answered. */
+@Composable
+private fun LyricsAttributionFooter(
+    attribution: LyricsAttribution,
+    ink: Color,
+    modifier: Modifier = Modifier,
+) {
+    val uriHandler = LocalUriHandler.current
+    val uploadedBy = stringResource(R.string.lyrics_credit_uploaded_by)
+    val madeBy = stringResource(R.string.lyrics_credit_made_by)
+    val text = remember(attribution, uploadedBy, madeBy, uriHandler) {
+        // As the Discogs credit does: a phone with no browser for the link does nothing, not crash.
+        val openLink = LinkInteractionListener { link ->
+            (link as? LinkAnnotation.Url)?.let { runCatching { uriHandler.openUri(it.url) } }
+        }
+        buildAnnotatedString {
+            // Spicy Lyrics' attribution, which its terms ask for: kept in English, like the
+            // Discogs credit ("Data provided by Discogs"), with the provider's own name.
+            append("Lyrics by ${attribution.provider}")
+            attribution.credits?.let {
+                person(uploadedBy, it.uploaderName, it.uploaderUrl, openLink)
+                person(madeBy, it.makerName, it.makerUrl, openLink)
+            }
+        }
+    }
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = ink.copy(alpha = 0.55f),
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier.padding(horizontal = LYRICS_SIDE_PAD_DP.dp, vertical = 10.dp),
+    )
+}
+
+/**
+ * " · Uploaded by <name>", the name linked when there is a [url] (https only, see
+ * `SpicyLyricsSource`). [template] is the translated string with [NAME_SLOT] where the name goes,
+ * split around it so a language can put the name anywhere.
+ */
+private fun AnnotatedString.Builder.person(
+    template: String,
+    name: String?,
+    url: String?,
+    onLinkTap: LinkInteractionListener,
+) {
+    if (name == null) return
+    val slot = template.indexOf(NAME_SLOT)
+    append(" · ")
+    append(if (slot >= 0) template.substring(0, slot) else "$template ")
+    if (url != null) {
+        val style = TextLinkStyles(SpanStyle(textDecoration = TextDecoration.Underline))
+        withLink(LinkAnnotation.Url(url, style, onLinkTap)) { append(name) }
+    } else {
+        append(name)
+    }
+    if (slot >= 0) append(template.substring(slot + NAME_SLOT.length))
+}
+
+/** Where the person's name goes in `lyrics_credit_uploaded_by` / `lyrics_credit_made_by`. */
+private const val NAME_SLOT = "%1\$s"
 
 /**
  * A calm one-liner where the live line would sit (the web's `.lyr-msg`): "No lyrics for this

@@ -27,10 +27,10 @@ import kotlinx.coroutines.delay
  * lyrics); a run with neither flag is one the retired automatic pass queued before an update, and
  * it ends at once without asking anything.
  *  - recheck ([KEY_RECHECK], Settings → Playback → Lyrics → "Re-check library"): upgrades stored
- *    lyrics to word-synced TTML, asking every word-synced source (Apple, lrc.red, Binimum; see
- *    [LyricsRepository.recheckTrack]), newest first, from a resumable cursor. A quiet background
- *    job: when the OS stops it (the ~10 min job cap), WorkManager reruns it and it carries on
- *    below the cursor. Reaching the end stamps "last checked" ([LyricsRepository.finishRecheck]).
+ *    lyrics to word-synced TTML, asking every word-synced source (Apple, Spicy Lyrics, lrc.red,
+ *    Binimum; see [LyricsRepository.recheckTrack]), newest first, from a resumable cursor. A quiet
+ *    background job: when the OS stops it (the ~10 min job cap), WorkManager reruns it and it
+ *    carries on below the cursor. Reaching the end stamps "last checked" ([LyricsRepository.finishRecheck]).
  *  - manual ([KEY_MANUAL], Library Health button): the Apple-only upgrade PLUS a fetch for
  *    downloaded tracks that have no lyrics yet. Runs as a FOREGROUND service with a cancellable
  *    progress notification (no ~10 min background-job cap), and posts a summary notification.
