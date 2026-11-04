@@ -542,7 +542,7 @@
     <string name="settings_playing_section">Playing</string>
     <string name="settings_headphones_section">Headphones</string>
     <string name="settings_headphone_resume_on_reconnect_title">Resume when headphones reconnect</string>
-    <string name="settings_headphone_resume_on_reconnect_desc">Pick up where you left off if headphones reconnect while Stash is running</string>
+    <string name="settings_headphone_resume_on_reconnect_desc">If unplugging paused the music, it picks up again when they\'re back within a few minutes.</string>
     <string name="settings_lyrics_section">Lyrics</string>
     <string name="settings_lyrics_apple_music">Apple Music</string>
     <string name="settings_lyrics_lrc_only">LRC only</string>
