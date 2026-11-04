@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -76,6 +77,9 @@ sealed interface BrowserNotice {
     /** The browser never said it had the song: the music stayed on this phone. */
     data class NoAnswer(val name: String) : BrowserNotice
 
+    /** The browser was unlinked (from this phone or from it): the music is back on this phone, paused. Offers Play. */
+    data class Unlinked(val name: String) : BrowserNotice
+
     /** Songs only this phone has were stepped over (once a session). */
     data class Skipped(val count: Int) : BrowserNotice
 }
@@ -88,7 +92,7 @@ sealed interface BrowserNotice {
  * - **One output at a time**: a browser and a Chromecast exclude each other, the newest pick wins (picking a browser ends the
  *   speaker's session, a speaker connecting ends the browser's); Listen Together refuses a browser and ends one that plays.
  * - **Ending** ([WebCastRemote.End]): "This phone" ([disconnect]) carries the music on here (owner's decision D2); a browser that
- *   went away, or a connection that stayed down, leaves it here paused; each says so once ([notices]).
+ *   went away, was unlinked, or a connection that stayed down, leaves it here paused; each says so once ([notices]).
  *
  * Main thread only.
  */
@@ -134,6 +138,11 @@ class BrowserOutputs internal constructor(
 
     private val _notices = MutableSharedFlow<BrowserNotice>(extraBufferCapacity = 8)
     val notices: SharedFlow<BrowserNotice> = _notices.asSharedFlow()
+
+    private val _served = MutableStateFlow(false)
+
+    /** The playback service plays through a browser right now: it says so as it starts and as it is back on the phone. */
+    val served: StateFlow<Boolean> = _served.asStateFlow()
 
     /** The space has a linked browser: "Play on" shows even on a phone without Cast. */
     val hasBrowser: StateFlow<Boolean> = link.linked.map { it.isNotEmpty() }.distinctUntilChanged()
@@ -186,7 +195,7 @@ class BrowserOutputs internal constructor(
         val me = link.deviceId ?: return false
         active?.let { if (it.remote.device == device) return true }
         val b = link.live.value[device]?.takeIf { it.state.canDrive } ?: return false
-        val name = link.linked.value[device] ?: b.name
+        val name = link.linked.value[device] ?: return false // unlinked a moment ago
         // Another browser plays now: it lets go, and the service moves the music to this one where it was (no pause between).
         active?.let { old ->
             link.release(old.remote.device, pause = true)
@@ -209,14 +218,20 @@ class BrowserOutputs internal constructor(
             listOf(
                 scope.launch { link.live.map { it[device] }.distinctUntilChanged().collect { remote.onState(it) } },
                 scope.launch { remote.link.collect { _session.value = BrowserSession(device, name, it) } },
+                // Unlinked, from here or from the browser: nothing more can reach it, so the music comes back at once.
+                scope.launch {
+                    link.linked.first { device !in it }
+                    onUnlinked(remote)
+                },
             ),
         )
         skippedNoted = false
         resumeOnPhone = false
         _session.value = BrowserSession(device, name, remote.link.value)
         _remote.value = remote
-        // A speaker playing now lets go (the service has already moved the music off it).
-        if (castDevices.remote.value != null) castDevices.disconnect()
+        // A speaker playing now lets go (the service has already moved the music off it); one still connecting is cancelled,
+        // or it would take the music from the browser picked after it once it connects.
+        if (castDevices.remote.value != null || castDevices.connection.value is CastConnection.Connecting) castDevices.disconnect()
         return true
     }
 
@@ -232,6 +247,11 @@ class BrowserOutputs internal constructor(
 
     /** The service, as [remote] turns null: whether to carry on playing here. Read once. */
     fun takeResumeOnPhone(): Boolean = resumeOnPhone.also { resumeOnPhone = false }
+
+    /** The playback service started ([on]) or stopped playing through a browser. */
+    fun noteServed(on: Boolean) {
+        _served.value = on
+    }
 
     /** The cast wrapper stepped over [count] songs only this phone has: said once a session. */
     fun noteSkipped(count: Int) {
@@ -253,6 +273,13 @@ class BrowserOutputs internal constructor(
         if (reason != WebCastRemote.End.TOOK_OVER) link.release(remote.device, pause = true)
         // A browser that never answered never had the music: it stays here as it was. One that went away leaves it here paused.
         finish(a, resume = reason == WebCastRemote.End.NO_ANSWER)
+    }
+
+    /** The browser left the space: it can't be told to let go, and the music comes back here paused. */
+    private fun onUnlinked(remote: WebCastRemote) {
+        val a = active?.takeIf { it.remote === remote } ?: return
+        _notices.tryEmit(BrowserNotice.Unlinked(remote.name))
+        finish(a, resume = false)
     }
 
     private fun finish(a: Active, resume: Boolean) {

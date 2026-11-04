@@ -48,6 +48,7 @@
     <string name="play_on_notice_closed">%1$s closed. Your music is back on this phone.</string>
     <string name="play_on_notice_lost">Lost the connection to %1$s. Your music is back on this phone.</string>
     <string name="play_on_notice_own_music">%1$s is playing its own music now.</string>
+    <string name="play_on_notice_unlinked">%1$s was unlinked. Your music is back on this phone.</string>
     <string name="play_on_notice_no_answer">%1$s didn\'t answer. Your music stayed on this phone.</string>
     <!-- Songs only this phone has, stepped over on a browser (once a session). -->
     <plurals name="play_on_notice_skipped">

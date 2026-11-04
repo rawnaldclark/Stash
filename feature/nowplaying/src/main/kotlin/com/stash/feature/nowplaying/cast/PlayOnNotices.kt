@@ -31,10 +31,11 @@ fun PlayOnNotices(
                 is BrowserNotice.Lost -> res.getString(R.string.play_on_notice_lost, notice.name)
                 is BrowserNotice.OwnMusic -> res.getString(R.string.play_on_notice_own_music, notice.name)
                 is BrowserNotice.NoAnswer -> res.getString(R.string.play_on_notice_no_answer, notice.name)
+                is BrowserNotice.Unlinked -> res.getString(R.string.play_on_notice_unlinked, notice.name)
                 is BrowserNotice.Skipped -> res.getQuantityString(R.plurals.play_on_notice_skipped, notice.count, notice.count)
             }
             // Back here paused: Play carries on where the browser was (a browser going away never starts the loudspeaker).
-            val offersPlay = notice is BrowserNotice.Closed || notice is BrowserNotice.Lost
+            val offersPlay = notice is BrowserNotice.Closed || notice is BrowserNotice.Lost || notice is BrowserNotice.Unlinked
             snackbarHostState.currentSnackbarData?.dismiss()
             val result = snackbarHostState.showSnackbar(
                 message = message,

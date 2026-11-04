@@ -243,6 +243,8 @@ class BrowserOutputsTest {
         open(CHROME)
         val o = outputs()
         o.connect(CHROME)
+        val song = com.stash.core.data.weblink.handoff.WireSong("Pink + White", "Frank Ocean")
+        o.remote.value!!.load(CastMedia("42#1", "", "", null, null, null, null, 0, song = song), 0, autoplay = true)
         link.live.value = mapOf(CHROME to state(CHROME, playing = true, title = "Pink + White", driver = ME, iid = "42#1"))
         runCurrent()
 
@@ -269,6 +271,32 @@ class BrowserOutputsTest {
         assertThat(notices).containsExactly(BrowserNotice.NoAnswer("Chrome on Windows"))
         assertThat(o.takeResumeOnPhone()).isTrue() // it stays playing here, if it was
         assertThat(link.sent.map { it.second::class }).contains(RemoteCommand.Load::class)
+    }
+
+    @Test fun `a browser unlinked while it plays ends it at once, paused here, said once`() = runTest {
+        open(CHROME, FIREFOX)
+        val o = outputs()
+        o.connect(CHROME)
+
+        link.linked.value = mapOf(FIREFOX to "Firefox on Mac") // removed from the space, here or from the browser
+        runCurrent()
+
+        assertThat(o.remote.value).isNull()
+        assertThat(o.session.value).isNull()
+        assertThat(notices).containsExactly(BrowserNotice.Unlinked("Chrome on Windows"))
+        assertThat(o.takeResumeOnPhone()).isFalse()
+        assertThat(link.calls).containsExactly("pin $CHROME", "unpin").inOrder() // nothing can reach it to let go
+    }
+
+    @Test fun `picking a browser cancels a speaker still connecting, which would take the music once connected`() = runTest {
+        open(CHROME)
+        val o = outputs()
+        speakers.connection.value = CastConnection.Connecting("Kitchen")
+
+        assertThat(o.connect(CHROME)).isTrue()
+
+        assertThat(speakers.disconnects).isEqualTo(1)
+        assertThat(o.remote.value).isNotNull()
     }
 
     @Test fun `skipped songs are said once a session`() = runTest {

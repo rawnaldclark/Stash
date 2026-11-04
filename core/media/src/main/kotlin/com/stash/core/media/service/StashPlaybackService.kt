@@ -1014,6 +1014,7 @@ class StashPlaybackService : MediaLibraryService() {
                 playbackDiagnosticsLog.recordCast("receiver changed: $kind")
                 wrapper.attach(master, remote, wrapper.currentPosition, wrapper.playWhenReady, castFeed(kind))
                 castKind = kind
+                browserOutputs.noteServed(kind == CastKind.BROWSER)
                 // The speaker's look-ahead (it serves the next song over the LAN) is no browser's business, and a speaker
                 // taking over from a browser starts its own while it plays.
                 prefetchPollJob?.cancel()
@@ -1048,6 +1049,7 @@ class StashPlaybackService : MediaLibraryService() {
         master.stop() // keeps the queue and position; nothing plays or buffers on the phone
         val wrapper = castPlayer ?: com.stash.core.media.cast.CastSessionPlayer(master).also { castPlayer = it }
         castKind = kind
+        browserOutputs.noteServed(kind == CastKind.BROWSER)
         wrapper.attach(master, remote, positionMs, playWhenReady, castFeed(kind))
         wrapper.addListener(castListener)
         mediaSession?.player = wrapper
@@ -1115,7 +1117,7 @@ class StashPlaybackService : MediaLibraryService() {
      */
     @OptIn(UnstableApi::class)
     private fun exitCast(resume: Boolean = false) {
-        val wrapper = castPlayer?.takeIf { it.isAttached } ?: return
+        val wrapper = castPlayer?.takeIf { it.isAttached } ?: return browserOutputs.noteServed(false)
         val play = resume && wrapper.playWhenReady
         val handoff = wrapper.detach()
         wrapper.removeListener(castListener)
@@ -1141,6 +1143,8 @@ class StashPlaybackService : MediaLibraryService() {
         playbackDiagnosticsLog.recordCast("playback back on the phone")
         updateCustomLayout()
         triggerNotificationUpdate()
+        // Last: what waits for the phone to hold the queue again (the queue's "Play on this phone") may go on at once.
+        browserOutputs.noteServed(false)
     }
 
     /** What the speaker loads for [item]: a LAN URL from [castServer], plus the metadata it shows. */
