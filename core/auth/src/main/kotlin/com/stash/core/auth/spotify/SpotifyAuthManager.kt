@@ -517,6 +517,86 @@ class SpotifyAuthManager @Inject constructor(
     }
 
     /**
+     * Which Spotify account [accessToken] belongs to, from the web player's own `profileAttributes`
+     * query ([SpotifyAuthConfig.HASH_PROFILE_ATTRIBUTES]), or null when Spotify doesn't say (no
+     * network, a rejected token, a rotated hash the bundle no longer has).
+     *
+     * Takes the token rather than reading the stored one, so a sign-in can be identified BEFORE it
+     * is saved: the account-swap guard in `TokenManagerImpl.connectSpotifyWithCookie` compares it
+     * with the connected account first. The request is `executeGraphQL`'s (same headers, same
+     * client token flow); a `PersistedQueryNotFound` re-scrapes the hash from the live bundle and
+     * retries once. Never throws, except cancellation.
+     *
+     * @param accessToken A web-player access token from [getAccessToken].
+     * @param clientId The web player's client id (the second half of the token's scope).
+     */
+    suspend fun fetchProfile(accessToken: String, clientId: String): SpotifyProfile? = withContext(Dispatchers.IO) {
+        if (accessToken.isEmpty() || clientId.isEmpty()) return@withContext null
+        val profile = try {
+            lookUpProfile(accessToken, clientId)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "fetchProfile failed: ${e.javaClass.simpleName}")
+            null
+        }
+        Log.d(TAG, "fetchProfile: identified=${profile != null}")
+        profile
+    }
+
+    /** [fetchProfile]'s requests: the client token, the query, and one re-scrape on a rotated hash. */
+    private suspend fun lookUpProfile(accessToken: String, clientId: String): SpotifyProfile? {
+        val clientToken = getClientToken(clientId) ?: return null
+        val seed = SpotifyAuthConfig.HASH_PROFILE_ATTRIBUTES
+        val body = profileAttributesBody(accessToken, clientToken, seed) ?: return null
+        SpotifyProfile.parseProfileAttributes(body)?.let { return it }
+        if (!body.contains("PersistedQueryNotFound", ignoreCase = true)) return null
+        val fresh = scrapePersistedQueryHash(SpotifyAuthConfig.OP_PROFILE_ATTRIBUTES, seed) ?: return null
+        return profileAttributesBody(accessToken, clientToken, fresh)?.let(SpotifyProfile::parseProfileAttributes)
+    }
+
+    /**
+     * The body of one `profileAttributes` GET, or null on a failed request. A non-2xx answer still
+     * returns its body when it is a persisted-query miss, so [fetchProfile] can re-scrape the hash.
+     * The answer names the account, so neither body nor id is logged.
+     */
+    private fun profileAttributesBody(accessToken: String, clientToken: String, hash: String): String? {
+        val extensions = buildJsonObject {
+            putJsonObject("persistedQuery") {
+                put("version", 1)
+                put("sha256Hash", hash)
+            }
+        }.toString()
+        val url = SpotifyAuthConfig.GRAPHQL_ENDPOINT +
+            "?operationName=${SpotifyAuthConfig.OP_PROFILE_ATTRIBUTES}" +
+            "&variables=${java.net.URLEncoder.encode("{}", "UTF-8")}" +
+            "&extensions=${java.net.URLEncoder.encode(extensions, "UTF-8")}"
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .header("Authorization", "Bearer $accessToken")
+            .header("Client-Token", clientToken)
+            .header("Accept", "application/json")
+            .header("App-Platform", "WebPlayer")
+            .header("Spotify-App-Version", getClientVersion())
+            .header("Origin", "https://open.spotify.com")
+            .header("Referer", "https://open.spotify.com/")
+            .header("User-Agent", WEB_UA)
+            .build()
+        return okHttpClient.newCall(request).execute().use { response ->
+            val body = response.body?.string()
+            when {
+                response.isSuccessful -> body
+                body?.contains("PersistedQueryNotFound", ignoreCase = true) == true -> body
+                else -> {
+                    Log.w(TAG, "fetchProfile: HTTP ${response.code}")
+                    null
+                }
+            }
+        }
+    }
+
+    /**
      * Extracts the Spotify username from a JWT access token without any network call.
      *
      * Spotify sp_dc-derived access tokens are JWTs. The payload (second segment,

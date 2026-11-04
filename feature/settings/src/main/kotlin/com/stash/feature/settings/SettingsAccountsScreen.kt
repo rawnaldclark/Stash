@@ -99,6 +99,38 @@ fun SettingsAccountsScreen(
         )
     }
 
+    // A sign-in as a different Spotify account than the connected one was refused (nothing was
+    // replaced): say whose account is connected and how to switch on purpose.
+    val spotifyMismatch by viewModel.spotifyAccountMismatch.collectAsStateWithLifecycle()
+    spotifyMismatch?.let { mismatch ->
+        AlertDialog(
+            onDismissRequest = viewModel::onDismissSpotifyAccountMismatch,
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = MaterialTheme.shapes.large,
+            title = {
+                Text(
+                    text = stringResource(R.string.settings_spotify_other_account_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            },
+            text = {
+                Text(
+                    text = mismatch.attemptedName?.let {
+                        stringResource(R.string.settings_spotify_other_account_body, mismatch.connectedName, it)
+                    } ?: stringResource(R.string.settings_spotify_other_account_body_unnamed, mismatch.connectedName),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::onDismissSpotifyAccountMismatch) {
+                    Text(stringResource(R.string.settings_ok))
+                }
+            },
+        )
+    }
+
     // YouTube Music cookie input dialog.
     if (uiState.showYouTubeCookieDialog) {
         com.stash.feature.settings.components.YouTubeCookieDialog(

@@ -167,6 +167,11 @@
     <string name="settings_spotify_username_label">Spotify username (optional)</string>
     <string name="settings_spotify_username_placeholder">Your Spotify username</string>
     <string name="settings_spotify_username_hint">Find at spotify.com/account under \'Username\'</string>
+    <!-- Settings > Accounts > Spotify: a sign-in as a different account than the connected one is refused; nothing is replaced. %1$s = connected account's name, %2$s = the other account's name. -->
+    <string name="settings_spotify_other_account_title">Different Spotify account</string>
+    <string name="settings_spotify_other_account_body">You\'re signed in to Spotify as %1$s. To use %2$s, sign out of %1$s first: tap Disconnect on the Spotify card.</string>
+    <!-- Same, when the other account has no name of its own to show (it reads the same as the connected one). %1$s = connected account's name. -->
+    <string name="settings_spotify_other_account_body_unnamed">You\'re signed in to Spotify as %1$s. The account you just signed in with is a different one. To use it, sign out of %1$s first: tap Disconnect on the Spotify card.</string>
 
     <!-- Settings > Accounts > YouTube Login & Fallbacks -->
     <string name="settings_youtube_signin_title">Sign in to YouTube Music</string>

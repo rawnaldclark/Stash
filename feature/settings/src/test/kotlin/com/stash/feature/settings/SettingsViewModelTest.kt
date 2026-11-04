@@ -56,9 +56,13 @@ class SettingsViewModelTest {
 
     private var themePreference: com.stash.core.data.prefs.ThemePreference = mockk(relaxed = true)
 
+    private val tokenManager = mockk<com.stash.core.auth.TokenManager>(relaxed = true)
+    private val likeCoordinator = mockk<com.stash.core.data.social.LikeCoordinator>(relaxed = true)
+    private val syncStateManager = com.stash.core.data.sync.SyncStateManager()
+
     private fun newVm(losslessConfigured: Boolean = true) = SettingsViewModel(
         appContext = mockk(relaxed = true),
-        tokenManager = mockk(relaxed = true),
+        tokenManager = tokenManager,
         musicRepository = mockk(relaxed = true),
         librarySizeHolder = librarySizeHolder,
         qualityPreference = mockk(relaxed = true),
@@ -107,8 +111,8 @@ class SettingsViewModelTest {
         relayClient = relayClient,
         lastFmRecommendationSource = mockk(relaxed = true),
         discordRpcCoordinator = mockk(relaxed = true),
-        syncStateManager = com.stash.core.data.sync.SyncStateManager(),
-        likeCoordinator = mockk(relaxed = true),
+        syncStateManager = syncStateManager,
+        likeCoordinator = likeCoordinator,
     )
 
     // -- Display size (UI scale) ---------------------------------------------
@@ -387,5 +391,79 @@ class SettingsViewModelTest {
         advanceUntilIdle()
 
         coVerify(exactly = 0) { likePreferences.setMirrorLikesSpotify(any()) }
+    }
+
+    // -- Spotify account-swap guard ------------------------------------------
+    // A sign-in as another Spotify account used to replace the connected one silently.
+
+    private fun spotifySessionExpired() = syncStateManager.onAuthExpiryProbed(
+        com.stash.core.data.sync.AuthExpiryState(spotifyExpired = true, youtubeExpired = false),
+    )
+
+    @Test fun `a sign-in as another Spotify account is refused with both names, and nothing else moves`() = runTest {
+        spotifySessionExpired()
+        coEvery { tokenManager.connectSpotifyWithCookie("sam-cookie", "") } returns
+            com.stash.core.auth.model.SpotifyConnectResult.DifferentAccount(connectedName = "Rawn", attemptedName = "Sam")
+        val vm = newVm()
+
+        // The card's Reconnect: the WebView hands over the cookie it captured.
+        vm.onSpotifyWebLoginCookieExtracted("sam-cookie")
+        advanceUntilIdle()
+
+        assertThat(vm.spotifyAccountMismatch.value).isEqualTo(SpotifyAccountMismatch("Rawn", "Sam"))
+        // Rawn's session still needs Rawn's sign-in: Reconnect stays offered, his likes keep waiting.
+        assertThat(syncStateManager.authExpiry.value.spotifyExpired).isTrue()
+        coVerify(exactly = 0) { likeCoordinator.retry(any()) }
+    }
+
+    @Test fun `two Spotify accounts with one display name - the message doesn't name the other`() = runTest {
+        coEvery { tokenManager.connectSpotifyWithCookie(any(), any()) } returns
+            com.stash.core.auth.model.SpotifyConnectResult.DifferentAccount(connectedName = "Rawn", attemptedName = " rawn")
+        val vm = newVm()
+
+        vm.onConnectSpotifyWithCookie("sam-cookie", "")
+        advanceUntilIdle()
+
+        assertThat(vm.spotifyAccountMismatch.value).isEqualTo(SpotifyAccountMismatch("Rawn", attemptedName = null))
+    }
+
+    @Test fun `the connected Spotify account signing in again connects as before`() = runTest {
+        spotifySessionExpired()
+        coEvery { tokenManager.connectSpotifyWithCookie("rawn-cookie", "") } returns
+            com.stash.core.auth.model.SpotifyConnectResult.Connected
+        val vm = newVm()
+
+        vm.onSpotifyWebLoginCookieExtracted("rawn-cookie")
+        advanceUntilIdle()
+
+        assertThat(vm.spotifyAccountMismatch.value).isNull()
+        assertThat(syncStateManager.authExpiry.value.spotifyExpired).isFalse()
+        coVerify(exactly = 1) { likeCoordinator.retry(com.stash.core.data.social.Destination.SPOTIFY) }
+    }
+
+    @Test fun `an invalid Spotify cookie is not an account mismatch`() = runTest {
+        spotifySessionExpired()
+        coEvery { tokenManager.connectSpotifyWithCookie(any(), any()) } returns
+            com.stash.core.auth.model.SpotifyConnectResult.Invalid
+        val vm = newVm()
+
+        vm.onConnectSpotifyWithCookie("bad-cookie", "")
+        advanceUntilIdle()
+
+        assertThat(vm.spotifyAccountMismatch.value).isNull()
+        assertThat(syncStateManager.authExpiry.value.spotifyExpired).isTrue()
+        coVerify(exactly = 0) { likeCoordinator.retry(any()) }
+    }
+
+    @Test fun `dismissing the Spotify account message clears it`() = runTest {
+        coEvery { tokenManager.connectSpotifyWithCookie(any(), any()) } returns
+            com.stash.core.auth.model.SpotifyConnectResult.DifferentAccount(connectedName = "Rawn", attemptedName = "Sam")
+        val vm = newVm()
+        vm.onConnectSpotifyWithCookie("sam-cookie", "")
+        advanceUntilIdle()
+
+        vm.onDismissSpotifyAccountMismatch()
+
+        assertThat(vm.spotifyAccountMismatch.value).isNull()
     }
 }

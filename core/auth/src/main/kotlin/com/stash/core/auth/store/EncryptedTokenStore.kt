@@ -3,6 +3,7 @@ package com.stash.core.auth.store
 import android.content.Context
 import android.util.Base64
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
@@ -11,6 +12,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.stash.core.auth.crypto.TinkEncryptionManager
 import com.stash.core.auth.model.ServiceToken
 import com.stash.core.auth.model.UserInfo
+import com.stash.core.auth.spotify.SpotifyProfile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -41,6 +43,13 @@ private data class StoredToken(
     val imageUrl: String = "",
 )
 
+/** Stored form of [SpotifyProfile]: which account the stored Spotify sign-in belongs to. */
+@Serializable
+private data class StoredSpotifyAccount(
+    val userId: String,
+    val displayName: String = "",
+)
+
 /**
  * Encrypted token store backed by Preferences DataStore and Tink AES-256-GCM.
  *
@@ -62,6 +71,8 @@ class EncryptedTokenStore @Inject constructor(
 
     private object Keys {
         val SPOTIFY = stringPreferencesKey("spotify_token")
+        /** Whose the [SPOTIFY] sign-in is; written with it, cleared with it. */
+        val SPOTIFY_ACCOUNT = stringPreferencesKey("spotify_account")
         val YOUTUBE = stringPreferencesKey("youtube_token")
         val DISCORD = stringPreferencesKey("discord_token")
         val SOUNDCLOUD = stringPreferencesKey("soundcloud_session")
@@ -85,9 +96,53 @@ class EncryptedTokenStore @Inject constructor(
         saveBlob(Keys.SPOTIFY, encryptStored(stored))
     }
 
-    /** Removes the stored Spotify credentials. */
+    /**
+     * Which Spotify account the stored sign-in belongs to, or null when it isn't known: signed out,
+     * signed in before Stash recorded it (learned at the next sync), or Spotify didn't say.
+     */
+    val spotifyAccount: Flow<SpotifyProfile?> = context.authDataStore.data.map { prefs ->
+        prefs[Keys.SPOTIFY_ACCOUNT]?.let { decryptAccount(it) }
+    }
+
+    /**
+     * Saves a new Spotify sign-in: the token, its profile, and whose account it is, in ONE write,
+     * so the recorded account can never belong to a different sign-in than the stored token.
+     * A null [account] (Spotify didn't say) removes any recorded one: it belonged to the
+     * sign-in this replaces.
+     */
+    suspend fun saveSpotifyConnection(token: ServiceToken, user: UserInfo, account: SpotifyProfile?) {
+        val tokenBlob = encryptStored(token.toStoredToken(user))
+        val accountBlob = account?.let { encryptAccount(it) }
+        editSweepingAfterKeysetReset { prefs ->
+            prefs[Keys.SPOTIFY] = tokenBlob
+            if (accountBlob != null) prefs[Keys.SPOTIFY_ACCOUNT] = accountBlob else prefs.remove(Keys.SPOTIFY_ACCOUNT)
+        }
+    }
+
+    /**
+     * Records whose the stored Spotify sign-in is, but only while that sign-in is still
+     * [spDcCookie] (its long-lived cookie): a sign-out or a new sign-in that landed while the
+     * account was being looked up wins, and nothing is written. Returns true when it was written.
+     */
+    suspend fun saveSpotifyAccountFor(spDcCookie: String, account: SpotifyProfile): Boolean {
+        val accountBlob = encryptAccount(account)
+        var written = false
+        editSweepingAfterKeysetReset { prefs ->
+            val current = prefs[Keys.SPOTIFY]?.let { decryptToken(it) }
+            if (current != null && current.refreshToken == spDcCookie) {
+                prefs[Keys.SPOTIFY_ACCOUNT] = accountBlob
+                written = true
+            }
+        }
+        return written
+    }
+
+    /** Removes the stored Spotify credentials, and with them whose account they were. */
     suspend fun clearSpotify() {
-        context.authDataStore.edit { it.remove(Keys.SPOTIFY) }
+        context.authDataStore.edit {
+            it.remove(Keys.SPOTIFY)
+            it.remove(Keys.SPOTIFY_ACCOUNT)
+        }
     }
 
     // ── YouTube Music ────────────────────────────────────────────────────
@@ -189,16 +244,22 @@ class EncryptedTokenStore @Inject constructor(
      * dropped here rather than left on disk, unreadable, for ever.
      */
     private suspend fun saveBlob(key: Preferences.Key<String>, blob: String) {
+        editSweepingAfterKeysetReset { prefs -> prefs[key] = blob }
+    }
+
+    /** One DataStore edit that first drops every blob sealed under a lost keyset (see [saveBlob]). */
+    private suspend fun editSweepingAfterKeysetReset(write: (MutablePreferences) -> Unit) {
         context.authDataStore.edit { prefs ->
             if (encryption.consumeKeysetReset()) {
                 prefs.remove(Keys.SPOTIFY)
+                prefs.remove(Keys.SPOTIFY_ACCOUNT)
                 prefs.remove(Keys.YOUTUBE)
                 prefs.remove(Keys.DISCORD)
                 prefs.remove(Keys.SOUNDCLOUD)
                 prefs.asMap().keys.map { it.name }.filter { it.startsWith(CLOUD_PREFIX) }
                     .forEach { prefs.remove(stringPreferencesKey(it)) }
             }
-            prefs[key] = blob
+            write(prefs)
         }
     }
 
@@ -234,6 +295,22 @@ class EncryptedTokenStore @Inject constructor(
         val stored = decryptStored(encrypted)
         if (stored.userId.isEmpty()) null
         else UserInfo(stored.userId, stored.displayName, stored.imageUrl.ifEmpty { null })
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun encryptAccount(account: SpotifyProfile): String {
+        val stored = StoredSpotifyAccount(userId = account.userId, displayName = account.displayName)
+        val plaintext = json.encodeToString(StoredSpotifyAccount.serializer(), stored).toByteArray()
+        return Base64.encodeToString(encryption.encrypt(plaintext), Base64.NO_WRAP)
+    }
+
+    /** The recorded Spotify account, or null when it has no user id or can't be decrypted. */
+    private fun decryptAccount(encrypted: String): SpotifyProfile? = try {
+        val plaintext = encryption.decrypt(Base64.decode(encrypted, Base64.NO_WRAP))
+        val stored = json.decodeFromString(StoredSpotifyAccount.serializer(), String(plaintext))
+        stored.userId.takeIf { it.isNotBlank() }
+            ?.let { SpotifyProfile(userId = it, displayName = stored.displayName.ifBlank { it }) }
     } catch (_: Exception) {
         null
     }

@@ -242,3 +242,26 @@ sealed interface LastFmAuthState {
     data class Connected(val username: String, val pendingScrobbles: Int) : LastFmAuthState
     data class Error(val message: String) : LastFmAuthState
 }
+
+/**
+ * A Spotify sign-in Stash refused because it was another account than the connected one
+ * ([com.stash.core.auth.model.SpotifyConnectResult.DifferentAccount]); the Accounts screen says
+ * so and how to switch.
+ *
+ * @property connectedName The connected account's name.
+ * @property attemptedName The refused account's name, or null when it would read the same as
+ *   [connectedName] (two accounts can share a display name): the message then doesn't name it,
+ *   rather than read "To use Rawn, sign out of Rawn".
+ */
+data class SpotifyAccountMismatch(
+    val connectedName: String,
+    val attemptedName: String?,
+) {
+    companion object {
+        fun of(refused: com.stash.core.auth.model.SpotifyConnectResult.DifferentAccount) = SpotifyAccountMismatch(
+            connectedName = refused.connectedName,
+            attemptedName = refused.attemptedName
+                .takeUnless { it.isBlank() || it.trim().equals(refused.connectedName.trim(), ignoreCase = true) },
+        )
+    }
+}
