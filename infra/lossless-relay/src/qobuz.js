@@ -6,6 +6,8 @@ export const UA = "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, li
 /** The client's whole budget is 8 s (spec §1). Two attempts at this timeout plus the D1 round trips still fit. */
 export const QOBUZ_TIMEOUT_MS = 3000;
 
+// Qobuz's request_sig protocol requires MD5; this is not a Stash password/auth hash.
+// Owner-accepted CodeQL exception #7 is documented in ROLLOUT-2026-10-31.md; do not change the wire digest.
 const md5 = (s) => createHash("md5").update(s).digest("hex");
 
 /**
