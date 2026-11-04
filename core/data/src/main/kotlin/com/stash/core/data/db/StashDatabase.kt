@@ -2001,18 +2001,20 @@ abstract class StashDatabase : RoomDatabase() {
          * credits" and nothing is backfilled.
          *
          * Each column is added only when it's missing: the PR's first build used these same four
-         * columns at v77, and a phone that ran it is already at 77 with them (its 77 never had
-         * #838's index rebuild, which only matters on that test phone).
+         * columns at v77, and a phone that ran it is already at 77 with them. That 77 never ran
+         * #838's `tracks_fts` rebuild ([MIGRATION_76_77]), so such a phone gets it here instead.
          */
         val MIGRATION_77_78 = object : Migration(77, 78) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // Frozen here, not shared with the entity: a later rename must not change what 78 adds.
                 val columns = listOf("credit_uploader_name", "credit_uploader_url", "credit_maker_name", "credit_maker_url")
+                val fromPrBuild = columns.any { db.hasColumn("lyrics", it) }
                 for (column in columns) {
                     if (!db.hasColumn("lyrics", column)) {
                         db.execSQL("ALTER TABLE `lyrics` ADD COLUMN `$column` TEXT")
                     }
                 }
+                if (fromPrBuild) db.execSQL("INSERT INTO tracks_fts(tracks_fts) VALUES('rebuild')")
             }
         }
 

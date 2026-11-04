@@ -16,7 +16,8 @@ import org.robolectric.annotation.Config
  * v77 -> v78 adds the four nullable Spicy Lyrics credit columns to `lyrics` (#837): existing rows
  * keep their lyrics and read as "no credits". Also the PR's first build, which added the same
  * columns at v77: a phone that ran it is already at 77 with them, and must reach 78 without
- * "duplicate column name". Every run validates the result against the exported 78.json.
+ * "duplicate column name", and with the `tracks_fts` rebuild its 77 skipped (#838). Every run
+ * validates the result against the exported 78.json.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
@@ -39,7 +40,7 @@ class MigrationV77V78Test {
             "INSERT INTO tracks (id, title, artist, album, album_artist, duration_ms, file_format, " +
                 "quality_kbps, file_size_bytes, source, date_added, play_count, is_downloaded, " +
                 "canonical_title, canonical_artist, match_confidence, match_dismissed) VALUES " +
-                "(1, 'Song', 'Artist', 'Album', 'Artist', 200000, 'opus', " +
+                "(1, 'Song', 'Artist', 'Zebra Tapes', 'Artist', 200000, 'opus', " +
                 "0, 0, 'YOUTUBE', 1, 0, 0, 'song', 'artist', 0, 0)",
         )
         db.execSQL(
@@ -47,6 +48,25 @@ class MigrationV77V78Test {
                 "source_lyrics_id, fetched_at, ttml, ttml_checked_at, sync_offset_ms) VALUES " +
                 "(1, 'Hi', '[00:01.00]Hi', 0, NULL, 'lrclib', '42', 5, NULL, 7, -250)",
         )
+    }
+
+    private fun matches(db: SupportSQLiteDatabase, query: String): Int =
+        db.query("SELECT count(*) FROM tracks_fts WHERE tracks_fts MATCH ?", arrayOf<Any?>(query))
+            .use { it.moveToFirst(); it.getInt(0) }
+
+    /**
+     * Leaves the album's words in `tracks_fts` after clearing it, as an update made while Room had
+     * the sync triggers dropped did (66 -> 67; see [StashDatabase.MIGRATION_76_77]).
+     */
+    private fun staleTheIndex(db: SupportSQLiteDatabase) {
+        assertEquals(1, matches(db, "zebra"))
+        val triggers = db.query(
+            "SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'room_fts_content_sync_%'",
+        ).use { c -> buildList { while (c.moveToNext()) add(c.getString(0) to c.getString(1)) } }
+        triggers.forEach { (name, _) -> db.execSQL("DROP TRIGGER `$name`") }
+        db.execSQL("UPDATE tracks SET album = '' WHERE id = 1")
+        triggers.forEach { (_, sql) -> db.execSQL(sql) }
+        assertEquals("stale", 1, matches(db, "zebra"))
     }
 
     private fun columns(db: SupportSQLiteDatabase): List<String> =
@@ -77,19 +97,22 @@ class MigrationV77V78Test {
         helper.createDatabase(dbName, 77).use { db ->
             seed(db)
             assertTrue(credits.none { it in columns(db) })
+            staleTheIndex(db)
         }
 
         helper.runMigrationsAndValidate(dbName, 78, true, StashDatabase.MIGRATION_77_78).use { db ->
             assertTrue(columns(db).containsAll(credits))
             assertRow(db, listOf(null, null, null, null))
+            assertEquals("a real 77 already had #838's rebuild: not run twice", 1, matches(db, "zebra"))
         }
     }
 
     @Test fun `a 77 that already has the credit columns reaches 78 and keeps its credits`() {
         helper.createDatabase(dbName, 77).use { db ->
             seed(db)
-            // What the PR's first build did at 76 -> 77.
+            // What the PR's first build did at 76 -> 77, instead of #838's index rebuild.
             credits.forEach { db.execSQL("ALTER TABLE `lyrics` ADD COLUMN `$it` TEXT") }
+            staleTheIndex(db)
             db.execSQL(
                 "UPDATE lyrics SET credit_uploader_name = 'alice', credit_uploader_url = 'https://a.example', " +
                     "credit_maker_name = 'bob' WHERE track_id = 1",
@@ -99,6 +122,8 @@ class MigrationV77V78Test {
         helper.runMigrationsAndValidate(dbName, 78, true, StashDatabase.MIGRATION_77_78).use { db ->
             assertEquals("no column added twice", credits.size, columns(db).count { it in credits })
             assertRow(db, listOf("alice", "https://a.example", "bob", null))
+            assertEquals("the index rebuild that 77 skipped", 0, matches(db, "zebra"))
+            assertEquals(1, matches(db, "song"))
         }
     }
 
