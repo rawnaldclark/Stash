@@ -429,6 +429,39 @@ class WebCastRemoteTest {
         assertThat(sent).containsExactly(RemoteCommand.UpNext(listOf(RemoteItem("44#n3", song))))
     }
 
+    @Test fun `a skip the browser missed, to the song it holds next, is a jump again, keeping its preload`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1"))
+        r.setNext(media("43#n1", nights))
+        advanceTimeBy(WebCastRemote.UP_NEXT_COALESCE_MS + 1)
+        runCurrent()
+        r.onState(state(iid = "42#1", next = "43#n1"))
+        r.onState(state(iid = "42#1", next = "43#n1", lostAt = testScheduler.currentTime))
+        // A skip and a pause from the lock screen while this phone's connection is down: neither got there.
+        assertThat(r.playNext()).isTrue()
+        r.pause()
+        sent.clear()
+        // Back: the browser still plays the song before and holds this one next.
+        r.onState(state(iid = "42#1", next = "43#n1", sid = "NewSession01", playing = true))
+        assertThat(sent).containsExactly(RemoteCommand.Jump("43#n1"), RemoteCommand.Pause).inOrder()
+
+        // Wanted somewhere inside it (a seek since), it is loaded there: a jump starts at 0:00.
+        val again = remote()
+        again.load(media("50#1"), 0, autoplay = true)
+        again.onState(state(iid = "50#1"))
+        again.setNext(media("51#n1", nights))
+        advanceTimeBy(WebCastRemote.UP_NEXT_COALESCE_MS + 1)
+        runCurrent()
+        again.onState(state(iid = "50#1", next = "51#n1"))
+        again.onState(state(iid = "50#1", next = "51#n1", lostAt = testScheduler.currentTime))
+        assertThat(again.playNext()).isTrue()
+        again.seekTo(30_000)
+        sent.clear()
+        again.onState(state(iid = "50#1", next = "51#n1", sid = "NewSession02", playing = true))
+        assertThat(sent).containsExactly(RemoteCommand.Load(RemoteItem("51#n1", nights), 30_000, true, "Blonde"))
+    }
+
     @Test fun `a song the browser should hold but doesn't is loaded where the phone is on it now, not where its load began`() = runTest {
         val r = remote()
         r.load(media("42#1"), 0, autoplay = true)

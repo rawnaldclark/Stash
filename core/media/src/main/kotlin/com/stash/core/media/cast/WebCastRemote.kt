@@ -432,19 +432,38 @@ class WebCastRemote(
             return
         }
         val reload = s.driver != me || s.iid != c.item.id
+        var toggle: RemoteCommand? = null
         if (reload) {
-            // Everything in [unheard] came after the load: the latest play-or-pause and seek say how it should start.
-            val was = before?.takeIf { it.state.driver == me && it.state.iid == c.item.id }
-            val seek = unheard.filterIsInstance<RemoteCommand.Seek>().lastOrNull()
-            val toggle = unheard.lastOrNull { it == RemoteCommand.Play || it == RemoteCommand.Pause }
-            val position = seek?.positionMs ?: was?.let { positionOf(it, it.state.playing) } ?: c.startMs
-            val play = toggle?.let { it == RemoteCommand.Play } ?: was?.state?.playing ?: c.autoplay
-            send(RemoteCommand.Load(c.item, position, play, from))
+            val (position, play) = startOf(c, before)
+            val why = "catch-up: iid=${s.iid} current=${c.item.id}"
+            if (s.driver == me && s.next == c.item.id && position == 0L) {
+                // It holds that song next, already buffered: a jump keeps the preload a load would throw away. A jump keeps
+                // the play state, so whether it plays is said after it when that differs.
+                log("jump ${c.item.id} ($why)")
+                send(RemoteCommand.Jump(c.item.id))
+                if (play != s.playing) toggle = if (play) RemoteCommand.Play else RemoteCommand.Pause
+            } else {
+                log("load ${c.item.id} at $position play=$play ($why)")
+                send(RemoteCommand.Load(c.item, position, play, from))
+            }
             awaitAnswer()
         }
         if (upNextSent && (reload || s.next != next?.id)) send(RemoteCommand.UpNext(listOfNotNull(next)))
-        // A load said where and whether it plays: only the volume is left to say.
-        resend(if (reload) unheard.filterIsInstance<RemoteCommand.Volume>() else unheard.toList())
+        // A load said where and whether it plays (a jump, where, and the play or pause after it): only the volume is left.
+        resend(listOfNotNull(toggle) + if (reload) unheard.filterIsInstance<RemoteCommand.Volume>() else unheard.toList())
+    }
+
+    /**
+     * Where and whether [c] starts when it goes out again: the latest seek and play-or-pause since it went out, else where the
+     * browser was on it ([before], when it named it), else as it went ([command] keeps that in line until the browser names it).
+     */
+    private fun startOf(c: Sent, before: BrowserState?): Pair<Long, Boolean> {
+        val was = before?.takeIf { it.state.driver == me && it.state.iid == c.item.id }
+        val seek = unheard.filterIsInstance<RemoteCommand.Seek>().lastOrNull()
+        val toggle = unheard.lastOrNull { it == RemoteCommand.Play || it == RemoteCommand.Pause }
+        val position = seek?.positionMs ?: was?.let { positionOf(it, it.state.playing) } ?: c.startMs
+        val play = toggle?.let { it == RemoteCommand.Play } ?: was?.state?.playing ?: c.autoplay
+        return position to play
     }
 
     /** Sends [commands] again: unheard until a state of this session comes, and shown at once as before. */
