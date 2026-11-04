@@ -559,6 +559,16 @@ test("settings is the host's; turning it on lets waiting suggestions in as Play 
     assert.equal(send(off.state, "h", { t: "settings", guestsAdd: false }).state, off.state, "the same again changes nothing");
 });
 
+test("turning the switch on keeps a suggestion in the tray when its guest already has 20 waiting", () => {
+    let s = add(room2(), "a", Array.from({ length: 20 }, (_, i) => song(`G${i}`)), true).state;
+    s = send(s, "h", { t: "settings", guestsAdd: false }).state;
+    s = add(s, "a", [song("Late")], true).state;
+    s = add(s, "b", [song("B1")], true).state;
+    const on = send(s, "h", { t: "settings", guestsAdd: true }).state;
+    assert.deepEqual(on.suggestions.map((x) => x.track.t), ["Late"]);
+    assert.ok(titles(on).includes("B1") && !titles(on).includes("Late"));
+});
+
 test("the switch follows whoever hosts: handing over recomputes it", () => {
     let r = send(room2(), "h", { t: "makeHost", memberId: "o" });
     assert.equal(sent(r, "state")[0].msg.state.guestsAdd, false, "an older app as host means approvals");

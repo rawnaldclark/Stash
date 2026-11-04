@@ -309,8 +309,9 @@ function addSongs(ctx, tracks, next) {
 
 /**
  * Call after anything that may change who hosts or their switch, with guestsCanAdd from before. When it turns on,
- * the suggestions still waiting go in as Play next, in the order they came (each guest within their 20). With
- * [announce], everyone hears the new setting (and the queue, if it changed); otherwise the caller's `state` says it.
+ * the suggestions still waiting go in as Play next, in the order they came; one from a guest who already has 20
+ * waiting stays in the host's tray instead of being lost. With [announce], everyone hears the new setting (and the
+ * queue, if it changed); otherwise the caller's `state` says it.
  */
 function switchChanged(ctx, before, announce) {
     const { s } = ctx;
@@ -320,7 +321,10 @@ function switchChanged(ctx, before, announce) {
     if (waiting.length) {
         s.suggestions = [];
         s.qv++;
-        for (const x of waiting) if (room(s, x.from) > 0) insertAdds(s, [{ ...x.track, by: x.from }], true);
+        for (const x of waiting) {
+            if (room(s, x.from) > 0) insertAdds(s, [{ ...x.track, by: x.from }], true);
+            else s.suggestions.push(x);
+        }
         settle(s);
     }
     if (!announce) return;
