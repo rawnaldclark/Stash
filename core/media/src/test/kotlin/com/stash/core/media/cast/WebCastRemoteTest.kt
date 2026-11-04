@@ -446,6 +446,35 @@ class WebCastRemoteTest {
         assertThat(sent).containsExactly(RemoteCommand.UpNext(listOf(RemoteItem("44#n3", song))))
     }
 
+    @Test fun `a state from before a jump to the same song again is no move back, and a reconnect after sends nothing`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1"))
+        r.setNext(media("43#n1", nights))
+        advanceTimeBy(WebCastRemote.UP_NEXT_COALESCE_MS + 1)
+        runCurrent()
+        r.onState(state(iid = "42#1", next = "43#n1"))
+        r.onState(state(iid = "43#n1")) // it moved on by itself to B
+        // B again after it (a queue of A, B, B), held by the browser.
+        r.setNext(media("43#n2", nights))
+        advanceTimeBy(WebCastRemote.UP_NEXT_COALESCE_MS + 1)
+        runCurrent()
+        r.onState(state(iid = "43#n1", next = "43#n2"))
+        // Next: a jump to the second B.
+        assertThat(r.playNext()).isTrue()
+        sent.clear()
+        // A heartbeat sent before the jump landed still names the first B: not a move to the song queued, nothing re-mapped.
+        r.onState(state(iid = "43#n1", next = "43#n2"))
+        assertThat(r.status.contentId).isEqualTo("43#n1")
+        assertThat(sent).isEmpty()
+        // The jump lands; a reconnect later finds it on the second B, where the phone is: nothing to say again.
+        r.onState(state(iid = "43#n2"))
+        assertThat(r.status.contentId).isEqualTo("43#n2")
+        r.onState(state(iid = "43#n2", sid = "Reconnected01", positionMs = 20_000))
+        assertThat(sent).isEmpty()
+        assertThat(r.status.contentId).isEqualTo("43#n2")
+    }
+
     @Test fun `a skip the browser missed, to the song it holds next, is a jump again, keeping its preload`() = runTest {
         val r = remote()
         r.load(media("42#1"), 0, autoplay = true)

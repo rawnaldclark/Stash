@@ -150,8 +150,10 @@ class WebCastRemote(
     }
 
     /**
-     * Each id handed to the browser as the next song this session → that song ([songOf]). A queue that shifted while the browser
-     * was away queues the same song again under a new id the browser never got; the id it holds is still that song ([movedOnTo]).
+     * Each id handed to the browser as the next song this session → that song ([songOf]), until it has been the current song. A
+     * queue that shifted while the browser was away queues the same song again under a new id the browser never got; the id it
+     * holds is still that song ([movedOnTo]). One that has been current is never a move again: a state still naming it after a
+     * jump to the same song further on (a queue of A, B, B) is a state from before the jump.
      */
     private val nextSongs = object : LinkedHashMap<String, String>() {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > MAX_IDS
@@ -254,6 +256,10 @@ class WebCastRemote(
         // A jump keeps the play state: said again as a load, it says the same. What was sent about the song before is over.
         current = Sent(n, 0L, autoplay = s.playing)
         next = null
+        // The queued song is the current one now: nothing is queued after it until the wrapper says, and a state still naming
+        // the song before (sent before the jump landed) is no move to it.
+        nextMedia = null
+        nextSongs.remove(n.id)
         upNextSent = false
         stopped = false
         failedId = null
@@ -425,6 +431,7 @@ class WebCastRemote(
             else -> return
         }
         current = Sent(item, 0L, autoplay = true)
+        nextSongs.remove(iid)
         next = null
         upNextSent = false
     }
