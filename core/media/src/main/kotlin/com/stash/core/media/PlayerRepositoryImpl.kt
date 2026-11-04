@@ -122,7 +122,17 @@ class PlayerRepositoryImpl @Inject constructor(
     private val diagnosticsLog: PlaybackDiagnosticsLog = PlaybackDiagnosticsLog(),
     // Data saver: the next-song look-ahead is skipped where it applies. Null in hand-built tests (never applies).
     private val qualityPolicy: com.stash.core.media.streaming.StreamQualityPolicy? = null,
+    // Remote v2 (spec 2026-11-03 §2.3): while a linked browser plays the queue, this phone resolves nothing it won't play.
+    // Null in hand-built tests (never a browser).
+    private val browserOutputs: com.stash.core.media.cast.BrowserOutputs? = null,
 ) : PlayerRepository {
+
+    /**
+     * A linked browser plays the queue (Remote v2): it finds and streams each song itself, so the look-ahead, a tap's resolve
+     * and a quality change's re-resolve all stand down. A tapped song becomes a placeholder that resolves only if the music
+     * comes back to this phone.
+     */
+    private val playsOnBrowser: Boolean get() = browserOutputs?.remote?.value != null
 
     /**
      * Visible-for-testing indirection so unit tests can stub out the
@@ -204,6 +214,9 @@ class PlayerRepositoryImpl @Inject constructor(
     private var lastObservedIsPlaying = false
 
     init {
+        // A browser playing the queue shows where it plays from ("Playing from Blonde"), as the handoff says it.
+        browserOutputs?.sourceLabel = { currentSource.displayLabel.takeIf { it.isNotBlank() } }
+
         // OOM triage (#238/#239): stamp player scale into every crash report.
         com.stash.core.data.diagnostics.CrashDiagnostics.register("player") {
             "queue=$lastKnownQueueSize timeline=$lastKnownTimelineSize order=$lastKnownOrderSize"
@@ -1222,6 +1235,7 @@ class PlayerRepositoryImpl @Inject constructor(
      */
     internal suspend fun prefetchNextTrack() {
         if (listenTogetherOwnsQueue) return
+        if (playsOnBrowser) return // the browser holds and resolves the next song itself
         val controller = controllerDeferred ?: return
         val tracks = currentQueueTracks
         val nextTimelineIndex = controller.nextMediaItemIndex
@@ -1366,6 +1380,7 @@ class PlayerRepositoryImpl @Inject constructor(
      */
     override suspend fun reresolveNextStream() {
         if (listenTogetherOwnsQueue) return
+        if (playsOnBrowser) return // nothing streams on this phone while a browser plays
         val controller = controllerDeferred ?: return
         val index = controller.nextMediaItemIndex
         // No next song, or it is this one again (a one-song queue on repeat): a new source would restart it.
@@ -3176,6 +3191,9 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         if (!streamAllowed()) return StreamRoutingResult.DownloadMode
         if (!connectivity.isConnected()) return StreamRoutingResult.NoConnectivity
+        // A browser plays it: it finds the song itself (the cast wrapper hands it the song, not a stream). The placeholder
+        // resolves only if the music comes back to this phone, as a queue's tail does.
+        if (playsOnBrowser) return StreamRoutingResult.Item(track.toDomain().toStreamPlaceholderMediaItem())
         if (connectivity.isCellular() && !streamingPreference.streamOnCellular.first()) {
             return StreamRoutingResult.CellularRefused
         }
@@ -3583,6 +3601,23 @@ class PlayerRepositoryImpl @Inject constructor(
             if (listenTogetherOwnsQueue) {
                 note("LISTEN_TOGETHER (left to the session)")
                 return // the session reports "unavailable" and stays silent (spec §6)
+            }
+            // A linked browser couldn't play the song (Remote v2 §2.3; it retried it once already, and never skips by itself).
+            // Whatever the song's URI scheme on this phone, this is not this phone's file or stream failing: the local-file
+            // branch would swap a downloaded song for a stream it resolves here. A plain skip, counted by the cascade guard so a
+            // browser that can't play anything can't machine-gun the queue. A Chromecast's errors keep their old path.
+            if (error.errorCode == PlaybackException.ERROR_CODE_REMOTE_ERROR && playsOnBrowser) {
+                val verdict = cascadeGuard.onError(null) // no same-song retry: the browser retried it already
+                note("REMOTE → $verdict")
+                Log.w(TAG, "onPlayerError: '$failingTitle' failed on the browser — verdict=$verdict")
+                when (val v = verdict) {
+                    StreamErrorCascadeGuard.Verdict.RetrySameItem, StreamErrorCascadeGuard.Verdict.Recover -> controller?.recoverOrStop()
+                    is StreamErrorCascadeGuard.Verdict.Halt -> {
+                        controller?.pause()
+                        _streamingHaltedEvents.tryEmit(StreamingHaltedEvent(failingTitle = failingTitle, consecutiveErrorCount = v.consecutiveErrors))
+                    }
+                }
+                return
             }
 
             // The error code alone is NOT enough to decide recovery. A streamed
@@ -4502,7 +4537,7 @@ class PlayerRepositoryImpl @Inject constructor(
         // v0.9.27: allow id=0 fallback for non-library tracks (e.g. search
         // previews with videoId strings). This makes the Like button and
         // other actions visible in Now Playing for non-library content.
-        val trackId = extras?.getLong(EXTRA_TRACK_ID) ?: mediaId.toLongOrNull() ?: 0L
+        val trackId = queueTrackId()
         if (isScannedTrackId(trackId)) return toScannedTrack(trackId)
 
         // Streaming tracks carry the Qobuz-reported format in extras so the
@@ -4681,6 +4716,13 @@ internal fun rebuiltTrackSource(extras: Bundle?, youtubeId: String?): com.stash.
 
 /** A cloud song's file format, for Now Playing's quality line (its Room row's truth). */
 internal const val EXTRA_CLOUD_FILE_FORMAT = "stash_cloud_file_format"
+
+/**
+ * The [com.stash.core.model.Track.id] the queue shows for this item (the repository's rebuilt Track): its [EXTRA_TRACK_ID] when
+ * it has extras, else its numeric media id, else 0 (a Search preview, whose media id is its video id). The playback service
+ * names a browser's phone-only queue rows by it (Remote v2), so the queue and the service mean the same row.
+ */
+internal fun MediaItem.queueTrackId(): Long = mediaMetadata.extras?.getLong(EXTRA_TRACK_ID) ?: mediaId.toLongOrNull() ?: 0L
 
 /**
  * The [Track] Now Playing and the queue see for an All Songs file. The logical queue doesn't hold

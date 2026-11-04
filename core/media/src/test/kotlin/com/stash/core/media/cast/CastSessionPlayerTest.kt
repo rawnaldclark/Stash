@@ -16,8 +16,11 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class CastSessionPlayerTest {
 
-    /** The stopped local player: a queue, an index and a position, nothing more. */
-    private class QueuePlayer(ids: List<String>) : SimpleBasePlayer(Looper.getMainLooper()) {
+    /**
+     * The stopped local player: a queue, an index and a position, nothing more. [seekable] false is the real one on a song it
+     * never prepared (it only moved its queue there while casting): no seek commands, a window that isn't seekable.
+     */
+    private class QueuePlayer(ids: List<String>, val seekable: Boolean = true) : SimpleBasePlayer(Looper.getMainLooper()) {
         val items = ids.map(::item).toMutableList()
         var index = 0
         var positionMs = 0L
@@ -26,7 +29,13 @@ class CastSessionPlayerTest {
         val calls = mutableListOf<String>()
 
         override fun getState(): State = State.Builder()
-            .setAvailableCommands(Player.Commands.Builder().addAllCommands().build())
+            .setAvailableCommands(
+                Player.Commands.Builder().addAllCommands().apply {
+                    if (!seekable) {
+                        removeAll(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM, Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD)
+                    }
+                }.build(),
+            )
             .setPlaylist(items.mapIndexed { i, it -> MediaItemData.Builder("uid$i").setMediaItem(it).build() })
             .setCurrentMediaItemIndex(if (items.isEmpty()) C.INDEX_UNSET else index)
             .setContentPositionMs(positionMs)
@@ -375,6 +384,35 @@ class CastSessionPlayerTest {
         assertThat(local.index).isEqualTo(0)
     }
 
+    @Test fun `a song the phone never prepared can still be seeked on the receiver (seek bar, notification, lock screen)`() {
+        val local = QueuePlayer(listOf("a", "b"), seekable = false)
+        val remote = FakeRemote()
+        val player = cast(local, remote)
+        remote.report(CastStatus.PlayerState.PLAYING, durationMs = 200_000L)
+
+        assertThat(player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)).isTrue()
+        assertThat(player.isCommandAvailable(Player.COMMAND_SEEK_FORWARD)).isTrue()
+        assertThat(player.isCurrentMediaItemSeekable).isTrue()
+
+        player.seekTo(90_000L)
+
+        assertThat(remote.calls).containsExactly("seek:90000")
+    }
+
+    @Test fun `after the queue ended, the seek bar in a song the phone never prepared plays it again from there`() {
+        val local = QueuePlayer(listOf("a"), seekable = false)
+        val remote = FakeRemote()
+        val player = cast(local, remote)
+        remote.report(CastStatus.PlayerState.PLAYING)
+        remote.report(CastStatus.PlayerState.IDLE, CastStatus.IdleReason.FINISHED)
+        assertThat(player.playbackState).isEqualTo(Player.STATE_ENDED)
+
+        player.seekTo(30_000L)
+
+        assertThat(remote.loads).hasSize(2)
+        assertThat(remote.loads.last().second).isEqualTo(30_000L)
+    }
+
     @Test fun `jumping to another song moves the phone's queue and loads it on the speaker`() {
         val local = QueuePlayer(listOf("a", "b", "c"))
         val remote = FakeRemote()
@@ -635,6 +673,104 @@ class CastSessionPlayerTest {
 
         assertThat(handoff).isEqualTo(CastSessionPlayer.Handoff(mediaItemIndex = 1, positionMs = 73_000L))
         assertThat(player.isAttached).isFalse()
+    }
+
+    // ── A linked browser (Remote v2): songs only the phone has are stepped over ──
+
+    /** Every run of stepped-over songs the wrapper reported, in order. */
+    private val skippedRuns = mutableListOf<Int>()
+
+    /** A browser's feed: songs whose id starts with "p" are only on the phone (it can't take them). */
+    private fun browserFeed() = CastFeed(
+        mediaFor = { item, contentId -> if (item.mediaId.startsWith("p")) null else media(item, contentId) },
+        skipsUnsendable = true,
+        onSkipped = { skippedRuns += it },
+    )
+
+    private fun castToBrowser(local: QueuePlayer, remote: FakeRemote) =
+        CastSessionPlayer(local, mediaFor = { item, contentId -> media(item, contentId) }, clock = { now })
+            .apply { attach(local, remote, 0L, true, browserFeed()) }
+
+    @Test fun `a song only the phone has is stepped over on a browser, with no player error`() {
+        val local = QueuePlayer(listOf("p1", "b"))
+        val remote = FakeRemote()
+        val player = castToBrowser(local, remote)
+
+        assertThat(remote.loads.single().first).startsWith("b#")
+        assertThat(local.index).isEqualTo(1)
+        assertThat(player.playerError).isNull()
+        assertThat(skippedRuns).containsExactly(1)
+    }
+
+    @Test fun `a run of them is stepped over in one go and said once`() {
+        val local = QueuePlayer(listOf("a", "p1", "p2", "c"))
+        val remote = FakeRemote()
+        val player = castToBrowser(local, remote)
+        remote.report(CastStatus.PlayerState.PLAYING)
+        assertThat(remote.nexts).isEmpty() // p1 isn't queued on the browser
+
+        player.seekToNextMediaItem()
+
+        assertThat(remote.loads.map { it.first.substringBefore('#') }).containsExactly("a", "c").inOrder()
+        assertThat(local.index).isEqualTo(3)
+        assertThat(player.playerError).isNull()
+        assertThat(skippedRuns).containsExactly(2)
+    }
+
+    @Test fun `when the browser finishes a song before phone-only ones, the queue steps over them`() {
+        val local = QueuePlayer(listOf("a", "p1", "c"))
+        val remote = FakeRemote()
+        castToBrowser(local, remote)
+        remote.report(CastStatus.PlayerState.PLAYING)
+
+        remote.report(CastStatus.PlayerState.IDLE, CastStatus.IdleReason.FINISHED)
+
+        assertThat(remote.lastContentId).startsWith("c#")
+        assertThat(local.index).isEqualTo(2)
+        assertThat(skippedRuns).containsExactly(1)
+    }
+
+    @Test fun `a queue with nothing more a browser can take ends there, once, without an error`() {
+        val local = QueuePlayer(listOf("p1", "p2"))
+        val remote = FakeRemote()
+        val player = castToBrowser(local, remote)
+
+        assertThat(remote.loads).isEmpty()
+        assertThat(remote.calls).contains("stop")
+        assertThat(player.playbackState).isEqualTo(Player.STATE_ENDED)
+        assertThat(player.playerError).isNull()
+        assertThat(skippedRuns).containsExactly(2)
+    }
+
+    @Test fun `a browser's error is still the player error the queue skips through its guard`() {
+        val local = QueuePlayer(listOf("a", "b"))
+        val remote = FakeRemote()
+        val player = castToBrowser(local, remote)
+
+        remote.report(CastStatus.PlayerState.IDLE, CastStatus.IdleReason.ERROR) // it retried once and stopped on it
+
+        assertThat(player.playerError?.errorCode).isEqualTo(PlaybackException.ERROR_CODE_REMOTE_ERROR)
+        assertThat(skippedRuns).isEmpty()
+    }
+
+    @Test fun `re-pointed at a speaker, a song it can't serve is an error again, not a step over`() {
+        val local = QueuePlayer(listOf("b", "p1"))
+        val browser = FakeRemote()
+        val speakerFeed: (MediaItem, String) -> CastMedia? = { item, contentId ->
+            if (item.mediaId.startsWith("p")) null else media(item, contentId)
+        }
+        val player = CastSessionPlayer(local, mediaFor = speakerFeed, clock = { now })
+            .apply { attach(local, browser, 0L, true, browserFeed()) }
+        browser.report(CastStatus.PlayerState.PLAYING)
+
+        val speaker = FakeRemote()
+        player.attach(local, speaker, player.currentPosition, true) // the speaker's own (default) feed
+        speaker.report(CastStatus.PlayerState.PLAYING)
+        player.seekToNextMediaItem()
+
+        assertThat(speaker.loads.map { it.first.substringBefore('#') }).containsExactly("b")
+        assertThat(player.playerError?.errorCode).isEqualTo(PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND)
+        assertThat(skippedRuns).isEmpty()
     }
 
     private companion object {

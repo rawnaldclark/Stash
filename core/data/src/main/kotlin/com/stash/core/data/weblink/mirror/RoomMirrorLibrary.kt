@@ -10,7 +10,7 @@ import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.listening.ListeningDay
 import com.stash.core.data.social.stash.StashLikedPlaylistRepository
-import com.stash.core.data.weblibrary.WebLibraryFile
+import com.stash.core.data.weblink.WebSongs
 import com.stash.core.data.weblink.handoff.HandoffSongMatcher
 import com.stash.core.data.weblink.handoff.MirrorIdentities
 import com.stash.core.data.weblink.handoff.WireSong
@@ -264,22 +264,11 @@ class RoomMirrorLibrary internal constructor(
         fun nameOf(name: String) = name.trim().ifEmpty { "Playlist" }.let { com.stash.core.data.weblink.merge.FirstMerge.cutUnits(it, MirrorWire.NAME_MAX) }
 
         /**
-         * A library row as a wire song: the library file's Song, marked `phoneOnly` when a file here is its only source (no ISRC,
-         * Spotify or YouTube id), as the handoff marks it. Null without a title or an artist.
+         * A library row as a wire song, by the one rule the handoff and a browser playing this phone's queue use too
+         * ([WebSongs.songOf]): `phoneOnly` when the web can't play it (SoundCloud, a cloud song, a file with no ids). Null without a
+         * title or an artist.
          */
-        fun songOf(row: MirrorDao.MirrorSong): WireSong? {
-            val t = row.toTrack()
-            if (t.source == MusicSource.SOUNDCLOUD) return WireSong(t.title, t.artist,
-                album = t.album, durationMs = t.durationMs, isrc = t.isrc, phoneOnly = true)
-            val song = WebLibraryFile.song(t, addedAt = null) ?: return null
-            val noIds = song.isrc == null && song.spotifyId == null && song.refs.isNullOrEmpty()
-            // A cloud song plays from the user's own cloud account, which the web can't reach: phone-only,
-            // so the web never looks it up by its words.
-            return WireSong.of(
-                song,
-                phoneOnly = (noIds && (t.source == MusicSource.LOCAL || t.isDownloaded)) || t.source == MusicSource.CLOUD || t.source == MusicSource.SOUNDCLOUD,
-            )
-        }
+        fun songOf(row: MirrorDao.MirrorSong): WireSong? = WebSongs.songOf(row.toTrack())
     }
 }
 

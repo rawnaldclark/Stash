@@ -1,17 +1,15 @@
 package com.stash.core.media.handoff
 
-import com.stash.core.data.weblibrary.WebLibraryFile
+import com.stash.core.data.weblink.WebSongs
 import com.stash.core.data.weblink.handoff.HandoffRepeat
 import com.stash.core.data.weblink.handoff.HandoffWire
 import com.stash.core.data.weblink.handoff.StashNow
 import com.stash.core.data.weblink.handoff.StashQueue
 import com.stash.core.data.weblink.handoff.WireSong
 import com.stash.core.data.weblink.merge.SyncHashes
-import com.stash.core.model.MusicSource
 import com.stash.core.model.PlayerState
 import com.stash.core.model.RepeatMode
 import com.stash.core.model.Track
-import com.stash.core.model.isScannedSong
 
 /** The two handoff documents built from one player state. */
 data class HandoffDocs(val now: StashNow, val queue: StashQueue)
@@ -22,21 +20,11 @@ data class HandoffDocs(val now: StashNow, val queue: StashQueue)
  */
 object HandoffDocsBuilder {
     /**
-     * A library track as a wire song: the library file's Song (no file paths, covers only from the share hosts), marked
-     * `phoneOnly` when a file on this phone is its only source (no ISRC, Spotify or YouTube id), and counted in `leftOut`.
-     * Null without a title or an artist.
+     * A library track as a wire song: the one rule the mirror and a browser playing this phone's queue use too
+     * ([WebSongs.songOf]): `phoneOnly` (and counted in `leftOut`) when the web can't play it, SoundCloud included. Null without a
+     * title or an artist.
      */
-    fun songOf(t: Track): WireSong? {
-        val song = WebLibraryFile.song(t, addedAt = null) ?: return null
-        // No ISRC, Spotify or YouTube id (what the web can play from), and a file on this phone is its source: an imported local
-        // file, or a download that carries none of those ids (sync-v1 §2.1).
-        val noIds = song.isrc == null && song.spotifyId == null && song.refs.isNullOrEmpty()
-        // An All Songs file is always phone-only: the web has nothing to play it from.
-        // A cloud song streams from the user's own cloud account, which the web player can't reach.
-        val phoneOnly = (noIds && (t.source == MusicSource.LOCAL || t.isDownloaded)) || t.isScannedSong ||
-            t.source == MusicSource.CLOUD
-        return WireSong.of(song, phoneOnly)
-    }
+    fun songOf(t: Track): WireSong? = WebSongs.songOf(t)
 
     /**
      * The rows of [state]'s queue that travel: all of them up to 2,000, else 2,000 starting 100 songs before the current one,

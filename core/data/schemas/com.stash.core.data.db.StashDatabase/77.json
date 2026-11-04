@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 77,
-    "identityHash": "35227d25bfcff0d1be25a44e0d301055",
+    "identityHash": "cdc2995311a18cb7d3ca2ab8fc1d758f",
     "entities": [
       {
         "tableName": "tracks",
@@ -1839,7 +1839,7 @@
       },
       {
         "tableName": "lyrics",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`track_id` INTEGER NOT NULL, `plain_text` TEXT, `synced_lrc` TEXT, `instrumental` INTEGER NOT NULL, `language` TEXT, `source` TEXT NOT NULL, `source_lyrics_id` TEXT, `fetched_at` INTEGER NOT NULL, `ttml` TEXT, `ttml_checked_at` INTEGER, `sync_offset_ms` INTEGER NOT NULL, `credit_uploader_name` TEXT, `credit_uploader_url` TEXT, `credit_maker_name` TEXT, `credit_maker_url` TEXT, PRIMARY KEY(`track_id`), FOREIGN KEY(`track_id`) REFERENCES `tracks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`track_id` INTEGER NOT NULL, `plain_text` TEXT, `synced_lrc` TEXT, `instrumental` INTEGER NOT NULL, `language` TEXT, `source` TEXT NOT NULL, `source_lyrics_id` TEXT, `fetched_at` INTEGER NOT NULL, `ttml` TEXT, `ttml_checked_at` INTEGER, `sync_offset_ms` INTEGER NOT NULL, PRIMARY KEY(`track_id`), FOREIGN KEY(`track_id`) REFERENCES `tracks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "trackId",
@@ -1900,26 +1900,6 @@
             "columnName": "sync_offset_ms",
             "affinity": "INTEGER",
             "notNull": true
-          },
-          {
-            "fieldPath": "creditUploaderName",
-            "columnName": "credit_uploader_name",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "creditUploaderUrl",
-            "columnName": "credit_uploader_url",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "creditMakerName",
-            "columnName": "credit_maker_name",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "creditMakerUrl",
-            "columnName": "credit_maker_url",
-            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
@@ -3860,7 +3840,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '35227d25bfcff0d1be25a44e0d301055')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'cdc2995311a18cb7d3ca2ab8fc1d758f')"
     ]
   }
 }

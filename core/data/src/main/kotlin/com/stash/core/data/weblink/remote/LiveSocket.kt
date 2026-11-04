@@ -3,6 +3,7 @@ package com.stash.core.data.weblink.remote
 import android.os.SystemClock
 import android.util.Log
 import com.stash.core.data.listen.RoomClient
+import com.stash.core.data.weblink.WebLinkConfig
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.ConnectionSpec
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -56,10 +58,16 @@ fun interface LiveConnector {
 }
 
 @Singleton
-class OkHttpLiveConnector @Inject constructor(okHttpClient: OkHttpClient) : LiveConnector {
+class OkHttpLiveConnector @Inject constructor(okHttpClient: OkHttpClient, config: WebLinkConfig) : LiveConnector {
     // A socket sits quiet between pings; the shared client's read timeout would kill it. Protocol pings every 20 s (as Listen
     // Together's RoomClient) find a dead connection (a network switch, a NAT that forgot it) and fail it, so it reconnects.
-    private val client = okHttpClient.newBuilder().readTimeout(0, TimeUnit.MILLISECONDS).pingInterval(20, TimeUnit.SECONDS).build()
+    // A plain-http Worker (a debug build pointed at `wrangler dev`) needs cleartext, which the shared client (TLS only) refuses,
+    // as SyncApiClient allows it; the debug network security config permits that one host only.
+    internal val client = okHttpClient.newBuilder()
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .pingInterval(20, TimeUnit.SECONDS)
+        .apply { if (config.cleartext) connectionSpecs(listOf(ConnectionSpec.MODERN_TLS, ConnectionSpec.CLEARTEXT)) }
+        .build()
 
     override fun connect(url: String, hello: String, scope: CoroutineScope): LiveConnection = LiveSocket(client, url, hello, scope)
 }
