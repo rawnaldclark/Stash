@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
@@ -1136,11 +1137,20 @@ class SyncViewModel @Inject constructor(
             }
         }
 
-        // Online re-reads the in-library count; a flip of the mode switches the query.
-        val songCountsFlow = streamingPreference.enabled
+        // Online re-reads the in-library count; a flip of the mode switches the query. Paused while a
+        // sync runs: the count re-runs on every write to the library, a sync writes constantly, and
+        // the tab shows its syncing face then, not these numbers. The last numbers stay until it ends.
+        val songCountsFlow = combine(
+            streamingPreference.enabled.distinctUntilChanged(),
+            syncStateManager.phase.map { it.isActive() }.distinctUntilChanged(),
+        ) { online, syncing -> online to syncing }
             .distinctUntilChanged()
-            .flatMapLatest { online ->
-                musicRepository.observeSongCountsBySource(inLibrary = online).map { online to it }
+            .flatMapLatest { (online, syncing) ->
+                if (syncing) {
+                    emptyFlow()
+                } else {
+                    musicRepository.observeSongCountsBySource(inLibrary = online).map { online to it }
+                }
             }
 
         viewModelScope.launch {

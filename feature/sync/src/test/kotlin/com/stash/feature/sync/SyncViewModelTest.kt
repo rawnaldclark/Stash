@@ -608,4 +608,24 @@ class SyncViewModelTest {
             assertEquals(false, countsInLibrary)
         }
     }
+
+    @Test
+    fun `the count waits while a sync runs, keeping its last numbers, and reads again after`() {
+        val phase = MutableStateFlow<SyncPhase>(SyncPhase.Idle)
+        every { syncStateManager.phase } returns phase
+        every { streamingPreference.enabled } returns MutableStateFlow(true)
+        val library = MutableStateFlow(mapOf(MusicSource.SPOTIFY to 5))
+        every { musicRepository.observeSongCountsBySource(true) } returns library
+        every { musicRepository.observeLatestSync() } returns kotlinx.coroutines.flow.flowOf(null)
+        val vm = newVm()
+        assertEquals(5, vm.uiState.value.syncStatus.totalTracks)
+
+        phase.value = SyncPhase.Authenticating
+        library.value = mapOf(MusicSource.SPOTIFY to 9)
+        assertEquals(5, vm.uiState.value.syncStatus.totalTracks)
+
+        phase.value = SyncPhase.Completed
+        assertEquals(9, vm.uiState.value.syncStatus.totalTracks)
+        io.mockk.verify(exactly = 2) { musicRepository.observeSongCountsBySource(true) }
+    }
 }
