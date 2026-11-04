@@ -16,8 +16,8 @@ import org.junit.Test
 
 /**
  * A linked browser as a cast receiver (Remote v2, spec 2026-11-03 §2.2): its states as [CastStatus], the commands the cast
- * wrapper's calls become, and when a session ends by itself (the 15 s grace for a browser gone, the 60 s one for this phone's
- * connection, someone at the browser taking over, a first song never answered).
+ * wrapper's calls become, and when a session ends by itself (a tab's bye at once, the 30 s grace for a browser gone without
+ * one, the 60 s one for this phone's connection, someone at the browser taking over, a first song never answered).
  */
 class WebCastRemoteTest {
     private val sent = mutableListOf<RemoteCommand>()
@@ -52,12 +52,13 @@ class WebCastRemoteTest {
         pendingPlay: Boolean = false,
         needsGesture: Boolean = false,
         lostAt: Long? = null,
+        bye: Boolean = false,
     ) = BrowserState(
         CHROME,
         "Chrome on Windows",
         RemoteState(
             sid, needsGesture, playing, positionMs, 200_000, 1.0, volume, true, "Pink + White", "Frank Ocean", null,
-            caps = listOf("drive"), driver = driver, iid = iid, next = next, phase = phase, pendingPlay = pendingPlay,
+            caps = listOf("drive"), driver = driver, iid = iid, next = next, phase = phase, pendingPlay = pendingPlay, bye = bye,
         ),
         receivedAt = testScheduler.currentTime,
         lostAt = lostAt,
@@ -186,7 +187,7 @@ class WebCastRemoteTest {
 
     // ── When it ends by itself ─────────────────────────────────────────
 
-    @Test fun `a browser gone gets 15 s as Reconnecting, and carries on if it comes back`() = runTest {
+    @Test fun `a browser gone without a bye gets the grace as Reconnecting, and carries on if it comes back`() = runTest {
         val r = remote()
         r.load(media("42#1"), 0, autoplay = true)
         r.onState(state(iid = "42#1"))
@@ -205,6 +206,78 @@ class WebCastRemoteTest {
         r.onState(null)
         advanceTimeBy(WebCastRemote.CLOSED_GRACE_MS + 1)
         runCurrent()
+        assertThat(ends).containsExactly(WebCastRemote.End.CLOSED)
+    }
+
+    @Test fun `the grace is 30 s, enough for a tab back 16 and a half s after a 10 s network cut`() = runTest {
+        assertThat(WebCastRemote.CLOSED_GRACE_MS).isEqualTo(30_000L)
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1"))
+        // The device run: a 10 s cut, the tab back 16.5 s after its socket went (past the 15 s this used to be).
+        r.onState(null)
+        advanceTimeBy(16_500)
+        runCurrent()
+        assertThat(ends).isEmpty()
+        r.onState(state(iid = "42#1", sid = "Reconnected01"))
+        assertThat(r.link.value).isEqualTo(WebCastRemote.Link.READY)
+        // Gone again and not back: it ends at 30 s, not a moment before.
+        r.onState(null)
+        advanceTimeBy(29_999)
+        runCurrent()
+        assertThat(ends).isEmpty()
+        assertThat(r.link.value).isEqualTo(WebCastRemote.Link.RECONNECTING)
+        advanceTimeBy(2)
+        runCurrent()
+        assertThat(ends).containsExactly(WebCastRemote.End.CLOSED)
+    }
+
+    @Test fun `a tab that says bye as it closes or reloads ends the session at once, as closed`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1", positionMs = 10_000))
+        advanceTimeBy(5_000)
+        runCurrent()
+        sent.clear()
+        // Sealed ahead of time, on pagehide: its position is old and isn't taken.
+        r.onState(state(iid = "42#1", positionMs = 2_000, bye = true))
+        assertThat(ends).containsExactly(WebCastRemote.End.CLOSED)
+        assertThat(r.link.value).isEqualTo(WebCastRemote.Link.READY) // no "Reconnecting to Chrome…" first
+        assertThat(r.status.positionMs).isEqualTo(15_000)
+        assertThat(sent).isEmpty()
+        // Its socket closing a moment later (peer off) adds nothing: it ended once, and nothing more goes out.
+        r.onState(null)
+        r.play()
+        advanceTimeBy(WebCastRemote.CLOSED_GRACE_MS * 2)
+        runCurrent()
+        assertThat(ends).containsExactly(WebCastRemote.End.CLOSED)
+        assertThat(sent).isEmpty()
+    }
+
+    @Test fun `a bye ends it as closed whatever it names, while starting, away, or after the page took over unseen`() = runTest {
+        // Before the first song was answered: closed, not "didn't answer" later.
+        val starting = remote()
+        starting.load(media("42#1"), 0, autoplay = true)
+        starting.onState(state(driver = null, iid = null, bye = true))
+        advanceTimeBy(WebCastRemote.NO_ANSWER_MS * 3)
+        runCurrent()
+        assertThat(ends).containsExactly(WebCastRemote.End.CLOSED)
+
+        // Inside a grace (this phone's socket dropped, then the bye came through): closed at once, not at the grace's end.
+        ends.clear()
+        val away = remote()
+        away.load(media("42#2"), 0, autoplay = true)
+        away.onState(state(iid = "42#2"))
+        away.onState(state(iid = "42#2", lostAt = testScheduler.currentTime))
+        away.onState(state(iid = "42#2", bye = true))
+        assertThat(ends).containsExactly(WebCastRemote.End.CLOSED)
+
+        // Its page had picked its own music (a state this phone missed), then the tab closed: it is gone, so closed.
+        ends.clear()
+        val took = remote()
+        took.load(media("42#3"), 0, autoplay = true)
+        took.onState(state(iid = "42#3"))
+        took.onState(state(driver = null, iid = null, bye = true))
         assertThat(ends).containsExactly(WebCastRemote.End.CLOSED)
     }
 
@@ -424,7 +497,7 @@ class WebCastRemoteTest {
         assertThat(ends).containsExactly(WebCastRemote.End.LOST)
     }
 
-    @Test fun `someone at the browser picking their own music ends the session, so does a reload`() = runTest {
+    @Test fun `someone at the browser picking their own music ends the session, so does a reload that said no bye`() = runTest {
         val r = remote()
         r.load(media("42#1"), 0, autoplay = true)
         r.onState(state(iid = "42#1"))

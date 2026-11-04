@@ -60,13 +60,13 @@ object RemoteCards {
     fun appName(label: String): String = label.substringBefore(" on ").trim().ifEmpty { label }
 
     /**
-     * The card for the browsers that advertise, or null: only fresh states with a song (nothing to control otherwise); a browser
-     * that plays wins over a paused one, then the newest. Never a browser this phone plays its own queue on ([driven], or one
+     * The card for the browsers that advertise, or null: only fresh states with a song (nothing to control otherwise), never a
+     * tab's `bye` (it closed or is reloading); a browser that plays wins over a paused one, then the newest. Never a browser this phone plays its own queue on ([driven], or one
      * whose state names this phone, [me], as its driver): the mini player is that one's remote (Remote v2 §6).
      */
     fun pick(browsers: Collection<BrowserState>, now: Long, driven: String? = null, me: String? = null): RemoteCard? {
         val b = browsers
-            .filter { now - it.receivedAt <= STALE_MS && it.state.title != null && it.state.artist != null }
+            .filter { now - it.receivedAt <= STALE_MS && !it.state.bye && it.state.title != null && it.state.artist != null }
             .filter { it.device != driven && (me == null || it.state.driver != me) }
             .maxWithOrNull(compareBy<BrowserState>({ it.state.playing }, { it.receivedAt }))
             ?: return null

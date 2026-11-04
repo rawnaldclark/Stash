@@ -575,6 +575,21 @@ class WebRemoteTest {
         assertThat(sentTo(CHROME, c2).map { it.command }).containsExactly(RemoteCommand.Release(pause = false), RemoteCommand.Release(pause = true)).inOrder()
     }
 
+    @Test fun `a tab saying bye isn't told to let go as it closes, the next tab still naming this phone is`() = runTest {
+        linked()
+        val r = remote()
+        r.start()
+        val mine = "$drive,\"driver\":\"${store.id!!.deviceId}\",\"iid\":\"42#1\",\"phase\":\"playing\""
+        conn.ch.send(stateFrame(CHROME, doc = stateDoc(extra = "$mine,\"bye\":true")))
+        runCurrent()
+        assertThat(sentTo(CHROME)).isEmpty()
+        // Reloaded, and the new tab still names this phone: it is told then.
+        conn.ch.send(stateFrame(CHROME, doc = stateDoc(sid = "Reloaded0001", extra = mine)))
+        runCurrent()
+        assertThat(sentTo(CHROME).map { it.command }).containsExactly(RemoteCommand.Release(pause = false))
+        assertThat(sentTo(CHROME).map { it.sid }).containsExactly("Reloaded0001")
+    }
+
     @Test fun `a browser let go of that missed it is told again when next heard, paused as it was told`() = runTest {
         linked()
         val r = remote()

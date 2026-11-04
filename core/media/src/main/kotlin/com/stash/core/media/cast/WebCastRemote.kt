@@ -31,10 +31,11 @@ import kotlinx.coroutines.launch
  *   new session id, or once a browser that was away is heard again, it is told what it missed: the song when `iid` isn't it,
  *   the one after it when `next` isn't it, then the play, pause, seek and volume sent since it was last heard. Each song gets
  *   [NO_ANSWER_MS] to be named; one that isn't is sent once more, then reported as an error the queue skips.
- * - **When it ends** ([onEnd], once): the browser went away (closed, or silent for [RemoteCards.STALE_MS]) and stayed away for
- *   [CLOSED_GRACE_MS]; this phone's own socket stayed down for [LOST_GRACE_MS] from the drop; someone at the browser picked their
- *   own music or reloaded the tab (its state no longer names this phone as driver, once it had played this phone's songs); or the
- *   first song was never answered within [NO_ANSWER_MS]. A browser that comes back inside a grace carries on.
+ * - **When it ends** ([onEnd], once): the tab said `bye` as it closed or reloaded (at once, no grace); the browser went away
+ *   without one (its socket went, or it was silent for [RemoteCards.STALE_MS]) and stayed away for [CLOSED_GRACE_MS]; this
+ *   phone's own socket stayed down for [LOST_GRACE_MS] from the drop; someone at the browser picked their own music, or the tab
+ *   reloaded without a bye (its state no longer names this phone as driver, once it had played this phone's songs); or the first
+ *   song was never answered within [NO_ANSWER_MS]. A browser that comes back inside a grace carries on.
  *
  * Main thread only (its listeners are called there, as [CastRemote] says); [scope] runs on it.
  */
@@ -54,13 +55,13 @@ class WebCastRemote(
 
     /** Why a session ended by itself. */
     enum class End {
-        /** The browser closed (its socket went, or it went silent) and didn't come back. */
+        /** The tab said `bye` (closed or reloaded), or the browser went (its socket, or silence) and didn't come back. */
         CLOSED,
 
         /** This phone's connection stayed down. */
         LOST,
 
-        /** Someone at the browser picked their own music, or the tab was reloaded: it isn't playing this phone's queue. */
+        /** Someone at the browser picked their own music, or the tab reloaded without a bye: it isn't playing this phone's queue. */
         TOOK_OVER,
 
         /** The browser never said it had the first song. */
@@ -304,11 +305,19 @@ class WebCastRemote(
     /**
      * The browser's latest state as `WebRemote` has it: null when it isn't live (its socket closed, `ready` didn't list it, the
      * relay said it is offline), [BrowserState.lostAt] set when it is this phone's socket that is down.
+     *
+     * A state saying `bye` is the tab's last word as it closes or reloads (sync-v1 §5.7): the session ends at once as
+     * [End.CLOSED], with no grace to wait out, whatever driver it names (the tab is gone either way). It was sealed ahead of
+     * time, so nothing else in it is taken (its position is old).
      */
     fun onState(b: BrowserState?) {
         if (ended) return
         when {
             b == null -> startGrace(End.CLOSED, CLOSED_GRACE_MS)
+            b.state.bye -> {
+                end(End.CLOSED)
+                return
+            }
             b.lostAt != null -> {
                 last = b
                 startGrace(End.LOST, (LOST_GRACE_MS - (clock() - b.lostAt!!)).coerceAtLeast(0))
@@ -491,8 +500,12 @@ class WebCastRemote(
         /** "Starting on Chrome on Windows…" lasts this long before "didn't answer" (§3); each later song waits as long (twice). */
         const val NO_ANSWER_MS = 10_000L
 
-        /** A browser gone is waited for this long, as "Reconnecting to Chrome…", before the music comes back to the phone (§3). */
-        const val CLOSED_GRACE_MS = 15_000L
+        /**
+         * A browser gone without a `bye` (a network drop, not a closed tab) is waited for this long, as "Reconnecting to
+         * Chrome…", before the music comes back to the phone (§3). A driven tab tries again after 1 s, then every 2 s; a 10 s
+         * cut on the device run was back at 16.5 s, past the 15 s this used to be.
+         */
+        const val CLOSED_GRACE_MS = 30_000L
 
         /** This phone's socket down: the browser plays on (it holds the next song); give up after this, as Cast does (§3). */
         const val LOST_GRACE_MS = 60_000L

@@ -10,6 +10,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.doubleOrNull
@@ -70,8 +71,20 @@ class RemoteVectorsTest {
             assertWithMessage("$name: next").that(s.next).isEqualTo(r["next"].strOrNull())
             assertWithMessage("$name: phase").that(s.phase?.wire).isEqualTo(r["phase"].strOrNull())
             assertWithMessage("$name: pendingPlay").that(s.pendingPlay).isEqualTo(r["pendingPlay"]!!.jsonPrimitive.booleanOrNull)
+            // `bye` (a tab closing or reloading): false where a vector doesn't name it.
+            assertWithMessage("$name: bye").that(s.bye).isEqualTo(r["bye"]?.jsonPrimitive?.booleanOrNull ?: false)
             assertWithMessage("$name: canDrive").that(s.canDrive).isEqualTo(RemoteWire.CAP_DRIVE in s.caps)
         }
+    }
+
+    @Test fun `bye is read only as a true boolean, false when missing or anything else`() {
+        val ok = v["states"]!!.jsonArray.map { it.jsonObject }.first { it["error"] == null }["doc"]!!.jsonObject
+        fun bye(value: JsonElement?) = RemoteWire.readState(JsonObject(if (value == null) ok - "bye" else ok + ("bye" to value)).toString()).bye
+        assertThat(bye(JsonPrimitive(true))).isTrue()
+        assertThat(bye(JsonPrimitive(false))).isFalse()
+        assertThat(bye(JsonPrimitive("true"))).isFalse()
+        assertThat(bye(JsonPrimitive(1))).isFalse()
+        assertThat(bye(null)).isFalse()
     }
 
     @Test fun `commands read as the vectors say, an unknown one is ignored, a bad one refused`() {

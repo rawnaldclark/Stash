@@ -63,6 +63,13 @@ class RemoteCardsTest {
         assertThat(RemoteCards.pick(listOf(browser(at = 0)), RemoteCards.STALE_MS + 1)).isNull()
     }
 
+    @Test fun `no card for a tab that said bye, closing or reloading`() {
+        assertThat(RemoteCards.pick(listOf(browser(st = state().copy(bye = true))), 1_000)).isNull()
+        // Another browser that plays on is still the card.
+        val other = browser(id = "d_Firefox000001", name = "Firefox on Mac", st = state(title = "Wait"))
+        assertThat(RemoteCards.pick(listOf(browser(st = state().copy(bye = true)), other), 1_000)?.title).isEqualTo("Wait")
+    }
+
     @Test fun `of several browsers, the one playing wins, then the newest`() {
         val paused = browser("d_Firefox000001", "Firefox on Mac", state(playing = false), at = 5_000)
         val playing = browser("d_Chrome0000001", "Chrome on Windows", state(playing = true), at = 1_000)

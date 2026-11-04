@@ -48,6 +48,11 @@ data class RemoteState(
     val next: String? = null,
     val phase: RemotePhase? = null,
     val pendingPlay: Boolean = false,
+    /**
+     * The tab's last word as it closes or reloads (sync-v1 §5.7, sent sealed on `pagehide`): it isn't coming back as this
+     * session, so a phone playing through it takes the music back at once instead of waiting for it.
+     */
+    val bye: Boolean = false,
 ) {
     /** It can play a phone's queue (Remote v2). */
     val canDrive: Boolean get() = RemoteWire.CAP_DRIVE in caps
@@ -191,6 +196,7 @@ object RemoteWire {
             next = o.str("next")?.takeIf(ITEM_ID::matches),
             phase = RemotePhase.of(o.str("phase")),
             pendingPlay = o.bool("pendingPlay") == true,
+            bye = o.bool("bye") == true,
         )
     }
 

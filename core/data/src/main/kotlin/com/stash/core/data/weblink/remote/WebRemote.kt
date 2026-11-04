@@ -421,6 +421,9 @@ class WebRemote internal constructor(
         browsers.update { it + (from to BrowserState(from, name, st, clock())) }
         publish()
         if (from == pinned.value) return
+        // A tab saying bye is closing or reloading: nothing sent now would reach it. What it is owed waits for the next tab's
+        // state, which is told then if it still names this phone.
+        if (st.bye) return
         if (st.driver == null || st.driver != me) {
             owed.remove(from) // it let go
         } else if (released.add(st.sid)) {

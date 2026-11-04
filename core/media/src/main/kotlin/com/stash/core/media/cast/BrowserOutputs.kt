@@ -148,12 +148,17 @@ class BrowserOutputs internal constructor(
     val hasBrowser: StateFlow<Boolean> = link.linked.map { it.isNotEmpty() }.distinctUntilChanged()
         .stateIn(scope, SharingStarted.Eagerly, false)
 
-    /** Every linked browser, open tab or not, with what picking it would do; fresh every few seconds while watched. */
+    /**
+     * Every linked browser, open tab or not, with what picking it would do; fresh every few seconds while watched. A tab whose
+     * last word was `bye` (closing or reloading) is not open.
+     */
     val browsers: StateFlow<List<BrowserOutput>> =
         combine(link.linked, link.live, _session, ticker()) { linked, live, session, _ ->
             val now = clock()
             linked.map { (device, name) ->
-                val b = live[device]?.takeIf { now - it.receivedAt <= RemoteCards.STALE_MS || device == session?.device }
+                val b = live[device]?.takeIf {
+                    !it.state.bye && (now - it.receivedAt <= RemoteCards.STALE_MS || device == session?.device)
+                }
                 val s = b?.state
                 val kind = when {
                     s == null -> BrowserOutput.Kind.NOT_OPEN
@@ -188,13 +193,13 @@ class BrowserOutputs internal constructor(
 
     /**
      * Plays this phone's queue on [device]: true when it is now the output. False during Listen Together, before the remote socket
-     * knows this phone, or for a browser that can't be driven (no tab open, an older tab).
+     * knows this phone, or for a browser that can't be driven (no tab open, an older tab, a tab that just said `bye`).
      */
     fun connect(device: String): Boolean {
         if (together.value) return false
         val me = link.deviceId ?: return false
         active?.let { if (it.remote.device == device) return true }
-        val b = link.live.value[device]?.takeIf { it.state.canDrive } ?: return false
+        val b = link.live.value[device]?.takeIf { it.state.canDrive && !it.state.bye } ?: return false
         val name = link.linked.value[device] ?: return false // unlinked a moment ago
         // Another browser plays now: it lets go, and the service moves the music to this one where it was (no pause between).
         active?.let { old ->

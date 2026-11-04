@@ -64,12 +64,13 @@ class BrowserOutputsTest {
         needsGesture: Boolean = false,
         driver: String? = null,
         iid: String? = null,
+        bye: Boolean = false,
     ) = BrowserState(
         device,
         link.linked.value[device] ?: device,
         RemoteState(
             "Zk3mQ9xL2pRt", needsGesture, playing, 0, 200_000, 1.0, 1.0, true, title, title?.let { "Frank Ocean" }, null,
-            caps = caps, driver = driver, iid = iid,
+            caps = caps, driver = driver, iid = iid, bye = bye,
         ),
         receivedAt = testScheduler.currentTime,
     )
@@ -134,6 +135,19 @@ class BrowserOutputsTest {
         assertThat(byDevice.getValue(OPERA).title).isEqualTo("Nights")
         assertThat(byDevice.values.filter { it.canPick }.map { it.device }).containsExactly(CHROME, EDGE, OPERA)
         assertThat(o.hasBrowser.value).isTrue()
+    }
+
+    @Test fun `a tab that just said bye is listed as not open, and can't be picked`() = runTest {
+        link.linked.value = mapOf(CHROME to NAMES.getValue(CHROME))
+        link.live.value = mapOf(CHROME to state(CHROME, playing = true, title = "Nights", bye = true))
+        val o = outputs()
+        val seen = mutableListOf<List<BrowserOutput>>()
+        backgroundScope.launch { o.browsers.collect { seen += it } }
+        runCurrent()
+
+        assertThat(seen.last().single().kind).isEqualTo(BrowserOutput.Kind.NOT_OPEN)
+        assertThat(o.connect(CHROME)).isFalse()
+        assertThat(link.calls).isEmpty()
     }
 
     @Test fun `a tab silent past the stale window is listed as not open again`() = runTest {
@@ -237,6 +251,27 @@ class BrowserOutputsTest {
         assertThat(notices).containsExactly(BrowserNotice.Closed("Chrome on Windows"))
         assertThat(o.takeResumeOnPhone()).isFalse()
         assertThat(link.calls).containsExactly("pin $CHROME", "release $CHROME pause=true", "unpin").inOrder()
+    }
+
+    @Test fun `a tab that says bye ends it at once, paused here, said once`() = runTest {
+        open(CHROME)
+        val o = outputs()
+        o.connect(CHROME)
+
+        link.live.value = mapOf(CHROME to state(CHROME, driver = ME, bye = true))
+        runCurrent() // no time passes: no grace to wait out
+
+        assertThat(o.remote.value).isNull()
+        assertThat(o.session.value).isNull()
+        assertThat(notices).containsExactly(BrowserNotice.Closed("Chrome on Windows"))
+        assertThat(o.takeResumeOnPhone()).isFalse()
+        assertThat(link.calls).containsExactly("pin $CHROME", "release $CHROME pause=true", "unpin").inOrder()
+
+        // Its socket closing right after changes nothing.
+        link.live.value = emptyMap()
+        advanceTimeBy(WebCastRemote.CLOSED_GRACE_MS * 2)
+        runCurrent()
+        assertThat(notices).containsExactly(BrowserNotice.Closed("Chrome on Windows"))
     }
 
     @Test fun `someone at the browser picking their own music ends it, and it isn't told to let go`() = runTest {
