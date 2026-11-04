@@ -76,8 +76,8 @@ class TokenManagerSpotifyAccountGuardTest {
         // The sign-ins the listener makes in the WebView, and who Spotify says each one is.
         coEvery { getAccessToken("rawn-new-cookie") } returns token("rawn-new", "rawn-new-cookie")
         coEvery { getAccessToken("sam-cookie") } returns token("sam-access", "sam-cookie")
-        coEvery { fetchProfile("rawn-new", "webclient", false) } returns rawn
-        coEvery { fetchProfile("sam-access", "webclient", false) } returns sam
+        coEvery { fetchProfile("rawn-new", "webclient", true) } returns rawn
+        coEvery { fetchProfile("sam-access", "webclient", true) } returns sam
         // Rawn's stored cookie is dead (that's why the card offered Reconnect).
         coEvery { getAccessToken("rawn-cookie") } returns null
     }
@@ -108,7 +108,7 @@ class TokenManagerSpotifyAccountGuardTest {
     }
 
     @Test fun `two accounts sharing a display name are still told apart`() = runTest {
-        coEvery { auth.fetchProfile("sam-access", "webclient", false) } returns sam.copy(displayName = "Rawn")
+        coEvery { auth.fetchProfile("sam-access", "webclient", true) } returns sam.copy(displayName = "Rawn")
 
         val result = manager().connectSpotifyWithCookie("sam-cookie")
 
@@ -175,7 +175,7 @@ class TokenManagerSpotifyAccountGuardTest {
 
     @Test fun `when Spotify doesn't say who signed in, the sign-in is saved and the old record dropped`() = runTest {
         // A failed lookup must never lock anyone out of reconnecting their own account.
-        coEvery { auth.fetchProfile("sam-access", "webclient", false) } returns null
+        coEvery { auth.fetchProfile("sam-access", "webclient", true) } returns null
 
         val result = manager().connectSpotifyWithCookie("sam-cookie")
 
@@ -197,19 +197,22 @@ class TokenManagerSpotifyAccountGuardTest {
 
     private val identifyBudgetMs = 20_000L
 
-    @Test fun `a sign-in never pays for downloading the web player bundle`() = runTest {
+    @Test fun `only the new sign-in's lookup may download the web player bundle`() = runTest {
+        // After a hash change nothing else fills the cache: an expired session's sync stops at the
+        // health probe. The connected account's lookup then reuses what the first one found.
         storedAccount.value = null
         coEvery { auth.getAccessToken("rawn-cookie") } returns token("rawn-live", "rawn-cookie")
         coEvery { auth.fetchProfile("rawn-live", "webclient", false) } returns rawn
 
         manager().connectSpotifyWithCookie("sam-cookie")
 
-        coVerify(exactly = 2) { auth.fetchProfile(any(), any(), false) }
-        coVerify(exactly = 0) { auth.fetchProfile(any(), any(), true) }
+        coVerify(exactly = 1) { auth.fetchProfile("sam-access", "webclient", true) }
+        coVerify(exactly = 1) { auth.fetchProfile("rawn-live", "webclient", false) }
+        coVerify(exactly = 2) { auth.fetchProfile(any(), any(), any()) }
     }
 
     @Test fun `past the budget the sign-in is saved unchecked, as before the guard`() = runTest {
-        coEvery { auth.fetchProfile("sam-access", "webclient", false) } coAnswers {
+        coEvery { auth.fetchProfile("sam-access", "webclient", true) } coAnswers {
             delay(60_000)
             sam
         }
@@ -223,7 +226,7 @@ class TokenManagerSpotifyAccountGuardTest {
 
     @Test fun `a step stuck in a blocking call can't hold the sign-in past the budget`() = runTest {
         // A blocking execute() doesn't notice cancellation, as this doesn't.
-        coEvery { auth.fetchProfile("sam-access", "webclient", false) } coAnswers {
+        coEvery { auth.fetchProfile("sam-access", "webclient", true) } coAnswers {
             withContext(NonCancellable) { delay(60_000) }
             sam
         }
@@ -266,7 +269,7 @@ class TokenManagerSpotifyAccountGuardTest {
     }
 
     @Test fun `an unidentified sign-in logs why it went unchecked, and nothing about anyone`() = runTest {
-        coEvery { auth.fetchProfile("sam-access", "webclient", false) } returns null
+        coEvery { auth.fetchProfile("sam-access", "webclient", true) } returns null
 
         val warnings = warningsDuring { manager().connectSpotifyWithCookie("sam-cookie", username = "Sam") }
 
@@ -284,7 +287,7 @@ class TokenManagerSpotifyAccountGuardTest {
     }
 
     @Test fun `running out of budget says so`() = runTest {
-        coEvery { auth.fetchProfile("sam-access", "webclient", false) } coAnswers {
+        coEvery { auth.fetchProfile("sam-access", "webclient", true) } coAnswers {
             delay(60_000)
             sam
         }
@@ -403,7 +406,7 @@ class TokenManagerSpotifyAccountGuardTest {
         val manager = manager()
         manager.rememberSpotifyAccount()
 
-        coEvery { auth.fetchProfile("sam-access", "webclient", false) } returns null
+        coEvery { auth.fetchProfile("sam-access", "webclient", true) } returns null
         manager.connectSpotifyWithCookie("sam-cookie")
         manager.rememberSpotifyAccount()
 

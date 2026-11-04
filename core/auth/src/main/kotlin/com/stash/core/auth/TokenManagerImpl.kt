@@ -400,9 +400,16 @@ class TokenManagerImpl @Inject constructor(
      * whatever was learned stands, and the sign-in carries on as if Spotify hadn't said.
      *
      * The work runs detached from the caller, on its dispatcher. A timeout can't interrupt a step
-     * stuck in a blocking call (the token exchange's `execute()`, the client token's connection),
-     * and a child would hold the caller until that step's own socket timeout. Abandoned work only
-     * reads, stops at its next suspension point and writes nothing here.
+     * stuck in a blocking call (the token exchange's `execute()`, the client token's connection,
+     * the bundle download), and a child would hold the caller until that step's own socket timeout.
+     * Abandoned work only reads, stops at its next suspension point and writes nothing here.
+     *
+     * The new sign-in's lookup may download the web player bundle after Spotify changes the
+     * `profileAttributes` hash. Nothing else would at that moment: an expired session's sync stops
+     * at the health probe, so a fresh process has no scraped hash when Reconnect is tapped, and
+     * without one the guard is off exactly when it matters. It only happens on a miss, the budget
+     * bounds the wait, and an abandoned download still fills the cache for the next try. The
+     * connected account's lookup reuses that cache, so it never downloads.
      *
      * The connected account is the recorded one; otherwise (signed in before Stash recorded it) it
      * is asked of Spotify with the stored cookie, which works when the session wasn't really dead.
@@ -417,7 +424,7 @@ class TokenManagerImpl @Inject constructor(
         var incoming: SpotifyProfile? = null
         var connected: SpotifyProfile? = stored.account.takeIf { stored.token != null }
         val work = CoroutineScope(currentCoroutineContext().minusKey(Job)).async {
-            incoming = spotifyAuthManager.fetchProfile(accessToken, clientId, rescrapeOnMiss = false)
+            incoming = spotifyAuthManager.fetchProfile(accessToken, clientId, rescrapeOnMiss = true)
             if (incoming != null && connected == null && stored.token != null) {
                 connected = askSpotifyWhoIs(stored.token)
             }

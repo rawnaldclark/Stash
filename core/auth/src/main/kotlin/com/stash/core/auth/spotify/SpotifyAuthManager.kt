@@ -546,9 +546,9 @@ class SpotifyAuthManager @Inject constructor(
      * @param accessToken A web-player access token from [getAccessToken].
      * @param clientId The web player's client id (the second half of the token's scope).
      * @param rescrapeOnMiss On a `PersistedQueryNotFound`, download the live bundle for the current
-     *   hash and retry once. A sync can pay for that; a sign-in can't, someone is watching its
-     *   spinner and the bundle is several MB. Without it, only a hash already scraped in this
-     *   process is tried.
+     *   hash and retry once. A sync and a new sign-in's lookup do: the bundle is several MB, but a
+     *   miss is rare and the sign-in's budget bounds the wait. Without it, only a hash already
+     *   scraped in this process is tried, for a lookup right after one that could download.
      */
     suspend fun fetchProfile(
         accessToken: String,

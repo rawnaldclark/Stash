@@ -1,5 +1,8 @@
 package com.stash.core.auth.spotify
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Call
@@ -17,8 +20,9 @@ import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Asking Spotify whose account a sign-in is must not hang a sign-in: someone is watching a spinner.
- * So there are limits on every request, the request ends with its caller, and only a sync (never a
- * sign-in) may download the multi-MB web player bundle after a rotated hash.
+ * So there are limits on every request and the request ends with its caller. The multi-MB web
+ * player bundle is only downloaded after a rotated hash, once, and a download the sign-in gave up
+ * on still counts for the next try.
  */
 class SpotifyProfileLookupTest {
 
@@ -30,7 +34,7 @@ class SpotifyProfileLookupTest {
     private val rawn = SpotifyProfile(userId = "rawnclark", displayName = "Rawn")
 
     /** Spotify, whose `profileAttributes` hash has rotated: the seed misses, the bundle has the new one. */
-    private fun spotify(onQuery: (Call) -> Unit = {}) = SpotifyAuthManager(
+    private fun spotify(onQuery: (Call) -> Unit = {}, onBundle: () -> Unit = {}) = SpotifyAuthManager(
         OkHttpClient.Builder().addInterceptor { chain ->
             val url = chain.request().url.toString()
             requests += url
@@ -39,7 +43,10 @@ class SpotifyProfileLookupTest {
                     onQuery(chain.call())
                     if (rotatedHash in url) answer else miss
                 }
-                "web-player.abc.js" in url -> """new X("profileAttributes","query","$rotatedHash",null)"""
+                "web-player.abc.js" in url -> {
+                    onBundle()
+                    """new X("profileAttributes","query","$rotatedHash",null)"""
+                }
                 else -> """<script src="https://cdn.example/web-player/web-player.abc.js"></script>"""
             }
             Response.Builder()
@@ -54,27 +61,53 @@ class SpotifyProfileLookupTest {
 
     private val bundleDownloads get() = requests.count { "/web-player/" in it }
 
-    @Test fun `a sign-in never downloads the bundle over a rotated hash`() = runBlocking {
+    @Test fun `the connected account's lookup never downloads the bundle itself`() = runBlocking {
         val profile = spotify().lookUpProfile("token", "client-token", rescrapeOnMiss = false)
 
         assertNull(profile)
         assertEquals(0, bundleDownloads)
     }
 
-    @Test fun `a sync downloads the bundle and retries with the current hash`() = runBlocking {
+    @Test fun `a sign-in or a sync downloads the bundle and retries with the current hash`() = runBlocking {
         val profile = spotify().lookUpProfile("token", "client-token", rescrapeOnMiss = true)
 
         assertEquals(rawn, profile)
         assertEquals(1, bundleDownloads)
     }
 
-    @Test fun `a sign-in uses a hash this process already scraped, without downloading again`() = runBlocking {
+    @Test fun `the connected account's lookup uses the hash just scraped, without downloading again`() = runBlocking {
         val spotify = spotify()
         spotify.lookUpProfile("token", "client-token", rescrapeOnMiss = true)
 
         val profile = spotify.lookUpProfile("token", "client-token", rescrapeOnMiss = false)
 
         assertEquals(rawn, profile)
+        assertEquals(1, bundleDownloads)
+    }
+
+    @Test(timeout = 10_000)
+    fun `a download the sign-in gave up on still fills the cache for the next try`() {
+        val downloading = CountDownLatch(1)
+        val hold = CountDownLatch(1)
+        val spotify = spotify(
+            onBundle = {
+                downloading.countDown()
+                hold.await()
+            },
+        )
+        // As the sign-in runs it: detached, so its budget can walk away from a blocking download.
+        val abandoned = CoroutineScope(Dispatchers.IO).async {
+            spotify.lookUpProfile("token", "client-token", rescrapeOnMiss = true)
+        }
+        downloading.await()
+
+        abandoned.cancel()
+        hold.countDown()
+        runBlocking { abandoned.join() }
+
+        assertTrue(abandoned.isCancelled)
+        val next = runBlocking { spotify.lookUpProfile("token", "client-token", rescrapeOnMiss = false) }
+        assertEquals(rawn, next)
         assertEquals(1, bundleDownloads)
     }
 
