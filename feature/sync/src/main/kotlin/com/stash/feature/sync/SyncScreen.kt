@@ -78,6 +78,7 @@ import com.stash.feature.sync.components.AccountCard
 import com.stash.feature.sync.components.ArrivalSheet
 import com.stash.feature.sync.components.AttentionRow
 import com.stash.feature.sync.components.SyncDownloadsRow
+import com.stash.feature.sync.components.TrackCountCard
 import com.stash.feature.sync.components.AuthExpiredBanner
 import com.stash.feature.sync.components.BrandDotLabel
 import com.stash.feature.sync.components.ConnectButton
@@ -262,6 +263,20 @@ fun SyncScreen(
                     )
                 }
 
+                // The track count + FLAC card, under the accounts it counts (back 2026-11-04). After a
+                // first sync only: before one, every number would be 0.
+                if (uiState.hasEverSynced) {
+                    item(key = "track_count") {
+                        Spacer(Modifier.height(12.dp))
+                        TrackCountCard(
+                            status = uiState.syncStatus,
+                            spotifyConnected = uiState.spotifyConnected,
+                            youTubeConnected = uiState.youTubeConnected,
+                            soundCloudConnected = uiState.soundCloudConnected,
+                        )
+                    }
+                }
+
                 // Covers "couldn't match during sync" and "flagged as wrong from Now Playing".
                 val reviewCount = uiState.unmatchedCount + uiState.flaggedCount
                 if (reviewCount > 0) {
@@ -406,6 +421,11 @@ internal fun List<SyncPlaylistRow>.newestFirst(): List<SyncPlaylistRow> = sorted
 private fun SyncPlaylistRow.isMix() = type == PlaylistType.DAILY_MIX
 internal fun SyncPlaylistRow.isOwnPlaylist() = !album && type != PlaylistType.DAILY_MIX && type != PlaylistType.LIKED_SONGS
 
+/**
+ * "1,204 songs · 12 playlists · 30 mixes" under the Online hero. The songs are the ones in your
+ * library, downloaded or not ([SyncStatusInfo.totalTracks] follows the mode): it counted downloads
+ * only until 2026-11-04, so someone who streams read "0 songs".
+ */
 @Composable
 private fun librarySummary(uiState: SyncUiState, rows: List<SyncPlaylistRow>): String {
     val songs = uiState.syncStatus.totalTracks

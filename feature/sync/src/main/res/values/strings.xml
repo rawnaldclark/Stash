@@ -155,6 +155,15 @@
     <string name="sync_auto_sync_at">At %1$s</string>
     <string name="sync_auto_sync_at_wifi">At %1$s · Wi-Fi</string>
     <string name="sync_history_row">History, blocked songs, undo</string>
+    <!-- The track count card under the account cards (2026-11-04). The big number's label in Online: songs in
+         your library, downloaded or not (as Library's Songs tab lists them). -->
+    <string name="sync_count_in_library">Songs in your library</string>
+    <!-- The same label in Offline: the songs downloaded to this phone. -->
+    <string name="sync_count_downloaded">Songs downloaded</string>
+    <!-- Under the storage number ("18.4 GB"): how much the downloads take on this phone. -->
+    <string name="sync_count_on_phone">On this phone</string>
+    <!-- The lossless part, under a number: "214 FLAC" under the songs, "6.1 GB FLAC" under the storage. -->
+    <string name="sync_count_flac">%1$s FLAC</string>
     <!-- The Downloads row above Auto-sync: its trailing text is the counts joined with " · ". -->
     <string name="sync_downloads_row">Downloads</string>
     <string name="sync_downloads_none">None running</string>

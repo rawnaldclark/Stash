@@ -3,6 +3,7 @@ package com.stash.core.data.repository
 import com.stash.core.data.db.dao.AlbumSummary
 import com.stash.core.data.db.dao.ArtistSummary
 import com.stash.core.data.db.entity.SyncHistoryEntity
+import com.stash.core.model.MusicSource
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import kotlinx.coroutines.flow.Flow
@@ -173,11 +174,12 @@ interface MusicRepository {
     /** Sum of file sizes (bytes) for downloaded FLAC tracks (reactive). */
     fun getFlacStorageBytes(): Flow<Long>
 
-    /** Count of downloaded tracks from Spotify. */
-    fun getSpotifyDownloadedCount(): Flow<Int>
-
-    /** Count of downloaded tracks from YouTube. */
-    fun getYouTubeDownloadedCount(): Flow<Int>
+    /**
+     * Songs per source (reactive), for the Sync tab's count card and hero. [inLibrary] true: the
+     * songs Library lists in Online, downloaded or not; false: downloaded songs only. A source with
+     * no songs is missing from the map.
+     */
+    fun observeSongCountsBySource(inLibrary: Boolean): Flow<Map<MusicSource, Int>>
 
     // ── Playlist queries ────────────────────────────────────────────────
 

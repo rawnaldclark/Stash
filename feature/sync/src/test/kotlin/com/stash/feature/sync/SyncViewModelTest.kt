@@ -89,9 +89,9 @@ class SyncViewModelTest {
         every { musicRepository.getUnmatchedCount() } returns emptyFlow()
         every { musicRepository.getFlaggedCount() } returns emptyFlow()
         every { musicRepository.observeLatestSync() } returns emptyFlow()
-        every { musicRepository.getTrackCount() } returns emptyFlow()
-        every { musicRepository.getSpotifyDownloadedCount() } returns emptyFlow()
-        every { musicRepository.getYouTubeDownloadedCount() } returns emptyFlow()
+        every { musicRepository.observeSongCountsBySource(any()) } returns emptyFlow()
+        // The song counts follow the mode, so init collects the mode eagerly.
+        every { streamingPreference.enabled } returns MutableStateFlow(false)
         every { librarySizeHolder.size } returns MutableStateFlow(mockk(relaxed = true))
         // The first-sync sheet is answered: Sync runs straight away unless a test says otherwise.
         every { prefs.arrivalChosen } returns MutableStateFlow(true)
@@ -569,5 +569,43 @@ class SyncViewModelTest {
         coVerify(exactly = 0) { playlistDao.setPinnedToHome(any(), any()) }
         coVerify(exactly = 0) { musicRepository.setPlaylistPinnedToHome(any(), any()) }
         coVerify(exactly = 0) { playlistDao.setSyncEnabledAndPin(any(), false, any()) }
+    }
+
+    // -- The track count card follows the mode (2026-11-04) ----------------------------------
+
+    @Test
+    fun `online counts the songs in your library, offline counts downloads`() {
+        val online = MutableStateFlow(true)
+        every { streamingPreference.enabled } returns online
+        every { musicRepository.observeSongCountsBySource(true) } returns kotlinx.coroutines.flow.flowOf(
+            mapOf(MusicSource.SPOTIFY to 812, MusicSource.YOUTUBE to 392, MusicSource.LOCAL to 3),
+        )
+        every { musicRepository.observeSongCountsBySource(false) } returns kotlinx.coroutines.flow.flowOf(
+            mapOf(MusicSource.SPOTIFY to 40),
+        )
+        every { musicRepository.observeLatestSync() } returns kotlinx.coroutines.flow.flowOf(null)
+        every { librarySizeHolder.size } returns MutableStateFlow(
+            com.stash.data.download.files.LibrarySizeBreakdown(totalBytes = 2_048L, losslessBytes = 1_024L, losslessFileCount = 7),
+        )
+        val vm = newVm()
+
+        with(vm.uiState.value.syncStatus) {
+            // Every source counts in the total, a local file included; per account, only its own.
+            assertEquals(1_207, totalTracks)
+            assertEquals(812, spotifyTracks)
+            assertEquals(392, youTubeTracks)
+            assertEquals(0, soundCloudTracks)
+            assertEquals(true, countsInLibrary)
+            assertEquals(7, flacTracks)
+        }
+
+        online.value = false
+
+        with(vm.uiState.value.syncStatus) {
+            assertEquals(40, totalTracks)
+            assertEquals(40, spotifyTracks)
+            assertEquals(0, youTubeTracks)
+            assertEquals(false, countsInLibrary)
+        }
     }
 }
