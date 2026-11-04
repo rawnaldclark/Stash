@@ -78,6 +78,7 @@ internal fun settingsSearchIndex(s: (Int) -> String): List<SettingsSearchEntry> 
         SettingsSearchEntry(s(R.string.settings_search_online_or_offline), SettingsPage.PLAYBACK, listOf("stream only", "download mode", "mode")),
         SettingsSearchEntry(s(R.string.settings_autoplay_radio_title), SettingsPage.PLAYBACK, listOf("endless", "keep playing", "continue")),
         SettingsSearchEntry(s(R.string.settings_crossfade_title), SettingsPage.PLAYBACK, listOf("fade", "gapless", "transition")),
+        SettingsSearchEntry(s(R.string.settings_headphone_resume_on_reconnect_title), SettingsPage.PLAYBACK, listOf("bluetooth", "earbuds", "unplug", "auto play", "dac")),
         SettingsSearchEntry(s(R.string.settings_lyrics_section), SettingsPage.PLAYBACK, listOf("lrc", "synced", "karaoke", "apple music")),
         SettingsSearchEntry(s(R.string.settings_stream_via_youtube_title), SettingsPage.PLAYBACK, listOf("fallback")),
         SettingsSearchEntry(s(R.string.settings_search_battery_saver), SettingsPage.PLAYBACK, listOf("power saving", "animations", "prefetch")),

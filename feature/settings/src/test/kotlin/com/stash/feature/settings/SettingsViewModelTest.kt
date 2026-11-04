@@ -94,6 +94,7 @@ class SettingsViewModelTest {
         streamingPreference = mockk(relaxed = true),
         crossfadePreference = mockk(relaxed = true),
         autoplayRadioPreference = autoplayRadioPreference,
+        headphonePreference = mockk(relaxed = true),
         databaseBackupManager = mockk(relaxed = true),
         sleepTimerController = mockk(relaxed = true),
         homeDiscoveryPreference = mockk(relaxed = true),

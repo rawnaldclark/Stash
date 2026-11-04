@@ -173,6 +173,17 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var browserOutputs: com.stash.core.media.cast.BrowserOutputs
     @Inject lateinit var playbackDiagnosticsLog: com.stash.core.media.diagnostics.PlaybackDiagnosticsLog
     @Inject lateinit var handoffPublisher: com.stash.core.media.handoff.HandoffPublisher
+    @Inject lateinit var headphonePreference: com.stash.core.data.prefs.HeadphonePreference
+
+    /** Resume when headphones reconnect: watches outputs and calls [onHeadphonesConnected]; created in onCreate. */
+    private var headphoneConnectionObserver: HeadphoneConnectionObserver? = null
+
+    /**
+     * Remembers whether an unplug stopped the music. The window matches the idle stop: past it the
+     * service has normally stopped, and a bound controller (Android Auto) keeping it alive longer
+     * must not bring the music back long after the unplug.
+     */
+    private val headphoneResumeGate = HeadphoneResumeGate(resumeWindowMs = IDLE_STOP_TIMEOUT_MS)
 
     /** The home screen widget (bound in the app module, where the Glance widget lives). */
     @Inject lateinit var widgetSink: com.stash.core.media.widget.NowPlayingWidgetSink
@@ -569,6 +580,7 @@ class StashPlaybackService : MediaLibraryService() {
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            headphoneResumeGate.onPlayWhenReadyChanged(playWhenReady, reason)
             refreshPlayerIdle()
         }
 
@@ -863,6 +875,13 @@ class StashPlaybackService : MediaLibraryService() {
         // Link Stash on the web: publish what plays for the linked browsers, on events only, for as long as this service
         // lives (spec §8.1). A no-op unless the feature is built in, linked and switched on.
         handoffPublisher.start(serviceScope)
+
+        headphoneConnectionObserver = HeadphoneConnectionObserver(
+            context = this,
+            scope = serviceScope,
+            headphonePreference = headphonePreference,
+            onHeadphonesConnected = ::onHeadphonesConnected,
+        ).apply { start() }
 
         serviceScope.launch {
             streamingPreference.enabled.collect { allowed ->
@@ -1685,6 +1704,9 @@ class StashPlaybackService : MediaLibraryService() {
         listenedPlayer?.removeListener(playerListener)
         newMaster.addListener(playerListener)
         listenedPlayer = newMaster
+        // The listener moved without an event: tell the gate the new master's state, or a playing
+        // new master looks paused to it and the next unplug would not arm the resume.
+        headphoneResumeGate.onPlayerSwapped(newMaster.playWhenReady)
         crossfadePreparedId = null
         onTrackTransitionForLoudness(newMaster.currentMediaItem)
         updateDiscordPresence(newMaster.currentMediaItem, newMaster.isPlaying)
@@ -2128,6 +2150,8 @@ class StashPlaybackService : MediaLibraryService() {
         widgetFeed = null
         likeObserverJob?.cancel()
         if (::handoffPublisher.isInitialized) handoffPublisher.stop()
+        headphoneConnectionObserver?.release()
+        headphoneConnectionObserver = null
         prefetchPollJob?.cancel()
         crossfadePollJob?.cancel()
         sleepTimerNotificationJob?.cancel()
@@ -2321,6 +2345,32 @@ class StashPlaybackService : MediaLibraryService() {
         override val positionMs: Long get() = master.currentPosition
         override val durationMs: Long? get() = master.duration.takeIf { it != C.TIME_UNSET && it > 0 }
         override val ended: Boolean get() = master.playbackState == Player.STATE_ENDED
+    }
+
+    /**
+     * Headphones came back and the setting is on ([HeadphoneConnectionObserver] checked it just
+     * before calling, on this main thread). Every input is read here in one go, so nothing can
+     * change between the check and the play.
+     */
+    private fun onHeadphonesConnected() {
+        val player = mediaSession?.player ?: return
+        // No AudioManager reads as "in a call": better a missed resume than music over a call.
+        val audioManager = getSystemService(android.media.AudioManager::class.java)
+        val shouldResume = headphoneResumeGate.shouldResume(
+            hasActiveCall = audioManager?.mode != android.media.AudioManager.MODE_NORMAL,
+            isInListenTogether = ::listenTogetherController.isInitialized && listenTogetherController.active.value,
+            isCasting = isCasting,
+            hasMediaItems = player.mediaItemCount > 0,
+            playWhenReady = player.playWhenReady,
+        )
+        if (!shouldResume) return
+        headphoneResumeGate.onResumeTriggered()
+        if (player.playbackState == Player.STATE_IDLE) {
+            player.prepare()
+        }
+        player.play()
+        // Clears a pending focus-loss self-resume, as a play from the notification does.
+        crossfadeEngine?.onPlayPauseRequested()
     }
 
     // ---- MediaLibrarySession.Callback ----
