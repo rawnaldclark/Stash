@@ -120,12 +120,15 @@ class TokenManagerImpl @Inject constructor(
      * Saves a refreshed token (the store keeps the user, without which the UI shows "Not
      * Connected") and returns its access token, but only while the stored sign-in is still the one
      * refreshed. If a Disconnect or a new sign-in landed during the refresh, that wins: nothing is
-     * saved and null is returned, as the token belongs to an account no longer connected.
+     * saved and the token, which belongs to an account no longer connected, is never handed out.
+     *
+     * The answer is then for the sign-in stored now, signed out being null. Null alone would read
+     * as "Session expired" to a sync's health probe, a false alarm when a sign-in has just landed.
      */
     private suspend fun savedRefresh(spDcCookie: String, refreshed: ServiceToken): String? {
         if (tokenStore.saveRefreshedSpotifyToken(spDcCookie, refreshed)) return refreshed.accessToken
         Log.i("StashSync", "Spotify token refresh dropped: the sign-in changed meanwhile")
-        return null
+        return tokenStore.spotifyToken.first()?.takeIf { !it.isExpired }?.accessToken
     }
 
     /**

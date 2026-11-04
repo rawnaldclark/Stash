@@ -323,9 +323,30 @@ class TokenManagerSpotifyAccountGuardTest {
         coVerify(exactly = 1) { store.saveRefreshedSpotifyToken("rawn-cookie", any()) }
     }
 
-    @Test fun `a refresh overtaken by a sign-out or new sign-in hands out nothing`() = runTest {
+    /** The refresh of Rawn's sign-in finishes only after [overtakenBy] is what's stored. */
+    private fun refreshOvertakenBy(overtakenBy: ServiceToken?) {
         coEvery { auth.refreshAccessToken("rawn-cookie") } returns token("rawn-fresh", "rawn-cookie")
-        coEvery { store.saveRefreshedSpotifyToken(any(), any()) } returns false
+        coEvery { store.saveRefreshedSpotifyToken(any(), any()) } answers {
+            storedToken.value = overtakenBy
+            false
+        }
+    }
+
+    @Test fun `a refresh overtaken by a sign-out hands out nothing`() = runTest {
+        refreshOvertakenBy(null)
+
+        assertNull(manager().getSpotifyAccessToken())
+    }
+
+    @Test fun `a refresh overtaken by a new sign-in answers for that sign-in, never with the dropped token`() = runTest {
+        // Null here would read as "Session expired" to a sync's health probe: a false alarm.
+        refreshOvertakenBy(token("sam-access", "sam-cookie"))
+
+        assertEquals("sam-access", manager().getSpotifyAccessToken())
+    }
+
+    @Test fun `a refresh overtaken by a sign-in already expired hands out nothing`() = runTest {
+        refreshOvertakenBy(token("sam-old", "sam-cookie", expiresAt = now - 60))
 
         assertNull(manager().getSpotifyAccessToken())
     }
@@ -333,12 +354,15 @@ class TokenManagerSpotifyAccountGuardTest {
     @Test fun `a forced refresh follows the same rule`() = runTest {
         storedToken.value = token("rawn-current", "rawn-cookie")
         coEvery { auth.refreshAccessToken("rawn-cookie") } returns token("rawn-fresh", "rawn-cookie")
-
-        coEvery { store.saveRefreshedSpotifyToken(any(), any()) } returns false
-        assertNull(manager().forceRefreshSpotifyAccessToken())
-
         coEvery { store.saveRefreshedSpotifyToken(any(), any()) } returns true
         assertEquals("rawn-fresh", manager().forceRefreshSpotifyAccessToken())
+
+        refreshOvertakenBy(token("sam-access", "sam-cookie"))
+        assertEquals("sam-access", manager().forceRefreshSpotifyAccessToken())
+
+        storedToken.value = token("rawn-current", "rawn-cookie")
+        refreshOvertakenBy(null)
+        assertNull(manager().forceRefreshSpotifyAccessToken())
     }
 
     // -- Learning whose account an older sign-in is --------------------------
