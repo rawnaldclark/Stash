@@ -279,6 +279,45 @@ class WebCastRemoteTest {
         assertThat(sent).containsExactly(RemoteCommand.UpNext(listOf(RemoteItem("52#n2", nights))))
     }
 
+    @Test fun `a browser that moved on to the held song, then reconnected, is not sent back to the song before`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1"))
+        r.setNext(media("43#n1", nights))
+        advanceTimeBy(WebCastRemote.UP_NEXT_COALESCE_MS + 1)
+        runCurrent()
+        r.onState(state(iid = "42#1", next = "43#n1"))
+        r.onState(state(iid = "43#n1", positionMs = 5_000)) // the song ended there: it moved on to the one it held
+        sent.clear()
+        r.onState(state(iid = "43#n1", sid = "NewSession01", positionMs = 9_000))
+        assertThat(sent).isEmpty() // what the phone plays now is B: no load of A
+        assertThat(r.status.contentId).isEqualTo("43#n1")
+
+        // The same when it moved on while this phone's connection was down: first heard after the move.
+        val again = remote()
+        again.load(media("50#1"), 0, autoplay = true)
+        again.onState(state(iid = "50#1"))
+        again.setNext(media("51#n1", nights))
+        advanceTimeBy(WebCastRemote.UP_NEXT_COALESCE_MS + 1)
+        runCurrent()
+        again.onState(state(iid = "50#1", next = "51#n1"))
+        again.onState(state(iid = "50#1", next = "51#n1", lostAt = testScheduler.currentTime))
+        sent.clear()
+        again.onState(state(iid = "51#n1", sid = "NewSession02", positionMs = 30_000))
+        assertThat(sent).isEmpty()
+        assertThat(again.status.contentId).isEqualTo("51#n1")
+    }
+
+    @Test fun `a song the browser should hold but doesn't is loaded where the phone is on it now, not where its load began`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1", positionMs = 100_000))
+        advanceTimeBy(5_000)
+        sent.clear()
+        r.onState(state(iid = null, sid = "NewSession01", playing = false, phase = null)) // driven still, its song gone
+        assertThat(sent).containsExactly(RemoteCommand.Load(RemoteItem("42#1", song), 105_000, true, "Blonde"))
+    }
+
     @Test fun `a later song unanswered is sent once more, then an error the queue steps over`() = runTest {
         val r = remote()
         r.load(media("42#1"), 0, autoplay = true)
