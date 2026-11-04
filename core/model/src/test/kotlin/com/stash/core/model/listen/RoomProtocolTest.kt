@@ -14,6 +14,9 @@ class RoomProtocolTest {
             ClientMessage.Seek(90_000), ClientMessage.Queue(emptyList()), ClientMessage.Status("ready", 3),
             ClientMessage.Suggest(track), ClientMessage.SuggestionAction("s1", "add"),
             ClientMessage.React(RoomProtocol.EMOJI[0]), ClientMessage.MakeHost("m2"), ClientMessage.End,
+            ClientMessage.Hello(name = "Rawn", v = 2, guestsAdd = false), ClientMessage.Load(track, 0, emptyList(), "unavailable", qv = 4),
+            ClientMessage.Queue(listOf(track), qv = 7), ClientMessage.Add(listOf(track), next = true),
+            ClientMessage.Unqueue(track.copy(addedBy = "m2"), at = 3), ClientMessage.Settings(guestsAdd = true),
         )
         for (m in all) {
             assertThat(RoomProtocol.json.decodeFromString(ClientMessage.serializer(), RoomProtocol.encode(m))).isEqualTo(m)
@@ -67,5 +70,43 @@ class RoomProtocolTest {
             .isEqualTo(ServerMessage.Prepare(2, SharedTrack("Xtal", "Aphex Twin"), 0, 9))
         assertThat(RoomProtocol.decode("""{"t":"nope"}""")).isNull()
         assertThat(RoomProtocol.decode("not json")).isNull()
+    }
+
+    @Test fun `guest adds go on the wire as the room reads them`() {
+        assertThat(RoomProtocol.encode(ClientMessage.Hello(name = "Rawn", v = RoomProtocol.VERSION, guestsAdd = true)))
+            .isEqualTo("""{"t":"hello","name":"Rawn","v":2,"guestsAdd":true}""")
+        assertThat(RoomProtocol.encode(ClientMessage.Add(listOf(SharedTrack("Xtal", "Aphex Twin")), next = false)))
+            .isEqualTo("""{"t":"add","tracks":[{"t":"Xtal","a":"Aphex Twin"}],"next":false}""")
+        assertThat(RoomProtocol.encode(ClientMessage.Unqueue(SharedTrack("Xtal", "Aphex Twin", addedBy = "M2"), at = 1)))
+            .isEqualTo("""{"t":"unqueue","track":{"t":"Xtal","a":"Aphex Twin","by":"M2"},"at":1}""")
+        assertThat(RoomProtocol.encode(ClientMessage.Settings(false))).isEqualTo("""{"t":"settings","guestsAdd":false}""")
+        assertThat(RoomProtocol.encode(ClientMessage.Queue(emptyList(), qv = 5))).isEqualTo("""{"t":"queue","queue":[],"qv":5}""")
+        // An older Worker never sent a version: the host's whole queues say nothing about one.
+        assertThat(RoomProtocol.encode(ClientMessage.Queue(emptyList()))).isEqualTo("""{"t":"queue","queue":[]}""")
+    }
+
+    @Test fun `a room that knows guest adds says so, and an older one reads as suggestions only`() {
+        val text = """{"t":"state","state":{"rev":3,"host":"m1","track":null,"trackKey":0,
+            "timeline":{"positionMs":0,"atRoomMs":1000,"playing":false},"queue":[],
+            "members":[{"id":"m1","name":"Rawn","joinedAt":1000,"status":"ok","v":2},{"id":"m2","name":null,"joinedAt":1001,"status":"ok"}],
+            "suggestions":[],"phase":{"kind":"playing"},"v":2,"guestsAdd":true,"qv":12}}"""
+        val state = (RoomProtocol.decode(text) as ServerMessage.StateSync).state
+        assertThat(state.v).isEqualTo(2)
+        assertThat(state.guestsAdd).isTrue()
+        assertThat(state.qv).isEqualTo(12)
+        assertThat(state.members.map { it.v }).containsExactly(2, null).inOrder()
+        val old = RoomProtocol.decode("""{"t":"state","state":{"rev":1,"host":"m1","trackKey":0,"queue":[],"members":[],"suggestions":[]}}""")
+        val oldState = (old as ServerMessage.StateSync).state
+        assertThat(oldState.v).isEqualTo(1)
+        assertThat(oldState.guestsAdd).isFalse()
+        assertThat(oldState.qv).isNull()
+    }
+
+    @Test fun `the room's added, settings and versioned queue decode`() {
+        assertThat(RoomProtocol.decode("""{"t":"added","by":"m2","next":true,"count":3,"track":{"t":"Xtal","a":"Aphex Twin","by":"m2"}}"""))
+            .isEqualTo(ServerMessage.Added("m2", next = true, count = 3, track = SharedTrack("Xtal", "Aphex Twin", addedBy = "m2")))
+        assertThat(RoomProtocol.decode("""{"t":"settings","guestsAdd":false}""")).isEqualTo(ServerMessage.SettingsUpdate(false))
+        assertThat(RoomProtocol.decode("""{"t":"queue","queue":[],"qv":9}""")).isEqualTo(ServerMessage.QueueUpdate(emptyList(), qv = 9))
+        assertThat(RoomProtocol.decode("""{"t":"queue","queue":[]}""")).isEqualTo(ServerMessage.QueueUpdate(emptyList(), qv = null))
     }
 }

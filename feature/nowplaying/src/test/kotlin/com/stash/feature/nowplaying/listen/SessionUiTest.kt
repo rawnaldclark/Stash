@@ -1,13 +1,20 @@
 package com.stash.feature.nowplaying.listen
 
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import com.stash.core.media.listen.SessionEvent
 import com.stash.core.model.share.SharedTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+/** Robolectric for the notices' string resources. */
+@RunWith(RobolectricTestRunner::class)
 class SessionUiTest {
+    private val res = ApplicationProvider.getApplicationContext<Context>().resources
 
     @Test
     fun `a person keeps one colour, and a room of ten spreads across the palette`() {
@@ -82,9 +89,25 @@ class SessionUiTest {
 
     @Test
     fun `notices name the person, and you when it's you`() {
-        assertEquals("Rawn skipped", eventText(SessionEvent(SessionEvent.Kind.SKIPPED, "h", "Rawn"), myId = "me"))
-        assertEquals("Someone joined", eventText(SessionEvent(SessionEvent.Kind.JOINED, "x", null), myId = "me"))
-        assertEquals("You're hosting now", eventText(SessionEvent(SessionEvent.Kind.HOSTING, "me", "Maya"), myId = "me"))
-        assertEquals("Maya is hosting now", eventText(SessionEvent(SessionEvent.Kind.HOSTING, "m", "Maya"), myId = "me"))
+        assertEquals("Rawn skipped", eventText(SessionEvent(SessionEvent.Kind.SKIPPED, "h", "Rawn"), myId = "me", res))
+        assertEquals("Someone joined", eventText(SessionEvent(SessionEvent.Kind.JOINED, "x", null), myId = "me", res))
+        assertEquals("You're hosting now", eventText(SessionEvent(SessionEvent.Kind.HOSTING, "me", "Maya"), myId = "me", res))
+        assertEquals("Maya is hosting now", eventText(SessionEvent(SessionEvent.Kind.HOSTING, "m", "Maya"), myId = "me", res))
+    }
+
+    @Test
+    fun `an add names who and what, or how many`() {
+        val added = SessionEvent(SessionEvent.Kind.ADDED, "s", "Sam", song = "Xtal", count = 1)
+        assertEquals("Sam added Xtal", eventText(added, myId = "me", res))
+        assertEquals("Sam added 3 songs", eventText(added.copy(count = 3), myId = "me", res))
+        assertEquals("Someone added 1 song", eventText(added.copy(name = null, song = null), myId = "me", res))
+    }
+
+    @Test
+    fun `a song the host couldn't play says whose phone, or yours`() {
+        val skipped = SessionEvent(SessionEvent.Kind.SKIPPED_UNAVAILABLE, "h", "Rawn", song = "Xtal")
+        assertEquals("Skipped Xtal: Rawn can't play it", eventText(skipped, myId = "me", res))
+        assertEquals("Skipped Xtal: you can't play it", eventText(skipped, myId = "h", res))
+        assertEquals("Skipped a song: Rawn can't play it", eventText(skipped.copy(song = null), myId = "me", res))
     }
 }

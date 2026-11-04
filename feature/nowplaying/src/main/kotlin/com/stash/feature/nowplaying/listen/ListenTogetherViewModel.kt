@@ -60,4 +60,13 @@ class ListenTogetherViewModel @Inject constructor(
     fun makeHost(memberId: String) = controller.send(Command.MakeHost(memberId))
     fun answerSuggestion(id: String, add: Boolean) = controller.send(Command.Suggestion(id, add))
     fun editQueue(queue: List<SharedTrack>) = controller.send(Command.SetQueue(queue))
+
+    /** A guest's own song out of Up next. */
+    fun unqueue(track: SharedTrack, at: Int) = controller.send(Command.Unqueue(track, at))
+
+    /** The host's "Let guests add songs": the room hears it at once, and the next session starts from it. */
+    fun setGuestsAdd(on: Boolean) {
+        controller.send(Command.SetGuestsAdd(on))
+        viewModelScope.launch { sharePreference.setGuestsAdd(on) }
+    }
 }

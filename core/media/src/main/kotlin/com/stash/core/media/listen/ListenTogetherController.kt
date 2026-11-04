@@ -2,6 +2,8 @@ package com.stash.core.media.listen
 
 import android.content.Context
 import android.content.Intent
+import androidx.annotation.PluralsRes
+import androidx.annotation.StringRes
 import com.stash.core.media.service.StashPlaybackService
 import com.stash.core.model.listen.RoomMember
 import com.stash.core.model.listen.RoomSuggestion
@@ -44,13 +46,25 @@ sealed interface ListenTogetherState {
         val queue: List<SharedTrack> = emptyList(),
         /** Everyone seen this session, id → name, kept after they leave so "Maya's pick" still says Maya. */
         val names: Map<String, String?> = emptyMap(),
+        /** The room knows guest adds (an older Worker only knows suggestions): the host's switch can be shown. */
+        val roomKnowsAdds: Boolean = false,
+        /** A guest's Play next and Add to queue go straight into the queue now; otherwise a guest suggests. */
+        val guestsAdd: Boolean = false,
+        /** This phone's own "Let guests add songs" (the host's switch shows it; it rules whenever this phone hosts). */
+        val myGuestsAdd: Boolean = true,
+        /** The host's app is older than guest adds: "Rawn's Stash needs an update to let you add songs." */
+        val hostAppOutdated: Boolean = false,
     ) : ListenTogetherState
 }
 
-/** Something a person did in the room, for a short named notice: "Maya joined", "Rawn skipped". */
-data class SessionEvent(val kind: Kind, val memberId: String, val name: String?) {
+/**
+ * Something a person did in the room, for a short named notice: "Maya joined", "Rawn skipped", "Sam added Xtal".
+ * [song] and [count]: ADDED's first song and how many; SKIPPED_UNAVAILABLE's song ([memberId] is the host who can't
+ * play it).
+ */
+data class SessionEvent(val kind: Kind, val memberId: String, val name: String?, val song: String? = null, val count: Int = 1) {
     /** HOSTING: [memberId] is the new host (maybe this phone: "You're hosting now"). */
-    enum class Kind { JOINED, LEFT, SKIPPED, WENT_BACK, PAUSED, RESUMED, HOSTING }
+    enum class Kind { JOINED, LEFT, SKIPPED, WENT_BACK, PAUSED, RESUMED, HOSTING, ADDED, SKIPPED_UNAVAILABLE }
 }
 
 /**
@@ -72,6 +86,10 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
         data class MakeHost(val memberId: String) : Command
         /** Host only: Up next after the host removed or moved songs. Replaces the room's queue. */
         data class SetQueue(val queue: List<SharedTrack>) : Command
+        /** A guest takes their own song out of Up next; it was at [at]. */
+        data class Unqueue(val track: SharedTrack, val at: Int) : Command
+        /** "Let guests add songs": remembered by the caller, sent to the room while this phone hosts. */
+        data class SetGuestsAdd(val on: Boolean) : Command
         /** Catch up with the room after a local pause (see [ListenTogetherState.InRoom.pausedLocally]). */
         data object Rejoin : Command
     }
@@ -135,5 +153,8 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
     internal fun publish(state: ListenTogetherState) { _state.value = state }
     internal fun reaction(reaction: ServerMessage.Reaction) { _reactions.tryEmit(reaction) }
     internal fun message(text: String) { _messages.tryEmit(text) }
+    internal fun message(@StringRes id: Int, vararg args: Any) = message(context.getString(id, *args))
+    internal fun quantityMessage(@PluralsRes id: Int, count: Int, vararg args: Any) =
+        message(context.resources.getQuantityString(id, count, *args))
     internal fun event(event: SessionEvent) { _events.tryEmit(event) }
 }

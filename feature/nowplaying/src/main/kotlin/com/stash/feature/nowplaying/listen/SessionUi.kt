@@ -1,5 +1,6 @@
 package com.stash.feature.nowplaying.listen
 
+import android.content.res.Resources
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -54,7 +56,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -74,7 +79,9 @@ import com.stash.core.model.listen.RoomMember
 import com.stash.core.model.share.ShareConfig
 import com.stash.core.model.share.SharedTrack
 import coil3.compose.AsyncImage
+import com.stash.core.ui.components.StashSwitch
 import com.stash.core.ui.theme.StashTheme
+import com.stash.feature.nowplaying.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharedFlow
 
@@ -263,8 +270,9 @@ fun LivePill(pausedLocally: Boolean, accent: Color, ink: Color, onRejoin: () -> 
 
 // ── Named notices ─────────────────────────────────────────────────────────────
 
-internal fun eventText(e: SessionEvent, myId: String?): String {
-    val who = e.name ?: "Someone"
+internal fun eventText(e: SessionEvent, myId: String?, res: Resources): String {
+    val who = e.name ?: res.getString(R.string.listen_someone)
+    val song = e.song ?: res.getString(R.string.listen_a_song)
     return when (e.kind) {
         SessionEvent.Kind.JOINED -> "$who joined"
         SessionEvent.Kind.LEFT -> "$who left"
@@ -273,12 +281,23 @@ internal fun eventText(e: SessionEvent, myId: String?): String {
         SessionEvent.Kind.PAUSED -> "$who paused"
         SessionEvent.Kind.RESUMED -> "$who resumed"
         SessionEvent.Kind.HOSTING -> if (e.memberId == myId) "You're hosting now" else "$who is hosting now"
+        // "Sam added Xtal", "Sam added 3 songs": a whole selection is one notice.
+        SessionEvent.Kind.ADDED ->
+            if (e.count <= 1 && e.song != null) res.getString(R.string.listen_added_song, who, e.song)
+            else res.getQuantityString(R.plurals.listen_added_songs, e.count, who, e.count)
+        SessionEvent.Kind.SKIPPED_UNAVAILABLE ->
+            if (e.memberId == myId) res.getString(R.string.listen_skipped_unavailable_you, song)
+            else res.getString(R.string.listen_skipped_unavailable, song, who)
     }
 }
 
-/** "Maya joined", "Rawn skipped": a short chip with the person's face, the newest replacing the last. */
+/**
+ * "Maya joined", "Rawn skipped", "Sam added Xtal": a short chip with the person's face, the newest replacing the last.
+ * In-app only: nobody gets a system notification for what happens in the room.
+ */
 @Composable
 fun SessionEventChip(events: SharedFlow<SessionEvent>, myId: String?, modifier: Modifier = Modifier) {
+    val res = LocalContext.current.resources
     var current by remember { mutableStateOf<SessionEvent?>(null) }
     var shown by remember { mutableStateOf<SessionEvent?>(null) } // kept through the exit fade
     LaunchedEffect(events) {
@@ -310,7 +329,13 @@ fun SessionEventChip(events: SharedFlow<SessionEvent>, myId: String?, modifier: 
         ) {
             PersonAvatar(e.memberId, e.name, 22.dp)
             Spacer(Modifier.width(8.dp))
-            Text(eventText(e, myId), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+            Text(
+                eventText(e, myId, res),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -339,6 +364,8 @@ fun SessionSheet(
     onShare: (String) -> Unit,
     onLeave: () -> Unit,
     onEnd: () -> Unit,
+    onGuestsAddChange: (Boolean) -> Unit = {},
+    onUnqueue: (track: SharedTrack, at: Int) -> Unit = { _, _ -> },
 ) {
     // Right after Start the state is still Idle for a moment (the command is on its way), so Idle only
     // closes the sheet at once after a session was live; a start that never happens closes it after 10 s.
@@ -359,7 +386,8 @@ fun SessionSheet(
         properties = com.stash.core.ui.components.sheetBarsFollow(StashTheme.extendedColors.elevatedSurface),
     ) {
         when (state) {
-            is ListenTogetherState.InRoom -> RoomContent(state, onAnswer, onMakeHost, onEditQueue, onCopyLink, onShare, onLeave, onEnd)
+            is ListenTogetherState.InRoom ->
+                RoomContent(state, onAnswer, onMakeHost, onEditQueue, onCopyLink, onShare, onLeave, onEnd, onGuestsAddChange, onUnqueue)
             else -> Column(
                 Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 48.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -383,12 +411,14 @@ private fun RoomContent(
     onShare: (String) -> Unit,
     onLeave: () -> Unit,
     onEnd: () -> Unit,
+    onGuestsAddChange: (Boolean) -> Unit,
+    onUnqueue: (track: SharedTrack, at: Int) -> Unit,
 ) {
     val host = room.members.firstOrNull { it.id == room.hostId }
     val nameOf = { id: String -> room.nameOf(id) }
     val count = room.members.size
     val listState = rememberLazyListState()
-    val upNext = rememberUpNextState(listState, room.queue, onEditQueue)
+    val upNext = rememberUpNextState(listState, room.queue, onEditQueue, onUnqueue)
     LazyColumn(
         Modifier.fillMaxWidth(),
         state = listState,
@@ -408,6 +438,19 @@ private fun RoomContent(
                 room.members.sortedBy { if (it.id == room.hostId) 0 else 1 }.forEach { m ->
                     Person(m, room, onMakeHost = if (room.isHost && m.id != room.myId) ({ onMakeHost(m.id) }) else null)
                 }
+            }
+            // The host decides whether guests' songs go straight in (only a room that knows guest adds can).
+            if (room.isHost && room.roomKnowsAdds) {
+                Spacer(Modifier.height(14.dp))
+                GuestsAddRow(checked = room.myGuestsAdd, onCheckedChange = onGuestsAddChange)
+            } else if (!room.isHost && room.hostAppOutdated) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    host?.name?.let { stringResource(R.string.listen_host_needs_update, it) }
+                        ?: stringResource(R.string.listen_host_needs_update_unnamed),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 
@@ -469,6 +512,37 @@ private fun RoomContent(
                 }
             }
         }
+    }
+}
+
+/**
+ * The host's "Let guests add songs", in the sheet's glass-card style (the Invite card below). The whole card toggles
+ * it, and TalkBack reads card and switch as one control.
+ */
+@Composable
+private fun GuestsAddRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(StashTheme.extendedColors.glassBackground)
+            .border(1.dp, StashTheme.extendedColors.glassBorder, shape)
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.listen_guests_add_title), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                stringResource(if (checked) R.string.listen_guests_add_on else R.string.listen_guests_add_off),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        // No handler of its own: the card's toggleable takes the tap.
+        StashSwitch(checked = checked, onCheckedChange = null)
     }
 }
 

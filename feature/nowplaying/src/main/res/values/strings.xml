@@ -77,4 +77,28 @@
          %1$s is the person's name on Spicy Lyrics (linked to their profile there). "Lyrics by Spicy Lyrics" stays in English. -->
     <string name="lyrics_credit_uploaded_by">Uploaded by %1$s</string>
     <string name="lyrics_credit_made_by">Made by %1$s</string>
+
+    <!-- Listen Together, guests add songs (spec 2026-11-04). The host's switch in the Session sheet. -->
+    <string name="listen_guests_add_title">Let guests add songs</string>
+    <string name="listen_guests_add_on">Their Play next and Add to queue go straight in</string>
+    <string name="listen_guests_add_off">You approve each song first</string>
+    <!-- A guest's Session sheet when the host's app is older than guest adds. %1$s: the host's name. -->
+    <string name="listen_host_needs_update">%1$s\'s Stash needs an update to let you add songs</string>
+    <string name="listen_host_needs_update_unnamed">The host\'s Stash needs an update to let you add songs</string>
+    <!-- The chip on Now Playing for everyone but the adder. %1$s: who added; %2$s: the song. -->
+    <string name="listen_added_song">%1$s added %2$s</string>
+    <!-- %1$s: who added; %2$d: how many songs. -->
+    <plurals name="listen_added_songs">
+        <item quantity="one">%1$s added %2$d song</item>
+        <item quantity="other">%1$s added %2$d songs</item>
+    </plurals>
+    <!-- The host's phone couldn't play a song, so the room skipped it for everyone. %1$s: the song; %2$s: the host. -->
+    <string name="listen_skipped_unavailable">Skipped %1$s: %2$s can\'t play it</string>
+    <!-- The same, on the host's own phone. %1$s: the song. -->
+    <string name="listen_skipped_unavailable_you">Skipped %1$s: you can\'t play it</string>
+    <!-- Stands in for a song or a person whose name the room doesn't know. -->
+    <string name="listen_a_song">a song</string>
+    <string name="listen_someone">Someone</string>
+    <!-- TalkBack's action on a song in Up next: the host on any song, a guest on their own. -->
+    <string name="listen_remove_from_up_next">Remove from Up next</string>
 </resources>

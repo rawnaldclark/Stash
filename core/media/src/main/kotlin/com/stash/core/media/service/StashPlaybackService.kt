@@ -938,6 +938,7 @@ class StashPlaybackService : MediaLibraryService() {
             autoplayRadio = { autoplayRadioPreference.enabled.first() },
             displayName = { sharePreference.displayName() },
             clock = { android.os.SystemClock.elapsedRealtime() },
+            guestsAddPreference = { sharePreference.guestsAddNow() },
         ).also { it.start() }
         listenTogetherController.serviceAttached = true
         android.util.Log.i("StashPlayback", "listen-together engine attached")

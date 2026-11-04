@@ -21,4 +21,18 @@
     <string name="radio_failed_player_not_ready">Player is still starting. Try again.</string>
     <string name="radio_failed_no_station">Couldn\'t find similar songs for this.</string>
     <string name="radio_failed_download_mode">Radio streams. Switch to Online to start one.</string>
+
+    <!-- Listen Together (spec 2026-11-04, guests add songs): toasts after a Play next or Add to queue in a session. -->
+    <string name="lt_added_next">Playing next in the session</string>
+    <string name="lt_added_queue">Added to the session queue</string>
+    <!-- A guest's adds go to the host for approval. %1$s: the host's name. -->
+    <string name="lt_suggested_to">Suggested to %1$s</string>
+    <string name="lt_suggested">Suggested to the host</string>
+    <!-- A guest may have this many songs waiting in the room's queue. %1$d: the limit (20). -->
+    <plurals name="lt_guest_cap">
+        <item quantity="one">You can have %1$d song waiting. Add more as they play.</item>
+        <item quantity="other">You can have %1$d songs waiting. Add more as they play.</item>
+    </plurals>
+    <!-- A guest tapped a song to play it now, in a room that lets guests add. -->
+    <string name="lt_only_host_changes_song">Only the host can change the song. Use Play next to add it.</string>
 </resources>

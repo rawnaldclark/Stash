@@ -8,9 +8,12 @@ import com.stash.core.data.listen.RoomConnection
 import com.stash.core.data.listen.RoomConnector
 import com.stash.core.data.listen.RoomEvent
 import com.stash.core.data.share.ShareResult
+import com.stash.core.media.PlayNext
+import com.stash.core.media.R
 import com.stash.core.media.listen.ListenTogetherController.Command
 import com.stash.core.model.listen.ClientMessage
 import com.stash.core.model.listen.RoomMember
+import com.stash.core.model.listen.RoomProtocol
 import com.stash.core.model.listen.RoomState
 import com.stash.core.model.listen.RoomTimeline
 import com.stash.core.model.listen.ServerMessage
@@ -21,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -41,6 +45,8 @@ class ListenTogetherSession(
     private val displayName: suspend () -> String?,
     /** Monotonic local time in ms (SystemClock.elapsedRealtime in the service). */
     private val clock: () -> Long,
+    /** This phone's remembered "Let guests add songs" (on until the user turns it off). */
+    private val guestsAddPreference: suspend () -> Boolean = { true },
 ) {
     private var connection: RoomConnection? = null
     /**
@@ -63,6 +69,8 @@ class ListenTogetherSession(
      * was down. Built on the flush, so the first Load reads where the song is then, not before the handshake.
      */
     private var pendingLoad: (() -> ClientMessage.Load)? = null
+    /** This phone has sent the room a song this session, so a room still showing none is only waiting for the echo. */
+    private var loadSent = false
     /** [clock] when this session began: pings carry time since then, never device uptime. */
     private var sessionStartClock = 0L
 
@@ -80,6 +88,14 @@ class ListenTogetherSession(
     private var versionMismatch = false
     private val history = ArrayDeque<SharedTrack>()
     private var radioTriedKey = NONE
+    /** This phone's "Let guests add songs": read as a session starts, sent in every hello, changed by the host's switch. */
+    private var myGuestsAdd = true
+    /**
+     * Play next / Add to queue from the menus, gathered for a moment so a whole "Play selected next" (one call per
+     * song) leaves as one message: the room closes a socket over 20 messages a second. Each entry: the items and
+     * whether they are Play next. One reader per session, so batches leave in the order they were tapped.
+     */
+    private var addInbox: Channel<Pair<List<MediaItem>, Boolean>>? = null
 
     // Named notices (SessionEvent): who's been seen, their names (kept after they leave), and
     // leaves waiting out a grace period so a network blip doesn't read as goodbye and hello.
@@ -119,6 +135,8 @@ class ListenTogetherSession(
             is Command.MakeHost -> send(ClientMessage.MakeHost(command.memberId))
             // Shown at once, so a swiped or dragged row doesn't flick back while the room's echo is on its way.
             is Command.SetQueue -> if (isHost && room != null) { setQueue(command.queue.take(MAX_QUEUE)); publish() }
+            is Command.Unqueue -> unqueue(command.track, command.at)
+            is Command.SetGuestsAdd -> setGuestsAdd(command.on)
             Command.Rejoin -> rejoin()
         }
     }
@@ -156,6 +174,7 @@ class ListenTogetherSession(
         isHost = asHost
         sessionStartClock = clock()
         controller.setActive(true) // gates PlayerRepositoryImpl's saves before anything moves
+        myGuestsAdd = guestsAddPreference()
         player.saveUserPosition()
         player.events = playerEvents
         player.enterSession(asHost, interceptor)
@@ -164,9 +183,14 @@ class ListenTogetherSession(
         // The host key goes out only until the room hands back a token (spec §2–§3).
         val session = CoroutineScope(scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job]))
         sessionScope = session
-        val conn = connector.connect(code, session) { ClientMessage.Hello(name, hostKey.takeIf { token == null }, token) }
+        val conn = connector.connect(code, session) {
+            ClientMessage.Hello(name, hostKey.takeIf { token == null }, token, RoomProtocol.VERSION, myGuestsAdd)
+        }
         connection = conn
         session.launch { conn.events.collect { onEvent(it) } }
+        val inbox = Channel<Pair<List<MediaItem>, Boolean>>(Channel.UNLIMITED)
+        addInbox = inbox
+        session.launch { gatherAdds(inbox) }
     }
 
     // ── The room ──────────────────────────────────────────────────────────────
@@ -204,7 +228,8 @@ class ListenTogetherSession(
                 }
                 val pending = pendingLoad?.invoke()
                 pendingLoad = null
-                if (isHost) pending?.let { load(it.track, it.positionMs, it.queue, it.why) } // may set pendingLoad again
+                // Keeps the version a dropped Load was built from; the very first one was built before the room existed.
+                if (isHost) pending?.let { load(it.track, it.positionMs, it.queue, it.why, it.qv ?: room?.qv) } // may set pendingLoad again
             }
             is ServerMessage.StateSync -> applyState(m.state)
             is ServerMessage.Pong -> {
@@ -215,7 +240,10 @@ class ListenTogetherSession(
             is ServerMessage.TimelineUpdate -> onTimeline(m)
             is ServerMessage.Prepare -> {
                 val by = m.by
-                if (by != null && by != myId) when (m.why) {
+                // The host's phone couldn't play the last song and moved everyone on: say so on every phone, the host's too.
+                if (by != null && m.why == UNAVAILABLE) {
+                    controller.event(SessionEvent(SessionEvent.Kind.SKIPPED_UNAVAILABLE, by, memberNames[by], song = room?.track?.title))
+                } else if (by != null && by != myId) when (m.why) {
                     "skip", "pick" -> notice(SessionEvent.Kind.SKIPPED, by)
                     "back" -> notice(SessionEvent.Kind.WENT_BACK, by)
                 }
@@ -224,8 +252,14 @@ class ListenTogetherSession(
             }
             is ServerMessage.Members -> { noticeMembers(m.members); room = room?.copy(members = m.members); publish() }
             is ServerMessage.Suggestions -> { room = room?.copy(suggestions = m.suggestions); publish() }
-            // The host's own edits already set room.queue; the echo brings the adders ("by") the room stamped.
-            is ServerMessage.QueueUpdate -> { room = room?.copy(queue = m.queue); publish() }
+            // The host's own edits already set room.queue; the echo brings the adders ("by") the room stamped, and the
+            // version the next whole queue this phone sends is built from.
+            is ServerMessage.QueueUpdate -> { room = room?.let { it.copy(queue = m.queue, qv = m.qv ?: it.qv) }; publish() }
+            // "Sam added Xtal" for everyone but Sam.
+            is ServerMessage.Added -> if (m.by != myId) {
+                controller.event(SessionEvent(SessionEvent.Kind.ADDED, m.by, memberNames[m.by], song = m.track?.title, count = m.count))
+            }
+            is ServerMessage.SettingsUpdate -> { room = room?.copy(guestsAdd = m.guestsAdd); publish() }
             is ServerMessage.Reaction -> controller.reaction(m)
             is ServerMessage.Ended -> teardown("Session ended")
         }
@@ -342,7 +376,8 @@ class ListenTogetherSession(
         player.pause()
         report(UNAVAILABLE, force = true)
         publish()
-        if (isHost) sessionScope?.launch { advance() } // the host can't play it: move the room on, don't stall it
+        // The host can't play it: move the room on, don't stall it, and every phone says why.
+        if (isHost) sessionScope?.launch { advance(why = UNAVAILABLE) }
     }
 
     private fun onTimeline(t: ServerMessage.TimelineUpdate) {
@@ -457,8 +492,11 @@ class ListenTogetherSession(
         override fun onPlay() {
             if (!isHost) return rejoin() // a listener's headset, notification or lock-screen play
             pausedLocally = false // the host chose to play: don't pause the room again
-            // Play on a song that has ended would replay nothing: move the room on instead.
-            if (player.ended) sessionScope?.launch { advance() } else send(ClientMessage.Play)
+            // Play on a song that has ended would replay nothing, and a room with no song and none on its way has
+            // nothing to play (guests may have queued some): move the room on instead. A song still on its way must
+            // not be skipped: the room hasn't echoed the first Load for a moment after a session starts.
+            val nothingOnItsWay = room?.track == null && !loadSent && pendingLoad == null
+            if (player.ended || nothingOnItsWay) sessionScope?.launch { advance() } else send(ClientMessage.Play)
         }
         override fun onPause() {
             if (isHost) {
@@ -472,10 +510,15 @@ class ListenTogetherSession(
         override fun onSeek(positionMs: Long) { if (isHost) send(ClientMessage.Seek(positionMs)) }
         override fun onNext() { if (isHost) sessionScope?.launch { advance(why = "skip") } }
         override fun onPrevious() { if (isHost) previous() }
-        override fun onAdd(items: List<MediaItem>) { sessionScope?.launch { add(items) } }
+        override fun onAdd(items: List<MediaItem>) {
+            // The Play next tag rides the MediaController round trip (PlayNext); shuffle is off in a session, so a
+            // Play next always arrives tagged and an Add to queue never does.
+            items.partitionRuns { PlayNext.isTagged(it) }.forEach { (run, next) -> addInbox?.trySend(run to next) }
+        }
         override fun onSet(items: List<MediaItem>, startIndex: Int) {
             if (!isHost) {
-                controller.message("Leave the session to play something else")
+                if (canAddDirectly()) controller.message(R.string.lt_only_host_changes_song)
+                else controller.message("Leave the session to play something else")
                 return
             }
             sessionScope?.launch { replace(items, startIndex) }
@@ -498,7 +541,7 @@ class ListenTogetherSession(
             val station = catalog.radioAfter(current)
             if (station.isNotEmpty()) {
                 remember(current)
-                load(station.first(), 0, station.drop(1), "radio")
+                load(station.first(), 0, station.drop(1), if (why == UNAVAILABLE) why else "radio")
                 return
             }
         }
@@ -514,16 +557,92 @@ class ListenTogetherSession(
         load(history.removeLast(), 0, (listOfNotNull(r.track) + r.queue).take(MAX_QUEUE), "back")
     }
 
-    private suspend fun add(items: List<MediaItem>) {
-        val tracks = items.take(if (isHost) MAX_QUEUE else MAX_SUGGESTIONS).mapNotNull { catalog.sharedTrackFor(it) }
-        if (tracks.isEmpty()) return
-        if (isHost) {
-            setQueue((room?.queue.orEmpty() + tracks).take(MAX_QUEUE))
-            controller.message("Added to the session queue")
-        } else {
-            tracks.forEach { send(ClientMessage.Suggest(it)) }
-            controller.message("Suggested to the host")
+    /**
+     * Reads [inbox] for the whole session: takes one add, then keeps taking whatever else arrives within
+     * [ADD_GATHER_MS] (up to [ADD_MAX_WAIT_MS] in all), and sends that as one batch. "Play selected next" calls
+     * Play next once per song, a few ms apart, so 25 songs leave as one message instead of 25.
+     */
+    private suspend fun gatherAdds(inbox: Channel<Pair<List<MediaItem>, Boolean>>) {
+        for (first in inbox) {
+            val batch = mutableListOf(first)
+            val started = clock()
+            while (clock() - started < ADD_MAX_WAIT_MS) {
+                delay(ADD_GATHER_MS)
+                val more = generateSequence { inbox.tryReceive().getOrNull() }.toList()
+                if (more.isEmpty()) break
+                batch += more
+            }
+            add(batch)
         }
+    }
+
+    /** A room that knows guest adds takes this phone's adds straight in: it hosts, or the host lets guests add. */
+    private fun canAddDirectly(): Boolean {
+        val r = room ?: return false
+        return r.v >= RoomProtocol.VERSION && (isHost || r.guestsAdd)
+    }
+
+    /**
+     * One gathered batch of Play next / Add to queue, each run with its kind, in tap order. A room that knows guest
+     * adds gets them as `add` (it turns a guest's into suggestions while the host doesn't let guests add); an older
+     * Worker gets what it knows: the host's songs at the end of the queue, a guest's first 3 as suggestions.
+     */
+    private suspend fun add(batch: List<Pair<List<MediaItem>, Boolean>>) {
+        val runs = batch
+            .mapNotNull { (items, next) ->
+                items.mapNotNull { catalog.sharedTrackFor(it) }.takeIf { it.isNotEmpty() }?.let { it to next }
+            }
+            // One message per kind, not per tap: this is what keeps a whole selection under the room's rate limit.
+            .partitionRuns { it.second }
+            .map { (entries, next) -> entries.flatMap { it.first } to next }
+        val r = room ?: return
+        if (runs.isEmpty()) return
+        if (r.v >= RoomProtocol.VERSION) {
+            val direct = isHost || r.guestsAdd
+            // A guest's songs waiting in the queue are capped: the room enforces it, this says why the rest didn't go.
+            var left = if (!direct || isHost) Int.MAX_VALUE else (GUEST_MAX_WAITING - r.queue.count { it.addedBy == myId }).coerceAtLeast(0)
+            var capped = false
+            for ((tracks, next) in runs) {
+                val take = tracks.take(left)
+                if (take.size < tracks.size) capped = true
+                left -= take.size
+                take.chunked(ADD_CHUNK).forEach { send(ClientMessage.Add(it, next)) }
+            }
+            when {
+                capped -> controller.quantityMessage(R.plurals.lt_guest_cap, GUEST_MAX_WAITING, GUEST_MAX_WAITING)
+                !direct -> suggestedMessage(r)
+                runs.all { it.second } -> controller.message(R.string.lt_added_next)
+                else -> controller.message(R.string.lt_added_queue)
+            }
+        } else if (isHost) {
+            setQueue((r.queue + runs.flatMap { it.first }).take(MAX_QUEUE))
+            controller.message(R.string.lt_added_queue)
+        } else {
+            runs.flatMap { it.first }.take(MAX_SUGGESTIONS).forEach { send(ClientMessage.Suggest(it)) }
+            suggestedMessage(r)
+        }
+    }
+
+    private fun suggestedMessage(r: RoomState) {
+        val host = r.members.firstOrNull { it.id == r.host }?.name ?: r.host?.let { memberNames[it] }
+        if (host != null) controller.message(R.string.lt_suggested_to, host) else controller.message(R.string.lt_suggested)
+    }
+
+    /** A guest takes their own song out (the host edits through [Command.SetQueue]); shown at once, like the host's swipe. */
+    private fun unqueue(track: SharedTrack, at: Int) {
+        val r = room ?: return
+        if (r.v < RoomProtocol.VERSION || (!isHost && track.addedBy != myId)) return
+        val i = if (r.queue.getOrNull(at) == track) at else r.queue.indexOf(track)
+        if (i >= 0) room = r.copy(queue = r.queue.filterIndexed { j, _ -> j != i })
+        send(ClientMessage.Unqueue(track, at))
+        publish()
+    }
+
+    /** The host's switch. The caller remembers it; the room hears it now while this phone hosts, else in the next hello. */
+    private fun setGuestsAdd(on: Boolean) {
+        myGuestsAdd = on
+        if (isHost && (room?.v ?: 1) >= RoomProtocol.VERSION) send(ClientMessage.Settings(on))
+        publish()
     }
 
     private suspend fun replace(items: List<MediaItem>, startIndex: Int) {
@@ -534,16 +653,28 @@ class ListenTogetherSession(
         load(first, 0, rest, "pick")
     }
 
-    /** [why] lets the other phones say "Rawn skipped" (skip, pick), "Rawn went back" (back), or nothing (end, radio). */
-    private fun load(track: SharedTrack, positionMs: Long, queue: List<SharedTrack>, why: String? = null) {
+    /**
+     * [why] lets the other phones say "Rawn skipped" (skip, pick), "Rawn went back" (back), "Skipped …: Rawn can't
+     * play it" (unavailable), or nothing (end, radio). [builtFrom]: the room's queue version [queue] came from, so the
+     * room puts back what guests added or removed since.
+     */
+    private fun load(
+        track: SharedTrack,
+        positionMs: Long,
+        queue: List<SharedTrack>,
+        why: String? = null,
+        builtFrom: Int? = room?.qv,
+    ) {
         room = room?.copy(queue = queue)
-        val msg = ClientMessage.Load(track, positionMs, queue, why)
+        loadSent = true
+        val msg = ClientMessage.Load(track, positionMs, queue, why, builtFrom)
         if (connection?.send(msg) != true) pendingLoad = { msg } // the socket is down: the next welcome sends it
     }
 
     private fun setQueue(queue: List<SharedTrack>) {
+        val built = room?.qv
         room = room?.copy(queue = queue)
-        send(ClientMessage.Queue(queue))
+        send(ClientMessage.Queue(queue, built))
     }
 
     private fun remember(track: SharedTrack) {
@@ -577,10 +708,12 @@ class ListenTogetherSession(
         connection = null
         sessionScope?.cancel() // events, pings, start, drift and any advance, add or replace still running
         sessionScope = null
+        addInbox?.close()
+        addInbox = null
         stopDrift()
         player.events = null
         player.exitSession()
-        code = null; url = null; myId = null; token = null; room = null; isHost = false; pendingLoad = null
+        code = null; url = null; myId = null; token = null; room = null; isHost = false; pendingLoad = null; loadSent = false
         timeline = null; applied = null; loadedKey = NONE; itemKey = NONE; readyKey = NONE; unavailableKey = NONE; lastStatus = null
         reconnecting = false; versionMismatch = false; history.clear(); radioTriedKey = NONE
         seenMembers.clear(); memberNames.clear(); pendingLeaves.clear() // their jobs died with sessionScope
@@ -639,6 +772,11 @@ class ListenTogetherSession(
                 track = r.track,
                 queue = r.queue,
                 names = memberNames.toMap(),
+                roomKnowsAdds = r.v >= RoomProtocol.VERSION,
+                guestsAdd = r.v >= RoomProtocol.VERSION && r.guestsAdd,
+                myGuestsAdd = myGuestsAdd,
+                hostAppOutdated = r.v >= RoomProtocol.VERSION &&
+                    r.members.firstOrNull { it.id == r.host }?.let { (it.v ?: 1) < RoomProtocol.VERSION } == true,
             ),
         )
     }
@@ -651,6 +789,12 @@ class ListenTogetherSession(
         const val NONE = -1
         const val MAX_QUEUE = 200
         const val MAX_SUGGESTIONS = 3
+        /** One guest's songs waiting in the room's queue (owner decision 7); keep in sync with MAX_GUEST_WAITING in room.js. */
+        const val GUEST_MAX_WAITING = 20
+        /** Songs per `add` message, well under the room's 256 KB frame even with long titles and cover links. */
+        const val ADD_CHUNK = 50
+        const val ADD_GATHER_MS = 400L
+        const val ADD_MAX_WAIT_MS = 2_000L
         const val MAX_HISTORY = 50
         const val LEAVE_GRACE_MS = 15_000L
         const val JOIN_LEAD_MS = 1_000L
@@ -667,5 +811,15 @@ class ListenTogetherSession(
         const val DRIFTING = "drifting"
 
         fun nextWholeSecond(ms: Long): Long = (ms + 999) / 1000 * 1000
+
+        /** [this] split into runs of neighbours with the same [key], in order: (run, key). */
+        fun <T, K> List<T>.partitionRuns(key: (T) -> K): List<Pair<List<T>, K>> {
+            val runs = mutableListOf<Pair<MutableList<T>, K>>()
+            for (x in this) {
+                val k = key(x)
+                if (runs.isNotEmpty() && runs.last().second == k) runs.last().first += x else runs += mutableListOf(x) to k
+            }
+            return runs
+        }
     }
 }

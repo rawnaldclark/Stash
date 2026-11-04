@@ -7,6 +7,7 @@ import com.stash.core.media.listen.ListenTogetherController.Command
 import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.model.share.SharedTrack
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.mockk
@@ -60,5 +61,19 @@ class ListenTogetherViewModelTest {
         verify { controller.send(Command.Suggestion("s1", true)) }
         verify { controller.send(Command.SetQueue(listOf(song))) }
         verify { controller.rejoin() }
+    }
+
+    @Test fun `a guest's own song goes out through the controller`() {
+        val vm = ListenTogetherViewModel(controller, sharePreference, playerRepository)
+        val mine = SharedTrack("Nude", "Radiohead", addedBy = "me")
+        vm.unqueue(mine, 2)
+        verify { controller.send(Command.Unqueue(mine, 2)) }
+    }
+
+    @Test fun `the host's switch reaches the room and is remembered for the next session`() {
+        val vm = ListenTogetherViewModel(controller, sharePreference, playerRepository)
+        vm.setGuestsAdd(false)
+        verify { controller.send(Command.SetGuestsAdd(false)) }
+        coVerify { sharePreference.setGuestsAdd(false) }
     }
 }

@@ -69,7 +69,6 @@ import com.stash.core.common.primaryArtist
 import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.model.RepeatMode
 import com.stash.core.ui.ambient.LocalAlbumChrome
-import com.stash.core.ui.components.ListenTogetherRole
 import com.stash.core.ui.components.LocalListenTogetherRole
 import com.stash.core.ui.components.chromeGlass
 import com.stash.core.ui.components.motion.pressScale
@@ -162,7 +161,7 @@ fun MiniPlayer(
         val track = uiState.currentTrack
         // Swipe the song sideways to skip, with Now Playing's art threshold (rememberSwipeToSkip).
         // A listener can't skip the room's song; a host's skips go to the room, which decides.
-        val isListener = LocalListenTogetherRole.current == ListenTogetherRole.LISTENER
+        val isListener = LocalListenTogetherRole.current.isGuest
         val repeatAll = uiState.repeatMode == RepeatMode.ALL
         val canNext = room != null || hasNextInQueue(uiState.queueSongsBefore + uiState.queue.size + uiState.queueSongsAfter, uiState.queueSongsBefore + uiState.currentIndex, repeatAll)
         val canPrevious = room != null || hasPreviousInQueue(uiState.queueSongsBefore + uiState.queue.size + uiState.queueSongsAfter, uiState.queueSongsBefore + uiState.currentIndex, repeatAll)
@@ -446,7 +445,7 @@ fun MiniPlayer(
 
                     // Skip next. A Listen Together listener can't skip the room's song: the slot stays, empty,
                     // so play/pause doesn't move when the host role changes hands.
-                    if (LocalListenTogetherRole.current == ListenTogetherRole.LISTENER) {
+                    if (LocalListenTogetherRole.current.isGuest) {
                         Spacer(Modifier.size(MiniTouchTarget))
                     } else {
                         MiniIconButton(onClick = viewModel::onSkipNext) {

@@ -43,6 +43,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -53,6 +54,7 @@ import com.stash.core.ui.components.DragAutoScrollMaxStep
 import com.stash.core.ui.components.DragPickUpHaptic
 import com.stash.core.ui.components.autoScrollStep
 import com.stash.core.ui.theme.StashTheme
+import com.stash.feature.nowplaying.R
 import java.util.Collections
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -64,7 +66,8 @@ import kotlinx.coroutines.launch
 
 // Up next in the Session sheet. Everyone sees who added each song. The host can also swipe a song away or drag it
 // by its handle, with the queue sheet's gestures (QueueBottomSheet says why each detail is the way it is). An edit
-// sends the whole new queue to the room; the room's reply resyncs the rows.
+// sends the whole new queue to the room; the room's reply resyncs the rows. A guest can swipe away their own songs
+// (spec 2026-11-04), which sends just that one song's removal.
 
 internal const val MAX_UP_NEXT = 20
 
@@ -98,6 +101,8 @@ internal class UpNextState(
     var queue: List<SharedTrack>,
 ) {
     var onEdit: (List<SharedTrack>) -> Unit = {}
+    /** A guest's own song out: the song and where it is in the room's queue. */
+    var onUnqueue: (SharedTrack, Int) -> Unit = { _, _ -> }
 
     /** The first [MAX_UP_NEXT] songs as shown: the room's order plus a drag's moves until the drop. Filled at once, so the sheet never opens on an empty list. */
     val rows = mutableStateListOf<UpNextEntry>().apply { addAll(upNextEntries(queue.take(MAX_UP_NEXT))) }
@@ -123,6 +128,13 @@ internal class UpNextState(
         rows.removeAll { it.uid == uid }
         val i = queue.indexOfEntry(uid)
         if (i >= 0) onEdit(queue.filterIndexed { j, _ -> j != i })
+    }
+
+    /** A guest's swipe: only this song leaves, so it can't undo anything the room changed meanwhile. */
+    fun removeOwn(uid: String) {
+        rows.removeAll { it.uid == uid }
+        val i = queue.indexOfEntry(uid)
+        if (i >= 0) onUnqueue(queue[i], i)
     }
 
     /** One place up ([by] = -1) or down (+1): TalkBack's way to reorder, since it can't drag. */
@@ -212,7 +224,12 @@ internal class UpNextState(
 }
 
 @Composable
-internal fun rememberUpNextState(listState: LazyListState, queue: List<SharedTrack>, onEdit: (List<SharedTrack>) -> Unit): UpNextState {
+internal fun rememberUpNextState(
+    listState: LazyListState,
+    queue: List<SharedTrack>,
+    onEdit: (List<SharedTrack>) -> Unit,
+    onUnqueue: (SharedTrack, Int) -> Unit = { _, _ -> },
+): UpNextState {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
@@ -222,12 +239,13 @@ internal fun rememberUpNextState(listState: LazyListState, queue: List<SharedTra
     SideEffect {
         state.queue = queue
         state.onEdit = onEdit
+        state.onUnqueue = onUnqueue
     }
     LaunchedEffect(queue.take(MAX_UP_NEXT), state.resyncTick) { state.sync() }
     return state
 }
 
-/** UP NEXT with its rows, which the host can edit, then "+N more". */
+/** UP NEXT with its rows, which the host can edit (and a guest can swipe away their own), then "+N more". */
 internal fun LazyListScope.upNextItems(room: ListenTogetherState.InRoom, upNext: UpNextState) {
     item { SectionLabel("UP NEXT") }
     if (upNext.rows.isEmpty()) {
@@ -235,15 +253,22 @@ internal fun LazyListScope.upNextItems(room: ListenTogetherState.InRoom, upNext:
     }
     items(upNext.rows, key = { it.uid }) { entry ->
         val face: @Composable () -> Unit = { entry.track.addedBy?.let { PersonAvatar(it, room.nameOf(it), 22.dp) } }
-        if (room.isHost) EditableRow(entry, upNext, face) else SongRow(entry.track, modifier = Modifier.animateItem(), trailing = face)
+        when {
+            room.isHost -> EditableRow(entry, upNext, face)
+            room.roomKnowsAdds && entry.track.addedBy == room.myId -> EditableRow(entry, upNext, face, ownOnly = true)
+            else -> SongRow(entry.track, modifier = Modifier.animateItem(), trailing = face)
+        }
     }
     if (room.queue.size > MAX_UP_NEXT) {
         item { Text("+${room.queue.size - MAX_UP_NEXT} more", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
 
+/** The host's row (swipe away, drag by the handle), or with [ownOnly] a guest's own song: swipe away only. */
 @Composable
-private fun LazyItemScope.EditableRow(entry: UpNextEntry, upNext: UpNextState, face: @Composable () -> Unit) {
+private fun LazyItemScope.EditableRow(entry: UpNextEntry, upNext: UpNextState, face: @Composable () -> Unit, ownOnly: Boolean = false) {
+    val removeLabel = stringResource(R.string.listen_remove_from_up_next)
+    val remove = { if (ownOnly) upNext.removeOwn(entry.uid) else upNext.remove(entry.uid) }
     val isDragging = upNext.rows.getOrNull(upNext.draggedIdx)?.uid == entry.uid
     var swipeX by remember { mutableFloatStateOf(0f) }
     var rowWidthPx by remember { mutableIntStateOf(0) }
@@ -274,7 +299,7 @@ private fun LazyItemScope.EditableRow(entry: UpNextEntry, upNext: UpNextState, f
                     onDragStopped = {
                         if (rowWidthPx > 0 && abs(swipeX) > rowWidthPx / 2f) {
                             animate(swipeX, sign(swipeX) * rowWidthPx, animationSpec = tween(150)) { v, _ -> swipeX = v }
-                            upNext.remove(entry.uid)
+                            remove()
                         } else {
                             animate(swipeX, 0f) { v, _ -> swipeX = v }
                         }
@@ -282,15 +307,16 @@ private fun LazyItemScope.EditableRow(entry: UpNextEntry, upNext: UpNextState, f
                 )
                 .background(if (isDragging) MaterialTheme.colorScheme.surfaceVariant else StashTheme.extendedColors.elevatedSurface)
                 .semantics {
-                    customActions = listOf(
-                        CustomAccessibilityAction("Remove from Up next") { upNext.remove(entry.uid); true },
+                    val removeAction = CustomAccessibilityAction(removeLabel) { remove(); true }
+                    customActions = if (ownOnly) listOf(removeAction) else listOf(
+                        removeAction,
                         CustomAccessibilityAction("Move up") { upNext.move(entry.uid, -1) },
                         CustomAccessibilityAction("Move down") { upNext.move(entry.uid, 1) },
                     )
                 },
         ) {
             face()
-            Box(
+            if (!ownOnly) Box(
                 Modifier
                     .size(48.dp)
                     .pointerInput(entry.uid) {

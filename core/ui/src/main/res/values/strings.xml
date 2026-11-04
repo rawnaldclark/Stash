@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Listen Together: a guest's "Play next" in a menu while the host approves each song (spec 2026-11-04).
+         %1$s: the host's name. -->
+    <string name="listen_suggest_to">Suggest to %1$s</string>
+    <string name="listen_suggest_to_host">Suggest to the host</string>
+</resources>
