@@ -137,6 +137,12 @@ import com.stash.core.ui.components.sheetBarsFollow
 fun PlaylistDetailScreen(
     onBack: () -> Unit,
     onSelectionModeChanged: (Boolean) -> Unit = {},
+    /**
+     * A row the app hands in for a Stash Mix's page, under its Download button: today Daily Discover's "Use your record in
+     * mixes" switch (feature:record decides whether this mix is Daily Discover and whether there is an import, and draws
+     * nothing otherwise). It gets the playlist id and the header's side padding.
+     */
+    stashMixRow: (@Composable (playlistId: Long, modifier: Modifier) -> Unit)? = null,
     viewModel: PlaylistDetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -301,6 +307,14 @@ fun PlaylistDetailScreen(
                             onClick = { viewModel.toggleDownload() },
                             modifier = Modifier.padding(start = HeaderGutter, end = HeaderGutter, bottom = 8.dp),
                         )
+                    }
+                }
+
+                // ── A Stash Mix's own row (Daily Discover: "Use your record in mixes") ──
+                val mix = state.playlist?.takeIf { it.type == PlaylistType.STASH_MIX }
+                if (stashMixRow != null && mix != null) {
+                    item(key = "stash_mix_row") {
+                        stashMixRow(mix.id, Modifier.padding(start = HeaderGutter, end = HeaderGutter, bottom = 8.dp))
                     }
                 }
 

@@ -106,6 +106,8 @@
     <string name="settings_search_clear">Clear search</string>
     <string name="settings_search_online_or_offline">Online or offline</string>
     <string name="settings_search_sync_your_likes">Sync your likes</string>
+    <!-- Settings search's name for Library & Storage › Your record › "Use your record in mixes" (the row's own words). -->
+    <string name="settings_search_record_in_mixes">Use your record in mixes</string>
 
     <!-- Settings > Support Banner -->
     <string name="settings_support_title">Support Stash</string>
