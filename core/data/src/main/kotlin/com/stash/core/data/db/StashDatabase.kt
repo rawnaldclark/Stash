@@ -1799,9 +1799,6 @@ abstract class StashDatabase : RoomDatabase() {
          */
         val MIGRATION_66_67 = object : Migration(66, 67) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                android.util.Log.i("FtsProbe", "entering 66->67: " + runCatching {
-                    db.query("PRAGMA integrity_check").use { c -> if (c.moveToFirst()) c.getString(0) else "no rows" }
-                }.getOrElse { "threw ${it.message}" })
                 val guessed = mutableListOf<Long>()
                 db.query(
                     "SELECT `id`, `artist`, `title`, `album`, `album_artist` FROM `tracks` " +
@@ -1932,9 +1929,6 @@ abstract class StashDatabase : RoomDatabase() {
         /** SoundCloud recording identity; old rows remain unlinked and keep their audio and ordering. */
         val MIGRATION_74_75 = object : Migration(74, 75) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                android.util.Log.i("FtsProbe", "entering 74->75: " + runCatching {
-                    db.query("PRAGMA integrity_check").use { c -> if (c.moveToFirst()) c.getString(0) else "no rows" }
-                }.getOrElse { "threw ${it.message}" })
                 for (table in listOf("tracks", "remote_track_snapshots")) {
                     db.execSQL("ALTER TABLE `$table` ADD COLUMN `soundcloud_id` TEXT")
                     db.execSQL("ALTER TABLE `$table` ADD COLUMN `soundcloud_permalink` TEXT")
@@ -1980,10 +1974,20 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
-         * v76 -> v77, data only: rebuilds the `tracks_fts` index from `tracks`. The index is derived
-         * data, and a library that went through 66 -> 67 (which clears `album` on guessed rows) can
-         * hold stale album terms in it. That fails `PRAGMA integrity_check` ("malformed inverted
-         * index") and makes backup export refuse to run. A rebuild is a no-op on a healthy index.
+         * v76 -> v77, data only: rebuilds the `tracks_fts` search index from `tracks` (#838). A full
+         * re-index, not a check, whatever state the index is in: every row is read again, measured
+         * at about 1.8 s per 72k tracks on a desktop (expect longer on a phone). It runs once.
+         *
+         * Why it's needed: `tracks_fts` is an external-content FTS4 table kept in step by Room's
+         * `room_fts_content_sync_*` triggers on `tracks`, and Room drops those triggers for the whole
+         * migration chain (`onPreMigrate` -> `dropFtsSyncTriggers`) and only puts them back after.
+         * So 66 -> 67, which cleared `album` on ~1,400 rows of the owner's library, left those rows'
+         * old album words in the index: search still found the songs by albums they no longer had.
+         * Android 15's SQLite (3.44+) is the first whose `PRAGMA integrity_check` looks inside FTS
+         * tables; it reports "malformed inverted index for FTS4 table main.tracks_fts", and backup
+         * export refused to run. A backup made before 77 is repaired on import by
+         * [DatabaseBackupManager.verifyDatabaseIntegrity] (`repairSearchIndex`), because that check
+         * runs before this chain does.
          */
         val MIGRATION_76_77 = object : Migration(76, 77) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -2068,6 +2072,15 @@ abstract class StashDatabase : RoomDatabase() {
          * `MIGRATION_N_N+1` above, append it here too; DatabaseModule spreads
          * this array, so there is exactly ONE place to forget — and
          * AllMigrationsChainTest fails the build when it falls behind.
+         *
+         * Search index rule: Room drops `tracks_fts`'s sync triggers while
+         * migrations run, so a migration that changes `title`, `artist` or
+         * `album`, or inserts or deletes `tracks` rows, must end with
+         * `INSERT INTO tracks_fts(tracks_fts) VALUES('rebuild')` (see
+         * [MIGRATION_76_77]), or search and Android 15's integrity_check see
+         * the old rows. Never write `tracks` with REPLACE, in a migration or a
+         * DAO: its implicit delete skips the delete trigger even when the
+         * triggers are in place.
          */
         val ALL_MIGRATIONS: Array<Migration> by lazy {
             arrayOf(
