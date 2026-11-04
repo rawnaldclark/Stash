@@ -4537,7 +4537,7 @@ class PlayerRepositoryImpl @Inject constructor(
         // v0.9.27: allow id=0 fallback for non-library tracks (e.g. search
         // previews with videoId strings). This makes the Like button and
         // other actions visible in Now Playing for non-library content.
-        val trackId = extras?.getLong(EXTRA_TRACK_ID) ?: mediaId.toLongOrNull() ?: 0L
+        val trackId = queueTrackId()
         if (isScannedTrackId(trackId)) return toScannedTrack(trackId)
 
         // Streaming tracks carry the Qobuz-reported format in extras so the
@@ -4716,6 +4716,13 @@ internal fun rebuiltTrackSource(extras: Bundle?, youtubeId: String?): com.stash.
 
 /** A cloud song's file format, for Now Playing's quality line (its Room row's truth). */
 internal const val EXTRA_CLOUD_FILE_FORMAT = "stash_cloud_file_format"
+
+/**
+ * The [com.stash.core.model.Track.id] the queue shows for this item (the repository's rebuilt Track): its [EXTRA_TRACK_ID] when
+ * it has extras, else its numeric media id, else 0 (a Search preview, whose media id is its video id). The playback service
+ * names a browser's phone-only queue rows by it (Remote v2), so the queue and the service mean the same row.
+ */
+internal fun MediaItem.queueTrackId(): Long = mediaMetadata.extras?.getLong(EXTRA_TRACK_ID) ?: mediaId.toLongOrNull() ?: 0L
 
 /**
  * The [Track] Now Playing and the queue see for an All Songs file. The logical queue doesn't hold

@@ -480,6 +480,14 @@ class StashPlaybackService : MediaLibraryService() {
     /** The browser's songs by mediaId (a Room lookup once per song while a browser plays; null: it can't take that one). */
     private val browserSongs = HashMap<String, com.stash.core.data.weblink.handoff.WireSong?>()
 
+    /** The queue looked up for the browser ([refreshBrowserPhoneOnly]): the latest edit's lookup replaces one still running. */
+    private var phoneOnlyJob: Job? = null
+
+    /** On the stopped local queue while a browser plays it: an edit looks the new songs up for the queue's dimmed rows. */
+    private val browserQueueListener = object : Player.Listener {
+        override fun onTimelineChanged(timeline: Timeline, reason: Int) = refreshBrowserPhoneOnly()
+    }
+
     /** A browser plays the queue: nothing is resolved or served on this phone (spec 2026-11-03 §2.3). */
     private val onBrowser: Boolean get() = isCasting && castKind == CastKind.BROWSER
 
@@ -1015,6 +1023,7 @@ class StashPlaybackService : MediaLibraryService() {
                 wrapper.attach(master, remote, wrapper.currentPosition, wrapper.playWhenReady, castFeed(kind))
                 castKind = kind
                 browserOutputs.noteServed(kind == CastKind.BROWSER)
+                refreshBrowserPhoneOnly()
                 // The speaker's look-ahead (it serves the next song over the LAN) is no browser's business, and a speaker
                 // taking over from a browser starts its own while it plays.
                 prefetchPollJob?.cancel()
@@ -1051,6 +1060,8 @@ class StashPlaybackService : MediaLibraryService() {
         castKind = kind
         browserOutputs.noteServed(kind == CastKind.BROWSER)
         wrapper.attach(master, remote, positionMs, playWhenReady, castFeed(kind))
+        master.addListener(browserQueueListener)
+        refreshBrowserPhoneOnly()
         wrapper.addListener(castListener)
         mediaSession?.player = wrapper
         widgetFeed?.follow(wrapper)
@@ -1127,7 +1138,10 @@ class StashPlaybackService : MediaLibraryService() {
         val kind = castKind
         castKind = null
         browserSongs.clear()
+        phoneOnlyJob?.cancel()
+        phoneOnlyJob = null
         val master = crossfadeEngine?.masterPlayer
+        master?.removeListener(browserQueueListener)
         if (master != null) {
             mediaSession?.player = master
             widgetFeed?.follow(master)
@@ -1258,6 +1272,43 @@ class StashPlaybackService : MediaLibraryService() {
             }
             browserSongs[key] = song
             done(true)
+        }
+    }
+
+    /**
+     * Looks every queue song up for the browser (each once while it plays, as [prepareForBrowser] does) and tells the queue which
+     * rows it will step over there (Remote v2 §5). The queue can't work that out from its own rows: they don't carry the download
+     * or the ISRC the library row has, so a downloaded song with no ids would show as playable and then be stepped over.
+     */
+    private fun refreshBrowserPhoneOnly() {
+        if (castKind != CastKind.BROWSER) return
+        val master = crossfadeEngine?.masterPlayer ?: return
+        val items = List(master.mediaItemCount, master::getMediaItemAt)
+        phoneOnlyJob?.cancel()
+        phoneOnlyJob = serviceScope.launch {
+            val missing = items.filterNot { browserSongs.containsKey(it.mediaId) }.distinctBy { it.mediaId }
+            if (missing.isNotEmpty()) {
+                val songs = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                    // A failed lookup goes by the words each item carries, as prepareForBrowser does (cancellation still cancels).
+                    val rows = try {
+                        trackDao.getByIds(missing.mapNotNull(com.stash.core.media.cast.BrowserSongs::rowId).distinct()).associateBy { it.id }
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        android.util.Log.w("StashPlayback", "browser: queue lookup failed", e)
+                        emptyMap()
+                    }
+                    missing.associate { item ->
+                        item.mediaId to com.stash.core.media.cast.BrowserSongs.songFor(
+                            item,
+                            com.stash.core.media.cast.BrowserSongs.rowId(item)?.let(rows::get)?.toDomain(),
+                        )
+                    }
+                }
+                if (castKind != CastKind.BROWSER) return@launch
+                for ((key, song) in songs) if (!browserSongs.containsKey(key)) browserSongs[key] = song
+            }
+            browserOutputs.notePhoneOnly(com.stash.core.media.cast.BrowserSongs.phoneOnlyIds(items, browserSongs))
         }
     }
 

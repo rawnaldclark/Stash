@@ -251,6 +251,20 @@ class BrowserOutputs internal constructor(
     /** The playback service started ([on]) or stopped playing through a browser. */
     fun noteServed(on: Boolean) {
         _served.value = on
+        if (!on) _phoneOnly.value = emptySet()
+    }
+
+    private val _phoneOnly = MutableStateFlow<Set<Long>>(emptySet())
+
+    /**
+     * While a browser plays the queue: the queue rows (by the Track id the queue shows) it can't play, which the playback
+     * service steps over there. The queue dims these, so what it shows is what the service does. Empty on this phone.
+     */
+    val phoneOnly: StateFlow<Set<Long>> = _phoneOnly.asStateFlow()
+
+    /** The playback service looked the queue up for the browser: [ids] are the rows it will step over. */
+    fun notePhoneOnly(ids: Set<Long>) {
+        _phoneOnly.value = ids
     }
 
     /** The cast wrapper stepped over [count] songs only this phone has: said once a session. */

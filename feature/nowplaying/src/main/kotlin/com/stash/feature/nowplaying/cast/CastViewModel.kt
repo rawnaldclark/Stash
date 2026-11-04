@@ -74,6 +74,13 @@ class CastViewModel @Inject constructor(
     /** Every linked browser with what picking it would do, kept fresh while the sheet shows. */
     val browserList: StateFlow<List<BrowserOutput>> = browsers.browsers
 
+    /**
+     * While a browser plays the queue: the queue rows it can't play, by Track id (Remote v2 §5). The playback service looks each
+     * song up in the library by the one rule ([com.stash.core.data.weblink.WebSongs]) and steps over these there; the queue dims
+     * exactly these rows.
+     */
+    val phoneOnly: StateFlow<Set<Long>> = browsers.phoneOnly
+
     /** Where the music plays. */
     val playOn: StateFlow<PlayOnState> = combine(devices.connection, browsers.session, browsers.hasBrowser, ::PlayOnState)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayOnState(devices.connection.value))
@@ -153,9 +160,3 @@ class CastViewModel @Inject constructor(
         const val BACK_ON_PHONE_MS = 3_000L
     }
 }
-
-/**
- * A queue song only this phone has, while a browser plays the queue (Remote v2 §5, the one rule in [WebSongs]): the browser
- * can't find it, so it is stepped over there and its row is dimmed.
- */
-internal val PHONE_ONLY: (com.stash.core.model.Track) -> Boolean = { !com.stash.core.data.weblink.WebSongs.playsOnWeb(it) }

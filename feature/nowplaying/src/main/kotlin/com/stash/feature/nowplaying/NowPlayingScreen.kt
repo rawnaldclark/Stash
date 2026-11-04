@@ -311,6 +311,7 @@ fun NowPlayingScreen(
     val castConnection by castViewModel.connection.collectAsStateWithLifecycle()
     // Where the music plays: this phone, a speaker or a linked browser (Remote v2 §6).
     val playOn by castViewModel.playOn.collectAsStateWithLifecycle()
+    val phoneOnlyIds by castViewModel.phoneOnly.collectAsStateWithLifecycle()
     // The receiver decodes (a speaker or a browser): speed is no longer the phone's.
     val casting = castConnection is com.stash.core.media.cast.CastConnection.Connected || playOn.onBrowser
     var showCastSheet by remember { mutableStateOf(false) }
@@ -455,7 +456,7 @@ fun NowPlayingScreen(
             onRestoreTrack = viewModel::onRestoreToQueue,
             // A browser plays the queue (Remote v2 §6): its name in the header, songs only here dimmed.
             playingOn = playOn.browser?.name,
-            phoneOnly = if (playOn.onBrowser) com.stash.feature.nowplaying.cast.PHONE_ONLY else null,
+            phoneOnly = if (playOn.onBrowser) remember(phoneOnlyIds) { { track: com.stash.core.model.Track -> track.id in phoneOnlyIds } } else null,
             onPlayOnPhone = { index ->
                 castViewModel.playHereThen { viewModel.onSkipToQueueIndex(index) }
                 showQueue = false

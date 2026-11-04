@@ -311,6 +311,19 @@ class BrowserOutputsTest {
         assertThat(notices).containsExactly(BrowserNotice.Skipped(2))
     }
 
+    @Test fun `the queue's phone-only rows are the service's, and are gone once the music is back on the phone`() = runTest {
+        open(CHROME)
+        val o = outputs()
+        o.connect(CHROME)
+        o.noteServed(true)
+        o.notePhoneOnly(setOf(990432L, 7L))
+
+        assertThat(o.phoneOnly.value).containsExactly(990432L, 7L)
+
+        o.noteServed(false)
+        assertThat(o.phoneOnly.value).isEmpty()
+    }
+
     private companion object {
         const val ME = "d_P1xel5Ph0ne0001"
         const val CHROME = "d_ChromeWindows01"
