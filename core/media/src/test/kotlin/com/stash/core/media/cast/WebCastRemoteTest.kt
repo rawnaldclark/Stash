@@ -190,12 +190,15 @@ class WebCastRemoteTest {
         val r = remote()
         r.load(media("42#1"), 0, autoplay = true)
         r.onState(state(iid = "42#1"))
+        sent.clear()
         r.onState(null) // its socket closed (peer off, offline, not in ready)
         assertThat(r.link.value).isEqualTo(WebCastRemote.Link.RECONNECTING)
         advanceTimeBy(WebCastRemote.CLOSED_GRACE_MS - 1_000)
         runCurrent()
-        r.onState(state(iid = "42#1"))
+        // Back on a new socket: a new session id, still driven by this phone, still holding its song.
+        r.onState(state(iid = "42#1", sid = "Reconnected01"))
         assertThat(r.link.value).isEqualTo(WebCastRemote.Link.READY)
+        assertThat(sent).isEmpty() // it has what it should: nothing to say again
         advanceTimeBy(WebCastRemote.CLOSED_GRACE_MS * 2)
         runCurrent()
         assertThat(ends).isEmpty()
@@ -203,6 +206,152 @@ class WebCastRemoteTest {
         advanceTimeBy(WebCastRemote.CLOSED_GRACE_MS + 1)
         runCurrent()
         assertThat(ends).containsExactly(WebCastRemote.End.CLOSED)
+    }
+
+    @Test fun `a new session id from the same browser, still naming this phone as driver, is the same session`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1"))
+        sent.clear()
+        // Its socket reconnected (a Wi-Fi blip, a relay restart), or another phone opened Stash: a new session id each time.
+        r.onState(state(iid = "42#1", sid = "NewSession01"))
+        r.onState(state(iid = "42#1", sid = "NewSession02"))
+        assertThat(ends).isEmpty()
+        assertThat(r.link.value).isEqualTo(WebCastRemote.Link.READY)
+        assertThat(r.status.contentId).isEqualTo("42#1")
+        assertThat(sent).isEmpty()
+        // A reloaded tab names no driver: that ends it, whatever its session id.
+        r.onState(state(iid = null, driver = null, sid = "NewSession02"))
+        assertThat(ends).containsExactly(WebCastRemote.End.TOOK_OVER)
+    }
+
+    @Test fun `what a new session dropped is said again, the latest play or pause, seek and volume, shown at once`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1"))
+        r.setNext(media("43#n1", nights))
+        advanceTimeBy(WebCastRemote.UP_NEXT_COALESCE_MS + 1)
+        runCurrent()
+        r.onState(state(iid = "42#1", next = "43#n1"))
+        // Sealed for the old session: the browser dropped them (and says so with a state of its new one).
+        r.pause()
+        r.seekTo(90_000)
+        r.setVolume(0.5f)
+        r.play()
+        r.pause()
+        sent.clear()
+        r.onState(state(iid = "42#1", next = "43#n1", sid = "NewSession01", playing = true, positionMs = 12_000))
+        assertThat(sent).containsExactly(RemoteCommand.Seek(90_000), RemoteCommand.Volume(0.5), RemoteCommand.Pause).inOrder()
+        assertThat(ends).isEmpty()
+        // Not "played from elsewhere": the pause is what this phone said, and shows as such until the browser answers.
+        assertThat(r.status.playerState).isEqualTo(CastStatus.PlayerState.PAUSED)
+        assertThat(r.status.positionMs).isEqualTo(90_000)
+        // Heard in that session, then another session that holds it all: nothing more to say.
+        sent.clear()
+        r.onState(state(iid = "42#1", next = "43#n1", sid = "NewSession01", playing = false, positionMs = 90_000, volume = 0.5))
+        r.onState(state(iid = "42#1", next = "43#n1", sid = "NewSession02", playing = false, positionMs = 90_000, volume = 0.5))
+        assertThat(sent).isEmpty()
+    }
+
+    @Test fun `a load or an upNext the browser never got goes out again on its new session`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1", positionMs = 50_000))
+        // A skip while the browser was reconnecting: the load, then the song after it.
+        r.load(media("50#2", nights), 0, autoplay = true)
+        r.setNext(media("51#n1"))
+        advanceTimeBy(WebCastRemote.UP_NEXT_COALESCE_MS + 1)
+        runCurrent()
+        sent.clear()
+        r.onState(state(iid = "42#1", sid = "NewSession01")) // still the song before: both were dropped
+        assertThat(sent).containsExactly(
+            RemoteCommand.Load(RemoteItem("50#2", nights), 0, true, "Blonde"),
+            RemoteCommand.UpNext(listOf(RemoteItem("51#n1", song))),
+        ).inOrder()
+        r.onState(state(iid = "50#2", next = "51#n1", sid = "NewSession01"))
+        assertThat(r.status.contentId).isEqualTo("50#2")
+        // Only the song after it missed: just that.
+        r.setNext(media("52#n2", nights))
+        advanceTimeBy(WebCastRemote.UP_NEXT_COALESCE_MS + 1)
+        runCurrent()
+        sent.clear()
+        r.onState(state(iid = "50#2", next = "51#n1", sid = "NewSession02"))
+        assertThat(sent).containsExactly(RemoteCommand.UpNext(listOf(RemoteItem("52#n2", nights))))
+    }
+
+    @Test fun `a later song unanswered is sent once more, then an error the queue steps over`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1"))
+        r.load(media("50#2", nights), 20_000, autoplay = true)
+        sent.clear()
+        advanceTimeBy(WebCastRemote.NO_ANSWER_MS + 1)
+        runCurrent()
+        assertThat(sent).containsExactly(RemoteCommand.Load(RemoteItem("50#2", nights), 20_000, true, "Blonde"))
+        assertThat(r.status.idleReason).isNotEqualTo(CastStatus.IdleReason.ERROR)
+        advanceTimeBy(WebCastRemote.NO_ANSWER_MS)
+        runCurrent()
+        // The wrapper reads this as a remote error: the queue's recovery skips it, through the cascade guard.
+        assertThat(r.status.contentId).isEqualTo("50#2")
+        assertThat(r.status.playerState).isEqualTo(CastStatus.PlayerState.IDLE)
+        assertThat(r.status.idleReason).isEqualTo(CastStatus.IdleReason.ERROR)
+        assertThat(ends).isEmpty()
+        // The next song starts afresh, and an answered one never fails.
+        r.load(media("51#3"), 0, autoplay = true)
+        assertThat(r.status.idleReason).isNotEqualTo(CastStatus.IdleReason.ERROR)
+        r.onState(state(iid = "51#3"))
+        advanceTimeBy(WebCastRemote.NO_ANSWER_MS * 3)
+        runCurrent()
+        assertThat(r.status.contentId).isEqualTo("51#3")
+        assertThat(r.status.idleReason).isEqualTo(CastStatus.IdleReason.NONE)
+    }
+
+    @Test fun `while this phone's connection is down nothing goes unanswered, and what it missed goes out on its return`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1"))
+        r.onState(state(iid = "42#1", lostAt = testScheduler.currentTime))
+        // A skip and a pause from the lock screen meanwhile (WebRemote couldn't send them).
+        r.load(media("50#2", nights), 0, autoplay = true)
+        r.pause()
+        sent.clear()
+        advanceTimeBy(WebCastRemote.LOST_GRACE_MS - 5_000)
+        runCurrent()
+        assertThat(sent).isEmpty()
+        assertThat(r.status.idleReason).isNotEqualTo(CastStatus.IdleReason.ERROR)
+        // Back: the browser minted a new session as this phone came on, and still plays the song before.
+        r.onState(state(iid = "42#1", sid = "NewSession01"))
+        assertThat(sent).containsExactly(RemoteCommand.Load(RemoteItem("50#2", nights), 0, false, "Blonde"))
+        assertThat(r.link.value).isEqualTo(WebCastRemote.Link.READY)
+        r.onState(state(iid = "50#2", sid = "NewSession01", playing = false, phase = RemotePhase.PAUSED))
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertThat(ends).isEmpty()
+        assertThat(r.status.contentId).isEqualTo("50#2")
+    }
+
+    @Test fun `a stale state naming this phone, from a session before, is no take-over when the release lands`() = runTest {
+        val r = remote()
+        // Picked again right after the service restarted: the browser still names this phone, on a song of the session before.
+        r.onState(state(iid = "17#4"))
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = null, driver = null)) // the release the session before sent lands
+        assertThat(ends).isEmpty()
+        assertThat(r.link.value).isEqualTo(WebCastRemote.Link.STARTING)
+        r.onState(state(iid = "42#1"))
+        assertThat(r.link.value).isEqualTo(WebCastRemote.Link.READY)
+        r.onState(state(iid = null, driver = null)) // now it is ours: someone there took it
+        assertThat(ends).containsExactly(WebCastRemote.End.TOOK_OVER)
+    }
+
+    @Test fun `a stop the browser missed is said again while it still plays this phone's song`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1"))
+        r.stop()
+        sent.clear()
+        r.onState(state(iid = "42#1", sid = "NewSession01"))
+        assertThat(sent).containsExactly(RemoteCommand.Stop)
     }
 
     @Test fun `a tab silent for a minute counts as gone, then the grace`() = runTest {

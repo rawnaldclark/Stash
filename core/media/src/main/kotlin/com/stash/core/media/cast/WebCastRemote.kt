@@ -5,6 +5,7 @@ import com.stash.core.data.weblink.remote.RemoteCards
 import com.stash.core.data.weblink.remote.RemoteCommand
 import com.stash.core.data.weblink.remote.RemoteItem
 import com.stash.core.data.weblink.remote.RemotePhase
+import com.stash.core.data.weblink.remote.RemoteState
 import com.stash.core.data.weblink.remote.RemoteWire
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -25,10 +26,15 @@ import kotlinx.coroutines.launch
  *   this phone handed it) is the content id, `phase` the player state (`loading` or a play waiting for a click is buffering,
  *   `ended` is idle and finished, `failed` idle with an error the queue's recovery skips), and the position moves on while it
  *   plays, as the card's does ([RemoteCards]).
+ * - **What it says again** (sync-v1 §5.7 Driving): a driven browser is known by its `driver`, never by its session id, which
+ *   changes on each of its reconnects and whenever a phone comes on (and commands sealed for the old one are dropped). So on a
+ *   new session id, or once a browser that was away is heard again, it is told what it missed: the song when `iid` isn't it,
+ *   the one after it when `next` isn't it, then the play, pause, seek and volume sent since it was last heard. Each song gets
+ *   [NO_ANSWER_MS] to be named; one that isn't is sent once more, then reported as an error the queue skips.
  * - **When it ends** ([onEnd], once): the browser went away (closed, or silent for [RemoteCards.STALE_MS]) and stayed away for
  *   [CLOSED_GRACE_MS]; this phone's own socket stayed down for [LOST_GRACE_MS] from the drop; someone at the browser picked their
- *   own music (its state no longer names this phone as driver); or the first song was never answered within
- *   [NO_ANSWER_MS]. A browser that comes back inside a grace carries on.
+ *   own music or reloaded the tab (its state no longer names this phone as driver, once it had played this phone's songs); or the
+ *   first song was never answered within [NO_ANSWER_MS]. A browser that comes back inside a grace carries on.
  *
  * Main thread only (its listeners are called there, as [CastRemote] says); [scope] runs on it.
  */
@@ -84,19 +90,50 @@ class WebCastRemote(
     /** The browser's last state (with this phone's own commands applied on top until it answers), or null before any. */
     private var last: BrowserState? = null
 
-    /** The browser session that has played this phone's songs: another one (a reload) holds none of them. */
-    private var drivenSid: String? = null
+    /** The browser session last heard from. A new one (a reconnect, a phone that came on) dropped what was sealed for the old. */
+    private var sid: String? = null
 
-    /** The wire id of the last `load`, and whether the browser has ever named one this phone loaded. */
-    private var loadedId: String? = null
-    private var answered = false
+    /** The browser, or this phone's connection, was away since it was last heard: what went out meanwhile may be lost. */
+    private var away = false
 
-    /** What [setNext] asked for (sent after the coalescing window), and the id of the last `upNext` that went out. */
+    /**
+     * The browser has named a song this phone handed it, with this phone as driver: it plays this phone's queue. Only from then
+     * does a state naming another driver, or none, end the session (a stale state from before this session never counts).
+     */
+    private var driving = false
+
+    /** A song this phone handed the browser, as a `load` of it again says it. */
+    private class Sent(val item: RemoteItem, val startMs: Long, val autoplay: Boolean)
+
+    /** The song the browser should be on: the last load, a jump, or the queued song it moved on to by itself. */
+    private var current: Sent? = null
+
+    /** "Playing from", as the last load said it. */
+    private var from: String? = null
+
+    /** A `stop` went out since the last load: a browser that missed it is told again. */
+    private var stopped = false
+
+    /** What [setNext] asked for (sent after the coalescing window). */
     private var nextMedia: CastMedia? = null
-    private var sentNextId: String? = null
     private var upNextJob: Job? = null
 
-    private var noAnswerJob: Job? = null
+    /** The song of the last `upNext` that went out (null: an empty one, or none yet), and whether one went out since the load. */
+    private var next: RemoteItem? = null
+    private var upNextSent = false
+
+    /**
+     * Play-or-pause, seek and volume sent since the browser was last heard in the same session, the latest of each in the order
+     * sent: they may not have landed. Taken as heard when a state of the same session comes; said again on a new one.
+     */
+    private val unheard = mutableListOf<RemoteCommand>()
+
+    /** The wait for the browser to name [current]. */
+    private var answerJob: Job? = null
+
+    /** [current]'s wire id when it was never named, even sent twice: an error in [status], which the queue's recovery skips. */
+    private var failedId: String? = null
+
     private var staleJob: Job? = null
     private var graceJob: Job? = null
     private var graceFor: End? = null
@@ -114,13 +151,20 @@ class WebCastRemote(
 
     override val status: CastStatus
         get() {
-            val b = last ?: return CastStatus.EMPTY
+            val b = last
+            val volume = (b?.state?.volume ?: 1.0).toFloat()
+            val canSetVolume = b?.state?.volume != null
+            // Never answered, even sent twice: the wrapper reports a remote error, and the queue steps over it.
+            val failed = failedId?.let { contentIds[it] }
+            if (failed != null) {
+                return CastStatus(CastStatus.PlayerState.IDLE, CastStatus.IdleReason.ERROR, failed, 0L, 0L, volume, volume == 0f, canSetVolume)
+            }
+            if (b == null) return CastStatus.EMPTY
             val s = b.state
-            val volume = (s.volume ?: 1.0).toFloat()
             val ours = s.driver == me && s.iid != null
             val contentId = if (ours) contentIds[s.iid] else null
             if (contentId == null) {
-                return CastStatus(CastStatus.PlayerState.IDLE, CastStatus.IdleReason.NONE, null, 0L, 0L, volume, false, s.volume != null)
+                return CastStatus(CastStatus.PlayerState.IDLE, CastStatus.IdleReason.NONE, null, 0L, 0L, volume, false, canSetVolume)
             }
             val (state, idle) = when {
                 s.phase == RemotePhase.FAILED -> CastStatus.PlayerState.IDLE to CastStatus.IdleReason.ERROR
@@ -129,17 +173,14 @@ class WebCastRemote(
                 s.playing -> CastStatus.PlayerState.PLAYING to CastStatus.IdleReason.NONE
                 else -> CastStatus.PlayerState.PAUSED to CastStatus.IdleReason.NONE
             }
-            return CastStatus(state, idle, contentId, positionOf(b, state), s.durationMs, volume, volume == 0f, s.volume != null)
+            val position = positionOf(b, plays = state == CastStatus.PlayerState.PLAYING)
+            return CastStatus(state, idle, contentId, position, s.durationMs, volume, volume == 0f, canSetVolume)
         }
 
-    /** The browser's position, moved on by the time since its state while it plays, never past the song's end. */
-    private fun positionOf(b: BrowserState, state: CastStatus.PlayerState): Long {
+    /** The browser's position, moved on by the time since its state while it [plays], never past the song's end. */
+    private fun positionOf(b: BrowserState, plays: Boolean): Long {
         val s = b.state
-        val p = if (state == CastStatus.PlayerState.PLAYING) {
-            s.positionMs + ((clock() - b.receivedAt).coerceAtLeast(0) * s.rate).toLong()
-        } else {
-            s.positionMs
-        }
+        val p = if (plays) s.positionMs + ((clock() - b.receivedAt).coerceAtLeast(0) * s.rate).toLong() else s.positionMs
         return if (s.durationMs > 0) minOf(p, s.durationMs) else p
     }
 
@@ -149,17 +190,18 @@ class WebCastRemote(
         if (ended) return
         val song = media.song ?: return // a speaker's media: a browser finds songs by their Song, never a LAN URL
         dropUpNext()
-        sentNextId = null
-        val id = wireId(media.contentId)
-        loadedId = id
-        send(RemoteCommand.Load(RemoteItem(id, song), startPositionMs.coerceAtLeast(0), autoplay, media.from))
-        if (!answered && noAnswerJob == null) {
-            _link.value = Link.STARTING
-            noAnswerJob = scope.launch {
-                delay(NO_ANSWER_MS)
-                if (!answered) end(End.NO_ANSWER)
-            }
-        }
+        next = null
+        upNextSent = false
+        stopped = false
+        failedId = null
+        // A load says where and whether it plays: what was sent before it about the song before is over. Volume isn't.
+        unheard.retainAll { it is RemoteCommand.Volume }
+        val sent = Sent(RemoteItem(wireId(media.contentId), song), startPositionMs.coerceAtLeast(0), autoplay)
+        current = sent
+        from = media.from
+        send(RemoteCommand.Load(sent.item, sent.startMs, sent.autoplay, from))
+        awaitAnswer()
+        if (!driving) _link.value = Link.STARTING
     }
 
     override fun setNext(media: CastMedia?) {
@@ -176,9 +218,10 @@ class WebCastRemote(
         upNextJob = null
         val m = nextMedia
         val song = m?.song
-        val id = m?.let { wireId(it.contentId) }
-        sentNextId = id.takeIf { song != null }
-        send(RemoteCommand.UpNext(if (id != null && song != null) listOf(RemoteItem(id, song)) else emptyList()))
+        val item = if (m != null && song != null) RemoteItem(wireId(m.contentId), song) else null
+        next = item
+        upNextSent = true
+        send(RemoteCommand.UpNext(listOfNotNull(item)))
     }
 
     /** A load replaces the browser's whole queue: an `upNext` still waiting is for the song before it. */
@@ -191,12 +234,18 @@ class WebCastRemote(
     /** True when the browser holds the queued song (its state's `next`): it moves on at once, already buffered. */
     override fun playNext(): Boolean {
         if (ended || upNextJob?.isActive == true) return false
-        val want = sentNextId ?: return false
+        val n = next ?: return false
         val s = last?.state ?: return false
-        if (s.driver != me || s.next != want) return false
-        send(RemoteCommand.Jump(want))
-        loadedId = want
-        sentNextId = null
+        if (s.driver != me || s.next != n.id) return false
+        send(RemoteCommand.Jump(n.id))
+        // A jump keeps the play state: said again as a load, it says the same. What was sent about the song before is over.
+        current = Sent(n, 0L, autoplay = s.playing)
+        next = null
+        upNextSent = false
+        stopped = false
+        failedId = null
+        unheard.retainAll { it is RemoteCommand.Volume }
+        awaitAnswer()
         return true
     }
 
@@ -207,8 +256,14 @@ class WebCastRemote(
     override fun stop() {
         if (ended) return
         dropUpNext()
-        sentNextId = null
-        loadedId = null
+        current = null
+        next = null
+        upNextSent = false
+        stopped = true
+        failedId = null
+        answerJob?.cancel()
+        answerJob = null
+        unheard.retainAll { it is RemoteCommand.Volume }
         send(RemoteCommand.Stop)
     }
 
@@ -227,10 +282,12 @@ class WebCastRemote(
         }
     }
 
-    /** A v1 command: sent, and taken at once into [status] (the wrapper reads it right after) until the browser answers. */
+    /** A v1 command: sent, kept until heard, and taken at once into [status] (the wrapper reads it right after). */
     private fun command(c: RemoteCommand) {
         if (ended) return
         send(c)
+        unheard.removeAll { kindOf(it) == kindOf(c) } // only the latest of each kind is worth saying again
+        unheard += c
         last = last?.let { RemoteCards.optimistic(it, c, clock()) }
     }
 
@@ -264,29 +321,42 @@ class WebCastRemote(
         notifyListeners()
     }
 
-    /** True (and the session ends) when the browser no longer plays this phone's queue. */
+    /**
+     * True (and the session ends) when a browser that played this phone's songs names another driver, or none: someone there
+     * picked their own music, or the tab was reloaded. Its session id is never compared: it changes on each reconnect.
+     */
     private fun took(b: BrowserState): Boolean {
-        val s = b.state
-        val sid = drivenSid ?: return false
-        return when {
-            s.sid != sid -> end(End.TOOK_OVER).let { true } // reloaded: the new page holds nothing of ours
-            s.driver != me -> end(End.TOOK_OVER).let { true } // its own music, or another phone's
-            else -> false
-        }
+        if (!driving || b.state.driver == me) return false
+        end(End.TOOK_OVER)
+        return true
     }
 
     private fun heard(b: BrowserState) {
         val s = b.state
+        val before = last
+        val missed = away || (sid != null && s.sid != sid)
+        away = false
+        sid = s.sid
         last = b
         cancelGrace()
-        if (s.driver == me) drivenSid = s.sid
-        if (!answered && s.driver == me && loadedId != null && s.iid != null && contentIds.containsKey(s.iid)) {
-            answered = true
-            noAnswerJob?.cancel()
-            noAnswerJob = null
+        if (s.driver == me && s.iid != null) {
+            val n = next
+            if (n != null && s.iid == n.id && s.iid != current?.item?.id) {
+                // It moved on by itself to the song queued there: that is the song it should be on now.
+                current = Sent(n, 0L, autoplay = true)
+                next = null
+                upNextSent = false
+            }
+            if (contentIds.containsKey(s.iid)) driving = true
+            if (s.iid == current?.item?.id) {
+                answerJob?.cancel()
+                answerJob = null
+                failedId = null
+            }
         }
+        if (missed) catchUp(before, s) else unheard.clear()
         _link.value = when {
-            !answered && loadedId != null -> Link.STARTING
+            !driving && current != null -> Link.STARTING
             s.driver == me && (s.pendingPlay || (s.needsGesture && s.phase == RemotePhase.LOADING)) -> Link.NEEDS_CLICK
             else -> Link.READY
         }
@@ -299,9 +369,74 @@ class WebCastRemote(
         }
     }
 
+    /**
+     * The browser missed what went out (sync-v1 §5.7 Driving): its session changed, or it (or this phone) was away. It is told
+     * again: the song when `iid` isn't it (where it was, this phone's own commands taken in), the song after it when `next`
+     * isn't it, then the latest play-or-pause, seek and volume not yet heard (each harmless twice). A `stop` it missed is
+     * said again while it still plays one of this phone's songs.
+     */
+    private fun catchUp(before: BrowserState?, s: RemoteState) {
+        val c = current
+        if (c == null) {
+            if (stopped && s.driver == me && s.iid != null && s.phase != RemotePhase.ENDED) send(RemoteCommand.Stop)
+            resend(unheard.filterIsInstance<RemoteCommand.Volume>())
+            return
+        }
+        val reload = s.driver != me || s.iid != c.item.id
+        if (reload) {
+            // Everything in [unheard] came after the load: the latest play-or-pause and seek say how it should start.
+            val was = before?.takeIf { it.state.driver == me && it.state.iid == c.item.id }
+            val seek = unheard.filterIsInstance<RemoteCommand.Seek>().lastOrNull()
+            val toggle = unheard.lastOrNull { it == RemoteCommand.Play || it == RemoteCommand.Pause }
+            val position = seek?.positionMs ?: was?.let { positionOf(it, it.state.playing) } ?: c.startMs
+            val play = toggle?.let { it == RemoteCommand.Play } ?: was?.state?.playing ?: c.autoplay
+            send(RemoteCommand.Load(c.item, position, play, from))
+            awaitAnswer()
+        }
+        if (upNextSent && (reload || s.next != next?.id)) send(RemoteCommand.UpNext(listOfNotNull(next)))
+        // A load said where and whether it plays: only the volume is left to say.
+        resend(if (reload) unheard.filterIsInstance<RemoteCommand.Volume>() else unheard.toList())
+    }
+
+    /** Sends [commands] again: unheard until a state of this session comes, and shown at once as before. */
+    private fun resend(commands: List<RemoteCommand>) {
+        unheard.clear()
+        for (c in commands) {
+            send(c)
+            unheard += c
+            last = last?.let { RemoteCards.optimistic(it, c, clock()) }
+        }
+    }
+
+    /**
+     * Waits [NO_ANSWER_MS] for the browser to name [current]. Unanswered, the first song ends the session ([End.NO_ANSWER]: the
+     * music never left the phone); a later one is sent once more, then, still unanswered, reported as an error the queue's
+     * recovery steps over. The wait stops while the browser or this phone is away, and starts again with the catch-up.
+     */
+    private fun awaitAnswer() {
+        answerJob?.cancel()
+        answerJob = null
+        if (away) return // the catch-up sends it and waits
+        answerJob = scope.launch {
+            delay(NO_ANSWER_MS)
+            if (!driving) {
+                end(End.NO_ANSWER)
+                return@launch
+            }
+            val c = current ?: return@launch
+            send(RemoteCommand.Load(c.item, c.startMs, c.autoplay, from))
+            delay(NO_ANSWER_MS)
+            failedId = c.item.id
+            notifyListeners()
+        }
+    }
+
     private fun startGrace(reason: End, ms: Long) {
         staleJob?.cancel()
         staleJob = null
+        answerJob?.cancel() // it can't answer while away; the catch-up sends the song again and waits anew
+        answerJob = null
+        away = true
         _link.value = Link.RECONNECTING
         if (graceJob?.isActive == true && graceFor == reason) return // already counting this one down
         graceJob?.cancel()
@@ -328,7 +463,7 @@ class WebCastRemote(
     /** Stops every timer and takes nothing more (the session ended, or was ended from this phone). */
     fun dispose() {
         ended = true
-        noAnswerJob?.cancel()
+        answerJob?.cancel()
         staleJob?.cancel()
         graceJob?.cancel()
         upNextJob?.cancel()
@@ -353,7 +488,7 @@ class WebCastRemote(
         /** Queue edits within this window go to the browser as one `upNext` (§4 "Big plays and the limits"). */
         const val UP_NEXT_COALESCE_MS = 300L
 
-        /** "Starting on Chrome on Windows…" lasts this long before "didn't answer" (§3). */
+        /** "Starting on Chrome on Windows…" lasts this long before "didn't answer" (§3); each later song waits as long (twice). */
         const val NO_ANSWER_MS = 10_000L
 
         /** A browser gone is waited for this long, as "Reconnecting to Chrome…", before the music comes back to the phone (§3). */
@@ -367,5 +502,12 @@ class WebCastRemote(
 
         private const val ID_MAX = 64
         private val NOT_ID = Regex("[^A-Za-z0-9_.:#-]")
+
+        /** Play and pause are one kind (the latest says whether it plays); seek and volume each another. */
+        private fun kindOf(c: RemoteCommand): Int = when (c) {
+            RemoteCommand.Play, RemoteCommand.Pause -> 0
+            is RemoteCommand.Seek -> 1
+            else -> 2
+        }
     }
 }
