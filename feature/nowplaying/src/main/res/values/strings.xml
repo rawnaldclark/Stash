@@ -72,4 +72,9 @@
     <string name="np_hidden_no_cast">Cast isn\'t available on this phone</string>
     <string name="np_hidden_other">Not available right now</string>
     <string name="np_hidden_overflow">In the menu for now: no room on this screen</string>
+
+    <!-- Lyrics credit under Spicy Lyrics' lyrics in Now Playing (#837): "Lyrics by Spicy Lyrics · Uploaded by NAME · Made by NAME".
+         %1$s is the person's name on Spicy Lyrics (linked to their profile there). "Lyrics by Spicy Lyrics" stays in English. -->
+    <string name="lyrics_credit_uploaded_by">Uploaded by %1$s</string>
+    <string name="lyrics_credit_made_by">Made by %1$s</string>
 </resources>

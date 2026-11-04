@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.SyncAlt
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.LinkInteractionListener
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
@@ -63,7 +64,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -81,6 +84,7 @@ import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.size.Precision
 import com.stash.core.ui.theme.SpaceGrotesk
+import com.stash.feature.nowplaying.R
 import java.util.Locale
 import kotlin.math.roundToLong
 
@@ -190,12 +194,21 @@ private fun LyricsAttributionFooter(
     ink: Color,
     modifier: Modifier = Modifier,
 ) {
-    val text = remember(attribution) {
+    val uriHandler = LocalUriHandler.current
+    val uploadedBy = stringResource(R.string.lyrics_credit_uploaded_by)
+    val madeBy = stringResource(R.string.lyrics_credit_made_by)
+    val text = remember(attribution, uploadedBy, madeBy, uriHandler) {
+        // As the Discogs credit does: a phone with no browser for the link does nothing, not crash.
+        val openLink = LinkInteractionListener { link ->
+            (link as? LinkAnnotation.Url)?.let { runCatching { uriHandler.openUri(it.url) } }
+        }
         buildAnnotatedString {
+            // Spicy Lyrics' attribution, which its terms ask for: kept in English, like the
+            // Discogs credit ("Data provided by Discogs"), with the provider's own name.
             append("Lyrics by ${attribution.provider}")
             attribution.credits?.let {
-                person("Uploaded by", it.uploaderName, it.uploaderUrl)
-                person("Made by", it.makerName, it.makerUrl)
+                person(uploadedBy, it.uploaderName, it.uploaderUrl, openLink)
+                person(madeBy, it.makerName, it.makerUrl, openLink)
             }
         }
     }
@@ -209,17 +222,32 @@ private fun LyricsAttributionFooter(
     )
 }
 
-private fun AnnotatedString.Builder.person(label: String, name: String?, url: String?) {
+/**
+ * " · Uploaded by <name>", the name linked when there is a [url] (https only, see
+ * `SpicyLyricsSource`). [template] is the translated string with [NAME_SLOT] where the name goes,
+ * split around it so a language can put the name anywhere.
+ */
+private fun AnnotatedString.Builder.person(
+    template: String,
+    name: String?,
+    url: String?,
+    onLinkTap: LinkInteractionListener,
+) {
     if (name == null) return
-    append(" · $label ")
+    val slot = template.indexOf(NAME_SLOT)
+    append(" · ")
+    append(if (slot >= 0) template.substring(0, slot) else "$template ")
     if (url != null) {
-        withLink(LinkAnnotation.Url(url, TextLinkStyles(SpanStyle(textDecoration = TextDecoration.Underline)))) {
-            append(name)
-        }
+        val style = TextLinkStyles(SpanStyle(textDecoration = TextDecoration.Underline))
+        withLink(LinkAnnotation.Url(url, style, onLinkTap)) { append(name) }
     } else {
         append(name)
     }
+    if (slot >= 0) append(template.substring(slot + NAME_SLOT.length))
 }
+
+/** Where the person's name goes in `lyrics_credit_uploaded_by` / `lyrics_credit_made_by`. */
+private const val NAME_SLOT = "%1\$s"
 
 /**
  * A calm one-liner where the live line would sit (the web's `.lyr-msg`): "No lyrics for this

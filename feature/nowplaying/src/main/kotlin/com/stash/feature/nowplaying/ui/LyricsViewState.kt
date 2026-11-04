@@ -41,7 +41,6 @@ data class LyricsAttribution(val provider: String, val credits: LyricsCredits?)
  *                   flaky connection reads "Couldn't load" + Retry, not the
  *                   false-permanent "No lyrics found".
  */
-
 sealed interface LyricsViewState {
     object Loading : LyricsViewState
     data class Synced(
@@ -114,9 +113,12 @@ internal fun lyricsViewStateForResult(result: LyricsResult?): LyricsViewState = 
     else -> LyricsViewState.None
 }
 
-/** Spicy Lyrics' terms: always show the provider; uploader/maker only when its own catalogue answered. */
+/**
+ * Spicy Lyrics' terms: always show the provider; uploader/maker only when its own catalogue answered.
+ * The provider is the source's own name, not translated (it is a name).
+ */
 private fun attributionFor(sourceId: String?, credits: LyricsCredits?): LyricsAttribution? =
-    if (sourceId == SpicyLyricsSource.SOURCE_ID) LyricsAttribution("Spicy Lyrics", credits) else null
+    if (sourceId == SpicyLyricsSource.SOURCE_ID) LyricsAttribution(SpicyLyricsSource.DISPLAY_NAME, credits) else null
 
 private fun LyricsEntity.credits(): LyricsCredits? =
     if (creditUploaderName == null && creditMakerName == null) null

@@ -2,7 +2,11 @@ package com.stash.feature.nowplaying.ui
 
 import com.stash.core.data.db.entity.LyricsEntity
 import com.stash.core.model.Track
+import com.stash.data.lyrics.source.LyricsCredits
+import com.stash.data.lyrics.source.LyricsResult
+import com.stash.data.lyrics.source.SpicyLyricsSource
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -72,6 +76,38 @@ class LyricsViewStateTest {
         val row = sampleRow(syncedLrc = "junk", plainText = null)
         val state = lyricsViewStateFor(track = trackWithStamp(1L), row = row)
         assertEquals(LyricsViewState.None, state)
+    }
+
+    @Test fun `Spicy Lyrics' lyrics carry its credit, with the names it stored`() {
+        val row = sampleRow(syncedLrc = "[00:01.00]hello", plainText = "hello").copy(
+            source = SpicyLyricsSource.SOURCE_ID,
+            creditUploaderName = "alice",
+            creditUploaderUrl = "https://spicylyrics.org/u/alice",
+        )
+        val state = lyricsViewStateFor(track = trackWithStamp(1L), row = row) as LyricsViewState.Synced
+        assertEquals(
+            LyricsAttribution("Spicy Lyrics", LyricsCredits("alice", "https://spicylyrics.org/u/alice", null, null)),
+            state.attribution,
+        )
+    }
+
+    @Test fun `Spicy Lyrics with no names still names the provider, other sources carry no credit`() {
+        val spicy = sampleRow(plainText = "words").copy(source = SpicyLyricsSource.SOURCE_ID)
+        assertEquals(
+            LyricsViewState.Plain("words", LyricsAttribution("Spicy Lyrics", null)),
+            lyricsViewStateFor(track = trackWithStamp(1L), row = spicy),
+        )
+        val lrclib = sampleRow(syncedLrc = "[00:01.00]hello", plainText = "hello")
+        assertNull((lyricsViewStateFor(track = trackWithStamp(1L), row = lrclib) as LyricsViewState.Synced).attribution)
+    }
+
+    @Test fun `a streamed song's Spicy answer carries the credit too`() {
+        val result = LyricsResult(
+            SpicyLyricsSource.SOURCE_ID, "hello", "[00:01.00]hello", false, null, "sl-1",
+            credits = LyricsCredits(null, null, "bob", null),
+        )
+        val state = lyricsViewStateForResult(result) as LyricsViewState.Synced
+        assertEquals(LyricsAttribution("Spicy Lyrics", LyricsCredits(null, null, "bob", null)), state.attribution)
     }
 
     private fun trackWithStamp(stamp: Long?): Track = Track(
