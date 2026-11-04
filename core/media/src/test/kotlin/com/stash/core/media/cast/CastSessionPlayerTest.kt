@@ -16,8 +16,11 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class CastSessionPlayerTest {
 
-    /** The stopped local player: a queue, an index and a position, nothing more. */
-    private class QueuePlayer(ids: List<String>) : SimpleBasePlayer(Looper.getMainLooper()) {
+    /**
+     * The stopped local player: a queue, an index and a position, nothing more. [seekable] false is the real one on a song it
+     * never prepared (it only moved its queue there while casting): no seek commands, a window that isn't seekable.
+     */
+    private class QueuePlayer(ids: List<String>, val seekable: Boolean = true) : SimpleBasePlayer(Looper.getMainLooper()) {
         val items = ids.map(::item).toMutableList()
         var index = 0
         var positionMs = 0L
@@ -26,7 +29,13 @@ class CastSessionPlayerTest {
         val calls = mutableListOf<String>()
 
         override fun getState(): State = State.Builder()
-            .setAvailableCommands(Player.Commands.Builder().addAllCommands().build())
+            .setAvailableCommands(
+                Player.Commands.Builder().addAllCommands().apply {
+                    if (!seekable) {
+                        removeAll(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM, Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD)
+                    }
+                }.build(),
+            )
             .setPlaylist(items.mapIndexed { i, it -> MediaItemData.Builder("uid$i").setMediaItem(it).build() })
             .setCurrentMediaItemIndex(if (items.isEmpty()) C.INDEX_UNSET else index)
             .setContentPositionMs(positionMs)
@@ -373,6 +382,35 @@ class CastSessionPlayerTest {
         assertThat(remote.calls).containsExactly("seek:90000")
         assertThat(remote.loads).hasSize(1)
         assertThat(local.index).isEqualTo(0)
+    }
+
+    @Test fun `a song the phone never prepared can still be seeked on the receiver (seek bar, notification, lock screen)`() {
+        val local = QueuePlayer(listOf("a", "b"), seekable = false)
+        val remote = FakeRemote()
+        val player = cast(local, remote)
+        remote.report(CastStatus.PlayerState.PLAYING, durationMs = 200_000L)
+
+        assertThat(player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)).isTrue()
+        assertThat(player.isCommandAvailable(Player.COMMAND_SEEK_FORWARD)).isTrue()
+        assertThat(player.isCurrentMediaItemSeekable).isTrue()
+
+        player.seekTo(90_000L)
+
+        assertThat(remote.calls).containsExactly("seek:90000")
+    }
+
+    @Test fun `after the queue ended, the seek bar in a song the phone never prepared plays it again from there`() {
+        val local = QueuePlayer(listOf("a"), seekable = false)
+        val remote = FakeRemote()
+        val player = cast(local, remote)
+        remote.report(CastStatus.PlayerState.PLAYING)
+        remote.report(CastStatus.PlayerState.IDLE, CastStatus.IdleReason.FINISHED)
+        assertThat(player.playbackState).isEqualTo(Player.STATE_ENDED)
+
+        player.seekTo(30_000L)
+
+        assertThat(remote.loads).hasSize(2)
+        assertThat(remote.loads.last().second).isEqualTo(30_000L)
     }
 
     @Test fun `jumping to another song moves the phone's queue and loads it on the speaker`() {

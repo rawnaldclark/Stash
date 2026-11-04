@@ -525,8 +525,14 @@ class CastSessionPlayer(
                 ?: window.mediaItem.mediaMetadata.durationMs?.takeIf { it > 0 }
                 ?: window.mediaItem.mediaMetadata.extras?.getLong(StashPlaybackService.EXTRA_TRACK_DURATION_MS, 0L)
                     ?.takeIf { it > 0 }
-            if (knownMs != null && window.durationUs != knownMs * 1000) {
+            if (knownMs != null && (window.durationUs != knownMs * 1000 || !window.isSeekable)) {
                 builder.setPlaylist(DurationOverrideTimeline(timeline, index, knownMs * 1000), base.currentTracks, base.currentMetadata)
+            }
+            // The receiver seeks in a song of known length. The stopped local player can't say so: every song after the first is
+            // one it only moved its queue to, never prepared, so it isn't seekable there, and Media3 drops a seek (the seek bar,
+            // the notification's, the lock screen's) that the player doesn't offer. Ended or failed, a seek loads it again there.
+            if (knownMs != null) {
+                builder.setAvailableCommands(commands.buildUpon().addAll(*SEEK_COMMANDS).build())
             }
         }
         return builder.build()
@@ -656,7 +662,7 @@ class CastSessionPlayer(
     /** Never release the service's ExoPlayer from here; the crossfade engine owns it. */
     override fun handleRelease(): ListenableFuture<*> = DONE
 
-    /** [Timeline] with one window's duration filled in. */
+    /** [Timeline] with one window's duration filled in, and that window seekable (the receiver seeks in it). */
     private class DurationOverrideTimeline(
         timeline: Timeline,
         private val windowIndex: Int,
@@ -664,7 +670,10 @@ class CastSessionPlayer(
     ) : ForwardingTimeline(timeline) {
         override fun getWindow(windowIndex: Int, window: Window, defaultPositionProjectionUs: Long): Window {
             super.getWindow(windowIndex, window, defaultPositionProjectionUs)
-            if (windowIndex == this.windowIndex) window.durationUs = durationUs
+            if (windowIndex == this.windowIndex) {
+                window.durationUs = durationUs
+                window.isSeekable = true
+            }
             return window
         }
 
@@ -680,6 +689,11 @@ class CastSessionPlayer(
         private const val ECHO_GRACE_MS = 2_000L
         private val DONE: ListenableFuture<*> = Futures.immediateVoidFuture()
         private val REMOTE_DEVICE = DeviceInfo.Builder(DeviceInfo.PLAYBACK_TYPE_REMOTE).setMaxVolume(MAX_VOLUME).build()
+
+        /** Seeking within the song, and the back / forward steps the notification offers. */
+        private val SEEK_COMMANDS = intArrayOf(
+            Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM, Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD,
+        )
     }
 }
 
