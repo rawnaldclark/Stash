@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -45,14 +47,17 @@ import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.settings.R
+import com.stash.feature.settings.STASH_GITHUB_URL
 
 /**
  * Settings' Support card, at the top of the hub (owner 2026-11-01: "hasn't changed since MVP"). The Settings glass
@@ -63,8 +68,10 @@ import com.stash.feature.settings.R
  * Top to bottom: the two people who make Stash (their pictures, overlapping) beside "Support Stash" and one line;
  * this month's goal, "$168 of $200 this month" over a thin bar, when the site gave a number ([SupportCardState.goal]);
  * and one Donate button, which opens the [DonateSheet]. A supporter ([SupportCardState.supporter]) gets thanks and
- * their status instead of the ask, and a quieter "Donate again". "Star on GitHub" lives in Settings › About now, and
- * the supporter claim in Lossless sources (owner 2026-11-03: a perk line here only repeated it).
+ * their status instead of the ask, and a quieter "Donate again". Right of it, a small outlined "Star" opens Stash on
+ * GitHub (owner 2026-11-04: back beside Donate, where people see it; Settings › About keeps its row, which is where
+ * Settings search sends "github"). The supporter claim lives in Lossless sources (owner 2026-11-03: a perk line here
+ * only repeated it).
  *
  * Every link the sheet shows goes through [onOpenUrl].
  */
@@ -121,28 +128,63 @@ fun SupportBanner(
             }
         }
         state.goal?.let { GoalMeter(it, fill = accent) }
-        if (state.supporter) {
-            OutlinedButton(
-                onClick = { showDonateSheet = true },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
-                border = BorderStroke(1.dp, ext.glassBorderBright),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = scheme.onSurface),
-            ) {
-                Icon(Icons.Rounded.Favorite, contentDescription = null, tint = ink, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.settings_support_donate_again), style = MaterialTheme.typography.labelLarge)
+        // Donate takes the width; Star takes only what its word needs. Both share one minimum height so the pair
+        // lines up (48 dp beside the filled Donate, 44 dp beside the quieter "Donate again").
+        val buttonMinHeight = if (state.supporter) 44.dp else 48.dp
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (state.supporter) {
+                OutlinedButton(
+                    onClick = { showDonateSheet = true },
+                    modifier = Modifier.weight(1f).heightIn(min = buttonMinHeight),
+                    border = BorderStroke(1.dp, ext.glassBorderBright),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = scheme.onSurface),
+                ) {
+                    Icon(Icons.Rounded.Favorite, contentDescription = null, tint = ink, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.settings_support_donate_again), style = MaterialTheme.typography.labelLarge)
+                }
+            } else {
+                Button(
+                    onClick = { showDonateSheet = true },
+                    modifier = Modifier.weight(1f).heightIn(min = buttonMinHeight),
+                    colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = onAccent),
+                ) {
+                    Icon(Icons.Rounded.Favorite, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.settings_support_donate), style = MaterialTheme.typography.labelLarge)
+                }
             }
-        } else {
-            Button(
-                onClick = { showDonateSheet = true },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = onAccent),
-            ) {
-                Icon(Icons.Rounded.Favorite, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.settings_support_donate), style = MaterialTheme.typography.labelLarge)
-            }
+            StarButton(onClick = { onOpenUrl(STASH_GITHUB_URL) }, iconTint = ink, minHeight = buttonMinHeight)
         }
+    }
+}
+
+/**
+ * "★ Star": the "Donate again" outline (bright hairline, the theme's ink for the word) so the card keeps one filled
+ * button. Narrower padding than a default button: it sits beside Donate and should read as the smaller action. The
+ * word on screen is "Star"; TalkBack reads "Star Stash on GitHub", the About row's title, since a bare "Star" could
+ * mean favourite.
+ */
+@Composable
+private fun StarButton(onClick: () -> Unit, iconTint: Color, minHeight: Dp) {
+    val spoken = stringResource(R.string.settings_about_star)
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.heightIn(min = minHeight),
+        border = BorderStroke(1.dp, StashTheme.extendedColors.glassBorderBright),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Icon(Icons.Rounded.Star, contentDescription = null, tint = iconTint, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = stringResource(R.string.settings_support_star),
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.semantics { contentDescription = spoken },
+        )
     }
 }
 

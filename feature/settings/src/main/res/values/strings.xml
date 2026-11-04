@@ -120,6 +120,7 @@
     <string name="settings_donate_sponsors">GitHub Sponsors</string>
     <string name="settings_donate_upi">UPI (India)</string>
     <string name="settings_donate_upi_hint">UPI is for supporters in India.</string>
+    <!-- The small outlined button right of Donate on the Support card: opens Stash on GitHub to star it. -->
     <string name="settings_support_star">Star</string>
     <!-- The Support card (2026-11): one line under "Support Stash", beside the two makers' pictures. -->
     <string name="settings_support_tagline">Keeps Stash running and updated, and pays for its servers and hosting.</string>
@@ -129,7 +130,8 @@
     <string name="settings_support_thanks_title">Thank you for supporting Stash</string>
     <string name="settings_support_thanks_line">You\'re a supporter: unlimited Tidal &amp; Qobuz is on.</string>
     <string name="settings_support_donate_again">Donate again</string>
-    <!-- Settings › About: the GitHub star moved here from the Support card. -->
+    <!-- Settings › About: the GitHub star row (the Support card also has a small "Star" button, and TalkBack reads
+         this title for it). -->
     <string name="settings_about_star">Star Stash on GitHub</string>
     <string name="settings_about_star_detail">github.com/rawnaldclark/Stash</string>
 
