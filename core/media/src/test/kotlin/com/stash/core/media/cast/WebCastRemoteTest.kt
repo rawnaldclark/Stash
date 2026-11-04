@@ -185,6 +185,24 @@ class WebCastRemoteTest {
         assertThat(sent.none { it == RemoteCommand.Next || it == RemoteCommand.Prev }).isTrue()
     }
 
+    @Test fun `muted twice, the volume comes back to where it was before the first`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1", volume = 0.6))
+        r.setMuted(true)
+        r.onState(state(iid = "42#1", volume = 0.0)) // the browser says 0 back
+        r.setMuted(true) // the system's mute again
+        sent.clear()
+        r.setMuted(false)
+        assertThat(sent).containsExactly(RemoteCommand.Volume(0.6))
+        // A volume set since is the one a later mute comes back to.
+        r.setVolume(0.25f)
+        r.setMuted(true)
+        sent.clear()
+        r.setMuted(false)
+        assertThat(sent).containsExactly(RemoteCommand.Volume(0.25))
+    }
+
     // ── When it ends by itself ─────────────────────────────────────────
 
     @Test fun `a browser gone without a bye gets the grace as Reconnecting, and carries on if it comes back`() = runTest {

@@ -278,7 +278,8 @@ class WebCastRemote(
 
     override fun setMuted(muted: Boolean) {
         if (muted) {
-            unmutedVolume = last?.state?.volume ?: 1.0
+            // A second mute while muted keeps the volume to come back to: the browser's volume is 0 by then.
+            if (unmutedVolume == null) unmutedVolume = last?.state?.volume ?: 1.0
             volume(0.0, "setMuted(true)")
         } else {
             volume(unmutedVolume ?: 1.0, "setMuted(false)")
