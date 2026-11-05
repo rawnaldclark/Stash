@@ -823,10 +823,14 @@ fun NowPlayingScreen(
     }
 
     if (showSignalPath) {
+        // A cloud song names its account: with two Google Drives, that's which one it plays from.
+        val cloudSource by androidx.compose.runtime.produceState<String?>(null, track?.id, track?.cloudUri) {
+            value = track?.let { signalPathViewModel.cloudSource(it) }
+        }
         com.stash.feature.nowplaying.ui.SignalPathSheet(
             onDismiss = { showSignalPath = false },
             onOpenSettings = null,
-            service = com.stash.core.media.streaming.StreamService.displayName(track?.streamOrigin),
+            service = cloudSource ?: com.stash.core.media.streaming.StreamService.displayName(track?.streamOrigin),
             viewModel = signalPathViewModel,
         )
     }

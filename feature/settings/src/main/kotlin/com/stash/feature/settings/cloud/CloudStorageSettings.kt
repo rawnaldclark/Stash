@@ -375,7 +375,9 @@ fun CloudFoldersSection(viewModel: CloudStorageViewModel) {
         val provider = accounts.firstOrNull { it.account.id == folder.accountId }?.account?.provider
         // "Saved from Stash" isn't a folder the user picked: it can't be removed (it would come back).
         val removable = folder.itemId != GoogleDriveProvider.UPLOADS_ITEM_ID
-        rows += { CloudFolderRow(folder, provider, onRemove = if (removable) ({ confirmRemove = folder.id }) else null) }
+        rows += {
+            CloudFolderRow(folder, provider, accounts.nameIfShared(folder.accountId), onRemove = if (removable) ({ confirmRemove = folder.id }) else null)
+        }
     }
     accounts.filter { it.signedIn }.forEach { row ->
         rows += {
@@ -383,7 +385,7 @@ fun CloudFoldersSection(viewModel: CloudStorageViewModel) {
                 SettingsNavRow(
                     title = stringResource(R.string.settings_cloud_gdrive_add_songs_title),
                     // Two identical rows otherwise, with two accounts.
-                    subtitle = row.account.label.takeIf { accounts.count { it.account.provider == row.account.provider } > 1 },
+                    subtitle = accounts.nameIfShared(row.account.id),
                     leadingIcon = Icons.Rounded.LibraryAdd,
                     onClick = { openGooglePicker(row.account.id) },
                 )
@@ -414,7 +416,9 @@ fun CloudFoldersSection(viewModel: CloudStorageViewModel) {
 
     confirmRemove?.let { id ->
         val fallbackName = stringResource(R.string.settings_cloud_folder_fallback_name)
-        val name = folders.firstOrNull { it.id == id }?.name ?: fallbackName
+        val folder = folders.firstOrNull { it.id == id }
+        // Each account has its own "Picked songs": say whose.
+        val name = folder?.let { listOfNotNull(it.name, accounts.nameIfShared(it.accountId)).joinToString(" · ") } ?: fallbackName
         AlertDialog(
             onDismissRequest = { confirmRemove = null },
             containerColor = MaterialTheme.colorScheme.surface,
@@ -442,8 +446,18 @@ fun CloudFoldersSection(viewModel: CloudStorageViewModel) {
     browse?.let { CloudFolderPicker(it, viewModel) }
 }
 
+/**
+ * What tells [accountId] apart from other accounts of its provider ("a@gmail.com"), or null while it
+ * is the only one, when the provider's name already says it all.
+ */
+internal fun List<CloudAccountRow>.nameIfShared(accountId: Long): String? {
+    val account = firstOrNull { it.account.id == accountId }?.account ?: return null
+    return account.label.takeIf { count { it.account.provider == account.provider } > 1 }
+}
+
+/** @param accountName The account the folder belongs to, when its provider alone wouldn't say. */
 @Composable
-private fun CloudFolderRow(folder: CloudFolderWithCount, provider: CloudProvider?, onRemove: (() -> Unit)?) {
+internal fun CloudFolderRow(folder: CloudFolderWithCount, provider: CloudProvider?, accountName: String?, onRemove: (() -> Unit)?) {
     val status = when (folder.lastScanStatus) {
         CloudScanStatus.RUNNING.name -> pluralStringResource(
             R.plurals.settings_cloud_scan_running_songs_so_far,
@@ -470,7 +484,7 @@ private fun CloudFolderRow(folder: CloudFolderWithCount, provider: CloudProvider
         Column(Modifier.weight(1f)) {
             Text(if (picked) folder.name else folder.path.ifEmpty { "/" }, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                listOfNotNull(provider?.displayName, status).joinToString(" · "),
+                listOfNotNull(provider?.displayName, accountName, status).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (folder.lastScanStatus == CloudScanStatus.ERROR.name) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             )
