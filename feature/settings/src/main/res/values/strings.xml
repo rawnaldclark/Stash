@@ -120,7 +120,11 @@
     <string name="settings_donate_sponsors">GitHub Sponsors</string>
     <string name="settings_donate_upi">UPI (India)</string>
     <string name="settings_donate_upi_hint">UPI is for supporters in India.</string>
-    <!-- The small outlined button right of Donate on the Support card: opens Stash on GitHub to star it. -->
+    <!-- The small outlined button right of Donate on the Support card: opens Stash on GitHub to star it. Keep it to
+         one short word: it sits beside Donate, is capped at 120 dp including its icon, and ellipsizes past that. -->
+    <string name="settings_support_star_button">Star</string>
+    <!-- No longer shown: its translations are phrases too long for that button (settings_support_star_button took
+         over). It stays until the translations are removed with it. -->
     <string name="settings_support_star">Star</string>
     <!-- The Support card (2026-11): one line under "Support Stash", beside the two makers' pictures. -->
     <string name="settings_support_tagline">Keeps Stash running and updated, and pays for its servers and hosting.</string>

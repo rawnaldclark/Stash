@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Favorite
@@ -51,6 +52,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -167,13 +169,18 @@ fun SupportBanner(
  * button. Narrower padding than a default button: it sits beside Donate and should read as the smaller action. The
  * word on screen is "Star"; TalkBack reads "Star Stash on GitHub", the About row's title, since a bare "Star" could
  * mean favourite.
+ *
+ * The word has its own string, `settings_support_star_button`: the translations of the older `settings_support_star`
+ * are phrases ("Mit Stern markieren"), and since this button is measured before Donate they squeezed it until German
+ * at 360 dp broke "Spenden" mid-word. One line and a 120 dp cap keep a long translation of the new one from doing it
+ * again; it ellipsizes instead.
  */
 @Composable
 private fun StarButton(onClick: () -> Unit, iconTint: Color, minHeight: Dp) {
     val spoken = stringResource(R.string.settings_about_star)
     OutlinedButton(
         onClick = onClick,
-        modifier = Modifier.heightIn(min = minHeight),
+        modifier = Modifier.heightIn(min = minHeight).widthIn(max = 120.dp),
         border = BorderStroke(1.dp, StashTheme.extendedColors.glassBorderBright),
         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -181,8 +188,10 @@ private fun StarButton(onClick: () -> Unit, iconTint: Color, minHeight: Dp) {
         Icon(Icons.Rounded.Star, contentDescription = null, tint = iconTint, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(6.dp))
         Text(
-            text = stringResource(R.string.settings_support_star),
+            text = stringResource(R.string.settings_support_star_button),
             style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.semantics { contentDescription = spoken },
         )
     }
