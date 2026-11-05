@@ -114,6 +114,16 @@ class YourStashUiTest {
         assertThat(ui(accounts = listOf(dropbox, drive)).cloud).isEqualTo(YourStashCloud.Connected(listOf(dropbox, drive)))
     }
 
+    @Test fun `a signed-out cloud row says which account when a provider has several`() {
+        val out = cloudRow(CloudProvider.GOOGLE_DRIVE, signedIn = false)
+        val signedIn = cloudRow(CloudProvider.GOOGLE_DRIVE)
+
+        assertThat(cloudRowSubtitle(out, several = true, signedOut = "Signed out")).isEqualTo("ray@example.com · Signed out")
+        assertThat(cloudRowSubtitle(out, several = false, signedOut = "Signed out")).isEqualTo("Signed out")
+        assertThat(cloudRowSubtitle(signedIn, several = true, signedOut = "Signed out")).isEqualTo("ray@example.com")
+        assertThat(cloudRowSubtitle(signedIn, several = false, signedOut = "Signed out")).isEqualTo("ray@example.com")
+    }
+
     @Test fun `a build without cloud keys has no cloud section, whatever is stored`() {
         assertThat(ui(cloudAvailable = false).cloud).isEqualTo(YourStashCloud.Hidden)
         assertThat(ui(cloudAvailable = false, accounts = listOf(cloudRow(CloudProvider.DROPBOX))).cloud).isEqualTo(YourStashCloud.Hidden)

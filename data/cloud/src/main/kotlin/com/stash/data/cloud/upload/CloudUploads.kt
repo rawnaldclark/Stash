@@ -32,8 +32,26 @@ import javax.inject.Singleton
  * What a "Save to Google Drive" tap did, for the toast.
  *
  * @property to The account the songs went to, named only when there's more than one to go to.
+ * @property elsewhere Songs of this save that stayed on another account. They count in [queued] and
+ *   [alreadyQueued] too; [CloudUploads.message] leaves them out of "Saving N songs to ...".
  */
-data class SaveRequest(val queued: Int, val alreadyQueued: Int, val notDownloaded: Int, val to: String? = null)
+data class SaveRequest(
+    val queued: Int,
+    val alreadyQueued: Int,
+    val notDownloaded: Int,
+    val to: String? = null,
+    val elsewhere: List<SavedElsewhere> = emptyList(),
+)
+
+/**
+ * Songs of a save that stayed on another account, however the save asked: a song lives in one Drive,
+ * and a song already queued stays where it was queued.
+ *
+ * @property account Which account, by its email or else its name.
+ * @property waiting Songs with no file in that Drive yet: they wait on that account's sign-in and space.
+ * @property inDrive Songs with a file there: only checked again.
+ */
+data class SavedElsewhere(val account: String, val waiting: Int, val inDrive: Int)
 
 /** The Google Drive card's upload status. */
 data class UploadStatus(
@@ -118,8 +136,15 @@ class CloudUploads @Inject constructor(
         clearFull(account)
         if (uploadable.isNotEmpty()) scheduler.kick()
         val drives = dao.getAccounts().filter { it.provider == CloudProvider.GOOGLE_DRIVE.id }
-        val to = drives.takeIf { it.size > 1 }?.firstOrNull { it.id == account }?.let { it.email ?: it.displayName }
-        return SaveRequest(queued, uploadable.size - queued, ids.size - uploadable.size, to)
+        if (drives.size < 2) return SaveRequest(queued, uploadable.size - queued, ids.size - uploadable.size)
+        fun nameOf(id: Long) = drives.firstOrNull { it.id == id }?.let { it.email?.takeIf(String::isNotBlank) ?: it.displayName }
+        val elsewhere = uploadable.chunked(CloudDao.BIND_CHUNK).flatMap { dao.uploadsElsewhere(it, account) }
+        return SaveRequest(
+            queued, uploadable.size - queued, ids.size - uploadable.size, nameOf(account),
+            elsewhere.groupBy { it.accountId }.mapNotNull { (id, parts) ->
+                nameOf(id)?.let { name -> SavedElsewhere(name, parts.sumOf { it.songs - it.inDrive }, parts.sumOf { it.inDrive }) }
+            },
+        )
     }
 
     /**
@@ -137,24 +162,25 @@ class CloudUploads @Inject constructor(
 
     /**
      * "Back up my downloads" on or off for [accountId]. On also makes it the account saves go to:
-     * there is one of those. Off applies only to the account backup runs on.
+     * there is one of those. Off applies only to the account backup runs on. Runs to the end even if
+     * the screen closes meanwhile: a run it stopped must start again.
      */
-    suspend fun setBackup(accountId: Long, on: Boolean) {
+    suspend fun setBackup(accountId: Long, on: Boolean) = withContext(NonCancellable) {
         val now = System.currentTimeMillis()
         val current = settings.backupAccountId.value
         if (on) {
-            if (current == accountId) return
-            // A run may be in the middle of a song that is about to move: stop it, then start over.
-            val moving = current != null
-            if (moving) scheduler.cancel()
+            if (current == accountId) return@withContext
+            // A run may be in the middle of a song that is about to move, even with backup off till
+            // now (switched off and on again during one big upload): stop it, then start over.
+            scheduler.cancel()
             dao.moveWaitingBackups(accountId, now)
             // Today's downloads are only counted ("Back up N existing"); new ones are sent.
             dao.insertUploadsForDownloads(accountId, CloudUploadState.EXISTING.name, now)
             settings.setSaveAccount(accountId)
             settings.setBackupAccount(accountId)
-            if (moving) kickIfQueued()
+            kickIfQueued()
         } else {
-            if (current != accountId) return
+            if (current != accountId) return@withContext
             settings.setBackupAccount(null)
             dao.unqueueBackupUploads(accountId, now)
         }
@@ -182,33 +208,47 @@ class CloudUploads @Inject constructor(
      * account on its own.
      */
     suspend fun <T> removingAccount(accountId: Long, remove: suspend () -> T): T {
+        var removed = false
         try {
             scheduler.cancel()
+            val result = remove()
+            removed = true
+            // Only now: a removal that fails leaves the account as it was, backup included.
             if (settings.backupAccountId.value == accountId) settings.setBackupAccount(null)
             if (settings.saveAccountId.value == accountId) settings.setSaveAccount(null)
             settings.setDriveFull(accountId, false)
             settings.clear(accountId)
-            return remove()
+            return result
         } finally {
             // Also when the screen that asked is closed meanwhile: the other accounts' songs must
             // not wait for the next app start.
-            withContext(NonCancellable) { afterAccountRemoved() }
+            withContext(NonCancellable) {
+                if (removed) countRemovedDownloads()
+                try {
+                    kickIfQueued()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "uploads not restarted after a disconnect: ${e.javaClass.simpleName}")
+                }
+            }
         }
     }
 
-    private suspend fun afterAccountRemoved() {
+    /**
+     * Downloads that just stopped being cloud songs (their folder or account was removed) have no
+     * upload row, which reads as "new downloads" while backup is on: count them instead, like any
+     * download from before backup, so a removal never starts a surprise upload.
+     */
+    suspend fun countRemovedDownloads() {
         try {
-            // The songs saved to the removed account have no upload row any more, which reads as
-            // "new downloads" while backup is on for another account: count them instead, like any
-            // download from before backup, so a disconnect never starts a surprise upload.
             settings.backupAccountId.value?.let {
                 dao.insertUploadsForDownloads(it, CloudUploadState.EXISTING.name, System.currentTimeMillis())
             }
-            kickIfQueued()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w(TAG, "uploads not restarted after a disconnect: ${e.javaClass.simpleName}")
+            Log.w(TAG, "removed downloads not counted: ${e.javaClass.simpleName}")
         }
     }
 
@@ -275,12 +315,19 @@ class CloudUploads @Inject constructor(
         }
     }
 
+    /** For tests: [start]'s watcher outlives the database otherwise. */
+    internal fun stopWatching() {
+        watcher?.cancel()
+        watcher = null
+    }
+
     private suspend fun queueNewDownloads(accountId: Long) {
         try {
             // The account may have been disconnected meanwhile: then the switch is off already.
             if (dao.getAccount(accountId) == null) return
             dao.insertUploadsForDownloads(accountId, CloudUploadState.QUEUED.name, System.currentTimeMillis())
-            if (accountId !in settings.fullAccounts.value) scheduler.kick()
+            // Not a plain kick: a pass that was waiting out its delay may find them already counted.
+            kickIfQueued()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -293,27 +340,30 @@ class CloudUploads @Inject constructor(
         private const val WATCH_DEBOUNCE_MS = 3_000L
         private const val WATCH_RESTART_MS = 30_000L
 
-        /** The toast after a "Save to Google Drive" tap on a song, album or playlist. */
+        /**
+         * The toast after a "Save to Google Drive" tap on a song, album or playlist, up to where the
+         * songs that stayed on another account are concerned ([SaveRequest.elsewhere]): the screen
+         * adds those. Empty when that is all there is to say.
+         */
         fun message(r: SaveRequest): String {
-            val sending = r.queued + r.alreadyQueued
+            val elsewhere = r.elsewhere.sumOf { it.waiting + it.inDrive }
+            val sending = r.queued + r.alreadyQueued - elsewhere
             return buildString {
-                append(
-                    when {
-                        sending == 0 -> "Nothing to save yet."
-                        sending == 1 -> "Saving 1 song to ${r.to ?: "Google Drive"}."
-                        else -> "Saving $sending songs to ${r.to ?: "Google Drive"}."
-                    },
-                )
+                when {
+                    sending == 1 -> append("Saving 1 song to ${r.to ?: "Google Drive"}.")
+                    sending > 1 -> append("Saving $sending songs to ${r.to ?: "Google Drive"}.")
+                    elsewhere == 0 -> append("Nothing to save yet.")
+                }
                 when {
                     r.notDownloaded == 1 -> append(" 1 song isn't downloaded yet.")
                     r.notDownloaded > 1 -> append(" ${r.notDownloaded} songs aren't downloaded yet.")
                 }
-                if (sending == 0 && r.notDownloaded > 0) {
+                if (sending == 0 && elsewhere == 0 && r.notDownloaded > 0) {
                     // "Nothing to save yet. 3 songs aren't downloaded yet." reads oddly: say it plainly.
                     clear()
                     append(if (r.notDownloaded == 1) "Download this song first to save it to Google Drive." else "Download these songs first to save them to Google Drive.")
                 }
-            }
+            }.trim()
         }
     }
 }

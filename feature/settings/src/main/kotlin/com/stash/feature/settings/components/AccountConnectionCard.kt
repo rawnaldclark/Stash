@@ -59,8 +59,9 @@ import com.stash.feature.settings.R
  * @param leading  Drawn instead of [icon] (a letter avatar, when one service has
  *   several accounts and the same logo wouldn't tell them apart). Null = [icon].
  * @param accountName  With several accounts of one service the address is all that
- *   tells them apart: it stands alone as the connected status, and the status line
- *   gets room for all of it. Null = "Connected as ...", on two lines at most.
+ *   tells them apart: it stands alone as the status, connected or expired (the colour
+ *   and the Reconnect button say which), and the status line gets room for all of it.
+ *   Null = "Connected as ..." or "Session expired for ...", on two lines at most.
  */
 @Composable
 fun AccountConnectionCard(
@@ -84,13 +85,13 @@ fun AccountConnectionCard(
         serviceName = serviceName,
         icon = icon,
         accentColor = accentColor,
-        statusText = accountName?.takeIf { status.tone == AccountStatusTone.CONNECTED } ?: status.text,
+        statusText = accountName?.takeIf { status.tone == AccountStatusTone.CONNECTED || status.tone == AccountStatusTone.EXPIRED } ?: status.text,
         statusTone = status.tone,
         modifier = modifier,
         busy = authState is AuthState.Connecting,
         extraContent = extraContent,
         leading = leading,
-        statusMaxLines = if (accountName != null) 3 else 2,
+        statusMaxLines = if (accountName != null) 4 else 2,
     ) {
         when {
             authState !is AuthState.Connected -> AccountConnectButton(accentColor, onConnect)
