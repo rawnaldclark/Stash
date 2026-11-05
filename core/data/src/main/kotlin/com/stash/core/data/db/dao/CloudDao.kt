@@ -338,15 +338,19 @@ interface CloudDao {
     // The worker writes single columns, never a whole row it read earlier: the user may have
     // queued, unqueued or re-saved the song meanwhile.
 
-    /** A new resumable session for [trackId] (null clears it: the old one expired). */
+    /**
+     * A new resumable session for [trackId] on [accountId] (null clears it: the old one expired). A
+     * session belongs to the account that opened it: if the row has moved to another account since
+     * the upload began, this writes nothing, and the row starts over there.
+     */
     @Query(
         """
         UPDATE cloud_uploads SET session_uri = :uri, session_size = :size, session_md5 = :md5,
             bytes_sent = 0, updated_at = :now
-        WHERE track_id = :trackId
+        WHERE track_id = :trackId AND account_id = :accountId
         """,
     )
-    suspend fun setUploadSession(trackId: Long, uri: String?, size: Long?, md5: String?, now: Long)
+    suspend fun setUploadSession(trackId: Long, accountId: Long, uri: String?, size: Long?, md5: String?, now: Long)
 
     /** Bytes Drive has committed so far (progress, and where a resume would start). */
     @Query("UPDATE cloud_uploads SET bytes_sent = :bytes, updated_at = :now WHERE track_id = :trackId")

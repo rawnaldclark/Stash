@@ -127,7 +127,7 @@ class CloudDaoTest {
         val failed = download("failed")
         upload(existing, a, CloudUploadState.EXISTING, CloudUploadOrigin.BACKUP)
         upload(queuedBackup, a, CloudUploadState.QUEUED, CloudUploadOrigin.BACKUP)
-        dao.setUploadSession(queuedBackup, "https://session", 10, "md5", 2)
+        dao.setUploadSession(queuedBackup, a, "https://session", 10, "md5", 2)
         dao.setUploadProgress(queuedBackup, 5, 2)
         upload(queuedManual, a, CloudUploadState.QUEUED, CloudUploadOrigin.MANUAL)
         upload(done, a, CloudUploadState.DONE, CloudUploadOrigin.BACKUP)
@@ -202,13 +202,28 @@ class CloudDaoTest {
         assertEquals(CloudUploadState.EXISTING.name, dao.getUpload(linked)!!.state)
     }
 
+    @Test fun `a session opened for one account never lands on a row that has moved to another`() = runTest {
+        val a = driveAccount("a")
+        val b = driveAccount("b")
+        val song = download("song")
+        upload(song, a, CloudUploadState.QUEUED, CloudUploadOrigin.BACKUP)
+        dao.moveWaitingBackups(b, 2)
+
+        // The upload that began on A hears back from Drive after the row went to B.
+        dao.setUploadSession(song, a, "https://session-on-a", 10, "md5", 3)
+        assertNull(dao.getUpload(song)!!.sessionUri)
+
+        dao.setUploadSession(song, b, "https://session-on-b", 10, "md5", 4)
+        assertEquals("https://session-on-b", dao.getUpload(song)!!.sessionUri)
+    }
+
     @Test fun `a link takes a song still waiting for another Drive with it, and leaves a finished one`() = runTest {
         val a = driveAccount("a")
         val b = driveAccount("b")
         val waiting = download("waiting")
         val finished = download("finished")
         upload(waiting, b, CloudUploadState.QUEUED, CloudUploadOrigin.BACKUP)
-        dao.setUploadSession(waiting, "https://session", 10, "md5", 2)
+        dao.setUploadSession(waiting, b, "https://session", 10, "md5", 2)
         upload(finished, b, CloudUploadState.DONE, CloudUploadOrigin.BACKUP)
 
         linkTo(waiting, a)
@@ -230,7 +245,7 @@ class CloudDaoTest {
         val failed = download("failed")
         upload(done, a, CloudUploadState.DONE)
         upload(failed, a, CloudUploadState.FAILED)
-        dao.setUploadSession(failed, "https://session", 10, "md5", 2)
+        dao.setUploadSession(failed, a, "https://session", 10, "md5", 2)
 
         assertEquals(2, dao.queueUploads(listOf(done, failed), b, CloudUploadOrigin.MANUAL.name, 5))
 

@@ -78,7 +78,7 @@ class DriveUploader(
                     }
                 }
             } catch (e: UploadSessionExpiredException) {
-                dao.setUploadSession(row.trackId, null, null, null, clock())
+                dao.setUploadSession(row.trackId, account, null, null, null, clock())
                 null
             }
         }
@@ -91,7 +91,7 @@ class DriveUploader(
                 // 4. A new upload.
                 val parent = folders.resolve(account, place.folders)
                 val uri = api.startSession(account, parent, place.fileName, UploadKeys.mimeType(extension), size, key)
-                dao.setUploadSession(row.trackId, uri, size, md5, clock())
+                dao.setUploadSession(row.trackId, account, uri, size, md5, clock())
                 onProgress(0, size)
                 session.upload(uri, path, size, 0, onCommitted)
             }
@@ -100,7 +100,7 @@ class DriveUploader(
         if (!reused && file.md5Checksum != null && file.md5Checksum != md5) {
             Log.w(TAG, "uploaded copy differs from the phone's file; removing it")
             api.deleteOwnUpload(account, file.id)
-            dao.setUploadSession(row.trackId, null, null, null, clock())
+            dao.setUploadSession(row.trackId, account, null, null, null, clock())
             throw CloudApiException(0, "the uploaded copy didn't match")
         }
         // 6. Link it.
