@@ -80,8 +80,10 @@ object CloudModule {
 
     @Provides
     @Singleton
-    fun provideGoogleDriveAuth(authorizer: GoogleAuthorizer, client: OkHttpClient): GoogleDriveAuth =
-        GoogleDriveAuth(authorizer, client)
+    fun provideGoogleDriveAuth(authorizer: GoogleAuthorizer, client: OkHttpClient, dao: CloudDao): GoogleDriveAuth =
+        GoogleDriveAuth(authorizer, client, severalAccounts = {
+            dao.getAccounts().count { it.provider == CloudProvider.GOOGLE_DRIVE.id } > 1
+        })
 
     /** Only providers this build has credentials for: an unconfigured one can't even start a sign-in. */
     @Provides
