@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { step, preview, EMOJI, MAX_MEMBERS } from "../src/room.js";
+import { step, preview, EMOJI, MAX_MEMBERS, MAX_QUEUE_CHARS } from "../src/room.js";
 
 const T0 = 1_000_000;
 const TRACK = { t: "Avril 14th", a: "Aphex Twin", d: 125000, isrc: "GBBPW0100025" };
@@ -524,7 +524,7 @@ test("with the switch off, or under an older host, a guest's add becomes suggest
     let r = add(room2({ ga: false }), "a", [song("S1"), song("S2")], true);
     assert.deepEqual(r.state.suggestions.map((x) => [x.id, x.from, x.track.t]), [["n-0", "a", "S1"], ["n-1", "a", "S2"]]);
     assert.deepEqual(titles(r.state), ALBUM.map((x) => x.t));
-    assert.equal(sent(r, "added").length, 0);
+    assert.deepEqual(sent(r, "added").map((o) => [o.to, o.msg.count, o.msg.suggested]), [["a", 0, 2]], "only the sender hears, and nobody gets a chip");
     r = add(party(), "a", [song("S1"), song("S2"), song("S3"), song("S4")], true);
     assert.equal(r.state.suggestions.length, 3, "still 3 waiting per listener");
     r = add(room2({ ga: false }), "h", [song("H1")], true);
@@ -711,4 +711,182 @@ test("bad adds and settings change nothing; a listener can't send settings", () 
     assert.equal(send(s, "nobody", { t: "add", tracks: [song("X")], next: true }).state, s);
     const off = room2({ ga: false });
     assert.equal(send(off, "a", { t: "add", tracks: [song("X")], next: true }).state, off, "a suggestion needs an id");
+});
+
+// ── Review fixes: who owns the album after a handover, Back's place in the queue, answers to an add, the size limit ──
+
+const LONG = "x".repeat(500);
+const longSong = (t) => ({ t: `${t}${LONG}`.slice(0, 500), a: LONG, al: LONG, art: `https://i.scdn.co/image/${"a".repeat(900)}` });
+const album30 = () => Array.from({ length: 30 }, (_, i) => ({ t: `B${i}`, a: "Host" }));
+const room30 = () => {
+    const s = room2();
+    return send(s, "h", { t: "load", track: TRACK, positionMs: 0, queue: album30(), qv: s.qv }, T0 + 11).state;
+};
+
+test("a former host's album doesn't count against them: after makeHost they can add, and can't swipe it away", () => {
+    const s = send(room30(), "h", { t: "makeHost", memberId: "a" }).state;
+    assert.ok(s.queue.every((t) => t.by === "a"), "the album is the new host's now");
+    const r = add(s, "h", [song("Mine")], true);
+    assert.equal(r.state.queue[0].t, "Mine", "not refused as 20 waiting");
+    assert.equal(r.state.queue[0].by, "h");
+    assert.equal(sent(r, "added")[0].msg.count, 1);
+    assert.equal(send(s, "h", { t: "unqueue", track: s.queue[0], at: 0 }).state, s, "a guest takes out only their own");
+    const swiped = send(s, "a", { t: "unqueue", track: s.queue[0], at: 0 }).state;
+    assert.equal(swiped.queue.length, 29, "the new host can");
+});
+
+test("the host's own earlier adds stay theirs through a handover, and the room's phones hear the new owner", () => {
+    let s = add(room30(), "h", [song("HostAdd")], true).state;
+    s = add(s, "b", [song("GuestAdd")], true).state;
+    const r = send(s, "h", { t: "makeHost", memberId: "a" });
+    assert.deepEqual(r.state.queue.slice(0, 2).map((t) => [t.t, t.by]), [["HostAdd", "h"], ["GuestAdd", "b"]]);
+    assert.ok(r.state.queue.slice(2).every((t) => t.by === "a"));
+    assert.ok(sent(r, "state")[0].msg.state.queue.slice(2).every((t) => t.by === "a"), "every phone's Up next says so");
+    assert.equal(add(r.state, "a", [song("After")], true).state.queue[2].t, "After", "the adds still hold the front run");
+});
+
+test("the album goes to a 60 s heir too, and the old host's copy of it stays gone with them", () => {
+    let s = step(room30(), { type: "close", from: "h" }, T0 + 1_000).state;
+    const r = step(s, { type: "alarm" }, T0 + 61_000);
+    assert.equal(r.state.host, "a");
+    assert.ok(r.state.queue.every((t) => t.by === "a"));
+    assert.ok(sent(r, "state")[0].msg.state.queue.every((t) => t.by === "a"));
+    s = add(r.state, "b", [song("G1")], true).state;
+    assert.equal(s.queue[0].t, "G1", "the album isn't an add, so a guest's Play next goes in front of it");
+});
+
+test("a room left hostless gives the album to whoever takes it, by the first hello back or the host key", () => {
+    let s = room30();
+    for (const id of ["h", "a", "b", "o"]) s = step(s, { type: "close", from: id }, T0 + 1_000).state;
+    s = step(s, { type: "alarm" }, T0 + 61_000).state;
+    assert.equal(s.host, null);
+    assert.ok(s.queue.every((t) => t.by === "h"), "nobody to give it to yet");
+    const first = hello(s, "n", { at: T0 + 62_000, v: 2 });
+    assert.equal(first.state.host, "n");
+    assert.ok(sent(first, "welcome")[0].msg.state.queue.every((t) => t.by === "n"));
+    const keyed = hello(s, "k", { hostKeyOk: true, at: T0 + 62_000, v: 2 });
+    assert.equal(keyed.state.host, "k");
+    assert.ok(keyed.state.queue.every((t) => t.by === "k"));
+});
+
+test("an app's whole queue after a handover keeps the new owner, so the cap stays right as the album plays", () => {
+    let s = send(room30(), "h", { t: "makeHost", memberId: "a" }).state;
+    s = send(s, "a", { t: "load", track: s.queue[0], positionMs: 0, queue: s.queue.slice(1), qv: s.qv, why: "end" }).state;
+    assert.equal(s.queue.filter((t) => t.by === "h").length, 0);
+    for (let i = 0; i < 20; i++) s = add(s, "h", [song(`F${i}`)], false).state;
+    assert.equal(s.queue.filter((t) => t.by === "h").length, 20);
+    assert.equal(sent(add(s, "h", [song("F21")], false), "added")[0].msg.count, 0, "their real 20 still hold");
+});
+
+/** The room with [waiting] guest songs in front and the host one song in, its app about to go Back to TRACK. */
+function playedOne(...waiting) {
+    let s = room2(); // TRACK playing, ALBUM after it, qv 1
+    s = send(s, "h", { t: "load", track: ALBUM[0], positionMs: 0, queue: ALBUM.slice(1), qv: s.qv, why: "end" }).state;
+    for (const [t, next] of waiting) s = add(s, "a", [song(t)], next).state;
+    return s;
+}
+const goBack = (s, seen = s.qv) => send(s, "h", {
+    t: "load", track: TRACK, positionMs: 0, queue: [s.track, ...s.queue], qv: seen, why: "back",
+}).state;
+
+test("Back: the song it re-queues holds the front, so a new Play next goes behind it and behind the Play next run", () => {
+    let s = goBack(playedOne(["P1", true], ["P2", true]));
+    assert.deepEqual(titles(s), ["A1", "P1", "P2", "A2", "A3"]);
+    s = add(s, "b", [song("P3")], true).state;
+    assert.deepEqual(titles(s), ["A1", "P1", "P2", "P3", "A2", "A3"], "was P3 A1 P1 P2: in front of the song Back left");
+});
+
+test("Back: an Add to queue goes behind the added songs, before the album", () => {
+    let s = goBack(playedOne(["P1", true], ["Q1", false]));
+    s = add(s, "b", [song("Q2")], false).state;
+    assert.deepEqual(titles(s), ["A1", "P1", "Q1", "Q2", "A2", "A3"]);
+});
+
+test("Back with an app that hadn't heard of an add yet: the add goes behind the re-queued song", () => {
+    const before = playedOne();
+    const seen = before.qv;
+    const view = before.queue;
+    const s = add(before, "a", [song("P1")], true).state;
+    const back = send(s, "h", { t: "load", track: TRACK, positionMs: 0, queue: [s.track, ...view], qv: seen, why: "back" }).state;
+    assert.deepEqual(titles(back), ["A1", "P1", "A2", "A3"]);
+});
+
+test("the song Back re-queued is an ordinary song again once it plays, and doesn't survive a new album", () => {
+    let s = goBack(playedOne(["P1", true]));
+    const album = [{ t: "N1", a: "Host" }];
+    const picked = send(s, "h", { t: "load", track: { t: "N0", a: "Host" }, positionMs: 0, queue: album, qv: s.qv, why: "pick" }).state;
+    assert.deepEqual(titles(picked), ["P1", "N1"], "P1 is a person's add waiting; A1 has been heard");
+    s = send(s, "h", { t: "load", track: s.queue[0], positionMs: 0, queue: s.queue.slice(1), qv: s.qv, why: "end" }).state;
+    assert.deepEqual(titles(s), ["P1", "A2", "A3"]);
+    assert.deepEqual(s.adds.map((e) => e.back ?? false), [false], "its log entry left with it");
+});
+
+test("Back twice keeps both songs in front of what's added next", () => {
+    let s = playedOne();
+    s = send(s, "h", { t: "load", track: ALBUM[1], positionMs: 0, queue: ALBUM.slice(2), qv: s.qv, why: "end" }).state;
+    s = send(s, "h", { t: "load", track: ALBUM[0], positionMs: 0, queue: [s.track, ...s.queue], qv: s.qv, why: "back" }).state;
+    s = send(s, "h", { t: "load", track: TRACK, positionMs: 0, queue: [s.track, ...s.queue], qv: s.qv, why: "back" }).state;
+    s = add(s, "a", [song("P1")], true).state;
+    assert.deepEqual(titles(s), ["A1", "A2", "P1", "A3"]);
+});
+
+test("an older app's Back is taken as sent, and the host dragging an album song to the top stays as it was", () => {
+    const before = playedOne();
+    const old = send(before, "h", { t: "load", track: TRACK, positionMs: 0, queue: [before.track, ...before.queue], why: "back" }).state;
+    assert.deepEqual(old.adds, [], "no qv: nothing logged");
+    // The drag: A3 above A2. It isn't an add, so a Play next goes in front of it, as the host left it.
+    let s = room2();
+    s = send(s, "h", { t: "queue", queue: [ALBUM[2], ALBUM[0], ALBUM[1]], qv: s.qv }).state;
+    s = add(s, "a", [song("P1")], true).state;
+    assert.deepEqual(titles(s), ["P1", "A3", "A1", "A2"]);
+});
+
+test("an add that can't go in is answered to the sender alone, and changes nothing", () => {
+    let s = room2();
+    for (let i = 0; i < 20; i++) s = add(s, "a", [song(`S${i}`)], true).state;
+    const r = add(s, "a", [song("One too many")], true);
+    assert.equal(r.state, s);
+    assert.deepEqual(r.out, [{ to: "a", msg: { t: "added", by: "a", next: true, count: 0 } }]);
+    const bad = add(s, "b", [{ t: "" }], false);
+    assert.equal(bad.state, s);
+    assert.deepEqual(bad.out, [{ to: "b", msg: { t: "added", by: "b", next: false, count: 0 } }]);
+});
+
+test("an add that became suggestions says so to the sender alone: how many fit, none when the tray is full", () => {
+    const off = room2({ ga: false });
+    const r = add(off, "a", [song("S1"), song("S2")], true);
+    assert.deepEqual(sent(r, "added"), [{ to: "a", msg: { t: "added", by: "a", next: true, count: 0, suggested: 2 } }]);
+    const three = add(r.state, "a", [song("S3"), song("S4")], true);
+    assert.equal(sent(three, "added")[0].msg.suggested, 1);
+    const full = add(three.state, "a", [song("S5")], false);
+    assert.equal(full.state, three.state);
+    assert.deepEqual(full.out, [{ to: "a", msg: { t: "added", by: "a", next: false, count: 0, suggested: 0 } }]);
+});
+
+test("the queue stops taking adds before the host's next Load could pass the room's frame limit", () => {
+    let s = created();
+    s = hello(s, "h", { hostKeyOk: true, v: 2, guestsAdd: true }).state;
+    for (let g = 0; g < 9; g++) s = hello(s, `g${g}`, { at: T0 + g + 1, v: 2 }).state;
+    let refused = 0;
+    for (let g = 0; g < 9; g++) {
+        const r = add(s, `g${g}`, Array.from({ length: 20 }, (_, i) => longSong(`${g}-${i}`)), true);
+        refused += 20 - (sent(r, "added")[0]?.msg.count ?? 0);
+        s = r.state;
+    }
+    assert.ok(refused > 0, "this much doesn't fit");
+    assert.ok(JSON.stringify(s.queue).length <= MAX_QUEUE_CHARS);
+    const refusal = add(s, "g8", [longSong("late")], true);
+    assert.deepEqual(refusal.out, [{ to: "g8", msg: { t: "added", by: "g8", next: true, count: 0 } }]);
+    // Twenty waiting suggestions of the same size can still go in when the switch turns on, and it all still fits.
+    const load = JSON.stringify({ t: "load", track: longSong("now"), positionMs: 0, why: "end", qv: s.qv, queue: s.queue });
+    const twenty = JSON.stringify(Array.from({ length: 20 }, (_, i) => ({ ...longSong(`w${i}`), by: "g1" })));
+    assert.ok(load.length + twenty.length < 262_144, `${load.length + twenty.length} chars`);
+});
+
+test("ordinary songs never meet the size limit: the room's whole 200 fit", () => {
+    let s = room2();
+    const ordinary = (t) => ({ t, a: "An Artist With A Name", al: "An Album Title", d: 200000, isrc: "GBBPW0100025", art: `https://i.scdn.co/image/${"a".repeat(40)}` });
+    s = send(s, "h", { t: "add", tracks: Array.from({ length: 200 }, (_, i) => ordinary(`H${i}`)), next: false }).state;
+    assert.equal(s.queue.length, 200);
+    assert.ok(JSON.stringify(s.queue).length < MAX_QUEUE_CHARS);
 });

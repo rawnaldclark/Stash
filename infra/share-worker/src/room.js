@@ -43,6 +43,14 @@ export const PROTOCOL_V = 2;
 export const MAX_GUEST_WAITING = 20;
 /** Removals a host's app may not have seen yet, kept so its next whole-queue message can't bring them back. */
 export const MAX_REMOVED = 50;
+/**
+ * The queue's length as JSON past which no more adds are taken. The host's next Load carries the whole queue, and the
+ * shell closes any frame over MAX_FRAME (262,144), so a queue of very long titles must never get near it: that socket
+ * would drop for good and only End would work. The app's own 200 ordinary songs come to about 49 KB. Low enough that
+ * the 20 waiting suggestions that can go in without this check, and the Load's own song, still fit at the longest a
+ * song can be.
+ */
+export const MAX_QUEUE_CHARS = 170_000;
 
 const HOST_ONLY = new Set(["load", "play", "pause", "seek", "queue", "suggestion", "makeHost", "end", "settings"]);
 /** Phone status → stored member status (`ready` is stored as `ok`, spec §3). */
@@ -176,6 +184,18 @@ function insertAdds(s, tracks, next) {
     }
 }
 
+/**
+ * The room changes hands. The album or playlist still waiting is the new host's from now on, so it counts against
+ * nobody's 20 and the former host can't swipe it away as a guest. Songs people added, the former host's too, stay theirs.
+ */
+function setHost(s, id) {
+    if (id === s.host) return;
+    s.host = id;
+    if (id === null) return; // nobody to give the album to yet: the next host gets it
+    const isAdd = addFlags(s);
+    s.queue = s.queue.map((t, i) => (isAdd[i] ? t : { ...t, by: id }));
+}
+
 /** How many more songs [from] may add: the room's 200, and for a guest their 20 waiting. */
 function room(s, from) {
     const left = MAX_QUEUE - s.adds.length;
@@ -234,8 +254,12 @@ function queuedAdds(s) {
  * from before guest adds) it is taken as sent, as it always was. With it, what happened since that version is put
  * back on top: songs guests removed come out again, and songs added go back in by the Play next / Add to queue rules.
  * On a pick (the host started a new album or playlist) every add stays in front of it.
+ *
+ * [left]: the song a Back just left. The app puts it at the front to play again next, which is a Play next in all but
+ * name: logged as one, it holds the front run, so what's added next goes behind it, not in front (`back` marks it, so
+ * it doesn't outlive the album: it has already been heard).
  */
-function setHostQueue(ctx, pick) {
+function setHostQueue(ctx, pick, left = null) {
     const { s, msg, event } = ctx;
     const sent = stamped(cleanQueue(msg.queue), event.from);
     const seen = Number.isSafeInteger(msg.qv) && msg.qv >= 0 ? msg.qv : null;
@@ -243,11 +267,15 @@ function setHostQueue(ctx, pick) {
         s.queue = sent;
     } else {
         const before = s.queue;
+        if (pick) s.adds = s.adds.filter((e) => !e.back);
         s.queue = [...(pick ? queuedAdds(s) : []), ...sent];
         for (const r of s.removed) {
             if (r.qv <= seen) continue;
             const i = s.queue.findIndex((t) => addKey(t) === r.k);
             if (i >= 0) s.queue.splice(i, 1);
+        }
+        if (left && s.queue[0] && songKey(s.queue[0]) === songKey(left)) {
+            s.adds.push({ k: addKey(s.queue[0]), qv: seen, next: true, back: true });
         }
         const tracks = new Map(before.map((t) => [addKey(t), t]));
         const have = countKeys(s.queue);
@@ -290,14 +318,30 @@ function pushSuggestion(s, from, id, track) {
 }
 
 /**
+ * Tells the sender alone that nothing of their add went in, so their app doesn't claim it did. [suggested]: it became
+ * suggestions instead, this many of them. An `added` always answers an `add`, which is what the app's toast waits for.
+ */
+function answerAdd(ctx, next, suggested) {
+    const by = ctx.event.from;
+    ctx.out.push({ to: by, msg: { t: "added", by, next, count: 0, ...(suggested === undefined ? {} : { suggested }) } });
+}
+
+/**
  * [tracks] straight into the queue for member `from` (stamped as theirs, whatever they claimed), as many as fit, and
- * "Sam added …" to everyone (the adder's own app stays quiet). False when none fit.
+ * "Sam added …" to everyone (the adder's own app stays quiet). False when none fit, and only the sender hears.
  */
 function addSongs(ctx, tracks, next) {
     const { s } = ctx;
     const from = ctx.event.from;
-    const taken = tracks.slice(0, room(s, from)).map((t) => ({ ...t, by: from }));
-    if (!taken.length) return false;
+    let chars = JSON.stringify(s.queue).length;
+    const taken = [];
+    for (const t of tracks.slice(0, room(s, from))) {
+        const song = { ...t, by: from };
+        chars += JSON.stringify(song).length + 1;
+        if (chars > MAX_QUEUE_CHARS) break;
+        taken.push(song);
+    }
+    if (!taken.length) { answerAdd(ctx, next); return false; }
     s.qv++;
     insertAdds(s, taken, next);
     settle(s);
@@ -386,9 +430,9 @@ const EVENTS = {
         if (Number.isSafeInteger(msg.v) && msg.v >= 1 && msg.v <= 99) m.v = msg.v;
         if (typeof msg.guestsAdd === "boolean") m.ga = msg.guestsAdd;
         // The host key proves only the original host, and only while nobody holds the room (spec §2).
-        if (event.hostKeyOk && s.host === null) s.host = m.id;
+        if (event.hostKeyOk && s.host === null) setHost(s, m.id);
         // A room whose host lapsed with nobody around goes to the longest-joined member back.
-        if (s.host === null && s.hostless) s.host = connected(s).sort((a, b) => a.joinedAt - b.joinedAt)[0].id;
+        if (s.host === null && s.hostless) setHost(s, connected(s).sort((a, b) => a.joinedAt - b.joinedAt)[0].id);
         if (s.host !== null) s.hostless = false;
         s.rev++;
         switchChanged(ctx, before, true);
@@ -431,7 +475,7 @@ const EVENTS = {
             if (gone.has(s.host)) {
                 // Host gone for 60 s: the longest-joined connected member takes over (spec §2), with their own switch.
                 const heir = connected(s).sort((a, b) => a.joinedAt - b.joinedAt)[0];
-                s.host = heir ? heir.id : null;
+                setHost(s, heir ? heir.id : null);
                 s.hostless = !heir;
                 switchChanged(ctx, before, false);
                 ctx.out.push(stateMsg(s));
@@ -454,9 +498,10 @@ const MESSAGES = {
         const { s, now, msg, event } = ctx;
         const track = cleanTrack(msg.track);
         if (!track) return false;
+        const left = msg.why === "back" ? s.track : null;
         s.track = track.by ? track : { ...track, by: event.from };
         s.trackKey++;
-        setHostQueue(ctx, msg.why === "pick");
+        setHostQueue(ctx, msg.why === "pick", left);
         s.timeline = { positionMs: cleanPosition(msg.positionMs, track) ?? 0, atRoomMs: now, playing: false };
         s.phase = { kind: "preparing", trackKey: s.trackKey, deadlineMs: now + PREPARE_MS };
         for (const m of connected(s)) m.status = "buffering";
@@ -525,16 +570,16 @@ const MESSAGES = {
     add(ctx) {
         const { s, msg, event } = ctx;
         if (!Array.isArray(msg.tracks)) return false;
+        const next = msg.next === true;
         const tracks = msg.tracks.slice(0, MAX_QUEUE).map(cleanTrack).filter(Boolean);
-        if (!tracks.length) return false;
-        if (event.from === s.host || guestsCanAdd(s)) return addSongs(ctx, tracks, msg.next === true);
+        if (!tracks.length) { answerAdd(ctx, next); return false; }
+        if (event.from === s.host || guestsCanAdd(s)) return addSongs(ctx, tracks, next);
         if (!event.newId) return false;
-        let changed = false;
-        tracks.forEach((track, i) => { if (pushSuggestion(s, event.from, `${event.newId}-${i}`, track)) changed = true; });
-        if (!changed) return false;
-        s.rev++;
-        ctx.out.push(suggestionsMsg(s));
-        return true;
+        let suggested = 0;
+        tracks.forEach((track, i) => { if (pushSuggestion(s, event.from, `${event.newId}-${i}`, track)) suggested++; });
+        if (suggested) { s.rev++; ctx.out.push(suggestionsMsg(s)); }
+        answerAdd(ctx, next, suggested);
+        return suggested > 0;
     },
 
     suggest(ctx) {
@@ -618,7 +663,7 @@ const MESSAGES = {
         const { s, msg } = ctx;
         if (msg.memberId === s.host || !findConnected(s, msg.memberId)) return false;
         const before = guestsCanAdd(s);
-        s.host = msg.memberId;
+        setHost(s, msg.memberId);
         s.rev++;
         switchChanged(ctx, before, false); // the new host's own switch (or an older app's approvals) rules from now
         ctx.out.push(stateMsg(s));

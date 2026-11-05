@@ -32,7 +32,8 @@ songs to the queue.
 | `settings {guestsAdd}` | host → room, room → all | The switch, and the room's answer when the effective value changes. |
 | `load` / `queue` + `qv` | host → room | The queue version the host's app built this whole queue from. |
 | `queue` + `qv` | room → all | Every queue broadcast carries the version. |
-| `added {by, next, count, track}` | room → all | For the "Sam added …" chip. |
+| `added {by, next, count, track}` | room → all | For the "Sam added …" chip, and the adder's own confirmation. |
+| `added {by, next, count: 0, suggested?}` | room → sender | Nothing of that `add` went in: refused (no `suggested`), or it became `suggested` suggestions. Every `add` gets one `added` back, so the app's toast says what really happened. |
 | `load` / `prepare` `why: "unavailable"` | host → room → all | The host's phone couldn't play the last song. |
 
 Effective switch: on only while the host's app sent `v: 2` and its switch is on, recomputed on every host change. An
@@ -48,8 +49,20 @@ the switch on lets waiting suggestions into the queue as Play next, in the order
   removals it hadn't seen applied again. Without `qv` (an older host) the queue is taken as sent, as before.
 - An added song's identity includes its adder, so a guest's copy is never confused with the same song on the host's
   album.
-- Known limit: the host's own two quick Up next edits less than one round trip apart, with a guest add arriving
-  between them, can undo the first edit (the same as before this change for two quick edits).
+- The song a Back re-queues holds the front like a Play next, so what's added next goes behind it. It doesn't outlive
+  a new album (it has already been heard). A song the host dragged to the top doesn't hold the front: a new Play next
+  goes in front of it, as the host left it.
+- When the room changes hands, the album or playlist still waiting becomes the new host's, on every path (hand over,
+  the 60 s heir, the first back into a hostless room, the host key). Songs people added stay theirs, the former host's
+  included.
+- The queue stops taking adds at 170,000 characters of JSON, so the host's next Load (the whole queue) can't pass the
+  room's 262,144 frame limit. Ordinary songs never meet it: the whole 200 come to about 49 KB. `add` and `unqueue` are
+  ignored past a burst of 10, then 2 a second, per socket; only a client looping them reaches that.
+- Known limit: the version covers one host action per round trip. Two host actions less than one round trip apart
+  (two skips, a skip and an edit, two edits), with a guest add or removal crossing them, can replay a song or bring
+  back a removed one, not only undo the first edit, and the slower the connection the wider the window. Two skips
+  during an outage can lose a guest's song the same way, because the second replaces the first in the waiting Load.
+  The reviewer's fuzz (4,000 runs per setup) finds nothing when the host acts at most once per round trip.
 
 ## Compatibility and deploy
 
