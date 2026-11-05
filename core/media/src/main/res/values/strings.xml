@@ -33,6 +33,16 @@
         <item quantity="one">You can have %1$d song waiting. Add more as they play.</item>
         <item quantity="other">You can have %1$d songs waiting. Add more as they play.</item>
     </plurals>
+    <!-- The room's queue can't take any more (200 songs). -->
+    <string name="lt_queue_full">The session queue is full</string>
+    <!-- A guest's adds became suggestions, and the 3 they may have waiting are already with the host. -->
+    <string name="lt_suggestions_full">The host still has your suggestions. Try again once they\'ve answered.</string>
+    <!-- Play next or Add to queue while the connection to the session is down: it is sent when it comes back. -->
+    <string name="lt_add_waiting">Not connected right now. It\'ll go in when you\'re back.</string>
+    <!-- The song this guest added was skipped because the host's phone can't play it. %1$s: the song, %2$s: the host. -->
+    <string name="lt_your_song_skipped_by">Skipped %1$s: %2$s can\'t play it</string>
+    <!-- The same, when the host's name isn't known. %1$s: the song. -->
+    <string name="lt_your_song_skipped">Skipped %1$s: the host can\'t play it</string>
     <!-- A guest tapped a song to play it now, in a room that lets guests add. -->
     <string name="lt_only_host_changes_song">Only the host can change the song. Use Play next to add it.</string>
 </resources>

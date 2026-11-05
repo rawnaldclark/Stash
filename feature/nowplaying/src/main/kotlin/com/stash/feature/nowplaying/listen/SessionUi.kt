@@ -359,7 +359,7 @@ fun SessionSheet(
     onDismiss: () -> Unit,
     onAnswer: (id: String, add: Boolean) -> Unit,
     onMakeHost: (String) -> Unit,
-    onEditQueue: (List<SharedTrack>) -> Unit,
+    onEditQueue: (List<SharedTrack>, Int?) -> Unit,
     onCopyLink: (String) -> Unit,
     onShare: (String) -> Unit,
     onLeave: () -> Unit,
@@ -406,7 +406,7 @@ private fun RoomContent(
     room: ListenTogetherState.InRoom,
     onAnswer: (id: String, add: Boolean) -> Unit,
     onMakeHost: (String) -> Unit,
-    onEditQueue: (List<SharedTrack>) -> Unit,
+    onEditQueue: (List<SharedTrack>, Int?) -> Unit,
     onCopyLink: (String) -> Unit,
     onShare: (String) -> Unit,
     onLeave: () -> Unit,
@@ -418,7 +418,8 @@ private fun RoomContent(
     val nameOf = { id: String -> room.nameOf(id) }
     val count = room.members.size
     val listState = rememberLazyListState()
-    val upNext = rememberUpNextState(listState, room.queue, onEditQueue, onUnqueue)
+    // The version this composition's queue is at, so an edit built from it can't read as removing a newer add.
+    val upNext = rememberUpNextState(listState, room.queue, { queue -> onEditQueue(queue, room.qv) }, onUnqueue)
     LazyColumn(
         Modifier.fillMaxWidth(),
         state = listState,

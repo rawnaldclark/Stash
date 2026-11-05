@@ -81,12 +81,18 @@ class ListenTogetherSessionTest {
         var closed = false
         /** False while the socket is down: send() drops the frame and says so. */
         var up = true
+        /** When set, asked before each send: false fails it as a dead socket does. */
+        var onSend: ((ClientMessage) -> Boolean)? = null
         var hello: (() -> ClientMessage.Hello)? = null
         var scope: CoroutineScope? = null
         /** RoomClient aborts its socket when its scope is cancelled before close(), losing a frame sent just before. */
         var closedAfterScopeCancelled = false
         override val events: Flow<RoomEvent> = incoming.receiveAsFlow()
-        override fun send(message: ClientMessage): Boolean { if (up) sent += message; return up }
+        override fun send(message: ClientMessage): Boolean {
+            val goes = up && onSend?.invoke(message) != false
+            if (goes) sent += message
+            return goes
+        }
         override fun close() { closed = true; if (scope?.isActive == false) closedAfterScopeCancelled = true }
     }
 
@@ -97,8 +103,13 @@ class ListenTogetherSessionTest {
         /** When set, lookups and radio wait on it: a slow DB or network. */
         var itemGate: CompletableDeferred<Unit>? = null
         var radioGate: CompletableDeferred<Unit>? = null
+        /** How many songs have been looked up: a whole library selected must not mean a whole library of lookups. */
+        var lookups = 0
         override suspend fun mediaItemFor(track: SharedTrack): MediaItem? { itemGate?.await(); return items[track] }
-        override suspend fun sharedTrackFor(item: MediaItem) = items.entries.firstOrNull { it.value.mediaId == item.mediaId }?.key
+        override suspend fun sharedTrackFor(item: MediaItem): SharedTrack? {
+            lookups++
+            return items.entries.firstOrNull { it.value.mediaId == item.mediaId }?.key
+        }
         override suspend fun radioAfter(track: SharedTrack): List<SharedTrack> { radioCalls++; radioGate?.await(); return radio }
     }
 
@@ -295,7 +306,7 @@ class ListenTogetherSessionTest {
         assertThat(ends).isEmpty()
     }
 
-    fun TestScope.notices(): List<String> {
+    fun TestScope.notices(): MutableList<String> {
         val notices = mutableListOf<String>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { controller.messages.collect { notices += it } }
         return notices
@@ -925,6 +936,7 @@ class ListenTogetherSessionTest {
             ClientMessage.Add(listOf(next), next = true),
             ClientMessage.Add(listOf(third), next = false),
         ).inOrder()
+        answered(1); answered(1, next = false)
         assertThat(notices).containsExactly("Playing next in the session", "Added to the session queue").inOrder()
     }
 
@@ -948,6 +960,8 @@ class ListenTogetherSessionTest {
         repeat(25) { i -> player.interceptor!!.onAdd(listOf(playNext("s$i"))); advanceTimeBy(30); runCurrent() }
         advanceTimeBy(2_000); runCurrent()
         assertThat(sentNoPings()).containsExactly(ClientMessage.Add(many.take(20), next = true))
+        queueUpdate(many.take(20).map { it.copy(addedBy = "me") })
+        answered(20)
         assertThat(notices).containsExactly("You can have 20 songs waiting. Add more as they play.")
     }
 
@@ -965,6 +979,8 @@ class ListenTogetherSessionTest {
         joinV2(queue = List(19) { SharedTrack("M$it", "A", addedBy = "me") } + third.copy(addedBy = "h"))
         player.interceptor!!.onAdd(listOf(playNext("2"), playNext("1"))); gathered()
         assertThat(adds()).containsExactly(ClientMessage.Add(listOf(next), next = true))
+        queueUpdate(List(20) { SharedTrack("M$it", "A", addedBy = "me") })
+        answered(1)
         assertThat(notices).containsExactly("You can have 20 songs waiting. Add more as they play.")
     }
 
@@ -973,6 +989,7 @@ class ListenTogetherSessionTest {
         joinV2(guestsAdd = false)
         player.interceptor!!.onAdd(listOf(playNext("2"))); gathered()
         assertThat(adds()).containsExactly(ClientMessage.Add(listOf(next), next = true))
+        answered(0, suggested = 1)
         assertThat(notices).containsExactly("Suggested to Host")
         assertThat((controller.state.value as ListenTogetherState.InRoom).guestsAdd).isFalse()
     }
@@ -1104,16 +1121,17 @@ class ListenTogetherSessionTest {
         assertThat(connection.sent).isEmpty()
     }
 
-    @Test fun `the host's Play with no song yet starts what guests queued`() = runTest {
+    @Test fun `the host's Play with no song and nothing on its way starts what's queued`() = runTest {
         coEvery { api.create("Rawn") } returns ShareResult.Ok(RoomApiClient.Created("K7QA2PXM", "KEY", "https://x/l/K7QA2PXM"))
         session()
         controller.send(Command.Host); runCurrent()
         connection.incoming.trySend(RoomEvent.Connected); runCurrent()
-        receive(ServerMessage.Welcome("h", "tok", state(host = "h", track = null, key = 0, v = 2, qv = 0, hostV = 2)))
-        receive(ServerMessage.QueueUpdate(listOf(next.copy(addedBy = "a")), qv = 1))
-        connection.sent.clear()
-        player.interceptor!!.onPlay(); runCurrent()
+        // The room's welcome already has what guests queued while this phone was connecting: the welcome itself starts it.
+        receive(ServerMessage.Welcome("h", "tok", state(host = "h", track = null, key = 0, queue = listOf(next.copy(addedBy = "a")), v = 2, qv = 1, hostV = 2)))
         assertThat(loads()).containsExactly(ClientMessage.Load(next.copy(addedBy = "a"), 0, emptyList(), "end", qv = 1))
+        // Play as it goes out is the song on its way, not a second skip.
+        player.interceptor!!.onPlay(); runCurrent()
+        assertThat(loads()).hasSize(1)
     }
 
     @Test fun `the host's Play while the first song is on its way to the room doesn't skip it`() = runTest {
@@ -1121,5 +1139,535 @@ class ListenTogetherSessionTest {
         connection.sent.clear()
         player.interceptor!!.onPlay(); runCurrent()
         assertThat(sentNoPings()).containsExactly(ClientMessage.Play)
+    }
+
+    // ── Review fixes: a room that stops, adds the socket can't take, what the toast may claim ────────────────────────
+
+    /** A song the catalog doesn't know: this phone can't play it. */
+    val gone = SharedTrack("Gone", "Nobody")
+
+    /** Hosting a room that knows guest adds, with [track] prepared and ready and [upcoming] after it. */
+    fun TestScope.hostPlaying(upcoming: List<MediaItem> = emptyList(), qv: Int = 1) {
+        host(upcoming = upcoming, v = 2, qv = qv)
+        syncClock()
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000, by = "h"))
+        player.events!!.onReady()
+        receive(ServerMessage.TimelineUpdate(rev = 2, trackKey = 1, positionMs = 42_000, atRoomMs = 11_000, playing = true))
+        connection.sent.clear()
+    }
+
+    fun TestScope.queueUpdate(queue: List<SharedTrack>, qv: Int = 8) = receive(ServerMessage.QueueUpdate(queue, qv))
+    fun TestScope.timeline(key: Int, playing: Boolean, rev: Int = 5) =
+        receive(ServerMessage.TimelineUpdate(rev = rev, trackKey = key, positionMs = 0, atRoomMs = 11_000, playing = playing))
+    fun TestScope.answered(count: Int, next: Boolean = true, by: String = "me", suggested: Int? = null) =
+        receive(ServerMessage.Added(by, next, count, suggested = suggested))
+    fun inRoom() = controller.state.value as ListenTogetherState.InRoom
+
+    // Finding 1: the last song the host can't play.
+
+    @Test fun `the last song the host can't play says so and pauses the room, which ignored the first pause while preparing`() = runTest {
+        hostPlaying()
+        val events = events()
+        receive(ServerMessage.Prepare(2, gone, 0, 8_000, by = "h", why = "end"))
+        assertThat(events.map { it.kind to it.song }).containsExactly(SessionEvent.Kind.SKIPPED_UNAVAILABLE to "Gone")
+        assertThat(events.single().memberId).isEqualTo("h")
+        assertThat(loads()).isEmpty()
+        connection.sent.clear()
+        // The guests are ready, so the room starts the song: it must not play on for them alone.
+        timeline(2, playing = true)
+        assertThat(sentNoPings()).containsExactly(ClientMessage.Pause)
+        // The room's paused answer ends it, and the next song isn't paused for it.
+        timeline(2, playing = false, rev = 6)
+        assertThat(inRoom().pausedLocally).isFalse()
+    }
+
+    @Test fun `the last song failing while the room is already paused leaves no pause waiting for the next song`() = runTest {
+        hostPlaying()
+        timeline(1, playing = false, rev = 3)
+        connection.sent.clear()
+        player.events!!.onError()
+        assertThat(sentNoPings()).doesNotContain(ClientMessage.Pause)
+        assertThat(inRoom().pausedLocally).isFalse()
+        val add = next.copy(addedBy = "a").also { catalog.items[it] = item("2") }
+        queueUpdate(listOf(add))
+        receive(ServerMessage.Prepare(2, add, 0, 8_000, by = "h"))
+        player.events!!.onReady()
+        connection.sent.clear()
+        timeline(2, playing = true, rev = 7)
+        assertThat(sentNoPings()).doesNotContain(ClientMessage.Pause)
+    }
+
+    @Test fun `the host's Play on a song it can't play asks nothing of the room when there's nowhere to go`() = runTest {
+        hostPlaying()
+        receive(ServerMessage.Prepare(2, gone, 0, 8_000, by = "h", why = "end"))
+        timeline(2, playing = false, rev = 6)
+        connection.sent.clear()
+        player.interceptor!!.onPlay(); runCurrent()
+        assertThat(sentNoPings()).doesNotContain(ClientMessage.Play) // it would start the song for the guests alone
+        assertThat(loads()).isEmpty()
+    }
+
+    @Test fun `a new host who can't play the room's song moves it on, saying why`() = runTest {
+        join()
+        receive(ServerMessage.Welcome("me", "tok", state(track = gone, key = 1, queue = listOf(next), v = 2, qv = 3, hostV = 2)))
+        assertThat(inRoom().unavailable).isTrue()
+        connection.sent.clear()
+        receive(ServerMessage.StateSync(state(host = "me", track = gone, key = 1, queue = listOf(next), v = 2, qv = 3, hostV = 2)))
+        assertThat(loads()).containsExactly(ClientMessage.Load(next, 0, emptyList(), "unavailable", qv = 3))
+    }
+
+    @Test fun `a new host who can't play the last song stops the room rather than leave it stuck`() = runTest {
+        join()
+        receive(ServerMessage.Welcome("me", "tok", state(track = gone, key = 1, timeline = RoomTimeline(0, 0, true), v = 2, qv = 3, hostV = 2)))
+        connection.sent.clear()
+        receive(ServerMessage.StateSync(state(host = "me", track = gone, key = 1, timeline = RoomTimeline(0, 0, true), v = 2, qv = 3, hostV = 2)))
+        assertThat(sentNoPings()).contains(ClientMessage.Pause)
+    }
+
+    // Finding 2: an add to a room that has stopped.
+
+    @Test fun `a guest's add to a room whose queue ran out starts it, without the host`() = runTest {
+        hostPlaying()
+        player.ended = true
+        player.events!!.onEnded(); runCurrent()
+        connection.sent.clear()
+        queueUpdate(listOf(next.copy(addedBy = "a")))
+        assertThat(loads()).containsExactly(ClientMessage.Load(next.copy(addedBy = "a"), 0, emptyList(), "end", qv = 8))
+    }
+
+    @Test fun `a guest's add to a room stopped on a song the host can't play starts it`() = runTest {
+        hostPlaying()
+        receive(ServerMessage.Prepare(2, gone, 0, 8_000, by = "h", why = "end"))
+        timeline(2, playing = true)
+        connection.sent.clear()
+        queueUpdate(listOf(next.copy(addedBy = "a")))
+        assertThat(loads()).containsExactly(ClientMessage.Load(next.copy(addedBy = "a"), 0, emptyList(), "end", qv = 8))
+        assertThat(inRoom().pausedLocally).isFalse()
+    }
+
+    @Test fun `a guest's add to a room that never had a song starts it, and the echo doesn't start it twice`() = runTest {
+        coEvery { api.create("Rawn") } returns ShareResult.Ok(RoomApiClient.Created("K7QA2PXM", "KEY", "https://x/l/K7QA2PXM"))
+        session()
+        controller.send(Command.Host); runCurrent()
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("h", "tok", state(host = "h", track = null, key = 0, v = 2, qv = 0, hostV = 2)))
+        val songs = listOf(next.copy(addedBy = "a"), third.copy(addedBy = "a")).onEach { catalog.items[it] = item("2") }
+        queueUpdate(songs, qv = 1)
+        assertThat(loads()).containsExactly(ClientMessage.Load(songs[0], 0, songs.drop(1), "end", qv = 1))
+        // Another add crosses it, then the room's echo of the Load: still the one Load.
+        queueUpdate(songs + track.copy(addedBy = "b"), qv = 2)
+        assertThat(loads()).hasSize(1)
+        receive(ServerMessage.Prepare(1, songs[0], 0, 8_000, by = "h", why = "end"))
+        queueUpdate(listOf(songs[1], track.copy(addedBy = "b")), qv = 3)
+        assertThat(loads()).hasSize(1)
+    }
+
+    @Test fun `an add while the host's song is playing or paused only joins the queue`() = runTest {
+        hostPlaying()
+        queueUpdate(listOf(next.copy(addedBy = "a")))
+        assertThat(loads()).isEmpty()
+        timeline(1, playing = false)
+        queueUpdate(listOf(next.copy(addedBy = "a"), third.copy(addedBy = "a")), qv = 9)
+        assertThat(loads()).isEmpty()
+    }
+
+    @Test fun `a listener's phone never moves a stopped room on`() = runTest {
+        joinV2()
+        player.ended = true
+        queueUpdate(listOf(next.copy(addedBy = "a")))
+        assertThat(loads()).isEmpty()
+    }
+
+    @Test fun `a host back from a drop finds an add made while it was gone and starts it`() = runTest {
+        hostPlaying()
+        player.ended = true
+        player.events!!.onEnded(); runCurrent()
+        connection.incoming.trySend(RoomEvent.Reconnecting); runCurrent()
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        connection.sent.clear()
+        receive(ServerMessage.Welcome("h", "tok", state(host = "h", key = 1, queue = listOf(next.copy(addedBy = "a")), v = 2, qv = 9, hostV = 2)))
+        assertThat(loads()).containsExactly(ClientMessage.Load(next.copy(addedBy = "a"), 0, emptyList(), "end", qv = 9))
+    }
+
+    @Test fun `a song ending as an add arrives moves on once, not twice`() = runTest {
+        hostPlaying(upcoming = listOf(item("2"), item("3")))
+        player.ended = true
+        player.events!!.onEnded() // no runCurrent: the Load must already be out when the next message is read
+        queueUpdate(listOf(next, third, track.copy(addedBy = "a")))
+        runCurrent()
+        assertThat(loads()).hasSize(1)
+        assertThat(loads().single().track).isEqualTo(next)
+    }
+
+    // Finding 3: an add while the socket is down.
+
+    @Test fun `an add while the socket is down is held and sent after the next welcome, with no false success`() = runTest {
+        val notices = notices()
+        joinV2()
+        connection.incoming.trySend(RoomEvent.Reconnecting); runCurrent()
+        connection.up = false
+        player.interceptor!!.onAdd(listOf(playNext("2"))); gathered()
+        player.interceptor!!.onAdd(listOf(playNext("3"))); gathered()
+        player.interceptor!!.onAdd(listOf(item("1"))); gathered()
+        assertThat(adds()).isEmpty()
+        assertThat(notices).containsExactly(
+            "Not connected right now. It'll go in when you're back.",
+            "Not connected right now. It'll go in when you're back.",
+            "Not connected right now. It'll go in when you're back.",
+        )
+        notices.clear()
+        connection.up = true
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        assertThat(adds()).isEmpty() // the room hasn't welcomed this socket yet
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1, v = 2, guestsAdd = true, qv = 5, hostV = 2)))
+        assertThat(adds()).containsExactly(
+            ClientMessage.Add(listOf(next, third), next = true),
+            ClientMessage.Add(listOf(track), next = false),
+        ).inOrder()
+        assertThat(notices).isEmpty() // not until the room says so
+        answered(2); answered(1, next = false)
+        assertThat(notices).containsExactly("Added to the session queue")
+    }
+
+    @Test fun `a socket that drops before the session says so still holds the add`() = runTest {
+        joinV2()
+        connection.up = false // no Reconnecting event yet: send() is the first to know
+        player.interceptor!!.onAdd(listOf(playNext("2"))); gathered()
+        connection.up = true
+        connection.incoming.trySend(RoomEvent.Reconnecting); runCurrent()
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1, v = 2, guestsAdd = true, qv = 5, hostV = 2)))
+        assertThat(adds()).containsExactly(ClientMessage.Add(listOf(next), next = true))
+    }
+
+    @Test fun `an add before the first welcome is held too`() = runTest {
+        val notices = notices()
+        join()
+        player.interceptor!!.onAdd(listOf(playNext("2"))); gathered()
+        assertThat(adds()).isEmpty()
+        assertThat(notices).containsExactly("Not connected right now. It'll go in when you're back.")
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1, v = 2, guestsAdd = true, qv = 5, hostV = 2)))
+        assertThat(adds()).containsExactly(ClientMessage.Add(listOf(next), next = true))
+    }
+
+    @Test fun `the socket dropping partway through a big selection holds only what didn't go`() = runTest {
+        val many = songs(120)
+        host(v = 2, qv = 0)
+        connection.sent.clear()
+        var addsLeft = 1
+        connection.onSend = { it !is ClientMessage.Add || addsLeft-- > 0 }
+        player.interceptor!!.onAdd(many.indices.map { playNext("s$it") }); gathered()
+        assertThat(adds().map { it.tracks.size }).containsExactly(50)
+        connection.onSend = null
+        connection.incoming.trySend(RoomEvent.Reconnecting); runCurrent()
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        connection.sent.clear()
+        receive(ServerMessage.Welcome("h", "tok", state(host = "h", track = track, key = 1, v = 2, qv = 2, hostV = 2)))
+        assertThat(adds().flatMap { it.tracks }).containsExactlyElementsIn(many.drop(50)).inOrder()
+        assertThat(adds().map { it.tracks.size }).containsExactly(50, 20).inOrder()
+    }
+
+    @Test fun `held adds are checked against the room as it is after the drop`() = runTest {
+        val notices = notices()
+        joinV2()
+        connection.incoming.trySend(RoomEvent.Reconnecting); runCurrent()
+        player.interceptor!!.onAdd(listOf(playNext("2"))); gathered()
+        notices.clear()
+        // 20 of this guest's songs got in another way, before the socket went: nothing to send, and it says why.
+        val mine = List(20) { SharedTrack("M$it", "A", addedBy = "me") }
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1, queue = mine, v = 2, guestsAdd = true, qv = 5, hostV = 2)))
+        assertThat(adds()).isEmpty()
+        assertThat(notices).containsExactly("You can have 20 songs waiting. Add more as they play.")
+    }
+
+    @Test fun `leaving forgets what was held`() = runTest {
+        joinV2()
+        connection.incoming.trySend(RoomEvent.Reconnecting); runCurrent()
+        player.interceptor!!.onAdd(listOf(playNext("2"))); gathered()
+        controller.send(Command.Leave); runCurrent()
+        controller.send(Command.Join("ZZ22ZZ22")); runCurrent()
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        connection.sent.clear()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1, v = 2, guestsAdd = true, qv = 5, hostV = 2)))
+        assertThat(adds()).isEmpty()
+    }
+
+    // Finding 5: an add during the radio lookup.
+
+    @Test fun `an add during the radio lookup plays, and the station doesn't wipe it`() = runTest {
+        autoplay = true
+        catalog.radio = listOf(third, track)
+        catalog.radioGate = CompletableDeferred()
+        hostPlaying()
+        player.ended = true
+        player.events!!.onEnded(); runCurrent() // waiting on the station
+        assertThat(catalog.radioCalls).isEqualTo(1)
+        val add = next.copy(addedBy = "a")
+        queueUpdate(listOf(add))
+        assertThat(loads()).containsExactly(ClientMessage.Load(add, 0, emptyList(), "end", qv = 8))
+        catalog.radioGate!!.complete(Unit); runCurrent()
+        assertThat(loads()).hasSize(1)
+    }
+
+    @Test fun `an add that reaches the queue just as the lookup ends is played instead of the station`() = runTest {
+        autoplay = true
+        catalog.radio = listOf(third)
+        catalog.radioGate = CompletableDeferred()
+        hostPlaying()
+        // Not ended, so the add alone doesn't start it: the host skipped, and is waiting on the station.
+        player.interceptor!!.onNext(); runCurrent()
+        val add = next.copy(addedBy = "a")
+        queueUpdate(listOf(add))
+        assertThat(loads()).isEmpty()
+        catalog.radioGate!!.complete(Unit); runCurrent()
+        assertThat(loads()).containsExactly(ClientMessage.Load(add, 0, emptyList(), "skip", qv = 8))
+    }
+
+    @Test fun `a song the host picked during the lookup isn't replaced by the station`() = runTest {
+        autoplay = true
+        catalog.radio = listOf(third)
+        catalog.radioGate = CompletableDeferred()
+        hostPlaying()
+        player.ended = true
+        player.events!!.onEnded(); runCurrent()
+        player.interceptor!!.onSet(listOf(item("2")), 0); runCurrent()
+        receive(ServerMessage.Prepare(2, next, 0, 8_000, by = "h", why = "pick"))
+        catalog.radioGate!!.complete(Unit); runCurrent()
+        assertThat(loads().map { it.track }).containsExactly(next)
+    }
+
+    @Test fun `no add during the lookup and the station plays as before`() = runTest {
+        autoplay = true
+        catalog.radio = listOf(third, next)
+        catalog.radioGate = CompletableDeferred()
+        hostPlaying()
+        player.ended = true
+        player.events!!.onEnded(); runCurrent()
+        catalog.radioGate!!.complete(Unit); runCurrent()
+        assertThat(loads()).containsExactly(ClientMessage.Load(third, 0, listOf(next), "radio", qv = 1))
+    }
+
+    // Finding 6: a host that can't play anything.
+
+    /** The room's echo of the song this phone just sent, which it can't play: the host's next move is the thing tested. */
+    fun TestScope.echoUnplayable(key: Int, song: SharedTrack) = receive(ServerMessage.Prepare(key, song, 0, 8_000, by = "h", why = "unavailable"))
+
+    @Test fun `a run of songs the host can't play stops after three, and the rest of the queue stays`() = runTest {
+        val goners = List(5) { SharedTrack("G$it", "Nobody") }
+        host(upcoming = emptyList(), v = 2, qv = 1)
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000, by = "h"))
+        queueUpdate(goners, qv = 2)
+        val events = events()
+        connection.sent.clear()
+        player.events!!.onError() // 1: moves to G0
+        assertThat(loads().map { it.track }).containsExactly(goners[0])
+        echoUnplayable(2, goners[0]) // 2: moves to G1
+        assertThat(loads().map { it.track }).containsExactly(goners[0], goners[1]).inOrder()
+        queueUpdate(goners.drop(2), qv = 3)
+        echoUnplayable(3, goners[1]) // 3: stops here
+        assertThat(loads()).hasSize(2)
+        assertThat(sentNoPings()).contains(ClientMessage.Pause)
+        assertThat(inRoom().queue).containsExactlyElementsIn(goners.drop(2)).inOrder()
+        assertThat(events.last().song).isEqualTo("G1")
+        // An add doesn't burn another song: the host stopped this on purpose.
+        queueUpdate(goners.drop(2) + next.copy(addedBy = "a"), qv = 4)
+        assertThat(loads()).hasSize(2)
+        // The host's Play starts it again, with a fresh count.
+        player.interceptor!!.onPlay(); runCurrent()
+        assertThat(loads()).hasSize(3)
+        assertThat(loads().last().track).isEqualTo(goners[2])
+        echoUnplayable(4, goners[2])
+        assertThat(loads()).hasSize(4)
+    }
+
+    @Test fun `a song the host can play resets the count`() = runTest {
+        host(upcoming = emptyList(), v = 2, qv = 1)
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000, by = "h"))
+        val goners = List(4) { SharedTrack("G$it", "Nobody") }
+        queueUpdate(listOf(goners[0], next, goners[1], goners[2], goners[3]), qv = 2)
+        connection.sent.clear()
+        player.events!!.onError() // 1
+        echoUnplayable(2, goners[0]) // 2
+        receive(ServerMessage.Prepare(3, next, 0, 8_000, by = "h", why = "unavailable"))
+        player.events!!.onReady() // played: back to none
+        player.events!!.onError() // 1
+        echoUnplayable(4, goners[1]) // 2, so this one still moves on; without the reset it would be 4 and stop
+        assertThat(loads().map { it.track }).containsExactly(goners[0], next, goners[1], goners[2]).inOrder()
+        echoUnplayable(5, goners[2]) // 3: now it stops
+        assertThat(loads()).hasSize(4)
+    }
+
+    @Test fun `an Offline-style host with radio on doesn't loop through stations`() = runTest {
+        autoplay = true
+        catalog.radio = List(5) { SharedTrack("R$it", "Nobody") }
+        hostPlaying()
+        player.events!!.onError(); runCurrent() // 1: the first station
+        assertThat(catalog.radioCalls).isEqualTo(1)
+        var key = 2
+        repeat(6) {
+            val sent = loads().lastOrNull() ?: return@repeat
+            receive(ServerMessage.Prepare(key++, sent.track, 0, 8_000, by = "h", why = "unavailable")); runCurrent()
+        }
+        assertThat(loads().size).isAtMost(2)
+        assertThat(catalog.radioCalls).isAtMost(1)
+        assertThat(sentNoPings()).contains(ClientMessage.Pause)
+    }
+
+    // Finding 7: selecting more than the room can hold.
+
+    @Test fun `a selection of 1,001 songs stays under the room's message limit and looks up only what could go in`() = runTest {
+        songs(1_001)
+        host(v = 2, qv = 0)
+        connection.sent.clear()
+        catalog.lookups = 0
+        player.interceptor!!.onAdd(List(1_001) { playNext("s$it") }); gathered()
+        assertThat(adds().size).isAtMost(4)
+        assertThat(adds().flatMap { it.tracks }).hasSize(200)
+        assertThat(catalog.lookups).isEqualTo(200)
+    }
+
+    @Test fun `a guest with adds off selecting many sends 3, as many as can wait`() = runTest {
+        songs(30)
+        joinV2(guestsAdd = false)
+        player.interceptor!!.onAdd(List(30) { playNext("s$it") }); gathered()
+        assertThat(adds()).hasSize(1)
+        assertThat(adds().single().tracks).hasSize(3)
+    }
+
+    @Test fun `a guest selecting 1,001 songs tap by tap stays one message per batch`() = runTest {
+        songs(1_001)
+        joinV2()
+        for (i in 0 until 1_001) player.interceptor!!.onAdd(listOf(playNext("s$i")))
+        gathered(); gathered()
+        assertThat(adds().flatMap { it.tracks }).hasSize(20)
+        assertThat(adds()).hasSize(1)
+    }
+
+    // Finding 9: a host's edit built from what was on screen.
+
+    @Test fun `the host's edit carries the version of the queue on screen, not the newest`() = runTest {
+        host(v = 2, qv = 4)
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000, by = "h"))
+        queueUpdate(listOf(next), qv = 5)
+        assertThat(inRoom().qv).isEqualTo(5)
+        // A guest's add arrives after the screen composed version 5, and before the swipe lands.
+        queueUpdate(listOf(third.copy(addedBy = "a"), next), qv = 6)
+        connection.sent.clear()
+        controller.send(Command.SetQueue(emptyList(), qv = 5)); runCurrent()
+        assertThat(connection.sent).containsExactly(ClientMessage.Queue(emptyList(), qv = 5))
+    }
+
+    // Finding 10: a message right after a pick.
+
+    @Test fun `a skip right after a new album keeps other people's adds, which the room had put in front of it`() = runTest {
+        hostPlaying()
+        val theirs = next.copy(addedBy = "a")
+        queueUpdate(listOf(theirs, track.copy(addedBy = "h")), qv = 5)
+        connection.sent.clear()
+        player.interceptor!!.onSet(listOf(item("3"), item("1")), 0); runCurrent()
+        assertThat(loads().single()).isEqualTo(ClientMessage.Load(third, 0, listOf(track), "pick", qv = 5))
+        player.interceptor!!.onNext(); runCurrent()
+        assertThat(loads().last()).isEqualTo(ClientMessage.Load(theirs, 0, listOf(track), "skip", qv = 5))
+    }
+
+    // Finding 13: telling the song's adder.
+
+    @Test fun `the guest who added the song the host can't play gets a toast wherever they are`() = runTest {
+        val notices = notices()
+        join()
+        receive(ServerMessage.Welcome("me", "tok", state(track = next.copy(addedBy = "me"), key = 1, v = 2, guestsAdd = true, qv = 3, hostV = 2)))
+        receive(ServerMessage.Prepare(2, third, 0, 8_000, by = "h", why = "unavailable"))
+        assertThat(notices).containsExactly("Skipped Xtal: Host can't play it")
+    }
+
+    @Test fun `nobody else gets that toast, and the host has the chip`() = runTest {
+        val notices = notices()
+        join()
+        receive(ServerMessage.Welcome("me", "tok", state(track = next.copy(addedBy = "b"), key = 1, v = 2, guestsAdd = true, qv = 3, hostV = 2)))
+        receive(ServerMessage.Prepare(2, third, 0, 8_000, by = "h", why = "unavailable"))
+        assertThat(notices).isEmpty()
+    }
+
+    // Finding 14: the toast comes from the room's answer.
+
+    @Test fun `the toast waits for the room's answer and for every message of the batch`() = runTest {
+        val many = songs(60)
+        val notices = notices()
+        host(v = 2, qv = 0)
+        connection.sent.clear()
+        player.interceptor!!.onAdd(many.indices.map { playNext("s$it") }); gathered()
+        assertThat(adds()).hasSize(2)
+        assertThat(notices).isEmpty()
+        answered(50, by = "h")
+        assertThat(notices).isEmpty()
+        answered(10, by = "h")
+        assertThat(notices).containsExactly("Playing next in the session")
+    }
+
+    @Test fun `a refusal says the queue is full, not that the song went in`() = runTest {
+        val notices = notices()
+        joinV2()
+        player.interceptor!!.onAdd(listOf(playNext("2"))); gathered()
+        answered(0)
+        assertThat(notices).containsExactly("The session queue is full")
+    }
+
+    @Test fun `a refusal because this guest's count was stale says it's their 20`() = runTest {
+        val notices = notices()
+        joinV2()
+        player.interceptor!!.onAdd(listOf(playNext("2"))); gathered()
+        queueUpdate(List(20) { SharedTrack("M$it", "A", addedBy = "me") }) // they got in from this phone's last batch
+        answered(0)
+        assertThat(notices).containsExactly("You can have 20 songs waiting. Add more as they play.")
+    }
+
+    @Test fun `only some going in says why the rest didn't`() = runTest {
+        val notices = notices()
+        joinV2(queue = List(18) { SharedTrack("M$it", "A", addedBy = "me") })
+        player.interceptor!!.onAdd(listOf(playNext("1"), playNext("2"), playNext("3"))); gathered()
+        assertThat(adds().single().tracks).hasSize(2)
+        queueUpdate(List(20) { SharedTrack("M$it", "A", addedBy = "me") })
+        answered(2)
+        assertThat(notices).containsExactly("You can have 20 songs waiting. Add more as they play.")
+    }
+
+    @Test fun `the switch turning off as the add crosses it says suggested, and on says added`() = runTest {
+        val notices = notices()
+        joinV2()
+        player.interceptor!!.onAdd(listOf(playNext("2"))); gathered()
+        answered(0, suggested = 1)
+        assertThat(notices).containsExactly("Suggested to Host")
+        notices.clear()
+        receive(ServerMessage.SettingsUpdate(guestsAdd = false))
+        player.interceptor!!.onAdd(listOf(playNext("3"))); gathered()
+        answered(1) // the host turned it back on before this reached the room
+        assertThat(notices).containsExactly("Playing next in the session")
+    }
+
+    @Test fun `a full tray says the host still has their suggestions`() = runTest {
+        val notices = notices()
+        joinV2(guestsAdd = false)
+        player.interceptor!!.onAdd(listOf(playNext("2"))); gathered()
+        answered(0, suggested = 0)
+        assertThat(notices).containsExactly("The host still has your suggestions. Try again once they've answered.")
+    }
+
+    @Test fun `a drop forgets answers that won't come, so the next one isn't read as theirs`() = runTest {
+        val notices = notices()
+        joinV2()
+        player.interceptor!!.onAdd(listOf(playNext("2"))); gathered()
+        connection.incoming.trySend(RoomEvent.Reconnecting); runCurrent()
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1, v = 2, guestsAdd = true, qv = 5, hostV = 2)))
+        answered(0)
+        assertThat(notices).isEmpty()
+    }
+
+    @Test fun `someone's empty answer is no chip`() = runTest {
+        joinV2()
+        val events = events()
+        receive(ServerMessage.Added(by = "h", next = true, count = 0))
+        assertThat(events).isEmpty()
     }
 }

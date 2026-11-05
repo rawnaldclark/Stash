@@ -207,9 +207,19 @@ sealed interface ServerMessage {
     @Serializable @SerialName("queue")
     data class QueueUpdate(val queue: List<SharedTrack>, val qv: Int? = null) : ServerMessage
 
-    /** [by] added [count] songs, the first [track], as Play next ([next]) or to the queue: "Sam added …". */
+    /**
+     * [by] added [count] songs, the first [track], as Play next ([next]) or to the queue: "Sam added …". Every `add`
+     * gets one of these back, so with count 0 (to the sender alone) it says nothing went in.
+     */
     @Serializable @SerialName("added")
-    data class Added(val by: String, val next: Boolean = false, val count: Int = 1, val track: SharedTrack? = null) : ServerMessage
+    data class Added(
+        val by: String,
+        val next: Boolean = false,
+        val count: Int = 1,
+        val track: SharedTrack? = null,
+        /** Only to the sender, with count 0: their add became this many suggestions (the room turned adds off, or the host's app is older). */
+        val suggested: Int? = null,
+    ) : ServerMessage
 
     /** Whether guests' adds go straight in now, after the host flipped the switch (or a new host's took over). */
     @Serializable @SerialName("settings")

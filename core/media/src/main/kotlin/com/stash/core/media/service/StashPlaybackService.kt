@@ -935,7 +935,8 @@ class StashPlaybackService : MediaLibraryService() {
             catalog = listenTogetherCatalog,
             api = roomApiClient,
             connector = roomConnector,
-            autoplayRadio = { autoplayRadioPreference.enabled.first() },
+            // Radio streams, so an Offline host's station would only be a run of songs it can't play.
+            autoplayRadio = { autoplayRadioPreference.enabled.first() && streamAllowedNow() },
             displayName = { sharePreference.displayName() },
             clock = { android.os.SystemClock.elapsedRealtime() },
             guestsAddPreference = { sharePreference.guestsAddNow() },

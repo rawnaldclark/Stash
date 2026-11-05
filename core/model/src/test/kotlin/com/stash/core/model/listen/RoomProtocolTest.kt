@@ -109,4 +109,11 @@ class RoomProtocolTest {
         assertThat(RoomProtocol.decode("""{"t":"queue","queue":[],"qv":9}""")).isEqualTo(ServerMessage.QueueUpdate(emptyList(), qv = 9))
         assertThat(RoomProtocol.decode("""{"t":"queue","queue":[]}""")).isEqualTo(ServerMessage.QueueUpdate(emptyList(), qv = null))
     }
+
+    @Test fun `the room's answer to an add decodes, refused or turned into suggestions`() {
+        assertThat(RoomProtocol.decode("""{"t":"added","by":"a","next":true,"count":0}"""))
+            .isEqualTo(ServerMessage.Added(by = "a", next = true, count = 0))
+        assertThat(RoomProtocol.decode("""{"t":"added","by":"a","next":false,"count":0,"suggested":2}"""))
+            .isEqualTo(ServerMessage.Added(by = "a", next = false, count = 0, suggested = 2))
+    }
 }

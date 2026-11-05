@@ -59,7 +59,8 @@ class ListenTogetherViewModel @Inject constructor(
     fun react(emoji: String) = controller.send(Command.React(emoji))
     fun makeHost(memberId: String) = controller.send(Command.MakeHost(memberId))
     fun answerSuggestion(id: String, add: Boolean) = controller.send(Command.Suggestion(id, add))
-    fun editQueue(queue: List<SharedTrack>) = controller.send(Command.SetQueue(queue))
+    /** [qv]: the room version of the queue on screen when the host edited it. */
+    fun editQueue(queue: List<SharedTrack>, qv: Int? = null) = controller.send(Command.SetQueue(queue, qv))
 
     /** A guest's own song out of Up next. */
     fun unqueue(track: SharedTrack, at: Int) = controller.send(Command.Unqueue(track, at))

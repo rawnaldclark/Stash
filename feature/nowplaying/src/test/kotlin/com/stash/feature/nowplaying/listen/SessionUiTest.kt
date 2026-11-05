@@ -110,4 +110,44 @@ class SessionUiTest {
         assertEquals("Skipped Xtal: you can't play it", eventText(skipped, myId = "h", res))
         assertEquals("Skipped a song: Rawn can't play it", eventText(skipped.copy(song = null), myId = "me", res))
     }
+
+    // The host's drop (UpNextState.endDrag): the move is made by song, on the queue as it is now.
+
+    private val a = SharedTrack("A", "X")
+    private val b = SharedTrack("B", "X")
+    private val c = SharedTrack("C", "X")
+    private val guest = SharedTrack("G", "Y", addedBy = "g")
+    private fun uid(queue: List<SharedTrack>, t: SharedTrack) = upNextEntries(queue).first { it.track == t }.uid
+
+    @Test fun `a drop on an unchanged queue is the same move as ever`() {
+        val q = listOf(a, b, c)
+        assertEquals(q.moved(2, 1), q.withMove(uid(q, c), listOf(uid(q, a))))
+        assertEquals(q.moved(0, 2), q.withMove(uid(q, a), listOf(uid(q, b), uid(q, c))))
+        assertEquals(q.moved(2, 0), q.withMove(uid(q, c), emptyList()))
+    }
+
+    @Test fun `a guest's add arriving mid-drag keeps both the add and the host's move`() {
+        val before = listOf(a, b, c)
+        val now = listOf(guest, a, b, c)
+        assertEquals(listOf(guest, a, c, b), now.withMove(uid(before, c), listOf(uid(before, a))))
+    }
+
+    @Test fun `a song that started mid-drag doesn't undo the move`() {
+        val before = listOf(a, b, c)
+        val now = listOf(b, c)
+        assertEquals("the row above left: first", listOf(c, b), now.withMove(uid(before, c), listOf(uid(before, a))))
+        assertEquals("the nearest row left above it", listOf(b, c), now.withMove(uid(before, c), listOf(uid(before, a), uid(before, b))))
+    }
+
+    @Test fun `a held song that has left drops the move`() {
+        val before = listOf(a, b, c)
+        assertNull(listOf(a, b).withMove(uid(before, c), listOf(uid(before, a))))
+    }
+
+    @Test fun `a removed row above falls back to the next one up`() {
+        val d = SharedTrack("D", "X")
+        val before = listOf(a, b, c, d)
+        val now = listOf(a, c, d) // b left
+        assertEquals(listOf(a, d, c), now.withMove(uid(before, d), listOf(uid(before, a), uid(before, b))))
+    }
 }

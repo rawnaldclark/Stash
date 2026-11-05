@@ -1289,7 +1289,7 @@ fun NowPlayingScreen(
                                     if (room != null) {
                                         // "Maya joined", "Sam added Xtal": over the art, so the layout never shifts. Outside the
                                         // box above: Full art (on by default) makes that box invisible, and the chip with it.
-                                        com.stash.feature.nowplaying.listen.SessionEventChip(together.events, room.myId, Modifier.align(Alignment.TopCenter))
+                                        com.stash.feature.nowplaying.listen.SessionEventChip(together.events, room.myId, Modifier.align(Alignment.TopCenter).then(controlsLayer))
                                     }
                                     }
                                     },

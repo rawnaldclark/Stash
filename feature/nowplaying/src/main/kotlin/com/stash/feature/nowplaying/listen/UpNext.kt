@@ -89,6 +89,19 @@ internal fun List<SharedTrack>.indexOfEntry(uid: String): Int = upNextEntries(th
 
 internal fun List<SharedTrack>.moved(from: Int, to: Int): List<SharedTrack> = toMutableList().apply { add(to, removeAt(from)) }
 
+/**
+ * The host's drop, on the queue as it is now: an add may have arrived, or a song started, under the finger. The row
+ * [uid] goes right after the nearest of [above] (the rows over it at the drop, top first) still queued, or first when
+ * none is. Null when its song has left, so there's nothing to move.
+ */
+internal fun List<SharedTrack>.withMove(uid: String, above: List<String>): List<SharedTrack>? {
+    val entries = upNextEntries(this)
+    val held = entries.firstOrNull { it.uid == uid } ?: return null
+    val others = entries.filterNot { it === held }
+    val to = above.asReversed().firstNotNullOfOrNull { row -> others.indexOfFirst { it.uid == row }.takeIf { i -> i >= 0 } }?.plus(1) ?: 0
+    return others.map { it.track }.toMutableList().apply { add(to, held.track) }
+}
+
 /** Up next's rows and the host's drag, kept while the Session sheet is open. */
 internal class UpNextState(
     val listState: LazyListState,
@@ -114,7 +127,6 @@ internal class UpNextState(
         private set
     private var itemHeight = 0
     private var startIdx = -1
-    private var startQueue: List<SharedTrack>? = null
     private var autoScroll: Job? = null
     private var settle: Job? = null
 
@@ -151,7 +163,6 @@ internal class UpNextState(
         if (i < 0) return
         draggedIdx = i
         startIdx = i
-        startQueue = queue
         haptics?.performHapticFeedback(DragPickUpHaptic)
         offsetY = 0f
         listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == uid }?.let { itemHeight = it.size }
@@ -187,11 +198,13 @@ internal class UpNextState(
     fun endDrag() {
         autoScroll?.cancel()
         autoScroll = null
-        // A song ended mid-drag: the queue moved under the finger and the indices are stale, so the move is dropped.
-        startQueue?.takeIf { it == queue && startIdx >= 0 && draggedIdx >= 0 && startIdx != draggedIdx }
-            ?.let { onEdit(it.moved(startIdx, draggedIdx)) }
+        // A guest's add or a song ending may have moved the queue under the finger, so the move is made by song, on the
+        // queue as it is now. Only a song that has left drops it.
+        val held = rows.getOrNull(draggedIdx)
+        if (held != null && startIdx >= 0 && startIdx != draggedIdx) {
+            queue.withMove(held.uid, rows.take(draggedIdx).map { it.uid })?.let(onEdit)
+        }
         startIdx = -1
-        startQueue = null
         settle = scope.launch {
             animate(offsetY, 0f, animationSpec = tween(150)) { v, _ -> offsetY = v }
             draggedIdx = -1

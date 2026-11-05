@@ -44,6 +44,8 @@ sealed interface ListenTogetherState {
         val track: SharedTrack? = null,
         /** What plays next in the room, each song with who added it. */
         val queue: List<SharedTrack> = emptyList(),
+        /** The room's queue version [queue] is at: an Up next edit built from this [queue] sends it back. */
+        val qv: Int? = null,
         /** Everyone seen this session, id → name, kept after they leave so "Maya's pick" still says Maya. */
         val names: Map<String, String?> = emptyMap(),
         /** The room knows guest adds (an older Worker only knows suggestions): the host's switch can be shown. */
@@ -85,7 +87,8 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
         data class Suggestion(val id: String, val add: Boolean) : Command
         data class MakeHost(val memberId: String) : Command
         /** Host only: Up next after the host removed or moved songs. Replaces the room's queue. */
-        data class SetQueue(val queue: List<SharedTrack>) : Command
+        /** [qv]: the room version the screen's queue was at when the host edited it ([ListenTogetherState.InRoom.qv]). */
+        data class SetQueue(val queue: List<SharedTrack>, val qv: Int? = null) : Command
         /** A guest takes their own song out of Up next; it was at [at]. */
         data class Unqueue(val track: SharedTrack, val at: Int) : Command
         /** "Let guests add songs": remembered by the caller, sent to the room while this phone hosts. */
