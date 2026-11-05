@@ -121,6 +121,7 @@ class GoogleDrivePicksTest {
         assertThat(outcome.isNewAccount).isTrue()
         val second = dao.getAccounts().single { it.id != first.id }
         assertThat(outcome.accountId).isEqualTo(second.id)
+        assertThat(outcome.label).isEqualTo("sam@example.com")
         assertThat(second.email).isEqualTo("sam@example.com")
         assertThat(store.map.getValue(CloudTokenManager.keyFor(CloudProvider.GOOGLE_DRIVE, second.id)).refreshToken).isEqualTo("sam@example.com")
         // The first account's sign-in is left alone.

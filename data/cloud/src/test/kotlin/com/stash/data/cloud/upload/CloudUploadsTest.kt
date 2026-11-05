@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -237,6 +238,34 @@ class CloudUploadsTest {
         uploads.save(listOf(b))
         assertThat(rowFor(b).accountId).isEqualTo(second)
         assertThat(uploads.saveAccount.first()).isEqualTo(second)
+    }
+
+    @Test fun `with one account the toast says Google Drive, with two it names the account`() = runTest {
+        val a = track("a")
+        val one = uploads.save(listOf(a))
+        assertThat(one.to).isNull()
+        assertThat(CloudUploads.message(one)).isEqualTo("Saving 1 song to Google Drive.")
+
+        val second = secondAccount()
+        uploads.setSaveAccount(second)
+        val two = uploads.save(listOf(track("b"), track("c")))
+
+        assertThat(two.to).isEqualTo("sam@example.com")
+        assertThat(CloudUploads.message(two)).isEqualTo("Saving 2 songs to sam@example.com.")
+    }
+
+    @Test fun `the choice goes through even when the screen that asked is gone`() = runTest {
+        val second = secondAccount()
+        uploads.setBackup(account, on = true)
+        val job = launch {
+            // Cancelled before it runs: what has started must not stop half-way.
+            kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]!!.cancel()
+            uploads.setSaveAccount(second)
+        }
+        job.join()
+
+        // Backup and saves stay together on one account, whichever it is.
+        assertThat(settings.backupAccountId.value).isEqualTo(uploads.saveAccountId())
     }
 
     @Test fun `a chosen account that was removed falls back to the first connected`() = runTest {
