@@ -49,6 +49,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation(libs.truth)
     testImplementation(libs.mockk)
+    testImplementation(libs.work.testing)
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }
