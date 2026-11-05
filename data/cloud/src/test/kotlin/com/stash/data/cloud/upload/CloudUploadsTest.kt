@@ -612,7 +612,7 @@ class CloudUploadsTest {
         assertThat(r.to).isEqualTo("sam@example.com")
         assertThat(rowFor(fresh).accountId).isEqualTo(second)
         assertThat(r.elsewhere).containsExactly(SavedElsewhere("Ron", waiting = 1, inDrive = 1))
-        assertThat(CloudUploads.message(r)).isEqualTo("Saving 1 song to sam@example.com. 1 song isn't downloaded yet.")
+        assertThat(CloudUploads.message(r)).isEqualTo("Saving 1 song. 1 song isn't downloaded yet.")
     }
 
     @Test fun `only songs that stayed elsewhere and one not downloaded reads cleanly`() {

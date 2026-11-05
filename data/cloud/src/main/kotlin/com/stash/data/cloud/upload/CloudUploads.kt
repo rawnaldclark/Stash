@@ -364,14 +364,18 @@ class CloudUploads @Inject constructor(
          * The toast after a "Save to Google Drive" tap on a song, album or playlist, up to where the
          * songs that stayed on another account are concerned ([SaveRequest.elsewhere]): the screen
          * adds those. Empty when that is all there is to say.
+         *
+         * A toast shows two lines from Android 12. When the screen has more to add, the first clause
+         * leaves out the address, so "3 songs are waiting on ron@gmail.com." isn't the part cut off.
          */
         fun message(r: SaveRequest): String {
             val elsewhere = r.elsewhere.sumOf { it.waiting + it.inDrive }
             val sending = r.queued + r.alreadyQueued - elsewhere
+            val to = if (elsewhere > 0) "" else " to ${r.to ?: "Google Drive"}"
             return buildString {
                 when {
-                    sending == 1 -> append("Saving 1 song to ${r.to ?: "Google Drive"}.")
-                    sending > 1 -> append("Saving $sending songs to ${r.to ?: "Google Drive"}.")
+                    sending == 1 -> append("Saving 1 song$to.")
+                    sending > 1 -> append("Saving $sending songs$to.")
                     elsewhere == 0 -> append("Nothing to save yet.")
                 }
                 when {

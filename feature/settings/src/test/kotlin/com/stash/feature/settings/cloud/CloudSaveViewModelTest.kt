@@ -90,7 +90,7 @@ class CloudSaveViewModelTest {
 
         vm.save(CloudSaveTarget.Songs(listOf(1, 2, 3, 4, 5)))
 
-        assertThat(messages).containsExactly(CloudSaveToast("Saving 2 songs to sam@example.com.", listOf(stayed)))
+        assertThat(messages).containsExactly(CloudSaveToast("Saving 2 songs.", listOf(stayed)))
         job.cancel()
     }
 
