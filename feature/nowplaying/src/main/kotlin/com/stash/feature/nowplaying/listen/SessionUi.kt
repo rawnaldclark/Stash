@@ -364,6 +364,8 @@ fun SessionSheet(
     onShare: (String) -> Unit,
     onLeave: () -> Unit,
     onEnd: () -> Unit,
+    // No default: a screen that forgot to pass the phone's real mode must not compile.
+    offlineMode: Boolean,
     onGuestsAddChange: (Boolean) -> Unit = {},
     onUnqueue: (track: SharedTrack, at: Int) -> Unit = { _, _ -> },
 ) {
@@ -387,7 +389,7 @@ fun SessionSheet(
     ) {
         when (state) {
             is ListenTogetherState.InRoom ->
-                RoomContent(state, onAnswer, onMakeHost, onEditQueue, onCopyLink, onShare, onLeave, onEnd, onGuestsAddChange, onUnqueue)
+                RoomContent(state, onAnswer, onMakeHost, onEditQueue, onCopyLink, onShare, onLeave, onEnd, offlineMode, onGuestsAddChange, onUnqueue)
             else -> Column(
                 Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 48.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -402,7 +404,7 @@ fun SessionSheet(
 }
 
 @Composable
-private fun RoomContent(
+internal fun RoomContent(
     room: ListenTogetherState.InRoom,
     onAnswer: (id: String, add: Boolean) -> Unit,
     onMakeHost: (String) -> Unit,
@@ -411,6 +413,7 @@ private fun RoomContent(
     onShare: (String) -> Unit,
     onLeave: () -> Unit,
     onEnd: () -> Unit,
+    offlineMode: Boolean,
     onGuestsAddChange: (Boolean) -> Unit,
     onUnqueue: (track: SharedTrack, at: Int) -> Unit,
 ) {
@@ -444,6 +447,17 @@ private fun RoomContent(
             if (room.isHost && room.roomKnowsAdds) {
                 Spacer(Modifier.height(14.dp))
                 GuestsAddRow(checked = room.myGuestsAdd, onCheckedChange = onGuestsAddChange)
+                // On or off alike: a suggestion the host approves gets skipped the same way a guest's own add does.
+                if (offlineMode) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        stringResource(R.string.listen_guests_add_offline_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        // Lines up with the words inside the card above.
+                        modifier = Modifier.padding(horizontal = 14.dp),
+                    )
+                }
             } else if (!room.isHost && room.hostAppOutdated) {
                 Spacer(Modifier.height(10.dp))
                 Text(

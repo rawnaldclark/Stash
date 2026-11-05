@@ -304,6 +304,8 @@ fun NowPlayingScreen(
     // Listen Together (spec 2026-09-24 §5).
     val together: com.stash.feature.nowplaying.listen.ListenTogetherViewModel = hiltViewModel()
     val togetherState by together.state.collectAsStateWithLifecycle()
+    // Read before the sheet opens, so the host's Offline hint is there on its first frame.
+    val togetherOffline by together.offlineMode.collectAsStateWithLifecycle()
     val room = togetherState as? ListenTogetherState.InRoom
     var showStartTogether by remember { mutableStateOf(false) }
     // Google Cast (spec 2026-10-06 §5). Hidden on phones without Play Services.
@@ -763,6 +765,7 @@ fun NowPlayingScreen(
             onAnswer = together::answerSuggestion,
             onMakeHost = together::makeHost,
             onEditQueue = together::editQueue,
+            offlineMode = togetherOffline,
             onGuestsAddChange = together::setGuestsAdd,
             onUnqueue = together::unqueue,
             onCopyLink = { com.stash.feature.nowplaying.listen.copyInvite(toastContext, it) },

@@ -82,6 +82,9 @@
     <string name="listen_guests_add_title">Let guests add songs</string>
     <string name="listen_guests_add_on">Their Play next and Add to queue go straight in</string>
     <string name="listen_guests_add_off">You approve each song first</string>
+    <!-- Under that switch, for the host only, while their phone is in Offline mode: the room moves past a song the
+         host can't play, whether a guest added it or the host approved it. -->
+    <string name="listen_guests_add_offline_hint">You\'re Offline: songs you haven\'t downloaded will be skipped</string>
     <!-- A guest's Session sheet when the host's app is older than guest adds. %1$s: the host's name. -->
     <string name="listen_host_needs_update">%1$s\'s Stash needs an update to let you add songs</string>
     <string name="listen_host_needs_update_unnamed">The host\'s Stash needs an update to let you add songs</string>

@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.share.SharePreference
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.listen.ListenTogetherController
@@ -16,7 +17,10 @@ import com.stash.core.model.share.SharedTrack
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /** Now Playing's Listen Together controls (spec §5). All the work happens in the session; this only forwards. */
@@ -25,11 +29,21 @@ class ListenTogetherViewModel @Inject constructor(
     private val controller: ListenTogetherController,
     private val sharePreference: SharePreference,
     private val playerRepository: PlayerRepository,
+    streamingPreference: StreamingPreference,
 ) : ViewModel() {
     val state: StateFlow<ListenTogetherState> = controller.state
     val reactions: SharedFlow<ServerMessage.Reaction> = controller.reactions
     /** "Maya joined", "Rawn skipped": named room events for the notice on Now Playing. */
     val events: SharedFlow<SessionEvent> = controller.events
+
+    /**
+     * Is this phone in Offline mode right now? The app's one mode switch, read live, so the host's hint under
+     * "Let guests add songs" follows a change while the sheet is open. `false` only until the first read: no hint
+     * is better than a wrong one for that moment.
+     */
+    val offlineMode: StateFlow<Boolean> = streamingPreference.enabled
+        .map { streamingOn -> !streamingOn }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /** The "Show my name as" field. Compose state, so the TextField reads it synchronously. */
     var name by mutableStateOf("")
