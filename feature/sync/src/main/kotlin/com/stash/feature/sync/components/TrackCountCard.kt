@@ -94,15 +94,19 @@ internal fun TrackCountCard(
                 alignEnd = false,
                 modifier = Modifier.weight(1f),
             )
-            CountStat(
-                number = formatBytes(status.storageUsedBytes),
-                label = stringResource(R.string.sync_count_on_phone),
-                flac = status.flacStorageBytes.takeIf { it > 0 }?.let {
-                    stringResource(R.string.sync_count_flac, formatBytes(it))
-                },
-                alignEnd = true,
-                modifier = Modifier.weight(1f),
-            )
+            // Left out while it's 0: the disk walk hasn't finished yet, or nothing is downloaded. "0 B"
+            // says nothing either way, and before the walk ends it isn't true.
+            if (status.storageUsedBytes > 0) {
+                CountStat(
+                    number = formatBytes(status.storageUsedBytes),
+                    label = stringResource(R.string.sync_count_on_phone),
+                    flac = status.flacStorageBytes.takeIf { it > 0 }?.let {
+                        stringResource(R.string.sync_count_flac, formatBytes(it))
+                    },
+                    alignEnd = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
         if (sources.isNotEmpty()) {
             // Wraps to a second line at a large font rather than squeezing the numbers.
