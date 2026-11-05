@@ -39,7 +39,7 @@ import javax.inject.Inject
  */
 data class CloudSaveToast(val message: String, val elsewhere: List<SavedElsewhere> = emptyList())
 
-/** A [CloudSaveToast] in words: "Saving 2 songs to sam@gmail.com. 3 songs are waiting on ron@gmail.com." */
+/** A [CloudSaveToast] in words: "Saving 2 songs. 3 songs are waiting on ron@gmail.com." */
 internal fun CloudSaveToast.text(context: Context): String {
     val resources = context.resources
     val stayed = elsewhere.flatMap { place ->

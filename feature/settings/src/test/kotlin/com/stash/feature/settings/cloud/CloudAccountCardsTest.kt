@@ -292,14 +292,14 @@ class CloudAccountCardsTest {
         val ronsDrive = "ron@example.com"
 
         assertThat(CloudSaveToast("Saving 2 songs to sam@example.com.").text(context)).isEqualTo("Saving 2 songs to sam@example.com.")
-        assertThat(CloudSaveToast("Saving 2 songs to sam@example.com.", listOf(SavedElsewhere(ronsDrive, waiting = 3, inDrive = 0))).text(context))
-            .isEqualTo("Saving 2 songs to sam@example.com. 3 songs are waiting on ron@example.com.")
+        assertThat(CloudSaveToast("Saving 2 songs.", listOf(SavedElsewhere(ronsDrive, waiting = 3, inDrive = 0))).text(context))
+            .isEqualTo("Saving 2 songs. 3 songs are waiting on ron@example.com.")
         assertThat(CloudSaveToast("", listOf(SavedElsewhere(ronsDrive, waiting = 1, inDrive = 0))).text(context))
             .isEqualTo("1 song is waiting on ron@example.com.")
         assertThat(CloudSaveToast("", listOf(SavedElsewhere(ronsDrive, waiting = 0, inDrive = 1))).text(context))
             .isEqualTo("1 song is already in ron@example.com.")
-        assertThat(CloudSaveToast("Saving 1 song to sam@example.com.", listOf(SavedElsewhere(ronsDrive, waiting = 2, inDrive = 4))).text(context))
-            .isEqualTo("Saving 1 song to sam@example.com. 2 songs are waiting on ron@example.com. 4 songs are already in ron@example.com.")
+        assertThat(CloudSaveToast("Saving 1 song.", listOf(SavedElsewhere(ronsDrive, waiting = 2, inDrive = 4))).text(context))
+            .isEqualTo("Saving 1 song. 2 songs are waiting on ron@example.com. 4 songs are already in ron@example.com.")
     }
 
     @Test fun `the disconnect dialog names the account and what moves`() {

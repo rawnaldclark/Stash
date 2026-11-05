@@ -169,9 +169,12 @@ class CloudLibrary @Inject constructor(
             var forgotten: String? = null
             val remove: suspend () -> CloudRemoval = {
                 withFolderLocks(folderIds) {
-                    kind?.let { forgotten = tokens.forget(it, accountId) }
-                    for (id in folderIds) googlePickStore.clear(id)
-                    dao.removeAccount(accountId)
+                    // The rows first: a write that fails leaves the account as it was, still signed
+                    // in and with its picks.
+                    val removal = dao.removeAccount(accountId)
+                    kind?.let { afterRemoval("token") { forgotten = tokens.forget(it, accountId) } }
+                    for (id in folderIds) afterRemoval("picks") { googlePickStore.clear(id) }
+                    removal
                 }
             }
             // Stop uploading to it; pending uploads go with the account row. Nothing in Drive is
@@ -183,6 +186,21 @@ class CloudLibrary @Inject constructor(
             resumeScans()
         }
     }.await()
+
+    /**
+     * Tidying up once a removal's rows are gone. The removal has happened by then, so a failure here
+     * must not report it as failed, or skip the steps that follow it (turning backup off, counting
+     * the kept downloads so they aren't sent as new ones).
+     */
+    private suspend fun afterRemoval(what: String, tidy: suspend () -> Unit) {
+        try {
+            tidy()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("CloudLibrary", "$what not cleared after a removal: ${e.javaClass.simpleName}")
+        }
+    }
 
     /** Best effort: the account is already gone here, whatever Play services says. */
     private suspend fun clearGoogleToken(token: String) {
@@ -230,8 +248,8 @@ class CloudLibrary @Inject constructor(
         try {
             scheduler.cancelRunning()
             val removal = scanner.withFolderLock(folderId) {
-                googlePickStore.clear(folderId)
-                dao.removeFolder(folderId)
+                // The rows first, as in [disconnect].
+                dao.removeFolder(folderId).also { afterRemoval("picks") { googlePickStore.clear(folderId) } }
             }
             uploads.countRemovedDownloads()
             removal

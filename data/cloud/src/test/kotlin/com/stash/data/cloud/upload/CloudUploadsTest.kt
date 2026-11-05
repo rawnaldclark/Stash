@@ -445,13 +445,49 @@ class CloudUploadsTest {
         assertThat(runner.kicks).isEqualTo(kicks)
     }
 
+    @Test fun `a song whose copy was trashed in another Drive is back in backup's count at the next app start`() = runTest {
+        val second = secondAccount()
+        val song = track("song")
+        scanLinked(song, second)
+        uploads.setBackup(account, on = true)
+        // It's in a Drive, so it waits there rather than being counted for sending again.
+        assertThat(rowFor(song).accountId).isEqualTo(second)
+        assertThat(uploads.status(account).first().existing).isEqualTo(0)
+
+        // The scan finds the copy gone: the link goes, the row stays where it was.
+        dao.removeItems(listOf(song))
+        assertThat(rowFor(song).accountId).isEqualTo(second)
+
+        val kicks = runner.kicks
+        uploads.start()
+        realTime { withTimeout(WATCHER_LIMIT_MS) { while (rowFor(song).accountId != account) delay(20) } }
+
+        assertThat(rowFor(song).state).isEqualTo(CloudUploadState.EXISTING.name)
+        assertThat(uploads.status(account).first().existing).isEqualTo(1)
+        // Counted, not sent: "Back up N existing" is the user's to press.
+        assertThat(runner.kicks).isEqualTo(kicks)
+    }
+
+    @Test fun `a song still linked to another Drive stays waiting there across an app start`() = runTest {
+        val second = secondAccount()
+        val song = track("song")
+        scanLinked(song, second)
+        uploads.setBackup(account, on = true)
+
+        uploads.start()
+        // Long enough for the move at start to have run.
+        realTime { delay(WATCHER_PASS_MS) }
+
+        assertThat(rowFor(song).accountId).isEqualTo(second)
+    }
+
     @Test fun `moving backup moves what it was waiting to send, and nothing else`() = runTest {
         val second = secondAccount()
         val existing = track("existing")
         uploads.setBackup(account, on = true)
         val queuedByBackup = track("new")
         dao.insertUploadsForDownloads(account, CloudUploadState.QUEUED.name, 5)
-        dao.setUploadSession(queuedByBackup, "https://session", 10, "md5", 6)
+        dao.setUploadSession(queuedByBackup, account, "https://session", 10, "md5", 6)
         val manual = track("manual")
         uploads.save(listOf(manual), account)
         val saved = track("saved")
@@ -576,7 +612,7 @@ class CloudUploadsTest {
         assertThat(r.to).isEqualTo("sam@example.com")
         assertThat(rowFor(fresh).accountId).isEqualTo(second)
         assertThat(r.elsewhere).containsExactly(SavedElsewhere("Ron", waiting = 1, inDrive = 1))
-        assertThat(CloudUploads.message(r)).isEqualTo("Saving 1 song to sam@example.com. 1 song isn't downloaded yet.")
+        assertThat(CloudUploads.message(r)).isEqualTo("Saving 1 song. 1 song isn't downloaded yet.")
     }
 
     @Test fun `only songs that stayed elsewhere and one not downloaded reads cleanly`() {

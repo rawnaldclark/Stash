@@ -16,11 +16,13 @@ import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.CloudProvider
 import com.stash.core.model.MusicSource
 import com.stash.data.cloud.auth.CloudTokenManager
+import com.stash.data.cloud.auth.CloudTokenStore
 import com.stash.data.cloud.provider.gdrive.FakeDrive
 import com.stash.data.cloud.provider.gdrive.GoogleAuthorizer
 import com.stash.data.cloud.provider.gdrive.GoogleDriveAuth
 import com.stash.data.cloud.provider.gdrive.GoogleDrivePicks
 import com.stash.data.cloud.provider.gdrive.GooglePickOutcome
+import com.stash.data.cloud.provider.gdrive.GooglePickStore
 import com.stash.data.cloud.provider.gdrive.GooglePickerResult
 import com.stash.data.cloud.provider.gdrive.InMemoryGooglePickStore
 import com.stash.data.cloud.provider.gdrive.MemoryTokenStore
@@ -58,6 +60,21 @@ class CloudLibraryAccountsTest {
     private val runner = CloudUploadsTest.FakeRunner()
     private val settings = CloudUploadsTest.MemorySettings()
     private val store = MemoryTokenStore()
+    private var tokenClearFails = false
+    private val failableStore = object : CloudTokenStore by store {
+        override suspend fun clear(key: String) {
+            if (tokenClearFails) error("keystore hiccup")
+            store.clear(key)
+        }
+    }
+    private val memoryPicks = InMemoryGooglePickStore()
+    private var pickClearFails = false
+    private val pickStore = object : GooglePickStore by memoryPicks {
+        override suspend fun clear(folderId: Long) {
+            if (pickClearFails) error("prefs hiccup")
+            memoryPicks.clear(folderId)
+        }
+    }
     private val drive = FakeDrive()
     private val authorizer = object : GoogleAuthorizer {
         var result: GooglePickerResult = GooglePickerResult.Cancelled
@@ -83,8 +100,7 @@ class CloudLibraryAccountsTest {
         val config = CloudConfig("", "", "com.stash.app", googleDriveEnabled = true)
         uploads = CloudUploads(dao, settings, runner, config)
         val auth = GoogleDriveAuth(authorizer, drive.client)
-        val tokens = CloudTokenManager(store, mapOf(CloudProvider.GOOGLE_DRIVE to auth))
-        val pickStore = InMemoryGooglePickStore()
+        val tokens = CloudTokenManager(failableStore, mapOf(CloudProvider.GOOGLE_DRIVE to auth))
         coEvery { scanner.withFolderLock<Any?>(any(), any()) } coAnswers { secondArg<suspend () -> Any?>().invoke() }
         library = CloudLibrary(
             context = ApplicationProvider.getApplicationContext(),
@@ -247,31 +263,104 @@ class CloudLibraryAccountsTest {
         coVerify(timeout = CloudUploadsTest.WATCHER_LIMIT_MS) { scans.scanNow(null, false) }
     }
 
+    /** The database refuses to delete from [table], so a removal fails inside its real write. */
+    private fun refuseDeletes(table: String) = db.openHelper.writableDatabase.execSQL(
+        "CREATE TRIGGER refuse_$table BEFORE DELETE ON $table BEGIN SELECT RAISE(ABORT, 'database hiccup'); END",
+    )
+
+    /** A download that [accountId]'s picked folder also holds: linked, and waiting on that account. */
+    private suspend fun linkedDownload(accountId: Long, itemId: String): Long {
+        val folder = dao.getFolders(accountId).firstOrNull()?.id
+            ?: dao.insertFolder(CloudFolderEntity(accountId = accountId, itemId = "picked", name = "Picked songs", path = "", addedAt = 1))
+        val track = download(itemId)
+        dao.linkUpload(
+            track,
+            CloudItemEntity(
+                trackId = track, accountId = accountId, folderId = folder, itemId = itemId, name = "$itemId.flac",
+                relativePath = "", parentItemId = null, cTag = "1", eTag = null, size = 1, mimeType = null,
+                seenGeneration = 1, scannedAt = 1,
+            ),
+        )
+        return track
+    }
+
     @Test fun `a disconnect that fails leaves the account as it was and scans carrying on`() = runTest {
         cloudSong(a, "stays", downloaded = false)
-        cloudSong(b, "goes", downloaded = false)
+        val goes = cloudSong(b, "goes", downloaded = false)
+        val folder = dao.getFolders(b).single().id
+        pickStore.add(folder, listOf("picked-file"))
         uploads.setBackup(b, on = true)
-        coEvery { scanner.withFolderLock<Any?>(any(), any()) } throws IllegalStateException("database hiccup")
+        refuseDeletes("cloud_accounts")
 
         val failed = runCatching { library.disconnect(b) }
 
         assertThat(failed.isFailure).isTrue()
         assertThat(dao.getAccount(b)).isNotNull()
+        assertThat(db.trackDao().getById(goes)).isNotNull()
+        // Still signed in, in Play services too, with the picks it was going to fetch.
+        assertThat(store.map.keys).contains(CloudTokenManager.keyFor(CloudProvider.GOOGLE_DRIVE, b))
+        assertThat(authorizer.cleared).isEmpty()
+        assertThat(pickStore.pending(folder)).containsExactly("picked-file")
         assertThat(settings.backupAccountId.value).isEqualTo(b)
         // Every account's scans were stopped to make room for it: they must start again.
         coVerify { scans.scanNow(null, false) }
         coVerify { scans.ensurePeriodic() }
     }
 
-    @Test fun `a folder removal that fails leaves scans carrying on`() = runTest {
-        cloudSong(a, "stays", downloaded = false)
-        coEvery { scanner.withFolderLock<Any?>(any(), any()) } throws IllegalStateException("database hiccup")
+    @Test fun `a disconnect the token store can't finish has still happened`() = runTest {
+        val kept = linkedDownload(b, "kept")
+        uploads.setBackup(a, on = true)
+        tokenClearFails = true
 
-        val failed = runCatching { library.removeFolder(dao.getFolders(a).single().id) }
+        library.disconnect(b)
+
+        assertThat(dao.getAccount(b)).isNull()
+        // What follows the removal still ran: the song is counted on backup, not sent as new.
+        assertThat(dao.getUpload(kept)!!.state).isEqualTo(CloudUploadState.EXISTING.name)
+        assertThat(dao.getUpload(kept)!!.accountId).isEqualTo(a)
+    }
+
+    @Test fun `a folder removal that fails leaves the folder as it was and scans carrying on`() = runTest {
+        val stays = cloudSong(a, "stays", downloaded = false)
+        val folder = dao.getFolders(a).single().id
+        pickStore.add(folder, listOf("picked-file"))
+        refuseDeletes("cloud_folders")
+
+        val failed = runCatching { library.removeFolder(folder) }
 
         assertThat(failed.isFailure).isTrue()
+        assertThat(dao.getFolders(a).map { it.id }).containsExactly(folder)
+        assertThat(db.trackDao().getById(stays)).isNotNull()
+        assertThat(pickStore.pending(folder)).containsExactly("picked-file")
         coVerify { scans.scanNow(null, false) }
         coVerify { scans.ensurePeriodic() }
+    }
+
+    @Test fun `a song that loses its link with a removed folder goes back to backup's count`() = runTest {
+        val song = linkedDownload(a, "song")
+        uploads.setBackup(b, on = true)
+        // It's in A's Drive, so it waits there rather than being counted for sending again.
+        assertThat(dao.getUpload(song)!!.accountId).isEqualTo(a)
+
+        library.removeFolder(dao.getFolders(a).single().id)
+
+        assertThat(dao.getItemForTrack(song)).isNull()
+        assertThat(dao.getUpload(song)!!.accountId).isEqualTo(b)
+        assertThat(dao.getUpload(song)!!.state).isEqualTo(CloudUploadState.EXISTING.name)
+        assertThat(uploads.status(b).first().existing).isEqualTo(1)
+    }
+
+    @Test fun `a folder removal the pick store can't finish has still happened`() = runTest {
+        val song = linkedDownload(a, "song")
+        uploads.setBackup(b, on = true)
+        val folder = dao.getFolders(a).single().id
+        pickClearFails = true
+
+        library.removeFolder(folder)
+
+        assertThat(dao.getFolders(a)).isEmpty()
+        // What follows the removal still ran.
+        assertThat(dao.getUpload(song)!!.accountId).isEqualTo(b)
     }
 
     @Test fun `disconnecting the account saves go to hands them to the first that remains`() = runTest {

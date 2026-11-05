@@ -60,7 +60,7 @@ import com.stash.feature.settings.R
  *   several accounts and the same logo wouldn't tell them apart). Null = [icon].
  * @param accountName  With several accounts of one service the address is all that
  *   tells them apart: it stands alone as the status, connected or expired (the colour
- *   and the Reconnect button say which), and the status line gets room for all of it.
+ *   and the Reconnect button say which), on as many lines as it takes: it is never cut.
  *   Null = "Connected as ..." or "Session expired for ...", on two lines at most.
  */
 @Composable
@@ -91,7 +91,7 @@ fun AccountConnectionCard(
         busy = authState is AuthState.Connecting,
         extraContent = extraContent,
         leading = leading,
-        statusMaxLines = if (accountName != null) 4 else 2,
+        statusMaxLines = if (accountName != null) Int.MAX_VALUE else 2,
     ) {
         when {
             authState !is AuthState.Connected -> AccountConnectButton(accentColor, onConnect)
