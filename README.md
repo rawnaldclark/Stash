@@ -9,6 +9,7 @@
 [![Latest release](https://img.shields.io/github/v/release/rawnaldclark/Stash?style=for-the-badge&labelColor=0d1117&color=8b5cf6&include_prereleases)](https://github.com/rawnaldclark/Stash/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/rawnaldclark/Stash/total?style=for-the-badge&labelColor=0d1117&color=8b5cf6)](https://github.com/rawnaldclark/Stash/releases)
 [![Stars](https://img.shields.io/github/stars/rawnaldclark/Stash?style=for-the-badge&labelColor=0d1117&color=8b5cf6)](https://github.com/rawnaldclark/Stash/stargazers)
+[![Translation status](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fweblate.paraliyzed.net%2Fapi%2Fprojects%2Fstash-music-app%2Fstatistics%2F&query=%24.translated_percent&label=translations&suffix=%25&style=for-the-badge&labelColor=0d1117&color=8b5cf6)](https://weblate.paraliyzed.net/engage/stash-music-app/)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?style=for-the-badge&logo=discord&logoColor=white&labelColor=0d1117)](https://discord.gg/vcbjEby5PC)
 
 [**Download**](#install) · [**Features**](#what-it-does) · [**Setup**](#first-time-setup) · [**FAQ**](#faq) · [**Support**](#support-stash)

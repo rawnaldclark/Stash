@@ -63,7 +63,7 @@
     <string name="play_on_queue_play_here">Play on this phone</string>
     <!-- Why a pinned action is missing from the Now Playing top bar (the pin editor says so under it). -->
     <string name="np_hidden_casting">Hidden while casting</string>
-    <string name="np_hidden_download_mode">Nothing streams in Download mode</string>
+    <string name="np_hidden_download_mode">Nothing streams in Offline</string>
     <string name="np_hidden_preview">Previews cannot be downloaded</string>
     <string name="np_hidden_soundcloud">This plays the exact SoundCloud upload</string>
     <string name="np_hidden_together">Hidden while listening together</string>

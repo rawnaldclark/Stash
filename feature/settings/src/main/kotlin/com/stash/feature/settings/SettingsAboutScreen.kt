@@ -93,7 +93,8 @@ fun SettingsAboutScreen(
                 { SettingsInfoRow(label = stringResource(R.string.settings_version_label), value = installedVersion) },
                 { SettingsInfoRow(label = stringResource(R.string.settings_license_label), value = "GPL-3.0") },
                 {
-                    // Moved here from the Support card (2026-11), which now has one action: Donate.
+                    // The Support card also has a small "Star" beside Donate again (2026-11-04). This row stays: it
+                    // shows the address, and Settings search sends "star / github / source code" here.
                     SettingsNavRow(
                         title = stringResource(R.string.settings_about_star),
                         subtitle = stringResource(R.string.settings_about_star_detail),

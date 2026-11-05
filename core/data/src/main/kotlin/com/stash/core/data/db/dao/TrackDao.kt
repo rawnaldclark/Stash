@@ -13,6 +13,7 @@ import com.stash.core.data.db.chunkedForBind
 import com.stash.core.data.db.chunkedForBindWrite
 import com.stash.core.data.db.entity.TrackAliasEntity
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.model.MusicSource
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -295,6 +296,12 @@ private const val RESTORABLE_DOWNLOAD = """
                     OR (status = 'FAILED' AND retry_count < 3)))
     )
 """
+
+/** One source's song count, a row of [TrackDao.observeSongCountsBySource]. */
+data class TrackSourceCount(
+    val source: MusicSource,
+    val songs: Int,
+)
 
 /** Column list shared by the Library feeds (see [LibraryTrackRow]). */
 private const val LIBRARY_ROW_COLUMNS = """
@@ -2259,13 +2266,24 @@ interface TrackDao {
     )
     fun getFlacStorageBytes(): Flow<Long>
 
-    /** Count of downloaded tracks from Spotify. */
-    @Query("SELECT COUNT(*) FROM tracks WHERE is_downloaded = 1 AND source = 'SPOTIFY'")
-    fun getSpotifyDownloadedCount(): Flow<Int>
-
-    /** Count of downloaded tracks from YouTube. */
-    @Query("SELECT COUNT(*) FROM tracks WHERE is_downloaded = 1 AND source = 'YOUTUBE'")
-    fun getYouTubeDownloadedCount(): Flow<Int>
+    /**
+     * The Sync tab's song count, one row per source (2026-11-04). [inLibrary] true counts the songs
+     * Library's Songs tab lists in Online ([IN_LIBRARY]: downloaded or not); false counts downloaded
+     * songs only, the old card's number, which Offline plays. Sources with no songs have no row.
+     *
+     * Before this, the card and the Online hero read downloaded-only counts in both modes, so
+     * someone who streams saw "0 songs" (and 0 per account) with a full library.
+     */
+    @Query(
+        """
+        SELECT t.source AS source, COUNT(*) AS songs
+        FROM tracks t
+        WHERE (:inLibrary = 0 AND t.is_downloaded = 1)
+           OR (:inLibrary = 1 AND (""" + IN_LIBRARY + """))
+        GROUP BY t.source
+        """,
+    )
+    fun observeSongCountsBySource(inLibrary: Boolean): Flow<List<TrackSourceCount>>
 
     // ── Aggregate queries ───────────────────────────────────────────────
 
