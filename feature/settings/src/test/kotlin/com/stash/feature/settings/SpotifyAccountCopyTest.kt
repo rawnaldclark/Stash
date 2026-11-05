@@ -43,11 +43,12 @@ class SpotifyAccountCopyTest {
         )
     }
 
-    @Test fun `the Refresh note says when the playlists go and how they come back`() {
+    @Test fun `the Refresh note says when the playlists go, how they come back and until when`() {
         val note = strings.getValue("settings_disconnect_spotify_refresh_note")
 
         // Disconnecting alone hides nothing: only a different account's first sync does.
         assertThat(note).contains("if you connect a different account")
-        assertThat(note).contains("\"Undo last sync\" in Sync History brings them back")
+        // Undo only offers the latest restore point, and the next sync takes a new one.
+        assertThat(note).endsWith("\"Undo last sync\" in Sync History brings them back, until the next sync runs.")
     }
 }

@@ -230,7 +230,7 @@
     <string name="settings_disconnect_account_title">Disconnect %1$s?</string>
     <string name="settings_disconnect_account_body">Stash signs out of %1$s on this phone and stops syncing it. Songs from %1$s still waiting to download are dropped from the queue.\n\nSongs you\'ve already downloaded stay in your library, and you can reconnect any time.</string>
     <!-- Added to the Spotify disconnect dialog while Spotify syncs in Refresh mode. Disconnecting alone hides nothing: the first sync of a different account does. -->
-    <string name="settings_disconnect_spotify_refresh_note">Spotify syncs in Refresh mode: if you connect a different account next, its first sync takes this account\'s playlists out of Stash. \"Undo last sync\" in Sync History brings them back.</string>
+    <string name="settings_disconnect_spotify_refresh_note">Spotify syncs in Refresh mode: if you connect a different account next, its first sync takes this account\'s playlists out of Stash. \"Undo last sync\" in Sync History brings them back, until the next sync runs.</string>
 
     <!-- Settings > Accounts > LikeMirrorWarningDialog -->
     <string name="settings_like_mirror_warning_title">Mirror likes to %1$s?</string>
