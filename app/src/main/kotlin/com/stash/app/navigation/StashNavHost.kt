@@ -589,6 +589,8 @@ private fun StashNavGraph(
             PlaylistDetailScreen(
                 onBack = { navController.popBackStack() },
                 onSelectionModeChanged = onSelectionModeChanged,
+                // Daily Discover's "Use your record in mixes" (owner 2026-11-04; Settings keeps its row too)
+                stashMixRow = { id, modifier -> com.stash.feature.record.taste.DailyDiscoverRecordRow(playlistId = id, modifier = modifier) },
             )
         }
 
