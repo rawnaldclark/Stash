@@ -125,7 +125,8 @@ private fun ModeTile(
     // Icon + word on the first line, as before; the caption sits under them so what a
     // mode does is written on the tile you tap. The caption is quieter than the word
     // (onSurfaceVariant) and dims a little more on the tile that isn't picked, but
-    // stays readable there: it is what you read before choosing. Content starts at the
+    // stays readable there, at 4.89:1 in light and 6.20:1 in dark: it is what you read
+    // before choosing. Content starts at the
     // top rather than centred, so "Online" and "Offline" stay on one line across the
     // pair when only one caption wraps.
     Column(
@@ -160,7 +161,7 @@ private fun ModeTile(
         Text(
             text = caption,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (selected) 1f else 0.75f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (selected) 1f else 0.9f),
             textAlign = TextAlign.Center,
         )
     }
