@@ -588,6 +588,7 @@ class SyncViewModelTest {
             com.stash.data.download.files.LibrarySizeBreakdown(totalBytes = 2_048L, losslessBytes = 1_024L, losslessFileCount = 7),
         )
         val vm = newVm()
+        val tab = onScreen(vm)
 
         with(vm.uiState.value.syncStatus) {
             // Every source counts in the total, a local file included; per account, only its own.
@@ -607,6 +608,7 @@ class SyncViewModelTest {
             assertEquals(0, youTubeTracks)
             assertEquals(false, countsInLibrary)
         }
+        tab.cancel()
     }
 
     @Test
@@ -618,6 +620,7 @@ class SyncViewModelTest {
         every { musicRepository.observeSongCountsBySource(true) } returns library
         every { musicRepository.observeLatestSync() } returns kotlinx.coroutines.flow.flowOf(null)
         val vm = newVm()
+        val tab = onScreen(vm)
         assertEquals(5, vm.uiState.value.syncStatus.totalTracks)
 
         phase.value = SyncPhase.Authenticating
@@ -627,5 +630,37 @@ class SyncViewModelTest {
         phase.value = SyncPhase.Completed
         assertEquals(9, vm.uiState.value.syncStatus.totalTracks)
         io.mockk.verify(exactly = 2) { musicRepository.observeSongCountsBySource(true) }
+        tab.cancel()
     }
+
+    /**
+     * The ViewModel outlives a tab switch, and "Fetch lyrics" writes to the tracks table about every
+     * 3 s. Off-screen nobody reads the count's query at all, so those writes cost nothing here.
+     */
+    @Test
+    fun `the count rests while the tab is off-screen, keeping its last numbers, and reads again on return`() {
+        every { streamingPreference.enabled } returns MutableStateFlow(true)
+        val library = MutableStateFlow(mapOf(MusicSource.SPOTIFY to 5))
+        every { musicRepository.observeSongCountsBySource(true) } returns library
+        every { musicRepository.observeLatestSync() } returns kotlinx.coroutines.flow.flowOf(null)
+        val vm = newVm()
+        assertEquals("nothing on screen yet", 0, library.subscriptionCount.value)
+
+        val tab = onScreen(vm)
+        assertEquals(5, vm.uiState.value.syncStatus.totalTracks)
+        assertEquals(1, library.subscriptionCount.value)
+
+        tab.cancel()
+        assertEquals("left the tab", 0, library.subscriptionCount.value)
+        library.value = mapOf(MusicSource.SPOTIFY to 9)
+        assertEquals(5, vm.uiState.value.syncStatus.totalTracks)
+
+        val back = onScreen(vm)
+        assertEquals(9, vm.uiState.value.syncStatus.totalTracks)
+        back.cancel()
+    }
+
+    /** The screen collecting [SyncViewModel.uiState], as `collectAsStateWithLifecycle` does; cancel it to leave. */
+    private fun onScreen(vm: SyncViewModel) =
+        kotlinx.coroutines.CoroutineScope(Dispatchers.Main).launch { vm.uiState.collect {} }
 }

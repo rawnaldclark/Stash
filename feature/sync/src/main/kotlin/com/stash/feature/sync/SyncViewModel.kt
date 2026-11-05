@@ -1137,16 +1137,20 @@ class SyncViewModel @Inject constructor(
             }
         }
 
-        // Online re-reads the in-library count; a flip of the mode switches the query. Paused while a
-        // sync runs: the count re-runs on every write to the library, a sync writes constantly, and
-        // the tab shows its syncing face then, not these numbers. The last numbers stay until it ends.
+        // Online re-reads the in-library count; a flip of the mode switches the query. The count re-runs
+        // on every write to the tracks table and takes real time on a big library, so it runs only when
+        // its numbers can be seen. Paused while a sync runs: a sync writes constantly, and the tab shows
+        // its syncing face then. Paused while nobody collects uiState: this ViewModel outlives a tab
+        // switch, and "Fetch lyrics" stamps a track about every 3 s, which was a full count of a 72k
+        // library every 3 s off-screen. The last numbers stay; opening the tab reads again.
         val songCountsFlow = combine(
             streamingPreference.enabled.distinctUntilChanged(),
             syncStateManager.phase.map { it.isActive() }.distinctUntilChanged(),
-        ) { online, syncing -> online to syncing }
+            _uiState.subscriptionCount.map { it > 0 }.distinctUntilChanged(),
+        ) { online, syncing, onScreen -> Triple(online, syncing, onScreen) }
             .distinctUntilChanged()
-            .flatMapLatest { (online, syncing) ->
-                if (syncing) {
+            .flatMapLatest { (online, syncing, onScreen) ->
+                if (syncing || !onScreen) {
                     emptyFlow()
                 } else {
                     musicRepository.observeSongCountsBySource(inLibrary = online).map { online to it }
