@@ -48,7 +48,7 @@ class CloudFolderRowTest {
         assertThat(rows(ron, sam).nameIfShared(99)).isNull()
     }
 
-    @Test fun `the row says provider, account and songs`() {
+    @Test fun `the row says provider and account, then its songs on their own line`() {
         rule.setContent {
             MaterialTheme {
                 CloudFolderRow(picked(trackCount = 12), CloudProvider.GOOGLE_DRIVE, accountName = "ron@example.com", onRemove = null)
@@ -56,7 +56,7 @@ class CloudFolderRowTest {
         }
 
         rule.onNodeWithText("Picked songs").assertExists()
-        rule.onNodeWithText("Google Drive · ron@example.com · 12 songs").assertExists()
+        rule.onNodeWithText("Google Drive · ron@example.com\n12 songs").assertExists()
     }
 
     @Test fun `with one account the row reads as it did`() {

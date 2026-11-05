@@ -469,7 +469,8 @@ internal fun CloudFolderRow(folder: CloudFolderWithCount, provider: CloudProvide
             (folder.lastScanAt?.let { " · " + stringResource(R.string.settings_cloud_last_checked, relativeTime(it)) } ?: "")
     }
     Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+        // The remove button brings its own margin; without it the text must stop short of the card's edge.
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = if (onRemove != null) 4.dp else 16.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Google Drive's "folder" is the set of songs the user picked, not a place in the drive.
@@ -483,8 +484,11 @@ internal fun CloudFolderRow(folder: CloudFolderWithCount, provider: CloudProvide
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(if (picked) folder.name else folder.path.ifEmpty { "/" }, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // An address fills most of a line, so its row keeps the status on a line of its own
+            // instead of breaking wherever the width falls ("· 12" / "songs").
+            val whose = listOfNotNull(provider?.displayName, accountName).joinToString(" · ")
             Text(
-                listOfNotNull(provider?.displayName, accountName, status).joinToString(" · "),
+                listOf(whose, status).filter { it.isNotEmpty() }.joinToString(if (accountName != null) "\n" else " · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (folder.lastScanStatus == CloudScanStatus.ERROR.name) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             )
