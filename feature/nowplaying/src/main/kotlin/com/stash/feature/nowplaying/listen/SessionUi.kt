@@ -147,9 +147,14 @@ internal fun sessionTitle(room: ListenTogetherState.InRoom): String {
     return if (others.isEmpty()) "Waiting for friends to join" else "Listening with ${nameList(others.map { it.name ?: "Someone" })}"
 }
 
-/** "Listening with Maya, Sam": who's here, who hosts. Tapping it opens the Session sheet. */
+/**
+ * "Listening with Maya, Sam": who's here, who hosts. Tapping it opens the Session sheet.
+ *
+ * @param onFullArt Full art is out behind the bar, so the title wears Now Playing's ink like the top row above it.
+ *   Otherwise it keeps the content colour it has always had. No default: Now Playing must say which it is.
+ */
 @Composable
-fun SessionBar(room: ListenTogetherState.InRoom, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun SessionBar(room: ListenTogetherState.InRoom, onClick: () -> Unit, onFullArt: Boolean, modifier: Modifier = Modifier) {
     val host = room.members.firstOrNull { it.id == room.hostId }
     val title = sessionTitle(room)
     val waiting = if (room.isHost) room.suggestions.size else 0
@@ -178,7 +183,16 @@ fun SessionBar(room: ListenTogetherState.InRoom, onClick: () -> Unit, modifier: 
         FaceStack(room.members, room.hostId)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyMedium,
+                // The player sheet sits outside the app's Scaffold, so nothing provides a content colour here: left
+                // unspecified, this is black whatever FullArtTheme does to the colour scheme.
+                color = if (onFullArt) com.stash.feature.nowplaying.ui.npInk() else Color.Unspecified,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Text(
                 subtitle,
                 style = MaterialTheme.typography.labelSmall,
