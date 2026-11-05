@@ -46,9 +46,9 @@ export const MAX_REMOVED = 50;
 /**
  * The queue's length as JSON past which no more adds are taken. The host's next Load carries the whole queue, and the
  * shell closes any frame over MAX_FRAME (262,144), so a queue of very long titles must never get near it: that socket
- * would drop for good and only End would work. The app's own 200 ordinary songs come to about 49 KB. Low enough that
- * the 20 waiting suggestions that can go in without this check, and the Load's own song, still fit at the longest a
- * song can be.
+ * would drop for good and only End would work. The app's own 200 ordinary songs come to about 49 KB. Low enough for
+ * what can still go in without this check: 20 waiting suggestions and the Load's own song, at most 4,000 characters
+ * each (MAX_TRACK_JSON_CHARS, which cleanTrack holds them to), bring it to 254,000 at the very most.
  */
 export const MAX_QUEUE_CHARS = 170_000;
 

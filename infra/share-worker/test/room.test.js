@@ -839,6 +839,12 @@ test("an older app's Back is taken as sent, and the host dragging an album song 
     s = send(s, "h", { t: "queue", queue: [ALBUM[2], ALBUM[0], ALBUM[1]], qv: s.qv }).state;
     s = add(s, "a", [song("P1")], true).state;
     assert.deepEqual(titles(s), ["P1", "A3", "A1", "A2"]);
+    // It jumps guests who added earlier too, so first come breaks here. Today's behaviour, and the owner's call.
+    let d = add(room2(), "a", [song("g1")], true).state; // g1 A1 A2 A3
+    d = send(d, "h", { t: "queue", queue: [d.queue[2], d.queue[0], d.queue[1], d.queue[3]], qv: d.qv }).state;
+    assert.deepEqual(titles(d), ["A2", "g1", "A1", "A3"]);
+    d = add(d, "b", [song("g2")], true).state;
+    assert.deepEqual(titles(d), ["g2", "A2", "g1", "A1", "A3"]);
 });
 
 test("an add that can't go in is answered to the sender alone, and changes nothing", () => {
@@ -889,4 +895,43 @@ test("ordinary songs never meet the size limit: the room's whole 200 fit", () =>
     s = send(s, "h", { t: "add", tracks: Array.from({ length: 200 }, (_, i) => ordinary(`H${i}`)), next: false }).state;
     assert.equal(s.queue.length, 200);
     assert.ok(JSON.stringify(s.queue).length < MAX_QUEUE_CHARS);
+});
+
+test("suggestions can't carry a queue past the frame limit: a song over 4,000 characters as JSON is refused", () => {
+    const CTL = String.fromCharCode(1); // 6 characters in JSON
+    const nasty = (i) => ({ t: CTL.repeat(497) + String(i).padStart(3, "0"), a: CTL.repeat(500), al: CTL.repeat(500) });
+    const worst = (i) => ({ t: CTL.repeat(497) + String(i).padStart(3, "0"), a: CTL.repeat(100), al: CTL.repeat(60) });
+    const longest = (i, g) => ({ t: `${g}-${i}-${"x".repeat(480)}`, a: "a".repeat(490), al: "b".repeat(490) });
+    assert.ok(JSON.stringify(worst(0)).length <= 4_000, "the longest that passes");
+
+    let s = created();
+    s = hello(s, "h", { hostKeyOk: true, v: 2, guestsAdd: true }).state;
+    const guests = Array.from({ length: 9 }, (_, g) => `g${g}`);
+    guests.forEach((g, i) => { s = hello(s, g, { at: T0 + i + 1, v: 2 }).state; });
+    s = send(s, "h", { t: "load", track: song("start"), positionMs: 0, queue: [], qv: 0 }).state;
+    // The queue up to the stop, a song at a time, so every guest still has room in their 20.
+    let n = 0;
+    for (let refused = false; !refused;) {
+        for (const g of guests) {
+            const r = add(s, g, [longest(n++, g)], false);
+            refused ||= sent(r, "added")[0].msg.count === 0;
+            s = r.state;
+        }
+    }
+    assert.ok(JSON.stringify(s.queue).length > 160_000);
+    s = send(s, "h", { t: "settings", guestsAdd: false }).state;
+
+    // At 9,000 characters each they would make the host's next Load about 350,000, and close its socket.
+    let tried = 0;
+    for (const g of guests) for (let i = 0; i < 3; i++) s = send(s, g, { t: "suggest", track: nasty(tried++) }, T0, { newId: `n${tried}` }).state;
+    assert.equal(s.suggestions.length, 0);
+
+    // As long as a song may be, 20 of them flushed by the switch, and the Load's own song, still fit.
+    let m = 0;
+    for (const g of guests) for (let i = 0; i < 3; i++) s = send(s, g, { t: "suggest", track: worst(m++) }, T0, { newId: `w${m}` }).state;
+    assert.equal(s.suggestions.length, 20);
+    s = send(s, "h", { t: "settings", guestsAdd: true }).state;
+    assert.equal(s.suggestions.length, 0, "they all went in");
+    const frame = JSON.stringify({ t: "load", track: worst(99), positionMs: 0, queue: s.queue, qv: s.qv, why: "skip" });
+    assert.ok(frame.length < 262_144, `${frame.length} characters`);
 });
