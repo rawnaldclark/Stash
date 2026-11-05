@@ -705,19 +705,81 @@ class SyncViewModelTest {
         val tab = onScreen(vm)
 
         assertTrue(vm.uiState.value.hasEverSynced)
-        assertFalse(vm.uiState.value.syncStatus.songCountsKnown)
+        assertNull(vm.uiState.value.syncStatus.songCountFor(streamingMode = true))
 
         kotlinx.coroutines.runBlocking { slowCount.emit(mapOf(MusicSource.SPOTIFY to 20_000)) }
 
-        assertTrue(vm.uiState.value.syncStatus.songCountsKnown)
-        assertEquals(20_000, vm.uiState.value.syncStatus.totalTracks)
+        assertEquals(20_000, vm.uiState.value.syncStatus.songCountFor(streamingMode = true))
         tab.cancel()
     }
 
+    /** No collector on purpose: which face the tab has doesn't depend on the count, which rests without one. */
     @Test
-    fun `no sync yet stays on the Ready face`() {
+    fun `the Ready face stays until a sync exists, then gives way`() {
+        val latest = MutableStateFlow<com.stash.core.data.db.entity.SyncHistoryEntity?>(null)
+        every { musicRepository.observeLatestSync() } returns latest
+        val vm = newVm()
+        assertFalse(vm.uiState.value.hasEverSynced)
+
+        latest.value = com.stash.core.data.db.entity.SyncHistoryEntity(
+            id = 1, startedAt = threeAm, status = com.stash.core.model.SyncState.COMPLETED,
+        )
+        assertTrue(vm.uiState.value.hasEverSynced)
+    }
+
+    /**
+     * The count rests while the tab is off-screen, so a flip on Home's chip leaves Online's number
+     * behind. On the Offline hero that read "72,000 songs" until the Offline count came back.
+     */
+    @Test
+    fun `a mode change off-screen doesn't show the old mode's number, until the new count is in`() {
+        val mode = MutableStateFlow(true)
+        every { streamingPreference.enabled } returns mode
+        every { musicRepository.observeSongCountsBySource(true) } returns kotlinx.coroutines.flow.flowOf(
+            mapOf(MusicSource.SPOTIFY to 72_000),
+        )
+        val downloads = kotlinx.coroutines.flow.MutableSharedFlow<Map<MusicSource, Int>>()
+        every { musicRepository.observeSongCountsBySource(false) } returns downloads
         every { musicRepository.observeLatestSync() } returns kotlinx.coroutines.flow.flowOf(null)
-        assertFalse(newVm().uiState.value.hasEverSynced)
+        val vm = newVm()
+        val tab = onScreen(vm)
+        assertEquals(72_000, vm.uiState.value.syncStatus.songCountFor(streamingMode = true))
+        tab.cancel()
+
+        mode.value = false
+        assertEquals("nobody collecting: Online's number is still held", 72_000, vm.uiState.value.syncStatus.totalTracks)
+        assertNull(vm.uiState.value.syncStatus.songCountFor(streamingMode = false))
+
+        val back = onScreen(vm)
+        assertNull("back on the tab, the Offline query still running", vm.uiState.value.syncStatus.songCountFor(streamingMode = false))
+
+        kotlinx.coroutines.runBlocking { downloads.emit(mapOf(MusicSource.SPOTIFY to 431)) }
+        assertEquals(431, vm.uiState.value.syncStatus.songCountFor(streamingMode = false))
+        assertNull("a number for Offline is no number for Online", vm.uiState.value.syncStatus.songCountFor(streamingMode = true))
+        back.cancel()
+    }
+
+    /** Flipping on the tab: the hero's mode changes first, and the old number mustn't show while the new query runs. */
+    @Test
+    fun `a mode change on the tab doesn't show the old mode's number while the new query runs`() {
+        val mode = MutableStateFlow(false)
+        every { streamingPreference.enabled } returns mode
+        every { musicRepository.observeSongCountsBySource(false) } returns kotlinx.coroutines.flow.flowOf(
+            mapOf(MusicSource.SPOTIFY to 431),
+        )
+        val library = kotlinx.coroutines.flow.MutableSharedFlow<Map<MusicSource, Int>>()
+        every { musicRepository.observeSongCountsBySource(true) } returns library
+        every { musicRepository.observeLatestSync() } returns kotlinx.coroutines.flow.flowOf(null)
+        val vm = newVm()
+        val tab = onScreen(vm)
+        assertEquals(431, vm.uiState.value.syncStatus.songCountFor(streamingMode = false))
+
+        mode.value = true
+        assertNull(vm.uiState.value.syncStatus.songCountFor(streamingMode = true))
+
+        kotlinx.coroutines.runBlocking { library.emit(mapOf(MusicSource.SPOTIFY to 72_000)) }
+        assertEquals(72_000, vm.uiState.value.syncStatus.songCountFor(streamingMode = true))
+        tab.cancel()
     }
 
     /** The screen collecting [SyncViewModel.uiState], as `collectAsStateWithLifecycle` does; cancel it to leave. */

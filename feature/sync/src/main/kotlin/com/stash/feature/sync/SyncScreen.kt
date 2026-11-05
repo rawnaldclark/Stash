@@ -225,7 +225,7 @@ fun SyncScreen(
                         arts = fan.mapNotNull { it.artUrl }.ifEmpty { arts },
                         // Each cover opens its mix; the fallback art (no mixes yet) is pictures only.
                         onCoverTap = if (fan.isEmpty()) null else { i -> onOpenPlaylist(fan[i].id) },
-                        summary = librarySummary(uiState, rows),
+                        summary = librarySummary(uiState.syncStatus.songCountFor(streamingMode), rows),
                         syncedAgo = rememberSyncedAgo(uiState.lastSyncFinishedAt),
                         newest = newest,
                         onPlay = { row -> viewModel.onPlayPlaylist(row.id, row.name) },
@@ -235,7 +235,7 @@ fun SyncScreen(
                 else -> item(key = "on_phone") {
                     OnThisPhoneHero(
                         saved = savedRows,
-                        songsOnPhone = uiState.syncStatus.totalTracks.takeIf { uiState.syncStatus.songCountsKnown },
+                        songsOnPhone = uiState.syncStatus.songCountFor(streamingMode),
                         syncedAgo = rememberSyncedAgo(uiState.lastSyncFinishedAt),
                         onChoose = { firstSource?.let(onManageSource) },
                         onSync = viewModel::onSyncNow,
@@ -264,8 +264,8 @@ fun SyncScreen(
                 }
 
                 // The track count + FLAC card, under the accounts it counts (back 2026-11-04). After a
-                // first sync only (before one, every number would be 0), once the counts are read.
-                if (uiState.hasEverSynced && uiState.syncStatus.songCountsKnown) {
+                // first sync only (before one, every number would be 0), once this mode's count is in.
+                if (uiState.hasEverSynced && uiState.syncStatus.songCountFor(streamingMode) != null) {
                     item(key = "track_count") {
                         Spacer(Modifier.height(12.dp))
                         TrackCountCard(
@@ -424,17 +424,16 @@ internal fun SyncPlaylistRow.isOwnPlaylist() = !album && type != PlaylistType.DA
 /**
  * "1,204 songs · 12 playlists · 30 mixes" under the Online hero. The songs are the ones in your
  * library, downloaded or not ([SyncStatusInfo.totalTracks] follows the mode): it counted downloads
- * only until 2026-11-04, so someone who streams read "0 songs". Until the count has been read the
- * songs are left out, for the same reason: "12 playlists · 30 mixes".
+ * only until 2026-11-04, so someone who streams read "0 songs". With [songs] null, while this mode's
+ * count isn't in ([SyncStatusInfo.songCountFor]), they are left out: "12 playlists · 30 mixes".
  */
 @Composable
-private fun librarySummary(uiState: SyncUiState, rows: List<SyncPlaylistRow>): String {
-    val songs = uiState.syncStatus.totalTracks
+private fun librarySummary(songs: Int?, rows: List<SyncPlaylistRow>): String {
     val playlistCount = rows.count { it.isOwnPlaylist() }
     val mixCount = rows.count { it.isMix() }
     val playlists = pluralStringResource(R.plurals.sync_playlists_count, playlistCount, playlistCount)
     val mixes = pluralStringResource(R.plurals.sync_mixes_count, mixCount, mixCount)
-    if (!uiState.syncStatus.songCountsKnown) return "$playlists · $mixes"
+    if (songs == null) return "$playlists · $mixes"
     return stringResource(
         R.string.sync_home_summary,
         pluralStringResource(R.plurals.sync_songs_count, songs, songs),

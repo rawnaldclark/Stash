@@ -32,11 +32,7 @@ data class SyncStatusInfo(
     val otherTracks: Int = 0,
     /** True when the song counts are "in your library" (Online); false when they're downloads (Offline). */
     val countsInLibrary: Boolean = false,
-    /**
-     * False until the song counts have been read once. Until then there is no number to show: the
-     * heroes leave the song count out and the card stays away, so "0 songs" can't flash on a library
-     * with thousands.
-     */
+    /** False until the song counts have been read once. Screens ask [songCountFor], which also checks the mode. */
     val songCountsKnown: Boolean = false,
     val totalPlaylists: Int = 0,
     val storageUsedBytes: Long = 0,
@@ -47,4 +43,14 @@ data class SyncStatusInfo(
     val state: SyncState = SyncState.IDLE,
     /** Richer display-oriented summary of the latest sync outcome. */
     val displayStatus: SyncDisplayStatus = SyncDisplayStatus.Idle,
-)
+) {
+    /**
+     * The song count to show in [streamingMode], or null while there is none for that mode, so the
+     * heroes leave the number out and the card stays away. Null before the first count, so "0 songs"
+     * can't flash on a library with thousands. Null after a flip until the new mode's count is in: the
+     * count rests off-screen and its query takes time, so the number held here can be the old mode's,
+     * and would read "72,000 songs" on the Offline hero.
+     */
+    fun songCountFor(streamingMode: Boolean): Int? =
+        totalTracks.takeIf { songCountsKnown && countsInLibrary == streamingMode }
+}
