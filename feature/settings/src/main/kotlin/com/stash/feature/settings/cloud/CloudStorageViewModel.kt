@@ -78,6 +78,18 @@ sealed interface CloudNotice {
 
     /** Saves and backup go to [account] from now on. */
     data class SavingTo(val account: String) : CloudNotice
+
+    /** [account] is gone; [kept] of its downloaded songs stay on this phone. */
+    data class Disconnected(val account: String, val kept: Int) : CloudNotice
+
+    /** A disconnect failed: [account] is still connected, as it was. */
+    data class DisconnectFailed(val account: String) : CloudNotice
+
+    /** A folder is gone; [kept] of its downloaded songs stay on this phone. */
+    data class FolderRemoved(val kept: Int) : CloudNotice
+
+    /** A folder's removal failed: it is still there. */
+    data object FolderRemoveFailed : CloudNotice
 }
 
 /**
@@ -264,12 +276,16 @@ class CloudStorageViewModel @Inject constructor(
     fun confirmDisconnect() {
         val pending = _pendingDisconnect.value ?: return
         _pendingDisconnect.value = null
+        val name = pending.name ?: pending.provider.displayName
         viewModelScope.launch {
-            val removal = cloud.disconnect(pending.accountId)
-            _messages.tryEmit(
-                buildString {
-                    append("${pending.name ?: pending.provider.displayName} disconnected.")
-                    if (removal.keptAsLocal > 0) append(" ${removal.keptAsLocal} downloaded songs stay on this phone.")
+            _notices.tryEmit(
+                try {
+                    CloudNotice.Disconnected(name, cloud.disconnect(pending.accountId).keptAsLocal)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    android.util.Log.w("CloudSettings", "disconnect failed: ${e::class.simpleName}")
+                    CloudNotice.DisconnectFailed(name)
                 },
             )
         }
@@ -353,10 +369,15 @@ class CloudStorageViewModel @Inject constructor(
 
     fun removeFolder(folderId: Long) {
         viewModelScope.launch {
-            val removal = cloud.removeFolder(folderId)
-            _messages.tryEmit(
-                if (removal.keptAsLocal > 0) "Folder removed. ${removal.keptAsLocal} downloaded songs stay on this phone."
-                else "Folder removed.",
+            _notices.tryEmit(
+                try {
+                    CloudNotice.FolderRemoved(cloud.removeFolder(folderId).keptAsLocal)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    android.util.Log.w("CloudSettings", "folder removal failed: ${e::class.simpleName}")
+                    CloudNotice.FolderRemoveFailed
+                },
             )
         }
     }

@@ -93,8 +93,8 @@ class CloudStorageViewModelAccountsTest {
 
     @Test fun `disconnecting with two accounts names the account, and the toast does too`() = runTest {
         val vm = vm()
-        val messages = mutableListOf<String>()
-        val job = launch(UnconfinedTestDispatcher(testScheduler)) { vm.messages.collect { messages += it } }
+        val notices = mutableListOf<CloudNotice>()
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) { vm.notices.collect { notices += it } }
 
         vm.requestDisconnect(sam)
 
@@ -110,7 +110,34 @@ class CloudStorageViewModelAccountsTest {
         vm.confirmDisconnect()
 
         coVerify { cloud.disconnect(2) }
-        assertThat(messages).containsExactly("sam@example.com disconnected. 2 downloaded songs stay on this phone.")
+        assertThat(notices).containsExactly(CloudNotice.Disconnected("sam@example.com", 2))
+        job.cancel()
+    }
+
+    @Test fun `a disconnect that fails says so instead of crashing, and a folder too`() = runTest {
+        val vm = vm()
+        val notices = mutableListOf<CloudNotice>()
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) { vm.notices.collect { notices += it } }
+        coEvery { cloud.disconnect(2) } throws IllegalStateException("database hiccup")
+        coEvery { cloud.removeFolder(7) } throws IllegalStateException("database hiccup")
+
+        vm.requestDisconnect(sam)
+        vm.confirmDisconnect()
+        vm.removeFolder(7)
+
+        assertThat(notices).containsExactly(CloudNotice.DisconnectFailed("sam@example.com"), CloudNotice.FolderRemoveFailed).inOrder()
+        job.cancel()
+    }
+
+    @Test fun `removing a folder says how many downloads stay`() = runTest {
+        val vm = vm()
+        val notices = mutableListOf<CloudNotice>()
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) { vm.notices.collect { notices += it } }
+        coEvery { cloud.removeFolder(7) } returns com.stash.core.data.db.dao.CloudRemoval(0, 1)
+
+        vm.removeFolder(7)
+
+        assertThat(notices).containsExactly(CloudNotice.FolderRemoved(1))
         job.cancel()
     }
 

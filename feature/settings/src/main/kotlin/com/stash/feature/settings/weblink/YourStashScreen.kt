@@ -446,11 +446,11 @@ private fun CloudSection(cloud: YourStashCloud, onOpenCloud: () -> Unit) {
                 val provider = row.account.provider
                 SettingsNavRow(
                     title = provider.displayName,
-                    subtitle = if (row.signedIn) {
-                        row.account.email ?: row.account.displayName
-                    } else {
-                        stringResource(R.string.settings_your_stash_cloud_signed_out)
-                    },
+                    subtitle = cloudRowSubtitle(
+                        row,
+                        several = cloud.accounts.count { it.account.provider == provider } > 1,
+                        signedOut = stringResource(R.string.settings_your_stash_cloud_signed_out),
+                    ),
                     leadingContent = {
                         Icon(
                             imageVector = ImageVector.vectorResource(logoOf(provider)),

@@ -14,6 +14,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.model.CloudProvider
 import com.stash.data.cloud.CloudAccount
+import com.stash.data.cloud.upload.SavedElsewhere
 import com.stash.data.cloud.upload.UploadStatus
 import org.junit.Rule
 import org.junit.Test
@@ -155,7 +156,9 @@ class CloudAccountCardsTest {
     @Test fun `one account signed out shows Reconnect on its own card only`() {
         show(listOf(ron.signedOut(), sam.signedIn()), saveAccount = 2)
 
-        rule.onNodeWithText("Session expired for ron@example.com. Reconnect to keep syncing.").assertExists()
+        // The address alone, as on a connected card: the colour and the button say the rest.
+        rule.onNodeWithText("ron@example.com").assertExists()
+        rule.onNodeWithText("Session expired for ron@example.com. Reconnect to keep syncing.").assertDoesNotExist()
         rule.onNodeWithText("sam@example.com").assertExists()
         assertThat(rule.onAllNodesWithText("Reconnect").fetchSemanticsNodes()).hasSize(1)
         // The signed-out card has no rows; the other carries on.
@@ -163,6 +166,55 @@ class CloudAccountCardsTest {
 
         rule.onNodeWithText("Reconnect").performClick()
         assertThat(opened).containsExactly(1L)
+    }
+
+    @Test fun `the one account signed out keeps its sentence`() {
+        show(listOf(ron.signedOut()), uploads = mapOf(1L to status(queued = 3)))
+
+        rule.onNodeWithText("Session expired for ron@example.com. Reconnect to keep syncing.").assertExists()
+        // Nothing to tell apart and nowhere else to save: no radio, no count, as it was.
+        rule.onNodeWithText(saveHere).assertDoesNotExist()
+        rule.onNodeWithText("3 songs are waiting for a reconnect").assertDoesNotExist()
+    }
+
+    @Test fun `the chosen account signed out keeps its selected radio and says what waits`() {
+        show(
+            listOf(ron.signedOut(), sam.signedIn()),
+            uploads = mapOf(1L to status(queued = 3, backupOn = true), 2L to status()),
+            saveAccount = 1,
+        )
+
+        val radios = rule.onAllNodesWithText(saveHere)
+        assertThat(radios.fetchSemanticsNodes()).hasSize(2)
+        radios[0].assertIsSelected()
+        radios[1].assertIsNotSelected()
+        rule.onNodeWithText("3 songs are waiting for a reconnect").assertExists()
+        // Not "Waiting for Wi-Fi": the network isn't what they wait for.
+        rule.onNodeWithText("Waiting for Wi-Fi").assertDoesNotExist()
+
+        // Tapping it does nothing; tapping the other moves saves away from it.
+        radios[0].performClick()
+        assertThat(chosen).isEmpty()
+        radios[1].performClick()
+        assertThat(chosen).containsExactly(sam)
+    }
+
+    @Test fun `the chosen account signed out with nothing waiting says what it has saved`() {
+        show(listOf(ron.signedOut(), sam.signedIn()), uploads = mapOf(1L to status(saved = 124), 2L to status()), saveAccount = 1)
+
+        rule.onNodeWithText("Saved 124 songs").assertExists()
+        rule.onAllNodesWithText(saveHere)[0].assertIsSelected()
+    }
+
+    @Test fun `another account signed out says what waits and offers no radio`() {
+        show(
+            listOf(ron.signedIn(), sam.signedOut()),
+            uploads = mapOf(1L to status(), 2L to status(queued = 1)),
+            saveAccount = 1,
+        )
+
+        rule.onNodeWithText("1 song is waiting for a reconnect").assertExists()
+        assertThat(rule.onAllNodesWithText(saveHere).fetchSemanticsNodes()).hasSize(1)
     }
 
     @Test fun `one Drive full says so on its own card, and Try again acts on that account`() {
@@ -225,6 +277,29 @@ class CloudAccountCardsTest {
         assertThat(CloudNotice.AlreadyConnected("sam@example.com", 2).text(context)).isEqualTo("Already connected as sam@example.com. Adding 2 songs.")
         assertThat(CloudNotice.SavingTo("sam@example.com").text(context)).isEqualTo("Saves and backup go to sam@example.com from now on. Songs already saved stay where they are.")
         assertThat(CloudNotice.AccountUnidentified.text(context)).contains("which account")
+        assertThat(CloudNotice.Disconnected("sam@example.com", 0).text(context)).isEqualTo("sam@example.com disconnected.")
+        assertThat(CloudNotice.Disconnected("sam@example.com", 1).text(context)).isEqualTo("sam@example.com disconnected. 1 downloaded song stays on this phone.")
+        assertThat(CloudNotice.Disconnected("sam@example.com", 2).text(context)).isEqualTo("sam@example.com disconnected. 2 downloaded songs stay on this phone.")
+        assertThat(CloudNotice.DisconnectFailed("sam@example.com").text(context)).isEqualTo("Couldn't disconnect sam@example.com. Try again.")
+        assertThat(CloudNotice.FolderRemoved(0).text(context)).isEqualTo("Folder removed.")
+        assertThat(CloudNotice.FolderRemoved(1).text(context)).isEqualTo("Folder removed. 1 downloaded song stays on this phone.")
+        assertThat(CloudNotice.FolderRemoved(30).text(context)).isEqualTo("Folder removed. 30 downloaded songs stay on this phone.")
+        assertThat(CloudNotice.FolderRemoveFailed.text(context)).isEqualTo("Couldn't remove this folder. Try again.")
+    }
+
+    @Test fun `a save's toast says where the songs really are`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val ronsDrive = "ron@example.com"
+
+        assertThat(CloudSaveToast("Saving 2 songs to sam@example.com.").text(context)).isEqualTo("Saving 2 songs to sam@example.com.")
+        assertThat(CloudSaveToast("Saving 2 songs to sam@example.com.", listOf(SavedElsewhere(ronsDrive, waiting = 3, inDrive = 0))).text(context))
+            .isEqualTo("Saving 2 songs to sam@example.com. 3 songs are waiting on ron@example.com.")
+        assertThat(CloudSaveToast("", listOf(SavedElsewhere(ronsDrive, waiting = 1, inDrive = 0))).text(context))
+            .isEqualTo("1 song is waiting on ron@example.com.")
+        assertThat(CloudSaveToast("", listOf(SavedElsewhere(ronsDrive, waiting = 0, inDrive = 1))).text(context))
+            .isEqualTo("1 song is already in ron@example.com.")
+        assertThat(CloudSaveToast("Saving 1 song to sam@example.com.", listOf(SavedElsewhere(ronsDrive, waiting = 2, inDrive = 4))).text(context))
+            .isEqualTo("Saving 1 song to sam@example.com. 2 songs are waiting on ron@example.com. 4 songs are already in ron@example.com.")
     }
 
     @Test fun `the disconnect dialog names the account and what moves`() {

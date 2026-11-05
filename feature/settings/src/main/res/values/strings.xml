@@ -1093,6 +1093,22 @@
     </plurals>
     <string name="settings_cloud_gdrive_save_here_title">Save and back up to this account</string>
     <string name="settings_cloud_gdrive_saving_to">Saves and backup go to %1$s from now on. Songs already saved stay where they are.</string>
+    <plurals name="settings_cloud_gdrive_waiting_on">
+        <item quantity="one">%1$d song is waiting on %2$s.</item>
+        <item quantity="other">%1$d songs are waiting on %2$s.</item>
+    </plurals>
+    <plurals name="settings_cloud_gdrive_already_in">
+        <item quantity="one">%1$d song is already in %2$s.</item>
+        <item quantity="other">%1$d songs are already in %2$s.</item>
+    </plurals>
+    <plurals name="settings_cloud_gdrive_waiting_for_reconnect">
+        <item quantity="one">%1$d song is waiting for a reconnect</item>
+        <item quantity="other">%1$d songs are waiting for a reconnect</item>
+    </plurals>
+    <string name="settings_cloud_disconnected">%1$s disconnected.</string>
+    <string name="settings_cloud_disconnect_failed">Couldn\'t disconnect %1$s. Try again.</string>
+    <string name="settings_cloud_folder_removed">Folder removed.</string>
+    <string name="settings_cloud_folder_remove_failed">Couldn\'t remove this folder. Try again.</string>
     <string name="settings_cloud_folder_add_title">Add a music folder</string>
     <string name="settings_cloud_folder_add_subtitle">Read-only. Your files stay as they are.</string>
     <string name="settings_cloud_disconnect_dialog_title">Disconnect %1$s?</string>

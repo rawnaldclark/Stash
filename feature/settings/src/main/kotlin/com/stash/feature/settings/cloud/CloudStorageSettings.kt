@@ -74,6 +74,8 @@ import com.stash.feature.settings.components.LogoSize
 import com.stash.feature.settings.components.SettingsGroupCard
 import com.stash.feature.settings.components.SettingsNavRow
 import com.stash.feature.settings.components.SettingsPickerRow
+import com.stash.feature.settings.components.SettingsRowPadH
+import com.stash.feature.settings.components.SettingsRowPadV
 import com.stash.feature.settings.components.SettingsSectionLabel
 import com.stash.feature.settings.components.SettingsToggleRow
 import com.stash.data.cloud.provider.gdrive.GoogleDriveProvider
@@ -129,7 +131,15 @@ internal fun CloudNotice.text(context: Context): String = when (this) {
         if (added > 0) context.resources.getQuantityString(R.plurals.settings_cloud_gdrive_already_connected_adding, added, account, added)
         else context.getString(R.string.settings_cloud_gdrive_already_connected, account)
     is CloudNotice.SavingTo -> context.getString(R.string.settings_cloud_gdrive_saving_to, account)
+    is CloudNotice.Disconnected -> withKept(context, context.getString(R.string.settings_cloud_disconnected, account), kept)
+    is CloudNotice.DisconnectFailed -> context.getString(R.string.settings_cloud_disconnect_failed, account)
+    is CloudNotice.FolderRemoved -> withKept(context, context.getString(R.string.settings_cloud_folder_removed), kept)
+    CloudNotice.FolderRemoveFailed -> context.getString(R.string.settings_cloud_folder_remove_failed)
 }
+
+/** [first], then how many downloads stay on the phone, if any. */
+private fun withKept(context: Context, first: String, kept: Int): String =
+    if (kept > 0) first + " " + context.resources.getQuantityString(R.plurals.settings_cloud_disconnect_dialog_kept, kept, kept) else first
 
 /**
  * Settings › Accounts: the cloud accounts ([CloudAccountCards]). Connect opens the provider's
@@ -269,25 +279,65 @@ private fun CloudAccountCard(
         onDisconnect = { actions.disconnect(account) },
         leading = if (several) ({ AccountLetterAvatar(account.label, accentOf(provider)) }) else null,
         accountName = account.label.takeIf { several },
-        extraContent = if (!row.signedIn) null else ({
-            if (actions.usesPicker(provider)) {
-                SettingsNavRow(
-                    title = stringResource(R.string.settings_cloud_gdrive_add_songs_title),
-                    subtitle = stringResource(R.string.settings_cloud_gdrive_add_songs_subtitle),
-                    leadingIcon = Icons.Rounded.LibraryAdd,
-                    onClick = { actions.openGooglePicker(account.id) },
-                )
-                uploads?.let { DriveUploadRows(it, account, several, takesSaves, actions) }
-            } else {
-                SettingsNavRow(
-                    title = stringResource(R.string.settings_cloud_folder_add_title),
-                    subtitle = stringResource(R.string.settings_cloud_folder_add_subtitle),
-                    leadingIcon = Icons.Rounded.CreateNewFolder,
-                    onClick = { actions.addFolder(account) },
-                )
-            }
-        }),
+        extraContent = when {
+            row.signedIn -> ({
+                if (actions.usesPicker(provider)) {
+                    SettingsNavRow(
+                        title = stringResource(R.string.settings_cloud_gdrive_add_songs_title),
+                        subtitle = stringResource(R.string.settings_cloud_gdrive_add_songs_subtitle),
+                        leadingIcon = Icons.Rounded.LibraryAdd,
+                        onClick = { actions.openGooglePicker(account.id) },
+                    )
+                    uploads?.let { DriveUploadRows(it, account, several, takesSaves, actions) }
+                } else {
+                    SettingsNavRow(
+                        title = stringResource(R.string.settings_cloud_folder_add_title),
+                        subtitle = stringResource(R.string.settings_cloud_folder_add_subtitle),
+                        leadingIcon = Icons.Rounded.CreateNewFolder,
+                        onClick = { actions.addFolder(account) },
+                    )
+                }
+            })
+            several && uploads != null && actions.usesPicker(provider) && (takesSaves || uploads.queued > 0) ->
+                ({ SignedOutUploadRows(uploads, takesSaves) })
+            else -> null
+        },
     )
+}
+
+/**
+ * A signed-out Drive card among several: nothing can be done here but Reconnect, yet it must not look
+ * as if no account takes saves, or as if its songs had gone anywhere. The account chosen for saves
+ * keeps its selected radio, and either way the card says what waits for that Reconnect. It offers
+ * no radio otherwise: a song saved to it could only wait.
+ */
+@Composable
+private fun SignedOutUploadRows(status: UploadStatus, takesSaves: Boolean) {
+    // Not status.line, which blames the network for what waits: here the sign-in is what's missing.
+    val line = if (status.queued > 0) {
+        pluralStringResource(R.plurals.settings_cloud_gdrive_waiting_for_reconnect, status.queued, status.queued)
+    } else {
+        status.line
+    }
+    if (takesSaves) {
+        SettingsPickerRow(
+            selected = true,
+            title = stringResource(R.string.settings_cloud_gdrive_save_here_title),
+            subtitle = line,
+            onClick = {},
+            modifier = Modifier.semantics {
+                selected = true
+                role = Role.RadioButton
+            },
+        )
+    } else if (line != null) {
+        Text(
+            text = line,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = SettingsRowPadH, vertical = SettingsRowPadV),
+        )
+    }
 }
 
 /**
