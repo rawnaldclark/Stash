@@ -176,7 +176,14 @@ class CloudUploadScheduler @Inject constructor(
     }
 
     override suspend fun cancel() {
-        workManager.cancelUniqueWork(UNIQUE).await()
+        try {
+            workManager.cancelUniqueWork(UNIQUE).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // WorkManager's own database failed: a disconnect must still go through.
+            Log.w(TAG, "uploads not stopped: ${e.javaClass.simpleName}")
+        }
     }
 
     override val running: Flow<Boolean>
@@ -186,5 +193,6 @@ class CloudUploadScheduler @Inject constructor(
 
     companion object {
         const val UNIQUE = "cloud_upload"
+        private const val TAG = "CloudUpload"
     }
 }

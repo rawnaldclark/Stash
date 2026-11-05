@@ -172,12 +172,12 @@ class CloudUploads @Inject constructor(
      * account on its own.
      */
     suspend fun <T> removingAccount(accountId: Long, remove: suspend () -> T): T {
-        scheduler.cancel()
-        if (settings.backupAccountId.value == accountId) settings.setBackupAccount(null)
-        if (settings.saveAccountId.value == accountId) settings.setSaveAccount(null)
-        settings.setDriveFull(accountId, false)
-        settings.clear(accountId)
         try {
+            scheduler.cancel()
+            if (settings.backupAccountId.value == accountId) settings.setBackupAccount(null)
+            if (settings.saveAccountId.value == accountId) settings.setSaveAccount(null)
+            settings.setDriveFull(accountId, false)
+            settings.clear(accountId)
             return remove()
         } finally {
             // Also when the screen that asked is closed meanwhile: the other accounts' songs must
