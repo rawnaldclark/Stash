@@ -47,21 +47,29 @@ private val Context.recordInMixesDataStore: DataStore<Preferences> by preference
     corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
 )
 
-/** DataStore-backed [RecordInMixesPreference]; one boolean, off until a tap stores one. */
+/**
+ * DataStore-backed [RecordInMixesPreference]; one boolean, off until a tap stores one. Tests hand in a store of their own:
+ * the [Context] one is a process-wide singleton, so deleting its file doesn't reset what it has read.
+ */
 @Singleton
-class RecordInMixesPreferencesManager @Inject constructor(
-    @ApplicationContext private val context: Context,
+class RecordInMixesPreferencesManager internal constructor(
+    private val store: DataStore<Preferences>,
 ) : RecordInMixesPreference {
-    private val enabledKey = booleanPreferencesKey("record_in_mixes")
+    @Inject constructor(@ApplicationContext context: Context) : this(context.recordInMixesDataStore)
 
-    override val enabled: Flow<Boolean> = context.recordInMixesDataStore.data.map { it[enabledKey] ?: DEFAULT }
+    private val enabledKey = booleanPreferencesKey(KEY)
+
+    override val enabled: Flow<Boolean> = store.data.map { it[enabledKey] ?: DEFAULT }
 
     override suspend fun setEnabled(value: Boolean) {
-        context.recordInMixesDataStore.edit { it[enabledKey] = value }
+        store.edit { it[enabledKey] = value }
     }
 
     companion object {
         /** What nothing stored means. stash-player's `recordInMixes` default is off too. */
         const val DEFAULT = false
+
+        /** Stored on phones already; renaming it would forget everyone's choice. */
+        internal const val KEY = "record_in_mixes"
     }
 }
