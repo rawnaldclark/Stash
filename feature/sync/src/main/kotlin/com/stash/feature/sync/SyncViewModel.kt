@@ -1164,11 +1164,16 @@ class SyncViewModel @Inject constructor(
                 songCountsFlow,
                 librarySizeHolder.size,
             ) { base, (online, counts), librarySize ->
+                val spotify = counts[MusicSource.SPOTIFY] ?: 0
+                val youTube = counts[MusicSource.YOUTUBE] ?: 0
+                val soundCloud = counts[MusicSource.SOUNDCLOUD] ?: 0
+                val total = counts.values.sum()
                 base.copy(
-                    totalTracks = counts.values.sum(),
-                    spotifyTracks = counts[MusicSource.SPOTIFY] ?: 0,
-                    youTubeTracks = counts[MusicSource.YOUTUBE] ?: 0,
-                    soundCloudTracks = counts[MusicSource.SOUNDCLOUD] ?: 0,
+                    totalTracks = total,
+                    spotifyTracks = spotify,
+                    youTubeTracks = youTube,
+                    soundCloudTracks = soundCloud,
+                    otherTracks = total - spotify - youTube - soundCloud,
                     countsInLibrary = online,
                     songCountsKnown = true,
                     storageUsedBytes = librarySize.totalBytes,

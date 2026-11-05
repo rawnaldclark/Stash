@@ -25,6 +25,11 @@ data class SyncStatusInfo(
     val youTubeTracks: Int = 0,
     /** The part of [totalTracks] that came from SoundCloud. */
     val soundCloudTracks: Int = 0,
+    /**
+     * The rest of [totalTracks]: source BOTH (Spotify export imports, shared and web-library adds),
+     * your own files and cloud songs. Not added to the accounts' numbers: a BOTH song would count twice.
+     */
+    val otherTracks: Int = 0,
     /** True when the song counts are "in your library" (Online); false when they're downloads (Offline). */
     val countsInLibrary: Boolean = false,
     /**

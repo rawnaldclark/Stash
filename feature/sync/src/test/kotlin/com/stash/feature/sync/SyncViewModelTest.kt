@@ -596,6 +596,7 @@ class SyncViewModelTest {
             assertEquals(812, spotifyTracks)
             assertEquals(392, youTubeTracks)
             assertEquals(0, soundCloudTracks)
+            assertEquals(3, otherTracks)
             assertEquals(true, countsInLibrary)
             assertEquals(7, flacTracks)
         }
@@ -606,6 +607,7 @@ class SyncViewModelTest {
             assertEquals(40, totalTracks)
             assertEquals(40, spotifyTracks)
             assertEquals(0, youTubeTracks)
+            assertEquals(0, otherTracks)
             assertEquals(false, countsInLibrary)
         }
         tab.cancel()
@@ -658,6 +660,31 @@ class SyncViewModelTest {
         val back = onScreen(vm)
         assertEquals(9, vm.uiState.value.syncStatus.totalTracks)
         back.cancel()
+    }
+
+    /** A Spotify export's imports are source BOTH: in the total, in Other, and in no account's number. */
+    @Test
+    fun `songs that belong to no one account count as Other, not in the accounts`() {
+        every { streamingPreference.enabled } returns MutableStateFlow(true)
+        every { musicRepository.observeSongCountsBySource(true) } returns kotlinx.coroutines.flow.flowOf(
+            mapOf(
+                MusicSource.SPOTIFY to 300,
+                MusicSource.BOTH to 20_000,
+                MusicSource.LOCAL to 5,
+                MusicSource.CLOUD to 2,
+            ),
+        )
+        every { musicRepository.observeLatestSync() } returns kotlinx.coroutines.flow.flowOf(null)
+        val vm = newVm()
+        val tab = onScreen(vm)
+
+        with(vm.uiState.value.syncStatus) {
+            assertEquals(20_307, totalTracks)
+            assertEquals(300, spotifyTracks)
+            assertEquals(0, youTubeTracks)
+            assertEquals(20_007, otherTracks)
+        }
+        tab.cancel()
     }
 
     /**

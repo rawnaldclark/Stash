@@ -164,6 +164,9 @@
     <string name="sync_count_on_phone">On this phone</string>
     <!-- The lossless part, under a number: "214 FLAC" under the songs, "6.1 GB FLAC" under the storage. -->
     <string name="sync_count_flac">%1$s FLAC</string>
+    <!-- Beside "812 Spotify", "392 YouTube": songs that belong to no one account (a Spotify export's imports,
+         your own files, cloud songs). Shown only when there are some. -->
+    <string name="sync_count_other">Other</string>
     <!-- The Downloads row above Auto-sync: its trailing text is the counts joined with " · ". -->
     <string name="sync_downloads_row">Downloads</string>
     <string name="sync_downloads_none">None running</string>

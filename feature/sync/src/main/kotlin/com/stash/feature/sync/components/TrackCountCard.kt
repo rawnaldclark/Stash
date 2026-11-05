@@ -46,8 +46,10 @@ import java.text.NumberFormat
  * The song numbers follow the mode, as Library's Songs tab does ([SyncStatusInfo.countsInLibrary]):
  * Online counts the songs in your library, downloaded or not; Offline counts downloaded songs. The
  * FLAC and GB numbers are always files on this phone (the disk walk). One dot per connected account,
- * a connected account with no songs shows 0. No status dot or "last sync" line: the hero already says
- * "synced 2h ago", and History has each run.
+ * a connected account with no songs shows 0. A last "Other" dot holds the songs that belong to no one
+ * account (a Spotify export's imports, your own files, cloud songs), only when there are any, so the
+ * dots don't read short of the total ("20,300 songs, 300 Spotify"). No status dot or "last sync" line:
+ * the hero already says "synced 2h ago", and History has each run.
  *
  * The account cards' glass (18 dp corners, no hairline), the Space Grotesk numerals of
  * [SourceStatCell], the brand dots of [AccountCard]. Read-only; TalkBack reads it as one.
@@ -61,10 +63,13 @@ internal fun TrackCountCard(
     soundCloudConnected: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val other = stringResource(R.string.sync_count_other)
+    val otherDot = MaterialTheme.colorScheme.onSurfaceVariant
     val sources = buildList {
         if (spotifyConnected) add(Triple(StashTheme.extendedColors.spotifyGreen, "Spotify", status.spotifyTracks))
         if (youTubeConnected) add(Triple(StashTheme.extendedColors.youtubeRed, "YouTube", status.youTubeTracks))
         if (soundCloudConnected) add(Triple(SoundCloudOrange, "SoundCloud", status.soundCloudTracks))
+        if (status.otherTracks > 0) add(Triple(otherDot, other, status.otherTracks))
     }
     Column(
         modifier = modifier
