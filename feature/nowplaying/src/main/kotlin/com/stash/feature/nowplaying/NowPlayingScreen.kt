@@ -1199,6 +1199,7 @@ fun NowPlayingScreen(
                                     fullArtText = if (fullArtOn) fullArtTextAnchor else null,
                                     art = {
                                     // -- Album art: NowPlayingBody sizes this slot (a square) --
+                                    Box(Modifier.fillMaxSize()) {
                                     Box(
                                         modifier = Modifier
                                             .fillMaxSize()
@@ -1284,10 +1285,12 @@ fun NowPlayingScreen(
                                         // Full art: a swipe across the art turns its page; the square's own
                                         // gestures (skip, seek, turn over) wait under it.
                                         if (fullArtOn && !reading) com.stash.feature.nowplaying.ui.FullArtSwipe(fullArt)
-                                        if (room != null) {
-                                            // "Maya joined", "Rawn skipped": over the art, so the layout never shifts.
-                                            com.stash.feature.nowplaying.listen.SessionEventChip(together.events, room.myId, Modifier.align(Alignment.TopCenter))
-                                        }
+                                    }
+                                    if (room != null) {
+                                        // "Maya joined", "Sam added Xtal": over the art, so the layout never shifts. Outside the
+                                        // box above: Full art (on by default) makes that box invisible, and the chip with it.
+                                        com.stash.feature.nowplaying.listen.SessionEventChip(together.events, room.myId, Modifier.align(Alignment.TopCenter))
+                                    }
                                     }
                                     },
                                     stack = {
