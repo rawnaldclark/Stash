@@ -238,7 +238,8 @@ class CloudUploads @Inject constructor(
     /**
      * Downloads that just stopped being cloud songs (their folder or account was removed) have no
      * upload row, which reads as "new downloads" while backup is on: count them instead, like any
-     * download from before backup, so a removal never starts a surprise upload.
+     * download from before backup, so a removal never starts a surprise upload. A song the removal
+     * only unlinked already has a row, on the account it left: that one goes back to backup too.
      */
     suspend fun countRemovedDownloads() {
         try {
@@ -249,6 +250,22 @@ class CloudUploads @Inject constructor(
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "removed downloads not counted: ${e.javaClass.simpleName}")
+        }
+        moveUnlinkedBackups()
+    }
+
+    /**
+     * A song linked to another account waits for backup on that account. Once the link goes (its copy
+     * trashed in that Drive, its picked folder removed) it has no cloud copy, and no card counts a row
+     * on an account that isn't the backup one, so it would drop out of backup with nothing said.
+     */
+    private suspend fun moveUnlinkedBackups() {
+        try {
+            settings.backupAccountId.value?.let { dao.moveWaitingBackups(it, System.currentTimeMillis()) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "unlinked downloads not moved to backup: ${e.javaClass.simpleName}")
         }
     }
 
@@ -285,6 +302,9 @@ class CloudUploads @Inject constructor(
     fun start() {
         if (!available || watcher != null) return
         watcher = scope.launch {
+            // A scan finds a trashed copy with nothing here looking: this is where it comes back.
+            // Before the kick, so a queued song isn't sent to the account it left.
+            moveUnlinkedBackups()
             try {
                 kickIfQueued()
             } catch (e: CancellationException) {

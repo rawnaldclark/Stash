@@ -272,11 +272,19 @@ class CloudScanner(
          * A song Stash saved to the cloud that is already a download here (this phone saved it
          * before a disconnect, or another phone saved the same song): link the file to that
          * download instead of adding a second song. True when linked.
+         *
+         * The keys are only as new as the start of this pass. A download linked since (another
+         * account's upload finished meanwhile) keeps that link, which its upload row agrees with,
+         * and this file is its own song: two accounts, two songs.
          */
         private suspend fun linkToLocal(f: ScanEntry.File, folders: List<String>): Boolean {
             val keys = localKeys ?: localSongs.load().toMutableMap().also { localKeys = it }
             val trackId = keys[f.songKey] ?: return false
-            val linked = dao.linkUpload(
+            // One download links to one file; a second file with the same key is its own song.
+            keys.remove(f.songKey)
+            // Linked to this very file a moment ago (its own upload finishing): nothing more to do.
+            dao.getItemForTrack(trackId)?.let { return it.accountId == folder.accountId && it.itemId == f.id }
+            return dao.linkUpload(
                 trackId,
                 CloudItemEntity(
                     trackId = trackId, accountId = folder.accountId, folderId = folder.id, itemId = f.id,
@@ -285,9 +293,6 @@ class CloudScanner(
                     seenGeneration = folder.scanGeneration, scannedAt = clock(), remotePath = f.remotePath,
                 ),
             )
-            // One download links to one file; a second file with the same key is its own song.
-            keys.remove(f.songKey)
-            return linked
         }
 
         /**
