@@ -109,6 +109,94 @@ class GoogleDrivePicksTest {
     }
 
     @Test
+    fun `a second Google account gets its own row, token and folders`() = runTest {
+        picks.accept(GooglePickerResult.Picked("tok1", listOf("1AAAAAAAAA")))
+        val first = dao.getAccounts().single()
+        drive.permissionId = "perm-456"
+        drive.email = "sam@example.com"
+        drive.validTokens += "tok2"
+
+        val outcome = picks.accept(GooglePickerResult.Picked("tok2", listOf("1BBBBBBBBB"))) as GooglePickOutcome.Added
+
+        assertThat(outcome.isNewAccount).isTrue()
+        val second = dao.getAccounts().single { it.id != first.id }
+        assertThat(outcome.accountId).isEqualTo(second.id)
+        assertThat(second.email).isEqualTo("sam@example.com")
+        assertThat(store.map.getValue(CloudTokenManager.keyFor(CloudProvider.GOOGLE_DRIVE, second.id)).refreshToken).isEqualTo("sam@example.com")
+        // The first account's sign-in is left alone.
+        assertThat(store.map.getValue(CloudTokenManager.keyFor(CloudProvider.GOOGLE_DRIVE, first.id)).accessToken).isEqualTo("tok1")
+        val picked = dao.getFolders(second.id).single { it.itemId == GoogleDriveProvider.PICKS_ITEM_ID }
+        assertThat(dao.getFolders(second.id)).hasSize(2)
+        assertThat(pickStore.pending(picked.id)).containsExactly("1BBBBBBBBB")
+    }
+
+    @Test
+    fun `picking an account already connected adds to it instead of making a third`() = runTest {
+        picks.accept(GooglePickerResult.Picked("tok1", emptyList()))
+        drive.permissionId = "perm-456"
+        drive.email = "sam@example.com"
+        drive.validTokens += "tok2"
+        picks.accept(GooglePickerResult.Picked("tok2", emptyList()))
+        val sam = dao.getAccounts().single { it.email == "sam@example.com" }
+
+        val outcome = picks.accept(GooglePickerResult.Picked("tok2", listOf("1CCCCCCCCC"))) as GooglePickOutcome.Added
+
+        assertThat(outcome.isNewAccount).isFalse()
+        assertThat(outcome.accountId).isEqualTo(sam.id)
+        assertThat(dao.getAccounts()).hasSize(2)
+    }
+
+    @Test
+    fun `a first account with no email still connects`() = runTest {
+        drive.email = null
+        val outcome = picks.accept(GooglePickerResult.Picked("tok1", listOf("1AAAAAAAAA")))
+        assertThat(outcome).isInstanceOf(GooglePickOutcome.Added::class.java)
+        val account = dao.getAccounts().single()
+        assertThat(store.map.getValue(CloudTokenManager.keyFor(CloudProvider.GOOGLE_DRIVE, account.id)).refreshToken).isEqualTo(GoogleDriveAuth.NO_ACCOUNT)
+    }
+
+    @Test
+    fun `a second account with no email is refused and stores nothing`() = runTest {
+        picks.accept(GooglePickerResult.Picked("tok1", emptyList()))
+        val tokens = store.map.toMap()
+        scans.clear()
+        drive.permissionId = "perm-456"
+        drive.email = null
+        drive.validTokens += "tok2"
+
+        val outcome = picks.accept(GooglePickerResult.Picked("tok2", listOf("1BBBBBBBBB")))
+
+        assertThat(outcome).isEqualTo(GooglePickOutcome.AccountUnidentified)
+        assertThat(dao.getAccounts()).hasSize(1)
+        assertThat(store.map).isEqualTo(tokens)
+        assertThat(scans).isEmpty()
+    }
+
+    @Test
+    fun `no second account next to one with no email`() = runTest {
+        drive.email = null
+        picks.accept(GooglePickerResult.Picked("tok1", emptyList()))
+        drive.permissionId = "perm-456"
+        drive.email = "sam@example.com"
+        drive.validTokens += "tok2"
+
+        assertThat(picks.accept(GooglePickerResult.Picked("tok2", emptyList()))).isEqualTo(GooglePickOutcome.AccountUnidentified)
+        assertThat(dao.getAccounts()).hasSize(1)
+    }
+
+    @Test
+    fun `a lookup that lost the email keeps the known account's email and silent sign-in`() = runTest {
+        picks.accept(GooglePickerResult.Picked("tok1", emptyList()))
+        drive.email = null
+
+        picks.accept(GooglePickerResult.Picked("tok1", listOf("1AAAAAAAAA")))
+
+        val account = dao.getAccounts().single()
+        assertThat(account.email).isEqualTo("ron@example.com")
+        assertThat(store.map.getValue(CloudTokenManager.keyFor(CloudProvider.GOOGLE_DRIVE, account.id)).refreshToken).isEqualTo("ron@example.com")
+    }
+
+    @Test
     fun `a cancelled or failed picker changes nothing`() = runTest {
         assertThat(picks.accept(GooglePickerResult.Cancelled)).isEqualTo(GooglePickOutcome.Cancelled)
         assertThat(picks.accept(GooglePickerResult.Failed("nope"))).isEqualTo(GooglePickOutcome.Failed("nope"))

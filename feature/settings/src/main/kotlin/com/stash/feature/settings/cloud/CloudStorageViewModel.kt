@@ -57,12 +57,20 @@ data class CloudBrowseState(
  */
 internal fun googlePickMessage(outcome: GooglePickOutcome): String? = when (outcome) {
     GooglePickOutcome.Cancelled -> null
+    // Its words are a string resource: see CloudNotice.
+    GooglePickOutcome.AccountUnidentified -> null
     is GooglePickOutcome.Failed -> outcome.message
     is GooglePickOutcome.Added -> buildString {
         if (outcome.isNewAccount) append("Google Drive connected as ${outcome.displayName}. ")
         append(GoogleDrivePicks.message(outcome))
         if (outcome.added > 0 && outcome.isNewAccount) append(" Wi-Fi is best for big batches.")
     }
+}
+
+/** A message whose words live in string resources; the screen resolves it into a toast. */
+sealed interface CloudNotice {
+    /** See [GooglePickOutcome.AccountUnidentified]. */
+    data object AccountUnidentified : CloudNotice
 }
 
 /** A disconnect waiting for the user's yes, with what it will do. */
@@ -111,6 +119,9 @@ class CloudStorageViewModel @Inject constructor(
 
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val messages: SharedFlow<String> = _messages.asSharedFlow()
+
+    private val _notices = MutableSharedFlow<CloudNotice>(extraBufferCapacity = 4)
+    val notices: SharedFlow<CloudNotice> = _notices.asSharedFlow()
 
     private val _browse = MutableStateFlow<CloudBrowseState?>(null)
     val browse: StateFlow<CloudBrowseState?> = _browse.asStateFlow()
@@ -163,7 +174,9 @@ class CloudStorageViewModel @Inject constructor(
      */
     fun finishGooglePick(data: Intent?) {
         viewModelScope.launch {
-            googlePickMessage(cloud.completeGooglePick(data))?.let { _messages.tryEmit(it) }
+            val outcome = cloud.completeGooglePick(data)
+            if (outcome == GooglePickOutcome.AccountUnidentified) _notices.tryEmit(CloudNotice.AccountUnidentified)
+            googlePickMessage(outcome)?.let { _messages.tryEmit(it) }
         }
     }
 
@@ -227,17 +240,17 @@ class CloudStorageViewModel @Inject constructor(
         }
     }
 
-    /** "Back up N existing downloads". */
-    fun backUpExistingDownloads() {
+    /** "Back up N existing downloads" on [accountId]'s card. */
+    fun backUpExistingDownloads(accountId: Long) {
         viewModelScope.launch {
-            val n = uploads.backUpExisting()
+            val n = uploads.backUpExisting(accountId)
             _messages.tryEmit(if (n == 1) "Saving 1 song to Google Drive." else "Saving $n songs to Google Drive.")
         }
     }
 
-    /** "Try again" after Google Drive was full. */
-    fun retryDriveUploads() {
-        viewModelScope.launch { uploads.resume() }
+    /** "Try again" after [accountId]'s Google Drive was full. */
+    fun retryDriveUploads(accountId: Long) {
+        viewModelScope.launch { uploads.resume(accountId) }
     }
 
     // ── Folder picker ────────────────────────────────────────────────────

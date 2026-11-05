@@ -113,7 +113,7 @@ class CloudLibrary @Inject constructor(
         try {
             googlePicks.accept(googleAuthorizer.pickerResult(data)).also {
                 // A reconnect: songs waiting to be saved to Drive go now.
-                if (it is GooglePickOutcome.Added) uploads.resume()
+                if (it is GooglePickOutcome.Added) uploads.resume(it.accountId)
             }
         } catch (e: CancellationException) {
             throw e
@@ -159,14 +159,17 @@ class CloudLibrary @Inject constructor(
         scheduler.cancelRunning()
         val folderIds = dao.getFolders(accountId).map { it.id }
         val kind = CloudProvider.fromId(account.provider)
-        // Stop uploading to it; pending uploads go with the account row. Nothing in Drive is touched.
-        if (kind == CloudProvider.GOOGLE_DRIVE) uploads.onAccountRemoved(accountId)
         var forgotten: String? = null
-        val removal = withFolderLocks(folderIds) {
-            kind?.let { forgotten = tokens.forget(it, accountId) }
-            for (id in folderIds) googlePickStore.clear(id)
-            dao.removeAccount(accountId)
+        val remove: suspend () -> CloudRemoval = {
+            withFolderLocks(folderIds) {
+                kind?.let { forgotten = tokens.forget(it, accountId) }
+                for (id in folderIds) googlePickStore.clear(id)
+                dao.removeAccount(accountId)
+            }
         }
+        // Stop uploading to it; pending uploads go with the account row. Nothing in Drive is
+        // touched, and the other accounts' uploads carry on after.
+        val removal = if (kind == CloudProvider.GOOGLE_DRIVE) uploads.removingAccount(accountId, remove) else remove()
         if (kind == CloudProvider.GOOGLE_DRIVE) forgotten?.let { clearGoogleToken(it) }
         resumeScans()
         return removal

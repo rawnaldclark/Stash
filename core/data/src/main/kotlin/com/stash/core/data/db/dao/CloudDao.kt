@@ -324,12 +324,16 @@ interface CloudDao {
     @Update
     suspend fun updateUpload(row: CloudUploadEntity)
 
-    /** The oldest queued upload: the worker's next song. */
-    @Query("SELECT * FROM cloud_uploads WHERE state = 'QUEUED' ORDER BY queued_at ASC, track_id ASC LIMIT 1")
-    suspend fun nextQueuedUpload(): CloudUploadEntity?
+    /**
+     * The oldest queued upload outside [skip]: the worker's next song. [skip] holds the accounts
+     * that can't take a song right now (signed out, Drive full), so they never hold up the others.
+     */
+    @Query("SELECT * FROM cloud_uploads WHERE state = 'QUEUED' AND account_id NOT IN (:skip) ORDER BY queued_at ASC, track_id ASC LIMIT 1")
+    suspend fun nextQueuedUpload(skip: List<Long>): CloudUploadEntity?
 
-    @Query("SELECT COUNT(*) FROM cloud_uploads WHERE state = 'QUEUED'")
-    suspend fun countQueuedUploads(): Int
+    /** How many songs are queued for the accounts outside [skip]. */
+    @Query("SELECT COUNT(*) FROM cloud_uploads WHERE state = 'QUEUED' AND account_id NOT IN (:skip)")
+    suspend fun countQueuedUploads(skip: List<Long>): Int
 
     // The worker writes single columns, never a whole row it read earlier: the user may have
     // queued, unqueued or re-saved the song meanwhile.
@@ -403,18 +407,35 @@ interface CloudDao {
     @Query("SELECT COUNT(*) FROM tracks WHERE $UPLOADABLE AND NOT EXISTS (SELECT 1 FROM cloud_uploads u WHERE u.track_id = tracks.id)")
     fun observeDownloadsWithoutUpload(): Flow<Int>
 
-    /** "Back up N existing downloads": queues them all. */
-    @Query("UPDATE cloud_uploads SET state = 'QUEUED', origin = 'BACKUP', queued_at = :now, updated_at = :now WHERE state = 'EXISTING'")
-    suspend fun queueExistingUploads(now: Long): Int
+    /** "Back up N existing downloads" for [accountId]: queues the ones waiting on that account. */
+    @Query("UPDATE cloud_uploads SET state = 'QUEUED', origin = 'BACKUP', queued_at = :now, updated_at = :now WHERE state = 'EXISTING' AND account_id = :accountId")
+    suspend fun queueExistingUploads(accountId: Long, now: Long): Int
 
-    /** The backup switch turned off: what it queued goes back to waiting (the user's own saves carry on). */
-    @Query("UPDATE cloud_uploads SET state = 'EXISTING', updated_at = :now WHERE state = 'QUEUED' AND origin = 'BACKUP'")
-    suspend fun unqueueBackupUploads(now: Long): Int
+    /** [accountId]'s backup switch turned off: what it queued goes back to waiting (the user's own saves carry on). */
+    @Query("UPDATE cloud_uploads SET state = 'EXISTING', updated_at = :now WHERE state = 'QUEUED' AND origin = 'BACKUP' AND account_id = :accountId")
+    suspend fun unqueueBackupUploads(accountId: Long, now: Long): Int
+
+    /**
+     * Backup moved to [accountId]: what it was still waiting to send follows it (rows waiting for
+     * "Back up N existing", and what backup itself queued). The user's own saves stay on the account
+     * they were saved to, and a song already in a Drive stays there. A session belongs to the
+     * account that opened it, so a moved row starts over.
+     */
+    @Query(
+        """
+        UPDATE cloud_uploads SET account_id = :accountId, session_uri = NULL, session_size = NULL, session_md5 = NULL,
+            bytes_sent = 0, attempts = 0, error = NULL, updated_at = :now
+        WHERE account_id != :accountId AND (state = 'EXISTING' OR (state = 'QUEUED' AND origin = 'BACKUP'))
+        """,
+    )
+    suspend fun moveWaitingBackups(accountId: Long, now: Long): Int
 
     /**
      * Queues [trackIds] (already checked uploadable) for [accountId]. A song already queued stays
      * as it is; any other row (saved before, skipped, failed, waiting) is queued again: the worker
-     * finds a copy still in Drive by its tag and only links it again.
+     * finds a copy still in Drive by its tag and only links it again. A song already saved to
+     * another Drive is checked there, never copied here: a song lives in one Drive, and a second
+     * copy would come back from the first Drive's scan as a second song.
      *
      * @return how many were newly queued.
      */
@@ -431,16 +452,19 @@ interface CloudDao {
                     ),
                 )
                 row.state == CloudUploadState.QUEUED.name -> continue
-                else -> updateUpload(
-                    row.copy(
-                        state = CloudUploadState.QUEUED.name, origin = origin, queuedAt = now, updatedAt = now,
-                        attempts = 0, error = null, accountId = accountId,
-                    ).let {
-                        // A session belongs to the account that opened it.
-                        if (row.accountId == accountId) it
-                        else it.copy(sessionUri = null, sessionSize = null, sessionMd5 = null, bytesSent = 0)
-                    },
-                )
+                else -> {
+                    val target = if (row.state == CloudUploadState.DONE.name) row.accountId else accountId
+                    updateUpload(
+                        row.copy(
+                            state = CloudUploadState.QUEUED.name, origin = origin, queuedAt = now, updatedAt = now,
+                            attempts = 0, error = null, accountId = target,
+                        ).let {
+                            // A session belongs to the account that opened it.
+                            if (row.accountId == target) it
+                            else it.copy(sessionUri = null, sessionSize = null, sessionMd5 = null, bytesSent = 0)
+                        },
+                    )
+                }
             }
             queued++
         }

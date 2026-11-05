@@ -6,6 +6,9 @@ import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.CloudAccountEntity
 import com.stash.core.data.db.entity.CloudFolderEntity
 import com.stash.core.data.db.entity.CloudItemEntity
+import com.stash.core.data.db.entity.CloudUploadEntity
+import com.stash.core.data.db.entity.CloudUploadOrigin
+import com.stash.core.data.db.entity.CloudUploadState
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.MusicSource
 import kotlinx.coroutines.flow.first
@@ -63,6 +66,120 @@ class CloudDaoTest {
             ),
         )
         return id
+    }
+
+    // ── Uploads with two Google accounts ─────────────────────────────────
+
+    private suspend fun driveAccount(name: String) =
+        dao.insertAccount(CloudAccountEntity(provider = "gdrive", remoteId = name, displayName = name, email = "$name@example.com", connectedAt = 2))
+
+    private suspend fun download(title: String) = dao.insertTrack(
+        TrackEntity(title = title, artist = "A", source = MusicSource.SPOTIFY, isDownloaded = true, filePath = "/m/$title.opus", spotifyUri = "spotify:track:$title"),
+    )
+
+    private suspend fun upload(track: Long, account: Long, state: CloudUploadState, origin: CloudUploadOrigin = CloudUploadOrigin.MANUAL, queuedAt: Long = 1) =
+        dao.putUpload(CloudUploadEntity(track, account, state.name, origin.name, queuedAt, queuedAt))
+
+    @Test fun `the next upload skips accounts that can't take a song, oldest first among the rest`() = runTest {
+        val a = driveAccount("a")
+        val b = driveAccount("b")
+        val oldA = download("old-a")
+        val newB = download("new-b")
+        val newestB = download("newest-b")
+        upload(oldA, a, CloudUploadState.QUEUED, queuedAt = 1)
+        upload(newB, b, CloudUploadState.QUEUED, queuedAt = 2)
+        upload(newestB, b, CloudUploadState.QUEUED, queuedAt = 3)
+
+        assertEquals(oldA, dao.nextQueuedUpload(emptyList())!!.trackId)
+        assertEquals(newB, dao.nextQueuedUpload(listOf(a))!!.trackId)
+        assertNull(dao.nextQueuedUpload(listOf(a, b)))
+
+        assertEquals(3, dao.countQueuedUploads(emptyList()))
+        assertEquals(2, dao.countQueuedUploads(listOf(a)))
+        assertEquals(0, dao.countQueuedUploads(listOf(a, b)))
+    }
+
+    @Test fun `back up existing and backup off touch only their own account`() = runTest {
+        val a = driveAccount("a")
+        val b = driveAccount("b")
+        val onA = download("on-a")
+        val onB = download("on-b")
+        upload(onA, a, CloudUploadState.EXISTING, CloudUploadOrigin.BACKUP)
+        upload(onB, b, CloudUploadState.EXISTING, CloudUploadOrigin.BACKUP)
+
+        assertEquals(1, dao.queueExistingUploads(b, 5))
+        assertEquals(CloudUploadState.EXISTING.name, dao.getUpload(onA)!!.state)
+        assertEquals(CloudUploadState.QUEUED.name, dao.getUpload(onB)!!.state)
+
+        assertEquals(0, dao.unqueueBackupUploads(a, 6))
+        assertEquals(CloudUploadState.QUEUED.name, dao.getUpload(onB)!!.state)
+        assertEquals(1, dao.unqueueBackupUploads(b, 7))
+        assertEquals(CloudUploadState.EXISTING.name, dao.getUpload(onB)!!.state)
+    }
+
+    @Test fun `moving backup takes what waits and leaves saves and finished songs`() = runTest {
+        val a = driveAccount("a")
+        val b = driveAccount("b")
+        val existing = download("existing")
+        val queuedBackup = download("queued-backup")
+        val queuedManual = download("queued-manual")
+        val done = download("done")
+        val failed = download("failed")
+        upload(existing, a, CloudUploadState.EXISTING, CloudUploadOrigin.BACKUP)
+        upload(queuedBackup, a, CloudUploadState.QUEUED, CloudUploadOrigin.BACKUP)
+        dao.setUploadSession(queuedBackup, "https://session", 10, "md5", 2)
+        dao.setUploadProgress(queuedBackup, 5, 2)
+        upload(queuedManual, a, CloudUploadState.QUEUED, CloudUploadOrigin.MANUAL)
+        upload(done, a, CloudUploadState.DONE, CloudUploadOrigin.BACKUP)
+        upload(failed, a, CloudUploadState.FAILED, CloudUploadOrigin.BACKUP)
+
+        assertEquals(2, dao.moveWaitingBackups(b, 9))
+
+        assertEquals(b, dao.getUpload(existing)!!.accountId)
+        dao.getUpload(queuedBackup)!!.let {
+            assertEquals(b, it.accountId)
+            assertEquals(CloudUploadState.QUEUED.name, it.state)
+            assertNull(it.sessionUri)
+            assertEquals(0L, it.bytesSent)
+        }
+        assertEquals(a, dao.getUpload(queuedManual)!!.accountId)
+        assertEquals(a, dao.getUpload(done)!!.accountId)
+        assertEquals(a, dao.getUpload(failed)!!.accountId)
+        // Nothing left to move: the same call again does nothing.
+        assertEquals(0, dao.moveWaitingBackups(b, 10))
+    }
+
+    @Test fun `saving a song already in another Drive keeps it there, anything else moves`() = runTest {
+        val a = driveAccount("a")
+        val b = driveAccount("b")
+        val done = download("done")
+        val failed = download("failed")
+        upload(done, a, CloudUploadState.DONE)
+        upload(failed, a, CloudUploadState.FAILED)
+        dao.setUploadSession(failed, "https://session", 10, "md5", 2)
+
+        assertEquals(2, dao.queueUploads(listOf(done, failed), b, CloudUploadOrigin.MANUAL.name, 5))
+
+        assertEquals(a, dao.getUpload(done)!!.accountId)
+        assertEquals(CloudUploadState.QUEUED.name, dao.getUpload(done)!!.state)
+        assertEquals(b, dao.getUpload(failed)!!.accountId)
+        assertNull(dao.getUpload(failed)!!.sessionUri)
+    }
+
+    @Test fun `removing one account leaves the other's uploads and items`() = runTest {
+        val a = driveAccount("a")
+        val b = driveAccount("b")
+        val onA = download("on-a")
+        val onB = download("on-b")
+        upload(onA, a, CloudUploadState.QUEUED)
+        upload(onB, b, CloudUploadState.QUEUED)
+
+        dao.removeAccount(b)
+
+        assertEquals(a, dao.getUpload(onA)!!.accountId)
+        assertNull(dao.getUpload(onB))
+        // The download itself stays.
+        assertTrue(db.trackDao().getById(onB)!!.isDownloaded)
     }
 
     @Test fun `disconnect deletes stream-only songs and keeps downloaded ones as local files`() = runTest {
