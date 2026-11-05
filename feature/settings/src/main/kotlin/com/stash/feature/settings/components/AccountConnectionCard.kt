@@ -58,6 +58,9 @@ import com.stash.feature.settings.R
  *   switches), so they read as properties of the connection. Null = none.
  * @param leading  Drawn instead of [icon] (a letter avatar, when one service has
  *   several accounts and the same logo wouldn't tell them apart). Null = [icon].
+ * @param accountName  With several accounts of one service the address is all that
+ *   tells them apart: it stands alone as the connected status, and the status line
+ *   gets room for all of it. Null = "Connected as ...", on two lines at most.
  */
 @Composable
 fun AccountConnectionCard(
@@ -74,18 +77,20 @@ fun AccountConnectionCard(
     expired: Boolean = false,
     extraContent: (@Composable ColumnScope.() -> Unit)? = null,
     leading: (@Composable () -> Unit)? = null,
+    accountName: String? = null,
 ) {
     val status = accountStatus(authState, expired)
     AccountCard(
         serviceName = serviceName,
         icon = icon,
         accentColor = accentColor,
-        statusText = status.text,
+        statusText = accountName?.takeIf { status.tone == AccountStatusTone.CONNECTED } ?: status.text,
         statusTone = status.tone,
         modifier = modifier,
         busy = authState is AuthState.Connecting,
         extraContent = extraContent,
         leading = leading,
+        statusMaxLines = if (accountName != null) 3 else 2,
     ) {
         when {
             authState !is AuthState.Connected -> AccountConnectButton(accentColor, onConnect)
@@ -120,6 +125,7 @@ internal val LogoSize = 32.dp
  *
  * @param busy  Shows a spinner in place of [action] (a sign-in in flight).
  * @param leading  Drawn instead of [icon], in the same [LogoSize] space. Null = [icon].
+ * @param statusMaxLines  How many lines [statusText] may take before it is cut.
  */
 @Composable
 fun AccountCard(
@@ -132,6 +138,7 @@ fun AccountCard(
     busy: Boolean = false,
     extraContent: (@Composable ColumnScope.() -> Unit)? = null,
     leading: (@Composable () -> Unit)? = null,
+    statusMaxLines: Int = 2,
     action: @Composable () -> Unit,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -172,7 +179,7 @@ fun AccountCard(
                     Text(
                         text = statusText,
                         style = MaterialTheme.typography.bodySmall,
-                        maxLines = 2,
+                        maxLines = statusMaxLines,
                         overflow = TextOverflow.Ellipsis,
                         color = when (statusTone) {
                             AccountStatusTone.CONNECTED -> extendedColors.success

@@ -1085,7 +1085,7 @@
     <string name="settings_cloud_gdrive_add_songs_subtitle">Stash sees only the songs you pick.</string>
     <string name="settings_cloud_gdrive_account_unidentified">Google didn\'t say which account this is, so Stash can\'t keep it apart from your other Google Drive account.</string>
     <string name="settings_cloud_gdrive_add_account_title">Add another Google account</string>
-    <string name="settings_cloud_gdrive_add_account_subtitle">Google asks which account, then you pick its songs.</string>
+    <string name="settings_cloud_gdrive_add_account_subtitle">You pick the account, then its songs.</string>
     <string name="settings_cloud_gdrive_already_connected">Already connected as %1$s.</string>
     <plurals name="settings_cloud_gdrive_already_connected_adding">
         <item quantity="one">Already connected as %1$s. Adding %2$d song.</item>

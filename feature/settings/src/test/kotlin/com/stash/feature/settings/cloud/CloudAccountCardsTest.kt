@@ -108,8 +108,9 @@ class CloudAccountCardsTest {
     @Test fun `two accounts get a card each, told apart by letter and email`() {
         show(listOf(ron.signedIn(), sam.signedIn()))
 
-        rule.onNodeWithText("Connected as ron@example.com").assertExists()
-        rule.onNodeWithText("Connected as sam@example.com").assertExists()
+        // The address alone: "Connected as" would cost it a line, and it's all that differs.
+        rule.onNodeWithText("ron@example.com").assertExists()
+        rule.onNodeWithText("sam@example.com").assertExists()
         rule.onNodeWithText("R").assertExists()
         rule.onNodeWithText("S").assertExists()
         rule.onNodeWithContentDescription("Google Drive").assertDoesNotExist()
@@ -155,7 +156,7 @@ class CloudAccountCardsTest {
         show(listOf(ron.signedOut(), sam.signedIn()), saveAccount = 2)
 
         rule.onNodeWithText("Session expired for ron@example.com. Reconnect to keep syncing.").assertExists()
-        rule.onNodeWithText("Connected as sam@example.com").assertExists()
+        rule.onNodeWithText("sam@example.com").assertExists()
         assertThat(rule.onAllNodesWithText("Reconnect").fetchSemanticsNodes()).hasSize(1)
         // The signed-out card has no rows; the other carries on.
         assertThat(rule.onAllNodesWithText(addSongs).fetchSemanticsNodes()).hasSize(1)

@@ -268,6 +268,7 @@ private fun CloudAccountCard(
         onConnect = onConnect,
         onDisconnect = { actions.disconnect(account) },
         leading = if (several) ({ AccountLetterAvatar(account.label, accentOf(provider)) }) else null,
+        accountName = account.label.takeIf { several },
         extraContent = if (!row.signedIn) null else ({
             if (actions.usesPicker(provider)) {
                 SettingsNavRow(
