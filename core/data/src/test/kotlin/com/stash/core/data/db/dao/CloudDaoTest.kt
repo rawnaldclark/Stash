@@ -149,6 +149,80 @@ class CloudDaoTest {
         assertEquals(0, dao.moveWaitingBackups(b, 10))
     }
 
+    /** A scan recognised [track] as a file in [account]'s Drive. */
+    private suspend fun linkTo(track: Long, account: Long) {
+        val folder = dao.insertFolder(CloudFolderEntity(accountId = account, itemId = "saved-$account", name = "Saved", path = "", addedAt = 1))
+            .takeIf { it > 0 } ?: dao.getFolders(account).first { it.itemId == "saved-$account" }.id
+        dao.linkUpload(
+            track,
+            CloudItemEntity(
+                trackId = track, accountId = account, folderId = folder, itemId = "file-$track", name = "f", relativePath = "",
+                parentItemId = null, cTag = "1", eTag = null, size = 1, mimeType = null, seenGeneration = 1, scannedAt = 1,
+            ),
+        )
+    }
+
+    @Test fun `a song linked to a file in one Drive stays on that account whichever one asks`() = runTest {
+        val a = driveAccount("a")
+        val b = driveAccount("b")
+        val linked = download("linked")
+        linkTo(linked, a)
+
+        // The switch and the watcher.
+        dao.insertUploadsForDownloads(b, CloudUploadState.EXISTING.name, 1)
+        assertEquals(a, dao.getUpload(linked)!!.accountId)
+        // Moving backup, and "Back up N existing".
+        assertEquals(0, dao.moveWaitingBackups(b, 2))
+        assertEquals(0, dao.queueExistingUploads(b, 3))
+        assertEquals(CloudUploadState.EXISTING.name, dao.getUpload(linked)!!.state)
+        // A tap on Save, with a row and without one.
+        assertEquals(1, dao.queueUploads(listOf(linked), b, CloudUploadOrigin.MANUAL.name, 4))
+        assertEquals(a, dao.getUpload(linked)!!.accountId)
+        val linkedNoRow = download("linked-no-row")
+        linkTo(linkedNoRow, a)
+        assertEquals(1, dao.queueUploads(listOf(linkedNoRow), b, CloudUploadOrigin.MANUAL.name, 5))
+        assertEquals(a, dao.getUpload(linkedNoRow)!!.accountId)
+    }
+
+    @Test fun `a row left on the wrong account by older data never sends a linked song there`() = runTest {
+        val a = driveAccount("a")
+        val b = driveAccount("b")
+        val linked = download("linked")
+        val folder = dao.insertFolder(CloudFolderEntity(accountId = a, itemId = "saved", name = "Saved", path = "", addedAt = 1))
+        // Written straight to the table: nothing today can leave a row like this (a link moves it).
+        dao.insertItem(
+            CloudItemEntity(
+                trackId = linked, accountId = a, folderId = folder, itemId = "file", name = "f", relativePath = "",
+                parentItemId = null, cTag = "1", eTag = null, size = 1, mimeType = null, seenGeneration = 1, scannedAt = 1,
+            ),
+        )
+        upload(linked, b, CloudUploadState.EXISTING, CloudUploadOrigin.BACKUP)
+
+        assertEquals(0, dao.queueExistingUploads(b, 2))
+        assertEquals(CloudUploadState.EXISTING.name, dao.getUpload(linked)!!.state)
+    }
+
+    @Test fun `a link takes a song still waiting for another Drive with it, and leaves a finished one`() = runTest {
+        val a = driveAccount("a")
+        val b = driveAccount("b")
+        val waiting = download("waiting")
+        val finished = download("finished")
+        upload(waiting, b, CloudUploadState.QUEUED, CloudUploadOrigin.BACKUP)
+        dao.setUploadSession(waiting, "https://session", 10, "md5", 2)
+        upload(finished, b, CloudUploadState.DONE, CloudUploadOrigin.BACKUP)
+
+        linkTo(waiting, a)
+        linkTo(finished, a)
+
+        dao.getUpload(waiting)!!.let {
+            assertEquals(a, it.accountId)
+            assertEquals(CloudUploadState.QUEUED.name, it.state)
+            // A session belongs to the account that opened it.
+            assertNull(it.sessionUri)
+        }
+        assertEquals(b, dao.getUpload(finished)!!.accountId)
+    }
+
     @Test fun `saving a song already in another Drive keeps it there, anything else moves`() = runTest {
         val a = driveAccount("a")
         val b = driveAccount("b")
