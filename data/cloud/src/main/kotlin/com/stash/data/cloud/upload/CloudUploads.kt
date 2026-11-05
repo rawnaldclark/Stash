@@ -28,8 +28,12 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** What a "Save to Google Drive" tap did, for the toast. */
-data class SaveRequest(val queued: Int, val alreadyQueued: Int, val notDownloaded: Int)
+/**
+ * What a "Save to Google Drive" tap did, for the toast.
+ *
+ * @property to The account the songs went to, named only when there's more than one to go to.
+ */
+data class SaveRequest(val queued: Int, val alreadyQueued: Int, val notDownloaded: Int, val to: String? = null)
 
 /** The Google Drive card's upload status. */
 data class UploadStatus(
@@ -113,17 +117,23 @@ class CloudUploads @Inject constructor(
         val queued = dao.queueUploads(uploadable, account, CloudUploadOrigin.MANUAL.name, System.currentTimeMillis())
         clearFull(account)
         if (uploadable.isNotEmpty()) scheduler.kick()
-        return SaveRequest(queued, uploadable.size - queued, ids.size - uploadable.size)
+        val drives = dao.getAccounts().filter { it.provider == CloudProvider.GOOGLE_DRIVE.id }
+        val to = drives.takeIf { it.size > 1 }?.firstOrNull { it.id == account }?.let { it.email ?: it.displayName }
+        return SaveRequest(queued, uploadable.size - queued, ids.size - uploadable.size, to)
     }
 
     /**
      * The "Save and back up to" choice. If backup is on, it moves along: its waiting songs follow
      * ([CloudDao.moveWaitingBackups]); what is already in the old Drive stays there.
      */
-    suspend fun setSaveAccount(accountId: Long) {
+    suspend fun setSaveAccount(accountId: Long) = withContext(NonCancellable) {
+        // All of it even if the screen closes meanwhile: backup and saves stay on one account.
         settings.setSaveAccount(accountId)
         if (settings.backupAccountId.value != null) setBackup(accountId, on = true)
     }
+
+    /** True while "Back up my downloads" runs on [accountId]. */
+    fun isBackupAccount(accountId: Long): Boolean = settings.backupAccountId.value == accountId
 
     /**
      * "Back up my downloads" on or off for [accountId]. On also makes it the account saves go to:
@@ -290,8 +300,8 @@ class CloudUploads @Inject constructor(
                 append(
                     when {
                         sending == 0 -> "Nothing to save yet."
-                        sending == 1 -> "Saving 1 song to Google Drive."
-                        else -> "Saving $sending songs to Google Drive."
+                        sending == 1 -> "Saving 1 song to ${r.to ?: "Google Drive"}."
+                        else -> "Saving $sending songs to ${r.to ?: "Google Drive"}."
                     },
                 )
                 when {

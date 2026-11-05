@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -61,7 +62,7 @@ internal fun googlePickMessage(outcome: GooglePickOutcome): String? = when (outc
     GooglePickOutcome.AccountUnidentified -> null
     is GooglePickOutcome.Failed -> outcome.message
     is GooglePickOutcome.Added -> buildString {
-        if (outcome.isNewAccount) append("Google Drive connected as ${outcome.displayName}. ")
+        if (outcome.isNewAccount) append("Google Drive connected as ${outcome.label}. ")
         append(GoogleDrivePicks.message(outcome))
         if (outcome.added > 0 && outcome.isNewAccount) append(" Wi-Fi is best for big batches.")
     }
@@ -71,10 +72,30 @@ internal fun googlePickMessage(outcome: GooglePickOutcome): String? = when (outc
 sealed interface CloudNotice {
     /** See [GooglePickOutcome.AccountUnidentified]. */
     data object AccountUnidentified : CloudNotice
+
+    /** "Add another Google account" picked an account already here; [added] new songs go to it. */
+    data class AlreadyConnected(val account: String, val added: Int) : CloudNotice
+
+    /** Saves and backup go to [account] from now on. */
+    data class SavingTo(val account: String) : CloudNotice
 }
 
-/** A disconnect waiting for the user's yes, with what it will do. */
-data class PendingCloudDisconnect(val accountId: Long, val provider: CloudProvider, val removed: Int, val kept: Int)
+/**
+ * A disconnect waiting for the user's yes, with what it will do.
+ *
+ * @property name The account, when the provider's name alone wouldn't say which one this is.
+ * @property savesMoveTo The account saves go to after this, when this is the one they go to now.
+ * @property backupTurnsOff True when backup runs on this account while another stays connected.
+ */
+data class PendingCloudDisconnect(
+    val accountId: Long,
+    val provider: CloudProvider,
+    val removed: Int,
+    val kept: Int,
+    val name: String? = null,
+    val savesMoveTo: String? = null,
+    val backupTurnsOff: Boolean = false,
+)
 
 /**
  * Settings for cloud storage libraries (Dropbox, OneDrive, Google Drive): the account cards under Accounts and
@@ -107,14 +128,21 @@ class CloudStorageViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
-     * Save to Google Drive: the connected Drive account's backup switch and status line (null
-     * while no Drive account is connected, or in a build without Google Drive).
+     * Save to Google Drive: each connected Drive account's backup switch and status line, by account
+     * id (empty while no Drive account is connected, or in a build without Google Drive).
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    val driveUploads: StateFlow<UploadStatus?> = cloud.accounts
-        .map { list -> list.firstOrNull { it.provider == CloudProvider.GOOGLE_DRIVE }?.id }
+    val driveUploads: StateFlow<Map<Long, UploadStatus>> = cloud.accounts
+        .map { list -> list.filter { it.provider == CloudProvider.GOOGLE_DRIVE }.map { it.id } }
         .distinctUntilChanged()
-        .flatMapLatest { id -> if (id == null || !uploads.available) flowOf(null) else uploads.status(id) }
+        .flatMapLatest { ids ->
+            if (ids.isEmpty() || !uploads.available) flowOf(emptyMap())
+            else combine(ids.map { id -> uploads.status(id).map { id to it } }) { it.toMap() }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** The Drive account that takes "Save to Google Drive" and backup. */
+    val saveAccount: StateFlow<Long?> = uploads.saveAccount
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
@@ -151,16 +179,19 @@ class CloudStorageViewModel @Inject constructor(
 
     /**
      * Opens Google's picker: for [accountId] ("Add songs", "Reconnect"), or a new account when
-     * null (the first pick connects Google Drive). [launch] starts the IntentSender; its result
-     * comes back to [finishGooglePick].
+     * null ("Connect", "Add another Google account": the first pick connects it). [launch] starts
+     * the IntentSender; its result comes back to [finishGooglePick]. Which kind this is stays in
+     * [savedState], so it survives Android killing Stash while the picker is in front.
      */
     fun startGooglePick(accountId: Long?, launch: (IntentSender) -> Unit) {
+        savedState[KEY_ASKING_WHICH_ACCOUNT] = accountId == null
         viewModelScope.launch {
             try {
                 launch(cloud.googlePickerIntent(accountId))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                savedState.remove<Boolean>(KEY_ASKING_WHICH_ACCOUNT)
                 android.util.Log.w("CloudSettings", "Google picker didn't open: ${e::class.simpleName}")
                 _messages.tryEmit("Couldn't open Google Drive. Check your connection and that Google Play services is up to date.")
             }
@@ -173,10 +204,16 @@ class CloudStorageViewModel @Inject constructor(
      * message, never half a pick.
      */
     fun finishGooglePick(data: Intent?) {
+        val askedWhichAccount = savedState.remove<Boolean>(KEY_ASKING_WHICH_ACCOUNT) == true
         viewModelScope.launch {
             val outcome = cloud.completeGooglePick(data)
-            if (outcome == GooglePickOutcome.AccountUnidentified) _notices.tryEmit(CloudNotice.AccountUnidentified)
-            googlePickMessage(outcome)?.let { _messages.tryEmit(it) }
+            when {
+                outcome == GooglePickOutcome.AccountUnidentified -> _notices.tryEmit(CloudNotice.AccountUnidentified)
+                // Asked for another account and got one already here: its card doesn't move, so say why.
+                outcome is GooglePickOutcome.Added && askedWhichAccount && !outcome.isNewAccount ->
+                    _notices.tryEmit(CloudNotice.AlreadyConnected(outcome.label, outcome.added))
+                else -> googlePickMessage(outcome)?.let { _messages.tryEmit(it) }
+            }
         }
     }
 
@@ -205,7 +242,18 @@ class CloudStorageViewModel @Inject constructor(
     fun requestDisconnect(account: CloudAccount) {
         viewModelScope.launch {
             val (removed, kept) = cloud.disconnectImpact(account.id)
-            _pendingDisconnect.value = PendingCloudDisconnect(account.id, account.provider, removed, kept)
+            // In connected order: the first of these is the one saves fall back to.
+            val others = cloud.accounts.first().filter { it.provider == account.provider && it.id != account.id }
+            val drive = account.provider == CloudProvider.GOOGLE_DRIVE && others.isNotEmpty()
+            _pendingDisconnect.value = PendingCloudDisconnect(
+                accountId = account.id,
+                provider = account.provider,
+                removed = removed,
+                kept = kept,
+                name = account.label.takeIf { others.isNotEmpty() },
+                savesMoveTo = others.firstOrNull()?.label?.takeIf { drive && uploads.saveAccountId() == account.id },
+                backupTurnsOff = drive && uploads.isBackupAccount(account.id),
+            )
         }
     }
 
@@ -220,7 +268,7 @@ class CloudStorageViewModel @Inject constructor(
             val removal = cloud.disconnect(pending.accountId)
             _messages.tryEmit(
                 buildString {
-                    append("${pending.provider.displayName} disconnected.")
+                    append("${pending.name ?: pending.provider.displayName} disconnected.")
                     if (removal.keptAsLocal > 0) append(" ${removal.keptAsLocal} downloaded songs stay on this phone.")
                 },
             )
@@ -228,6 +276,14 @@ class CloudStorageViewModel @Inject constructor(
     }
 
     // ── Save to Google Drive ─────────────────────────────────────────────
+
+    /** The "Save and back up to" choice on the Drive cards. */
+    fun setSaveAccount(account: CloudAccount) {
+        viewModelScope.launch {
+            uploads.setSaveAccount(account.id)
+            _notices.tryEmit(CloudNotice.SavingTo(account.label))
+        }
+    }
 
     /** "Back up my downloads to Google Drive" on or off. */
     fun setDriveBackup(accountId: Long, on: Boolean) {
@@ -315,6 +371,9 @@ class CloudStorageViewModel @Inject constructor(
     private companion object {
         /** The provider id this instance's [connect] is waiting on, in its saved state. */
         const val KEY_SIGNING_IN = "cloud.signingIn"
+
+        /** True while Google's picker is open with no account given: Google asks which one. */
+        const val KEY_ASKING_WHICH_ACCOUNT = "cloud.askingWhichAccount"
     }
 
     private fun load(folderId: String?) {

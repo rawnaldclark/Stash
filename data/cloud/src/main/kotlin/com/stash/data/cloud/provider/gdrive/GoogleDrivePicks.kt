@@ -18,7 +18,11 @@ sealed interface GooglePickOutcome {
         val isNewAccount: Boolean,
         val added: Int,
         val alreadyThere: Int,
-    ) : GooglePickOutcome
+        val email: String? = null,
+    ) : GooglePickOutcome {
+        /** What tells this account apart from another: its email, when it has one. */
+        val label: String get() = email ?: displayName
+    }
 
     data object Cancelled : GooglePickOutcome
     data class Failed(val message: String) : GooglePickOutcome
@@ -100,7 +104,7 @@ class GoogleDrivePicks(
             store.add(folderId, fresh)
             scanNow(folderId)
         }
-        return GooglePickOutcome.Added(accountId, who.displayName, existing == null, fresh.size, fileIds.size - fresh.size)
+        return GooglePickOutcome.Added(accountId, who.displayName, existing == null, fresh.size, fileIds.size - fresh.size, email)
     }
 
     /** The account's picks folder row, made on first use. */

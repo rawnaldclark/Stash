@@ -56,6 +56,8 @@ import com.stash.feature.settings.R
  * @param extraContent  Optional per-service sub-settings rendered inside the
  *   same card, below a subtle divider (e.g. YouTube Music's likes and history
  *   switches), so they read as properties of the connection. Null = none.
+ * @param leading  Drawn instead of [icon] (a letter avatar, when one service has
+ *   several accounts and the same logo wouldn't tell them apart). Null = [icon].
  */
 @Composable
 fun AccountConnectionCard(
@@ -71,6 +73,7 @@ fun AccountConnectionCard(
     onNeedsAction: (() -> Unit)? = null,
     expired: Boolean = false,
     extraContent: (@Composable ColumnScope.() -> Unit)? = null,
+    leading: (@Composable () -> Unit)? = null,
 ) {
     val status = accountStatus(authState, expired)
     AccountCard(
@@ -82,6 +85,7 @@ fun AccountConnectionCard(
         modifier = modifier,
         busy = authState is AuthState.Connecting,
         extraContent = extraContent,
+        leading = leading,
     ) {
         when {
             authState !is AuthState.Connected -> AccountConnectButton(accentColor, onConnect)
@@ -105,7 +109,8 @@ fun AccountConnectionCard(
     }
 }
 
-private val LogoSize = 32.dp
+/** The space an account card's logo or avatar takes. */
+internal val LogoSize = 32.dp
 
 /**
  * The shell every account on Accounts & Sync shares: brand logo, name, one
@@ -114,6 +119,7 @@ private val LogoSize = 32.dp
  * sign-in flow (Last.fm, ListenBrainz) fill it directly so they look the same.
  *
  * @param busy  Shows a spinner in place of [action] (a sign-in in flight).
+ * @param leading  Drawn instead of [icon], in the same [LogoSize] space. Null = [icon].
  */
 @Composable
 fun AccountCard(
@@ -125,6 +131,7 @@ fun AccountCard(
     modifier: Modifier = Modifier,
     busy: Boolean = false,
     extraContent: (@Composable ColumnScope.() -> Unit)? = null,
+    leading: (@Composable () -> Unit)? = null,
     action: @Composable () -> Unit,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -141,15 +148,19 @@ fun AccountCard(
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = serviceName,
-                    tint = accentColor,
-                    // Brand logos fill their whole 24-unit box where Material icons
-                    // keep 2 units clear; the same inset keeps them the size the
-                    // generic icons were.
-                    modifier = Modifier.size(LogoSize).padding(LogoSize / 12),
-                )
+                if (leading != null) {
+                    leading()
+                } else {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = serviceName,
+                        tint = accentColor,
+                        // Brand logos fill their whole 24-unit box where Material icons
+                        // keep 2 units clear; the same inset keeps them the size the
+                        // generic icons were.
+                        modifier = Modifier.size(LogoSize).padding(LogoSize / 12),
+                    )
+                }
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
