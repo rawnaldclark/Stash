@@ -63,8 +63,9 @@ class ListenTogetherSessionTest {
             this.interceptor = interceptor
         }
         override fun exitSession() { calls += "exit" }
-        override fun load(item: MediaItem, positionMs: Long) { calls += "load:${item.mediaId}@$positionMs" }
-        override fun seekTo(positionMs: Long) { calls += "seek:$positionMs"; this.positionMs = positionMs }
+        override fun load(item: MediaItem, positionMs: Long) { calls += "load:${item.mediaId}@$positionMs"; ended = false }
+        /** Takes the real player out of ENDED, even at the very end: paused, it settles on READY and stays there. */
+        override fun seekTo(positionMs: Long) { calls += "seek:$positionMs"; this.positionMs = positionMs; ended = false }
         override fun play() { calls += "play" }
         override fun pause() { calls += "pause" }
 
@@ -1157,8 +1158,8 @@ class ListenTogetherSessionTest {
     }
 
     fun TestScope.queueUpdate(queue: List<SharedTrack>, qv: Int = 8) = receive(ServerMessage.QueueUpdate(queue, qv))
-    fun TestScope.timeline(key: Int, playing: Boolean, rev: Int = 5) =
-        receive(ServerMessage.TimelineUpdate(rev = rev, trackKey = key, positionMs = 0, atRoomMs = 11_000, playing = playing))
+    fun TestScope.timeline(key: Int, playing: Boolean, rev: Int = 5, positionMs: Long = 0) =
+        receive(ServerMessage.TimelineUpdate(rev = rev, trackKey = key, positionMs = positionMs, atRoomMs = 11_000, playing = playing))
     fun TestScope.answered(count: Int, next: Boolean = true, by: String = "me", suggested: Int? = null) =
         receive(ServerMessage.Added(by, next, count, suggested = suggested))
     fun inRoom() = controller.state.value as ListenTogetherState.InRoom
@@ -1241,7 +1242,7 @@ class ListenTogetherSessionTest {
         timeline(2, playing = true)
         connection.sent.clear()
         queueUpdate(listOf(next.copy(addedBy = "a")))
-        assertThat(loads()).containsExactly(ClientMessage.Load(next.copy(addedBy = "a"), 0, emptyList(), "end", qv = 8))
+        assertThat(loads()).containsExactly(ClientMessage.Load(next.copy(addedBy = "a"), 0, emptyList(), "unavailable", qv = 8))
         assertThat(inRoom().pausedLocally).isFalse()
     }
 
@@ -1285,7 +1286,8 @@ class ListenTogetherSessionTest {
         connection.incoming.trySend(RoomEvent.Reconnecting); runCurrent()
         connection.incoming.trySend(RoomEvent.Connected); runCurrent()
         connection.sent.clear()
-        receive(ServerMessage.Welcome("h", "tok", state(host = "h", key = 1, queue = listOf(next.copy(addedBy = "a")), v = 2, qv = 9, hostV = 2)))
+        val pausedAtTheEnd = RoomTimeline(125_020, 11_000, false)
+        receive(ServerMessage.Welcome("h", "tok", state(host = "h", key = 1, timeline = pausedAtTheEnd, queue = listOf(next.copy(addedBy = "a")), v = 2, qv = 9, hostV = 2)))
         assertThat(loads()).containsExactly(ClientMessage.Load(next.copy(addedBy = "a"), 0, emptyList(), "end", qv = 9))
     }
 
@@ -1297,6 +1299,132 @@ class ListenTogetherSessionTest {
         runCurrent()
         assertThat(loads()).hasSize(1)
         assertThat(loads().single().track).isEqualTo(next)
+    }
+
+    // N1: the queue ran out a while ago. The room's paused answer made the player seek, so it no longer reads ENDED.
+
+    fun TestScope.queueRanOut(pausedAt: Long = 125_020) {
+        hostPlaying()
+        player.ended = true
+        player.events!!.onEnded(); runCurrent()
+        assertThat(sentNoPings()).contains(ClientMessage.Pause)
+        timeline(1, playing = false, rev = 3, positionMs = pausedAt)
+        assertThat(player.calls).contains("seek:$pausedAt")
+        assertThat(player.ended).isFalse()
+        connection.sent.clear()
+    }
+
+    @Test fun `a guest's add well after the queue ran out starts the room`() = runTest {
+        queueRanOut()
+        val add = next.copy(addedBy = "a")
+        queueUpdate(listOf(add))
+        assertThat(loads()).containsExactly(ClientMessage.Load(add, 0, emptyList(), "end", qv = 8))
+    }
+
+    @Test fun `the host's own add well after the queue ran out starts it too`() = runTest {
+        queueRanOut()
+        val add = next.copy(addedBy = "h")
+        queueUpdate(listOf(add))
+        assertThat(loads()).containsExactly(ClientMessage.Load(add, 0, emptyList(), "end", qv = 8))
+    }
+
+    @Test fun `the room's position landing just short of the end still counts as finished`() = runTest {
+        queueRanOut(pausedAt = 124_100)
+        queueUpdate(listOf(next.copy(addedBy = "a")))
+        assertThat(loads()).hasSize(1)
+    }
+
+    @Test fun `a pause by hand over a second before the end stays paused when a song is added`() = runTest {
+        hostPlaying()
+        timeline(1, playing = false, rev = 3, positionMs = 123_900)
+        connection.sent.clear()
+        queueUpdate(listOf(next.copy(addedBy = "a")))
+        assertThat(loads()).isEmpty()
+    }
+
+    @Test fun `a new host who finds the room paused at the song's end with a song waiting moves it on`() = runTest {
+        join()
+        val pausedAtTheEnd = RoomTimeline(125_020, 0, false)
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1, timeline = pausedAtTheEnd, queue = listOf(next), v = 2, qv = 3, hostV = 2)))
+        assertThat(player.ended).isFalse()
+        connection.sent.clear()
+        receive(ServerMessage.StateSync(state(host = "me", key = 1, timeline = pausedAtTheEnd, queue = listOf(next), v = 2, qv = 3, hostV = 2)))
+        assertThat(loads()).containsExactly(ClientMessage.Load(next, 0, emptyList(), "end", qv = 3))
+    }
+
+    // N2: a stop says why, on every phone, once.
+
+    @Test fun `a stop tells the host with a toast, wherever in the app they are`() = runTest {
+        val notices = notices()
+        hostPlaying()
+        receive(ServerMessage.Prepare(2, gone, 0, 8_000, by = "h", why = "end"))
+        assertThat(notices).containsExactly("Session paused: you can't play Gone")
+    }
+
+    @Test fun `a stop with songs still queued says Play tries the next one`() = runTest {
+        val notices = notices()
+        val goners = List(3) { SharedTrack("G$it", "Nobody") }
+        host(upcoming = emptyList(), v = 2, qv = 1)
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000, by = "h"))
+        queueUpdate(goners, qv = 2)
+        player.events!!.onError() // 1
+        echoUnplayable(2, goners[0]) // 2
+        queueUpdate(goners.drop(1), qv = 3)
+        echoUnplayable(3, goners[1]) // 3
+        assertThat(notices).containsExactly("Session paused: you can't play G1. Tap Play to try the next song.")
+    }
+
+    @Test fun `an add after a stop moves on saying why, and the host's chip for that song isn't repeated`() = runTest {
+        hostPlaying()
+        val events = events()
+        receive(ServerMessage.Prepare(2, gone, 0, 8_000, by = "h", why = "end"))
+        timeline(2, playing = true)
+        val add = next.copy(addedBy = "a").also { catalog.items[it] = item("2") }
+        connection.sent.clear()
+        queueUpdate(listOf(add))
+        assertThat(loads().single().why).isEqualTo("unavailable")
+        receive(ServerMessage.Prepare(3, add, 0, 8_000, by = "h", why = "unavailable"))
+        assertThat(events.map { it.song }).containsExactly("Gone")
+    }
+
+    /** A guest's view: the host has just been given [song] and says it can't play it. */
+    fun TestScope.hostCantPlay(song: SharedTrack) {
+        catalog.items[song] = item("2")
+        receive(ServerMessage.Prepare(2, song, 0, 8_000, by = "h", why = "end"))
+        receive(ServerMessage.Members(listOf(RoomMember("h", "Host", 1, "unavailable", v = 2), RoomMember("me", "Me", 2, "ok", v = 2))))
+        timeline(2, playing = true, rev = 6)
+    }
+
+    @Test fun `guests hear why when the host pauses on a song it can't play, and the adder gets the toast, once`() = runTest {
+        val notices = notices()
+        joinV2()
+        val events = events()
+        hostCantPlay(next.copy(addedBy = "me"))
+        receive(ServerMessage.TimelineUpdate(rev = 7, trackKey = 2, positionMs = 0, atRoomMs = 11_000, playing = false, by = "h"))
+        assertThat(events).containsExactly(SessionEvent(SessionEvent.Kind.SKIPPED_UNAVAILABLE, "h", "Host", song = "Xtal"))
+        assertThat(notices).containsExactly("Skipped Xtal: Host can't play it")
+        // The room moves on later, for the next add: everyone has already been told.
+        receive(ServerMessage.Prepare(3, third, 0, 8_000, by = "h", why = "unavailable"))
+        assertThat(events).hasSize(1)
+        assertThat(notices).hasSize(1)
+    }
+
+    @Test fun `a guest who didn't add it gets the notice and no toast`() = runTest {
+        val notices = notices()
+        joinV2()
+        val events = events()
+        hostCantPlay(next.copy(addedBy = "b"))
+        receive(ServerMessage.TimelineUpdate(rev = 7, trackKey = 2, positionMs = 0, atRoomMs = 11_000, playing = false, by = "h"))
+        assertThat(events.single().kind).isEqualTo(SessionEvent.Kind.SKIPPED_UNAVAILABLE)
+        assertThat(notices).isEmpty()
+    }
+
+    @Test fun `a host's ordinary pause still says paused`() = runTest {
+        joinV2()
+        val events = events()
+        timeline(1, playing = true, rev = 6)
+        receive(ServerMessage.TimelineUpdate(rev = 7, trackKey = 1, positionMs = 0, atRoomMs = 11_000, playing = false, by = "h"))
+        assertThat(events.single().kind).isEqualTo(SessionEvent.Kind.PAUSED)
     }
 
     // Finding 3: an add while the socket is down.
@@ -1462,21 +1590,23 @@ class ListenTogetherSessionTest {
         connection.sent.clear()
         player.events!!.onError() // 1: moves to G0
         assertThat(loads().map { it.track }).containsExactly(goners[0])
-        echoUnplayable(2, goners[0]) // 2: moves to G1
+        echoUnplayable(2, goners[0]) // 2: moves to G1, before this phone has read the room's echo of G0's Load
         assertThat(loads().map { it.track }).containsExactly(goners[0], goners[1]).inOrder()
-        queueUpdate(goners.drop(2), qv = 3)
+        queueUpdate(goners.drop(1), qv = 3) // that echo
         echoUnplayable(3, goners[1]) // 3: stops here
         assertThat(loads()).hasSize(2)
         assertThat(sentNoPings()).contains(ClientMessage.Pause)
+        queueUpdate(goners.drop(2), qv = 4) // the echo of G1's Load
         assertThat(inRoom().queue).containsExactlyElementsIn(goners.drop(2)).inOrder()
         assertThat(events.last().song).isEqualTo("G1")
         // An add doesn't burn another song: the host stopped this on purpose.
-        queueUpdate(goners.drop(2) + next.copy(addedBy = "a"), qv = 4)
+        queueUpdate(goners.drop(2) + next.copy(addedBy = "a"), qv = 5)
         assertThat(loads()).hasSize(2)
-        // The host's Play starts it again, with a fresh count.
+        // The host's Play starts it again, with a fresh count, and every phone hears about the song it left.
         player.interceptor!!.onPlay(); runCurrent()
         assertThat(loads()).hasSize(3)
         assertThat(loads().last().track).isEqualTo(goners[2])
+        assertThat(loads().last().why).isEqualTo("unavailable")
         echoUnplayable(4, goners[2])
         assertThat(loads()).hasSize(4)
     }
@@ -1489,11 +1619,14 @@ class ListenTogetherSessionTest {
         connection.sent.clear()
         player.events!!.onError() // 1
         echoUnplayable(2, goners[0]) // 2
+        queueUpdate(listOf(next, goners[1], goners[2], goners[3]), qv = 3) // the room's echo of G0's Load
         receive(ServerMessage.Prepare(3, next, 0, 8_000, by = "h", why = "unavailable"))
+        queueUpdate(listOf(goners[1], goners[2], goners[3]), qv = 4) // of next's
         player.events!!.onReady() // played: back to none
         player.events!!.onError() // 1
         echoUnplayable(4, goners[1]) // 2, so this one still moves on; without the reset it would be 4 and stop
         assertThat(loads().map { it.track }).containsExactly(goners[0], next, goners[1], goners[2]).inOrder()
+        queueUpdate(listOf(goners[2], goners[3]), qv = 5) // of G1's
         echoUnplayable(5, goners[2]) // 3: now it stops
         assertThat(loads()).hasSize(4)
     }

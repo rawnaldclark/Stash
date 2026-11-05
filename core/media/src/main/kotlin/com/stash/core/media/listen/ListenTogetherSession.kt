@@ -100,6 +100,8 @@ class ListenTogetherSession(
      * starts it again.
      */
     private var unplayableInARow = 0
+    /** The song (trackKey) this phone has said "Skipped … can't play it" about: once each, whether the room paused on it first or not. */
+    private var skipNoticeKey = NONE
     /** This phone's "Let guests add songs": read as a session starts, sent in every hello, changed by the host's switch. */
     private var myGuestsAdd = true
     /**
@@ -274,10 +276,7 @@ class ListenTogetherSession(
                 loadsInFlight = (loadsInFlight - 1).coerceAtLeast(0)
                 // The host's phone couldn't play the last song and moved everyone on: say so on every phone, the host's too.
                 if (by != null && m.why == UNAVAILABLE) {
-                    val skipped = room?.track
-                    controller.event(SessionEvent(SessionEvent.Kind.SKIPPED_UNAVAILABLE, by, memberNames[by], song = skipped?.title))
-                    // The chip shows only on the art view. Whoever added the song may be anywhere in the app, so they get a toast.
-                    if (skipped != null && skipped.addedBy == myId && by != myId) yourSongSkipped(skipped, by)
+                    noticeSkipped(by)
                 } else if (by != null && by != myId) when (m.why) {
                     "skip", "pick" -> notice(SessionEvent.Kind.SKIPPED, by)
                     "back" -> notice(SessionEvent.Kind.WENT_BACK, by)
@@ -318,7 +317,7 @@ class ListenTogetherSession(
         if (isHost != wasHost) player.enterSession(isHost, interceptor) // makeHost or a 60 s handover
         // The song ended while nobody could move the room on (the old host left), or the new host can't play it: they do.
         if (isHost && !wasHost) {
-            if (s.trackKey == loadedKey && cantPlayCurrentSong()) advanceNow(UNAVAILABLE) else if (player.ended) advanceNow()
+            if (s.trackKey == loadedKey && cantPlayCurrentSong()) advanceNow(UNAVAILABLE) else if (songFinished()) advanceNow()
         }
         publish()
         val track = s.track ?: return
@@ -430,7 +429,35 @@ class ListenTogetherSession(
 
     private fun cantPlayCurrentSong() = loadedKey != NONE && unavailableKey == loadedKey
 
-    private fun yourSongSkipped(song: SharedTrack, hostId: String) {
+    /** Moving the room on from here: so every phone hears about a song the host couldn't play, however late. */
+    private fun moveOnReason() = if (cantPlayCurrentSong()) UNAVAILABLE else "end"
+
+    /**
+     * The room's song has played out, even if the player no longer says so. When a last song ends the room pauses at
+     * its end, [applyTimeline] seeks there, and that takes the player out of ENDED for good: it settles on READY, because
+     * only a playing position can reach the end again. So a room paused at the end counts too. [END_SLOP_MS]: the room's
+     * position can land just short of the end, by what drift correction lets go. A pause by hand in the last second reads
+     * the same, and that's a fair price: an add moves on from it.
+     */
+    private fun songFinished(): Boolean {
+        if (player.ended) return true
+        val t = timeline ?: return false
+        val duration = player.durationMs ?: return false
+        return !t.playing && t.trackKey == loadedKey && t.positionMs >= duration - END_SLOP_MS
+    }
+
+    /**
+     * "Skipped ‹Song›: ‹Host› can't play it" about the room's current song, once on this phone: the room may pause on it
+     * first and move on only later. The chip shows only on the art view and the song's adder may be anywhere in the app,
+     * so they get a toast too.
+     */
+    private fun noticeSkipped(hostId: String) {
+        val r = room ?: return
+        if (skipNoticeKey == r.trackKey) return
+        skipNoticeKey = r.trackKey
+        val song = r.track
+        controller.event(SessionEvent(SessionEvent.Kind.SKIPPED_UNAVAILABLE, hostId, memberNames[hostId], song = song?.title))
+        if (song == null || song.addedBy != myId || hostId == myId) return
         val host = memberNames[hostId]
         if (host != null) controller.message(R.string.lt_your_song_skipped_by, song.title, host)
         else controller.message(R.string.lt_your_song_skipped, song.title)
@@ -441,11 +468,18 @@ class ListenTogetherSession(
         if (current != null && current.trackKey == t.trackKey && t.rev < current.rev) return // out of order
         val by = t.by
         if (by != null && by != myId && current != null && current.playing != t.playing) {
-            notice(if (t.playing) SessionEvent.Kind.RESUMED else SessionEvent.Kind.PAUSED, by)
+            // The host paused the room on a song it can't play, having nowhere to go: no new song is coming to say why.
+            if (!t.playing && by == room?.host && hostCantPlay()) noticeSkipped(by)
+            else notice(if (t.playing) SessionEvent.Kind.RESUMED else SessionEvent.Kind.PAUSED, by)
         }
         timeline = t
         room = room?.copy(timeline = RoomTimeline(t.positionMs, t.atRoomMs, t.playing))
         applyTimeline()
+    }
+
+    private fun hostCantPlay(): Boolean {
+        val r = room ?: return false
+        return r.members.firstOrNull { it.id == r.host }?.status == UNAVAILABLE
     }
 
     private fun applyTimeline() {
@@ -554,7 +588,7 @@ class ListenTogetherSession(
             // A song still on its way must not be skipped: the room hasn't echoed the first Load for a moment after a
             // session starts.
             val nothingOnItsWay = room?.track == null && loadsInFlight == 0 && pendingLoad == null
-            if (player.ended || cantPlayCurrentSong() || nothingOnItsWay) advanceNow() else send(ClientMessage.Play)
+            if (player.ended || cantPlayCurrentSong() || nothingOnItsWay) advanceNow(moveOnReason()) else send(ClientMessage.Play)
         }
         override fun onPause() {
             if (isHost) {
@@ -613,9 +647,9 @@ class ListenTogetherSession(
         val r = room ?: return
         if (!isHost || r.queue.isEmpty() || loadsInFlight > 0 || pendingLoad != null) return
         if (unplayableInARow >= MAX_UNPLAYABLE_IN_A_ROW) return
-        if (player.ended || cantPlayCurrentSong() || r.track == null) {
+        if (songFinished() || cantPlayCurrentSong() || r.track == null) {
             pausedLocally = false
-            advanceNow()
+            advanceNow(moveOnReason())
             publish()
         }
     }
@@ -655,11 +689,14 @@ class ListenTogetherSession(
      * The host can't play the room's song and there's nowhere to move to, or it has skipped too many in a row. The room
      * mustn't play on for the guests alone, with nothing to move it on at the end, so it pauses here. The room ignores a
      * pause while preparing (and the timeline is null until it's done), so [pausedLocally] sends it again then. Left
-     * unset on a room already paused: it would pause the next song. There's no new song, so no Prepare tells the guests
-     * why; they see the pause.
+     * unset on a room already paused: it would pause the next song. The guests hear why from that pause ([onTimeline]),
+     * and the host gets a toast, because the chip shows only on the art view and they may be anywhere in the app.
      */
     private fun stopOnUnplayable(r: RoomState) {
-        myId?.let { controller.event(SessionEvent(SessionEvent.Kind.SKIPPED_UNAVAILABLE, it, memberNames[it], song = r.track?.title)) }
+        myId?.let(::noticeSkipped)
+        r.track?.title?.let { song ->
+            controller.message(if (r.queue.isEmpty()) R.string.lt_stopped_cant_play else R.string.lt_stopped_cant_play_more, song)
+        }
         if (timeline?.playing != false) {
             pausedLocally = true
             send(ClientMessage.Pause)
@@ -888,7 +925,7 @@ class ListenTogetherSession(
         player.events = null
         player.exitSession()
         code = null; url = null; myId = null; token = null; room = null; isHost = false; pendingLoad = null; loadsInFlight = 0
-        welcomed = false; unplayableInARow = 0; heldAdds.clear(); awaitingAdds.clear()
+        welcomed = false; unplayableInARow = 0; skipNoticeKey = NONE; heldAdds.clear(); awaitingAdds.clear()
         timeline = null; applied = null; loadedKey = NONE; itemKey = NONE; readyKey = NONE; unavailableKey = NONE; lastStatus = null
         reconnecting = false; versionMismatch = false; history.clear(); radioTriedKey = NONE
         seenMembers.clear(); memberNames.clear(); pendingLeaves.clear() // their jobs died with sessionScope
@@ -974,6 +1011,7 @@ class ListenTogetherSession(
         const val MAX_QUEUE = 200
         const val MAX_SUGGESTIONS = 3
         const val MAX_UNPLAYABLE_IN_A_ROW = 3
+        const val END_SLOP_MS = 1_000L
         /** One guest's songs waiting in the room's queue (owner decision 7); keep in sync with MAX_GUEST_WAITING in room.js. */
         const val GUEST_MAX_WAITING = 20
         /** Songs per `add` message, well under the room's 256 KB frame even with long titles and cover links. */

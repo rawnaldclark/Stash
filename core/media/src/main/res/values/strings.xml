@@ -43,6 +43,10 @@
     <string name="lt_your_song_skipped_by">Skipped %1$s: %2$s can\'t play it</string>
     <!-- The same, when the host's name isn't known. %1$s: the song. -->
     <string name="lt_your_song_skipped">Skipped %1$s: the host can\'t play it</string>
+    <!-- To the host: their phone can't play this song and nothing is queued, so the session paused. %1$s: the song. -->
+    <string name="lt_stopped_cant_play">Session paused: you can\'t play %1$s</string>
+    <!-- To the host: several songs in a row they can't play, so the session paused with songs still queued. %1$s: the song. -->
+    <string name="lt_stopped_cant_play_more">Session paused: you can\'t play %1$s. Tap Play to try the next song.</string>
     <!-- A guest tapped a song to play it now, in a room that lets guests add. -->
     <string name="lt_only_host_changes_song">Only the host can change the song. Use Play next to add it.</string>
 </resources>
