@@ -32,8 +32,26 @@ import javax.inject.Singleton
  * What a "Save to Google Drive" tap did, for the toast.
  *
  * @property to The account the songs went to, named only when there's more than one to go to.
+ * @property elsewhere Songs of this save that stayed on another account. They count in [queued] and
+ *   [alreadyQueued] too; [CloudUploads.message] leaves them out of "Saving N songs to ...".
  */
-data class SaveRequest(val queued: Int, val alreadyQueued: Int, val notDownloaded: Int, val to: String? = null)
+data class SaveRequest(
+    val queued: Int,
+    val alreadyQueued: Int,
+    val notDownloaded: Int,
+    val to: String? = null,
+    val elsewhere: List<SavedElsewhere> = emptyList(),
+)
+
+/**
+ * Songs of a save that stayed on another account, however the save asked: a song lives in one Drive,
+ * and a song already queued stays where it was queued.
+ *
+ * @property account Which account, by its email or else its name.
+ * @property waiting Songs with no file in that Drive yet: they wait on that account's sign-in and space.
+ * @property inDrive Songs with a file there: only checked again.
+ */
+data class SavedElsewhere(val account: String, val waiting: Int, val inDrive: Int)
 
 /** The Google Drive card's upload status. */
 data class UploadStatus(
@@ -118,8 +136,15 @@ class CloudUploads @Inject constructor(
         clearFull(account)
         if (uploadable.isNotEmpty()) scheduler.kick()
         val drives = dao.getAccounts().filter { it.provider == CloudProvider.GOOGLE_DRIVE.id }
-        val to = drives.takeIf { it.size > 1 }?.firstOrNull { it.id == account }?.let { it.email ?: it.displayName }
-        return SaveRequest(queued, uploadable.size - queued, ids.size - uploadable.size, to)
+        if (drives.size < 2) return SaveRequest(queued, uploadable.size - queued, ids.size - uploadable.size)
+        fun nameOf(id: Long) = drives.firstOrNull { it.id == id }?.let { it.email?.takeIf(String::isNotBlank) ?: it.displayName }
+        val elsewhere = uploadable.chunked(CloudDao.BIND_CHUNK).flatMap { dao.uploadsElsewhere(it, account) }
+        return SaveRequest(
+            queued, uploadable.size - queued, ids.size - uploadable.size, nameOf(account),
+            elsewhere.groupBy { it.accountId }.mapNotNull { (id, parts) ->
+                nameOf(id)?.let { name -> SavedElsewhere(name, parts.sumOf { it.songs - it.inDrive }, parts.sumOf { it.inDrive }) }
+            },
+        )
     }
 
     /**
@@ -315,27 +340,30 @@ class CloudUploads @Inject constructor(
         private const val WATCH_DEBOUNCE_MS = 3_000L
         private const val WATCH_RESTART_MS = 30_000L
 
-        /** The toast after a "Save to Google Drive" tap on a song, album or playlist. */
+        /**
+         * The toast after a "Save to Google Drive" tap on a song, album or playlist, up to where the
+         * songs that stayed on another account are concerned ([SaveRequest.elsewhere]): the screen
+         * adds those. Empty when that is all there is to say.
+         */
         fun message(r: SaveRequest): String {
-            val sending = r.queued + r.alreadyQueued
+            val elsewhere = r.elsewhere.sumOf { it.waiting + it.inDrive }
+            val sending = r.queued + r.alreadyQueued - elsewhere
             return buildString {
-                append(
-                    when {
-                        sending == 0 -> "Nothing to save yet."
-                        sending == 1 -> "Saving 1 song to ${r.to ?: "Google Drive"}."
-                        else -> "Saving $sending songs to ${r.to ?: "Google Drive"}."
-                    },
-                )
+                when {
+                    sending == 1 -> append("Saving 1 song to ${r.to ?: "Google Drive"}.")
+                    sending > 1 -> append("Saving $sending songs to ${r.to ?: "Google Drive"}.")
+                    elsewhere == 0 -> append("Nothing to save yet.")
+                }
                 when {
                     r.notDownloaded == 1 -> append(" 1 song isn't downloaded yet.")
                     r.notDownloaded > 1 -> append(" ${r.notDownloaded} songs aren't downloaded yet.")
                 }
-                if (sending == 0 && r.notDownloaded > 0) {
+                if (sending == 0 && elsewhere == 0 && r.notDownloaded > 0) {
                     // "Nothing to save yet. 3 songs aren't downloaded yet." reads oddly: say it plainly.
                     clear()
                     append(if (r.notDownloaded == 1) "Download this song first to save it to Google Drive." else "Download these songs first to save them to Google Drive.")
                 }
-            }
+            }.trim()
         }
     }
 }

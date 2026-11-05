@@ -545,6 +545,52 @@ class CloudUploadsTest {
         assertThat(rowFor(a).state).isEqualTo(CloudUploadState.QUEUED.name)
     }
 
+    @Test fun `saving again a song queued on another account leaves it there, and says so instead of naming the new one`() = runTest {
+        val second = secondAccount()
+        val waiting = track("waiting")
+        uploads.save(listOf(waiting), account)
+        uploads.setSaveAccount(second)
+
+        val r = uploads.save(listOf(waiting))
+
+        // Today's behaviour, kept: whether a re-save should move it is the owner's call.
+        assertThat(rowFor(waiting).accountId).isEqualTo(account)
+        assertThat(r.elsewhere).containsExactly(SavedElsewhere("Ron", waiting = 1, inDrive = 0))
+        // Nothing is on its way to Sam, so nothing says so.
+        assertThat(CloudUploads.message(r)).isEmpty()
+    }
+
+    @Test fun `a save that lands in three places says each`() = runTest {
+        val second = secondAccount()
+        val waiting = track("waiting")
+        val saved = track("saved")
+        uploads.save(listOf(waiting, saved), account)
+        dao.finishUpload(saved, CloudUploadState.DONE.name, "file", null, 2)
+        scanLinked(saved, account)
+        val fresh = track("fresh")
+        val notDownloaded = track("x", downloaded = false)
+        uploads.setSaveAccount(second)
+
+        val r = uploads.save(listOf(waiting, saved, fresh, notDownloaded))
+
+        assertThat(r.to).isEqualTo("sam@example.com")
+        assertThat(rowFor(fresh).accountId).isEqualTo(second)
+        assertThat(r.elsewhere).containsExactly(SavedElsewhere("Ron", waiting = 1, inDrive = 1))
+        assertThat(CloudUploads.message(r)).isEqualTo("Saving 1 song to sam@example.com. 1 song isn't downloaded yet.")
+    }
+
+    @Test fun `only songs that stayed elsewhere and one not downloaded reads cleanly`() {
+        val r = SaveRequest(queued = 0, alreadyQueued = 2, notDownloaded = 1, to = "sam@example.com", elsewhere = listOf(SavedElsewhere("ron@example.com", 2, 0)))
+        assertThat(CloudUploads.message(r)).isEqualTo("1 song isn't downloaded yet.")
+    }
+
+    @Test fun `with one account nothing is elsewhere and the toast names no account`() = runTest {
+        val r = uploads.save(listOf(track("a")))
+        assertThat(r.elsewhere).isEmpty()
+        assertThat(r.to).isNull()
+        assertThat(CloudUploads.message(r)).isEqualTo("Saving 1 song to Google Drive.")
+    }
+
     @Test fun `a song that never made it goes to the account chosen now`() = runTest {
         val second = secondAccount()
         val a = track("a")

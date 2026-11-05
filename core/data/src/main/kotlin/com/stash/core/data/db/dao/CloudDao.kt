@@ -42,6 +42,9 @@ data class UnlinkedDownload(
 /** How many of an account's upload rows are in one [CloudUploadState]. */
 data class CloudUploadCount(val state: String, val count: Int)
 
+/** How many songs of a save have their upload row on [accountId], and how many of those have a file there. */
+data class CloudUploadsElsewhere(val accountId: Long, val songs: Int, val inDrive: Int)
+
 /** What removing cloud songs did: rows deleted, and downloaded songs kept as local files. */
 data class CloudRemoval(val deletedTracks: Int, val keptAsLocal: Int)
 
@@ -442,6 +445,18 @@ interface CloudDao {
         """,
     )
     suspend fun moveWaitingBackups(accountId: Long, now: Long): Int
+
+    /** Where [trackIds] went instead of [accountId]: their rows on other accounts, by account. */
+    @Query(
+        """
+        SELECT u.account_id AS accountId, COUNT(*) AS songs,
+            SUM(EXISTS (SELECT 1 FROM cloud_items i WHERE i.track_id = u.track_id AND i.account_id = u.account_id)) AS inDrive
+        FROM cloud_uploads u
+        WHERE u.track_id IN (:trackIds) AND u.account_id != :accountId
+        GROUP BY u.account_id
+        """,
+    )
+    suspend fun uploadsElsewhere(trackIds: List<Long>, accountId: Long): List<CloudUploadsElsewhere>
 
     /**
      * Queues [trackIds] (already checked uploadable) for [accountId]. A song already queued stays

@@ -11,6 +11,7 @@ import com.stash.data.cloud.CloudAccount
 import com.stash.data.cloud.CloudLibrary
 import com.stash.data.cloud.upload.CloudUploads
 import com.stash.data.cloud.upload.SaveRequest
+import com.stash.data.cloud.upload.SavedElsewhere
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -63,12 +64,12 @@ class CloudSaveViewModelTest {
         every { music.getTracksByAlbum("Blue", "Joni") } returns flowOf(listOf(track(1), track(2), track(3, downloaded = false)))
         coEvery { uploads.save(listOf(1L, 2L, 3L), null) } returns SaveRequest(queued = 2, alreadyQueued = 0, notDownloaded = 1)
         val vm = vm()
-        val messages = mutableListOf<String>()
+        val messages = mutableListOf<CloudSaveToast>()
         val job = launch(UnconfinedTestDispatcher(testScheduler)) { vm.messages.collect { messages += it } }
 
         vm.save(CloudSaveTarget.Album("Blue", "Joni"))
 
-        assertThat(messages).containsExactly("Saving 2 songs to Google Drive. 1 song isn't downloaded yet.")
+        assertThat(messages).containsExactly(CloudSaveToast("Saving 2 songs to Google Drive. 1 song isn't downloaded yet."))
         job.cancel()
     }
 
@@ -80,13 +81,26 @@ class CloudSaveViewModelTest {
         assertThat(CloudUploads.message(SaveRequest(1, 0, 3))).isEqualTo("Saving 1 song to Google Drive. 3 songs aren't downloaded yet.")
     }
 
+    @Test fun `songs that stayed on another account reach the toast`() = runTest {
+        val stayed = SavedElsewhere("ron@example.com", waiting = 3, inDrive = 0)
+        coEvery { uploads.save(any(), null) } returns SaveRequest(queued = 2, alreadyQueued = 3, notDownloaded = 0, to = "sam@example.com", elsewhere = listOf(stayed))
+        val vm = vm()
+        val messages = mutableListOf<CloudSaveToast>()
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) { vm.messages.collect { messages += it } }
+
+        vm.save(CloudSaveTarget.Songs(listOf(1, 2, 3, 4, 5)))
+
+        assertThat(messages).containsExactly(CloudSaveToast("Saving 2 songs to sam@example.com.", listOf(stayed)))
+        job.cancel()
+    }
+
     @Test fun `a failed save says so instead of crashing`() = runTest {
         coEvery { uploads.save(any(), null) } throws IllegalStateException("db")
         val vm = vm()
-        val messages = mutableListOf<String>()
+        val messages = mutableListOf<CloudSaveToast>()
         val job = launch(UnconfinedTestDispatcher(testScheduler)) { vm.messages.collect { messages += it } }
         vm.save(CloudSaveTarget.Songs(listOf(1)))
-        assertThat(messages).containsExactly("Couldn't save to Google Drive. Try again.")
+        assertThat(messages).containsExactly(CloudSaveToast("Couldn't save to Google Drive. Try again."))
         job.cancel()
     }
 
