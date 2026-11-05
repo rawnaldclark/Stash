@@ -235,7 +235,7 @@ fun SyncScreen(
                 else -> item(key = "on_phone") {
                     OnThisPhoneHero(
                         saved = savedRows,
-                        songsOnPhone = uiState.syncStatus.totalTracks,
+                        songsOnPhone = uiState.syncStatus.totalTracks.takeIf { uiState.syncStatus.songCountsKnown },
                         syncedAgo = rememberSyncedAgo(uiState.lastSyncFinishedAt),
                         onChoose = { firstSource?.let(onManageSource) },
                         onSync = viewModel::onSyncNow,
@@ -264,8 +264,8 @@ fun SyncScreen(
                 }
 
                 // The track count + FLAC card, under the accounts it counts (back 2026-11-04). After a
-                // first sync only: before one, every number would be 0.
-                if (uiState.hasEverSynced) {
+                // first sync only (before one, every number would be 0), once the counts are read.
+                if (uiState.hasEverSynced && uiState.syncStatus.songCountsKnown) {
                     item(key = "track_count") {
                         Spacer(Modifier.height(12.dp))
                         TrackCountCard(
@@ -424,18 +424,22 @@ internal fun SyncPlaylistRow.isOwnPlaylist() = !album && type != PlaylistType.DA
 /**
  * "1,204 songs · 12 playlists · 30 mixes" under the Online hero. The songs are the ones in your
  * library, downloaded or not ([SyncStatusInfo.totalTracks] follows the mode): it counted downloads
- * only until 2026-11-04, so someone who streams read "0 songs".
+ * only until 2026-11-04, so someone who streams read "0 songs". Until the count has been read the
+ * songs are left out, for the same reason: "12 playlists · 30 mixes".
  */
 @Composable
 private fun librarySummary(uiState: SyncUiState, rows: List<SyncPlaylistRow>): String {
     val songs = uiState.syncStatus.totalTracks
-    val playlists = rows.count { it.isOwnPlaylist() }
-    val mixes = rows.count { it.isMix() }
+    val playlistCount = rows.count { it.isOwnPlaylist() }
+    val mixCount = rows.count { it.isMix() }
+    val playlists = pluralStringResource(R.plurals.sync_playlists_count, playlistCount, playlistCount)
+    val mixes = pluralStringResource(R.plurals.sync_mixes_count, mixCount, mixCount)
+    if (!uiState.syncStatus.songCountsKnown) return "$playlists · $mixes"
     return stringResource(
         R.string.sync_home_summary,
         pluralStringResource(R.plurals.sync_songs_count, songs, songs),
-        pluralStringResource(R.plurals.sync_playlists_count, playlists, playlists),
-        pluralStringResource(R.plurals.sync_mixes_count, mixes, mixes),
+        playlists,
+        mixes,
     )
 }
 
@@ -673,7 +677,8 @@ private fun PlaySomethingNew(name: String, onClick: () -> Unit) {
 @Composable
 private fun OnThisPhoneHero(
     saved: List<SyncPlaylistRow>,
-    songsOnPhone: Int,
+    /** Null until the count has been read: the line then has only "synced 2h ago", or nothing. */
+    songsOnPhone: Int?,
     syncedAgo: String,
     onChoose: () -> Unit,
     onSync: () -> Unit,
@@ -682,11 +687,10 @@ private fun OnThisPhoneHero(
     Column(Modifier.fillMaxWidth().padding(top = 30.dp)) {
         HeroTitle(stringResource(R.string.sync_download_title))
         Spacer(Modifier.height(6.dp))
-        val songs = pluralStringResource(R.plurals.sync_songs_count, songsOnPhone, songsOnPhone)
-        HeroBody(
-            if (syncedAgo.isBlank()) songs
-            else songs + " · " + stringResource(R.string.sync_home_synced_ago, syncedAgo.lowercase()),
-        )
+        val songs = songsOnPhone?.let { pluralStringResource(R.plurals.sync_songs_count, it, it) }
+        val ago = syncedAgo.takeIf { it.isNotBlank() }
+            ?.let { stringResource(R.string.sync_home_synced_ago, it.lowercase()) }
+        HeroBody(listOfNotNull(songs, ago).joinToString(" · "))
         Spacer(Modifier.height(16.dp))
         if (saved.isEmpty()) {
             HeroBody(stringResource(R.string.sync_download_none))

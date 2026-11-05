@@ -660,6 +660,39 @@ class SyncViewModelTest {
         back.cancel()
     }
 
+    /**
+     * A big library's count takes seconds. The tab's face must not wait for it, or Ready stays up on
+     * someone who has synced; and until it is in there is no number, so "0 songs" can't show.
+     */
+    @Test
+    fun `the synced face shows before the count arrives, with no song number until it does`() {
+        every { streamingPreference.enabled } returns MutableStateFlow(true)
+        every { musicRepository.observeLatestSync() } returns kotlinx.coroutines.flow.flowOf(
+            com.stash.core.data.db.entity.SyncHistoryEntity(
+                id = 1, startedAt = threeAm, status = com.stash.core.model.SyncState.COMPLETED,
+            ),
+        )
+        val slowCount = kotlinx.coroutines.flow.MutableSharedFlow<Map<MusicSource, Int>>()
+        every { musicRepository.observeSongCountsBySource(true) } returns slowCount
+        val vm = newVm()
+        val tab = onScreen(vm)
+
+        assertTrue(vm.uiState.value.hasEverSynced)
+        assertFalse(vm.uiState.value.syncStatus.songCountsKnown)
+
+        kotlinx.coroutines.runBlocking { slowCount.emit(mapOf(MusicSource.SPOTIFY to 20_000)) }
+
+        assertTrue(vm.uiState.value.syncStatus.songCountsKnown)
+        assertEquals(20_000, vm.uiState.value.syncStatus.totalTracks)
+        tab.cancel()
+    }
+
+    @Test
+    fun `no sync yet stays on the Ready face`() {
+        every { musicRepository.observeLatestSync() } returns kotlinx.coroutines.flow.flowOf(null)
+        assertFalse(newVm().uiState.value.hasEverSynced)
+    }
+
     /** The screen collecting [SyncViewModel.uiState], as `collectAsStateWithLifecycle` does; cancel it to leave. */
     private fun onScreen(vm: SyncViewModel) =
         kotlinx.coroutines.CoroutineScope(Dispatchers.Main).launch { vm.uiState.collect {} }

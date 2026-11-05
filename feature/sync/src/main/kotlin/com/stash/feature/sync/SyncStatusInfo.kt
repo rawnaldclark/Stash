@@ -27,6 +27,12 @@ data class SyncStatusInfo(
     val soundCloudTracks: Int = 0,
     /** True when the song counts are "in your library" (Online); false when they're downloads (Offline). */
     val countsInLibrary: Boolean = false,
+    /**
+     * False until the song counts have been read once. Until then there is no number to show: the
+     * heroes leave the song count out and the card stays away, so "0 songs" can't flash on a library
+     * with thousands.
+     */
+    val songCountsKnown: Boolean = false,
     val totalPlaylists: Int = 0,
     val storageUsedBytes: Long = 0,
     /** Lossless files on this phone (the disk walk). */

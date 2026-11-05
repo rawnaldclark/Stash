@@ -209,7 +209,8 @@ data class SyncUiState(
     /**
      * True after at least one sync has started. Picks the Ready face over
      * the synced heroes, and gates the [com.stash.feature.sync.components.TrackCountCard].
-     * Derived as `syncStatus.lastSyncTime != null`.
+     * Read straight from the latest sync, not from [syncStatus]: that waits for the song count,
+     * which takes seconds on a big library, and the Ready face would stay up meanwhile.
      */
     val hasEverSynced: Boolean = false,
     /**
@@ -1169,18 +1170,22 @@ class SyncViewModel @Inject constructor(
                     youTubeTracks = counts[MusicSource.YOUTUBE] ?: 0,
                     soundCloudTracks = counts[MusicSource.SOUNDCLOUD] ?: 0,
                     countsInLibrary = online,
+                    songCountsKnown = true,
                     storageUsedBytes = librarySize.totalBytes,
                     flacTracks = librarySize.losslessFileCount,
                     flacStorageBytes = librarySize.losslessBytes,
                 )
             }.collect { status ->
-                _uiState.update {
-                    it.copy(
-                        syncStatus = status,
-                        hasEverSynced = status.lastSyncTime != null,
-                    )
-                }
+                _uiState.update { it.copy(syncStatus = status) }
             }
+        }
+
+        // Which face the tab shows doesn't wait for the count above.
+        viewModelScope.launch {
+            musicRepository.observeLatestSync()
+                .map { latestSync -> latestSync != null }
+                .distinctUntilChanged()
+                .collect { synced -> _uiState.update { it.copy(hasEverSynced = synced) } }
         }
     }
 
