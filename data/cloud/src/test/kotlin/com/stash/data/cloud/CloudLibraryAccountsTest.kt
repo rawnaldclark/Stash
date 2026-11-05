@@ -24,13 +24,22 @@ import com.stash.data.cloud.provider.gdrive.GooglePickOutcome
 import com.stash.data.cloud.provider.gdrive.GooglePickerResult
 import com.stash.data.cloud.provider.gdrive.InMemoryGooglePickStore
 import com.stash.data.cloud.provider.gdrive.MemoryTokenStore
+import com.stash.data.cloud.scan.CloudScanScheduler
 import com.stash.data.cloud.scan.CloudScanner
 import com.stash.data.cloud.upload.CloudUploads
 import com.stash.data.cloud.upload.CloudUploadsTest
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -62,6 +71,8 @@ class CloudLibraryAccountsTest {
     private lateinit var dao: CloudDao
     private lateinit var uploads: CloudUploads
     private lateinit var library: CloudLibrary
+    private val scans = mockk<CloudScanScheduler>(relaxed = true)
+    private val scanner = mockk<CloudScanner>()
     private var a = 0L
     private var b = 0L
 
@@ -74,9 +85,7 @@ class CloudLibraryAccountsTest {
         val auth = GoogleDriveAuth(authorizer, drive.client)
         val tokens = CloudTokenManager(store, mapOf(CloudProvider.GOOGLE_DRIVE to auth))
         val pickStore = InMemoryGooglePickStore()
-        val scanner = mockk<CloudScanner> {
-            coEvery { withFolderLock<Any?>(any(), any()) } coAnswers { secondArg<suspend () -> Any?>().invoke() }
-        }
+        coEvery { scanner.withFolderLock<Any?>(any(), any()) } coAnswers { secondArg<suspend () -> Any?>().invoke() }
         library = CloudLibrary(
             context = ApplicationProvider.getApplicationContext(),
             config = config,
@@ -84,7 +93,7 @@ class CloudLibraryAccountsTest {
             providers = emptyMap(),
             coordinator = mockk(relaxed = true),
             tokens = tokens,
-            scheduler = mockk(relaxed = true),
+            scheduler = scans,
             scanner = scanner,
             googleAuthorizer = authorizer,
             googlePicks = GoogleDrivePicks(dao, tokens, auth, pickStore, scanNow = {}),
@@ -95,7 +104,15 @@ class CloudLibraryAccountsTest {
         b = account("b", connectedAt = 2)
     }
 
-    @After fun tearDown() = db.close()
+    @After fun tearDown() {
+        uploads.stopWatching()
+        db.close()
+    }
+
+    /** Waits on the clock, not the test's virtual one: the removal runs in the app's own scope. */
+    private suspend fun eventually(condition: suspend () -> Boolean) = withContext(Dispatchers.Default) {
+        withTimeout(CloudUploadsTest.WATCHER_LIMIT_MS) { while (!condition()) delay(20) }
+    }
 
     private suspend fun account(name: String, connectedAt: Long): Long {
         val id = dao.insertAccount(CloudAccountEntity(provider = "gdrive", remoteId = name, displayName = name, email = "$name@example.com", connectedAt = connectedAt))
@@ -156,6 +173,105 @@ class CloudLibraryAccountsTest {
         assertThat(db.trackDao().getById(downloadedB)!!.source).isEqualTo(MusicSource.LOCAL)
         assertThat(dao.getFolders(a)).hasSize(1)
         assertThat(dao.getFolders(b)).isEmpty()
+    }
+
+    @Test fun `removing a folder never starts a surprise upload of its downloads`() = runTest {
+        // The real watcher: it sees the songs without a row the moment their folder goes.
+        uploads.start()
+        val kept = cloudSong(a, "kept", downloaded = true)
+        val folder = dao.getFolders(a).single().id
+        uploads.setBackup(b, on = true)
+
+        val removal = library.removeFolder(folder)
+
+        assertThat(removal.keptAsLocal).isEqualTo(1)
+        assertThat(db.trackDao().getById(kept)!!.source).isEqualTo(MusicSource.LOCAL)
+        // A real new download, which the watcher's pass does send: once it has, the pass has run.
+        val fresh = download("fresh")
+        eventually { dao.getUpload(fresh) != null }
+        assertThat(dao.getUpload(fresh)!!.state).isEqualTo(CloudUploadState.QUEUED.name)
+        // Counted on the backup account like any download from before backup, not queued.
+        assertThat(dao.getUpload(kept)!!.state).isEqualTo(CloudUploadState.EXISTING.name)
+        assertThat(dao.getUpload(kept)!!.accountId).isEqualTo(b)
+    }
+
+    @Test fun `removing a folder with backup off leaves its downloads uncounted`() = runTest {
+        val kept = cloudSong(a, "kept", downloaded = true)
+
+        library.removeFolder(dao.getFolders(a).single().id)
+
+        assertThat(dao.getUpload(kept)).isNull()
+    }
+
+    @Test fun `leaving Settings during a disconnect doesn't leave it half done`() = runTest {
+        cloudSong(a, "stays", downloaded = false)
+        cloudSong(b, "goes", downloaded = false)
+        uploads.setBackup(b, on = true)
+        val scanFinished = CompletableDeferred<Unit>()
+        val waiting = CompletableDeferred<Unit>()
+        coEvery { scanner.withFolderLock<Any?>(any(), any()) } coAnswers {
+            waiting.complete(Unit)
+            scanFinished.await()
+            secondArg<suspend () -> Any?>().invoke()
+        }
+
+        // The screen that asked closes while the removal waits for a scan to let go of the folder.
+        val screen = launch(Dispatchers.Default) { library.disconnect(b) }
+        withContext(Dispatchers.Default) { withTimeout(CloudUploadsTest.WATCHER_LIMIT_MS) { waiting.await() } }
+        screen.cancelAndJoin()
+        scanFinished.complete(Unit)
+
+        eventually { dao.getAccount(b) == null }
+        eventually { settings.backupAccountId.value == null }
+        coVerify(timeout = CloudUploadsTest.WATCHER_LIMIT_MS) { scans.scanNow(null, false) }
+    }
+
+    @Test fun `leaving Settings while a folder is removed doesn't leave it half done`() = runTest {
+        cloudSong(a, "stays", downloaded = false)
+        val goes = cloudSong(b, "goes", downloaded = false)
+        val folder = dao.getFolders(b).single().id
+        val scanFinished = CompletableDeferred<Unit>()
+        val waiting = CompletableDeferred<Unit>()
+        coEvery { scanner.withFolderLock<Any?>(any(), any()) } coAnswers {
+            waiting.complete(Unit)
+            scanFinished.await()
+            secondArg<suspend () -> Any?>().invoke()
+        }
+
+        val screen = launch(Dispatchers.Default) { library.removeFolder(folder) }
+        withContext(Dispatchers.Default) { withTimeout(CloudUploadsTest.WATCHER_LIMIT_MS) { waiting.await() } }
+        screen.cancelAndJoin()
+        scanFinished.complete(Unit)
+
+        eventually { db.trackDao().getById(goes) == null }
+        coVerify(timeout = CloudUploadsTest.WATCHER_LIMIT_MS) { scans.scanNow(null, false) }
+    }
+
+    @Test fun `a disconnect that fails leaves the account as it was and scans carrying on`() = runTest {
+        cloudSong(a, "stays", downloaded = false)
+        cloudSong(b, "goes", downloaded = false)
+        uploads.setBackup(b, on = true)
+        coEvery { scanner.withFolderLock<Any?>(any(), any()) } throws IllegalStateException("database hiccup")
+
+        val failed = runCatching { library.disconnect(b) }
+
+        assertThat(failed.isFailure).isTrue()
+        assertThat(dao.getAccount(b)).isNotNull()
+        assertThat(settings.backupAccountId.value).isEqualTo(b)
+        // Every account's scans were stopped to make room for it: they must start again.
+        coVerify { scans.scanNow(null, false) }
+        coVerify { scans.ensurePeriodic() }
+    }
+
+    @Test fun `a folder removal that fails leaves scans carrying on`() = runTest {
+        cloudSong(a, "stays", downloaded = false)
+        coEvery { scanner.withFolderLock<Any?>(any(), any()) } throws IllegalStateException("database hiccup")
+
+        val failed = runCatching { library.removeFolder(dao.getFolders(a).single().id) }
+
+        assertThat(failed.isFailure).isTrue()
+        coVerify { scans.scanNow(null, false) }
+        coVerify { scans.ensurePeriodic() }
     }
 
     @Test fun `disconnecting the account saves go to hands them to the first that remains`() = runTest {

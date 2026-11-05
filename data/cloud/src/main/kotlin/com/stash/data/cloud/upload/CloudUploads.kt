@@ -127,24 +127,25 @@ class CloudUploads @Inject constructor(
 
     /**
      * "Back up my downloads" on or off for [accountId]. On also makes it the account saves go to:
-     * there is one of those. Off applies only to the account backup runs on.
+     * there is one of those. Off applies only to the account backup runs on. Runs to the end even if
+     * the screen closes meanwhile: a run it stopped must start again.
      */
-    suspend fun setBackup(accountId: Long, on: Boolean) {
+    suspend fun setBackup(accountId: Long, on: Boolean) = withContext(NonCancellable) {
         val now = System.currentTimeMillis()
         val current = settings.backupAccountId.value
         if (on) {
-            if (current == accountId) return
-            // A run may be in the middle of a song that is about to move: stop it, then start over.
-            val moving = current != null
-            if (moving) scheduler.cancel()
+            if (current == accountId) return@withContext
+            // A run may be in the middle of a song that is about to move, even with backup off till
+            // now (switched off and on again during one big upload): stop it, then start over.
+            scheduler.cancel()
             dao.moveWaitingBackups(accountId, now)
             // Today's downloads are only counted ("Back up N existing"); new ones are sent.
             dao.insertUploadsForDownloads(accountId, CloudUploadState.EXISTING.name, now)
             settings.setSaveAccount(accountId)
             settings.setBackupAccount(accountId)
-            if (moving) kickIfQueued()
+            kickIfQueued()
         } else {
-            if (current != accountId) return
+            if (current != accountId) return@withContext
             settings.setBackupAccount(null)
             dao.unqueueBackupUploads(accountId, now)
         }
@@ -172,33 +173,47 @@ class CloudUploads @Inject constructor(
      * account on its own.
      */
     suspend fun <T> removingAccount(accountId: Long, remove: suspend () -> T): T {
+        var removed = false
         try {
             scheduler.cancel()
+            val result = remove()
+            removed = true
+            // Only now: a removal that fails leaves the account as it was, backup included.
             if (settings.backupAccountId.value == accountId) settings.setBackupAccount(null)
             if (settings.saveAccountId.value == accountId) settings.setSaveAccount(null)
             settings.setDriveFull(accountId, false)
             settings.clear(accountId)
-            return remove()
+            return result
         } finally {
             // Also when the screen that asked is closed meanwhile: the other accounts' songs must
             // not wait for the next app start.
-            withContext(NonCancellable) { afterAccountRemoved() }
+            withContext(NonCancellable) {
+                if (removed) countRemovedDownloads()
+                try {
+                    kickIfQueued()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "uploads not restarted after a disconnect: ${e.javaClass.simpleName}")
+                }
+            }
         }
     }
 
-    private suspend fun afterAccountRemoved() {
+    /**
+     * Downloads that just stopped being cloud songs (their folder or account was removed) have no
+     * upload row, which reads as "new downloads" while backup is on: count them instead, like any
+     * download from before backup, so a removal never starts a surprise upload.
+     */
+    suspend fun countRemovedDownloads() {
         try {
-            // The songs saved to the removed account have no upload row any more, which reads as
-            // "new downloads" while backup is on for another account: count them instead, like any
-            // download from before backup, so a disconnect never starts a surprise upload.
             settings.backupAccountId.value?.let {
                 dao.insertUploadsForDownloads(it, CloudUploadState.EXISTING.name, System.currentTimeMillis())
             }
-            kickIfQueued()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w(TAG, "uploads not restarted after a disconnect: ${e.javaClass.simpleName}")
+            Log.w(TAG, "removed downloads not counted: ${e.javaClass.simpleName}")
         }
     }
 
@@ -265,12 +280,19 @@ class CloudUploads @Inject constructor(
         }
     }
 
+    /** For tests: [start]'s watcher outlives the database otherwise. */
+    internal fun stopWatching() {
+        watcher?.cancel()
+        watcher = null
+    }
+
     private suspend fun queueNewDownloads(accountId: Long) {
         try {
             // The account may have been disconnected meanwhile: then the switch is off already.
             if (dao.getAccount(accountId) == null) return
             dao.insertUploadsForDownloads(accountId, CloudUploadState.QUEUED.name, System.currentTimeMillis())
-            if (accountId !in settings.fullAccounts.value) scheduler.kick()
+            // Not a plain kick: a pass that was waiting out its delay may find them already counted.
+            kickIfQueued()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

@@ -6,16 +6,23 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.dao.CloudDao
 import com.stash.core.data.db.entity.CloudAccountEntity
+import com.stash.core.data.db.entity.CloudItemEntity
 import com.stash.core.data.db.entity.CloudUploadState
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.MusicSource
 import com.stash.data.cloud.CloudConfig
+import com.stash.data.cloud.provider.gdrive.GoogleDriveProvider
+import com.stash.data.cloud.provider.gdrive.driveFolderRow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -35,10 +42,16 @@ class CloudUploadsTest {
     private var account = 0L
 
     class FakeRunner : CloudUploadRunner {
-        var kicks = 0
-        var cancels = 0
+        @Volatile var kicks = 0
+        @Volatile var cancels = 0
+
+        /** Runs as the upload is stopped, to see what the queue looks like at that moment. */
+        var onCancel: suspend () -> Unit = {}
         override suspend fun kick() { kicks++ }
-        override suspend fun cancel() { cancels++ }
+        override suspend fun cancel() {
+            cancels++
+            onCancel()
+        }
         override val running: Flow<Boolean> = flowOf(false)
         override val wifiOnly: Flow<Boolean> = flowOf(true)
     }
@@ -62,7 +75,10 @@ class CloudUploadsTest {
         account = dao.insertAccount(CloudAccountEntity(provider = "gdrive", remoteId = "p", displayName = "Ron", connectedAt = 0))
     }
 
-    @After fun tearDown() = db.close()
+    @After fun tearDown() {
+        uploads.stopWatching()
+        db.close()
+    }
 
     private suspend fun track(title: String, downloaded: Boolean = true, source: MusicSource = MusicSource.SPOTIFY) =
         db.trackDao().insert(
@@ -148,10 +164,11 @@ class CloudUploadsTest {
         uploads.setBackup(account, on = true)
         uploads.save(listOf(track("a")))
         val kicks = runner.kicks
+        val cancels = runner.cancels
 
         uploads.removingAccount(account) { dao.removeAccount(account) }
 
-        assertThat(runner.cancels).isEqualTo(1)
+        assertThat(runner.cancels).isEqualTo(cancels + 1)
         assertThat(settings.backupAccountId.value).isNull()
         assertThat(dao.countQueuedUploads(emptyList())).isEqualTo(0)
         // Nothing left to send: no run is started for nothing.
@@ -159,6 +176,9 @@ class CloudUploadsTest {
     }
 
     // ── Two Google accounts ──────────────────────────────────────────────
+
+    /** Waits on the clock, not the test's virtual one: the watcher runs on real threads. */
+    private suspend fun realTime(block: suspend () -> Unit) = withContext(Dispatchers.Default) { block() }
 
     private suspend fun secondAccount() =
         dao.insertAccount(CloudAccountEntity(provider = "gdrive", remoteId = "p2", displayName = "Sam", email = "sam@example.com", connectedAt = 1))
@@ -208,6 +228,8 @@ class CloudUploadsTest {
     }
 
     @Test fun `removing another account never starts a surprise upload of what was saved to it`() = runTest {
+        // The real watcher: it sees the songs without a row the moment their account goes.
+        uploads.start()
         val second = secondAccount()
         val savedThere = track("saved-there")
         uploads.save(listOf(savedThere), second)
@@ -216,6 +238,7 @@ class CloudUploadsTest {
         val kicks = runner.kicks
 
         uploads.removingAccount(second) { dao.removeAccount(second) }
+        realTime { delay(WATCHER_PASS_MS) }
 
         // Counted on the backup account like any download from before backup, not queued.
         assertThat(rowFor(savedThere).accountId).isEqualTo(account)
@@ -223,6 +246,111 @@ class CloudUploadsTest {
         assertThat(dao.observeDownloadsWithoutUpload().first()).isEqualTo(0)
         assertThat(runner.kicks).isEqualTo(kicks)
         assertThat(uploads.status(account).first().existing).isEqualTo(1)
+
+        // The watcher was awake all along: a real new download goes.
+        val fresh = track("fresh")
+        realTime { withTimeout(WATCHER_LIMIT_MS) { while (dao.getUpload(fresh) == null) delay(50) } }
+        assertThat(rowFor(fresh).state).isEqualTo(CloudUploadState.QUEUED.name)
+        assertThat(rowFor(savedThere).state).isEqualTo(CloudUploadState.EXISTING.name)
+    }
+
+    @Test fun `a removal that fails leaves backup and saves where they were`() = runTest {
+        val second = secondAccount()
+        uploads.setBackup(second, on = true)
+
+        val failed = runCatching { uploads.removingAccount(second) { error("database hiccup") } }
+
+        assertThat(failed.isFailure).isTrue()
+        assertThat(settings.backupAccountId.value).isEqualTo(second)
+        assertThat(settings.saveAccountId.value).isEqualTo(second)
+    }
+
+    // ── A download a scan linked to a file in one Drive lives there ──────
+
+    /** What a scan of [accountId]'s "Saved from Stash" does when it recognises [trackId]: a link, no upload row. */
+    private suspend fun scanLinked(trackId: Long, accountId: Long) {
+        val folder = dao.driveFolderRow(accountId, GoogleDriveProvider.UPLOADS_ITEM_ID, 1)
+        dao.linkUpload(
+            trackId,
+            CloudItemEntity(
+                trackId = trackId, accountId = accountId, folderId = folder.id, itemId = "file$trackId", name = "f.flac",
+                relativePath = "", parentItemId = null, cTag = "1", eTag = null, size = 1, mimeType = null,
+                seenGeneration = 1, scannedAt = 1,
+            ),
+        )
+    }
+
+    @Test fun `turning backup on counts a scan-linked download where it lives`() = runTest {
+        val second = secondAccount()
+        val linked = track("linked")
+        scanLinked(linked, account)
+
+        uploads.setBackup(second, on = true)
+
+        assertThat(rowFor(linked).accountId).isEqualTo(account)
+        assertThat(uploads.status(second).first().existing).isEqualTo(0)
+        assertThat(uploads.backUpExisting(second)).isEqualTo(0)
+        assertThat(dao.countQueuedUploads(emptyList())).isEqualTo(0)
+    }
+
+    @Test fun `the watcher queues a scan-linked download where it lives`() = runTest {
+        val second = secondAccount()
+        uploads.setBackup(second, on = true)
+        val linked = track("linked")
+        scanLinked(linked, account)
+
+        dao.insertUploadsForDownloads(second, CloudUploadState.QUEUED.name, 5)
+
+        assertThat(rowFor(linked).accountId).isEqualTo(account)
+    }
+
+    @Test fun `saving a scan-linked download checks it where it lives, never copies it`() = runTest {
+        val second = secondAccount()
+        val linked = track("linked")
+        scanLinked(linked, account)
+        uploads.setSaveAccount(second)
+
+        uploads.save(listOf(linked))
+
+        assertThat(rowFor(linked).accountId).isEqualTo(account)
+        assertThat(rowFor(linked).state).isEqualTo(CloudUploadState.QUEUED.name)
+    }
+
+    @Test fun `moving backup leaves a scan-linked download where it lives`() = runTest {
+        val second = secondAccount()
+        val linked = track("linked")
+        val unlinked = track("unlinked")
+        scanLinked(linked, account)
+        uploads.setBackup(account, on = true)
+
+        uploads.setSaveAccount(second)
+
+        assertThat(rowFor(linked).accountId).isEqualTo(account)
+        assertThat(rowFor(unlinked).accountId).isEqualTo(second)
+        assertThat(uploads.status(second).first().existing).isEqualTo(1)
+    }
+
+    @Test fun `switching backup off and on for another account during one upload stops that upload first`() = runTest {
+        val second = secondAccount()
+        uploads.setBackup(account, on = true)
+        val uploading = track("uploading")
+        dao.insertUploadsForDownloads(account, CloudUploadState.QUEUED.name, 5)
+        uploads.save(listOf(track("manual")), account)
+        uploads.setBackup(account, on = false)
+        uploads.setSaveAccount(second)
+        var whereItWasWhenStopped: Long? = null
+        runner.onCancel = { whereItWasWhenStopped = rowFor(uploading).accountId }
+        val cancels = runner.cancels
+        val kicks = runner.kicks
+
+        uploads.setBackup(second, on = true)
+
+        // The file would otherwise finish in the old Drive while its row says the new one.
+        assertThat(runner.cancels).isEqualTo(cancels + 1)
+        assertThat(whereItWasWhenStopped).isEqualTo(account)
+        assertThat(rowFor(uploading).accountId).isEqualTo(second)
+        // The hand-saved song that was waiting behind it goes on.
+        assertThat(runner.kicks).isEqualTo(kicks + 1)
     }
 
     @Test fun `saves go to the first connected account until the user chooses`() = runTest {
@@ -418,5 +546,13 @@ class CloudUploadsTest {
         assertThat(a).hasLength(40)
         assertThat(UploadKeys.trackKey("usabc1234567", "x", "y", 1)).isEqualTo(UploadKeys.trackKey("USABC1234567", "z", "w", 2))
         assertThat(UploadKeys.trackKey(null, "x", "y", 1_000)).isNotEqualTo(UploadKeys.trackKey(null, "x", "y", 2_000))
+    }
+
+    companion object {
+        /** Long enough for the watcher's 3 s wait after a change to end, and its pass to run. */
+        const val WATCHER_PASS_MS = 3_600L
+
+        /** A pass that hasn't happened by now isn't coming. */
+        const val WATCHER_LIMIT_MS = 15_000L
     }
 }
