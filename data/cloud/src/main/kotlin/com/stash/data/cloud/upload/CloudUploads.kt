@@ -45,10 +45,11 @@ data class SaveRequest(
 
 /**
  * Songs of a save that stayed on another account, however the save asked: a song lives in one Drive,
- * and a song already queued stays where it was queued.
+ * and a song part-way through an upload there finishes there.
  *
  * @property account Which account, by its email or else its name.
- * @property waiting Songs with no file in that Drive yet: they wait on that account's sign-in and space.
+ * @property waiting Songs with no file linked in that Drive yet (part-way through an upload there, or
+ *   sent there before and being checked again): they wait on that account's sign-in and space.
  * @property inDrive Songs with a file there: only checked again.
  */
 data class SavedElsewhere(val account: String, val waiting: Int, val inDrive: Int)
@@ -125,8 +126,8 @@ class CloudUploads @Inject constructor(
 
     /**
      * Queues [trackIds] for [accountId] (or the [saveAccountId]). Only downloads can go; the rest
-     * are counted in [SaveRequest.notDownloaded]. Clears that account's "Drive full" pause: the user
-     * is trying again.
+     * are counted in [SaveRequest.notDownloaded]. A song still waiting on another account moves here
+     * ([CloudDao.queueUploads]). Clears that account's "Drive full" pause: the user is trying again.
      */
     suspend fun save(trackIds: List<Long>, accountId: Long? = null): SaveRequest {
         val account = accountId ?: saveAccountId() ?: return SaveRequest(0, 0, trackIds.size)

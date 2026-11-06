@@ -7,6 +7,7 @@ import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.dao.CloudDao
 import com.stash.core.data.db.entity.CloudAccountEntity
 import com.stash.core.data.db.entity.CloudItemEntity
+import com.stash.core.data.db.entity.CloudUploadOrigin
 import com.stash.core.data.db.entity.CloudUploadState
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.MusicSource
@@ -581,19 +582,68 @@ class CloudUploadsTest {
         assertThat(rowFor(a).state).isEqualTo(CloudUploadState.QUEUED.name)
     }
 
-    @Test fun `saving again a song queued on another account leaves it there, and says so instead of naming the new one`() = runTest {
+    @Test fun `saving again a hand-saved song still waiting on another account moves it to the chosen one`() = runTest {
         val second = secondAccount()
         val waiting = track("waiting")
         uploads.save(listOf(waiting), account)
+        // Ron signed out: one try failed before anything was sent.
+        dao.failUploadAttempt(waiting, "signed out", 3, 2)
         uploads.setSaveAccount(second)
+        val cancels = runner.cancels
 
         val r = uploads.save(listOf(waiting))
 
-        // Today's behaviour, kept: whether a re-save should move it is the owner's call.
-        assertThat(rowFor(waiting).accountId).isEqualTo(account)
+        rowFor(waiting).let {
+            assertThat(it.accountId).isEqualTo(second)
+            assertThat(it.state).isEqualTo(CloudUploadState.QUEUED.name)
+            assertThat(it.origin).isEqualTo(CloudUploadOrigin.MANUAL.name)
+            // A fresh start on Sam's Drive.
+            assertThat(it.attempts).isEqualTo(0)
+            assertThat(it.error).isNull()
+            assertThat(it.sessionUri).isNull()
+        }
+        assertThat(runner.cancels).isEqualTo(cancels)
+        assertThat(r.elsewhere).isEmpty()
+        assertThat(CloudUploads.message(r)).isEqualTo("Saving 1 song to sam@example.com.")
+    }
+
+    @Test fun `saving again a song part-way through an upload to another account leaves it to finish there`() = runTest {
+        val second = secondAccount()
+        val sending = track("sending")
+        uploads.save(listOf(sending), account)
+        dao.setUploadSession(sending, account, "https://session", 10, "md5", 2)
+        dao.setUploadProgress(sending, 5, 3)
+        uploads.setSaveAccount(second)
+        val cancels = runner.cancels
+
+        val r = uploads.save(listOf(sending))
+
+        rowFor(sending).let {
+            assertThat(it.accountId).isEqualTo(account)
+            assertThat(it.sessionUri).isEqualTo("https://session")
+            assertThat(it.bytesSent).isEqualTo(5)
+        }
+        // Nothing is cancelled.
+        assertThat(runner.cancels).isEqualTo(cancels)
         assertThat(r.elsewhere).containsExactly(SavedElsewhere("Ron", waiting = 1, inDrive = 0))
-        // Nothing is on its way to Sam, so nothing says so.
-        assertThat(CloudUploads.message(r)).isEmpty()
+    }
+
+    @Test fun `saving again a song already uploaded to another account leaves it there`() = runTest {
+        val second = secondAccount()
+        val saved = track("saved")
+        uploads.save(listOf(saved), account)
+        dao.finishUpload(saved, CloudUploadState.DONE.name, "file", null, 2)
+        scanLinked(saved, account)
+        uploads.setSaveAccount(second)
+
+        val r = uploads.save(listOf(saved))
+
+        assertThat(rowFor(saved).accountId).isEqualTo(account)
+        assertThat(r.elsewhere).containsExactly(SavedElsewhere("Ron", waiting = 0, inDrive = 1))
+        // Queued there now, for a check of the copy it has; saving it once more still leaves it there.
+        assertThat(rowFor(saved).state).isEqualTo(CloudUploadState.QUEUED.name)
+        uploads.save(listOf(saved))
+        assertThat(rowFor(saved).accountId).isEqualTo(account)
     }
 
     @Test fun `a save that lands in three places says each`() = runTest {
@@ -601,6 +651,8 @@ class CloudUploadsTest {
         val waiting = track("waiting")
         val saved = track("saved")
         uploads.save(listOf(waiting, saved), account)
+        // Part-way through an upload to Ron's Drive: it finishes there.
+        dao.setUploadSession(waiting, account, "https://session", 10, "md5", 2)
         dao.finishUpload(saved, CloudUploadState.DONE.name, "file", null, 2)
         scanLinked(saved, account)
         val fresh = track("fresh")
