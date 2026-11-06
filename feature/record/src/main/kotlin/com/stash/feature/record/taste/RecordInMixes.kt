@@ -3,6 +3,7 @@ package com.stash.feature.record.taste
 import android.content.Context
 import android.util.Log
 import com.stash.core.data.db.dao.StashMixRecipeDao
+import com.stash.core.data.db.entity.StashMixRecipeEntity
 import com.stash.core.data.prefs.RecordInMixesPreference
 import com.stash.core.data.sync.workers.StashMixRefreshWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -22,14 +23,18 @@ import javax.inject.Singleton
  * "Use your record in mixes" (owner decision D2; stash-player `src/lib/discover/record-switch.ts`): the switch, and today's Daily
  * Discover made again once when it is flipped, so the change shows today, not tomorrow. A flip waits [PAUSE_MS] for another (off,
  * then on again, is no change); then, when it changed what the mix was last made with and there is a taste for it to change,
- * Daily Discover is made again in today's order (once it has been made at all: the next refresh makes the first one).
+ * Daily Discover is made again in today's order. When it has never been made, turning the switch on makes the first one: the
+ * import doesn't with the switch off ([RecordTaste.dailyDiscoverFromTaste]), and turning it on would otherwise show nothing until
+ * the next launch or daily refresh. Turning it off with none made changes nothing.
  */
 @Singleton
 class RecordInMixes internal constructor(
     private val switch: RecordInMixesPreference,
     private val hasTaste: suspend () -> Boolean,
-    /** Today's Daily Discover made again (its id), in today's order; false when there is none to make again. */
-    private val rebuild: suspend () -> Boolean,
+    /** The built-in Daily Discover; null when it isn't active (Stash Mixes off marks it inactive). */
+    private val dailyDiscover: suspend () -> StashMixRecipeEntity?,
+    /** A mix asked for: its recipe's id, and whether in today's order (made again) or a fresh one. */
+    private val make: (recipeId: Long, sameDay: Boolean) -> Unit,
     scope: CoroutineScope? = null,
     private val pauseMs: Long = PAUSE_MS,
 ) {
@@ -41,15 +46,8 @@ class RecordInMixes internal constructor(
     ) : this(
         switch = switch,
         hasTaste = taste::has,
-        rebuild = {
-            val dd = RecordTaste.dailyDiscover(recipes)
-            if (dd?.playlistId == null) {
-                false
-            } else {
-                StashMixRefreshWorker.enqueueOneTime(context, dd.id, sameDay = true)
-                true
-            }
-        },
+        dailyDiscover = { RecordTaste.dailyDiscover(recipes) },
+        make = { recipeId, sameDay -> StashMixRefreshWorker.enqueueOneTime(context, recipeId, sameDay = sameDay) },
     )
 
     /** One flip at a time, in the order they came: the last one asked is the one kept. */
@@ -78,12 +76,23 @@ class RecordInMixes internal constructor(
         if (want == made) return
         made = want
         try {
-            if (hasTaste() && rebuild()) Log.i(TAG, "Use your record in mixes is ${if (want) "on" else "off"}: today's Daily Discover made again")
+            if (hasTaste() && makeDailyDiscover(on = want)) Log.i(TAG, "Use your record in mixes is ${if (want) "on" else "off"}: Daily Discover asked for")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "Daily Discover couldn't be made again after the switch: ${e.javaClass.simpleName}")
         }
+    }
+
+    /** Asks for Daily Discover when this flip should change it; false when there's nothing to make. */
+    private suspend fun makeDailyDiscover(on: Boolean): Boolean {
+        val dd = dailyDiscover() ?: return false
+        when {
+            dd.playlistId != null -> make(dd.id, true)
+            on -> make(dd.id, false)
+            else -> return false
+        }
+        return true
     }
 
     companion object {

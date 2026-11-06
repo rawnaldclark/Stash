@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The Online/Offline sheet (opened from the mode chip on Home, Sync, album and artist pages). One short line under
+         each tile's word says what the mode does. Online: everything plays; songs that aren't downloaded stream.
+         Offline: only downloaded songs play. Settings > Playback shows the same two lines under its mode switch. -->
+    <string name="mode_online_caption">Streams and plays downloads</string>
+    <string name="mode_offline_caption">Downloads only</string>
+</resources>

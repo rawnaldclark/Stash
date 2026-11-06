@@ -212,7 +212,7 @@ class RecordTasteTest {
             seed()
             imported()
             taste.refresh()
-            val vm = RecordInMixesViewModel(taste, RecordInMixes(com.stash.core.data.prefs.RecordInMixesPreference.Fixed(), { true }, { true }, scope), store)
+            val vm = RecordInMixesViewModel(taste, RecordInMixes(com.stash.core.data.prefs.RecordInMixesPreference.Fixed(), { true }, { null }, { _, _ -> }, scope), store)
             suspend fun until(what: String, ok: (List<String>?) -> Boolean): List<String>? {
                 repeat(100) {
                     val keys = vm.list.value?.map { k -> k.key }
