@@ -245,6 +245,15 @@ class FakeDriveStore : Interceptor {
 /** Song files in memory, by path. */
 class MemoryAudioFiles : LocalAudioFiles {
     val files = HashMap<String, ByteArray>()
+
+    /** Runs as the uploader reads a file's checksum, the moment before it opens a session. */
+    var onMd5: suspend () -> Unit = {}
+
+    override suspend fun md5(path: String): String {
+        onMd5()
+        return super.md5(path)
+    }
+
     override suspend fun size(path: String): Long? = files[path]?.size?.toLong()
     override fun open(path: String, offset: Long): InputStream =
         ByteArrayInputStream(files[path] ?: throw java.io.FileNotFoundException(path)).apply { skip(offset) }

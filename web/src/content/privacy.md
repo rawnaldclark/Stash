@@ -24,7 +24,7 @@
 # Google's OAuth verification links to /privacy#cloud-storage. Don't rename it.
 #
 # Shown as "Last updated" on the page. Change it whenever this file changes.
-updated: 2026-11-03
+updated: 2026-11-04
 ---
 
 ## The short version
@@ -68,10 +68,14 @@ Qobuz catalog requests go straight from your phone to `www.qobuz.com`, with no a
 - **LRCLIB** (`lrclib.net`): synced lyrics.
 - **iTunes Search** (`itunes.apple.com`): the first step of word-synced Apple Music lyrics. It is sent the song's title and artist, to find its Apple Music song id.
 - **paxsenix's lyrics API** (`lyrics.paxsenix.org`): the second step. It is sent that Apple song id, and nothing else about you, to get the word-synced lyrics (its cache first, then a live lookup).
+- **Spicy Lyrics** (through `proxy.paraliyzed.net`): word- and line-synced lyrics, only for songs that have a Spotify id. It is sent that id, and nothing else about you. The proxy is run by a Stash contributor; it adds the Spicy Lyrics key and caches answers by track id. Like any server, it sees your IP address.
 - **KuGou** (`mobileservice.kugou.com`, `lyrics.kugou.com`): synced lyrics when the sources before it have none. It is sent the song's title and artist, and for some lookups its length. It sees an ordinary desktop-browser User-Agent, not Stash's.
-- **YouTube Music** (`music.youtube.com`): plain-text lyrics as the last fallback, only for songs that have a YouTube id.
+- **YouTube Music** (`music.youtube.com`): plain-text lyrics, the last of the regular sources, only for songs that have a YouTube id.
+- **lrc.red** (`lrc.red`): word-synced lyrics, asked after every source above. It is sent the song's ISRC (the code that identifies a recording) to fetch its lyrics file. For a song with no ISRC, it is first sent the song's title and artist, to find one; Binimum below uses the ISRC found here too. Nothing else about you.
+- **Binimum** (`lyrics-storage.binimum.org`): word-synced lyrics, asked last, when lrc.red has none. It is sent only the song's ISRC, and nothing else about you.
+- **Cloudflare DNS-over-HTTPS** (`cloudflare-dns.com`, reached at `1.1.1.1` and `1.0.0.1`): looks up the addresses of iTunes Search, paxsenix, the Spicy Lyrics proxy, lrc.red and Binimum. Some networks answer wrongly for paxsenix, so these lyrics hosts all look up their addresses this way. It sees those host names and, like any server, your IP address, never the songs. When it can't be reached, your phone's own DNS is used.
 
-LRCLIB, iTunes Search and paxsenix see a `Stash/<version>` User-Agent. iTunes Search and paxsenix are asked whenever lyrics are looked up or fetched for a download while Apple Music is the preferred lyrics source, which is the default. They're also asked by a background pass that upgrades lyrics you already have (once after each app update, on Wi-Fi) and by "Fetch lyrics" in Library Health. LRCLIB, KuGou and YouTube Music come next, in that order, each only when the ones before it come back empty or fail: from Now Playing, after a download, and by "Fetch lyrics", never by the background pass. Setting the lyrics source to LRC only in Settings › Playback stops iTunes Search and paxsenix. LRCLIB, KuGou and YouTube Music keep working.
+LRCLIB, iTunes Search, paxsenix, the Spicy Lyrics proxy, lrc.red and Binimum see a `Stash/<version>` User-Agent. iTunes Search and paxsenix are asked whenever lyrics are looked up or fetched for a download while Apple Music is the preferred lyrics source, which is the default. They're also asked by "Fetch lyrics" in Library Health, which also tries to make lyrics you already have word-synced, and by "Re-check library" in Settings › Playback, for songs they haven't already checked. Spicy Lyrics, LRCLIB, KuGou, YouTube Music, lrc.red and Binimum come next, in that order, each only when the ones before it come back empty or fail: from Now Playing, after a download, and by "Fetch lyrics". Spicy Lyrics is skipped for songs without a Spotify id. Spicy Lyrics, lrc.red and Binimum are also asked when you ask Now Playing for word-synced lyrics, by "Re-check library" (on Wi-Fi), and once more in the background when the lyrics a song just got from Now Playing or a download have no word timing. Nothing goes through your library for lyrics on its own: "Fetch lyrics" and "Re-check library" run only when you tap them. Setting the lyrics source to LRC only in Settings › Playback stops iTunes Search, paxsenix, Spicy Lyrics, lrc.red and Binimum. LRCLIB, KuGou and YouTube Music keep working.
 
 ### Scrobbling and artist info
 
@@ -179,7 +183,6 @@ Some of the requests above happen without you tapping anything. These are all of
 **On a schedule**, with no setting to turn it off:
 
 - Daily: the Stash and yt-dlp update checks.
-- Once after each app update, on Wi-Fi: the lyrics upgrade pass described under Lyrics, unless the lyrics source is set to LRC only.
 - Once after each app update, with a connection: album art for downloaded songs whose files don't carry their tags yet, from the hosts listed under Album art.
 - Twice a day, while you have cloud storage connected: a check of your picked folders or songs for changes, with that provider only (see [Your cloud storage](#cloud-storage)).
 

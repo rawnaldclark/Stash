@@ -536,6 +536,27 @@ class DriveUploadTest {
         assertThat(phone.dao.getItemForTrack(track)!!.itemId).isEqualTo(file)
     }
 
+    @Test fun `a re-save just before the upload opens its session still leaves one copy, with the row where it went`() = runTest {
+        val phone = Phone()
+        val track = phone.download("Alpha", flac("Alpha"))
+        val second = phone.secondDrive()
+        val row = phone.queued(track)
+        // The run has picked the song up for the first Drive and is reading the file when the user
+        // saves it again with the second Drive chosen.
+        phone.files.onMd5 = {
+            phone.files.onMd5 = {}
+            phone.dao.queueUploads(listOf(track), second, CloudUploadOrigin.MANUAL.name, 8)
+            assertThat(phone.dao.getUpload(track)!!.accountId).isEqualTo(second)
+        }
+
+        phone.uploader.upload(row)
+
+        // It went where the run was sending it, and the row followed it there: no second copy to come.
+        assertThat(drive.files()).hasSize(1)
+        assertThat(phone.dao.getItemForTrack(track)!!.accountId).isEqualTo(phone.accountId)
+        assertThat(phone.dao.getUpload(track)!!.accountId).isEqualTo(phone.accountId)
+    }
+
     @Test fun `a phone that already downloaded the same song links another phone's copy to it`() = runTest {
         val a = Phone()
         a.save(a.download("Alpha", flac("Alpha"), isrc = "USABC1234567"))
