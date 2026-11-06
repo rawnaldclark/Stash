@@ -16,6 +16,7 @@ import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.model.listen.RoomMember
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.nowplaying.ui.FullArtTheme
+import com.stash.feature.nowplaying.ui.NpInkLight
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -24,8 +25,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * The colour "Listening with Mia" actually gets, read back from the laid-out text, under the real FullArtTheme. A
- * content colour no theme would use stands in for whatever is above the bar, so "keeps its colour" can't pass by luck.
+ * The colour "Listening with Mia" is laid out with, under the real FullArtTheme. A content colour no theme would use
+ * stands in for whatever is above the bar: the title must wear Now Playing's ink, never that.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -46,13 +47,13 @@ class SessionBarTitleTest {
     private val contentColor = Color(0xFF123456)
 
     private var appDark by mutableStateOf(true)
-    private var fullArt by mutableStateOf(true)
+    private var fullArt by mutableStateOf(false)
 
     private fun show() {
         rule.setContent {
             StashTheme(darkTheme = appDark) {
                 CompositionLocalProvider(LocalContentColor provides contentColor) {
-                    FullArtTheme(on = fullArt) { SessionBar(room, onClick = {}, onFullArt = fullArt) }
+                    FullArtTheme(on = fullArt) { SessionBar(room, onClick = {}) }
                 }
             }
         }
@@ -68,7 +69,17 @@ class SessionBarTitleTest {
     }
 
     @Test
-    fun `on Full art the title wears the ink of the text around it, in a dark app and in a light one`() {
+    fun `in the normal layout the title is white in a dark theme and plum-black in a light one`() {
+        // Device-visible 2026-11-05: black on the dark ground (1.11:1), because nothing above the sheet gives a colour.
+        show()
+        assertEquals(Color.White, titleColor())
+        appDark = false
+        assertEquals(NpInkLight, titleColor())
+    }
+
+    @Test
+    fun `on Full art the title is white, in a dark app and in a light one`() {
+        fullArt = true
         show()
         assertEquals(Color.White, titleColor())
         appDark = false
@@ -76,22 +87,13 @@ class SessionBarTitleTest {
     }
 
     @Test
-    fun `off Full art the title keeps the colour it had, in a dark app and in a light one`() {
-        fullArt = false
-        show()
-        assertEquals(contentColor, titleColor())
+    fun `in a light theme the title follows Full art turning on and off`() {
         appDark = false
-        assertEquals(contentColor, titleColor())
-    }
-
-    @Test
-    fun `the title follows Full art turning on and off`() {
-        fullArt = false
         show()
-        assertEquals(contentColor, titleColor())
+        assertEquals(NpInkLight, titleColor())
         fullArt = true
         assertEquals(Color.White, titleColor())
         fullArt = false
-        assertEquals(contentColor, titleColor())
+        assertEquals(NpInkLight, titleColor())
     }
 }

@@ -1148,7 +1148,6 @@ fun NowPlayingScreen(
                         com.stash.feature.nowplaying.listen.SessionBar(
                             room = room,
                             onClick = { showSession = true },
-                            onFullArt = fullArtDark,
                             modifier = Modifier.padding(top = 4.dp),
                         )
                     }

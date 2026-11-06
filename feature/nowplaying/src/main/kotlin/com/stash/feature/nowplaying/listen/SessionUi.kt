@@ -147,14 +147,9 @@ internal fun sessionTitle(room: ListenTogetherState.InRoom): String {
     return if (others.isEmpty()) "Waiting for friends to join" else "Listening with ${nameList(others.map { it.name ?: "Someone" })}"
 }
 
-/**
- * "Listening with Maya, Sam": who's here, who hosts. Tapping it opens the Session sheet.
- *
- * @param onFullArt Full art is out behind the bar, so the title wears Now Playing's ink like the top row above it.
- *   Otherwise it keeps the content colour it has always had. No default: Now Playing must say which it is.
- */
+/** "Listening with Maya, Sam": who's here, who hosts. Tapping it opens the Session sheet. */
 @Composable
-fun SessionBar(room: ListenTogetherState.InRoom, onClick: () -> Unit, onFullArt: Boolean, modifier: Modifier = Modifier) {
+fun SessionBar(room: ListenTogetherState.InRoom, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val host = room.members.firstOrNull { it.id == room.hostId }
     val title = sessionTitle(room)
     val waiting = if (room.isHost) room.suggestions.size else 0
@@ -186,9 +181,10 @@ fun SessionBar(room: ListenTogetherState.InRoom, onClick: () -> Unit, onFullArt:
             Text(
                 title,
                 style = MaterialTheme.typography.bodyMedium,
-                // The player sheet sits outside the app's Scaffold, so nothing provides a content colour here: left
-                // unspecified, this is black whatever FullArtTheme does to the colour scheme.
-                color = if (onFullArt) com.stash.feature.nowplaying.ui.npInk() else Color.Unspecified,
+                // Now Playing's ink, like everything drawn straight on it: white on the dark ground and on Full art,
+                // plum-black on the light one. Left to the content colour it was black everywhere, because the player
+                // sheet sits outside the app's Scaffold and nothing above it provides one.
+                color = com.stash.feature.nowplaying.ui.npInk(),
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
