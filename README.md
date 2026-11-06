@@ -139,7 +139,7 @@ The first sync is the slow one (a big library with Download on can take an hour)
 Stash doesn't use Spotify's or YouTube's official APIs, because they don't let apps like this exist. It uses your login instead, the same way your browser does. Your login stays on your phone, encrypted, and only ever goes back to Spotify or YouTube.
 
 <details>
-<summary><b>🎵 Spotify sign-in not working? Paste the cookie</b></summary>
+<summary><b> Spotify sign-in not working? Paste the cookie</b></summary>
 
 1. On a computer, open **[open.spotify.com](https://open.spotify.com)** and make sure you're logged in.
 2. Press **F12** to open Developer Tools.
@@ -154,7 +154,7 @@ Tip: cookies from incognito windows sometimes don't work. Use a normal window.
 </details>
 
 <details>
-<summary><b>📺 YouTube Music sign-in not working? Paste the cookie</b></summary>
+<summary><b> YouTube Music sign-in not working? Paste the cookie</b></summary>
 
 1. On a computer, open **[music.youtube.com](https://music.youtube.com)** and make sure you're logged in.
 2. Press **F12** and click the **Network** tab.
@@ -168,7 +168,7 @@ Same incognito tip as Spotify.
 </details>
 
 <details>
-<summary><b>🎮 Discord status (read this first)</b></summary>
+<summary><b> Discord status (read this first)</b></summary>
 
 Discord has no official way for a phone app to show what you're playing, so Stash does it through your own account's session (the same trick PreMiD and similar tools use). It's not a bot and it only sets your status.
 
