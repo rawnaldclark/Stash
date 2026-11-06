@@ -21,8 +21,8 @@ import com.stash.core.ui.components.sheetBarsFollow
 import com.stash.core.ui.theme.StashTheme
 
 /**
- * Bottom-sheet host for the [OnlineOfflinePicker] used by the Home tab.
- * Opens when the user taps the [StreamingModeChip]; closes after a
+ * Bottom-sheet host for the [OnlineOfflinePicker], shared by Home, Sync and the
+ * album and artist pages. Opens when the user taps the [StreamingModeChip]; closes after a
  * tile selection so a single mode flip is one tap on the chip + one
  * tap on the tile.
  *
@@ -65,17 +65,10 @@ fun StreamingModeSheet(
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.height(4.dp))
-            // What Offline really means: playback stays on the phone, but Sync keeps
-            // downloading switched-on playlists and mixes, so it isn't airplane mode.
-            Text(
-                text = "Online: plays everything and streams what isn't downloaded. " +
-                    "Offline: plays only your downloads. Sync and downloads still use the network.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(20.dp))
+            // No explainer paragraph (owner, 2026-11-04: it was word soup): each tile
+            // carries its own one-line caption. "Sync still downloads while Offline"
+            // stays on the Sync tab's Offline view, the one place it matters.
+            Spacer(Modifier.height(16.dp))
             OnlineOfflinePicker(
                 streamingEnabled = streamingEnabled,
                 onSelect = onSelect,

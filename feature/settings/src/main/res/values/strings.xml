@@ -106,6 +106,8 @@
     <string name="settings_search_clear">Clear search</string>
     <string name="settings_search_online_or_offline">Online or offline</string>
     <string name="settings_search_sync_your_likes">Sync your likes</string>
+    <!-- Settings search's name for Library & Storage › Your record › "Use your record in mixes" (the row's own words). -->
+    <string name="settings_search_record_in_mixes">Use your record in mixes</string>
 
     <!-- Settings > Support Banner -->
     <string name="settings_support_title">Support Stash</string>
@@ -120,6 +122,11 @@
     <string name="settings_donate_sponsors">GitHub Sponsors</string>
     <string name="settings_donate_upi">UPI (India)</string>
     <string name="settings_donate_upi_hint">UPI is for supporters in India.</string>
+    <!-- The small outlined button right of Donate on the Support card: opens Stash on GitHub to star it. Keep it to
+         one short word: it sits beside Donate, is capped at 120 dp including its icon, and ellipsizes past that. -->
+    <string name="settings_support_star_button">Star</string>
+    <!-- No longer shown: its translations are phrases too long for that button (settings_support_star_button took
+         over). It stays until the translations are removed with it. -->
     <string name="settings_support_star">Star</string>
     <!-- The Support card (2026-11): one line under "Support Stash", beside the two makers' pictures. -->
     <string name="settings_support_tagline">Keeps Stash running and updated, and pays for its servers and hosting.</string>
@@ -129,7 +136,8 @@
     <string name="settings_support_thanks_title">Thank you for supporting Stash</string>
     <string name="settings_support_thanks_line">You\'re a supporter: unlimited Tidal &amp; Qobuz is on.</string>
     <string name="settings_support_donate_again">Donate again</string>
-    <!-- Settings › About: the GitHub star moved here from the Support card. -->
+    <!-- Settings › About: the GitHub star row (the Support card also has a small "Star" button, and TalkBack reads
+         this title for it). -->
     <string name="settings_about_star">Star Stash on GitHub</string>
     <string name="settings_about_star_detail">github.com/rawnaldclark/Stash</string>
 
