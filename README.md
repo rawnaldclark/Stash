@@ -20,9 +20,9 @@
   <img src="docs/screenshots/hero-dark.webp" alt="Stash on three phones: Home with Daily Discover, Now Playing with a lossless FLAC track, and word-synced lyrics">
 </p>
 
-Stash grabs your Spotify and YouTube Music playlists and mirrors them on your Android phone. Download them, stream them, mix and match. Hi-res when it exists.
+Stash grabs your Spotify and YouTube Music playlists and mirrors them on your Android phone. Download them, stream them. Hi-res when it exists.
 
-No Stash account, no analytics, your logins stay on your phone. Free and open source, forever.
+No Stash account, no analytics, your logins stay encrypted on your phone. Free and open source, forever.
 
 ---
 
@@ -35,15 +35,14 @@ No Stash account, no analytics, your logins stay on your phone. Free and open so
 ####  Your library, one place
 - Spotify + YouTube Music together: liked songs, playlists, daily mixes
 - Your listening wrapped: top songs, stats, and a recap of your month
-- Got your own music in Dropbox, OneDrive or Google Drive? Connect it and stream or download it like everything else (on Google Drive you pick the songs)
+- Got your own music in Dropbox, OneDrive or Google Drive? Connect it to stream or download it.
 
 </td>
     <td width="50%" valign="top">
 
 ####  Download or stream
-- Download your playlists or just stream them. Your call
+- Download your playlists or just stream them.
 - Pick your quality: Lossless, AAC 320 or Opus
-- Downloaded songs play offline, the rest stream
 
 </td>
   </tr>
