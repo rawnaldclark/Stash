@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Listen Together: a guest's "Play next" in a menu while the host approves each song (spec 2026-11-04).
+         %1$s: the host's name. -->
+    <string name="listen_suggest_to">Suggest to %1$s</string>
+    <string name="listen_suggest_to_host">Suggest to the host</string>
+
     <!-- The Online/Offline sheet (opened from the mode chip on Home, Sync, album and artist pages). One short line under
          each tile's word says what the mode does. Online: everything plays; songs that aren't downloaded stream.
          Offline: only downloaded songs play. Settings > Playback shows the same two lines under its mode switch. -->

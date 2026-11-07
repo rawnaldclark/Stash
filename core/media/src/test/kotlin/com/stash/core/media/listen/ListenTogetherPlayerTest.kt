@@ -9,6 +9,7 @@ import com.google.common.collect.ImmutableList
 import com.google.common.truth.Truth.assertThat
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.stash.core.media.PlayNext
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -36,7 +37,9 @@ class ListenTogetherPlayerTest {
         override fun onSeek(positionMs: Long) { calls += "seek:$positionMs" }
         override fun onNext() { calls += "next" }
         override fun onPrevious() { calls += "previous" }
-        override fun onAdd(items: List<MediaItem>) { calls += "add:${items.single().mediaId}" }
+        override fun onAdd(items: List<MediaItem>) {
+            calls += items.joinToString(",", prefix = "add:") { it.mediaId + if (PlayNext.isTagged(it)) "+next" else "" }
+        }
         override fun onSet(items: List<MediaItem>, startIndex: Int) { calls += "set:$startIndex" }
     }
 
@@ -52,12 +55,14 @@ class ListenTogetherPlayerTest {
         assertThat(player.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT)).isFalse()
     }
 
-    @Test fun `a listener's add from a track menu becomes a suggestion`() {
+    @Test fun `a listener's Play next and Add to queue reach the session, telling one from the other`() {
         val recorder = Recorder()
         val player = ListenTogetherPlayer(StubPlayer()).apply { configure(isHost = false, interceptor = recorder) }
         assertThat(player.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS)).isTrue()
         player.addMediaItem(MediaItem.Builder().setMediaId("7").build())
-        assertThat(recorder.calls).containsExactly("add:7")
+        // Play next inserts after the current song, with the tag that rides the MediaController round trip.
+        player.addMediaItem(1, PlayNext.tag(MediaItem.Builder().setMediaId("8").build()))
+        assertThat(recorder.calls).containsExactly("add:7", "add:8+next").inOrder()
     }
 
     @Test fun `the host's commands go to the session, never straight to the player`() {

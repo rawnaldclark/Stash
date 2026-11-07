@@ -261,7 +261,7 @@ fun ArtistDetailScreen(
         val selectionActions = listOfNotNull(
             SelectionAction("add_queue", "Add to queue", Icons.Default.PlaylistAdd) {
                 viewModel.addSelectedToQueue(selectedTracks); selection.clear()
-            }.takeIf { listenRole == com.stash.core.ui.components.ListenTogetherRole.NONE },
+            }.takeIf { listenRole.canQueue }, // a guest who suggests has no queue to add to
             SelectionAction("add_playlist", "Add to playlist", Icons.Default.PlaylistAddCheck) {
                 showBatchSave = true
             },
