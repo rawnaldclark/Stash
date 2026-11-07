@@ -1,7 +1,6 @@
 package com.stash.feature.settings.cloud
 
 import android.content.Context
-import android.widget.Toast
 import androidx.annotation.DrawableRes
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
@@ -110,17 +109,16 @@ private fun rememberGooglePicker(viewModel: CloudStorageViewModel): (Long?) -> U
     }
 }
 
-/** Shows [CloudStorageViewModel.messages] and its notices as toasts while the screen is on. */
+/** Shows [CloudStorageViewModel.messages] and its notices while the screen is on ([rememberCloudMessages]). */
 @Composable
 private fun CloudMessages(viewModel: CloudStorageViewModel) {
     val context = LocalContext.current
-    LaunchedEffect(viewModel) {
-        viewModel.messages.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+    val show = rememberCloudMessages()
+    LaunchedEffect(viewModel, show) {
+        viewModel.messages.collect { show(it) }
     }
-    LaunchedEffect(viewModel) {
-        viewModel.notices.collect { notice ->
-            Toast.makeText(context, notice.text(context), Toast.LENGTH_LONG).show()
-        }
+    LaunchedEffect(viewModel, show) {
+        viewModel.notices.collect { notice -> show(notice.text(context)) }
     }
 }
 

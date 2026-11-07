@@ -15,6 +15,7 @@ import androidx.lifecycle.viewModelScope
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.CloudProvider
 import com.stash.core.ui.components.CloudSaveTarget
+import com.stash.core.ui.components.LocalAppSnackbar
 import com.stash.core.ui.components.LocalSaveToCloud
 import com.stash.data.cloud.CloudLibrary
 import com.stash.data.cloud.upload.CloudUploads
@@ -95,7 +96,7 @@ class CloudSaveViewModel @Inject constructor(
 
 /**
  * Provides [LocalSaveToCloud] to [content] while Google Drive is connected (so the menus show
- * "Save to Google Drive"), and toasts what each save did.
+ * "Save to Google Drive"), and says what each save did.
  */
 @Composable
 fun CloudSaveHost(
@@ -104,9 +105,25 @@ fun CloudSaveHost(
 ) {
     val connected by viewModel.connected.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    LaunchedEffect(viewModel) {
-        viewModel.messages.collect { Toast.makeText(context, it.text(context), Toast.LENGTH_LONG).show() }
+    val show = rememberCloudMessages()
+    LaunchedEffect(viewModel, show) {
+        viewModel.messages.collect { show(it.text(context)) }
     }
     val save = remember(viewModel) { viewModel::save }
     CompositionLocalProvider(LocalSaveToCloud provides if (connected) save else null) { content() }
+}
+
+/**
+ * Shows a cloud message on the app's snackbar, which wraps to as many lines as it needs. A toast is
+ * cut to two lines, and these messages carry email addresses: "Saving 2 songs. 3 songs are waiting
+ * on ron.clark@gmail.com." lost its end, the part that matters. A toast only where there's no
+ * snackbar (a preview, a test).
+ */
+@Composable
+internal fun rememberCloudMessages(): (String) -> Unit {
+    val snackbar = LocalAppSnackbar.current
+    val context = LocalContext.current
+    return remember(snackbar, context) {
+        if (snackbar != null) snackbar::show else { text -> Toast.makeText(context, text, Toast.LENGTH_LONG).show() }
+    }
 }
