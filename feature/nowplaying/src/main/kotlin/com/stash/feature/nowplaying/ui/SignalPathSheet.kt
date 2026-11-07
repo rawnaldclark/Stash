@@ -1,5 +1,6 @@
 package com.stash.feature.nowplaying.ui
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +31,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.data.db.dao.CloudDao
+import com.stash.core.model.CloudRef
+import com.stash.core.model.Track
 import com.stash.core.media.output.HiResOutputController
 import com.stash.core.media.output.SignalQuality
 import com.stash.core.media.output.SignalVerdict
@@ -37,14 +41,38 @@ import com.stash.core.media.output.withService
 import com.stash.core.ui.theme.StashTheme
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.StateFlow
 
 /** Exposes the live signal path to Now Playing. */
 @HiltViewModel
 class SignalPathViewModel @Inject constructor(
     controller: HiResOutputController,
+    private val cloud: CloudDao,
 ) : ViewModel() {
     val verdict: StateFlow<SignalVerdict?> = controller.signalPath
+
+    /**
+     * Where [track] lives when it is a cloud song, for the head of the Source line: "Google Drive ·
+     * a@gmail.com". Null for any other song (a download linked to the copy Stash saved in Drive
+     * included: that one plays its own file, and has no cloud address).
+     *
+     * The playing track is rebuilt from the media session and holds the address only while it
+     * streams; a downloaded cloud song plays its file, so its row is read instead.
+     */
+    suspend fun cloudSource(track: Track): String? = try {
+        val uri = track.cloudUri ?: track.id.takeIf { it > 0 }?.let { cloud.getTrack(it)?.cloudUri }
+        CloudRef.parse(uri)?.let { ref ->
+            val account = cloud.getAccount(ref.accountId)
+            listOfNotNull(ref.provider.displayName, account?.email?.takeIf { it.isNotBlank() } ?: account?.displayName).joinToString(" · ")
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        // Only a label: a database hiccup mustn't take the sheet down with it.
+        Log.w("SignalPath", "cloud source not read: ${e.javaClass.simpleName}")
+        null
+    }
 }
 
 object SignalPathBadge {
@@ -78,8 +106,9 @@ private fun SignalQuality.color(): Color = when (this) {
  * and what to change when it isn't.
  *
  * @param service the streaming service the song is coming from ("Qobuz",
- *   "Tidal"), named at the head of the Source line; null for a downloaded or
- *   local file, whose source isn't stored.
+ *   "Tidal") or the cloud account it lives in ("Google Drive · a@gmail.com"),
+ *   named at the head of the Source line; null for a downloaded or local file,
+ *   whose source isn't stored.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
