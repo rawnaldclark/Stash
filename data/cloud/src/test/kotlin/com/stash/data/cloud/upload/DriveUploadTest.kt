@@ -14,6 +14,7 @@ import com.stash.core.data.db.entity.CloudUploadState
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.CloudProvider
 import com.stash.core.model.MusicSource
+import com.stash.data.cloud.CloudConfig
 import com.stash.data.cloud.auth.CloudTokenManager
 import com.stash.data.cloud.net.CloudHttp
 import com.stash.data.cloud.net.RangeFetcher
@@ -26,11 +27,13 @@ import com.stash.data.cloud.provider.gdrive.InMemoryGooglePickStore
 import com.stash.data.cloud.provider.gdrive.MemoryTokenStore
 import com.stash.data.cloud.provider.gdrive.driveFolderRow
 import com.stash.data.cloud.scan.CloudScanner
+import com.stash.data.cloud.scan.LocalSongKeys
 import com.stash.data.cloud.tags.Fixtures
 import com.stash.data.cloud.tags.Fixtures.ascii
 import com.stash.data.cloud.tags.Fixtures.flacBlock
 import com.stash.data.cloud.tags.Fixtures.streamInfo
 import com.stash.data.cloud.tags.Fixtures.vorbisComments
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -102,11 +105,11 @@ class DriveUploadTest {
 
         suspend fun save(trackId: Long): UploadResult = uploader.upload(queued(trackId))
 
-        fun scanner(): CloudScanner {
+        fun scanner(localSongs: LocalSongKeys = LocalSongKeys { UploadKeys.downloadsByKey(dao) }): CloudScanner {
             val providers = mapOf(CloudProvider.GOOGLE_DRIVE to provider)
             val ranges = RangeFetcher(drive.client)
             return CloudScanner(dao, providers, CloudLinkResolver(providers), { l, o, n -> ranges.fetch(l.url, o, n, l.headers) }, { _, _ -> null }, clock = { 9_000 },
-                localSongs = { UploadKeys.downloadsByKey(dao) },
+                localSongs = localSongs,
             )
         }
 
@@ -311,7 +314,7 @@ class DriveUploadTest {
         val session = drive.sessions.values.single()
         System.arraycopy(bytes, 0, session.data, 0, ResumableUpload.QUANTUM)
         session.committed = ResumableUpload.QUANTUM.toLong()
-        phone.dao.setUploadSession(track, uri, bytes.size.toLong(), FakeDriveStore.md5(bytes), 1)
+        phone.dao.setUploadSession(track, phone.accountId, uri, bytes.size.toLong(), FakeDriveStore.md5(bytes), 1)
         drive.requests.clear()
 
         val r = phone.uploader.upload(phone.dao.getUpload(track)!!) as UploadResult.Saved
@@ -329,7 +332,7 @@ class DriveUploadTest {
         phone.queued(track)
         val uri = phone.api.startSession(phone.accountId, "root", "alpha.flac", "audio/flac", bytes.size.toLong(), "k")
         drive.sessions.values.single().expired = true
-        phone.dao.setUploadSession(track, uri, bytes.size.toLong(), FakeDriveStore.md5(bytes), 1)
+        phone.dao.setUploadSession(track, phone.accountId, uri, bytes.size.toLong(), FakeDriveStore.md5(bytes), 1)
 
         val r = phone.uploader.upload(phone.dao.getUpload(track)!!) as UploadResult.Saved
 
@@ -401,6 +404,136 @@ class DriveUploadTest {
         assertThat(phone.dao.getItemForTrack(track)!!.accountId).isEqualTo(again)
         // Known by its tag: no bytes read for it.
         assertThat(drive.requests.none { it.url.queryParameter("alt") == "media" }).isTrue()
+    }
+
+    /** A phone that saved [track] to its Drive, was disconnected and reconnected, then scanned: a link and no upload row. */
+    private suspend fun Phone.scanLinkedAfterReconnect(track: Long): Long {
+        save(track)
+        dao.removeAccount(accountId)
+        val again = dao.insertAccount(CloudAccountEntity(provider = "gdrive", remoteId = "perm-123", displayName = "Ron", email = "ron@example.com", connectedAt = 1))
+        store.save(CloudTokenManager.keyFor(CloudProvider.GOOGLE_DRIVE, again), ServiceToken("tok1", "ron@example.com", 1_000 + 3_000))
+        scanner().scan(dao.driveFolderRow(again, GoogleDriveProvider.UPLOADS_ITEM_ID, 0).id)
+        assertThat(dao.getUpload(track)).isNull()
+        assertThat(dao.getItemForTrack(track)!!.accountId).isEqualTo(again)
+        return again
+    }
+
+    private suspend fun Phone.secondDrive(): Long {
+        drive.validTokens += "tok2"
+        return dao.insertAccount(CloudAccountEntity(provider = "gdrive", remoteId = "perm-456", displayName = "Sam", email = "sam@example.com", connectedAt = 2))
+            .also { store.save(CloudTokenManager.keyFor(CloudProvider.GOOGLE_DRIVE, it), ServiceToken("tok2", "sam@example.com", 1_000 + 3_000)) }
+    }
+
+    private fun Phone.uploads() =
+        CloudUploads(dao, CloudUploadsTest.MemorySettings(), CloudUploadsTest.FakeRunner(), CloudConfig("", "", "com.stash.app", googleDriveEnabled = true))
+
+    @Test fun `a download one Drive's scan linked is never copied to another, and never comes back as a second song`() = runTest {
+        val phone = Phone()
+        val track = phone.download("Alpha", flac("Alpha"))
+        val first = phone.scanLinkedAfterReconnect(track)
+        val second = phone.secondDrive()
+        val uploads = phone.uploads()
+
+        // The whole path the review traced: backup on the other Drive, then "Back up N existing"...
+        uploads.setBackup(second, on = true)
+        assertThat(uploads.status(second).first().existing).isEqualTo(0)
+        assertThat(uploads.backUpExisting(second)).isEqualTo(0)
+        // ...then "Save to Google Drive" on the song itself.
+        uploads.save(listOf(track))
+        val row = phone.dao.getUpload(track)!!
+        assertThat(row.accountId).isEqualTo(first)
+        drive.requests.clear()
+        phone.uploader.upload(row)
+
+        // Found in its own Drive by its tag: nothing was sent, and the link is where it was.
+        assertThat(drive.uploadStarts()).isEmpty()
+        assertThat(phone.dao.getItemForTrack(track)!!.accountId).isEqualTo(first)
+        // The first Drive's next scan still knows the file.
+        val r = phone.scanner().scan(phone.dao.driveFolderRow(first, GoogleDriveProvider.UPLOADS_ITEM_ID, 0).id, full = true)!!
+        assertThat(r.added).isEqualTo(0)
+        assertThat(phone.trackCount()).isEqualTo(1)
+    }
+
+    @Test fun `a song waiting for one Drive follows another Drive's scan that finds it there`() = runTest {
+        val phone = Phone()
+        val track = phone.download("Alpha", flac("Alpha"))
+        phone.save(track)
+        phone.dao.removeAccount(phone.accountId)
+        val first = phone.dao.insertAccount(CloudAccountEntity(provider = "gdrive", remoteId = "perm-123", displayName = "Ron", email = "ron@example.com", connectedAt = 1))
+        phone.store.save(CloudTokenManager.keyFor(CloudProvider.GOOGLE_DRIVE, first), ServiceToken("tok1", "ron@example.com", 1_000 + 3_000))
+        val second = phone.secondDrive()
+        val uploads = phone.uploads()
+        // Counted on the backup account before the scan has looked.
+        uploads.setBackup(second, on = true)
+        assertThat(phone.dao.getUpload(track)!!.accountId).isEqualTo(second)
+
+        phone.scanner().scan(phone.dao.driveFolderRow(first, GoogleDriveProvider.UPLOADS_ITEM_ID, 0).id)
+
+        assertThat(phone.dao.getItemForTrack(track)!!.accountId).isEqualTo(first)
+        assertThat(phone.dao.getUpload(track)!!.accountId).isEqualTo(first)
+        assertThat(uploads.status(second).first().existing).isEqualTo(0)
+    }
+
+    /** Links [track] to [itemId] on [account], as a finished upload does. */
+    private suspend fun Phone.linkLikeAnUpload(track: Long, account: Long, itemId: String) {
+        dao.linkUpload(
+            track,
+            CloudItemEntity(
+                trackId = track, accountId = account, folderId = dao.driveFolderRow(account, GoogleDriveProvider.UPLOADS_ITEM_ID, 0).id,
+                itemId = itemId, name = "alpha.flac", relativePath = "", parentItemId = null, cTag = "1", eTag = null, size = 1,
+                mimeType = null, seenGeneration = 1, scannedAt = 1,
+            ),
+        )
+    }
+
+    /** The account a song's file is back in after a disconnect and reconnect, with no link yet. */
+    private suspend fun Phone.reconnectedWithFile(track: Long): Long {
+        save(track)
+        dao.removeAccount(accountId)
+        val again = dao.insertAccount(CloudAccountEntity(provider = "gdrive", remoteId = "perm-123", displayName = "Ron", email = "ron@example.com", connectedAt = 1))
+        store.save(CloudTokenManager.keyFor(CloudProvider.GOOGLE_DRIVE, again), ServiceToken("tok1", "ron@example.com", 1_000 + 3_000))
+        return again
+    }
+
+    @Test fun `a song another Drive finished after this pass loaded its keys stays there, and this file is its own song`() = runTest {
+        val phone = Phone()
+        val track = phone.download("Alpha", flac("Alpha"))
+        val first = phone.reconnectedWithFile(track)
+        val second = phone.secondDrive()
+        // The second Drive's upload finishes right after the first Drive's pass has read its keys.
+        val scanner = phone.scanner {
+            UploadKeys.downloadsByKey(phone.dao).also {
+                phone.dao.queueUploads(listOf(track), second, CloudUploadOrigin.BACKUP.name, 2)
+                phone.linkLikeAnUpload(track, second, "copy-in-second")
+                phone.dao.finishUpload(track, CloudUploadState.DONE.name, "copy-in-second", null, 3)
+            }
+        }
+
+        val r = scanner.scan(phone.dao.driveFolderRow(first, GoogleDriveProvider.UPLOADS_ITEM_ID, 0).id)!!
+
+        // The link and the row still agree: nothing for the second Drive's next scan to add again.
+        assertThat(phone.dao.getItemForTrack(track)!!.accountId).isEqualTo(second)
+        assertThat(phone.dao.getUpload(track)!!.accountId).isEqualTo(second)
+        assertThat(phone.dao.getUpload(track)!!.state).isEqualTo(CloudUploadState.DONE.name)
+        // Two accounts, two songs.
+        assertThat(r.added).isEqualTo(1)
+        assertThat(phone.trackCount()).isEqualTo(2)
+    }
+
+    @Test fun `a song linked to this very file while the pass looked at it stays one song`() = runTest {
+        val phone = Phone()
+        val track = phone.download("Alpha", flac("Alpha"))
+        val first = phone.reconnectedWithFile(track)
+        val file = drive.files().single().id
+        val scanner = phone.scanner {
+            UploadKeys.downloadsByKey(phone.dao).also { phone.linkLikeAnUpload(track, first, file) }
+        }
+
+        val r = scanner.scan(phone.dao.driveFolderRow(first, GoogleDriveProvider.UPLOADS_ITEM_ID, 0).id)!!
+
+        assertThat(r.added).isEqualTo(0)
+        assertThat(phone.trackCount()).isEqualTo(1)
+        assertThat(phone.dao.getItemForTrack(track)!!.itemId).isEqualTo(file)
     }
 
     @Test fun `a phone that already downloaded the same song links another phone's copy to it`() = runTest {

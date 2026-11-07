@@ -324,25 +324,33 @@ interface CloudDao {
     @Update
     suspend fun updateUpload(row: CloudUploadEntity)
 
-    /** The oldest queued upload: the worker's next song. */
-    @Query("SELECT * FROM cloud_uploads WHERE state = 'QUEUED' ORDER BY queued_at ASC, track_id ASC LIMIT 1")
-    suspend fun nextQueuedUpload(): CloudUploadEntity?
+    /**
+     * The oldest queued upload outside [skip]: the worker's next song. [skip] holds the accounts
+     * that can't take a song right now (signed out, Drive full), so they never hold up the others.
+     */
+    @Query("SELECT * FROM cloud_uploads WHERE state = 'QUEUED' AND account_id NOT IN (:skip) ORDER BY queued_at ASC, track_id ASC LIMIT 1")
+    suspend fun nextQueuedUpload(skip: List<Long>): CloudUploadEntity?
 
-    @Query("SELECT COUNT(*) FROM cloud_uploads WHERE state = 'QUEUED'")
-    suspend fun countQueuedUploads(): Int
+    /** How many songs are queued for the accounts outside [skip]. */
+    @Query("SELECT COUNT(*) FROM cloud_uploads WHERE state = 'QUEUED' AND account_id NOT IN (:skip)")
+    suspend fun countQueuedUploads(skip: List<Long>): Int
 
     // The worker writes single columns, never a whole row it read earlier: the user may have
     // queued, unqueued or re-saved the song meanwhile.
 
-    /** A new resumable session for [trackId] (null clears it: the old one expired). */
+    /**
+     * A new resumable session for [trackId] on [accountId] (null clears it: the old one expired). A
+     * session belongs to the account that opened it: if the row has moved to another account since
+     * the upload began, this writes nothing, and the row starts over there.
+     */
     @Query(
         """
         UPDATE cloud_uploads SET session_uri = :uri, session_size = :size, session_md5 = :md5,
             bytes_sent = 0, updated_at = :now
-        WHERE track_id = :trackId
+        WHERE track_id = :trackId AND account_id = :accountId
         """,
     )
-    suspend fun setUploadSession(trackId: Long, uri: String?, size: Long?, md5: String?, now: Long)
+    suspend fun setUploadSession(trackId: Long, accountId: Long, uri: String?, size: Long?, md5: String?, now: Long)
 
     /** Bytes Drive has committed so far (progress, and where a resume would start). */
     @Query("UPDATE cloud_uploads SET bytes_sent = :bytes, updated_at = :now WHERE track_id = :trackId")
@@ -381,12 +389,15 @@ interface CloudDao {
     /**
      * Gives every uploadable download without an upload row one, in [state]: `EXISTING` when the
      * backup switch is turned on (they are only counted, for "Back up N existing downloads"),
-     * `QUEUED` for downloads made while it is on. Rows that exist are left alone.
+     * `QUEUED` for downloads made while it is on. Rows that exist are left alone. A download a
+     * scan already linked to a file in a Drive gets its row on that account, whatever [accountId]
+     * is: a song lives in one Drive.
      */
     @Query(
         """
         INSERT OR IGNORE INTO cloud_uploads (track_id, account_id, state, origin, queued_at, updated_at, bytes_sent, attempts)
-        SELECT id, :accountId, :state, 'BACKUP', :now, :now, 0, 0 FROM tracks WHERE $UPLOADABLE
+        SELECT id, COALESCE((SELECT i.account_id FROM cloud_items i WHERE i.track_id = tracks.id), :accountId), :state, 'BACKUP', :now, :now, 0, 0
+        FROM tracks WHERE $UPLOADABLE
         """,
     )
     suspend fun insertUploadsForDownloads(accountId: Long, state: String, now: Long)
@@ -403,18 +414,46 @@ interface CloudDao {
     @Query("SELECT COUNT(*) FROM tracks WHERE $UPLOADABLE AND NOT EXISTS (SELECT 1 FROM cloud_uploads u WHERE u.track_id = tracks.id)")
     fun observeDownloadsWithoutUpload(): Flow<Int>
 
-    /** "Back up N existing downloads": queues them all. */
-    @Query("UPDATE cloud_uploads SET state = 'QUEUED', origin = 'BACKUP', queued_at = :now, updated_at = :now WHERE state = 'EXISTING'")
-    suspend fun queueExistingUploads(now: Long): Int
+    /**
+     * "Back up N existing downloads" for [accountId]: queues the ones waiting on that account,
+     * except a song linked to a file in another Drive, which lives there.
+     */
+    @Query(
+        """
+        UPDATE cloud_uploads SET state = 'QUEUED', origin = 'BACKUP', queued_at = :now, updated_at = :now
+        WHERE state = 'EXISTING' AND account_id = :accountId
+            AND NOT EXISTS (SELECT 1 FROM cloud_items i WHERE i.track_id = cloud_uploads.track_id AND i.account_id != :accountId)
+        """,
+    )
+    suspend fun queueExistingUploads(accountId: Long, now: Long): Int
 
-    /** The backup switch turned off: what it queued goes back to waiting (the user's own saves carry on). */
-    @Query("UPDATE cloud_uploads SET state = 'EXISTING', updated_at = :now WHERE state = 'QUEUED' AND origin = 'BACKUP'")
-    suspend fun unqueueBackupUploads(now: Long): Int
+    /** [accountId]'s backup switch turned off: what it queued goes back to waiting (the user's own saves carry on). */
+    @Query("UPDATE cloud_uploads SET state = 'EXISTING', updated_at = :now WHERE state = 'QUEUED' AND origin = 'BACKUP' AND account_id = :accountId")
+    suspend fun unqueueBackupUploads(accountId: Long, now: Long): Int
+
+    /**
+     * Backup moved to [accountId]: what it was still waiting to send follows it (rows waiting for
+     * "Back up N existing", and what backup itself queued). The user's own saves stay on the account
+     * they were saved to, and a song already in a Drive stays there, linked or uploaded. A session
+     * belongs to the account that opened it, so a moved row starts over.
+     */
+    @Query(
+        """
+        UPDATE cloud_uploads SET account_id = :accountId, session_uri = NULL, session_size = NULL, session_md5 = NULL,
+            bytes_sent = 0, attempts = 0, error = NULL, updated_at = :now
+        WHERE account_id != :accountId AND (state = 'EXISTING' OR (state = 'QUEUED' AND origin = 'BACKUP'))
+            AND NOT EXISTS (SELECT 1 FROM cloud_items i WHERE i.track_id = cloud_uploads.track_id AND i.account_id != :accountId)
+        """,
+    )
+    suspend fun moveWaitingBackups(accountId: Long, now: Long): Int
 
     /**
      * Queues [trackIds] (already checked uploadable) for [accountId]. A song already queued stays
      * as it is; any other row (saved before, skipped, failed, waiting) is queued again: the worker
-     * finds a copy still in Drive by its tag and only links it again.
+     * finds a copy still in Drive by its tag and only links it again. A song already in another
+     * Drive (saved there, or linked to a file there by that Drive's scan) is checked there, never
+     * copied here: a song lives in one Drive, and a second copy would come back from the first
+     * Drive's scan as a second song.
      *
      * @return how many were newly queued.
      */
@@ -423,24 +462,28 @@ interface CloudDao {
         var queued = 0
         for (id in trackIds) {
             val row = getUpload(id)
+            val home = getItemForTrack(id)?.accountId
             when {
                 row == null -> putUpload(
                     CloudUploadEntity(
-                        trackId = id, accountId = accountId, state = CloudUploadState.QUEUED.name,
+                        trackId = id, accountId = home ?: accountId, state = CloudUploadState.QUEUED.name,
                         origin = origin, queuedAt = now, updatedAt = now,
                     ),
                 )
                 row.state == CloudUploadState.QUEUED.name -> continue
-                else -> updateUpload(
-                    row.copy(
-                        state = CloudUploadState.QUEUED.name, origin = origin, queuedAt = now, updatedAt = now,
-                        attempts = 0, error = null, accountId = accountId,
-                    ).let {
-                        // A session belongs to the account that opened it.
-                        if (row.accountId == accountId) it
-                        else it.copy(sessionUri = null, sessionSize = null, sessionMd5 = null, bytesSent = 0)
-                    },
-                )
+                else -> {
+                    val target = home ?: if (row.state == CloudUploadState.DONE.name) row.accountId else accountId
+                    updateUpload(
+                        row.copy(
+                            state = CloudUploadState.QUEUED.name, origin = origin, queuedAt = now, updatedAt = now,
+                            attempts = 0, error = null, accountId = target,
+                        ).let {
+                            // A session belongs to the account that opened it.
+                            if (row.accountId == target) it
+                            else it.copy(sessionUri = null, sessionSize = null, sessionMd5 = null, bytesSent = 0)
+                        },
+                    )
+                }
             }
             queued++
         }
@@ -459,7 +502,8 @@ interface CloudDao {
      * plays or playlists are ever lost to a link.
      *
      * The row's `seen_generation` is the folder's generation read here, inside the transaction,
-     * so a full pass that started meanwhile can't sweep the link it just saw.
+     * so a full pass that started meanwhile can't sweep the link it just saw. A song still waiting
+     * to go to another Drive follows the link: it turned out to be in this one.
      */
     @Transaction
     suspend fun linkUpload(trackId: Long, item: CloudItemEntity): Boolean {
@@ -471,8 +515,20 @@ interface CloudDao {
             }
         }
         val generation = getFolder(item.folderId)?.scanGeneration ?: item.seenGeneration
-        return linkItem(trackId, item.copy(seenGeneration = generation))
+        val linked = linkItem(trackId, item.copy(seenGeneration = generation))
+        moveUnfinishedUpload(trackId, item.accountId, item.scannedAt)
+        return linked
     }
+
+    /** A session belongs to the account that opened it, so a moved row starts over. */
+    @Query(
+        """
+        UPDATE cloud_uploads SET account_id = :accountId, session_uri = NULL, session_size = NULL, session_md5 = NULL,
+            bytes_sent = 0, attempts = 0, error = NULL, updated_at = :now
+        WHERE track_id = :trackId AND account_id != :accountId AND state != 'DONE'
+        """,
+    )
+    suspend fun moveUnfinishedUpload(trackId: Long, accountId: Long, now: Long)
 
     /**
      * True when [trackId] is in a playlist, liked, or has been played: a song that must not be
