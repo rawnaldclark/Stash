@@ -99,6 +99,39 @@ fun SettingsAccountsScreen(
         )
     }
 
+    // A sign-in as a different Spotify account than the connected one was refused (nothing was
+    // replaced). Usually a Reconnect that landed on the wrong account, so it says how to get the
+    // connected account back first, then how to switch on purpose.
+    val spotifyMismatch by viewModel.spotifyAccountMismatch.collectAsStateWithLifecycle()
+    spotifyMismatch?.let { mismatch ->
+        AlertDialog(
+            onDismissRequest = viewModel::onDismissSpotifyAccountMismatch,
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = MaterialTheme.shapes.large,
+            title = {
+                Text(
+                    text = stringResource(R.string.settings_spotify_other_account_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            },
+            text = {
+                Text(
+                    text = mismatch.attemptedName?.let {
+                        stringResource(R.string.settings_spotify_other_account_body, mismatch.connectedName, it)
+                    } ?: stringResource(R.string.settings_spotify_other_account_body_unnamed, mismatch.connectedName),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::onDismissSpotifyAccountMismatch) {
+                    Text(stringResource(R.string.settings_ok))
+                }
+            },
+        )
+    }
+
     // YouTube Music cookie input dialog.
     if (uiState.showYouTubeCookieDialog) {
         com.stash.feature.settings.components.YouTubeCookieDialog(
@@ -210,8 +243,10 @@ fun SettingsAccountsScreen(
             )
         }
         if (confirmSpotifyDisconnect) {
+            val spotifyRefreshMode by viewModel.spotifyRefreshMode.collectAsStateWithLifecycle()
             com.stash.feature.settings.components.DisconnectAccountDialog(
                 serviceName = "Spotify",
+                note = if (spotifyRefreshMode) stringResource(R.string.settings_disconnect_spotify_refresh_note) else null,
                 onConfirm = {
                     confirmSpotifyDisconnect = false
                     // Also sign the WebView out, or the next Connect re-submits the old sp_dc.
