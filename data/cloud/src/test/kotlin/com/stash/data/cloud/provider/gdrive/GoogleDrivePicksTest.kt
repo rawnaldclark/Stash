@@ -6,6 +6,7 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.dao.CloudDao
 import com.stash.core.data.db.entity.CloudItemEntity
+import com.stash.core.data.db.entity.CloudScanStatus
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.CloudProvider
 import com.stash.core.model.MusicSource
@@ -121,6 +122,7 @@ class GoogleDrivePicksTest {
         assertThat(outcome.isNewAccount).isTrue()
         val second = dao.getAccounts().single { it.id != first.id }
         assertThat(outcome.accountId).isEqualTo(second.id)
+        assertThat(outcome.label).isEqualTo("sam@example.com")
         assertThat(second.email).isEqualTo("sam@example.com")
         assertThat(store.map.getValue(CloudTokenManager.keyFor(CloudProvider.GOOGLE_DRIVE, second.id)).refreshToken).isEqualTo("sam@example.com")
         // The first account's sign-in is left alone.
@@ -194,6 +196,44 @@ class GoogleDrivePicksTest {
         val account = dao.getAccounts().single()
         assertThat(account.email).isEqualTo("ron@example.com")
         assertThat(store.map.getValue(CloudTokenManager.keyFor(CloudProvider.GOOGLE_DRIVE, account.id)).refreshToken).isEqualTo("ron@example.com")
+    }
+
+    /** An account connected earlier, whose [itemId] row a lost sign-in turned red. */
+    private suspend fun connectedWithRedRow(itemId: String): Long {
+        picks.accept(GooglePickerResult.Picked("tok1", emptyList()))
+        val account = dao.getAccounts().single().id
+        val row = dao.getFolders(account).single { it.itemId == itemId }
+        dao.updateFolder(row.copy(lastScanStatus = CloudScanStatus.ERROR.name, lastScanError = "Sign-in expired. Reconnect the account."))
+        scans.clear()
+        return row.id
+    }
+
+    @Test
+    fun `a Reconnect scans the rows a lost sign-in left red, and only those`() = runTest {
+        val red = connectedWithRedRow(GoogleDriveProvider.UPLOADS_ITEM_ID)
+
+        picks.accept(GooglePickerResult.Picked("tok1", emptyList()))
+
+        assertThat(scans).containsExactly(red)
+    }
+
+    @Test
+    fun `a Reconnect that also picks songs scans each row once`() = runTest {
+        val red = connectedWithRedRow(GoogleDriveProvider.PICKS_ITEM_ID)
+
+        picks.accept(GooglePickerResult.Picked("tok1", listOf("1AAAAAAAAA")))
+
+        assertThat(scans).containsExactly(red)
+    }
+
+    @Test
+    fun `a pick with nothing red and nothing new starts no scan`() = runTest {
+        picks.accept(GooglePickerResult.Picked("tok1", emptyList()))
+        scans.clear()
+
+        picks.accept(GooglePickerResult.Picked("tok1", emptyList()))
+
+        assertThat(scans).isEmpty()
     }
 
     @Test

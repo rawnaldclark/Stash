@@ -42,7 +42,10 @@ data class CloudAccount(
     val displayName: String,
     val email: String?,
     val connectedAt: Long,
-)
+) {
+    /** What tells this account apart from another of the same provider: its email, when it has one. */
+    val label: String get() = email?.takeIf { it.isNotBlank() } ?: displayName
+}
 
 /**
  * The one entry point the UI uses for cloud storage: which providers this build offers,
