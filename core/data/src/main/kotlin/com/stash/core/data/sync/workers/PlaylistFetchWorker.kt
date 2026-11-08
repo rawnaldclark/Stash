@@ -986,6 +986,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
             Log.d(TAG, "fetchSpotifyPlaylists: auto-mix discovery disabled, skipping home feed")
             diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.SKIPPED, 0, account = pass.label))
         } else try {
+            // The home feed is a read of its own: an extra out of time stops before it.
+            stopIfOutOfTime(pass, run)
             when (val result = spotifyApiClient.getDailyMixes()) {
                 is SyncResult.Success -> {
                     // Fold in the yearly recaps ("Your Top Songs 2024", "Your
@@ -1310,6 +1312,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 var offset = 0
                 var complete = true
                 while (pagesFetched < pageCap) {
+                    // Up to 40 pages: an extra out of time stops between two, its listing not whole.
+                    stopIfOutOfTime(pass, run)
                     val page = spotifyApiClient.getUserPlaylists(
                         limit = pageSize,
                         offset = offset,
@@ -1596,11 +1600,15 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 claimed = claimedBefore,
                 budget = run.albumBudget,
                 onAlbumRead = ::reportPlaylistFetched,
-                // An extra's albums past the time left wait for the next sync, as past the budget.
+                // An extra out of time: its walk stops between two pages, and its albums past the
+                // time left wait for the next sync, as past the budget.
                 stopReading = if (pass.owner != null) run.outOfTime else NEVER_OUT_OF_TIME,
             )
             // The main account's switch is off: it listed nothing, so it has nothing to measure.
             if (step.status == StepStatus.SKIPPED) run.listings.albums.remove(listing)
+            // An extra's walk stopped for time: stopped, as anywhere else in its pass (its step says
+            // so; the unfinished listing's own step would read as a failure).
+            if (pass.owner != null && !listing.listedAll && run.outOfTime()) throw ExtraAccountOutOfTime()
             diagnostics.add(step)
         } catch (e: CancellationException) {
             throw e
@@ -1613,7 +1621,10 @@ class PlaylistFetchWorker @AssistedInject constructor(
     /**
      * Stops an extra account's pass ([ExtraAccountOutOfTime]) once a background sync is out of
      * time ([SpotifySyncRun.outOfTime]). Called only between reads, before anything of the next one
-     * is written. Never stops the main account's pass, which runs exactly as it always did.
+     * is written: before the home feed, each Liked page, each library page, each playlist read, and
+     * (through the saved-albums step's stopReading) each album page. Never stops the main account's
+     * pass, which runs exactly as it always did. The token exchange before the pass is one call, so
+     * the check before the pass covers it.
      */
     private fun stopIfOutOfTime(pass: SpotifyPass, run: SpotifySyncRun) {
         if (pass.owner != null && run.outOfTime()) throw ExtraAccountOutOfTime()

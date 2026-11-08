@@ -128,6 +128,10 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
 
         /** The listing answers, but says a part of it is missing (a folder too deep, say). */
         var listingPartial = false
+
+        /** Saved albums per listing page, and how long each page takes on the worker's clock. */
+        var albumPageSize = Int.MAX_VALUE
+        var minutesPerAlbumPage = 0L
     }
 
     private val libraries = HashMap<String?, Library>()
@@ -184,7 +188,8 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
         coEvery { spotify.getSavedAlbumsPage(any(), any(), any()) } answers {
             val lib = acting()
             val offset = secondArg<Int>()
-            val page = if (offset == 0) lib.albums.map(::savedAlbum) else emptyList()
+            clock.now += lib.minutesPerAlbumPage * 60_000
+            val page = lib.albums.drop(offset).take(lib.albumPageSize).map(::savedAlbum)
             SpotifySavedAlbumsPage(
                 page, page.map { it.id }, rawItemCount = page.size, totalCount = lib.albums.size, offset = offset,
                 sortOrder = SpotifyApiClient.SAVED_ALBUMS_ORDER,
@@ -632,6 +637,25 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
         runDiff(syncId)
 
         assertEquals(listOf("b1-1", "b1-2"), titlesIn(db.playlistDao().findBySourceId("b1")!!.id))
+    }
+
+    @Test fun `an extra running out of time between two album pages stops there, and no album is hidden`() = runBlocking {
+        addExtra(userB)
+        library(userB).albums += listOf(album("b1"), album("b2"))
+        library(userB).albumPageSize = 1
+        library(userB).minutesPerAlbumPage = 7
+        val aGone = insertRow(albumKey("a-gone"))
+        val bGone = insertRow(albumKey("b-gone"), owner = userB)
+
+        val syncId = runFetch(withAlbums = true)
+
+        coVerify(exactly = 0) { spotify.getSavedAlbumsPage(any(), 1, any()) }
+        val stopped = step(syncId, "accountPass", "extra 1")
+        assertEquals(StepStatus.SKIPPED, stopped.status)
+        assertTrue(stopped.note!!.startsWith("stopped part way"))
+        assertTrue("B's albums are unknown this sync: held back", db.playlistDao().getById(aGone)!!.isActive)
+        assertTrue(db.playlistDao().getById(bGone)!!.isActive)
+        assertTrue(heldBackSaid())
     }
 
     @Test fun `a sync in the foreground has no time limit`() = runBlocking {

@@ -123,9 +123,9 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
      * @param accountLabel The account's label for the step ([SyncStepResult.account]); null for the main.
      * @param claimed Album keys an earlier account listed this sync: counted as listed, not written again.
      * @param budget The sync's one album-reading budget, shared by every account.
-     * @param stopReading Whether to read no more albums this sync (an extra account's run in a
-     *   background sync out of time): the rest wait for the next sync, as past [budget]. The
-     *   listing itself still runs whole.
+     * @param stopReading Whether to read no more this sync (an extra account's run in a
+     *   background sync out of time): the albums not read yet wait for the next sync, as past
+     *   [budget], and the walk stops before its next page, leaving [listing] not whole.
      *
      * The main account's switch is its Sync setting, read here: switched off, the step is SKIPPED
      * and [listing] stays empty and incomplete (the caller drops it). An extra account's switch is
@@ -166,6 +166,11 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
 
         while (true) {
             if (pages >= PAGE_CAP) {
+                listingComplete = false
+                break
+            }
+            // Out of time (an extra's run only): stop between two pages, unfinished.
+            if (stopReading()) {
                 listingComplete = false
                 break
             }
