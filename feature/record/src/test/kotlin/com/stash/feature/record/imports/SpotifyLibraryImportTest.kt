@@ -284,7 +284,17 @@ class SpotifyLibraryImportTest {
         val b = fixture()
         library.write(chosen(b.playlists), emptyList(), NOW) { _, _ -> }
 
-        db.playlistDao().deactivateMissingSpotifyCustomPlaylists(emptyList(), hasCurrentIds = false)
+        // The sync's sweep: a whole listing of the main account's playlists with none in it.
+        com.stash.core.data.sync.hideWhatNoSpotifyAccountListed(
+            db.playlistDao(), db.syncUndoDao(), com.stash.core.data.sync.SyncLog(), syncId = 1,
+            syncMode = com.stash.core.model.SyncMode.REFRESH,
+            listings = com.stash.core.data.sync.SpotifySyncListings().apply {
+                playlists += com.stash.core.data.sync.SpotifyAccountListing(null).apply {
+                    listedAll = true
+                    complete = true
+                }
+            },
+        )
 
         assertThat(imported().map { it.isActive }).containsExactly(true, true)
     }

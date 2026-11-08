@@ -1190,33 +1190,6 @@ interface PlaylistDao {
     )
     suspend fun hasActiveYouTubeRows(type: PlaylistType, savedAlbums: Boolean): Boolean
 
-    /**
-     * Soft-deactivate only Spotify CUSTOM playlists absent from a complete
-     * inventory. With [hasCurrentIds] false every active one goes. Worked out
-     * in memory and written in chunks for the same bind-cap reason as
-     * [deactivateMissingForSource].
-     *
-     * EVERY account's rows: with extra Spotify accounts this would hide one account's
-     * library on another's listing. The sync no longer calls it; it hides through the
-     * joint hide ([com.stash.core.data.sync.hideWhatNoSpotifyAccountListed]) instead.
-     *
-     * Saved albums ([com.stash.core.data.album.SavedAlbums]) are never in the
-     * playlist listing, so they are left out: Spotify's saved albums (item 5)
-     * need their own "still saved" check against the album listing.
-     */
-    @Transaction
-    suspend fun deactivateMissingSpotifyCustomPlaylists(
-        currentSourceIds: List<String>,
-        hasCurrentIds: Boolean,
-    ): Int {
-        val current = currentSourceIds.toHashSet()
-        val missing = getActivePlaylistsBySource(MusicSource.SPOTIFY)
-            .filter { it.type == PlaylistType.CUSTOM && (!hasCurrentIds || it.sourceId !in current) }
-            .filterNot { com.stash.core.data.album.SavedAlbums.isSavedAlbum(it.type, it.source, it.sourceId) }
-            .map { it.id }
-        return deactivateByIdsChunked(missing)
-    }
-
     /** Every row keyed one of [sourceIds] (at most one each: the key is unique). Keep it to a page. */
     @Query("SELECT * FROM playlists WHERE source_id IN (:sourceIds)")
     suspend fun findBySourceIds(sourceIds: List<String>): List<PlaylistEntity>

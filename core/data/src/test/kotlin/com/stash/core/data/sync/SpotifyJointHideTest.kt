@@ -185,6 +185,39 @@ class SpotifyJointHideTest {
         assertTrue(active(sharedOwnedByB))
     }
 
+    @Test fun `a whole listing with nothing in it hides every playlist of its account, and nothing else`() = runTest {
+        val first = row("first")
+        val second = row("second")
+        val alreadyHidden = db.playlistDao().insert(
+            PlaylistEntity(name = "x", source = MusicSource.SPOTIFY, sourceId = "x", type = PlaylistType.CUSTOM, isActive = false),
+        )
+        val local = row("local", source = MusicSource.BOTH)
+
+        val outcome = hide(listings(playlists = listOf(listing(null))))
+
+        assertFalse(active(first))
+        assertFalse(active(second))
+        assertFalse(active(alreadyHidden))
+        assertTrue("the listener's own", active(local))
+        assertEquals(mapOf<String?, Int>(null to 2), outcome.hiddenPlaylists)
+    }
+
+    /**
+     * Past 999 ids a single NOT IN UPDATE threw "too many SQL variables" on API 26-30 and nothing
+     * was hidden; a naive per-chunk NOT IN would hide what the other chunks list. The joint hide
+     * reads the rows once and writes by id, in chunks.
+     */
+    @Test fun `a library-sized listing hides only what is missing`() = runTest {
+        val present = (1..1200).map { "sp$it" }
+        present.forEach { row(it) }
+        val gone = row("gone")
+
+        hide(listings(playlists = listOf(listing(null, *present.toTypedArray()))))
+
+        assertFalse(active(gone))
+        assertEquals(1200, db.playlistDao().getActivePlaylistsBySource(MusicSource.SPOTIFY).size)
+    }
+
     @Test fun `Accumulate never hides, and an unread mode hides nothing`() = runTest {
         val a2 = row("a2")
         val b2 = row("b2", owner = b)
