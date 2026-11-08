@@ -7,8 +7,8 @@ import kotlin.coroutines.CoroutineContext
 
 /**
  * The Spotify account a coroutine acts as: one of the EXTRA accounts (plan 2026-11-04 §2.2),
- * named by its `spotify_accounts` row id. No element in the context means the main account,
- * exactly as before extras existed.
+ * named by its `spotify_accounts` row: the row id and the row's Spotify user id. No element in
+ * the context means the main account, exactly as before extras existed.
  *
  * Every per-account read of [com.stash.core.auth.TokenManager] follows it: the access token
  * (and its forced refresh), the sp_dc cookie, the username, the client id, and
@@ -17,7 +17,13 @@ import kotlin.coroutines.CoroutineContext
  *
  * **The safety rule.** With an extra set, a missing or dead extra sign-in answers null. It never
  * falls back to the main account's token: an extra's pass would otherwise read the main's library
- * as the extra's. The rule lives in `TokenManagerImpl` (`actingExtra()` and the `extra*` reads).
+ * as the extra's. The rule lives in `TokenManagerImpl` (`actingExtra()` and `extraSignIn()`).
+ *
+ * **Why the user id too.** The sign-in is stored under the row id, outside the database, so a
+ * database restored from a backup (another phone's, or an older one) can give a row id to a
+ * different account than the sign-in stored under it. A sign-in whose account isn't [userId]
+ * answers null, like a missing one: an extra's pass never reads one account's library as
+ * another's.
  *
  * **What it does not reach.** A coroutine context travels into `withContext`, `async` and
  * `launch` children and across dispatchers, but NOT into work started on another scope (an
@@ -29,17 +35,25 @@ import kotlin.coroutines.CoroutineContext
  * they are the main account's whatever is acting.
  *
  * @property rowId The extra account's `spotify_accounts.id`; always positive.
+ * @property userId The row's `spotify_accounts.user_id`: the Spotify account its sign-in must be.
  */
-class SpotifyAccount(val rowId: Long) : AbstractCoroutineContextElement(SpotifyAccount) {
+class SpotifyAccount(val rowId: Long, val userId: String) : AbstractCoroutineContextElement(SpotifyAccount) {
 
     init {
         require(rowId > 0) { "an extra Spotify account's row id is positive" }
+        require(userId.isNotBlank()) { "an extra Spotify account has a user id" }
     }
 
     /** The key [SpotifyAccount] is found under in a coroutine context. */
     companion object Key : CoroutineContext.Key<SpotifyAccount>
 
-    override fun equals(other: Any?): Boolean = other is SpotifyAccount && other.rowId == rowId
+    /** Whether [account] (whose a stored sign-in is) is this extra's account. Null is no. */
+    fun isAccount(account: SpotifyProfile?): Boolean =
+        account != null && account.accountKey == SpotifyProfile.accountKeyOf(userId)
+
+    override fun equals(other: Any?): Boolean =
+        other is SpotifyAccount && other.rowId == rowId &&
+            SpotifyProfile.accountKeyOf(other.userId) == SpotifyProfile.accountKeyOf(userId)
 
     override fun hashCode(): Int = rowId.hashCode()
 
@@ -48,9 +62,9 @@ class SpotifyAccount(val rowId: Long) : AbstractCoroutineContextElement(SpotifyA
 }
 
 /**
- * Runs [block] acting as the extra Spotify account [rowId] (see [SpotifyAccount]). Every
- * per-account token read inside it is that account's, and null when its sign-in is missing or
- * dead, never the main account's.
+ * Runs [block] acting as the extra Spotify account [account] (see [SpotifyAccount]). Every
+ * per-account token read inside it is that account's, and null when its sign-in is missing, dead
+ * or another account's, never the main account's.
  */
-suspend fun <T> withSpotifyAccount(rowId: Long, block: suspend CoroutineScope.() -> T): T =
-    withContext(SpotifyAccount(rowId), block)
+suspend fun <T> withSpotifyAccount(account: SpotifyAccount, block: suspend CoroutineScope.() -> T): T =
+    withContext(account, block)

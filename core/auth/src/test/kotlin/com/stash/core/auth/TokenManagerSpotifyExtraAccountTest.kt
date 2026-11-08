@@ -55,6 +55,10 @@ class TokenManagerSpotifyExtraAccountTest {
     private val sam = SpotifyProfile(userId = "lm7d11nsf65n11sojl4twwr6t", displayName = "Sam")
     private val kim = SpotifyProfile(userId = "kimk", displayName = "Kim")
 
+    /** The extra accounts' rows: Sam is row 7, Kim row 8. */
+    private val samRow = SpotifyAccount(7, sam.userId)
+    private val kimRow = SpotifyAccount(8, kim.userId)
+
     private fun token(access: String, spDc: String, expiresAt: Long = now + 3_600, scope: String = "|webclient") =
         ServiceToken(access, spDc, expiresAtEpoch = expiresAt, scope = scope)
 
@@ -137,7 +141,7 @@ class TokenManagerSpotifyExtraAccountTest {
         addExtra(7, sam, token("sam-access", "sam-cookie", scope = "|sam-client"))
         val manager = manager()
 
-        withSpotifyAccount(7) {
+        withSpotifyAccount(samRow) {
             assertEquals("sam-access", manager.getSpotifyAccessToken())
             assertEquals("sam-cookie", manager.getSpDcCookie())
             assertEquals(sam.userId, manager.getSpotifyUsername())
@@ -151,10 +155,10 @@ class TokenManagerSpotifyExtraAccountTest {
     @Test fun `an extra with no sign-in answers null to every read, never the main's`() = runTest {
         val manager = manager()
 
-        val answers = withSpotifyAccount(7) { manager.allReads() }
+        val answers = withSpotifyAccount(samRow) { manager.allReads() }
 
         assertEquals(listOf(null, null, null, null, null), answers)
-        assertFalse(withSpotifyAccount(7) { manager.isAuthenticated(AuthService.SPOTIFY) })
+        assertFalse(withSpotifyAccount(samRow) { manager.isAuthenticated(AuthService.SPOTIFY) })
         coVerify(exactly = 0) { auth.refreshAccessToken(any()) }
         coVerify(exactly = 0) { store.saveRefreshedSpotifyToken(any(), any()) }
     }
@@ -164,7 +168,7 @@ class TokenManagerSpotifyExtraAccountTest {
         addExtra(7, sam, token("sam-old", "sam-cookie", expiresAt = now - 60, scope = "|sam-client"))
         val manager = manager()
 
-        val answers = withSpotifyAccount(7) { manager.allReads() }
+        val answers = withSpotifyAccount(samRow) { manager.allReads() }
 
         assertNull("access token", answers[0])
         assertNull("forced refresh", answers[1])
@@ -178,7 +182,7 @@ class TokenManagerSpotifyExtraAccountTest {
     @Test fun `the rule holds across dispatchers and in child coroutines`() = runTest {
         val manager = manager()
 
-        val answers = withSpotifyAccount(7) {
+        val answers = withSpotifyAccount(samRow) {
             listOf(
                 withContext(Dispatchers.Default) { manager.getSpotifyAccessToken() },
                 async { manager.getSpotifyAccessToken() }.await(),
@@ -193,7 +197,7 @@ class TokenManagerSpotifyExtraAccountTest {
         coEvery { auth.refreshAccessToken("sam-cookie") } returns token("sam-fresh", "sam-cookie")
         val manager = manager()
 
-        assertEquals("sam-fresh", withSpotifyAccount(7) { manager.getSpotifyAccessToken() })
+        assertEquals("sam-fresh", withSpotifyAccount(samRow) { manager.getSpotifyAccessToken() })
 
         coVerify(exactly = 1) { store.saveRefreshedSpotifyExtraToken(7, "sam-cookie", any()) }
         coVerify(exactly = 0) { store.saveRefreshedSpotifyToken(any(), any()) }
@@ -208,22 +212,41 @@ class TokenManagerSpotifyExtraAccountTest {
             token("sam-fresh", "sam-cookie")
         }
 
-        assertNull(withSpotifyAccount(7) { manager().getSpotifyAccessToken() })
+        assertNull(withSpotifyAccount(samRow) { manager().getSpotifyAccessToken() })
     }
 
     @Test fun `the main's record isn't looked up while an extra acts`() = runTest {
         addExtra(7, sam, token("sam-access", "sam-cookie"))
 
-        withSpotifyAccount(7) { manager().rememberSpotifyAccount() }
+        withSpotifyAccount(samRow) { manager().rememberSpotifyAccount() }
 
         coVerify(exactly = 0) { store.readSpotifySignIn() }
         coVerify(exactly = 0) { auth.fetchProfile(any(), any(), any()) }
     }
 
-    @Test fun `an extra's row id is positive`() {
-        val refused = runCatching { SpotifyAccount(0) }.exceptionOrNull()
-        assertTrue(refused is IllegalArgumentException)
-        assertEquals("SpotifyAccount(extra #7)", SpotifyAccount(7).toString())
+    @Test fun `a sign-in under the row that is another account's is never used`() = runTest {
+        // A database restored from another phone's backup: row 7 is Kim's there, but the sign-in
+        // stored under row 7 on this phone is Sam's. Kim's pass must not read Sam's library.
+        addExtra(7, sam, token("sam-access", "sam-cookie", scope = "|sam-client"))
+        val kimAsRow7 = SpotifyAccount(7, kim.userId)
+        val manager = manager()
+
+        val answers = withSpotifyAccount(kimAsRow7) { manager.allReads() }
+
+        assertEquals(listOf(null, null, null, null, null), answers)
+        assertFalse(withSpotifyAccount(kimAsRow7) { manager.isAuthenticated(AuthService.SPOTIFY) })
+        assertFalse(manager.hasSpotifyExtraSignIn(kimAsRow7))
+        assertNull(manager.getSpotifyExtraAccessToken(kimAsRow7))
+        coVerify(exactly = 0) { auth.refreshAccessToken(any()) }
+        // The row's own account, written in another shape of its id, is still itself.
+        assertTrue(manager.hasSpotifyExtraSignIn(SpotifyAccount(7, "spotify:user:${sam.userId.uppercase()}")))
+    }
+
+    @Test fun `an extra is a positive row id with a user id, and never names the account`() {
+        assertTrue(runCatching { SpotifyAccount(0, sam.userId) }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(runCatching { SpotifyAccount(7, " ") }.exceptionOrNull() is IllegalArgumentException)
+        assertEquals("SpotifyAccount(extra #7)", samRow.toString())
+        assertEquals(samRow, SpotifyAccount(7, sam.userId.uppercase()))
     }
 
     // -- One refresh lock per account ----------------------------------------
@@ -247,8 +270,8 @@ class TokenManagerSpotifyExtraAccountTest {
         val manager = manager()
 
         val mainCall = async { manager.getSpotifyAccessToken() }
-        val samCall = async { withSpotifyAccount(7) { manager.getSpotifyAccessToken() } }
-        val kimCall = async { withSpotifyAccount(8) { manager.getSpotifyAccessToken() } }
+        val samCall = async { withSpotifyAccount(samRow) { manager.getSpotifyAccessToken() } }
+        val kimCall = async { withSpotifyAccount(kimRow) { manager.getSpotifyAccessToken() } }
         advanceUntilIdle()
 
         // The main and Sam are stuck on their refreshes; Kim's went through all the same.
@@ -275,7 +298,7 @@ class TokenManagerSpotifyExtraAccountTest {
         }
         val manager = manager()
 
-        val callers = List(3) { async { withSpotifyAccount(7) { manager.getSpotifyAccessToken() } } }
+        val callers = List(3) { async { withSpotifyAccount(samRow) { manager.getSpotifyAccessToken() } } }
         advanceUntilIdle()
         gate.complete(Unit)
 
@@ -342,7 +365,7 @@ class TokenManagerSpotifyExtraAccountTest {
     @Test fun `a validated sign-in is saved under its row when it is the row's account`() = runTest {
         val manager = manager()
 
-        assertTrue(manager.saveSpotifyExtra(7, sam.userId.uppercase(), samSignIn))
+        assertTrue(manager.saveSpotifyExtra(SpotifyAccount(7, sam.userId.uppercase()), samSignIn))
 
         coVerify(exactly = 1) { store.saveSpotifyExtra(7, token("sam-access", "sam-cookie"), sam) }
         coVerify(exactly = 0) { store.saveSpotifyConnection(any(), any(), any()) }
@@ -351,10 +374,10 @@ class TokenManagerSpotifyExtraAccountTest {
     @Test fun `a sign-in of another account than the row's, an unnamed one, or the main's, is refused`() = runTest {
         val manager = manager()
 
-        assertFalse(manager.saveSpotifyExtra(7, kim.userId, samSignIn))
-        assertFalse(manager.saveSpotifyExtra(7, sam.userId, ValidatedSpotifySignIn(token("x", "y"), null)))
+        assertFalse(manager.saveSpotifyExtra(SpotifyAccount(7, kim.userId), samSignIn))
+        assertFalse(manager.saveSpotifyExtra(samRow, ValidatedSpotifySignIn(token("x", "y"), null)))
         val rawnSignIn = ValidatedSpotifySignIn(token("rawn-2", "rawn-cookie-2"), rawn)
-        assertFalse(manager.saveSpotifyExtra(7, rawn.userId, rawnSignIn))
+        assertFalse(manager.saveSpotifyExtra(SpotifyAccount(7, rawn.userId), rawnSignIn))
 
         coVerify(exactly = 0) { store.saveSpotifyExtra(any(), any(), any()) }
     }
