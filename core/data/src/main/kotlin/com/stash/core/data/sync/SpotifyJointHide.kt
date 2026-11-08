@@ -116,7 +116,7 @@ internal fun spotifyRowsToHide(
 ): SpotifyHidePlan {
     val spotifyCustom = rows.filter { it.isActive && it.source == MusicSource.SPOTIFY && it.type == PlaylistType.CUSTOM }
     val playlistRows = spotifyCustom.filterNot { SavedAlbums.isSavedAlbum(it.type, it.source, it.sourceId) }
-    val albumRows = spotifyCustom.filter { it.sourceId.startsWith(SPOTIFY_ALBUM_KEY_PREFIX, ignoreCase = true) }
+    val albumRows = spotifyCustom.filter { isSpotifySavedAlbumKey(it.sourceId) }
     val (playlists, playlistsKept) = missingByOwner(playlistRows, syncMode, listings.playlists, "playlists")
     val (albums, albumsKept) = missingByOwner(albumRows, syncMode, listings.albums, "saved albums")
     return SpotifyHidePlan(playlists, albums, playlistsKept, albumsKept)
@@ -209,3 +209,10 @@ private const val TAG = "StashSync"
 
 /** The key prefix of a saved album the Spotify sync files ([SavedAlbums.sourceId] for "spotify"). */
 private const val SPOTIFY_ALBUM_KEY_PREFIX = "album:spotify:"
+
+/**
+ * Whether [sourceId] is a saved album's key as the Spotify sync files it (`album:spotify:<id>`), so
+ * measured by the album listings; any other Spotify playlist key goes by the playlist listings.
+ */
+internal fun isSpotifySavedAlbumKey(sourceId: String): Boolean =
+    sourceId.startsWith(SPOTIFY_ALBUM_KEY_PREFIX, ignoreCase = true)

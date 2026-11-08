@@ -109,6 +109,9 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
         val albums = mutableListOf<String>()
         val mixes = mutableListOf<String>()
         var listingFails = false
+
+        /** The listing answers, but says a part of it is missing (a folder too deep, say). */
+        var listingPartial = false
     }
 
     private val libraries = HashMap<String?, Library>()
@@ -136,7 +139,10 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
             if (lib.listingFails) {
                 SpotifyLibraryPage.EMPTY
             } else {
-                SpotifyLibraryPage(lib.playlists.map(::listed), folderUris = emptyList(), rawItemCount = lib.playlists.size)
+                SpotifyLibraryPage(
+                    lib.playlists.map(::listed), folderUris = emptyList(), rawItemCount = lib.playlists.size,
+                    isComplete = !lib.listingPartial,
+                )
             }
         }
         coEvery { spotify.getPlaylistTracks(any()) } answers {
@@ -221,6 +227,66 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
         val bStep = step(syncId, "getSavedAlbums", "extra 1")
         assertEquals("both count as B's listing", 2, bStep.itemCount)
         assertTrue(bStep.note!!.contains("1 also saved on an account read before, written there"))
+    }
+
+    @Test fun `the main's listing missing a page holds its rows - an extra that lists one neither re-reads nor takes it`() = runBlocking {
+        addExtra(userB)
+        library(null).playlists += "a1"
+        library(null).listingPartial = true
+        library(userB).playlists += listOf("shared", "b1")
+        // The main's: on the part of its library this sync couldn't list.
+        val shared = insertRow("shared")
+        val aGone = insertRow("a-gone")
+        val bGone = insertRow("b-gone", owner = userB)
+
+        val syncId = runFetch()
+
+        assertTrue("B didn't snapshot it", db.remoteSnapshotDao().getPlaylistSnapshotsBySyncId(syncId).none { it.sourcePlaylistId == "shared" })
+        coVerify(exactly = 0) { spotify.getPlaylistTracks("shared") }
+        assertEquals("1 also on an account read before, read there", step(syncId, "getUserPlaylists", "extra 1").note)
+        runDiff(syncId)
+
+        val row = db.playlistDao().getById(shared)!!
+        assertNull("still the main's", row.spotifyAccount)
+        assertTrue(row.isActive)
+        assertTrue("the main's listing missed a page: nothing is hidden", db.playlistDao().getById(aGone)!!.isActive)
+        assertTrue(db.playlistDao().getById(bGone)!!.isActive)
+    }
+
+    @Test fun `a row moves away from its account only once that account listed everything without it`() = runBlocking {
+        addExtra(userB)
+        addExtra(userC)
+        library(userB).playlists += "t"
+        library(userC).playlists += "c1"
+        library(userC).listingPartial = true
+        val t = insertRow("t", owner = userC)
+
+        runDiff(runFetch())
+
+        assertEquals("C's listing missed a page: still C's", userC, db.playlistDao().getById(t)!!.spotifyAccount)
+        assertEquals("its songs still came from B's read", listOf("t-1", "t-2"), titlesIn(t))
+
+        library(userC).listingPartial = false
+        tokens.dead += userC
+        runDiff(runFetch())
+
+        assertEquals("C signed out: still C's", userC, db.playlistDao().getById(t)!!.spotifyAccount)
+
+        tokens.dead -= userC
+        runDiff(runFetch())
+
+        assertEquals("C listed everything, and not t: B's now", userB, db.playlistDao().getById(t)!!.spotifyAccount)
+        assertTrue(db.playlistDao().getById(t)!!.isActive)
+    }
+
+    @Test fun `a row whose account is gone goes to the account that lists it`() = runBlocking {
+        addExtra(userB)
+        library(userB).playlists += "o"
+        val o = insertRow("o", owner = "ghost")
+
+        runDiff(runFetch())
+
+        assertEquals(userB, db.playlistDao().getById(o)!!.spotifyAccount)
     }
 
     // ── Liked Songs ──────────────────────────────────────────────────────

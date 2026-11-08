@@ -26,6 +26,7 @@ import com.stash.core.data.sync.SpotifyPlaylistIds
 import com.stash.core.data.sync.SpotifySavedAlbumsFetcher
 import com.stash.core.data.sync.SpotifySyncListings
 import com.stash.core.data.sync.hideWhatNoSpotifyAccountListed
+import com.stash.core.data.sync.isSpotifySavedAlbumKey
 import com.stash.core.data.sync.spotifyExtraAccountLabel
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.SyncPreferencesManager
@@ -246,6 +247,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
          * Hitting it marks the snapshot partial rather than truncating silently.
          */
         private const val LIKED_SONGS_PAGE_CAP = 1000
+
+        /** Snapshot ids bound in one re-tag write, well inside SQLite's bind limit. */
+        private const val SNAPSHOT_IDS_PER_WRITE = 500
 
         // Shared reason string for auth-expiry short-circuit so the
         // sync_history FAILED row and the SyncStateManager onError call
@@ -573,7 +577,13 @@ class PlaylistFetchWorker @AssistedInject constructor(
             .onFailure { if (it is CancellationException) throw it }
             .getOrNull()
         spotifySyncModeThisRun = mode
-        val run = SpotifySyncRun(syncId, mode)
+        // Every extra account, read or not this sync (over the limit, signed out): a row tagged
+        // with one of them is that account's until its own listing proves otherwise.
+        val extras = extraSpotifyAccountsOrNone()
+        val run = SpotifySyncRun(
+            syncId, mode,
+            extraTags = extras.mapTo(HashSet()) { SpotifyPlaylistIds.accountTag(it.userId) },
+        )
 
         // Auto-mix discovery is opt-OUT (#335, #344). These are playlists the
         // user never created or saved, so when someone turns them off we must
@@ -586,7 +596,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
         }.onFailure { if (it is CancellationException) throw it }.getOrDefault(true)
 
         fetchSpotifyAccount(SpotifyPass.main(discoverMixes), run, diagnostics)
-        fetchExtraSpotifyAccounts(run, diagnostics)
+        fetchExtraSpotifyAccounts(extras, run, diagnostics)
+        // With no extra account at any row, every tag is an orphan's (or the main's): nothing to keep.
+        if (extras.isNotEmpty()) keepRowsWithUnprovenOwners(run)
         hideMissingSpotifyRows(run, diagnostics)
     }
 
@@ -595,8 +607,11 @@ class PlaylistFetchWorker @AssistedInject constructor(
      * row-id order. Each runs acting as its account ([withSpotifyAccount]) and only when its sign-in
      * still gives a token, decided once, before the pass ([fetchExtraSpotifyAccount]).
      */
-    private suspend fun fetchExtraSpotifyAccounts(run: SpotifySyncRun, diagnostics: MutableList<SyncStepResult>) {
-        val extras = extraSpotifyAccountsOrNone()
+    private suspend fun fetchExtraSpotifyAccounts(
+        extras: List<com.stash.core.data.db.entity.SpotifyAccountEntity>,
+        run: SpotifySyncRun,
+        diagnostics: MutableList<SyncStepResult>,
+    ) {
         for ((index, row) in extras.withIndex()) {
             currentCoroutineContext().ensureActive()
             val label = spotifyExtraAccountLabel(row.id)
@@ -712,6 +727,65 @@ class PlaylistFetchWorker @AssistedInject constructor(
     }
 
     /**
+     * The rows an account read earlier this sync still holds although its listing of their kind
+     * missed a page ([com.stash.core.data.sync.SpotifyAccountListing.listedAll] false): every
+     * playlist (or saved album) row tagged with it, shown or hidden. That account may still have
+     * them on the page it couldn't read, so a later pass treats them as claimed: it counts them
+     * as listed, doesn't snapshot them, and so never takes them over. Without this, a playlist the
+     * main can never list (a folder over 5 deep, a library over 40 pages) would move to whichever
+     * extra also follows it, every sync, and removing that extra would hide it.
+     */
+    private suspend fun heldByEarlierUnprovenListings(run: SpotifySyncRun): Set<String> {
+        val unprovenPlaylists = run.listings.playlists.filterNot { it.listedAll }.mapTo(HashSet()) { it.owner }
+        val unprovenAlbums = run.listings.albums.filterNot { it.listedAll }.mapTo(HashSet()) { it.owner }
+        if (unprovenPlaylists.isEmpty() && unprovenAlbums.isEmpty()) return emptySet()
+        val held = HashSet<String>()
+        for (owner in unprovenPlaylists + unprovenAlbums) {
+            for (id in playlistDao.spotifySourceIdsOwnedBy(owner)) {
+                val unproven = if (isSpotifySavedAlbumKey(id)) unprovenAlbums else unprovenPlaylists
+                if (owner in unproven) held += id
+            }
+        }
+        return held
+    }
+
+    /**
+     * Ownership moves away from an account only when that account's listing of the kind was whole
+     * this sync (plan 2026-11-04 §2.4, review of #858). The diff gives a row the account of the
+     * snapshot applied to it; a snapshot from one account over a row another account owns is
+     * tagged back to the owner here, after every pass, when the owner:
+     *  - ran this sync, but its listing of that kind missed a page (it read after the snapshot's
+     *    account, so [heldByEarlierUnprovenListings] couldn't hold the row for it);
+     *  - or didn't list that kind at all: signed out, switched off, over the limit, out of time,
+     *    or the main account with its saved albums switched off.
+     * The row's songs still follow the snapshot; only the tag stays. A row whose tag names no
+     * account at all (a removed one, or one a backup carried in) goes to the account that lists
+     * it, as it always did. With no extra accounts there is nothing to do, and this isn't called.
+     *
+     * Not caught: a snapshot left over a row it would wrongly take must never reach the diff, so
+     * a failure here fails the fetch (and the chain) instead.
+     */
+    private suspend fun keepRowsWithUnprovenOwners(run: SpotifySyncRun) {
+        val moving = remoteSnapshotDao.spotifySnapshotsMovingARow(run.syncId)
+        if (moving.isEmpty()) return
+        val kept = moving.filter { snapshot ->
+            val owner = snapshot.rowAccount
+            // An account with no row behind it: whoever lists the row now adopts it.
+            if (owner != null && owner !in run.extraTags) return@filter false
+            val listings = if (isSpotifySavedAlbumKey(snapshot.sourceId)) run.listings.albums else run.listings.playlists
+            listings.none { it.owner == owner && it.listedAll }
+        }
+        for ((owner, snapshots) in kept.groupBy { it.rowAccount }) {
+            for (ids in snapshots.map { it.snapshotId }.chunked(SNAPSHOT_IDS_PER_WRITE)) {
+                remoteSnapshotDao.setSpotifyAccount(ids, owner)
+            }
+        }
+        if (kept.isNotEmpty()) {
+            Log.i(TAG, "fetchSpotifyPlaylists: ${kept.size} row(s) stay with their account (its listing wasn't whole this sync); ${moving.size - kept.size} move")
+        }
+    }
+
+    /**
      * The joint hide after every account's pass ([hideWhatNoSpotifyAccountListed], plan 2026-11-04
      * §2.4), outside any acting account. The albums it hid are named on their account's albums step,
      * as that step did when it still hid them itself. Never fatal: a failure here hides nothing and
@@ -766,7 +840,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
         Log.d(TAG, "fetchSpotifyPlaylists: starting ${pass.label ?: "main account"} for syncId=${run.syncId}")
         run.labels[pass.owner] = pass.label
         // What earlier passes listed this sync: theirs to snapshot (one snapshot per id per sync).
-        val claimedBefore: Set<String> = HashSet(run.claimed)
+        // Plus what an earlier account owns whose listing missed a page: it may still have them, so
+        // this pass neither re-reads nor takes them (counted as listed when it lists them).
+        val claimedBefore: Set<String> = HashSet(run.claimed).apply { addAll(heldByEarlierUnprovenListings(run)) }
         // Registered before anything is read, as incomplete: a pass that fails part way, however it
         // fails, leaves them so, and the joint hide then hides nothing for anyone.
         val playlistListing = if (pass.playlists) SpotifyAccountListing(pass.owner).also { run.listings.playlists += it } else null
@@ -1183,7 +1259,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
             }
             // A playlist an earlier account's pass listed this sync is that account's to snapshot:
             // it still counts as listed here (above), and isn't read again. A playlist two accounts
-            // follow is one row, and ownership settles on the account read first (the main).
+            // follow is one row, and ownership settles on the account read first (the main). So
+            // is one an earlier account owns whose listing missed a page (it may still have it).
             val customPlaylists = keptPlaylists.filter { it.id !in claimedBefore }
             val sharedWithEarlier = keptPlaylists.size - customPlaylists.size
             Log.d(TAG, "fetchSpotifyPlaylists: found ${customPlaylists.size} user playlists (filtered from ${userPlaylists.size}, $sharedWithEarlier read by an earlier account)")
@@ -1983,8 +2060,15 @@ internal class SpotifyPass(
  * What one sync's Spotify passes share: the one sync mode, the ids claimed so far (listed by an
  * earlier pass: a later pass counts them as listed and doesn't snapshot them again), every
  * listing for the joint hide, the one album-reading budget, and each account's label by owner.
+ *
+ * @property extraTags Every extra account's tag, read this sync or not: a row tagged with one of
+ *   them has an account behind it (any other tag is an orphan's).
  */
-internal class SpotifySyncRun(val syncId: Long, val mode: SyncMode?) {
+internal class SpotifySyncRun(
+    val syncId: Long,
+    val mode: SyncMode?,
+    val extraTags: Set<String> = emptySet(),
+) {
     val claimed: MutableSet<String> = HashSet()
     val listings = SpotifySyncListings()
     val albumBudget = SpotifySavedAlbumsFetcher.ReadBudget()
