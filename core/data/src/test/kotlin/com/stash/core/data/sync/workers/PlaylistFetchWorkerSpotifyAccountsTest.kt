@@ -309,6 +309,31 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
         assertEquals(userB, db.playlistDao().getById(o)!!.spotifyAccount)
     }
 
+    @Test fun `the main's saved albums switched off and B's on - B's sync, and the main's stay exactly as they are`() = runBlocking {
+        every { prefs.syncSpotifySavedAlbums } returns flowOf(false)
+        addExtra(userB)
+        library(null).albums += album("amain")
+        library(userB).albums += listOf(album("bonly"), album("shared"))
+        val mainGone = insertRow(albumKey("a-gone"))
+        // The main's row; B saved the album too.
+        val shared = insertRow(albumKey("shared"))
+        val bGone = insertRow(albumKey("b-gone"), owner = userB)
+
+        val syncId = runFetch(withAlbums = true)
+
+        assertEquals(StepStatus.SKIPPED, step(syncId, "getSavedAlbums", null).status)
+        coVerify(exactly = 0) { spotify.getAlbumTracks(album("amain")) }
+        val bStep = step(syncId, "getSavedAlbums", "extra 1")
+        assertTrue(bStep.note!!.contains("1 un-saved on Spotify, hidden"))
+        assertTrue("the main listed no albums: none of its is measured", db.playlistDao().getById(mainGone)!!.isActive)
+        assertFalse("B's whole listing takes its own un-saved album out", db.playlistDao().getById(bGone)!!.isActive)
+
+        runDiff(syncId)
+
+        assertNull("the main didn't list its albums: its row stays its own", db.playlistDao().getById(shared)!!.spotifyAccount)
+        assertEquals(userB, db.playlistDao().findBySourceId(albumKey("bonly"))!!.spotifyAccount)
+    }
+
     // ── Liked Songs ──────────────────────────────────────────────────────
 
     @Test fun `two accounts give two Liked rows, and Refresh of B never removes A's likes`() = runBlocking {
