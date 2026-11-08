@@ -808,38 +808,19 @@ class PlaylistFetchWorker @AssistedInject constructor(
     }
 
     /**
-     * The rows an account read earlier this sync still holds although its listing of their kind
-     * missed a page ([com.stash.core.data.sync.SpotifyAccountListing.listedAll] false): every
-     * playlist (or saved album) row tagged with it, shown or hidden. That account may still have
-     * them on the page it couldn't read, so a later pass treats them as claimed: it counts them
-     * as listed, doesn't snapshot them, and so never takes them over. Without this, a playlist the
-     * main can never list (a folder over 5 deep, a library over 40 pages) would move to whichever
-     * extra also follows it, every sync, and removing that extra would hide it.
-     */
-    private suspend fun heldByEarlierUnprovenListings(run: SpotifySyncRun): Set<String> {
-        val unprovenPlaylists = run.listings.playlists.filterNot { it.listedAll }.mapTo(HashSet()) { it.owner }
-        val unprovenAlbums = run.listings.albums.filterNot { it.listedAll }.mapTo(HashSet()) { it.owner }
-        if (unprovenPlaylists.isEmpty() && unprovenAlbums.isEmpty()) return emptySet()
-        val held = HashSet<String>()
-        for (owner in unprovenPlaylists + unprovenAlbums) {
-            for (id in playlistDao.spotifySourceIdsOwnedBy(owner)) {
-                val unproven = if (isSpotifySavedAlbumKey(id)) unprovenAlbums else unprovenPlaylists
-                if (owner in unproven) held += id
-            }
-        }
-        return held
-    }
-
-    /**
      * Ownership moves away from an account only when that account's listing of the kind was whole
      * this sync (plan 2026-11-04 §2.4, review of #858). The diff gives a row the account of the
      * snapshot applied to it; a snapshot from one account over a row another account owns is
      * tagged back to the owner here, after every pass, when the owner:
-     *  - ran this sync, but its listing of that kind missed a page (it read after the snapshot's
-     *    account, so [heldByEarlierUnprovenListings] couldn't hold the row for it);
+     *  - ran this sync, but its listing of that kind missed a page (read before or after the
+     *    snapshot's account);
      *  - or didn't list that kind at all: signed out, switched off, over the limit, out of time,
      *    or the main account with its saved albums switched off.
-     * The row's songs still follow the snapshot; only the tag stays. A row whose tag names no
+     * The row's songs still follow the snapshot; only the tag stays. So a playlist the main can't
+     * list this sync (a folder over 5 deep, a library past the 40-page walk) but an extra follows
+     * is read, refreshed and, when hidden, shown again by the extra's pass, and stays the main's.
+     * No pass holds such a row back: the main didn't snapshot it (an id it snapshots is one it
+     * listed, so claimed), so the extra's snapshot is the only one under that key this sync. A row whose tag names no
      * account at all (a removed one, or one a backup carried in) goes to the account that lists
      * it, as it always did. With no extra accounts there is nothing to do, and this isn't called.
      *
@@ -925,9 +906,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
         Log.d(TAG, "fetchSpotifyPlaylists: starting ${pass.label ?: "main account"} for syncId=${run.syncId}")
         run.labels[pass.owner] = pass.label
         // What earlier passes listed this sync: theirs to snapshot (one snapshot per id per sync).
-        // Plus what an earlier account owns whose listing missed a page: it may still have them, so
-        // this pass neither re-reads nor takes them (counted as listed when it lists them).
-        val claimedBefore: Set<String> = HashSet(run.claimed).apply { addAll(heldByEarlierUnprovenListings(run)) }
+        // A row an earlier account owns but didn't list is read here like any other; whose it stays
+        // is settled after every pass (keepRowsWithUnprovenOwners).
+        val claimedBefore: Set<String> = HashSet(run.claimed)
         // Registered before anything is read, as incomplete: a pass that fails part way, however it
         // fails, leaves them so, and the joint hide then hides nothing for anyone.
         val playlistListing = if (pass.playlists) SpotifyAccountListing(pass.owner).also { run.listings.playlists += it } else null
@@ -1346,8 +1327,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
             }
             // A playlist an earlier account's pass listed this sync is that account's to snapshot:
             // it still counts as listed here (above), and isn't read again. A playlist two accounts
-            // follow is one row, and ownership settles on the account read first (the main). So
-            // is one an earlier account owns whose listing missed a page (it may still have it).
+            // follow is one row, and ownership settles on the account read first (the main).
             val customPlaylists = keptPlaylists.filter { it.id !in claimedBefore }
             val sharedWithEarlier = keptPlaylists.size - customPlaylists.size
             Log.d(TAG, "fetchSpotifyPlaylists: found ${customPlaylists.size} user playlists (filtered from ${userPlaylists.size}, $sharedWithEarlier read by an earlier account)")

@@ -249,28 +249,47 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
         assertTrue(bStep.note!!.contains("1 also saved on an account read before, written there"))
     }
 
-    @Test fun `the main's listing missing a page holds its rows - an extra that lists one neither re-reads nor takes it`() = runBlocking {
+    @Test fun `a hidden row of the main's that the main's partial walk missed is read, shown again and kept the main's by an extra`() = runBlocking {
         addExtra(userB)
         library(null).playlists += "a1"
         library(null).listingPartial = true
         library(userB).playlists += listOf("shared", "b1")
-        // The main's: on the part of its library this sync couldn't list.
-        val shared = insertRow("shared")
+        // The main's, hidden by an earlier sync; on the part of its library this sync couldn't list.
+        val shared = insertRow("shared", active = false)
         val aGone = insertRow("a-gone")
         val bGone = insertRow("b-gone", owner = userB)
 
         val syncId = runFetch()
 
-        assertTrue("B didn't snapshot it", db.remoteSnapshotDao().getPlaylistSnapshotsBySyncId(syncId).none { it.sourcePlaylistId == "shared" })
-        coVerify(exactly = 0) { spotify.getPlaylistTracks("shared") }
-        assertEquals("1 also on an account read before, read there", step(syncId, "getUserPlaylists", "extra 1").note)
+        coVerify(exactly = 1) { spotify.getPlaylistTracks("shared") }
+        assertNull(
+            "B's snapshot, tagged back to the main (its listing wasn't whole)",
+            db.remoteSnapshotDao().getPlaylistSnapshotsBySyncId(syncId).single { it.sourcePlaylistId == "shared" }.spotifyAccount,
+        )
         runDiff(syncId)
 
         val row = db.playlistDao().getById(shared)!!
         assertNull("still the main's", row.spotifyAccount)
-        assertTrue(row.isActive)
+        assertTrue("B follows it: shown again", row.isActive)
+        assertEquals(listOf("shared-1", "shared-2"), titlesIn(shared))
         assertTrue("the main's listing missed a page: nothing is hidden", db.playlistDao().getById(aGone)!!.isActive)
         assertTrue(db.playlistDao().getById(bGone)!!.isActive)
+    }
+
+    @Test fun `a row of the main's past its 40-page walk is refreshed through an extra that lists it`() = runBlocking {
+        addExtra(userB)
+        // Every page comes back full, so the main's walk stops at its 40-page cap: "deep" is past it.
+        library(null).playlists += (1..50).map { "a$it" }
+        library(userB).playlists += "deep"
+        val deep = insertRow("deep")
+
+        val syncId = runFetch()
+
+        assertEquals(StepStatus.ERROR, step(syncId, "getUserPlaylists", null).status)
+        runDiff(syncId)
+
+        assertNull("still the main's", db.playlistDao().getById(deep)!!.spotifyAccount)
+        assertEquals("its songs came through B", listOf("deep-1", "deep-2"), titlesIn(deep))
     }
 
     @Test fun `a row moves away from its account only once that account listed everything without it`() = runBlocking {
@@ -751,8 +770,11 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
         ),
     )
 
-    private suspend fun insertRow(sourceId: String, owner: String? = null): Long = db.playlistDao().insert(
-        PlaylistEntity(name = sourceId, source = MusicSource.SPOTIFY, sourceId = sourceId, type = PlaylistType.CUSTOM, spotifyAccount = owner),
+    private suspend fun insertRow(sourceId: String, owner: String? = null, active: Boolean = true): Long = db.playlistDao().insert(
+        PlaylistEntity(
+            name = sourceId, source = MusicSource.SPOTIFY, sourceId = sourceId, type = PlaylistType.CUSTOM,
+            spotifyAccount = owner, isActive = active,
+        ),
     )
 
     private fun songsOf(id: String) = songs[id] ?: listOf("$id-1", "$id-2")
