@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -99,9 +100,13 @@ class SpotifyAccountsViewModelTest {
         return SpotifyCookieCheck.Valid(signIn, isMain)
     }
 
+    /**
+     * Every notice from here on. Collected unconfined: subscribed at once and handed each notice as
+     * it is sent, since advanceUntilIdle stops once only background work is left.
+     */
     private fun TestScope.noticesOf(vm: SpotifyAccountsViewModel): List<OtherAccountNotice> {
         val seen = mutableListOf<OtherAccountNotice>()
-        backgroundScope.launch { vm.notices.collect { seen += it } }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.notices.collect { seen += it } }
         return seen
     }
 
@@ -234,7 +239,7 @@ class SpotifyAccountsViewModelTest {
 
     @Test fun `the add row shows with a connected account and room, never at the limit`() = runTest {
         val vm = newVm()
-        backgroundScope.launch { vm.canAdd.collect {} }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.canAdd.collect {} }
 
         rows.value = listOf(row(2, "a", "A"), row(3, "b", "B"))
         advanceUntilIdle()
@@ -308,7 +313,7 @@ class SpotifyAccountsViewModelTest {
         rows.value = listOf(row(2, "a", "A", signedOutAt = 1), row(3, "b", "B"), row(4, "c", "C"))
         coEvery { tokenManager.hasSpotifyExtraSignIn(SpotifyAccount(3, "b")) } returns false
         val vm = newVm()
-        backgroundScope.launch { vm.accounts.collect {} }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.accounts.collect {} }
         advanceUntilIdle()
 
         assertThat(vm.accounts.value.map { it.id to it.needsSignIn }).containsExactly(2L to true, 3L to true, 4L to false).inOrder()
@@ -353,7 +358,7 @@ class SpotifyAccountsViewModelTest {
         assertThat(vm.state.value.offerSyncNow).isEqualTo("Sam")
     }
 
-    @Test fun `before the first sync, Sync now isn't offered: that sync brings it`() = runTest {
+    @Test fun `before the first sync, Sync now isn't offered - that sync brings it`() = runTest {
         firstSyncAsked = false
         signsInAs("sam")
         coEvery { accountDao.addOrFind(any(), any(), any()) } returns row(7, "sam", "Sam")
