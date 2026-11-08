@@ -88,6 +88,7 @@ class SpotifyApiClient @Inject constructor(
     companion object {
         private const val TAG = "StashSync"
         private const val DEFAULT_LIMIT = 50
+        private const val HTTP_TOO_MANY_REQUESTS = 429
 
         /**
          * The order the sync lists saved albums in: newest save first, an order that holds while the
@@ -313,6 +314,18 @@ class SpotifyApiClient @Inject constructor(
      */
     @Volatile
     private var webApiRateLimitedUntil: Long = 0
+
+    private val rateLimitedAnswerCount = java.util.concurrent.atomic.AtomicInteger()
+
+    /**
+     * How many of Spotify's answers to the signed-in account's own requests (the web player's
+     * queries: library, Liked Songs, albums, playlists, home feed) have been HTTP 429 since the app
+     * started, whichever account was acting. Only ever grows: a caller compares two readings, as
+     * the sync does around the main account's pass, since every such read swallows its 429 into a
+     * failed page. The public Web API prong's 429s are not counted: they land on the shared
+     * client-credentials token ([webApiRateLimitedUntil]), not on the account.
+     */
+    val rateLimitedAnswers: Int get() = rateLimitedAnswerCount.get()
 
     /**
      * Serializes refreshes of [clientCredentialsToken]. Concurrent callers
@@ -1724,7 +1737,13 @@ class SpotifyApiClient @Inject constructor(
      * caller's coroutine, body read included; a blocking `execute()` can't be, so the caller would
      * wait out the HTTP timeouts.
      */
-    private suspend fun send(request: Request, cancellable: Boolean): Pair<Int, String?> {
+    private suspend fun send(request: Request, cancellable: Boolean): Pair<Int, String?> =
+        sendOnce(request, cancellable).also { (code, _) ->
+            if (code == HTTP_TOO_MANY_REQUESTS) rateLimitedAnswerCount.incrementAndGet()
+        }
+
+    /** [send] without the count. */
+    private suspend fun sendOnce(request: Request, cancellable: Boolean): Pair<Int, String?> {
         val call = okHttpClient.newCall(request)
         if (!cancellable) return call.execute().use { it.code to it.body?.string() }
         return suspendCancellableCoroutine { cont ->

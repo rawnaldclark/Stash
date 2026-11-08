@@ -27,6 +27,29 @@ interface RemoteSnapshotDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylistSnapshots(snapshots: List<RemotePlaylistSnapshotEntity>): List<Long>
 
+    /**
+     * This sync's EXTRA-account Spotify snapshots that would move a row to another account at the
+     * diff: the row (source SPOTIFY, same key) is tagged with an account other than the snapshot's
+     * (`spotify_account`, null = the main). Liked Songs never: each account has its own row. The
+     * main account's snapshots never: what the main lists settles on it (plan 2026-11-04 §2.4).
+     */
+    @Query(
+        """
+        SELECT s.id AS snapshotId, s.source_playlist_id AS sourceId, p.spotify_account AS rowAccount
+        FROM remote_playlist_snapshots s
+        JOIN playlists p ON p.source_id = s.source_playlist_id
+        WHERE s.sync_id = :syncId AND s.source = 'SPOTIFY' AND p.source = 'SPOTIFY'
+          AND s.playlist_type != 'LIKED_SONGS'
+          AND s.spotify_account IS NOT NULL
+          AND p.spotify_account IS NOT s.spotify_account
+        """
+    )
+    suspend fun spotifySnapshotsMovingARow(syncId: Long): List<SpotifySnapshotOverAnotherAccount>
+
+    /** Tags the snapshots [snapshotIds] with [account] (null = the main). At most a few hundred ids a call. */
+    @Query("UPDATE remote_playlist_snapshots SET spotify_account = :account WHERE id IN (:snapshotIds)")
+    suspend fun setSpotifyAccount(snapshotIds: List<Long>, account: String?)
+
     /** Retrieve all playlist snapshots belonging to a given sync run. */
     @Query("SELECT * FROM remote_playlist_snapshots WHERE sync_id = :syncId ORDER BY playlist_name ASC")
     suspend fun getPlaylistSnapshotsBySyncId(syncId: Long): List<RemotePlaylistSnapshotEntity>
@@ -100,3 +123,13 @@ interface RemoteSnapshotDao {
     @Query("DELETE FROM remote_playlist_snapshots WHERE fetched_at < :cutoffEpochMillis")
     suspend fun prunePlaylistSnapshotsOlderThan(cutoffEpochMillis: Long)
 }
+
+/**
+ * A Spotify snapshot over a row another account owns ([RemoteSnapshotDao.spotifySnapshotsMovingARow]):
+ * the snapshot, the row's key, and the row's account (null = the main).
+ */
+data class SpotifySnapshotOverAnotherAccount(
+    val snapshotId: Long,
+    val sourceId: String,
+    val rowAccount: String?,
+)

@@ -141,6 +141,18 @@ class DiagnosticsBundleBuilderTest {
         org.junit.Assert.assertFalse(text.contains("alice@example.com"))
     }
 
+    @Test fun `an extra Spotify account's steps are named by its label, the main's as before`() = runTest {
+        val steps = """[{"service":"SPOTIFY","step":"getUserPlaylists","status":"SUCCESS","itemCount":4},""" +
+            """{"service":"SPOTIFY","step":"getUserPlaylists","status":"SUCCESS","itemCount":2,"account":"extra 1"}]"""
+        every { syncHistoryDao.getRecentSyncs(any()) } returns
+            flowOf(listOf(com.stash.core.data.db.entity.SyncHistoryEntity(diagnostics = steps)))
+
+        val text = builder().buildText()
+
+        assertTrue(text.contains("    SPOTIFY · getUserPlaylists · SUCCESS · http=null · items=4"))
+        assertTrue(text.contains("    SPOTIFY (extra 1) · getUserPlaylists · SUCCESS · http=null · items=2"))
+    }
+
     @Test fun `a failing data source degrades to an unavailable note, not a crash`() = runTest {
         coEvery { downloadQueueDao.getStatusCounts() } throws RuntimeException("db locked")
         val text = builder().buildText()

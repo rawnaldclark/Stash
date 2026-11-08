@@ -17,6 +17,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+/** [PlaylistDao.deactivateMissingForSource]: a source's rows a complete inventory no longer lists. */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
 class PlaylistDaoSpotifyDeactivationTest {
@@ -34,54 +35,8 @@ class PlaylistDaoSpotifyDeactivationTest {
 
     @After fun tearDown() = db.close()
 
-    @Test fun `deactivates only active missing Spotify custom playlists`() = runTest {
-        val present = insert("present", MusicSource.SPOTIFY, PlaylistType.CUSTOM)
-        val missing = insert("missing", MusicSource.SPOTIFY, PlaylistType.CUSTOM)
-        val alreadyInactive = insert("inactive", MusicSource.SPOTIFY, PlaylistType.CUSTOM, active = false)
-        val liked = insert("liked", MusicSource.SPOTIFY, PlaylistType.LIKED_SONGS)
-        val daily = insert("daily", MusicSource.SPOTIFY, PlaylistType.DAILY_MIX)
-        val local = insert("local", MusicSource.BOTH, PlaylistType.CUSTOM)
-        val youtube = insert("youtube", MusicSource.YOUTUBE, PlaylistType.CUSTOM)
-
-        assertEquals(1, dao.deactivateMissingSpotifyCustomPlaylists(listOf("present"), true))
-
-        assertTrue(dao.getById(present)!!.isActive)
-        assertFalse(dao.getById(missing)!!.isActive)
-        assertFalse(dao.getById(alreadyInactive)!!.isActive)
-        assertTrue(dao.getById(liked)!!.isActive)
-        assertTrue(dao.getById(daily)!!.isActive)
-        assertTrue(dao.getById(local)!!.isActive)
-        assertTrue(dao.getById(youtube)!!.isActive)
-    }
-
-    @Test fun `complete empty inventory deactivates every eligible playlist`() = runTest {
-        val first = insert("first", MusicSource.SPOTIFY, PlaylistType.CUSTOM)
-        val second = insert("second", MusicSource.SPOTIFY, PlaylistType.CUSTOM)
-        val liked = insert("liked", MusicSource.SPOTIFY, PlaylistType.LIKED_SONGS)
-
-        assertEquals(2, dao.deactivateMissingSpotifyCustomPlaylists(emptyList(), false))
-
-        assertFalse(dao.getById(first)!!.isActive)
-        assertFalse(dao.getById(second)!!.isActive)
-        assertTrue(dao.getById(liked)!!.isActive)
-    }
-
-    /**
-     * One bind variable per current id: past 999 the old single NOT IN UPDATE
-     * threw "too many SQL variables" on API 26-30 and deactivation silently
-     * never ran. And a naive per-chunk NOT IN would hide every row the other
-     * chunks list.
-     */
-    @Test fun `a library-sized Spotify inventory deactivates only what is missing`() = runTest {
-        val present = (1..1200).map { "sp$it" }
-        present.forEach { insert(it, MusicSource.SPOTIFY, PlaylistType.CUSTOM) }
-        val missing = insert("gone", MusicSource.SPOTIFY, PlaylistType.CUSTOM)
-
-        assertEquals(1, dao.deactivateMissingSpotifyCustomPlaylists(present, true))
-
-        assertFalse(dao.getById(missing)!!.isActive)
-        assertEquals(1200, dao.getActivePlaylistsBySource(MusicSource.SPOTIFY).size)
-    }
+    // Spotify's rows are measured by the sync's joint hide since several accounts:
+    // SpotifyJointHideTest covers them, the library-sized listing included.
 
     @Test fun `a library-sized YouTube inventory deactivates only what is missing`() = runTest {
         val present = (1..1200).map { "yt$it" }

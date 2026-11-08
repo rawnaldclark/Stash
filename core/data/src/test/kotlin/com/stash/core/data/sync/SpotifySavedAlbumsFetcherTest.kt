@@ -12,6 +12,7 @@ import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.StepStatus
 import com.stash.core.model.SyncMode
+import com.stash.core.model.SyncStepResult
 import com.stash.data.spotify.SpotifyAlbumTrack
 import com.stash.data.spotify.SpotifyAlbumTracklist
 import com.stash.data.spotify.SpotifyApiClient
@@ -37,7 +38,8 @@ import org.robolectric.annotation.Config
 
 /**
  * The saved-albums step over a real (in-memory) database with Spotify faked: what it writes for the
- * diff, what it reads and what it leaves alone, and which albums it hides.
+ * diff, what it reads and what it leaves alone, and which albums a sync hides. The step only lists;
+ * the hiding is the sync's joint hide after it ([sync] runs both, as the sync does for one account).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
@@ -55,7 +57,7 @@ class SpotifySavedAlbumsFetcherTest {
             .allowMainThreadQueries()
             .build()
         kotlinx.coroutines.runBlocking { db.syncHistoryDao().insert(SyncHistoryEntity()) }
-        fetcher = SpotifySavedAlbumsFetcher(spotify, db, prefs, db.syncUndoDao(), syncLog)
+        fetcher = SpotifySavedAlbumsFetcher(spotify, db, prefs, syncLog)
     }
 
     @After fun tearDown() = db.close()
@@ -113,6 +115,19 @@ class SpotifySavedAlbumsFetcherTest {
 
     private suspend fun snapshots(syncId: Long = 1L) = db.remoteSnapshotDao().getPlaylistSnapshotsBySyncId(syncId)
 
+    /**
+     * One sync of the main account's saved albums, as the sync runs it: this step lists into the
+     * account's listing (dropped when the step is switched off), then the joint hide measures it.
+     * Returns the step, naming what the hide took out, as the sync records it.
+     */
+    private suspend fun sync(mode: SyncMode?, syncId: Long = 1L): SyncStepResult {
+        val listing = SpotifyAccountListing(owner = null)
+        val step = fetcher.fetch(syncId = syncId, syncMode = mode, listing = listing)
+        val listings = SpotifySyncListings().apply { if (step.status != StepStatus.SKIPPED) albums += listing }
+        val outcome = hideWhatNoSpotifyAccountListed(db.playlistDao(), db.syncUndoDao(), syncLog, syncId, mode, listings)
+        return SpotifySavedAlbumsFetcher.withHidden(step, outcome.hiddenAlbums[null] ?: 0)
+    }
+
     private suspend fun row(
         sourceId: String,
         source: MusicSource = MusicSource.SPOTIFY,
@@ -152,7 +167,7 @@ class SpotifySavedAlbumsFetcherTest {
         listing(listOf(album(1), album(2)), listOf(album(3)))
         coEvery { spotify.getAlbumTracks(any()) } returns songs("One", "Two", "Three", explicitAt = 1)
 
-        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        val step = sync(SyncMode.REFRESH)
 
         assertEquals(StepStatus.SUCCESS, step.status)
         assertEquals(3, step.itemCount)
@@ -179,7 +194,7 @@ class SpotifySavedAlbumsFetcherTest {
         val id = mirroredAlbum(1, addedAt = "2026-10-11T10:00:00Z", ageMs = 30L * 24 * 60 * 60 * 1000)
         listing(listOf(album(1)))
 
-        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        val step = sync(SyncMode.REFRESH)
 
         coVerify(exactly = 0) { spotify.getAlbumTracks(any()) }
         val snapshot = snapshots().single()
@@ -195,7 +210,7 @@ class SpotifySavedAlbumsFetcherTest {
         listing(listOf(album(1, addedAt = "2026-11-01T09:00:00Z")))
         coEvery { spotify.getAlbumTracks(any()) } returns songs("A1", "B1")
 
-        fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        sync(SyncMode.REFRESH)
 
         coVerify(exactly = 1) { spotify.getAlbumTracks("Alb1".padEnd(22, 'x')) }
         assertEquals("added:2026-11-01T09:00:00Z", snapshots().single().snapshotId)
@@ -208,7 +223,7 @@ class SpotifySavedAlbumsFetcherTest {
         listing(listOf(album(1)))
         coEvery { spotify.getAlbumTracks(any()) } returns songs("A1", "B1")
 
-        fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        sync(SyncMode.REFRESH)
 
         coVerify(exactly = 1) { spotify.getAlbumTracks(any()) }
     }
@@ -217,7 +232,7 @@ class SpotifySavedAlbumsFetcherTest {
         listing(listOf(album(1)))
         coEvery { spotify.getAlbumTracks(any()) } returns songs("One", complete = false, walkedAll = true)
 
-        fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        sync(SyncMode.REFRESH)
 
         val snapshot = snapshots().single()
         assertTrue(snapshot.partial)
@@ -229,7 +244,7 @@ class SpotifySavedAlbumsFetcherTest {
         coEvery { spotify.getAlbumTracks(any()) } returns
             songs("One", totalCount = 2, complete = false, walkedAll = false, pageFailed = true)
 
-        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        val step = sync(SyncMode.REFRESH)
 
         val snapshot = snapshots().single()
         assertTrue("the diff only adds", snapshot.partial)
@@ -253,7 +268,7 @@ class SpotifySavedAlbumsFetcherTest {
         coEvery { spotify.getAlbumTracks(any()) } returns songs("A", complete = false, walkedAll = false, pageFailed = true)
         coEvery { spotify.getAlbumTracks(album(4).id) } returns songs("One")
 
-        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        val step = sync(SyncMode.REFRESH)
 
         assertEquals("nothing for the diff to write over the three", listOf(key(4)), snapshots().map { it.sourcePlaylistId })
         assertEquals(3, step.unreadPlaylistCount)
@@ -268,7 +283,7 @@ class SpotifySavedAlbumsFetcherTest {
             "One", "Two", totalCount = 1_200, complete = false, walkedAll = false, pageCapHit = true,
         )
 
-        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        val step = sync(SyncMode.REFRESH)
 
         coVerify(exactly = 5) { spotify.getAlbumTracks(any()) }
         val written = snapshots()
@@ -284,7 +299,7 @@ class SpotifySavedAlbumsFetcherTest {
         listing(listOf(album(1)))
         coEvery { spotify.getAlbumTracks(any()) } returns songs("A1", totalCount = 2, complete = false, walkedAll = false)
 
-        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        val step = sync(SyncMode.REFRESH)
 
         assertTrue(snapshots().single().partial)
         assertEquals(StepStatus.SUCCESS, step.status)
@@ -295,7 +310,7 @@ class SpotifySavedAlbumsFetcherTest {
         listing(many.take(50), many.drop(50).take(50), many.drop(100).take(50), many.drop(150).take(50), many.drop(200))
         coEvery { spotify.getAlbumTracks(any()) } returns songs("One")
 
-        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        val step = sync(SyncMode.REFRESH)
 
         coVerify(exactly = SpotifySavedAlbumsFetcher.MAX_READS_PER_SYNC) { spotify.getAlbumTracks(any()) }
         // The first 200 the listing gave (snapshots come back by name, so compared as a set).
@@ -311,7 +326,7 @@ class SpotifySavedAlbumsFetcherTest {
         listing(listOf(album(1), album(2)))
         coEvery { spotify.getAlbumTracks(any()) } returns songs("A1", "B1")
 
-        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        val step = sync(SyncMode.REFRESH)
 
         coVerify(exactly = 1) { spotify.getAlbumTracks("Alb1".padEnd(22, 'x')) }
         coVerify(exactly = 0) { spotify.getAlbumTracks("Alb2".padEnd(22, 'x')) }
@@ -328,7 +343,7 @@ class SpotifySavedAlbumsFetcherTest {
         listing(listOf(album(1)))
         coEvery { spotify.getAlbumTracks(any()) } returns songs("A1", "B1")
 
-        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.ACCUMULATE)
+        val step = sync(SyncMode.ACCUMULATE)
 
         coVerify(exactly = 1) { spotify.getAlbumTracks(album(1).id) }
         assertTrue(step.note!!, step.note!!.contains("1 re-read after 90 days"))
@@ -341,7 +356,7 @@ class SpotifySavedAlbumsFetcherTest {
         listing(*albums.chunked(SpotifySavedAlbumsFetcher.PAGE_SIZE).toTypedArray())
         coEvery { spotify.getAlbumTracks(any()) } returns songs("A", "B")
 
-        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        val step = sync(SyncMode.REFRESH)
 
         coVerify(exactly = SpotifySavedAlbumsFetcher.REFRESHES_PER_SYNC) { spotify.getAlbumTracks(any()) }
         coVerify(exactly = 0) { spotify.getAlbumTracks(album(n).id) }
@@ -354,7 +369,7 @@ class SpotifySavedAlbumsFetcherTest {
         listing(listOf(album(1)), listOf(album(2)), order = "Recents")
         coEvery { spotify.getAlbumTracks(any()) } returns songs("One")
 
-        fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        sync(SyncMode.REFRESH)
 
         coVerify { spotify.getSavedAlbumsPage(any(), 0, SpotifyApiClient.SAVED_ALBUMS_ORDER) }
         coVerify { spotify.getSavedAlbumsPage(any(), 1, "Recents") }
@@ -368,7 +383,7 @@ class SpotifySavedAlbumsFetcherTest {
             SpotifySavedAlbumsPage(listOf(album(2)), listOf(album(2).id), 1, 2, 1, sortOrder = "Recents")
         coEvery { spotify.getAlbumTracks(any()) } returns songs("One")
 
-        fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        sync(SyncMode.REFRESH)
 
         assertTrue(db.playlistDao().getById(gone)!!.isActive)
     }
@@ -380,7 +395,7 @@ class SpotifySavedAlbumsFetcherTest {
         for (order in listOf("Recents", null)) {
             listing(listOf(album(1)), order = order)
 
-            val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+            val step = sync(SyncMode.REFRESH)
 
             assertTrue("order $order", db.playlistDao().getById(gone)!!.isActive)
             assertEquals(StepStatus.SUCCESS, step.status)
@@ -392,7 +407,7 @@ class SpotifySavedAlbumsFetcherTest {
         listing((1..5).map { album(it) })
         coEvery { spotify.getAlbumTracks(any()) } returns null
 
-        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        val step = sync(SyncMode.REFRESH)
 
         coVerify(exactly = SpotifySavedAlbumsFetcher.FAILURES_TO_STOP) { spotify.getAlbumTracks(any()) }
         assertTrue(snapshots().isEmpty())
@@ -407,14 +422,14 @@ class SpotifySavedAlbumsFetcherTest {
         val pasted = row(key(1), source = MusicSource.BOTH, name = "Album 1")
         listing(listOf(album(1)))
 
-        fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        sync(SyncMode.REFRESH)
 
         coVerify(exactly = 0) { spotify.getAlbumTracks(any()) }
         assertTrue("one row per key: the sync takes nothing over", snapshots().isEmpty())
 
         // Un-saved on Spotify later: the listener's own save in Stash stays.
         listing(emptyList())
-        fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        sync(SyncMode.REFRESH)
         assertTrue(db.playlistDao().getById(pasted)!!.isActive)
     }
 
@@ -424,7 +439,7 @@ class SpotifySavedAlbumsFetcherTest {
         db.playlistDao().setUserHidden(removed, true)
         listing(listOf(album(1)))
 
-        fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        sync(SyncMode.REFRESH)
 
         coVerify(exactly = 0) { spotify.getAlbumTracks(any()) }
         assertTrue(snapshots().isEmpty())
@@ -441,7 +456,7 @@ class SpotifySavedAlbumsFetcherTest {
         listing(listOf(album(1, addedAt = "2026-11-01T09:00:00Z")))
         coEvery { spotify.getAlbumTracks(any()) } returns songs("One", "Two")
 
-        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        val step = sync(SyncMode.REFRESH)
 
         val back = db.playlistDao().getById(removed)!!
         assertEquals(MusicSource.SPOTIFY, back.source)
@@ -458,7 +473,7 @@ class SpotifySavedAlbumsFetcherTest {
         db.playlistDao().markPastedSpotifyAlbumRemoved(removed, removedAt)
         listing(listOf(album(1, addedAt = "2026-10-11T10:00:00Z")))
 
-        fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        sync(SyncMode.REFRESH)
 
         coVerify(exactly = 0) { spotify.getAlbumTracks(any()) }
         val after = db.playlistDao().getById(removed)!!
@@ -481,7 +496,7 @@ class SpotifySavedAlbumsFetcherTest {
         val out = row(key(1), name = "Album 1", userHidden = true)
         listing(listOf(album(1)))
 
-        fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        sync(SyncMode.REFRESH)
 
         coVerify(exactly = 0) { spotify.getAlbumTracks(any()) }
         assertTrue(snapshots().isEmpty())
@@ -492,7 +507,7 @@ class SpotifySavedAlbumsFetcherTest {
         enabled.value = false
         val synced = row(key(1))
 
-        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        val step = sync(SyncMode.REFRESH)
 
         assertEquals(StepStatus.SKIPPED, step.status)
         coVerify(exactly = 0) { spotify.getSavedAlbumsPage(any(), any(), any()) }
@@ -510,7 +525,7 @@ class SpotifySavedAlbumsFetcherTest {
         val playlist = row("37iSpotifyPlaylistIdxx")
         listing(listOf(album(1)))
 
-        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        val step = sync(SyncMode.REFRESH)
 
         assertFalse(db.playlistDao().getById(gone)!!.isActive)
         for (id in listOf(kept, pasted, youTube, stashSaved, playlist)) {
@@ -526,7 +541,7 @@ class SpotifySavedAlbumsFetcherTest {
         listing(listOf(album(1)))
         coEvery { spotify.getAlbumTracks(any()) } returns songs("One")
 
-        fetcher.fetch(syncId = 1L, syncMode = SyncMode.ACCUMULATE)
+        sync(SyncMode.ACCUMULATE)
 
         assertTrue(db.playlistDao().getById(gone)!!.isActive)
     }
@@ -538,7 +553,7 @@ class SpotifySavedAlbumsFetcherTest {
         coEvery { spotify.getSavedAlbumsPage(any(), 1, any()) } returns SpotifySavedAlbumsPage.EMPTY
         coEvery { spotify.getAlbumTracks(any()) } returns songs("One")
 
-        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        val step = sync(SyncMode.REFRESH)
 
         assertTrue(db.playlistDao().getById(gone)!!.isActive)
         assertEquals(StepStatus.ERROR, step.status)
@@ -550,7 +565,7 @@ class SpotifySavedAlbumsFetcherTest {
         listing(listOf(album(1)), total = 2)
         coEvery { spotify.getAlbumTracks(any()) } returns songs("One")
 
-        fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        sync(SyncMode.REFRESH)
 
         assertTrue(db.playlistDao().getById(gone)!!.isActive)
     }
@@ -565,7 +580,7 @@ class SpotifySavedAlbumsFetcherTest {
             SpotifySavedAlbumsPage(listOf(album(3)), listOf(album(3).id), 1, 3, 2, sortOrder = SpotifyApiClient.SAVED_ALBUMS_ORDER)
         coEvery { spotify.getAlbumTracks(any()) } returns songs("One")
 
-        fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        sync(SyncMode.REFRESH)
 
         assertTrue(db.playlistDao().getById(gone)!!.isActive)
     }
@@ -576,7 +591,7 @@ class SpotifySavedAlbumsFetcherTest {
             SpotifySavedAlbumsPage(listOf(album(1)), listOf(album(1).id, album(2).id), 2, 2, 0, sortOrder = SpotifyApiClient.SAVED_ALBUMS_ORDER)
         coEvery { spotify.getAlbumTracks(any()) } returns songs("One")
 
-        fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        sync(SyncMode.REFRESH)
 
         assertTrue(db.playlistDao().getById(preRelease)!!.isActive)
         coVerify(exactly = 1) { spotify.getAlbumTracks(any()) }
@@ -586,13 +601,79 @@ class SpotifySavedAlbumsFetcherTest {
         val gone = row(key(9))
         coEvery { spotify.getSavedAlbumsPage(any(), any(), any()) } returns SpotifySavedAlbumsPage.EMPTY
 
-        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        val step = sync(SyncMode.REFRESH)
 
         assertEquals(StepStatus.ERROR, step.status)
         assertTrue(db.playlistDao().getById(gone)!!.isActive)
     }
 
     // ── The skip rule itself ─────────────────────────────────────────────
+
+    // ── Several accounts ─────────────────────────────────────────────────
+
+    @Test fun `an album an earlier account listed counts as listed, and isn't written or read again`() = runTest {
+        listing(listOf(album(1), album(2)))
+        coEvery { spotify.getAlbumTracks(any()) } returns songs("A", "B")
+        val accountListing = SpotifyAccountListing(owner = "userb")
+
+        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH, listing = accountListing, claimed = setOf(key(1)))
+
+        assertEquals(listOf(key(2)), snapshots().map { it.sourcePlaylistId })
+        coVerify(exactly = 0) { spotify.getAlbumTracks("Alb1".padEnd(22, 'x')) }
+        assertEquals(setOf(key(1), key(2)), accountListing.ids)
+        assertTrue("a whole listing, claimed albums included", accountListing.complete)
+        assertEquals(2, step.itemCount)
+        assertTrue(step.note!!.contains("1 also saved on an account read before, written there"))
+    }
+
+    @Test fun `an extra account's run tags its snapshots and step, and its switch is the caller's`() = runTest {
+        enabled.value = false // the main account's switch: not this account's
+        listing(listOf(album(1)))
+        coEvery { spotify.getAlbumTracks(any()) } returns songs("A")
+        val accountListing = SpotifyAccountListing(owner = "userb")
+
+        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH, listing = accountListing, accountLabel = "extra 3")
+
+        assertEquals(StepStatus.SUCCESS, step.status)
+        assertEquals("extra 3", step.account)
+        assertEquals("userb", snapshots().single().spotifyAccount)
+    }
+
+    @Test fun `every account's run shares the sync's one reading budget`() = runTest {
+        val budget = SpotifySavedAlbumsFetcher.ReadBudget().apply { reads = SpotifySavedAlbumsFetcher.MAX_READS_PER_SYNC - 1 }
+        listing(listOf(album(1), album(2)))
+        coEvery { spotify.getAlbumTracks(any()) } returns songs("A")
+
+        val main = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH, budget = budget)
+        val extra = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH, listing = SpotifyAccountListing("userb"), budget = budget)
+
+        coVerify(exactly = 1) { spotify.getAlbumTracks(any()) }
+        assertTrue(main.note!!.contains("1 left for the next sync"))
+        assertTrue("the budget is spent for the next account too", extra.note!!.contains("2 left for the next sync"))
+        assertTrue(budget.spent)
+    }
+
+    @Test fun `failed reads in a row stop the reading for every account after`() = runTest {
+        val budget = SpotifySavedAlbumsFetcher.ReadBudget()
+        listing(listOf(album(1), album(2), album(3)))
+        coEvery { spotify.getAlbumTracks(any()) } returns null
+
+        fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH, budget = budget)
+        fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH, listing = SpotifyAccountListing("userb"), budget = budget)
+
+        coVerify(exactly = SpotifySavedAlbumsFetcher.FAILURES_TO_STOP) { spotify.getAlbumTracks(any()) }
+    }
+
+    @Test fun `a listing not by date saved is never complete`() = runTest {
+        listing(listOf(album(1)), order = "Recents")
+        coEvery { spotify.getAlbumTracks(any()) } returns songs("A")
+        val accountListing = SpotifyAccountListing(owner = null)
+
+        fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH, listing = accountListing)
+
+        assertEquals(setOf(key(1)), accountListing.ids)
+        assertFalse(accountListing.complete)
+    }
 
     @Test fun `the album stamp holds only for the same save and the same rows`() {
         val stamp = SpotifyMirrorStamp("added:2026-10-11T10:00:00Z", SyncMode.REFRESH, 1L, "d1", 1L).encode()

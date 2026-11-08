@@ -11,6 +11,8 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthService
+import com.stash.core.auth.spotify.SpotifyAccount
+import com.stash.core.auth.spotify.withSpotifyAccount
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.RemoteSnapshotDao
 import com.stash.core.data.db.dao.SyncHistoryDao
@@ -18,6 +20,14 @@ import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
 import com.stash.core.data.db.entity.RemoteTrackSnapshotEntity
 import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.sync.AuthExpiryState
+import com.stash.core.data.sync.MAX_EXTRA_SPOTIFY_ACCOUNTS
+import com.stash.core.data.sync.SpotifyAccountListing
+import com.stash.core.data.sync.SpotifyPlaylistIds
+import com.stash.core.data.sync.SpotifySavedAlbumsFetcher
+import com.stash.core.data.sync.SpotifySyncListings
+import com.stash.core.data.sync.hideWhatNoSpotifyAccountListed
+import com.stash.core.data.sync.isSpotifySavedAlbumKey
+import com.stash.core.data.sync.spotifyExtraAccountLabel
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.data.sync.SyncStateManager
@@ -144,9 +154,10 @@ internal fun keepAsLibraryPlaylist(
 ): Boolean = id !in homeFeedMixIds && !DAILY_MIX_NAME.matches(name)
 
 /**
- * The Spotify playlist ids this run can honestly say still exist — the set
- * [com.stash.core.data.db.dao.PlaylistDao.deactivateMissingSpotifyCustomPlaylists]
- * measures "missing" against.
+ * The Spotify playlist ids this run can honestly say still exist — the one
+ * account's listing the joint hide
+ * ([com.stash.core.data.sync.hideWhatNoSpotifyAccountListed]) measures "missing"
+ * against, with every other account's.
  *
  * Every id the library walk LISTED, pre-filter. libraryV3 is the account's
  * inventory, so it is the only authority on whether a saved playlist is still
@@ -203,6 +214,10 @@ class PlaylistFetchWorker @AssistedInject constructor(
     private val soundCloudLikes: com.stash.core.data.sync.SoundCloudLikesFetcher? = null,
     private val soundCloudPlaylists: com.stash.core.data.sync.SoundCloudPlaylistsFetcher? = null,
     private val spotifySavedAlbums: com.stash.core.data.sync.SpotifySavedAlbumsFetcher? = null,
+    /** The extra Spotify accounts (plan 2026-11-04): each gets its own pass after the main's. */
+    private val spotifyAccountDao: com.stash.core.data.db.dao.SpotifyAccountDao? = null,
+    /** The clock of [EXTRA_ACCOUNTS_BACKGROUND_BUDGET_MS]; the phone's own when not given (tests give theirs). */
+    syncClock: com.stash.core.data.sync.SyncElapsedClock? = null,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -234,6 +249,19 @@ class PlaylistFetchWorker @AssistedInject constructor(
          * Hitting it marks the snapshot partial rather than truncating silently.
          */
         private const val LIKED_SONGS_PAGE_CAP = 1000
+
+        /** Snapshot ids bound in one re-tag write, well inside SQLite's bind limit. */
+        private const val SNAPSHOT_IDS_PER_WRITE = 500
+
+        /**
+         * How long a sync running in the background may have run before the extra Spotify
+         * accounts are left for the next sync. Android 12+ stops a background job at about 10
+         * minutes, and a scheduled sync can't go foreground ([promoteToForeground]): stopped, it
+         * starts again from scratch, and an extra's first sync (every playlist read) could be
+         * stopped every time. What is left of the 10 minutes is for YouTube, SoundCloud and the
+         * rest. A sync in the foreground has no limit, as before.
+         */
+        internal const val EXTRA_ACCOUNTS_BACKGROUND_BUDGET_MS = 6 * 60 * 1000L
 
         // Shared reason string for auth-expiry short-circuit so the
         // sync_history FAILED row and the SyncStateManager onError call
@@ -270,6 +298,23 @@ class PlaylistFetchWorker @AssistedInject constructor(
     /** The Spotify sync mode this run read, handed to the diff ([KEY_SPOTIFY_SYNC_MODE]). */
     @Volatile
     private var spotifySyncModeThisRun: SyncMode? = null
+
+    private val clock = syncClock ?: com.stash.core.data.sync.SyncElapsedClock()
+
+    /** When [doWork] started, on [clock]: the system's job limit counts from about here. */
+    @Volatile
+    private var startedAtMs = 0L
+
+    /** Whether [promoteToForeground] worked: a foreground sync has no job time limit. */
+    @Volatile
+    private var inForeground = false
+
+    /**
+     * Whether a background sync has used [EXTRA_ACCOUNTS_BACKGROUND_BUDGET_MS]: the extra Spotify
+     * accounts not read yet wait for the next sync, and one being read stops before its next read.
+     */
+    private fun outOfTimeForExtraAccounts(): Boolean =
+        !inForeground && clock.nowMs() - startedAtMs >= EXTRA_ACCOUNTS_BACKGROUND_BUDGET_MS
 
     private fun markYoutubeIncomplete(reason: String) {
         if (youtubeInventoryComplete.compareAndSet(true, false)) {
@@ -341,17 +386,21 @@ class PlaylistFetchWorker @AssistedInject constructor(
      * as a regular job, exactly as before — a missing notification is no reason
      * to fail the sync. Mirrors [TrackDownloadWorker]'s safeSetForeground, but
      * lets a stopped sync's cancellation through.
+     *
+     * @return whether the fetch now runs in the foreground (no job time limit).
      */
-    private suspend fun promoteToForeground() {
+    private suspend fun promoteToForeground(): Boolean =
         try {
             setForeground(getForegroundInfo())
+            true
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             Log.w(TAG, "setForeground failed (backgrounded / foreground-restricted); fetching as a regular job", e)
+            false
         }
-    }
 
     override suspend fun doWork(): Result {
+        startedAtMs = clock.nowMs()
         // Step 1: Create a sync history record. Only one sync runs at a time, so a
         // row still open now belongs to a chain that was replaced while paused
         // between steps: close it as interrupted, not "Running" until the next launch.
@@ -431,7 +480,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
 
             // Step 3: Transition to fetching playlists. This is the long part,
             // so ask to run it as a foreground service first.
-            promoteToForeground()
+            inForeground = promoteToForeground()
             syncStateManager.onFetchingPlaylists()
             syncHistoryDao.updateStatus(syncId, SyncState.FETCHING_PLAYLISTS)
 
@@ -442,6 +491,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
             // toward keeping the sync alive.
             if (probeResult.fetchSpotify) {
                 fetchSpotifyPlaylists(syncId, diagnostics)
+            } else {
+                noteExtraSpotifyAccountsNotRead(diagnostics)
             }
             var youtubeComplete = true
             if (probeResult.fetchYoutube) {
@@ -542,7 +593,334 @@ class PlaylistFetchWorker @AssistedInject constructor(
     }
 
     /**
-     * Fetches Daily Mixes and Liked Songs from Spotify and writes snapshot rows.
+     * The Spotify part of a sync (plan 2026-11-04, Wave 2): one pass per account, the main account's
+     * first, then each extra account's ([fetchExtraSpotifyAccounts]), then ONE joint hide of what no
+     * account listed ([hideMissingSpotifyRows]). One sync mode for every account, read once here.
+     *
+     * The main account's pass is exactly the one-account sync it always was: a [SpotifyApiException]
+     * it rethrows (a 429) ends the Spotify fetch right here, so no extra account is read and nothing
+     * is hidden, and [doWork] retries the chain. An extra account's failures never get that far.
+     *
+     * @throws SpotifyApiException only from the main account's pass (see [fetchSpotifyAccount]).
+     */
+    private suspend fun fetchSpotifyPlaylists(syncId: Long, diagnostics: MutableList<SyncStepResult>) {
+        // Read once: what decides the skips also gates the joint hide, for every account alike.
+        // Unreadable: nothing is skipped and nothing is hidden.
+        val mode = runCatching { syncPreferencesManager.spotifySyncMode.first() }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull()
+        spotifySyncModeThisRun = mode
+        // Every extra account, read or not this sync (over the limit, signed out): a row tagged
+        // with one of them is that account's until its own listing proves otherwise.
+        val extras = extraSpotifyAccountsOrNone()
+        val run = SpotifySyncRun(
+            syncId, mode,
+            extraTags = extras.mapTo(HashSet()) { SpotifyPlaylistIds.accountTag(it.userId) },
+            outOfTime = ::outOfTimeForExtraAccounts,
+        )
+
+        // Auto-mix discovery is opt-OUT (#335, #344). These are playlists the
+        // user never created or saved, so when someone turns them off we must
+        // not fetch them at all — skipping the call is also what makes their
+        // sync shorter, which was half the complaint. Anything already in the
+        // library stays put; the per-mix Home toggle in Manage Playlists still
+        // applies to those. Defaults to true — see SyncPreferencesManager.
+        val discoverMixes = runCatching {
+            syncPreferencesManager.discoverAutoMixes.first()
+        }.onFailure { if (it is CancellationException) throw it }.getOrDefault(true)
+
+        // Spotify's 429s so far: each of the main's reads swallows its own into a failed page, so
+        // the count says whether the main's pass met any. Read only with an extra to protect.
+        val rateLimitedBefore = if (extras.isNotEmpty()) spotifyApiClient.rateLimitedAnswers else 0
+        fetchSpotifyAccount(SpotifyPass.main(discoverMixes), run, diagnostics)
+        // Spotify turning the main's requests away: the extras would only add to it, and get the
+        // same answers. They wait for the next sync, their rows left as they are, and nothing of a
+        // kind they sync is hidden this time ([holdBackHides]).
+        val extrasHeldBack = when {
+            extras.isEmpty() -> null
+            spotifyApiClient.rateLimitedAnswers > rateLimitedBefore ->
+                "not read this sync: Spotify was turning requests away (HTTP 429) while the main account synced (read on the next sync)"
+            run.albumBudget.failedInARow >= SpotifySavedAlbumsFetcher.FAILURES_TO_STOP ->
+                "not read this sync: the main account's album reads kept failing, as when Spotify turns requests away (read on the next sync)"
+            else -> null
+        }
+        fetchExtraSpotifyAccounts(extras, run, diagnostics, extrasHeldBack)
+        // With no extra account at any row, every tag is an orphan's (or the main's): nothing to keep.
+        if (extras.isNotEmpty()) keepRowsWithUnprovenOwners(run)
+        hideMissingSpotifyRows(run, diagnostics)
+    }
+
+    /**
+     * The extra Spotify accounts' passes, after the main's: at most [MAX_EXTRA_SPOTIFY_ACCOUNTS], in
+     * row-id order. Each runs acting as its account ([withSpotifyAccount]) and only when its sign-in
+     * still gives a token, decided once, before the pass ([fetchExtraSpotifyAccount]).
+     */
+    private suspend fun fetchExtraSpotifyAccounts(
+        extras: List<com.stash.core.data.db.entity.SpotifyAccountEntity>,
+        run: SpotifySyncRun,
+        diagnostics: MutableList<SyncStepResult>,
+        /** Why no extra is read this sync (the main's pass met Spotify's limits); null to read them. */
+        heldBack: String?,
+    ) {
+        for ((index, row) in extras.withIndex()) {
+            currentCoroutineContext().ensureActive()
+            val label = spotifyExtraAccountLabel(row.id)
+            if (index >= MAX_EXTRA_SPOTIFY_ACCOUNTS) {
+                // Past the limit: not read, and its rows left exactly as they are.
+                diagnostics.add(
+                    SyncStepResult(
+                        "SPOTIFY", "accountLimit", StepStatus.SKIPPED, account = label,
+                        note = "not read: a sync reads at most $MAX_EXTRA_SPOTIFY_ACCOUNTS extra accounts",
+                    ),
+                )
+                continue
+            }
+            if (heldBack != null) {
+                diagnostics.add(SyncStepResult("SPOTIFY", "accountPass", StepStatus.SKIPPED, account = label, note = heldBack))
+                holdBackHides(row, run)
+                continue
+            }
+            if (run.outOfTime()) {
+                // A background sync near the system's limit: read next time, its rows left as they
+                // are, and nothing of a kind it syncs hidden for anyone until then.
+                Log.i(TAG, "fetchSpotifyPlaylists: $label — out of time for a background sync, not read")
+                holdBackHides(row, run)
+                diagnostics.add(
+                    SyncStepResult(
+                        "SPOTIFY", "accountPass", StepStatus.SKIPPED, account = label,
+                        note = "not read this sync: a sync in the background gets about 10 minutes, and the accounts before it used most of them (read on the next sync)",
+                    ),
+                )
+                continue
+            }
+            fetchExtraSpotifyAccount(row, run, diagnostics)
+        }
+    }
+
+    /**
+     * One extra account's pass. Contained: whatever it throws, a 429 ([SpotifyApiException])
+     * included, is caught here and recorded as this account's step. It never fails or retries the
+     * chain, and never touches what the main account's pass (or another extra's) brought in. A
+     * listing it didn't finish stays incomplete, so nothing of that kind is hidden this sync.
+     * Stopped for time ([ExtraAccountOutOfTime]), every listing of it is left not whole
+     * ([holdBackHides]), so nothing of a kind it syncs is hidden this sync.
+     *
+     * Whether it runs is decided once, by asking for its access token acting as it: null means its
+     * sign-in no longer works, so the pass is skipped, its rows left exactly as they are, and
+     * `signed_out_at` set ("Sign in again"). A token clears `signed_out_at` again. Asked once rather
+     * than per request: a dead extra's token exchange would otherwise be retried on every call.
+     */
+    private suspend fun fetchExtraSpotifyAccount(
+        row: com.stash.core.data.db.entity.SpotifyAccountEntity,
+        run: SpotifySyncRun,
+        diagnostics: MutableList<SyncStepResult>,
+    ) {
+        val label = spotifyExtraAccountLabel(row.id)
+        try {
+            val acting = SpotifyAccount(row.id, row.userId)
+            withSpotifyAccount(acting) {
+                val token = tokenManager.getSpotifyAccessToken()
+                if (token == null) {
+                    noteExtraSignedOut(row)
+                    Log.w(TAG, "fetchSpotifyPlaylists: $label — sign-in no longer works, not read")
+                    syncLog.warn("Spotify · ${row.label.ifBlank { "another account" }} — sign in again to sync it (kept as it was)")
+                    diagnostics.add(
+                        SyncStepResult(
+                            "SPOTIFY", "signIn", StepStatus.ERROR, account = label,
+                            errorMessage = "this account's sign-in no longer works: sign in again (its playlists are kept as they are)",
+                        ),
+                    )
+                    return@withSpotifyAccount
+                }
+                noteExtraSignedIn(row)
+                syncLog.info("Spotify · ${row.label.ifBlank { "another account" }}…")
+                fetchSpotifyAccount(SpotifyPass.extra(row), run, diagnostics)
+            }
+        } catch (e: ExtraAccountOutOfTime) {
+            // Stopped before its next read. What it read stays (the diff applies it, and the next
+            // sync skips what is unchanged since); nothing of a kind it syncs is hidden this sync.
+            holdBackHides(row, run)
+            Log.i(TAG, "fetchSpotifyPlaylists: $label — out of time for a background sync, stopped part way")
+            diagnostics.add(
+                SyncStepResult(
+                    "SPOTIFY", "accountPass", StepStatus.SKIPPED, account = label,
+                    note = "stopped part way: a sync in the background gets about 10 minutes (the rest is read on the next sync)",
+                ),
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "fetchSpotifyPlaylists: $label — pass failed, the other accounts' results stand", e)
+            syncLog.warn("Spotify · ${row.label.ifBlank { "another account" }} — couldn't finish reading it (kept as it was)")
+            diagnostics.add(
+                SyncStepResult(
+                    "SPOTIFY", "accountPass", StepStatus.ERROR, account = label,
+                    httpCode = (e as? SpotifyApiException)?.httpCode,
+                    // PRIVACY: an error's text could carry the account's id (a URL); it never reaches History.
+                    errorMessage = withoutAccountId(e.message ?: e.javaClass.simpleName, row.userId),
+                ),
+            )
+        }
+    }
+
+    /**
+     * An extra not read this sync, or stopped part way, for a passing reason: a background sync out
+     * of time, or Spotify turning the main account away. Its library is unknown this time, and it may
+     * still follow a playlist (or have saved an album) another account just dropped, so nothing of a
+     * kind it syncs is hidden this sync, for anyone: each of its listings of a kind switched on is
+     * left, or registered, not whole ([com.stash.core.data.sync.SpotifyAccountListing.listedAll]),
+     * which the joint hide reads as "hide none of this kind". Its own rows wait too, and none moves
+     * away from it.
+     *
+     * Not for a signed-out or over-the-limit account: that can last for weeks, so it holds nobody
+     * back, and only its own rows wait (plan 2026-11-04 §2.4).
+     */
+    private fun holdBackHides(row: com.stash.core.data.db.entity.SpotifyAccountEntity, run: SpotifySyncRun) {
+        val tag = SpotifyPlaylistIds.accountTag(row.userId)
+        fun holdBack(listings: MutableList<SpotifyAccountListing>, switchedOn: Boolean, kind: String) {
+            val own = listings.filter { it.owner == tag }
+            if (own.isEmpty()) {
+                if (!switchedOn) return
+                // Never started: registered as never listed.
+                listings += SpotifyAccountListing(tag)
+            }
+            for (listing in own) {
+                listing.listedAll = false
+                listing.complete = false
+            }
+            run.hidesHeldBack += kind
+        }
+        holdBack(run.listings.playlists, row.syncPlaylists, "playlists")
+        holdBack(run.listings.albums, row.syncAlbums && spotifySavedAlbums != null, "albums")
+    }
+
+    /** The extra Spotify accounts in row-id order; none when there is no table to read (tests) or it can't be read. */
+    private suspend fun extraSpotifyAccountsOrNone(): List<com.stash.core.data.db.entity.SpotifyAccountEntity> {
+        val dao = spotifyAccountDao ?: return emptyList()
+        return try {
+            dao.getAll().sortedBy { it.id }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "fetchSpotifyPlaylists: couldn't read the extra Spotify accounts; main account only", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * The Spotify fetch didn't run this sync (the main account isn't connected, or its sign-in
+     * expired), so neither did any extra account's: they need the main's pass to run first (its
+     * claims, and ownership settling on the main). Said once per extra in the steps.
+     */
+    private suspend fun noteExtraSpotifyAccountsNotRead(diagnostics: MutableList<SyncStepResult>) {
+        for ((index, row) in extraSpotifyAccountsOrNone().withIndex()) {
+            if (index >= MAX_EXTRA_SPOTIFY_ACCOUNTS) break
+            diagnostics.add(
+                SyncStepResult(
+                    "SPOTIFY", "accountPass", StepStatus.SKIPPED, account = spotifyExtraAccountLabel(row.id),
+                    note = "not read: the main Spotify account wasn't read this sync",
+                ),
+            )
+        }
+    }
+
+    /** Records that [row]'s sign-in stopped working, keeping the first time it was found. Never fatal. */
+    private suspend fun noteExtraSignedOut(row: com.stash.core.data.db.entity.SpotifyAccountEntity) {
+        if (row.signedOutAt != null) return
+        runCatching { spotifyAccountDao?.updateSignedOutAt(row.id, System.currentTimeMillis()) }
+            .onFailure { if (it is CancellationException) throw it }
+    }
+
+    /** Clears [row]'s "sign in again" once its sign-in works again. Never fatal. */
+    private suspend fun noteExtraSignedIn(row: com.stash.core.data.db.entity.SpotifyAccountEntity) {
+        if (row.signedOutAt == null) return
+        runCatching { spotifyAccountDao?.updateSignedOutAt(row.id, null) }
+            .onFailure { if (it is CancellationException) throw it }
+    }
+
+    /**
+     * Ownership moves away from an account only when that account's listing of the kind was whole
+     * this sync (plan 2026-11-04 §2.4, review of #858). The diff gives a row the account of the
+     * snapshot applied to it; a snapshot from one account over a row another account owns is
+     * tagged back to the owner here, after every pass, when the owner:
+     *  - ran this sync, but its listing of that kind missed a page (read before or after the
+     *    snapshot's account);
+     *  - or didn't list that kind at all: signed out, switched off, over the limit, out of time,
+     *    or the main account with its saved albums switched off.
+     * The row's songs still follow the snapshot; only the tag stays. So a playlist the main can't
+     * list this sync (a folder over 5 deep, a library past the 40-page walk) but an extra follows
+     * is read, refreshed and, when hidden, shown again by the extra's pass, and stays the main's.
+     * No pass holds such a row back: the main didn't snapshot it (an id it snapshots is one it
+     * listed, so claimed), so the extra's snapshot is the only one under that key this sync. A row whose tag names no
+     * account at all (a removed one, or one a backup carried in) goes to the account that lists
+     * it, as it always did. With no extra accounts there is nothing to do, and this isn't called.
+     *
+     * Only an extra's snapshot is ever tagged back. One from the main account always moves the
+     * row to the main: a playlist the main lists settles on it (plan 2026-11-04 §2.4, §3.5), and
+     * the main is never removed, so the row can't then be hidden with an extra that wasn't read.
+     *
+     * Not caught: a snapshot left over a row it would wrongly take must never reach the diff, so
+     * a failure here fails the fetch (and the chain) instead.
+     */
+    private suspend fun keepRowsWithUnprovenOwners(run: SpotifySyncRun) {
+        val moving = remoteSnapshotDao.spotifySnapshotsMovingARow(run.syncId)
+        if (moving.isEmpty()) return
+        val kept = moving.filter { snapshot ->
+            val owner = snapshot.rowAccount
+            // An account with no row behind it: whoever lists the row now adopts it.
+            if (owner != null && owner !in run.extraTags) return@filter false
+            val listings = if (isSpotifySavedAlbumKey(snapshot.sourceId)) run.listings.albums else run.listings.playlists
+            listings.none { it.owner == owner && it.listedAll }
+        }
+        for ((owner, snapshots) in kept.groupBy { it.rowAccount }) {
+            for (ids in snapshots.map { it.snapshotId }.chunked(SNAPSHOT_IDS_PER_WRITE)) {
+                remoteSnapshotDao.setSpotifyAccount(ids, owner)
+            }
+        }
+        if (kept.isNotEmpty()) {
+            Log.i(TAG, "fetchSpotifyPlaylists: ${kept.size} row(s) stay with their account (its listing wasn't whole this sync); ${moving.size - kept.size} move")
+        }
+    }
+
+    /**
+     * The joint hide after every account's pass ([hideWhatNoSpotifyAccountListed], plan 2026-11-04
+     * §2.4), outside any acting account. The albums it hid are named on their account's albums step,
+     * as that step did when it still hid them itself. Never fatal: a failure here hides nothing and
+     * costs no account its results.
+     */
+    private suspend fun hideMissingSpotifyRows(run: SpotifySyncRun, diagnostics: MutableList<SyncStepResult>) {
+        if (run.hidesHeldBack.isNotEmpty() && run.mode == SyncMode.REFRESH) {
+            // Said once: an extra skipped or stopped for a passing reason ([holdBackHides]).
+            val kinds = run.hidesHeldBack.joinToString(" or ")
+            syncLog.info("Hiding no Spotify $kinds this sync: one of your accounts couldn't be read in full")
+        }
+        val outcome = try {
+            hideWhatNoSpotifyAccountListed(playlistDao, syncUndoDao, syncLog, run.syncId, run.mode, run.listings)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchSpotifyPlaylists: the joint hide failed; nothing hidden", e)
+            diagnostics.add(SyncStepResult("SPOTIFY", "hideMissing", StepStatus.ERROR, errorMessage = e.message))
+            return
+        }
+        for ((owner, hidden) in outcome.hiddenAlbums) {
+            val label = run.labels[owner]
+            synchronized(diagnostics) {
+                val at = diagnostics.indexOfFirst {
+                    it.service == "SPOTIFY" && it.step == com.stash.core.data.sync.SpotifySavedAlbumsFetcher.STEP && it.account == label
+                }
+                if (at >= 0) diagnostics[at] = com.stash.core.data.sync.SpotifySavedAlbumsFetcher.withHidden(diagnostics[at], hidden)
+            }
+        }
+    }
+
+    /**
+     * One Spotify account's pass: its mixes, then its Liked Songs, then the library walk, then its
+     * saved albums, each as its switches allow ([SpotifyPass]). An extra's pass runs acting as that
+     * account, so every Spotify call in it reads that account's library. Every snapshot it writes
+     * carries the account ([SpotifyPass.owner]); an id an earlier pass listed this sync is counted
+     * as listed but not snapshotted again ([SpotifySyncRun.claimed]). It hides nothing: it registers
+     * what it listed ([SpotifySyncRun.listings]) for the joint hide.
      *
      * Uses the two-pronged approach:
      * - Daily Mixes enumeration uses sp_dc/GraphQL (may fail gracefully)
@@ -556,29 +934,60 @@ class PlaylistFetchWorker @AssistedInject constructor(
      * @throws SpotifyApiException only if a critical, retryable API error occurs
      *         during track fetching (e.g., client_credentials token endpoint down).
      */
-    private suspend fun fetchSpotifyPlaylists(syncId: Long, diagnostics: MutableList<SyncStepResult>) {
-        Log.d(TAG, "fetchSpotifyPlaylists: starting for syncId=$syncId")
-        var dailyMixCount = 0
-        var likedSongCount = 0
-        // Ids covered by the home-feed mix pass below; the library walk
+    private suspend fun fetchSpotifyAccount(
+        pass: SpotifyPass,
+        run: SpotifySyncRun,
+        diagnostics: MutableList<SyncStepResult>,
+    ) {
+        Log.d(TAG, "fetchSpotifyPlaylists: starting ${pass.label ?: "main account"} for syncId=${run.syncId}")
+        run.labels[pass.owner] = pass.label
+        // What earlier passes listed this sync: theirs to snapshot (one snapshot per id per sync).
+        // A row an earlier account owns but didn't list is read here like any other; whose it stays
+        // is settled after every pass (keepRowsWithUnprovenOwners).
+        val claimedBefore: Set<String> = HashSet(run.claimed)
+        // Registered before anything is read, as incomplete: a pass that fails part way, however it
+        // fails, leaves them so, and the joint hide then hides nothing for anyone.
+        val playlistListing = if (pass.playlists) SpotifyAccountListing(pass.owner).also { run.listings.playlists += it } else null
+        val albumListing = if (pass.albums && spotifySavedAlbums != null) {
+            SpotifyAccountListing(pass.owner).also { run.listings.albums += it }
+        } else {
+            null
+        }
+        // Ids covered by the home-feed mix pass; the library walk
         // excludes exactly these instead of everything spotify owns (#354).
         val homeFeedMixIds = mutableSetOf<String>()
+        try {
+            readSpotifyAccount(pass, run, claimedBefore, homeFeedMixIds, playlistListing, albumListing, diagnostics)
+        } finally {
+            // What this pass listed is claimed for the passes after it, even when it failed part
+            // way: what it did snapshot must not be snapshotted again (REPLACE on (sync, id)).
+            run.claimed += homeFeedMixIds
+            playlistListing?.let { run.claimed += it.ids }
+            albumListing?.let { run.claimed += it.ids }
+        }
+    }
 
-        // Auto-mix discovery is opt-OUT (#335, #344). These are playlists the
-        // user never created or saved, so when someone turns them off we must
-        // not fetch them at all — skipping the call is also what makes their
-        // sync shorter, which was half the complaint. Anything already in the
-        // library stays put; the per-mix Home toggle in Manage Playlists still
-        // applies to those. Defaults to true — see SyncPreferencesManager.
-        val discoverMixes = runCatching {
-            syncPreferencesManager.discoverAutoMixes.first()
-        }.onFailure { if (it is CancellationException) throw it }.getOrDefault(true)
+    /** The reads of [fetchSpotifyAccount], in order; [playlistListing] / [albumListing] null when switched off. */
+    private suspend fun readSpotifyAccount(
+        pass: SpotifyPass,
+        run: SpotifySyncRun,
+        claimedBefore: Set<String>,
+        homeFeedMixIds: MutableSet<String>,
+        playlistListing: SpotifyAccountListing?,
+        albumListing: SpotifyAccountListing?,
+        diagnostics: MutableList<SyncStepResult>,
+    ) {
+        val syncId = run.syncId
+        var dailyMixCount = 0
+        var likedSongCount = 0
 
         // Fetch Daily Mixes (sp_dc dependent -- may return empty if GraphQL fails).
-        if (!discoverMixes) {
+        if (!pass.mixes) {
             Log.d(TAG, "fetchSpotifyPlaylists: auto-mix discovery disabled, skipping home feed")
-            diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.SKIPPED, 0))
+            diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.SKIPPED, 0, account = pass.label))
         } else try {
+            // The home feed is a read of its own: an extra out of time stops before it.
+            stopIfOutOfTime(pass, run)
             when (val result = spotifyApiClient.getDailyMixes()) {
                 is SyncResult.Success -> {
                     // Fold in the yearly recaps ("Your Top Songs 2024", "Your
@@ -603,11 +1012,14 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         )
                     }
                     val dailyMixes = result.data + extraYearly
-                    diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.SUCCESS, dailyMixes.size))
+                    diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.SUCCESS, dailyMixes.size, account = pass.label))
                     Log.d(TAG, "fetchSpotifyPlaylists: found ${dailyMixes.size} daily mixes")
 
                     for (mix in dailyMixes) {
                         homeFeedMixIds += mix.id
+                        // An earlier account's pass already snapshotted it this sync.
+                        if (mix.id in claimedBefore) continue
+                        stopIfOutOfTime(pass, run)
                         try {
                             val mixNumber = Regex("""\d+""").find(mix.name)?.value?.toIntOrNull()
 
@@ -662,6 +1074,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                                     trackCount = mix.tracks?.total ?: 0,
                                     artUrl = mix.images?.firstOrNull()?.url,
                                     partial = fetchFailed || fetched?.partial == true,
+                                    spotifyAccount = pass.owner,
                                 )
                             )
 
@@ -701,11 +1114,11 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     }
                 }
                 is SyncResult.Empty -> {
-                    diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.EMPTY, errorMessage = result.reason))
+                    diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.EMPTY, errorMessage = result.reason, account = pass.label))
                     Log.d(TAG, "fetchSpotifyPlaylists: daily mixes empty: ${result.reason}")
                 }
                 is SyncResult.Error -> {
-                    diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.ERROR, errorMessage = result.message))
+                    diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.ERROR, errorMessage = result.message, account = pass.label))
                     Log.e(TAG, "fetchSpotifyPlaylists: daily mixes error: ${result.message}")
                 }
             }
@@ -714,12 +1127,14 @@ class PlaylistFetchWorker @AssistedInject constructor(
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             Log.e(TAG, "fetchSpotifyPlaylists: daily mixes enumeration failed (sp_dc issue), continuing", e)
-            diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.ERROR, errorMessage = e.message))
+            diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.ERROR, errorMessage = e.message, account = pass.label))
         }
 
         // Fetch Liked Songs with pagination (sp_dc dependent).
         // Spotify returns max 50 per page; we loop until we get all tracks.
-        try {
+        if (!pass.liked) {
+            diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.SKIPPED, account = pass.label))
+        } else try {
             val allLikedSongs = mutableListOf<com.stash.data.spotify.model.SpotifyTrackItem>()
             var likedOffset = 0
             val likedPageSize = 50
@@ -736,6 +1151,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
             var likedPagesFetched = 0
 
             while (true) {
+                stopIfOutOfTime(pass, run)
                 // Bounded: if the persisted query ever stopped honouring
                 // `offset`, every page would come back full and this loop
                 // would never end, growing allLikedSongs without limit.
@@ -794,14 +1210,15 @@ class PlaylistFetchWorker @AssistedInject constructor(
             val orderedLikedSongs = sortLikedSongsByAddedAtDesc(allLikedSongs)
 
             if (orderedLikedSongs.isNotEmpty()) {
-                diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.SUCCESS, orderedLikedSongs.size))
+                diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.SUCCESS, orderedLikedSongs.size, account = pass.label))
                 Log.d(TAG, "fetchSpotifyPlaylists: found ${orderedLikedSongs.size} liked songs total")
 
                 val likedPlaylistId = remoteSnapshotDao.insertPlaylistSnapshot(
                     RemotePlaylistSnapshotEntity(
                         syncId = syncId,
                         source = MusicSource.SPOTIFY,
-                        sourcePlaylistId = com.stash.core.data.sync.SpotifyPlaylistIds.MAIN_LIKED_SONGS,
+                        // Each account's own row: the main's `spotify_liked_songs`, an extra's `spotify_liked_songs:<userId>`.
+                        sourcePlaylistId = pass.likedSongsId,
                         playlistName = "Liked Songs",
                         playlistType = PlaylistType.LIKED_SONGS,
                         trackCount = orderedLikedSongs.size,
@@ -812,6 +1229,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         ),
                         partial = likedFetchPartial,
                         expectedCount = likedTotalCount,
+                        spotifyAccount = pass.owner,
                     )
                 )
 
@@ -839,18 +1257,18 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 // Nothing fetched because the request FAILED — report it as the
                 // error it is. Recording it EMPTY ("No liked songs found") hid
                 // the failure and kept allAttemptedStepsFailed from seeing it.
-                diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.ERROR, errorMessage = likedFetchError))
+                diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.ERROR, errorMessage = likedFetchError, account = pass.label))
                 Log.e(TAG, "fetchSpotifyPlaylists: liked songs fetch failed: $likedFetchError")
             } else {
-                diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.EMPTY, errorMessage = "No liked songs found"))
+                diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.EMPTY, errorMessage = "No liked songs found", account = pass.label))
                 Log.d(TAG, "fetchSpotifyPlaylists: liked songs empty after pagination")
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             Log.e(TAG, "fetchSpotifyPlaylists: liked songs fetch failed (sp_dc issue), continuing", e)
-            diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.ERROR, errorMessage = e.message))
+            diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.ERROR, errorMessage = e.message, account = pass.label))
         }
-        reportPlaylistFetched()
+        if (pass.liked) reportPlaylistFetched()
 
         // Fetch user-created/saved playlists from the Spotify library.
         var userPlaylistCount = 0
@@ -861,7 +1279,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
         // log and the History row: "inventory incomplete" on every sync, naming
         // nothing, was all #747's reporters had.
         val unreadPlaylists = linkedMapOf<String, String>()
-        try {
+        if (playlistListing == null) {
+            diagnostics.add(SyncStepResult("SPOTIFY", "getUserPlaylists", StepStatus.SKIPPED, account = pass.label))
+        } else try {
             // v0.9.21: paginate libraryV3 instead of a single 50-item fetch.
             // The previous single-call path silently capped users at ≤50
             // playlists (often <50 since the parser drops non-Playlist
@@ -892,6 +1312,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 var offset = 0
                 var complete = true
                 while (pagesFetched < pageCap) {
+                    // Up to 40 pages: an extra out of time stops between two, its listing not whole.
+                    stopIfOutOfTime(pass, run)
                     val page = spotifyApiClient.getUserPlaylists(
                         limit = pageSize,
                         offset = offset,
@@ -931,25 +1353,33 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 "fetchSpotifyPlaylists: paged ${userPlaylists.size} playlists across " +
                     "$pagesFetched page(s), $foldersWalked folder(s) descended",
             )
+            // What this account listed, pre-filter (see [spotifyLivenessIds]): the joint hide
+            // measures "missing" against it, and a later account's pass treats it as claimed.
+            playlistListing.ids += spotifyLivenessIds(userPlaylists.map { it.id })
+            // Every id listed, whatever becomes of the songs in them below: what another account's
+            // rows need of this listing (SpotifyAccountListing.listedAll).
+            playlistListing.listedAll = listingComplete
             // Drop only what the home-feed mix pass already covered (#354).
             // distinctBy: defensive — a playlist must not snapshot twice even if
             // Spotify ever lists it both at the root and inside a folder.
-            val customPlaylists = userPlaylists.distinctBy { it.id }.filter { playlist ->
+            val keptPlaylists = userPlaylists.distinctBy { it.id }.filter { playlist ->
                 keepAsLibraryPlaylist(playlist.id, playlist.name, homeFeedMixIds)
             }
-            Log.d(TAG, "fetchSpotifyPlaylists: found ${customPlaylists.size} user playlists (filtered from ${userPlaylists.size})")
+            // A playlist an earlier account's pass listed this sync is that account's to snapshot:
+            // it still counts as listed here (above), and isn't read again. A playlist two accounts
+            // follow is one row, and ownership settles on the account read first (the main).
+            val customPlaylists = keptPlaylists.filter { it.id !in claimedBefore }
+            val sharedWithEarlier = keptPlaylists.size - customPlaylists.size
+            Log.d(TAG, "fetchSpotifyPlaylists: found ${customPlaylists.size} user playlists (filtered from ${userPlaylists.size}, $sharedWithEarlier read by an earlier account)")
 
             // Skip reading what hasn't changed (see SpotifyMirrorStamp): one
             // read of every stamp, and the mode a re-read would sync in. Either
             // read failing just means every playlist is read, as before
             // skipping existed. A fingerprint is computed per candidate only.
             val mirrorStamps = loadSpotifyMirrorStamps()
-            // Read once: what decides the skips also gates hiding missing playlists
-            // below. Unreadable: nothing is skipped and nothing is hidden.
-            val spotifySyncMode = runCatching { syncPreferencesManager.spotifySyncMode.first() }
-                .onFailure { if (it is CancellationException) throw it }
-                .getOrNull()
-            spotifySyncModeThisRun = spotifySyncMode
+            // The sync's one mode, read once for every account: what decides the skips also gates
+            // the joint hide. Unreadable: nothing is skipped and nothing is hidden.
+            val spotifySyncMode = run.mode
             val appVersion = appVersionCode(applicationContext)
             val skipCheckedAtMs = System.currentTimeMillis()
             var skippedUnchanged = 0
@@ -962,6 +1392,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
             }
 
             for (playlist in customPlaylists) {
+                // Before anything of this playlist is written: a stop never leaves half a snapshot.
+                stopIfOutOfTime(pass, run)
                 try {
                     val trustedStamp = mirrorStamps[playlist.id]
                         ?.takeIf { isStampable(playlist.id, PlaylistType.CUSTOM) }
@@ -978,7 +1410,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         // sync: no tracks fetched. The row keeps it in this
                         // run's inventory and tells the diff to leave it alone.
                         remoteSnapshotDao.insertPlaylistSnapshot(
-                            unchangedSpotifyPlaylistSnapshot(playlist, trustedStamp, syncId),
+                            unchangedSpotifyPlaylistSnapshot(playlist, trustedStamp, syncId)
+                                .copy(spotifyAccount = pass.owner),
                         )
                         skippedUnchanged++
                         userPlaylistCount++
@@ -1056,7 +1489,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                                 countVerified = countVerified && !fetchFailed && !fetchPartial,
                                 fetchedRevision = fetchedRevision,
                             ),
-                        )
+                        ).copy(spotifyAccount = pass.owner)
                     )
 
                     val trackSnapshots = fetchedItems.mapIndexedNotNull { index, item ->
@@ -1097,24 +1530,16 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 )
             }
 
-            // Hiding a playlist as gone takes the whole inventory: every page listed, every playlist read.
+            // Hiding this account's own playlist as gone takes its whole inventory: every page
+            // listed, every playlist read. The joint hide, after every account's pass, reads it
+            // from the listing.
             val inventoryComplete = listingComplete && unreadPlaylists.isEmpty()
-            if (spotifySyncMode != null && shouldDeactivateMissingPlaylists(spotifySyncMode, inventoryComplete)) {
-                // The first change this sync makes to the library: "Undo last sync"
-                // must restore from before it, or the playlists hidden here never
-                // come back. The diff step keeps this point instead of taking its own.
-                captureUndoPoint(syncUndoDao, syncLog, syncId, TAG)
-                // Observed, not snapshotted — see [spotifyLivenessIds].
-                val currentIds = spotifyLivenessIds(userPlaylists.map { it.id })
-                val hidden = playlistDao.deactivateMissingSpotifyCustomPlaylists(
-                    currentSourceIds = currentIds,
-                    hasCurrentIds = currentIds.isNotEmpty(),
-                )
-                if (hidden > 0) {
-                    Log.i(TAG, "Deactivated $hidden missing Spotify custom playlist(s)")
-                    syncLog.warn("Hid $hidden Spotify playlist(s) no longer in your account")
-                }
-            }
+            playlistListing.complete = inventoryComplete
+            val notes = listOfNotNull(
+                // A shared diagnostics bundle shows how many weren't re-read.
+                "$skippedUnchanged unchanged since the last sync, not re-read".takeIf { skippedUnchanged > 0 },
+                "$sharedWithEarlier also on an account read before, read there".takeIf { sharedWithEarlier > 0 },
+            )
             diagnostics.add(
                 SyncStepResult(
                     "SPOTIFY",
@@ -1122,10 +1547,10 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     if (inventoryComplete) StepStatus.SUCCESS else StepStatus.ERROR,
                     userPlaylistCount,
                     errorMessage = spotifyInventoryProblem(listingComplete, unreadPlaylists.values.toList()),
-                    // A shared diagnostics bundle shows how many weren't re-read.
-                    note = if (skippedUnchanged > 0) "$skippedUnchanged unchanged since the last sync, not re-read" else null,
+                    note = notes.joinToString("; ").ifEmpty { null },
                     unreadPlaylists = unreadPlaylists.values.take(SyncStepResult.UNREAD_NAMES_STORED),
                     unreadPlaylistCount = unreadPlaylists.size,
+                    account = pass.label,
                 )
             )
         } catch (e: SpotifyApiException) {
@@ -1138,33 +1563,71 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     "SPOTIFY", "getUserPlaylists", StepStatus.ERROR, errorMessage = e.message,
                     unreadPlaylists = unreadPlaylists.values.take(SyncStepResult.UNREAD_NAMES_STORED),
                     unreadPlaylistCount = unreadPlaylists.size,
+                    account = pass.label,
                 ),
             )
         }
 
-        fetchSpotifySavedAlbums(syncId, diagnostics)
+        fetchSpotifySavedAlbums(pass, run, albumListing, claimedBefore, diagnostics)
 
-        Log.d(TAG, "fetchSpotifyPlaylists: completed -- $dailyMixCount daily mixes, $likedSongCount liked songs, $userPlaylistCount user playlists")
+        Log.d(TAG, "fetchSpotifyPlaylists: completed ${pass.label ?: "main account"} -- $dailyMixCount daily mixes, $likedSongCount liked songs, $userPlaylistCount user playlists")
     }
 
     /**
-     * The saved-albums step (item 5): Library › Albums from the account's saved albums. Its own
-     * listing and its own "still saved" check, in the account's sync mode (the one the playlist walk
-     * read, else read now). A failure here costs this step only, never the playlists already fetched.
+     * The saved-albums step (item 5): Library › Albums from the account's saved albums, into
+     * [listing] (null: an extra account with the switch off). Its own listing, measured by the joint
+     * hide; the sync's one album-reading budget, shared by every account. A failure here costs this
+     * step only, never the playlists already fetched, and leaves [listing] incomplete.
      */
-    private suspend fun fetchSpotifySavedAlbums(syncId: Long, diagnostics: MutableList<SyncStepResult>) {
+    private suspend fun fetchSpotifySavedAlbums(
+        pass: SpotifyPass,
+        run: SpotifySyncRun,
+        listing: SpotifyAccountListing?,
+        claimedBefore: Set<String>,
+        diagnostics: MutableList<SyncStepResult>,
+    ) {
         val fetcher = spotifySavedAlbums ?: return
+        if (listing == null) {
+            diagnostics.add(SyncStepResult("SPOTIFY", "getSavedAlbums", StepStatus.SKIPPED, account = pass.label))
+            return
+        }
         try {
-            val mode = spotifySyncModeThisRun ?: runCatching { syncPreferencesManager.spotifySyncMode.first() }
-                .onFailure { if (it is CancellationException) throw it }
-                .getOrNull()
-            diagnostics.add(fetcher.fetch(syncId, mode, onAlbumRead = ::reportPlaylistFetched))
+            val step = fetcher.fetch(
+                syncId = run.syncId,
+                syncMode = run.mode,
+                listing = listing,
+                accountLabel = pass.label,
+                claimed = claimedBefore,
+                budget = run.albumBudget,
+                onAlbumRead = ::reportPlaylistFetched,
+                // An extra out of time: its walk stops between two pages, and its albums past the
+                // time left wait for the next sync, as past the budget.
+                stopReading = if (pass.owner != null) run.outOfTime else NEVER_OUT_OF_TIME,
+            )
+            // The main account's switch is off: it listed nothing, so it has nothing to measure.
+            if (step.status == StepStatus.SKIPPED) run.listings.albums.remove(listing)
+            // An extra's walk stopped for time: stopped, as anywhere else in its pass (its step says
+            // so; the unfinished listing's own step would read as a failure).
+            if (pass.owner != null && !listing.listedAll && run.outOfTime()) throw ExtraAccountOutOfTime()
+            diagnostics.add(step)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "fetchSpotifySavedAlbums: failed", e)
-            diagnostics.add(SyncStepResult("SPOTIFY", "getSavedAlbums", StepStatus.ERROR, errorMessage = e.message))
+            diagnostics.add(SyncStepResult("SPOTIFY", "getSavedAlbums", StepStatus.ERROR, errorMessage = e.message, account = pass.label))
         }
+    }
+
+    /**
+     * Stops an extra account's pass ([ExtraAccountOutOfTime]) once a background sync is out of
+     * time ([SpotifySyncRun.outOfTime]). Called only between reads, before anything of the next one
+     * is written: before the home feed, each Liked page, each library page, each playlist read, and
+     * (through the saved-albums step's stopReading) each album page. Never stops the main account's
+     * pass, which runs exactly as it always did. The token exchange before the pass is one call, so
+     * the check before the pass covers it.
+     */
+    private fun stopIfOutOfTime(pass: SpotifyPass, run: SpotifySyncRun) {
+        if (pass.owner != null && run.outOfTime()) throw ExtraAccountOutOfTime()
     }
 
     /**
@@ -1672,6 +2135,95 @@ class PlaylistFetchWorker @AssistedInject constructor(
         reportPlaylistFetched()
     }
 }
+
+/**
+ * Whose library one Spotify sync pass reads, and which kinds of it (plan 2026-11-04 §3.3).
+ *
+ * @property owner What the pass's snapshots are tagged with (`spotify_account`): null for the main
+ *   account, an extra's Spotify user id as its `spotify_accounts` row stores it otherwise.
+ * @property label The account's diagnostics label ([spotifyExtraAccountLabel]); null for the main.
+ * @property likedSongsId The account's own Liked Songs row ([SpotifyPlaylistIds]).
+ * @property albums For the main account, "ask the saved-albums step", which applies the main's own
+ *   Sync setting; for an extra, its row's switch.
+ */
+internal class SpotifyPass(
+    val owner: String?,
+    val label: String?,
+    val likedSongsId: String,
+    val mixes: Boolean,
+    val liked: Boolean,
+    val playlists: Boolean,
+    val albums: Boolean,
+) {
+    companion object {
+        /** The main account: every kind, its mixes as the Sync setting says. */
+        fun main(discoverMixes: Boolean) = SpotifyPass(
+            owner = null,
+            label = null,
+            likedSongsId = SpotifyPlaylistIds.MAIN_LIKED_SONGS,
+            mixes = discoverMixes,
+            liked = true,
+            playlists = true,
+            albums = true,
+        )
+
+        /**
+         * An extra account, as its row's switches say. Its user id is used exactly as the row stores
+         * it, through [SpotifyPlaylistIds.accountTag] (which refuses one that isn't normalised).
+         */
+        fun extra(row: com.stash.core.data.db.entity.SpotifyAccountEntity) = SpotifyPass(
+            owner = SpotifyPlaylistIds.accountTag(row.userId),
+            label = spotifyExtraAccountLabel(row.id),
+            likedSongsId = SpotifyPlaylistIds.extraLikedSongs(row.userId),
+            mixes = row.syncMixes,
+            liked = row.syncLiked,
+            playlists = row.syncPlaylists,
+            albums = row.syncAlbums,
+        )
+    }
+}
+
+/**
+ * What one sync's Spotify passes share: the one sync mode, the ids claimed so far (listed by an
+ * earlier pass: a later pass counts them as listed and doesn't snapshot them again), every
+ * listing for the joint hide, the one album-reading budget, and each account's label by owner.
+ *
+ * @property extraTags Every extra account's tag, read this sync or not: a row tagged with one of
+ *   them has an account behind it (any other tag is an orphan's).
+ */
+internal class SpotifySyncRun(
+    val syncId: Long,
+    val mode: SyncMode?,
+    val extraTags: Set<String> = emptySet(),
+    /** Whether a background sync is out of time for extra accounts ([PlaylistFetchWorker.EXTRA_ACCOUNTS_BACKGROUND_BUDGET_MS]). */
+    val outOfTime: () -> Boolean = NEVER_OUT_OF_TIME,
+) {
+    val claimed: MutableSet<String> = HashSet()
+    val listings = SpotifySyncListings()
+
+    /** The kinds ("playlists", "albums") whose hide an extra held back this sync (PlaylistFetchWorker.holdBackHides). */
+    val hidesHeldBack: MutableSet<String> = LinkedHashSet()
+    val albumBudget = SpotifySavedAlbumsFetcher.ReadBudget()
+    val labels: MutableMap<String?, String?> = HashMap()
+}
+
+/** A sync with no time limit for extra accounts (the foreground, and the main account's pass). */
+private val NEVER_OUT_OF_TIME: () -> Boolean = { false }
+
+/**
+ * An extra account's pass stopped because a background sync is out of time
+ * ([PlaylistFetchWorker.EXTRA_ACCOUNTS_BACKGROUND_BUDGET_MS]). A [CancellationException], like
+ * kotlinx's own timeout, so every catch-all in the pass lets it through to the pass's caller,
+ * which catches it by type. It never leaves the pass: the sync itself carries on.
+ */
+private class ExtraAccountOutOfTime : CancellationException("out of time for extra Spotify accounts in a background sync")
+
+/**
+ * [message] with every mention of the account id [userId] masked, for a step an extra account's
+ * failure writes: Sync History and diagnostics name an account by its label only.
+ */
+internal fun withoutAccountId(message: String, userId: String): String =
+    if (userId.isBlank()) message else message.replace(userId, "<account>", ignoreCase = true)
 
 /**
  * The snapshot row for a YouTube library playlist whose track fetch came back

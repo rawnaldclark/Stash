@@ -5,7 +5,7 @@ import org.junit.Test
 
 /**
  * Unit test for [spotifyLivenessIds] — the "these still exist" set that
- * `deactivateMissingSpotifyCustomPlaylists` measures absence against.
+ * the joint hide (`hideWhatNoSpotifyAccountListed`) measures absence against.
  *
  * The bug it pins: the caller used to pass the POST-[keepAsLibraryPlaylist]
  * list. That filter only decides which pass snapshots an id, so a playlist

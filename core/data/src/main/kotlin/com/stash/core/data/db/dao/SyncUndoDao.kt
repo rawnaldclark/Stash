@@ -95,6 +95,8 @@ interface SyncUndoDao {
      * [sinceEpochMs]) changed, as Undo would put them back: shown or hidden,
      * added (see [hidePlaylistsAddedSince]), or gaining or losing synced tracks.
      * Order alone doesn't count. The Undo card shows this, not every playlist.
+     * Shown or hidden skips what [restorePlaylistVisibility] skips: a row whose
+     * Spotify account is gone.
      */
     @Query(
         """
@@ -102,7 +104,8 @@ interface SyncUndoDao {
         WHERE p.source IN $SYNCED_SOURCES AND (
             EXISTS (SELECT 1 FROM sync_undo_playlists u
                     WHERE u.sync_id = :syncId AND u.playlist_id = p.id AND u.is_active != p.is_active
-                      AND p.user_hidden = 0)
+                      AND p.user_hidden = 0
+                      AND $HAS_SPOTIFY_ACCOUNT_P)
             OR (p.is_active = 1 AND p.date_added >= :sinceEpochMs
                 AND p.sync_enabled = 0 AND p.keep_offline = 0
                 AND p.id NOT IN (SELECT playlist_id FROM sync_undo_playlists WHERE sync_id = :syncId))
@@ -134,6 +137,11 @@ interface SyncUndoDao {
      * Shown/hidden back to the point: playlists the sync hid come back, ones it
      * revived go again. Only `is_active`; the Download switch the point also
      * holds is the user's, and a sync never sets it.
+     *
+     * Never a row whose `spotify_account` names an account with no
+     * `spotify_accounts` row (removed since, or a tag a backup carried in): no
+     * sync runs as that account, so a row revived here would never be hidden
+     * again. It stays as it is, and comes back when an account lists it.
      */
     @Query(
         """
@@ -143,10 +151,25 @@ interface SyncUndoDao {
         WHERE source IN $SYNCED_SOURCES
           -- One the user took out of the library stays out: undo puts back what sync did.
           AND user_hidden = 0
+          AND $HAS_SPOTIFY_ACCOUNT
           AND id IN (SELECT playlist_id FROM sync_undo_playlists WHERE sync_id = :syncId)
         """
     )
     suspend fun restorePlaylistVisibility(syncId: Long): Int
+
+    /**
+     * Records the rows of the extra Spotify account [userId] (its tag) as hidden in every restore
+     * point, so no Undo shows them again: removing the account hides them, and an Undo of a sync
+     * from before the removal would otherwise bring them back with no account to sync them.
+     * Runs in the removal's transaction.
+     */
+    @Query(
+        """
+        UPDATE sync_undo_playlists SET is_active = 0
+        WHERE playlist_id IN (SELECT id FROM playlists WHERE source = 'SPOTIFY' AND spotify_account = :userId)
+        """
+    )
+    suspend fun keepSpotifyAccountRowsHidden(userId: String): Int
 
     /**
      * Hides the playlists the sync added: Spotify/YouTube rows that weren't
@@ -327,5 +350,14 @@ interface SyncUndoDao {
 
         /** The `playlists.source` values a sync writes: the playlists it mirrors. */
         const val SYNCED_SOURCES = "('SPOTIFY', 'YOUTUBE')"
+
+        /**
+         * A `playlists` row (unaliased) with an account behind it: the main's (no tag), every
+         * other service's, or an extra Spotify account's that still has its `spotify_accounts` row.
+         */
+        const val HAS_SPOTIFY_ACCOUNT = "(spotify_account IS NULL OR spotify_account IN (SELECT user_id FROM spotify_accounts))"
+
+        /** [HAS_SPOTIFY_ACCOUNT] for a `playlists` row aliased `p`. */
+        const val HAS_SPOTIFY_ACCOUNT_P = "(p.spotify_account IS NULL OR p.spotify_account IN (SELECT user_id FROM spotify_accounts))"
     }
 }

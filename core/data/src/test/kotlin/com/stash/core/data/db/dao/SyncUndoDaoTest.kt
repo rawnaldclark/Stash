@@ -187,7 +187,16 @@ class SyncUndoDaoTest {
         val pid = seedPlaylist("Road trip", MusicSource.SPOTIFY, "sp-road")
         // The fetch step: point first, then hide what the account no longer lists.
         assertThat(dao.captureOnce(syncId, nowEpochMs = 1_000L)).isTrue()
-        playlistDao.deactivateMissingSpotifyCustomPlaylists(currentSourceIds = listOf("sp-other"), hasCurrentIds = true)
+        com.stash.core.data.sync.hideWhatNoSpotifyAccountListed(
+            playlistDao, dao, com.stash.core.data.sync.SyncLog(), syncId, com.stash.core.model.SyncMode.REFRESH,
+            com.stash.core.data.sync.SpotifySyncListings().apply {
+                playlists += com.stash.core.data.sync.SpotifyAccountListing(null).apply {
+                    ids += "sp-other"
+                    listedAll = true
+                    complete = true
+                }
+            },
+        )
         assertThat(playlistDao.getById(pid)!!.isActive).isFalse()
         // The diff step keeps that point rather than snapshotting the playlist already hidden.
         assertThat(dao.captureOnce(syncId, nowEpochMs = 2_000L)).isFalse()

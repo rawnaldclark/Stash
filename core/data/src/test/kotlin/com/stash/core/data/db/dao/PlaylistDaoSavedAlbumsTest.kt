@@ -183,9 +183,18 @@ class PlaylistDaoSavedAlbumsTest {
         val gone = playlist("Old playlist", MusicSource.SPOTIFY, "37i9old")
         val album = playlist("Red Medicine", MusicSource.SPOTIFY, "album:spotify:4m28")
 
-        val hidden = dao.deactivateMissingSpotifyCustomPlaylists(currentSourceIds = listOf("37i9new"), hasCurrentIds = true)
+        val outcome = com.stash.core.data.sync.hideWhatNoSpotifyAccountListed(
+            dao, db.syncUndoDao(), com.stash.core.data.sync.SyncLog(), syncId = 1, syncMode = com.stash.core.model.SyncMode.REFRESH,
+            listings = com.stash.core.data.sync.SpotifySyncListings().apply {
+                playlists += com.stash.core.data.sync.SpotifyAccountListing(null).apply {
+                    ids += "37i9new"
+                    listedAll = true
+                    complete = true
+                }
+            },
+        )
 
-        assertThat(hidden).isEqualTo(1)
+        assertThat(outcome.hiddenPlaylists).isEqualTo(mapOf<String?, Int>(null to 1))
         assertThat(dao.getById(gone)!!.isActive).isFalse()
         assertThat(dao.getById(album)!!.isActive).isTrue()
     }

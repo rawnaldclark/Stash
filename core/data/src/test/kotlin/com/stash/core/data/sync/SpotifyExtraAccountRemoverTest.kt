@@ -1,0 +1,173 @@
+package com.stash.core.data.sync
+
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import com.stash.core.auth.TokenManager
+import com.stash.core.data.db.StashDatabase
+import com.stash.core.data.db.entity.DownloadQueueEntity
+import com.stash.core.data.db.entity.PlaylistEntity
+import com.stash.core.data.db.entity.PlaylistTrackCrossRef
+import com.stash.core.data.db.entity.SpotifyAccountEntity
+import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.model.DownloadStatus
+import com.stash.core.model.MusicSource
+import com.stash.core.model.PlaylistType
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
+import kotlinx.coroutines.test.runTest
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+/**
+ * Removing an extra Spotify account (plan 2026-11-04 §3.5): only its rows go out of sight, no
+ * download is cancelled, no song is deleted, the main account and the other extras are untouched.
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(manifest = Config.NONE, sdk = [33])
+class SpotifyExtraAccountRemoverTest {
+
+    private lateinit var db: StashDatabase
+    private val tokenManager = mockk<TokenManager>(relaxed = true)
+    private lateinit var remover: SpotifyExtraAccountRemover
+
+    private val userB = "userb"
+    private val userC = "userc"
+
+    @Before fun setUp() {
+        db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), StashDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        remover = SpotifyExtraAccountRemover(db, tokenManager)
+    }
+
+    @After fun tearDown() = db.close()
+
+    private suspend fun account(userId: String) =
+        db.spotifyAccountDao().insert(SpotifyAccountEntity(userId = userId, label = userId, addedAt = 1L))
+
+    private suspend fun row(
+        sourceId: String,
+        owner: String?,
+        type: PlaylistType = PlaylistType.CUSTOM,
+        source: MusicSource = MusicSource.SPOTIFY,
+    ) = db.playlistDao().insert(
+        PlaylistEntity(name = sourceId, source = source, sourceId = sourceId, type = type, spotifyAccount = owner),
+    )
+
+    private suspend fun song(title: String, playlistId: Long, downloaded: Boolean = false): Long {
+        val trackId = db.trackDao().insert(
+            TrackEntity(
+                title = title, artist = "Artist", canonicalTitle = title.lowercase(), canonicalArtist = "artist",
+                isDownloaded = downloaded, filePath = if (downloaded) "/music/$title.opus" else null,
+            ),
+        )
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = playlistId, trackId = trackId, position = 0))
+        return trackId
+    }
+
+    @Test fun `removing an extra hides only its rows, cancels no download, and keeps its songs`() = runTest {
+        val b = account(userB)
+        account(userC)
+        val a1 = row("a1", owner = null)
+        val b1 = row("b1", owner = userB)
+        val bLiked = row(SpotifyPlaylistIds.extraLikedSongs(userB), owner = userB, type = PlaylistType.LIKED_SONGS)
+        val bPasted = row("album:spotify:p", owner = userB, source = MusicSource.BOTH)
+        val c1 = row("c1", owner = userC)
+        val queuedA = song("QA", a1)
+        val queuedB = song("QB", b1)
+        val downloadedB = song("DB", b1, downloaded = true)
+        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = queuedA, searchQuery = "a"))
+        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = queuedB, searchQuery = "b"))
+
+        val removal = remover.remove(b)
+
+        assertEquals(SpotifyAccountRemoval.Removed(hiddenRows = 2), removal)
+        assertFalse(db.playlistDao().getById(b1)!!.isActive)
+        assertFalse(db.playlistDao().getById(bLiked)!!.isActive)
+        assertTrue("the main account's rows stay", db.playlistDao().getById(a1)!!.isActive)
+        assertTrue("another extra's rows stay", db.playlistDao().getById(c1)!!.isActive)
+        assertTrue("a save of the listener's own stays", db.playlistDao().getById(bPasted)!!.isActive)
+        assertEquals("rows keep their tag, so adding it again re-adopts them", userB, db.playlistDao().getById(b1)!!.spotifyAccount)
+        assertEquals(DownloadStatus.PENDING, db.downloadQueueDao().getByTrackId(queuedA)!!.status)
+        assertEquals("not cancelled by source", DownloadStatus.PENDING, db.downloadQueueDao().getByTrackId(queuedB)!!.status)
+        assertNotNull("its downloaded song stays", db.trackDao().getById(downloadedB))
+        assertNull(db.spotifyAccountDao().getById(b))
+        assertNotNull(db.spotifyAccountDao().getByUserId(userC))
+        coVerify(exactly = 1) { tokenManager.clearSpotifyExtra(b) }
+    }
+
+    @Test fun `removing an account that is already gone does nothing`() = runTest {
+        val b = account(userB)
+        remover.remove(b)
+
+        assertEquals(SpotifyAccountRemoval.NotFound, remover.remove(b))
+        coVerify(exactly = 1) { tokenManager.clearSpotifyExtra(b) }
+    }
+
+    @Test fun `the sign-in is forgotten first, while the account and its rows are all still there`() = runTest {
+        val b = account(userB)
+        val b1 = row("b1", owner = userB)
+        var accountThere = false
+        var rowShown = false
+        coEvery { tokenManager.clearSpotifyExtra(b) } coAnswers {
+            accountThere = db.spotifyAccountDao().getById(b) != null
+            rowShown = db.playlistDao().getById(b1)!!.isActive
+        }
+
+        remover.remove(b)
+
+        assertTrue(accountThere)
+        assertTrue(rowShown)
+        assertNull(db.spotifyAccountDao().getById(b))
+    }
+
+    @Test fun `a sign-in that can't be forgotten stops the removal, changing nothing`() = runTest {
+        val b = account(userB)
+        val b1 = row("b1", owner = userB)
+        coEvery { tokenManager.clearSpotifyExtra(any()) } throws IllegalStateException("keystore")
+
+        assertEquals(SpotifyAccountRemoval.SignInNotForgotten, remover.remove(b))
+        assertTrue("its rows stay", db.playlistDao().getById(b1)!!.isActive)
+        assertNotNull("so does the account, to remove again", db.spotifyAccountDao().getById(b))
+    }
+
+    @Test fun `Undo of a sync from before the removal doesn't bring the account's rows back`() = runTest {
+        val b = account(userB)
+        val a1 = row("a1", owner = null)
+        val b1 = row("b1", owner = userB)
+        db.syncUndoDao().captureOnce(syncId = 1, nowEpochMs = 1L)
+        // The sync behind the point hid a row of each account; then the listener removed B.
+        db.playlistDao().deactivateByIdsChunked(listOf(a1, b1))
+        remover.remove(b)
+
+        assertEquals("only the main's row counts as changed", 1, db.syncUndoDao().countChangedPlaylists(1, 1L))
+        db.syncUndoDao().restore(1)
+
+        assertTrue(db.playlistDao().getById(a1)!!.isActive)
+        assertFalse("no account to sync it: stays hidden", db.playlistDao().getById(b1)!!.isActive)
+    }
+
+    @Test fun `Undo never shows a row whose account has no row at all`() = runTest {
+        // A tag a backup carried in, with no spotify_accounts row behind it.
+        val orphan = row("o1", owner = "ghost")
+        val a1 = row("a1", owner = null)
+        db.syncUndoDao().captureOnce(syncId = 1, nowEpochMs = 1L)
+        db.playlistDao().deactivateByIdsChunked(listOf(orphan, a1))
+
+        assertEquals(1, db.syncUndoDao().countChangedPlaylists(1, 1L))
+        db.syncUndoDao().restore(1)
+
+        assertFalse(db.playlistDao().getById(orphan)!!.isActive)
+        assertTrue(db.playlistDao().getById(a1)!!.isActive)
+    }
+}
