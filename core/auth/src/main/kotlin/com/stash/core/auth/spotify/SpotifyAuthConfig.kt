@@ -100,6 +100,18 @@ object SpotifyAuthConfig {
      */
     const val HASH_GET_ALBUM = "0b6ce3511e1b02e4a40fa95440f992acbe85080eb308af9194322d708fc1914f"
 
+    /** Operation name of the web player's "who is signed in" query; see [HASH_PROFILE_ATTRIBUTES]. */
+    const val OP_PROFILE_ATTRIBUTES = "profileAttributes"
+
+    /**
+     * Persisted-query hash for `profileAttributes`, the web player's own "who is signed in" query
+     * (its top-bar avatar). No variables; answers `data.me.profile` with `username` (the account's
+     * Spotify user id, which never changes), `name` (its display name) and `uri`. The only account
+     * identity a sign-in has: the token itself is opaque and carries no username (#429's log).
+     * From web-player.c263f3db.js (2026-11-02); a rotated hash is re-scraped from the bundle.
+     */
+    const val HASH_PROFILE_ATTRIBUTES = "08ffb4730af3746e04a8301396f20875dbbce10c75243803091a9274eacc8ac0"
+
     /**
      * Persisted query hash for the `addToLibrary` / `removeFromLibrary`
      * mutations — the heart button in the Spotify web player. One

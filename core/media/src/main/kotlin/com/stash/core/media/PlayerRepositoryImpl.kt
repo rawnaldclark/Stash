@@ -2210,6 +2210,12 @@ class PlayerRepositoryImpl @Inject constructor(
         // query on a SAF tree, which a slow provider (SD card, cloud-backed) stalls.
         val queueItem = withContext(Dispatchers.IO) { queueTrack.toQueueMediaItem() }
         restoreGhostPaused()
+        if (controller.mediaItemCount == 0 && inListenTogether) {
+            // A guest whose first song hasn't arrived yet: the room owns the queue, so this is a Play next for it
+            // (ListenTogetherPlayer hands it to the session), tagged so it isn't taken for an Add to queue.
+            controller.addMediaItem(PlayNext.tag(queueItem))
+            return true
+        }
         if (controller.mediaItemCount == 0) {
             // The user tapped "Play next" with nothing playing: they expect the song to
             // actually start, not sit silently in a queue they can't see. It is the current

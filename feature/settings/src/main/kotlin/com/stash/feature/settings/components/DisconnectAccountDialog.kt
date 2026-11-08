@@ -17,12 +17,15 @@ import com.stash.feature.settings.R
  * not bring back until the next sync re-queues them. A stray tap on the red
  * button used to do all of that silently, so the dialog says what goes and
  * what stays.
+ *
+ * @param note One more thing this account's disconnect means, after the usual text, if any.
  */
 @Composable
 fun DisconnectAccountDialog(
     serviceName: String,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
+    note: String? = null,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -30,8 +33,9 @@ fun DisconnectAccountDialog(
         shape = MaterialTheme.shapes.large,
         title = { Text(stringResource(R.string.settings_disconnect_account_title, serviceName), style = MaterialTheme.typography.titleLarge) },
         text = {
+            val body = stringResource(R.string.settings_disconnect_account_body, serviceName)
             Text(
-                stringResource(R.string.settings_disconnect_account_body, serviceName),
+                if (note == null) body else "$body\n\n$note",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

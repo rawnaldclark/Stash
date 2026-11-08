@@ -49,6 +49,10 @@ const KEPT_BATCH = 150;
  */
 const MAX_KEPT_READS = 300;
 
+/** What to tell someone unlocked in the app (the app's Settings line, feature/settings strings settings_supporter_offer). */
+const APP_HOW = 'Tell them: in the app, Settings > "Unlimited Tidal & Qobuz for supporters", then this email and the code it sends.';
+const APP_HOW_SHORT = 'Settings > "Unlimited Tidal & Qobuz for supporters" in the app';
+
 /** What each ?done= says. Anything not listed shows nothing. */
 const DONE = {
     approved: "Approved. They've been emailed.",
@@ -58,7 +62,10 @@ const DONE = {
     added: "Added to the list.",
     "added-emailed": "Added to the list, and emailed.",
     "added-noemail": "Added to the list, but the email didn't send",
-    removed: "Access removed, with any Ko-fi amounts kept toward the $5 entry. Their sign-in stops working within a few minutes.",
+    "app-added": `Added to the list, and unlocked in the app. ${APP_HOW}`,
+    "app-added-emailed": `Added to the list, emailed, and unlocked in the app. ${APP_HOW}`,
+    "app-added-noemail": `Added to the list and unlocked in the app (${APP_HOW_SHORT}), but the email didn't send`,
+    removed: "Access removed, with any Ko-fi amounts kept toward the $5 entry and any app unlock. Their sign-in stops working within a few minutes; a phone they already unlocked stays unlocked.",
     "not-listed": "That email wasn't on the list.",
     donation: "Donation added to this month.",
     "entry-removed": "Entry removed.",
@@ -122,6 +129,19 @@ async function pendingRequests(kv, page) {
     return { total: all.length, more, page: current, pages, rows: rows.filter(Boolean) };
 }
 
+/** How many emails are unlocked in the app by hand (comp:<h>), from key listings alone; "more" past the page cap. */
+async function appUnlockCount(kv) {
+    let n = 0;
+    let cursor;
+    for (let i = 0; i < MAX_REQUEST_LIST_PAGES; i++) {
+        const res = await kv.list({ prefix: KEYS.compPrefix, cursor });
+        n += res.keys.length;
+        if (res.list_complete || !res.cursor) return { n, more: false };
+        cursor = res.cursor;
+    }
+    return { n, more: true };
+}
+
 function pager({ page, pages }) {
     if (pages <= 1) return "";
     const link = (n, label) => `<a class="admin-page-link" href="/admin?page=${n}">${label}</a>`;
@@ -134,13 +154,14 @@ async function adminPage(env, url, admin) {
     const kv = env.ACCESS_KV;
     const month = monthKey(new Date(clock.now()));
     const page = Number.parseInt(url.searchParams.get("page") ?? "1", 10) || 1;
-    const [requests, goal, tipjarCheck, ourCheck, openKeys, kept] = await Promise.all([
+    const [requests, goal, tipjarCheck, ourCheck, openKeys, kept, unlocked] = await Promise.all([
         pendingRequests(kv, page),
         readGoal(kv, month),
         kv.get(KEYS.hashCheck),
         hashEmail(HASHCHECK_EMAIL, env.EMAIL_PEPPER),
         openSignups(kv),
         keptFromOpen(kv),
+        appUnlockCount(kv),
     ]);
     const until = openUntilText(env);
     const openStatus = isOpen(env) ? `Open to everyone until ${until}.` : until ? `Closed (it ran until ${until}).` : "Not set (OPEN_UNTIL in wrangler.jsonc).";
@@ -160,6 +181,7 @@ async function adminPage(env, url, admin) {
             "open-status": openStatus,
             "open-count": `${openKeys.length} signed up in the open window`,
             "kept-open-count": `${kept.hs.length}${kept.more ? "+" : ""} kept from the open window`,
+            "app-count": `${unlocked.n}${unlocked.more ? "+" : ""} unlocked in the app here`,
         },
         html: {
             requests: requests.rows.map(requestItem).join(""),
@@ -322,21 +344,26 @@ async function act(request, env, url, admin) {
             const email = normalizeEmail(form.email);
             if (!validEmail(email)) return back(url, "bad-email");
             const h = await hashOf(email);
-            await kv.put(KEYS.access(h), JSON.stringify({ source: "manual", by: admin.email, at }));
+            // A Ko-fi supporter keeps their own entry: "manual" over it would cost them the app's claim.
+            const prev = await kv.get(KEYS.access(h), "json").catch(() => null);
+            if (prev?.source !== "kofi") await kv.put(KEYS.access(h), JSON.stringify({ source: "manual", by: admin.email, at }));
+            const app = form.app === "yes";
+            if (app) await kv.put(KEYS.comp(h), JSON.stringify({ by: admin.email, at }), { metadata: { at } });
             await kv.delete(KEYS.request(h));
             rememberAccess(h, true);
-            if (form.notify !== "yes") return back(url, "added");
+            const done = app ? "app-added" : "added";
+            if (form.notify !== "yes") return back(url, done);
             const sent = await welcome(env, url, email);
-            return sent.ok ? back(url, "added-emailed") : back(url, "added-noemail", sent.code);
+            return sent.ok ? back(url, `${done}-emailed`) : back(url, `${done}-noemail`, sent.code);
         }
         case "remove": {
             if (!env.EMAIL_PEPPER) return back(url, "no-pepper");
             const email = normalizeEmail(form.email);
             if (!validEmail(email)) return back(url, "bad-email");
             const h = await hashOf(email);
-            const [onList, signedUp] = await Promise.all([kv.get(KEYS.access(h)), kv.get(KEYS.open(h))]);
-            const listed = onList !== null || signedUp !== null;
-            await Promise.all([kv.delete(KEYS.access(h)), kv.delete(KEYS.open(h))]);
+            const [onList, signedUp, unlocked] = await Promise.all([kv.get(KEYS.access(h)), kv.get(KEYS.open(h)), kv.get(KEYS.comp(h))]);
+            const listed = onList !== null || signedUp !== null || unlocked !== null;
+            await Promise.all([kv.delete(KEYS.access(h)), kv.delete(KEYS.open(h)), kv.delete(KEYS.comp(h))]);
             await clearCodes(env, h);
             await clearKofiPayments(kv, h);
             rememberAccess(h, false);

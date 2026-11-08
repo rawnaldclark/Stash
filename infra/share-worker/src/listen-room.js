@@ -9,6 +9,13 @@ import { sameHex, sha256Hex } from "./store.js";
 /** 32 symbols with no 0/O or 1/I, so `byte & 31` is unbiased and codes read aloud cleanly. */
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const MSG_PER_SECOND = 20;
+/**
+ * `add` and `unqueue` each rewrite the stored room and send the whole queue to every phone. The burst covers real use
+ * (a 200-song selection is 4 messages, a few quick swipes); a client looping them is then held to the steady rate.
+ * Not `suggest`: an older app sends one per song, and the room's own 3-waiting limit already holds it.
+ */
+export const EDIT_BURST = 10;
+export const EDITS_PER_SECOND = 2;
 /** Largest frame read; anything bigger closes with 1009 before it is decoded or parsed. */
 export const MAX_FRAME = 262_144;
 /** A socket that hasn't said hello this long is fair game when the socket cap is reached. */
@@ -32,6 +39,7 @@ export class ListenRoom {
         this.now = now;
         // ponytail: per-socket message counters live in memory and reset when the room hibernates (spec §2 allows it).
         this.rates = new WeakMap();
+        this.edits = new WeakMap();
     }
 
     /** Internal routes, called by the Worker through the ROOMS binding. */
@@ -85,7 +93,13 @@ export class ListenRoom {
             if (r.reject) ws.close(r.reject.code, r.reject.reason);
             return;
         }
-        await this.apply({ type: "msg", from, msg, newId: msg.t === "suggest" ? randomCode(8) : undefined });
+        if ((msg.t === "add" || msg.t === "unqueue") && this.overEditLimit(ws)) {
+            // Ignored, not closed. An add is still answered: the sender's app is waiting to say what became of it.
+            if (msg.t === "add") this.send(from, { t: "added", by: from, next: msg.next === true, count: 0 });
+            return;
+        }
+        // A suggestion's id; an `add` may become suggestions too (guest adds off, or an older host).
+        await this.apply({ type: "msg", from, msg, newId: msg.t === "suggest" || msg.t === "add" ? randomCode(8) : undefined });
     }
 
     async webSocketClose(ws, code, reason) {
@@ -130,6 +144,17 @@ export class ListenRoom {
         const r = this.rates.get(ws);
         if (!r || now - r.start >= 1000) { this.rates.set(ws, { start: now, count: 1 }); return false; }
         return ++r.count > MSG_PER_SECOND;
+    }
+
+    overEditLimit(ws) {
+        const now = this.now();
+        const b = this.edits.get(ws) ?? { tokens: EDIT_BURST, at: now };
+        b.tokens = Math.min(EDIT_BURST, b.tokens + ((now - b.at) / 1000) * EDITS_PER_SECOND);
+        b.at = now;
+        this.edits.set(ws, b);
+        if (b.tokens < 1) return true;
+        b.tokens--;
+        return false;
     }
 
     async apply(event, beforeSend) {

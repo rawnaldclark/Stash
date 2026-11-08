@@ -360,4 +360,23 @@ class PlayerRepositoryListenTogetherTest {
         repo.updateState(controller)
         assertThat(repo.playerState.value.queue.map { it.id }).containsExactly(99L)
     }
+
+    @Test fun `a guest's Play next before the first song arrives reaches the room as a Play next, not a song to start`() = runTest {
+        val repo = build()
+        every { controller.mediaItemCount } returns 0
+        together.setActive(true)
+        assertThat(repo.addNext(com.stash.core.model.Track(id = 7, title = "Xtal", artist = "Aphex Twin", isStreamable = true))).isTrue()
+        // ListenTogetherPlayer hands the item to the session; the tag is how it knows Play next from Add to queue.
+        verify(exactly = 1) { controller.addMediaItem(match<MediaItem> { PlayNext.isTagged(it) }) }
+        verify(exactly = 0) { controller.prepare() }
+        verify(exactly = 0) { controller.play() }
+    }
+
+    @Test fun `outside a session the same Play next on an empty player starts the song, untagged`() = runTest {
+        val repo = build()
+        every { controller.mediaItemCount } returns 0
+        repo.addNext(com.stash.core.model.Track(id = 7, title = "Xtal", artist = "Aphex Twin", isStreamable = true))
+        verify(exactly = 1) { controller.addMediaItem(match<MediaItem> { !PlayNext.isTagged(it) }) }
+        verify(exactly = 1) { controller.play() }
+    }
 }

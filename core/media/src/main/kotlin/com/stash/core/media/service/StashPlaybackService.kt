@@ -935,9 +935,11 @@ class StashPlaybackService : MediaLibraryService() {
             catalog = listenTogetherCatalog,
             api = roomApiClient,
             connector = roomConnector,
-            autoplayRadio = { autoplayRadioPreference.enabled.first() },
+            // Radio streams, so an Offline host's station would only be a run of songs it can't play.
+            autoplayRadio = { autoplayRadioPreference.enabled.first() && streamAllowedNow() },
             displayName = { sharePreference.displayName() },
             clock = { android.os.SystemClock.elapsedRealtime() },
+            guestsAddPreference = { sharePreference.guestsAddNow() },
         ).also { it.start() }
         listenTogetherController.serviceAttached = true
         android.util.Log.i("StashPlayback", "listen-together engine attached")
@@ -2341,6 +2343,9 @@ class StashPlaybackService : MediaLibraryService() {
 
         /** Player.setPlaybackSpeed keeps pitch at 1, so Sonic time-stretches (spec §4). */
         override fun setSpeed(speed: Float) = master.setPlaybackSpeed(speed)
+
+        /** What the MediaSession's controllers read as playWhenReady: the room's, not the held-paused master's. */
+        override fun setPlayIntent(playing: Boolean) { togetherPlayer?.setPlayIntent(playing) }
 
         override val positionMs: Long get() = master.currentPosition
         override val durationMs: Long? get() = master.duration.takeIf { it != C.TIME_UNSET && it > 0 }

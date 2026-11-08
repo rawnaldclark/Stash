@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.stash.core.model.listen.RoomProtocol
 import com.stash.core.model.listen.ServerMessage
+import com.stash.feature.nowplaying.ui.npInk
 import kotlin.random.Random
 import kotlinx.coroutines.flow.SharedFlow
 
@@ -95,7 +96,11 @@ fun ReactionButton(onReact: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
     Box {
-        IconButton(onClick = { open = true }) { Icon(Icons.Default.AddReaction, contentDescription = "React") }
+        // Now Playing's ink, like Previous and Next beside it. With no tint it took the content colour, which is black
+        // under the player sheet in every theme.
+        IconButton(onClick = { open = true }) {
+            Icon(Icons.Default.AddReaction, contentDescription = "React", tint = npInk())
+        }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             Row(Modifier.padding(horizontal = 4.dp)) {
                 RoomProtocol.EMOJI.forEach { emoji ->
