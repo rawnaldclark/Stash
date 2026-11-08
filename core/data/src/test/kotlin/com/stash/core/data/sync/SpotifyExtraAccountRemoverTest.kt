@@ -89,9 +89,9 @@ class SpotifyExtraAccountRemoverTest {
         db.downloadQueueDao().insert(DownloadQueueEntity(trackId = queuedA, searchQuery = "a"))
         db.downloadQueueDao().insert(DownloadQueueEntity(trackId = queuedB, searchQuery = "b"))
 
-        val hidden = remover.remove(b)
+        val removal = remover.remove(b)
 
-        assertEquals(2, hidden)
+        assertEquals(SpotifyAccountRemoval.Removed(hiddenRows = 2), removal)
         assertFalse(db.playlistDao().getById(b1)!!.isActive)
         assertFalse(db.playlistDao().getById(bLiked)!!.isActive)
         assertTrue("the main account's rows stay", db.playlistDao().getById(a1)!!.isActive)
@@ -110,18 +110,35 @@ class SpotifyExtraAccountRemoverTest {
         val b = account(userB)
         remover.remove(b)
 
-        assertNull(remover.remove(b))
+        assertEquals(SpotifyAccountRemoval.NotFound, remover.remove(b))
         coVerify(exactly = 1) { tokenManager.clearSpotifyExtra(b) }
     }
 
-    @Test fun `a sign-in that can't be forgotten doesn't undo the removal`() = runTest {
+    @Test fun `the sign-in is forgotten first, while the account and its rows are all still there`() = runTest {
+        val b = account(userB)
+        val b1 = row("b1", owner = userB)
+        var accountThere = false
+        var rowShown = false
+        coEvery { tokenManager.clearSpotifyExtra(b) } coAnswers {
+            accountThere = db.spotifyAccountDao().getById(b) != null
+            rowShown = db.playlistDao().getById(b1)!!.isActive
+        }
+
+        remover.remove(b)
+
+        assertTrue(accountThere)
+        assertTrue(rowShown)
+        assertNull(db.spotifyAccountDao().getById(b))
+    }
+
+    @Test fun `a sign-in that can't be forgotten stops the removal, changing nothing`() = runTest {
         val b = account(userB)
         val b1 = row("b1", owner = userB)
         coEvery { tokenManager.clearSpotifyExtra(any()) } throws IllegalStateException("keystore")
 
-        assertEquals(1, remover.remove(b))
-        assertFalse(db.playlistDao().getById(b1)!!.isActive)
-        assertNull(db.spotifyAccountDao().getById(b))
+        assertEquals(SpotifyAccountRemoval.SignInNotForgotten, remover.remove(b))
+        assertTrue("its rows stay", db.playlistDao().getById(b1)!!.isActive)
+        assertNotNull("so does the account, to remove again", db.spotifyAccountDao().getById(b))
     }
 
     @Test fun `Undo of a sync from before the removal doesn't bring the account's rows back`() = runTest {
