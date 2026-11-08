@@ -177,6 +177,23 @@ class EncryptedTokenStoreSpotifyExtraTest {
         assertFalse(EncryptedTokenStore.isPerAccountKey("youtube_token"))
     }
 
+    @Test fun `the row ids with a stored extra sign-in are listed, and nothing else`() = runBlocking {
+        assertEquals(emptySet<Long>(), store.spotifyExtraRowIds())
+
+        connectMain()
+        store.saveSpotifyExtra(7, samToken, sam)
+        store.saveSpotifyExtra(12, kimToken, kim)
+        store.saveCloudToken("gdrive_3", ServiceToken("g", "g-refresh", expiresAtEpoch = 5))
+        assertEquals(setOf(7L, 12L), store.spotifyExtraRowIds())
+
+        store.clearSpotifyExtra(7)
+        assertEquals(setOf(12L), store.spotifyExtraRowIds())
+
+        // Listed even when it can't be read: a dead blob is one to clean up too.
+        every { cipher.decrypt(any()) } throws java.security.GeneralSecurityException("lost key")
+        assertEquals(setOf(12L), store.spotifyExtraRowIds())
+    }
+
     @Test fun `an unreadable extra blob reads as no sign-in`() = runBlocking {
         store.saveSpotifyExtra(7, samToken, sam)
         every { cipher.decrypt(any()) } throws java.security.GeneralSecurityException("lost key")
