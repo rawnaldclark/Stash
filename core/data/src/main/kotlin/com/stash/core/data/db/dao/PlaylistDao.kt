@@ -1049,15 +1049,6 @@ interface PlaylistDao {
     suspend fun updateSpotifyAccount(playlistId: Long, account: String?)
 
     /**
-     * The keys (`source_id`) of every playlist and saved-album row the Spotify sync filed for
-     * [account] (null = the main account), shown or hidden: CUSTOM rows only, never Liked Songs or
-     * a mix. The sync holds them for [account] when its listing missed a page this sync, so a
-     * later account's pass neither re-reads nor takes them (plan 2026-11-04 §2.4).
-     */
-    @Query("SELECT source_id FROM playlists WHERE source = 'SPOTIFY' AND type = 'CUSTOM' AND spotify_account IS :account")
-    suspend fun spotifySourceIdsOwnedBy(account: String?): List<String>
-
-    /**
      * Hides every row the Spotify sync filed for the extra account [userId] (plan 2026-11-04 §3.5,
      * removing an account): `is_active = 0` on its source-SPOTIFY rows, nothing else. Tracks, their
      * downloads and every other account's rows stay; a row the listener saved in Stash themselves
