@@ -320,8 +320,10 @@ class SpotifyAccountsViewModel @Inject constructor(
         // Added already: sign that row in again, never a second row for one account.
         accountDao.findByAccount(account.userId)?.let { return save(it, check.signIn, isNew = false) }
         if (accountDao.count() >= MAX_EXTRA_SPOTIFY_ACCOUNTS) return Outcome.Refused(OtherAccountRefusal.Full)
-        val row = accountDao.addOrFind(account.userId, suggestedName(account), System.currentTimeMillis())
-        return save(row, check.signIn, isNew = true)
+        val addition = accountDao.add(account.userId, suggestedName(account), System.currentTimeMillis())
+        // Found rather than added (added a moment ago, elsewhere): signed in again, and never taken
+        // back out should its sign-in not save. Only a row this add inserted is.
+        return save(addition.row, check.signIn, isNew = addition.added)
     }
 
     private suspend fun signInAgain(accountId: Long, check: SpotifyCookieCheck.Valid, account: SpotifyProfile): Outcome {

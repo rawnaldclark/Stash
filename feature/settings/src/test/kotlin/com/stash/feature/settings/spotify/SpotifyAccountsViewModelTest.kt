@@ -8,6 +8,7 @@ import com.stash.core.auth.model.UserInfo
 import com.stash.core.auth.model.ValidatedSpotifySignIn
 import com.stash.core.auth.spotify.SpotifyAccount
 import com.stash.core.auth.spotify.SpotifyProfile
+import com.stash.core.data.db.dao.SpotifyAccountAddition
 import com.stash.core.data.db.dao.SpotifyAccountDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.entity.SpotifyAccountEntity
@@ -126,7 +127,7 @@ class SpotifyAccountsViewModelTest {
 
         assertThat(vm.state.value.refusal).isEqualTo(OtherAccountRefusal.AlreadyConnected("Rawn"))
         assertThat(vm.state.value.signIn).isNull()
-        coVerify(exactly = 0) { accountDao.addOrFind(any(), any(), any()) }
+        coVerify(exactly = 0) { accountDao.add(any(), any(), any()) }
         coVerify(exactly = 0) { tokenManager.saveSpotifyExtra(any(), any()) }
         coVerify(exactly = 0) { tokenManager.connectSpotifyWithCookie(any(), any()) }
         // The WebView keeps no account, a refused one included.
@@ -142,7 +143,7 @@ class SpotifyAccountsViewModelTest {
         add(vm)
 
         assertThat(vm.state.value.refusal).isEqualTo(OtherAccountRefusal.MainUnchecked("Rawn"))
-        coVerify(exactly = 0) { accountDao.addOrFind(any(), any(), any()) }
+        coVerify(exactly = 0) { accountDao.add(any(), any(), any()) }
         coVerify(exactly = 0) { tokenManager.saveSpotifyExtra(any(), any()) }
         verify(exactly = 1) { webSession.clear() }
     }
@@ -150,7 +151,7 @@ class SpotifyAccountsViewModelTest {
     @Test fun `with no account connected, there is nothing to confuse an unchecked add with`() = runTest {
         auth.value = AuthState.NotConnected
         signsInAs("sam", isMain = null)
-        coEvery { accountDao.addOrFind(any(), any(), any()) } returns row(7, "sam", "Sam")
+        coEvery { accountDao.add(any(), any(), any()) } returns SpotifyAccountAddition(row(7, "sam", "Sam"), added = true)
         coEvery { tokenManager.saveSpotifyExtra(any(), any()) } returns true
         val vm = newVm()
 
@@ -167,7 +168,7 @@ class SpotifyAccountsViewModelTest {
         add(vm)
 
         assertThat(vm.state.value.refusal).isEqualTo(OtherAccountRefusal.Unidentified)
-        coVerify(exactly = 0) { accountDao.addOrFind(any(), any(), any()) }
+        coVerify(exactly = 0) { accountDao.add(any(), any(), any()) }
         coVerify(exactly = 0) { tokenManager.saveSpotifyExtra(any(), any()) }
     }
 
@@ -180,7 +181,7 @@ class SpotifyAccountsViewModelTest {
 
         add(vm)
 
-        coVerify(exactly = 0) { accountDao.addOrFind(any(), any(), any()) }
+        coVerify(exactly = 0) { accountDao.add(any(), any(), any()) }
         coVerify(exactly = 1) { tokenManager.saveSpotifyExtra(SpotifyAccount(4, "sam"), check.signIn) }
         coVerify(exactly = 1) { accountDao.updateSignedOutAt(4, null) }
         assertThat(notices).containsExactly(OtherAccountNotice.SignedInAgain("Sam"))
@@ -189,7 +190,7 @@ class SpotifyAccountsViewModelTest {
 
     @Test fun `a new account is added, then asked for its name, pre-filled with Spotify's`() = runTest {
         val check = signsInAs("sam", "Sam Smith")
-        coEvery { accountDao.addOrFind("sam", "Sam Smith", any()) } returns row(7, "sam", "Sam Smith")
+        coEvery { accountDao.add("sam", "Sam Smith", any()) } returns SpotifyAccountAddition(row(7, "sam", "Sam Smith"), added = true)
         coEvery { tokenManager.saveSpotifyExtra(any(), any()) } returns true
         val vm = newVm()
 
@@ -206,7 +207,7 @@ class SpotifyAccountsViewModelTest {
 
     @Test fun `a sign-in that won't save takes its new row back out`() = runTest {
         signsInAs("sam")
-        coEvery { accountDao.addOrFind(any(), any(), any()) } returns row(7, "sam", "Sam")
+        coEvery { accountDao.add(any(), any(), any()) } returns SpotifyAccountAddition(row(7, "sam", "Sam"), added = true)
         coEvery { tokenManager.saveSpotifyExtra(any(), any()) } throws IllegalStateException("Keystore")
         val vm = newVm()
 
@@ -217,9 +218,35 @@ class SpotifyAccountsViewModelTest {
         assertThat(vm.state.value.naming).isNull()
     }
 
+    @Test fun `a row the add found already, rather than added, stays when its sign-in won't save`() = runTest {
+        // Added a moment ago elsewhere: not there when looked up, there when the add ran.
+        signsInAs("sam")
+        coEvery { accountDao.add(any(), any(), any()) } returns SpotifyAccountAddition(row(4, "sam", "Sam"), added = false)
+        coEvery { tokenManager.saveSpotifyExtra(any(), any()) } throws IllegalStateException("Keystore")
+        val vm = newVm()
+
+        add(vm)
+
+        coVerify(exactly = 0) { accountDao.delete(any()) }
+        assertThat(vm.state.value.error).isEqualTo(OtherAccountSignInError.NOT_SAVED)
+    }
+
+    @Test fun `a row the add found already is signed in again, not named as new`() = runTest {
+        signsInAs("sam")
+        coEvery { accountDao.add(any(), any(), any()) } returns SpotifyAccountAddition(row(4, "sam", "Sam"), added = false)
+        coEvery { tokenManager.saveSpotifyExtra(any(), any()) } returns true
+        val vm = newVm()
+        val notices = noticesOf(vm)
+
+        add(vm)
+
+        assertThat(notices).containsExactly(OtherAccountNotice.SignedInAgain("Sam"))
+        assertThat(vm.state.value.naming).isNull()
+    }
+
     @Test fun `a sign-in the store refuses takes its new row back out and says it's the connected account`() = runTest {
         signsInAs("sam")
-        coEvery { accountDao.addOrFind(any(), any(), any()) } returns row(7, "sam", "Sam")
+        coEvery { accountDao.add(any(), any(), any()) } returns SpotifyAccountAddition(row(7, "sam", "Sam"), added = true)
         coEvery { tokenManager.saveSpotifyExtra(any(), any()) } returns false
         val vm = newVm()
 
@@ -249,7 +276,7 @@ class SpotifyAccountsViewModelTest {
 
         assertThat(vm.state.value.error).isEqualTo(OtherAccountSignInError.INVALID)
         assertThat(vm.state.value.showPasteDialog).isTrue()
-        coVerify(exactly = 0) { accountDao.addOrFind(any(), any(), any()) }
+        coVerify(exactly = 0) { accountDao.add(any(), any(), any()) }
         verify(exactly = 1) { webSession.clear() }
     }
 
@@ -261,7 +288,7 @@ class SpotifyAccountsViewModelTest {
         add(vm)
 
         assertThat(vm.state.value.refusal).isEqualTo(OtherAccountRefusal.Full)
-        coVerify(exactly = 0) { accountDao.addOrFind(any(), any(), any()) }
+        coVerify(exactly = 0) { accountDao.add(any(), any(), any()) }
     }
 
     @Test fun `the add row shows with a connected account and room, never at the limit`() = runTest {
@@ -299,7 +326,7 @@ class SpotifyAccountsViewModelTest {
 
         assertThat(dropped).isTrue()
         assertThat(vm.state.value.signIn).isNull()
-        coVerify(exactly = 0) { accountDao.addOrFind(any(), any(), any()) }
+        coVerify(exactly = 0) { accountDao.add(any(), any(), any()) }
     }
 
     @Test fun `a cookie the sign-in screen hands over after Cancel opens nothing and checks nothing`() = runTest {
@@ -409,7 +436,7 @@ class SpotifyAccountsViewModelTest {
 
     @Test fun `a typed name is saved, then Sync now is offered`() = runTest {
         signsInAs("sam")
-        coEvery { accountDao.addOrFind(any(), any(), any()) } returns row(7, "sam", "Sam")
+        coEvery { accountDao.add(any(), any(), any()) } returns SpotifyAccountAddition(row(7, "sam", "Sam"), added = true)
         coEvery { tokenManager.saveSpotifyExtra(any(), any()) } returns true
         val vm = newVm()
         add(vm)
@@ -432,7 +459,7 @@ class SpotifyAccountsViewModelTest {
 
     @Test fun `Skip keeps Spotify's name`() = runTest {
         signsInAs("sam")
-        coEvery { accountDao.addOrFind(any(), any(), any()) } returns row(7, "sam", "Sam")
+        coEvery { accountDao.add(any(), any(), any()) } returns SpotifyAccountAddition(row(7, "sam", "Sam"), added = true)
         coEvery { tokenManager.saveSpotifyExtra(any(), any()) } returns true
         val vm = newVm()
         add(vm)
@@ -447,7 +474,7 @@ class SpotifyAccountsViewModelTest {
     @Test fun `before the first sync, Sync now isn't offered - that sync brings it`() = runTest {
         firstSyncAsked = false
         signsInAs("sam")
-        coEvery { accountDao.addOrFind(any(), any(), any()) } returns row(7, "sam", "Sam")
+        coEvery { accountDao.add(any(), any(), any()) } returns SpotifyAccountAddition(row(7, "sam", "Sam"), added = true)
         coEvery { tokenManager.saveSpotifyExtra(any(), any()) } returns true
         val vm = newVm()
         val notices = noticesOf(vm)
