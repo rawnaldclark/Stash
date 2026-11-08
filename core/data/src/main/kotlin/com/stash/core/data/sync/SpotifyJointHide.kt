@@ -92,7 +92,9 @@ data class SpotifyHideOutcome(
  *
  *  1. Only in Refresh mode ([shouldDeactivateMissingPlaylists]), and only when EVERY account that
  *     listed that kind listed every id of it ([SpotifyAccountListing.listedAll]): an account whose
- *     walk missed a page could have the row, so nothing of that kind goes, for anyone.
+ *     walk missed a page could have the row, so nothing of that kind goes, for anyone. An extra
+ *     skipped or stopped this sync for a passing reason (out of time, Spotify's limits) counts as
+ *     one whose walk missed a page.
  *  2. Only rows owned by an account that listed that kind this sync, and listed it
  *     [complete][SpotifyAccountListing.complete]ly: its own songs all read too, as a single
  *     account always needed. An account with one playlist it couldn't read keeps its own rows,
