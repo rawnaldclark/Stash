@@ -175,6 +175,11 @@
     <string name="settings_spotify_username_label">Spotify username (optional)</string>
     <string name="settings_spotify_username_placeholder">Your Spotify username</string>
     <string name="settings_spotify_username_hint">Find at spotify.com/account under \'Username\'</string>
+    <!-- Settings > Accounts > Spotify: a sign-in as a different account than the connected one is refused; nothing is replaced. %1$s = connected account's name, %2$s = the other account's name. -->
+    <string name="settings_spotify_other_account_title">Different Spotify account</string>
+    <string name="settings_spotify_other_account_body">Stash is connected to Spotify as %1$s, but you just signed in as %2$s. To reconnect %1$s, sign in again with %1$s\'s email or Google account. To switch to %2$s, tap Disconnect on the Spotify card first.</string>
+    <!-- Same, when the other account has no name of its own to show (it reads the same as the connected one). %1$s = connected account's name. -->
+    <string name="settings_spotify_other_account_body_unnamed">Stash is connected to Spotify as %1$s, but you just signed in with a different account. To reconnect %1$s, sign in again with %1$s\'s email or Google account. To switch accounts, tap Disconnect on the Spotify card first.</string>
 
     <!-- Settings > Accounts > YouTube Login & Fallbacks -->
     <string name="settings_youtube_signin_title">Sign in to YouTube Music</string>
@@ -232,6 +237,8 @@
     <!-- Settings > Accounts > DisconnectAccountDialog -->
     <string name="settings_disconnect_account_title">Disconnect %1$s?</string>
     <string name="settings_disconnect_account_body">Stash signs out of %1$s on this phone and stops syncing it. Songs from %1$s still waiting to download are dropped from the queue.\n\nSongs you\'ve already downloaded stay in your library, and you can reconnect any time.</string>
+    <!-- Added to the Spotify disconnect dialog while Spotify syncs in Refresh mode. Disconnecting alone hides nothing: the first sync of a different account does. -->
+    <string name="settings_disconnect_spotify_refresh_note">Spotify syncs in Refresh mode: if you connect a different account next, its first sync takes this account\'s playlists out of Stash. \"Undo last sync\" in Sync History brings them back, until the next sync runs.</string>
 
     <!-- Settings > Accounts > LikeMirrorWarningDialog -->
     <string name="settings_like_mirror_warning_title">Mirror likes to %1$s?</string>

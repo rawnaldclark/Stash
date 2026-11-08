@@ -3,6 +3,7 @@ package com.stash.core.auth
 import com.stash.core.auth.model.AuthService
 import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.model.ServiceToken
+import com.stash.core.auth.model.SpotifyConnectResult
 import com.stash.core.auth.model.UserInfo
 import kotlinx.coroutines.flow.StateFlow
 
@@ -136,10 +137,22 @@ interface TokenManager {
 
     /**
      * Validates an sp_dc cookie against the Spotify web-player token endpoint,
-     * fetches the user profile, and persists all credentials on success.
+     * identifies whose account it is, and persists the credentials, unless a
+     * DIFFERENT account is already connected: then nothing is saved and the
+     * connected account is left untouched ([SpotifyConnectResult.DifferentAccount]).
+     * The connected account signing in again (an expired session) saves as before.
      *
      * @param spDcCookie The raw sp_dc cookie value from the user's browser.
-     * @return true if the cookie was valid and auth was saved, false otherwise.
+     * @param username Optional name the user typed in the paste dialog, shown as "Connected as".
      */
-    suspend fun connectSpotifyWithCookie(spDcCookie: String, username: String = ""): Boolean
+    suspend fun connectSpotifyWithCookie(spDcCookie: String, username: String = ""): SpotifyConnectResult
+
+    /**
+     * Learns and records which Spotify account the stored sign-in belongs to, when that isn't
+     * known yet (signed in before Stash recorded it). Without it, a later sign-in as another
+     * account couldn't be told apart, so the account-swap guard couldn't refuse it. Called while
+     * the session is known to work (the sync's auth probe). Best-effort: a failed lookup is tried
+     * again a few hours later.
+     */
+    suspend fun rememberSpotifyAccount() = Unit
 }

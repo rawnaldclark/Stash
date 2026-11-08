@@ -46,7 +46,10 @@ class TokenManagerRefreshSingleFlightTest {
             every { youTubeUser } returns MutableStateFlow(null)
             every { discordToken } returns MutableStateFlow(null)
             every { discordUser } returns MutableStateFlow(null)
-            coEvery { saveSpotifyToken(any(), any()) } answers { stored.value = firstArg() }
+            coEvery { saveRefreshedSpotifyToken(any(), any()) } answers {
+                stored.value = secondArg()
+                true
+            }
         }
         val gate = CompletableDeferred<Unit>()
         val auth = mockk<SpotifyAuthManager> {
@@ -63,6 +66,6 @@ class TokenManagerRefreshSingleFlightTest {
 
         assertEquals(listOf("new", "new", "new"), callers.awaitAll())
         coVerify(exactly = 1) { auth.refreshAccessToken(any()) }
-        coVerify(exactly = 1) { store.saveSpotifyToken(any(), any()) }
+        coVerify(exactly = 1) { store.saveRefreshedSpotifyToken(any(), any()) }
     }
 }

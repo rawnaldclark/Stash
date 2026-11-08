@@ -28,6 +28,12 @@ import javax.inject.Singleton
  * `false` so a flaky Wi-Fi connection doesn't false-positive the banner.
  * Real auth failures still get caught mid-sync by `DownloadFailureClassifier`
  * (Task 7) when individual track downloads return 401/403.
+ *
+ * Second side job: a working session is when Stash can learn whose account
+ * it is, if that was never recorded ([TokenManager.rememberSpotifyAccount]).
+ * The account-swap guard needs it later, when this session may be dead and a
+ * "Reconnect" could be signed in as another account. Best-effort: it never
+ * changes the verdict.
  */
 @Singleton
 class SpotifyAuthHealthProbe @Inject constructor(
@@ -35,13 +41,27 @@ class SpotifyAuthHealthProbe @Inject constructor(
 ) : AuthHealthProbe {
     override val source: AuthSource = AuthSource.SPOTIFY
 
-    override suspend fun isExpired(): Boolean = try {
-        tokenManager.getSpotifyAccessToken() == null
-    } catch (ce: kotlinx.coroutines.CancellationException) {
-        throw ce
-    } catch (e: Throwable) {
-        Log.w(TAG, "probe failed conservatively", e)
-        false
+    override suspend fun isExpired(): Boolean {
+        val expired = try {
+            tokenManager.getSpotifyAccessToken() == null
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (e: Throwable) {
+            Log.w(TAG, "probe failed conservatively", e)
+            return false
+        }
+        if (!expired) rememberAccount()
+        return expired
+    }
+
+    private suspend fun rememberAccount() {
+        try {
+            tokenManager.rememberSpotifyAccount()
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (e: Throwable) {
+            Log.w(TAG, "couldn't record the Spotify account", e)
+        }
     }
 
     private companion object {
