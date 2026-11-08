@@ -96,6 +96,30 @@ class GoogleDrivePicksTest {
     }
 
     @Test
+    fun `picking a copy Stash saved here, already linked to its download, is already in the library`() = runTest {
+        picks.accept(GooglePickerResult.Picked("tok1", emptyList()))
+        val account = dao.getAccounts().single()
+        val saved = dao.getFolders(account.id).single { it.itemId == GoogleDriveProvider.UPLOADS_ITEM_ID }
+        val picked = dao.getFolders(account.id).single { it.itemId == GoogleDriveProvider.PICKS_ITEM_ID }
+        // The saved-songs scan linked the copy to the phone's download.
+        dao.insertScanned(
+            TrackEntity(title = "A", artist = "X", source = MusicSource.SPOTIFY, isDownloaded = true, filePath = "/m/a.flac"),
+            CloudItemEntity(
+                trackId = 0, accountId = account.id, folderId = saved.id, itemId = "1SAVEDCOPY", name = "a.flac",
+                relativePath = "", parentItemId = null, cTag = "md5a", eTag = null, size = 1, mimeType = null,
+                seenGeneration = 1, scannedAt = 1,
+            ),
+        )
+        scans.clear()
+
+        val outcome = picks.accept(GooglePickerResult.Picked("tok1", listOf("1SAVEDCOPY", "1NEWFILEXX"))) as GooglePickOutcome.Added
+
+        assertThat(outcome.added).isEqualTo(1)
+        assertThat(outcome.alreadyThere).isEqualTo(1)
+        assertThat(pickStore.pending(picked.id)).containsExactly("1NEWFILEXX")
+    }
+
+    @Test
     fun `nothing new picked scans only a new account's saved songs`() = runTest {
         val outcome = picks.accept(GooglePickerResult.Picked("tok1", emptyList())) as GooglePickOutcome.Added
         assertThat(outcome.added).isEqualTo(0)

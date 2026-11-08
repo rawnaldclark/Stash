@@ -39,6 +39,19 @@ data class UnlinkedDownload(
     @ColumnInfo(name = "duration_ms") val durationMs: Long,
 )
 
+/**
+ * A download not linked to any cloud file, with its file: for the Drive scan to recognise a cloud
+ * file that is a byte-for-byte copy of it. [sizeBytes] is what the library recorded (0 = not known).
+ */
+data class UnlinkedDownloadFile(
+    val id: Long,
+    @ColumnInfo(name = "file_path") val filePath: String,
+    @ColumnInfo(name = "file_size_bytes") val sizeBytes: Long,
+)
+
+/** A download linked to a cloud file, by that file's content version (Google Drive: its md5). */
+data class LinkedDownloadVersion(val version: String, val trackId: Long)
+
 /** How many of an account's upload rows are in one [CloudUploadState]. */
 data class CloudUploadCount(val state: String, val count: Int)
 
@@ -271,9 +284,18 @@ interface CloudDao {
     suspend fun accountTrackIds(accountId: Long): List<Long>
 
     /**
+     * The provider ids of every file [accountId] has in the library, whichever folder row holds
+     * it (Google Drive: picked songs, and the copies Stash saved there).
+     */
+    @Query("SELECT item_id FROM cloud_items WHERE account_id = :accountId")
+    suspend fun accountItemIds(accountId: Long): List<String>
+
+    /**
      * Removes the cloud songs [trackIds]: deletes the ones that only streamed, turns the
-     * downloaded ones into LOCAL files, drops their `cloud_items` rows. Chunked under SQLite's
-     * bind limit; one transaction.
+     * downloaded ones into LOCAL files, drops their `cloud_items` rows. A download that loses its
+     * link this way (its copy trashed in Drive, its folder or account removed) no longer has a
+     * copy there, so its finished upload row waits again ([uploadsLostTheirCopy]). Chunked under
+     * SQLite's bind limit; one transaction.
      */
     @Transaction
     suspend fun removeItems(trackIds: List<Long>): CloudRemoval {
@@ -282,6 +304,7 @@ interface CloudDao {
         trackIds.chunked(BIND_CHUNK).forEach { chunk ->
             deleted += deleteStreamOnlyTracks(chunk)
             kept += keepAsLocal(chunk)
+            uploadsLostTheirCopy(chunk)
             deleteItemRows(chunk)
         }
         return CloudRemoval(deleted, kept)
@@ -389,18 +412,47 @@ interface CloudDao {
     /**
      * Gives every uploadable download without an upload row one, in [state]: `EXISTING` when the
      * backup switch is turned on (they are only counted, for "Back up N existing downloads"),
-     * `QUEUED` for downloads made while it is on. Rows that exist are left alone. A download a
-     * scan already linked to a file in a Drive gets its row on that account, whatever [accountId]
-     * is: a song lives in one Drive.
+     * `QUEUED` for downloads made while it is on. Rows that exist are left alone.
+     *
+     * A download a scan already linked to a file in a Drive (a copy Stash saved there, relinked
+     * after a reconnect; or the same bytes picked there) is already in that Drive: its row is
+     * DONE, on that account, whatever [accountId] is, and counts under "Backed up N songs", never
+     * under "Back up N existing". A song lives in one Drive.
      */
     @Query(
         """
-        INSERT OR IGNORE INTO cloud_uploads (track_id, account_id, state, origin, queued_at, updated_at, bytes_sent, attempts)
-        SELECT id, COALESCE((SELECT i.account_id FROM cloud_items i WHERE i.track_id = tracks.id), :accountId), :state, 'BACKUP', :now, :now, 0, 0
+        INSERT OR IGNORE INTO cloud_uploads (track_id, account_id, state, origin, queued_at, updated_at, bytes_sent, attempts, drive_file_id)
+        SELECT id,
+            COALESCE((SELECT i.account_id FROM cloud_items i WHERE i.track_id = tracks.id), :accountId),
+            CASE WHEN EXISTS (SELECT 1 FROM cloud_items i WHERE i.track_id = tracks.id) THEN 'DONE' ELSE :state END,
+            'BACKUP', :now, :now, 0, 0,
+            (SELECT i.item_id FROM cloud_items i WHERE i.track_id = tracks.id)
         FROM tracks WHERE $UPLOADABLE
         """,
     )
     suspend fun insertUploadsForDownloads(accountId: Long, state: String, now: Long)
+
+    /**
+     * Rows still waiting (EXISTING) for downloads that are linked to a file in a Drive: they are in
+     * that Drive, so they become DONE on its account. Mends rows made before the link (backup
+     * switched on while a reconnect's scan hadn't relinked the songs yet) and rows left by builds
+     * before [insertUploadsForDownloads] knew this. A session a row may still hold is dropped: the
+     * song needs no copy. Returns how many rows changed.
+     */
+    @Query(LINKED_UPLOADS_DONE)
+    suspend fun markLinkedUploadsDone(now: Long): Int
+
+    /** [markLinkedUploadsDone] for one song, as its link is made. */
+    @Query("$LINKED_UPLOADS_DONE AND track_id = :trackId")
+    suspend fun markLinkedUploadDone(trackId: Long, now: Long): Int
+
+    /**
+     * The songs [trackIds] are losing their link: a DONE row has no copy in that Drive any more, so
+     * it waits again (EXISTING: counted for "Back up N existing", never sent by itself). Rows on an
+     * account backup doesn't run on go back to backup with [moveWaitingBackups].
+     */
+    @Query("UPDATE cloud_uploads SET state = 'EXISTING' WHERE state = 'DONE' AND track_id IN (:trackIds)")
+    suspend fun uploadsLostTheirCopy(trackIds: List<Long>)
 
     /**
      * Downloads with no cloud link, for the Drive scan to recognise a song Stash saved (from this
@@ -409,6 +461,27 @@ interface CloudDao {
      */
     @Query("SELECT id, isrc, artist, title, duration_ms FROM tracks WHERE $UPLOADABLE AND NOT EXISTS (SELECT 1 FROM cloud_items i WHERE i.track_id = tracks.id)")
     suspend fun unlinkedDownloads(): List<UnlinkedDownload>
+
+    /**
+     * [unlinkedDownloads] with their files, for the Drive scan to recognise a cloud file that is a
+     * byte-for-byte copy of one (a song downloaded from Drive and kept after a disconnect, picked
+     * again) by its size and md5.
+     */
+    @Query("SELECT id, file_path, file_size_bytes FROM tracks WHERE $UPLOADABLE AND NOT EXISTS (SELECT 1 FROM cloud_items i WHERE i.track_id = tracks.id)")
+    suspend fun unlinkedDownloadFiles(): List<UnlinkedDownloadFile>
+
+    /**
+     * Downloads linked to a file in [accountId], by that file's content version as the scan stored
+     * it (`c_tag`; Google Drive: the md5, which is the download's own when the file is a copy of it).
+     */
+    @Query(
+        """
+        SELECT i.c_tag AS version, i.track_id AS trackId FROM cloud_items i INNER JOIN tracks t ON t.id = i.track_id
+        WHERE i.account_id = :accountId AND i.c_tag IS NOT NULL
+            AND t.is_downloaded = 1 AND t.file_path IS NOT NULL AND t.source != 'CLOUD'
+        """,
+    )
+    suspend fun linkedDownloadVersions(accountId: Long): List<LinkedDownloadVersion>
 
     /** How many uploadable downloads have no upload row: what the backup switch watches for. */
     @Query("SELECT COUNT(*) FROM tracks WHERE $UPLOADABLE AND NOT EXISTS (SELECT 1 FROM cloud_uploads u WHERE u.track_id = tracks.id)")
@@ -503,7 +576,10 @@ interface CloudDao {
      *
      * The row's `seen_generation` is the folder's generation read here, inside the transaction,
      * so a full pass that started meanwhile can't sweep the link it just saw. A song still waiting
-     * to go to another Drive follows the link: it turned out to be in this one.
+     * to go to another Drive follows the link: it turned out to be in this one. One that was only
+     * waiting to be counted (EXISTING) is in that Drive now: DONE ([markLinkedUploadDone]), so a
+     * reconnect's relink of songs backup had counted meanwhile shows them as backed up. A queued
+     * one stays queued: the upload checks it against the copy it finds.
      */
     @Transaction
     suspend fun linkUpload(trackId: Long, item: CloudItemEntity): Boolean {
@@ -517,6 +593,7 @@ interface CloudDao {
         val generation = getFolder(item.folderId)?.scanGeneration ?: item.seenGeneration
         val linked = linkItem(trackId, item.copy(seenGeneration = generation))
         moveUnfinishedUpload(trackId, item.accountId, item.scannedAt)
+        markLinkedUploadDone(trackId, item.scannedAt)
         return linked
     }
 
@@ -564,5 +641,14 @@ interface CloudDao {
 
         /** A `tracks` row Stash can upload: a download with its file on record, not a cloud song. */
         const val UPLOADABLE = "is_downloaded = 1 AND file_path IS NOT NULL AND source != 'CLOUD'"
+
+        /** [markLinkedUploadsDone]: waiting rows of linked songs become DONE on the account of their link. */
+        const val LINKED_UPLOADS_DONE = """
+            UPDATE cloud_uploads SET state = 'DONE',
+                account_id = (SELECT i.account_id FROM cloud_items i WHERE i.track_id = cloud_uploads.track_id),
+                drive_file_id = (SELECT i.item_id FROM cloud_items i WHERE i.track_id = cloud_uploads.track_id),
+                session_uri = NULL, session_size = NULL, session_md5 = NULL, error = NULL, updated_at = :now
+            WHERE state = 'EXISTING' AND EXISTS (SELECT 1 FROM cloud_items i WHERE i.track_id = cloud_uploads.track_id)
+        """
     }
 }

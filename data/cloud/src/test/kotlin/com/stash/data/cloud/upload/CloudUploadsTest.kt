@@ -7,6 +7,8 @@ import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.dao.CloudDao
 import com.stash.core.data.db.entity.CloudAccountEntity
 import com.stash.core.data.db.entity.CloudItemEntity
+import com.stash.core.data.db.entity.CloudUploadEntity
+import com.stash.core.data.db.entity.CloudUploadOrigin
 import com.stash.core.data.db.entity.CloudUploadState
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.MusicSource
@@ -562,6 +564,36 @@ class CloudUploadsTest {
         uploads.save(listOf(a))
 
         assertThat(rowFor(a).accountId).isEqualTo(second)
+    }
+
+    @Test fun `rows left counting songs that are in a Drive say backed up after an app start`() = runTest {
+        val linked = track("linked")
+        val waiting = track("waiting")
+        // As the Pixel 5 had them: backup on, both counted as existing, though the first had been
+        // relinked to its copy in this Drive by the reconnect's scan.
+        settings.setBackupAccount(account)
+        dao.putUpload(CloudUploadEntity(linked, account, CloudUploadState.EXISTING.name, CloudUploadOrigin.BACKUP.name, 1, 1))
+        dao.putUpload(CloudUploadEntity(waiting, account, CloudUploadState.EXISTING.name, CloudUploadOrigin.BACKUP.name, 1, 1))
+        val folder = dao.driveFolderRow(account, GoogleDriveProvider.UPLOADS_ITEM_ID, 1)
+        dao.insertItem(
+            CloudItemEntity(
+                trackId = linked, accountId = account, folderId = folder.id, itemId = "file-linked", name = "f.flac",
+                relativePath = "", parentItemId = null, cTag = "1", eTag = null, size = 1, mimeType = null,
+                seenGeneration = 1, scannedAt = 1,
+            ),
+        )
+        assertThat(uploads.status(account).first().existing).isEqualTo(2)
+
+        uploads.start()
+        realTime { withTimeout(WATCHER_LIMIT_MS) { while (rowFor(linked).state != CloudUploadState.DONE.name) delay(20) } }
+
+        val status = uploads.status(account).first()
+        assertThat(status.saved).isEqualTo(1)
+        assertThat(status.existing).isEqualTo(1)
+        assertThat(rowFor(linked).driveFileId).isEqualTo("file-linked")
+        assertThat(rowFor(waiting).state).isEqualTo(CloudUploadState.EXISTING.name)
+        // Counted, never sent by itself.
+        assertThat(runner.kicks).isEqualTo(0)
     }
 
     @Test fun `the card's status line`() {
