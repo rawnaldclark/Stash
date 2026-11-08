@@ -80,6 +80,7 @@ fun SettingsAccountsScreen(
     val spotifyAccounts: SpotifyAccountsViewModel = hiltViewModel()
     val otherSpotify by spotifyAccounts.state.collectAsStateWithLifecycle()
     val otherSpotifyAccounts by spotifyAccounts.accounts.collectAsStateWithLifecycle()
+    val otherSpotifyNames by spotifyAccounts.otherAccountNames.collectAsStateWithLifecycle()
     val spotifyMainName by spotifyAccounts.mainName.collectAsStateWithLifecycle()
     val canAddSpotify by spotifyAccounts.canAdd.collectAsStateWithLifecycle()
     // Its sign-in outlives the page on a tab switch too (the entry is kept): closed the same way.
@@ -332,7 +333,9 @@ fun SettingsAccountsScreen(
                 com.stash.feature.settings.components.clearSpotifyWebSession()
                 viewModel.onDisconnectSpotify()
             }
-            if (otherSpotifyAccounts.isEmpty()) {
+            // From the account rows, not the cards: those wait on reading each sign-in, and a
+            // Disconnect tapped first would show the one-account text while others exist.
+            if (otherSpotifyNames.isEmpty()) {
                 com.stash.feature.settings.components.DisconnectAccountDialog(
                     serviceName = "Spotify",
                     note = note,
@@ -342,7 +345,7 @@ fun SettingsAccountsScreen(
             } else {
                 // The other accounts can't stay without this one (v1): it asks to disconnect them all.
                 DisconnectAllSpotifyDialog(
-                    names = listOfNotNull(spotifyMainName) + otherSpotifyAccounts.map { it.name },
+                    names = listOfNotNull(spotifyMainName) + otherSpotifyNames,
                     note = note,
                     onConfirm = onConfirm,
                     onDismiss = { confirmSpotifyDisconnect = false },

@@ -432,6 +432,18 @@ class SpotifyAccountsViewModelTest {
         assertThat(vm.accounts.value.map { it.id to it.needsSignIn }).containsExactly(2L to true, 3L to true, 4L to false).inOrder()
     }
 
+    @Test fun `the other accounts' names are known before any sign-in is read, for Disconnect's confirm`() = runTest {
+        rows.value = listOf(row(2, "a", "Alex"), row(3, "b", "Sam"))
+        // Reading the sign-ins hasn't answered yet: the cards wait, the names don't.
+        coEvery { tokenManager.hasSpotifyExtraSignIn(any()) } coAnswers { awaitCancellation() }
+        val vm = newVm()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.accounts.collect {} }
+        advanceUntilIdle()
+
+        assertThat(vm.otherAccountNames.value).containsExactly("Alex", "Sam").inOrder()
+        assertThat(vm.accounts.value).isEmpty()
+    }
+
     // -- Name, then "Sync now?" -------------------------------------------------------------
 
     @Test fun `a typed name is saved, then Sync now is offered`() = runTest {

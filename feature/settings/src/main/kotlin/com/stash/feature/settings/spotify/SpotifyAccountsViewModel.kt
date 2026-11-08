@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -189,6 +190,20 @@ class SpotifyAccountsViewModel @Inject constructor(
     val accounts: StateFlow<List<OtherSpotifyAccount>> = combine(accountDao.observeAll(), signInChanges) { rows, _ -> rows }
         .mapLatest { rows -> rows.map { it.toUi(needsSignIn = it.signedOutAt != null || !hasSignIn(it)) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * The other accounts' names, straight from their rows: no sign-in is read for them, so they are
+     * here as soon as the table answers, before [accounts] (which reads each sign-in). Disconnect's
+     * confirm decides from these whether it is disconnecting one account or all of them. Kept
+     * from the start (Eagerly) so a quick Disconnect still finds them.
+     */
+    val otherAccountNames: StateFlow<List<String>> = accountDao.observeAll()
+        .map { rows -> rows.map { it.label } }
+        .catch { e ->
+            Log.w(TAG, "reading the other accounts failed: ${e.javaClass.simpleName}")
+            emit(emptyList())
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /**
      * Whether "Add another Spotify account" shows: a main account is connected (the others sync
