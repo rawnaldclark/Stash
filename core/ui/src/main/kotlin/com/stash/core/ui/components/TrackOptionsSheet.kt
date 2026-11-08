@@ -163,7 +163,7 @@ fun TrackOptionsSheet(
         }
 
         // -- Add to Queue option --
-        if (!scanned && onAddToQueue != null && role == ListenTogetherRole.NONE) {
+        if (!scanned && onAddToQueue != null && role.canQueue) {
             SheetOptionRow(
                 icon = Icons.Default.PlaylistAdd,
                 label = "Add to Queue",

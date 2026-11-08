@@ -318,7 +318,7 @@ fun SearchTrackMenu(
                 leadingIcon = { Icon(Icons.Default.PlaylistPlay, contentDescription = null) },
                 onClick = { menuOpen = false; onPlayNext() },
             )
-            if (role == com.stash.core.ui.components.ListenTogetherRole.NONE) {
+            if (role.canQueue) {
                 DropdownMenuItem(
                     text = { Text("Add to queue") },
                     leadingIcon = { Icon(Icons.Default.PlaylistAdd, contentDescription = null) },
