@@ -1098,6 +1098,7 @@
     <string name="settings_cloud_section_title">Cloud storage</string>
     <string name="settings_cloud_gdrive_add_songs_title">Add songs from Google Drive</string>
     <string name="settings_cloud_gdrive_add_songs_subtitle">Stash sees only the songs you pick.</string>
+    <string name="settings_cloud_gdrive_account_unidentified">Google didn\'t say which account this is, so Stash can\'t keep it apart from your other Google Drive account.</string>
     <string name="settings_cloud_folder_add_title">Add a music folder</string>
     <string name="settings_cloud_folder_add_subtitle">Read-only. Your files stay as they are.</string>
     <string name="settings_cloud_disconnect_dialog_title">Disconnect %1$s?</string>

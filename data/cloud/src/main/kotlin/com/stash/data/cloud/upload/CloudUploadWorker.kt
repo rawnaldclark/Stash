@@ -17,13 +17,11 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.await
 import com.stash.core.data.db.dao.CloudDao
-import com.stash.core.data.db.entity.CloudUploadState
 import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.model.CloudProvider
 import com.stash.data.cloud.CloudConfig
-import com.stash.data.cloud.provider.CloudApiException
-import com.stash.data.cloud.provider.CloudAuthRequiredException
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -31,26 +29,18 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Uploads the queued songs (`cloud_uploads` rows in QUEUED), oldest first, one at a time, until
- * none are left: "Save to Google Drive" and "Back up my downloads" both end up here.
+ * Uploads the queued songs until none are left that can go ([CloudUploadRun] is the pass itself):
+ * "Save to Google Drive" and "Back up my downloads" both end up here.
  *
  * Runs only on the network the Sync tab's Wi-Fi only setting allows (Wi-Fi by default) and as a foreground
  * job with a progress notification, since a big batch takes a while. Losing the network or the
  * process costs little: each song's resumable session and committed offset are on its row, and
- * the next run carries on from there.
- *
- *  - Drive full: backup pauses ([CloudUploadSettings.driveFull]); the songs stay queued and the
- *    card says "Your Google Drive is full" until the user tries again.
- *  - Signed out: the songs stay queued; the card shows the usual Reconnect, which starts the
- *    uploads again ([CloudUploads.resume]).
- *  - No connection / Drive asked to slow down: retry later (WorkManager's backoff).
- *  - Anything wrong with one song: that song goes to the back of the queue; after
- *    [MAX_ATTEMPTS] tries it is FAILED and the others carry on.
+ * the next run carries on from there. A run that lost the connection is retried later
+ * (WorkManager's backoff).
  */
 @HiltWorker
 class CloudUploadWorker @AssistedInject constructor(
@@ -63,58 +53,22 @@ class CloudUploadWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, params) {
 
     private var foregroundOk = true
-    private var done = 0
 
     override suspend fun getForegroundInfo(): ForegroundInfo = foregroundInfo("Saving to Google Drive", 0, 0)
 
     override suspend fun doWork(): Result {
         if (!config.isEnabled(CloudProvider.GOOGLE_DRIVE)) return Result.success()
-        if (settings.driveFull.value) return Result.success()
-        while (true) {
-            val row = dao.nextQueuedUpload() ?: break
-            val left = dao.countQueuedUploads()
-            val title = dao.getTrack(row.trackId)?.title ?: "a song"
-            promote(title, left, 0, 0)
-            try {
-                when (val r = uploader.upload(row) { sent, total -> promote(title, left, sent, total) }) {
-                    is UploadResult.Saved -> {
-                        dao.finishUpload(row.trackId, CloudUploadState.DONE.name, r.fileId, null, now())
-                        done++
-                    }
-                    is UploadResult.Skipped -> dao.finishUpload(row.trackId, CloudUploadState.SKIPPED.name, null, r.reason, now())
-                }
-            } catch (e: CancellationException) {
-                // Wi-Fi lost, or cancelled: the session and offset are saved; the next run resumes.
-                throw e
-            } catch (e: DriveFullException) {
-                Log.i(TAG, "Google Drive is full: backup paused")
-                settings.setDriveFull(true)
-                return Result.success()
-            } catch (e: CloudAuthRequiredException) {
-                Log.i(TAG, "Google Drive needs a reconnect: uploads wait")
-                return Result.success()
-            } catch (e: LocalFileException) {
-                Log.w(TAG, "one song's file couldn't be read: ${e.cause?.javaClass?.simpleName ?: "it got shorter"}")
-                dao.failUploadAttempt(row.trackId, "Couldn't read this song's file.", MAX_ATTEMPTS, now())
-            } catch (e: CloudApiException) {
-                Log.w(TAG, "upload of one song failed: HTTP ${e.status}")
-                dao.failUploadAttempt(row.trackId, "Google Drive didn't take this song (error ${e.status}).", MAX_ATTEMPTS, now())
-            } catch (e: IOException) {
-                // No connection, Drive busy (CloudUnavailableException), a session gone mid-way:
-                // nothing is wrong with the song. Try again later, from the saved offset.
-                Log.w(TAG, "uploads paused: ${e.javaClass.simpleName}")
-                return if (runAttemptCount < MAX_RUNS) Result.retry() else Result.success()
-            } catch (e: Exception) {
-                // A file that can't be read (permission gone on an SD card...): one song's problem.
-                Log.w(TAG, "upload of one song failed: ${e.javaClass.simpleName}")
-                dao.failUploadAttempt(row.trackId, "Couldn't read this song's file.", MAX_ATTEMPTS, now())
-            }
+        val run = CloudUploadRun(
+            dao = dao,
+            settings = settings,
+            upload = { row, progress -> uploader.upload(row, progress) },
+            onProgress = ::promote,
+        )
+        return when (run.run()) {
+            CloudUploadRun.Outcome.Finished -> Result.success()
+            CloudUploadRun.Outcome.RetryLater -> if (runAttemptCount < MAX_RUNS) Result.retry() else Result.success()
         }
-        if (done > 0) Log.i(TAG, "saved $done songs to Google Drive")
-        return Result.success()
     }
-
-    private fun now() = System.currentTimeMillis()
 
     private suspend fun promote(title: String, left: Int, sent: Long, total: Long) {
         val text = if (left > 1) "$title · $left left" else title
@@ -173,8 +127,12 @@ interface CloudUploadRunner {
     /** Runs the queue (after any run in progress: it may be on its last song already). */
     suspend fun kick()
 
-    /** Stops uploading (disconnect). Sessions stay on their rows; no file is touched in Drive. */
-    fun cancel()
+    /**
+     * Stops uploading, returning once WorkManager has taken the stop in (so a [kick] after it starts
+     * a new run instead of queueing behind the stopped one). Sessions stay on their rows; no file is
+     * touched in Drive.
+     */
+    suspend fun cancel()
 
     /** True while an upload run is actually running (false while it waits for Wi-Fi). */
     val running: Flow<Boolean>
@@ -217,8 +175,15 @@ class CloudUploadScheduler @Inject constructor(
         workManager.enqueueUniqueWork(UNIQUE, if (running) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.REPLACE, request)
     }
 
-    override fun cancel() {
-        workManager.cancelUniqueWork(UNIQUE)
+    override suspend fun cancel() {
+        try {
+            workManager.cancelUniqueWork(UNIQUE).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // WorkManager's own database failed: a disconnect must still go through.
+            Log.w(TAG, "uploads not stopped: ${e.javaClass.simpleName}")
+        }
     }
 
     override val running: Flow<Boolean>
@@ -228,5 +193,6 @@ class CloudUploadScheduler @Inject constructor(
 
     companion object {
         const val UNIQUE = "cloud_upload"
+        private const val TAG = "CloudUpload"
     }
 }

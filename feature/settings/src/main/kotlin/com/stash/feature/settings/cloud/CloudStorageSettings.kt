@@ -95,12 +95,20 @@ private fun rememberGooglePicker(viewModel: CloudStorageViewModel): (Long?) -> U
     }
 }
 
-/** Shows [CloudStorageViewModel.messages] as toasts while the screen is on. */
+/** Shows [CloudStorageViewModel.messages] and its notices as toasts while the screen is on. */
 @Composable
 private fun CloudMessages(viewModel: CloudStorageViewModel) {
     val context = LocalContext.current
     LaunchedEffect(viewModel) {
         viewModel.messages.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+    }
+    LaunchedEffect(viewModel) {
+        viewModel.notices.collect { notice ->
+            val text = when (notice) {
+                CloudNotice.AccountUnidentified -> context.getString(R.string.settings_cloud_gdrive_account_unidentified)
+            }
+            Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+        }
     }
 }
 
@@ -346,13 +354,13 @@ private fun DriveBackupRows(status: UploadStatus, accountId: Long, viewModel: Cl
             title = stringResource(R.string.settings_cloud_backup_try_again_title),
             subtitle = stringResource(R.string.settings_cloud_backup_no_space_subtitle),
             leadingIcon = Icons.Rounded.Refresh,
-            onClick = viewModel::retryDriveUploads,
+            onClick = { viewModel.retryDriveUploads(accountId) },
         )
         status.backupOn && status.existing > 0 -> SettingsNavRow(
             title = pluralStringResource(R.plurals.settings_cloud_backup_existing_title, status.existing, status.existing),
             subtitle = stringResource(R.string.settings_cloud_backup_backfill_subtitle),
             leadingIcon = Icons.Rounded.CloudUpload,
-            onClick = viewModel::backUpExistingDownloads,
+            onClick = { viewModel.backUpExistingDownloads(accountId) },
         )
     }
 }

@@ -57,6 +57,14 @@ interface CloudStorageProvider {
      * Dropbox and OneDrive; Google Drive's carries the bearer token in [CloudLink.headers].
      */
     suspend fun link(accountId: Long, itemId: String, priority: RequestPriority): CloudLink
+
+    /**
+     * The scan left [itemId] out of the library on purpose: it is another copy of a song already
+     * here, linked to a file of its own in this account ([com.stash.data.cloud.scan.CloudScanner]).
+     * A provider that keeps files waiting to be scanned (Google Drive's picks) stops keeping this
+     * one, so it doesn't wait forever. Nothing to do for the others.
+     */
+    suspend fun leftOut(accountId: Long, root: ScanRoot, itemId: String) {}
 }
 
 /** A picked folder as a provider needs it: its id and its display path from the drive's top. */
@@ -83,6 +91,8 @@ sealed interface ScanEntry {
      * @property remotePath Lower-cased full path, for providers that report deletions by path.
      * @property downloadUrl A ready link when the page carried one (saves a request).
      * @property songKey The song's Save to Drive track key, on files Stash itself uploaded.
+     * @property md5 The file's md5, when the provider reports one (Google Drive): a file with the
+     *   md5 of a download on the phone is a byte-for-byte copy of it.
      */
     data class File(
         val id: String,
@@ -96,6 +106,7 @@ sealed interface ScanEntry {
         val remotePath: String?,
         val downloadUrl: String? = null,
         val songKey: String? = null,
+        val md5: String? = null,
     ) : ScanEntry
 
     /** A folder under (or equal to) the root; feeds the scanner's id → path map. */

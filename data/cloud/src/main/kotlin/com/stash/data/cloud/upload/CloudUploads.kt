@@ -12,16 +12,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -62,6 +65,15 @@ data class UploadStatus(
  * from then on, a download that appears without an upload row is queued and sent
  * ([start] watches for them). Turning it off sends what it queued back to EXISTING; songs the
  * user saved by hand still go.
+ *
+ * A download linked to a file in a Drive (saved there before, relinked by a scan after a
+ * reconnect, or picked there as the same bytes) is in that Drive: its row is DONE there and counts
+ * under "Backed up N songs", never under "Back up N existing". When the link goes (the copy trashed,
+ * the folder or account removed) the row waits again ([CloudDao.removeItems]).
+ *
+ * Several Drive accounts: one of them takes saves and backup ([saveAccountId]). A song lives in one
+ * Drive. Each account has its own queue state: one signed out or full never holds up another's
+ * songs ([CloudUploadRun]), and each has its own status line.
  */
 @Singleton
 class CloudUploads @Inject constructor(
@@ -75,64 +87,178 @@ class CloudUploads @Inject constructor(
 
     val available: Boolean get() = config.isEnabled(CloudProvider.GOOGLE_DRIVE)
 
-    /** The first connected Google Drive account, or null. */
-    suspend fun driveAccountId(): Long? =
-        dao.getAccounts().firstOrNull { it.provider == CloudProvider.GOOGLE_DRIVE.id }?.id
+    /**
+     * The Drive account that takes saves and backup: the one the user chose, else the one backup
+     * already runs on, else the first connected. Null while no Drive account is connected.
+     */
+    suspend fun saveAccountId(): Long? = pickSaveAccount(
+        settings.saveAccountId.value,
+        settings.backupAccountId.value,
+        dao.getAccounts().filter { it.provider == CloudProvider.GOOGLE_DRIVE.id }.map { it.id },
+    )
+
+    /** [saveAccountId] as it changes, for the Drive cards. */
+    val saveAccount: Flow<Long?>
+        get() = combine(settings.saveAccountId, settings.backupAccountId, dao.observeAccounts()) { chosen, backup, accounts ->
+            pickSaveAccount(chosen, backup, accounts.filter { it.provider == CloudProvider.GOOGLE_DRIVE.id }.map { it.id })
+        }.distinctUntilChanged()
+
+    private fun pickSaveAccount(chosen: Long?, backup: Long?, drives: List<Long>): Long? =
+        listOfNotNull(chosen, backup).firstOrNull { it in drives } ?: drives.firstOrNull()
 
     /**
-     * Queues [trackIds] for [accountId] (or the Drive account). Only downloads can go; the rest
-     * are counted in [SaveRequest.notDownloaded]. Clears a "Drive full" pause: the user is trying
-     * again.
+     * Queues [trackIds] for [accountId] (or the [saveAccountId]). Only downloads can go; the rest
+     * are counted in [SaveRequest.notDownloaded]. Clears that account's "Drive full" pause: the user
+     * is trying again.
      */
     suspend fun save(trackIds: List<Long>, accountId: Long? = null): SaveRequest {
-        val account = accountId ?: driveAccountId() ?: return SaveRequest(0, 0, trackIds.size)
+        val account = accountId ?: saveAccountId() ?: return SaveRequest(0, 0, trackIds.size)
         val ids = trackIds.distinct()
         val uploadable = ids.chunked(CloudDao.BIND_CHUNK).flatMap { dao.uploadableTrackIds(it) }
         val queued = dao.queueUploads(uploadable, account, CloudUploadOrigin.MANUAL.name, System.currentTimeMillis())
-        if (settings.driveFull.value) settings.setDriveFull(false)
+        clearFull(account)
         if (uploadable.isNotEmpty()) scheduler.kick()
         return SaveRequest(queued, uploadable.size - queued, ids.size - uploadable.size)
     }
 
-    /** "Back up my downloads" on or off for [accountId]. */
-    suspend fun setBackup(accountId: Long, on: Boolean) {
+    /**
+     * The "Save and back up to" choice. If backup is on, it moves along: its waiting songs follow
+     * ([CloudDao.moveWaitingBackups]); what is already in the old Drive stays there.
+     */
+    suspend fun setSaveAccount(accountId: Long) {
+        settings.setSaveAccount(accountId)
+        if (settings.backupAccountId.value != null) setBackup(accountId, on = true)
+    }
+
+    /**
+     * "Back up my downloads" on or off for [accountId]. On also makes it the account saves go to:
+     * there is one of those. Off applies only to the account backup runs on. Runs to the end even if
+     * the screen closes meanwhile: a run it stopped must start again.
+     */
+    suspend fun setBackup(accountId: Long, on: Boolean) = withContext(NonCancellable) {
         val now = System.currentTimeMillis()
+        val current = settings.backupAccountId.value
         if (on) {
-            // Today's downloads are only counted ("Back up N existing"); new ones are sent.
+            if (current == accountId) return@withContext
+            // A run may be in the middle of a song that is about to move, even with backup off till
+            // now (switched off and on again during one big upload): stop it, then start over.
+            scheduler.cancel()
+            dao.moveWaitingBackups(accountId, now)
+            // Today's downloads are only counted ("Back up N existing"); new ones are sent. One
+            // already in a Drive (relinked after a reconnect) is counted as backed up there.
             dao.insertUploadsForDownloads(accountId, CloudUploadState.EXISTING.name, now)
+            dao.markLinkedUploadsDone(now)
+            settings.setSaveAccount(accountId)
             settings.setBackupAccount(accountId)
+            kickIfQueued()
         } else {
+            if (current != accountId) return@withContext
             settings.setBackupAccount(null)
-            dao.unqueueBackupUploads(now)
+            dao.unqueueBackupUploads(accountId, now)
         }
     }
 
-    /** "Back up N existing downloads". */
-    suspend fun backUpExisting(): Int {
-        val n = dao.queueExistingUploads(System.currentTimeMillis())
-        if (settings.driveFull.value) settings.setDriveFull(false)
+    /**
+     * "Back up N existing downloads" for [accountId]. A song found in a Drive since it was counted
+     * is backed up already, never sent again.
+     */
+    suspend fun backUpExisting(accountId: Long): Int {
+        val now = System.currentTimeMillis()
+        dao.markLinkedUploadsDone(now)
+        val n = dao.queueExistingUploads(accountId, now)
+        clearFull(accountId)
         if (n > 0) scheduler.kick()
         return n
     }
 
-    /** "Try again" after Drive was full, or after a reconnect: runs whatever is queued. */
-    suspend fun resume() {
-        if (settings.driveFull.value) settings.setDriveFull(false)
-        if (dao.countQueuedUploads() > 0) scheduler.kick()
+    /** "Try again" after [accountId]'s Drive was full, or after a reconnect: runs whatever can go. */
+    suspend fun resume(accountId: Long) {
+        clearFull(accountId)
+        kickIfQueued()
     }
 
-    /** Disconnect: stop uploading for [accountId] (its rows go with the account row). */
-    suspend fun onAccountRemoved(accountId: Long) {
-        scheduler.cancel()
-        if (settings.backupAccountId.value == accountId) settings.setBackupAccount(null)
-        settings.setDriveFull(false)
-        settings.clear(accountId)
+    /**
+     * Disconnects [accountId] from uploads around [remove], which deletes the account row (its
+     * upload rows go with it): the run stops first, since it may be in the middle of one of this
+     * account's songs, and starts again after for the accounts that remain. Backup on the removed
+     * account turns off rather than moving: Stash never starts sending the user's songs to another
+     * account on its own.
+     */
+    suspend fun <T> removingAccount(accountId: Long, remove: suspend () -> T): T {
+        var removed = false
+        try {
+            scheduler.cancel()
+            val result = remove()
+            removed = true
+            // Only now: a removal that fails leaves the account as it was, backup included.
+            if (settings.backupAccountId.value == accountId) settings.setBackupAccount(null)
+            if (settings.saveAccountId.value == accountId) settings.setSaveAccount(null)
+            settings.setDriveFull(accountId, false)
+            settings.clear(accountId)
+            return result
+        } finally {
+            // Also when the screen that asked is closed meanwhile: the other accounts' songs must
+            // not wait for the next app start.
+            withContext(NonCancellable) {
+                if (removed) countRemovedDownloads()
+                try {
+                    kickIfQueued()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "uploads not restarted after a disconnect: ${e.javaClass.simpleName}")
+                }
+            }
+        }
+    }
+
+    /**
+     * Downloads that just stopped being cloud songs (their folder or account was removed) have no
+     * upload row, which reads as "new downloads" while backup is on: count them instead, like any
+     * download from before backup, so a removal never starts a surprise upload. A song the removal
+     * only unlinked already has a row, on the account it left: that one goes back to backup too.
+     */
+    suspend fun countRemovedDownloads() {
+        try {
+            settings.backupAccountId.value?.let {
+                dao.insertUploadsForDownloads(it, CloudUploadState.EXISTING.name, System.currentTimeMillis())
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "removed downloads not counted: ${e.javaClass.simpleName}")
+        }
+        moveUnlinkedBackups()
+    }
+
+    /**
+     * A song linked to another account waits for backup on that account. Once the link goes (its copy
+     * trashed in that Drive, its picked folder removed) it has no cloud copy, and no card counts a row
+     * on an account that isn't the backup one, so it would drop out of backup with nothing said.
+     */
+    private suspend fun moveUnlinkedBackups() {
+        try {
+            settings.backupAccountId.value?.let { dao.moveWaitingBackups(it, System.currentTimeMillis()) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "unlinked downloads not moved to backup: ${e.javaClass.simpleName}")
+        }
+    }
+
+    private suspend fun clearFull(accountId: Long) {
+        if (accountId in settings.fullAccounts.value) settings.setDriveFull(accountId, false)
+    }
+
+    /** Starts a run if any account that isn't full has songs waiting. */
+    private suspend fun kickIfQueued() {
+        if (dao.countQueuedUploads(settings.fullAccounts.value.toList()) > 0) scheduler.kick()
     }
 
     fun status(accountId: Long): Flow<UploadStatus> = combine(
         dao.observeUploadCounts(accountId),
         settings.backupAccountId,
-        settings.driveFull,
+        settings.fullAccounts,
         scheduler.running,
         scheduler.wifiOnly,
     ) { counts, backup, full, running, wifiOnly ->
@@ -140,7 +266,7 @@ class CloudUploads @Inject constructor(
         UploadStatus(
             backupOn = backup == accountId, saved = n(CloudUploadState.DONE), queued = n(CloudUploadState.QUEUED),
             existing = n(CloudUploadState.EXISTING), failed = n(CloudUploadState.FAILED),
-            driveFull = full, running = running, wifiOnly = wifiOnly,
+            driveFull = accountId in full, running = running, wifiOnly = wifiOnly,
         )
     }
 
@@ -153,8 +279,20 @@ class CloudUploads @Inject constructor(
     fun start() {
         if (!available || watcher != null) return
         watcher = scope.launch {
+            // Rows counted as waiting for songs that are in a Drive (left by an older build, or by a
+            // reconnect whose scan relinked them after backup counted them) say "Backed up".
             try {
-                if (dao.countQueuedUploads() > 0 && !settings.driveFull.value) scheduler.kick()
+                dao.markLinkedUploadsDone(System.currentTimeMillis())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "linked downloads not marked as backed up: ${e.javaClass.simpleName}")
+            }
+            // A scan finds a trashed copy with nothing here looking: this is where it comes back.
+            // Before the kick, so a queued song isn't sent to the account it left.
+            moveUnlinkedBackups()
+            try {
+                kickIfQueued()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -183,12 +321,19 @@ class CloudUploads @Inject constructor(
         }
     }
 
+    /** For tests: [start]'s watcher outlives the database otherwise. */
+    internal fun stopWatching() {
+        watcher?.cancel()
+        watcher = null
+    }
+
     private suspend fun queueNewDownloads(accountId: Long) {
         try {
             // The account may have been disconnected meanwhile: then the switch is off already.
             if (dao.getAccount(accountId) == null) return
             dao.insertUploadsForDownloads(accountId, CloudUploadState.QUEUED.name, System.currentTimeMillis())
-            if (!settings.driveFull.value) scheduler.kick()
+            // Not a plain kick: a pass that was waiting out its delay may find them already counted.
+            kickIfQueued()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

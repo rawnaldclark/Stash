@@ -42,6 +42,9 @@ class FakeDrive : Interceptor {
     /** The Google account the tokens belong to, as `about` reports it. */
     var permissionId = "perm-123"
 
+    /** The account's email as `about` reports it; null = Drive left it out. */
+    var email: String? = "ron@example.com"
+
     val client: OkHttpClient = OkHttpClient.Builder().addInterceptor(this).build()
 
     fun add(f: File) {
@@ -65,7 +68,8 @@ class FakeDrive : Interceptor {
         if (token !in validTokens) return respond(req, 401, """{"error":{"code":401,"errors":[{"reason":"authError"}]}}""")
         val path = req.url.pathSegments
         if (path.lastOrNull() == "about") {
-            return respond(req, 200, """{"user":{"displayName":"Ron","emailAddress":"ron@example.com","permissionId":"$permissionId"}}""")
+            val mail = email?.let { """"emailAddress":"$it",""" }.orEmpty()
+            return respond(req, 200, """{"user":{"displayName":"Ron",$mail"permissionId":"$permissionId"}}""")
         }
         val id = path.last()
         val f = files[id] ?: return respond(req, 404, """{"error":{"code":404,"errors":[{"reason":"notFound"}]}}""")

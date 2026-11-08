@@ -6,23 +6,28 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * The upload side's small state: whether "Back up my downloads" is on (and for which Drive
- * account), whether backup is paused because Drive is full, and the remembered Stash folder ids
- * ([DriveFolderCache]). Nothing secret: ids and switches.
+ * account), which account saves go to, which accounts are paused because their Drive is full, and
+ * the remembered Stash folder ids ([DriveFolderCache]). Nothing secret: ids and switches.
  */
 interface CloudUploadSettings : DriveFolderCache {
     /** The Drive account backup uploads to; null = backup is off. */
     val backupAccountId: StateFlow<Long?>
     suspend fun setBackupAccount(accountId: Long?)
 
-    /** True after Drive said it's full: uploads wait until the user tries again. */
-    val driveFull: StateFlow<Boolean>
-    suspend fun setDriveFull(full: Boolean)
+    /** The Drive account the user chose for saves and backup; null = never chose ([CloudUploads.saveAccountId] decides). */
+    val saveAccountId: StateFlow<Long?>
+    suspend fun setSaveAccount(accountId: Long?)
+
+    /** The accounts whose Drive said it's full: their uploads wait until the user tries again. */
+    val fullAccounts: StateFlow<Set<Long>>
+    suspend fun setDriveFull(accountId: Long, full: Boolean)
 }
 
 /** [CloudUploadSettings] in private app preferences. */
@@ -33,19 +38,37 @@ class PrefsCloudUploadSettings @Inject constructor(
     private val prefs by lazy { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
 
     private val backup by lazy { MutableStateFlow(prefs.getLong(KEY_BACKUP, -1L).takeIf { it > 0 }) }
-    private val full by lazy { MutableStateFlow(prefs.getBoolean(KEY_FULL, false)) }
+    private val save by lazy { MutableStateFlow(prefs.getLong(KEY_SAVE, -1L).takeIf { it > 0 }) }
+    private val full by lazy { MutableStateFlow(loadFull()) }
 
     override val backupAccountId: StateFlow<Long?> get() = backup.asStateFlow()
-    override val driveFull: StateFlow<Boolean> get() = full.asStateFlow()
+    override val saveAccountId: StateFlow<Long?> get() = save.asStateFlow()
+    override val fullAccounts: StateFlow<Set<Long>> get() = full.asStateFlow()
 
     override suspend fun setBackupAccount(accountId: Long?) = withContext(Dispatchers.IO) {
         prefs.edit().putLong(KEY_BACKUP, accountId ?: -1L).commit()
         backup.value = accountId
     }
 
-    override suspend fun setDriveFull(full: Boolean) = withContext(Dispatchers.IO) {
-        prefs.edit().putBoolean(KEY_FULL, full).commit()
-        this@PrefsCloudUploadSettings.full.value = full
+    override suspend fun setSaveAccount(accountId: Long?) = withContext(Dispatchers.IO) {
+        prefs.edit().putLong(KEY_SAVE, accountId ?: -1L).commit()
+        save.value = accountId
+    }
+
+    override suspend fun setDriveFull(accountId: Long, full: Boolean) = withContext(Dispatchers.IO) {
+        val key = "$FULL_PREFIX$accountId"
+        prefs.edit().apply { if (full) putBoolean(key, true) else remove(key) }.commit()
+        this@PrefsCloudUploadSettings.full.update { if (full) it + accountId else it - accountId }
+    }
+
+    /**
+     * The per-account flags. The old one-for-all `drive_full` flag says nothing about which account
+     * it meant, so it goes: if that Drive is still full, its next upload says so again and sets the
+     * account's own flag, at the cost of one request.
+     */
+    private fun loadFull(): Set<Long> {
+        if (prefs.contains(KEY_LEGACY_FULL)) prefs.edit().remove(KEY_LEGACY_FULL).apply()
+        return prefs.all.keys.mapNotNull { key -> key.takeIf { it.startsWith(FULL_PREFIX) }?.removePrefix(FULL_PREFIX)?.toLongOrNull() }.toSet()
     }
 
     override suspend fun get(accountId: Long, path: String): String? = withContext(Dispatchers.IO) {
@@ -78,7 +101,9 @@ class PrefsCloudUploadSettings @Inject constructor(
     private companion object {
         const val PREFS = "cloud_gdrive_uploads"
         const val KEY_BACKUP = "backup_account"
-        const val KEY_FULL = "drive_full"
+        const val KEY_SAVE = "save_account"
+        const val KEY_LEGACY_FULL = "drive_full"
+        const val FULL_PREFIX = "drive_full:"
         const val FOLDER_PREFIX = "folder:"
     }
 }

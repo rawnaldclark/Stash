@@ -113,7 +113,7 @@ class CloudLibrary @Inject constructor(
         try {
             googlePicks.accept(googleAuthorizer.pickerResult(data)).also {
                 // A reconnect: songs waiting to be saved to Drive go now.
-                if (it is GooglePickOutcome.Added) uploads.resume()
+                if (it is GooglePickOutcome.Added) uploads.resume(it.accountId)
             }
         } catch (e: CancellationException) {
             throw e
@@ -151,25 +151,52 @@ class CloudLibrary @Inject constructor(
      * downloaded ones, which stay as local files. (The access Stash was granted can also be
      * revoked on the provider's website; nothing is sent to the provider here. Google Drive's token
      * is also dropped from Play services' cache on the phone.)
+     *
+     * Runs in the app's scope: leaving Settings during the wait for a scan cancels only the wait for
+     * the outcome, never the removal half-way. Scans carry on after it, even if it fails.
      */
-    suspend fun disconnect(accountId: Long): CloudRemoval {
-        val account = dao.getAccount(accountId) ?: return CloudRemoval(0, 0)
-        // Stop scans first, and wait out any still inside one of this account's folders, so no
-        // scan writes rows for a removed account or refreshes (and re-saves) its token after.
-        scheduler.cancelRunning()
-        val folderIds = dao.getFolders(accountId).map { it.id }
-        val kind = CloudProvider.fromId(account.provider)
-        // Stop uploading to it; pending uploads go with the account row. Nothing in Drive is touched.
-        if (kind == CloudProvider.GOOGLE_DRIVE) uploads.onAccountRemoved(accountId)
-        var forgotten: String? = null
-        val removal = withFolderLocks(folderIds) {
-            kind?.let { forgotten = tokens.forget(it, accountId) }
-            for (id in folderIds) googlePickStore.clear(id)
-            dao.removeAccount(accountId)
+    suspend fun disconnect(accountId: Long): CloudRemoval = appScope.async {
+        val account = dao.getAccount(accountId) ?: return@async CloudRemoval(0, 0)
+        try {
+            // Stop scans first, and wait out any still inside one of this account's folders, so no
+            // scan writes rows for a removed account or refreshes (and re-saves) its token after.
+            scheduler.cancelRunning()
+            val folderIds = dao.getFolders(accountId).map { it.id }
+            val kind = CloudProvider.fromId(account.provider)
+            var forgotten: String? = null
+            val remove: suspend () -> CloudRemoval = {
+                withFolderLocks(folderIds) {
+                    // The rows first: a write that fails leaves the account as it was, still signed
+                    // in and with its picks.
+                    val removal = dao.removeAccount(accountId)
+                    kind?.let { afterRemoval("token") { forgotten = tokens.forget(it, accountId) } }
+                    for (id in folderIds) afterRemoval("picks") { googlePickStore.clear(id) }
+                    removal
+                }
+            }
+            // Stop uploading to it; pending uploads go with the account row. Nothing in Drive is
+            // touched, and the other accounts' uploads carry on after.
+            val removal = if (kind == CloudProvider.GOOGLE_DRIVE) uploads.removingAccount(accountId, remove) else remove()
+            if (kind == CloudProvider.GOOGLE_DRIVE) forgotten?.let { clearGoogleToken(it) }
+            removal
+        } finally {
+            resumeScans()
         }
-        if (kind == CloudProvider.GOOGLE_DRIVE) forgotten?.let { clearGoogleToken(it) }
-        resumeScans()
-        return removal
+    }.await()
+
+    /**
+     * Tidying up once a removal's rows are gone. The removal has happened by then, so a failure here
+     * must not report it as failed, or skip the steps that follow it (turning backup off, counting
+     * the kept downloads so they aren't sent as new ones).
+     */
+    private suspend fun afterRemoval(what: String, tidy: suspend () -> Unit) {
+        try {
+            tidy()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("CloudLibrary", "$what not cleared after a removal: ${e.javaClass.simpleName}")
+        }
     }
 
     /** Best effort: the account is already gone here, whatever Play services says. */
@@ -210,22 +237,36 @@ class CloudLibrary @Inject constructor(
         return true
     }
 
-    /** Unpicks a folder; its songs go, downloaded ones stay as local files. */
-    suspend fun removeFolder(folderId: Long): CloudRemoval {
-        scheduler.cancelRunning()
-        val removal = scanner.withFolderLock(folderId) {
-            googlePickStore.clear(folderId)
-            dao.removeFolder(folderId)
+    /**
+     * Unpicks a folder; its songs go, downloaded ones stay as local files, counted rather than sent
+     * if backup is on. In the app's scope and with scans carrying on after, like [disconnect].
+     */
+    suspend fun removeFolder(folderId: Long): CloudRemoval = appScope.async {
+        try {
+            scheduler.cancelRunning()
+            val removal = scanner.withFolderLock(folderId) {
+                // The rows first, as in [disconnect].
+                dao.removeFolder(folderId).also { afterRemoval("picks") { googlePickStore.clear(folderId) } }
+            }
+            uploads.countRemovedDownloads()
+            removal
+        } finally {
+            resumeScans()
         }
-        resumeScans()
-        return removal
-    }
+    }.await()
 
     /** Other folders' scans were cancelled with the removed one's: they carry on from their cursors. */
     private suspend fun resumeScans() {
-        if (dao.getAllFolders().isEmpty()) return
-        scheduler.scanNow(null)
-        scheduler.ensurePeriodic()
+        try {
+            if (dao.getAllFolders().isEmpty()) return
+            scheduler.scanNow(null)
+            scheduler.ensurePeriodic()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Never in place of what the removal has to report; the next pick or folder restarts them.
+            Log.w("CloudLibrary", "scans not resumed: ${e.javaClass.simpleName}")
+        }
     }
 
     private suspend fun <T> withFolderLocks(folderIds: List<Long>, block: suspend () -> T): T =

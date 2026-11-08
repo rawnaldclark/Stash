@@ -47,6 +47,106 @@ fun interface LocalSongKeys {
     suspend fun load(): Map<String, Long>
 }
 
+/** One download on the phone: its track, its file, and the size the library recorded (0 = not known). */
+data class LocalSongFile(val trackId: Long, val path: String, val recordedSize: Long)
+
+/**
+ * The phone's downloads as files, for the scan to recognise a cloud file that is a byte-for-byte
+ * copy of one by its md5 (Google Drive reports it): a song downloaded from Drive and kept after a
+ * disconnect, then picked again, is that song, never a second one.
+ */
+interface LocalSongFiles {
+    /** Downloads not linked to any cloud file. */
+    suspend fun unlinked(): List<LocalSongFile>
+
+    /**
+     * Downloads linked to a file in [accountId], by that file's content version as the scan
+     * stored it, lower-cased (Google Drive: the md5, the download's own when the file is a copy).
+     */
+    suspend fun linkedVersions(accountId: Long): Map<String, Long>
+
+    /** The file's size on the phone; null when it is gone or can't be read. */
+    suspend fun size(path: String): Long?
+
+    /** Lower-case hex md5 of the whole file; throws when it can't be read. */
+    suspend fun md5(path: String): String
+
+    companion object {
+        /** No downloads: nothing is recognised by its bytes. */
+        val NONE: LocalSongFiles = object : LocalSongFiles {
+            override suspend fun unlinked(): List<LocalSongFile> = emptyList()
+            override suspend fun linkedVersions(accountId: Long): Map<String, Long> = emptyMap()
+            override suspend fun size(path: String): Long? = null
+            override suspend fun md5(path: String): String = throw IOException("no local files")
+        }
+    }
+}
+
+/**
+ * One scan pass's view of [LocalSongFiles] for one account: read on first use (a pass whose files
+ * are all known costs nothing), kept current as the pass links songs. Unlinked downloads are
+ * indexed by size once per pass (the recorded size; the file's own for an older row that has none),
+ * and a file is only hashed when its size is exactly the cloud file's, at most once per pass.
+ */
+internal class LocalCopies(private val files: LocalSongFiles, private val accountId: Long) {
+    /** Unlinked downloads by file size, and each one's size in that index. */
+    private var bySize: HashMap<Long, MutableList<LocalSongFile>>? = null
+    private val indexedSize = HashMap<Long, Long>()
+    private var linked: MutableMap<String, Long>? = null
+
+    /** md5 per download (null = its file couldn't be read). */
+    private val md5s = HashMap<Long, String?>()
+
+    /** The unlinked download whose file is exactly [size] bytes with [md5], or null. */
+    suspend fun unlinkedCopy(size: Long, md5: String): Long? {
+        if (size <= 0) return null
+        for (d in sizeIndex()[size].orEmpty()) {
+            if (md5Of(d)?.equals(md5, ignoreCase = true) == true) return d.trackId
+        }
+        return null
+    }
+
+    /** A download linked to another file of this account with these bytes, or null. */
+    suspend fun linkedHere(md5: String): Long? = linkedMap()[md5.lowercase()]
+
+    /** This pass linked [trackId] to a file of this account with [md5] (null when unknown). */
+    fun linked(trackId: Long, md5: String?) {
+        indexedSize.remove(trackId)?.let { size -> bySize?.get(size)?.removeAll { it.trackId == trackId } }
+        // Not read yet: the first read comes from the database, which has the link.
+        if (md5 != null) linked?.putIfAbsent(md5.lowercase(), trackId)
+    }
+
+    private suspend fun linkedMap(): MutableMap<String, Long> =
+        linked ?: files.linkedVersions(accountId).toMutableMap().also { linked = it }
+
+    private suspend fun sizeIndex(): HashMap<Long, MutableList<LocalSongFile>> {
+        bySize?.let { return it }
+        val index = HashMap<Long, MutableList<LocalSongFile>>()
+        for (d in files.unlinked()) {
+            // A file that is gone can't be a copy of anything.
+            val size = d.recordedSize.takeIf { it > 0 } ?: files.size(d.path) ?: continue
+            index.getOrPut(size) { mutableListOf() } += d
+            indexedSize[d.trackId] = size
+        }
+        return index.also { bySize = it }
+    }
+
+    private suspend fun md5Of(d: LocalSongFile): String? {
+        if (!md5s.containsKey(d.trackId)) {
+            md5s[d.trackId] = try {
+                files.md5(d.path)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // An SD card gone, a folder grant withdrawn: this download just can't be compared.
+                Log.w("CloudScanner", "a download's file couldn't be read: ${e.javaClass.simpleName}")
+                null
+            }
+        }
+        return md5s[d.trackId]
+    }
+}
+
 /** What one folder's scan did. */
 data class CloudScanResult(val added: Int, val updated: Int, val removed: Int, val unchanged: Int)
 
@@ -94,6 +194,7 @@ class CloudScanner(
     private val art: ArtSaver,
     private val clock: () -> Long = System::currentTimeMillis,
     private val localSongs: LocalSongKeys = LocalSongKeys { emptyMap() },
+    private val localFiles: LocalSongFiles = LocalSongFiles.NONE,
 ) {
     private val folderLocks = ConcurrentHashMap<Long, Mutex>()
 
@@ -206,7 +307,7 @@ class CloudScanner(
             liveIds += f.id
 
             val existing = dao.getItem(folder.accountId, f.id)
-            if (existing == null && f.songKey != null && linkToLocal(f, folders)) {
+            if (existing == null && alreadyHere(f, folders)) {
                 unchanged++
                 return
             }
@@ -268,14 +369,50 @@ class CloudScanner(
         /** Downloads by track key, loaded once per pass; an entry leaves once linked. */
         private var localKeys: MutableMap<String, Long>? = null
 
+        /** Downloads by their bytes, read on first use. */
+        private val copies = LocalCopies(localFiles, folder.accountId)
+
+        /**
+         * True when [f], a file new to the library, is a song already on this phone, so it is not
+         * added a second time:
+         *  - a copy Stash saved whose track key is a download's ([linkToLocal]): linked to it;
+         *  - a byte-for-byte copy of a download with no link (same size and md5: a song downloaded
+         *    from Drive, kept after a disconnect and picked again): linked to it the same way;
+         *  - a copy of a download already linked to another file of this account: that song is in
+         *    this Drive already and one song links to one file, so this file is left out
+         *    ([CloudStorageProvider.leftOut]). A copy in another account is that account's own
+         *    song, as with keys: two accounts, two songs.
+         */
+        private suspend fun alreadyHere(f: ScanEntry.File, folders: List<String>): Boolean {
+            if (f.songKey != null && linkToLocal(f, folders)) return true
+            val md5 = f.md5 ?: return false
+            copies.unlinkedCopy(f.size, md5)?.let { trackId -> if (link(trackId, f, folders)) return true }
+            if (copies.linkedHere(md5) == null) return false
+            provider.leftOut(folder.accountId, root, f.id)
+            return true
+        }
+
         /**
          * A song Stash saved to the cloud that is already a download here (this phone saved it
          * before a disconnect, or another phone saved the same song): link the file to that
          * download instead of adding a second song. True when linked.
+         *
+         * The keys are only as new as the start of this pass. A download linked since (another
+         * account's upload finished meanwhile) keeps that link, which its upload row agrees with,
+         * and this file is its own song: two accounts, two songs.
          */
         private suspend fun linkToLocal(f: ScanEntry.File, folders: List<String>): Boolean {
             val keys = localKeys ?: localSongs.load().toMutableMap().also { localKeys = it }
             val trackId = keys[f.songKey] ?: return false
+            // One download links to one file; a second file with the same key is its own song.
+            keys.remove(f.songKey)
+            return link(trackId, f, folders)
+        }
+
+        /** Links [f] to the download [trackId]; true when linked (now, or already to this very file). */
+        private suspend fun link(trackId: Long, f: ScanEntry.File, folders: List<String>): Boolean {
+            // Linked to this very file a moment ago (its own upload finishing): nothing more to do.
+            dao.getItemForTrack(trackId)?.let { return it.accountId == folder.accountId && it.itemId == f.id }
             val linked = dao.linkUpload(
                 trackId,
                 CloudItemEntity(
@@ -285,8 +422,7 @@ class CloudScanner(
                     seenGeneration = folder.scanGeneration, scannedAt = clock(), remotePath = f.remotePath,
                 ),
             )
-            // One download links to one file; a second file with the same key is its own song.
-            keys.remove(f.songKey)
+            if (linked) copies.linked(trackId, f.md5)
             return linked
         }
 

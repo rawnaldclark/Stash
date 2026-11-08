@@ -22,6 +22,8 @@ import java.io.IOException
 class GoogleDriveAuth(
     private val authorizer: GoogleAuthorizer,
     private val client: OkHttpClient,
+    /** True while more than one Google Drive account is connected. */
+    private val severalAccounts: suspend () -> Boolean = { false },
 ) : ProviderAuth {
 
     override fun authorizeUrl(state: String, codeChallenge: String): String =
@@ -37,6 +39,10 @@ class GoogleDriveAuth(
     /** Silent re-authorization for the account in [refreshToken]; [RefreshRejectedException] = reconnect. */
     override suspend fun refresh(refreshToken: String, staleAccessToken: String?): TokenResult {
         val account = refreshToken.takeIf { it != NO_ACCOUNT && it.isNotBlank() }
+        // With no address Play services answers for whichever account it likes, and with another
+        // connected that can be the other one: songs would then play and upload under the wrong
+        // sign-in. The picker tells them apart, so this one asks for a Reconnect instead.
+        if (account == null && severalAccounts()) throw RefreshRejectedException("Google needs you to reconnect Drive")
         val token = authorizer.silentToken(account, staleAccessToken)
             ?: throw RefreshRejectedException("Google needs you to reconnect Drive")
         return TokenResult(token, refreshToken, TOKEN_LIFETIME_SECONDS, PlayServicesGoogleAuthorizer.DRIVE_FILE_SCOPE)
