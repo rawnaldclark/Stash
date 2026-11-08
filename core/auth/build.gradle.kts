@@ -12,6 +12,8 @@ android {
         unitTests {
             // android.util.Log inside the bundle scrape must not throw "not mocked" in JVM tests.
             isReturnDefaultValues = true
+            // Robolectric (the token store's tests: android.util.Base64 behind every blob).
+            isIncludeAndroidResources = true
         }
     }
 }
@@ -32,4 +34,5 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
     testImplementation(libs.mockk)
+    testImplementation(libs.robolectric)
 }

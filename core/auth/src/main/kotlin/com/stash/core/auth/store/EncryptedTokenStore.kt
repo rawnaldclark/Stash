@@ -2,6 +2,7 @@ package com.stash.core.auth.store
 
 import android.content.Context
 import android.util.Base64
+import androidx.datastore.core.DataStore
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
@@ -81,17 +82,38 @@ data class StoredSpotifySignIn(
  * Each streaming service (Spotify, YouTube Music) stores its token + user info as a single
  * encrypted JSON blob. Encryption keys are managed by [TinkEncryptionManager] and rooted in
  * Android Keystore.
+ *
+ * Accounts that can be several have one blob per account, keyed by their database row id: cloud
+ * storage accounts (`cloud_token_<provider>_<rowId>`) and extra Spotify accounts
+ * (`spotify_extra_<rowId>`). The main Spotify account keeps its one `spotify_token` blob.
  */
 @Singleton
-class EncryptedTokenStore @Inject constructor(
-    @ApplicationContext private val context: Context,
+class EncryptedTokenStore internal constructor(
+    private val dataStore: DataStore<Preferences>,
     private val encryption: TinkEncryptionManager,
 ) {
+    /** The app's one `auth_tokens` store. The internal constructor takes any store, for JVM tests. */
+    @Inject constructor(
+        @ApplicationContext context: Context,
+        encryption: TinkEncryptionManager,
+    ) : this(context.authDataStore, encryption)
+
     private val json = Json { ignoreUnknownKeys = true }
 
-    private companion object {
+    internal companion object {
         const val CLOUD_PREFIX = "cloud_token_"
         val CLOUD_ACCOUNT_KEY = Regex("[a-z]+_[0-9]+")
+
+        /** One blob per extra Spotify account: `spotify_extra_<rowId>` (plan 2026-11-04 §2.2). */
+        const val SPOTIFY_EXTRA_PREFIX = "spotify_extra_"
+
+        /**
+         * Whether [name] is a per-account blob's key, which a keyset reset drops along with the
+         * fixed keys: every cloud account's and every extra Spotify account's. A new kind of
+         * per-account key must be added here, or its blobs outlive the keyset that sealed them.
+         */
+        fun isPerAccountKey(name: String): Boolean =
+            name.startsWith(CLOUD_PREFIX) || name.startsWith(SPOTIFY_EXTRA_PREFIX)
     }
 
     private object Keys {
@@ -106,12 +128,12 @@ class EncryptedTokenStore @Inject constructor(
     // ── Spotify ──────────────────────────────────────────────────────────
 
     /** Emits the current Spotify [ServiceToken], or null if not stored / decryption fails. */
-    val spotifyToken: Flow<ServiceToken?> = context.authDataStore.data.map { prefs ->
+    val spotifyToken: Flow<ServiceToken?> = dataStore.data.map { prefs ->
         prefs[Keys.SPOTIFY]?.let { decryptToken(it) }
     }
 
     /** Emits the current Spotify [UserInfo], or null if not stored / decryption fails. */
-    val spotifyUser: Flow<UserInfo?> = context.authDataStore.data.map { prefs ->
+    val spotifyUser: Flow<UserInfo?> = dataStore.data.map { prefs ->
         prefs[Keys.SPOTIFY]?.let { decryptUser(it) }
     }
 
@@ -135,7 +157,7 @@ class EncryptedTokenStore @Inject constructor(
 
     /** The stored Spotify sign-in and whose account it is, read together. */
     suspend fun readSpotifySignIn(): StoredSpotifySignIn {
-        val prefs = context.authDataStore.data.first()
+        val prefs = dataStore.data.first()
         return StoredSpotifySignIn(
             token = prefs[Keys.SPOTIFY]?.let { decryptToken(it) },
             account = prefs[Keys.SPOTIFY_ACCOUNT]?.let { decryptAccount(it) },
@@ -175,23 +197,78 @@ class EncryptedTokenStore @Inject constructor(
         return written
     }
 
-    /** Removes the stored Spotify credentials, and with them whose account they were. */
+    /** Removes the stored Spotify credentials, and with them whose account they were. Extra accounts' stay. */
     suspend fun clearSpotify() {
-        context.authDataStore.edit {
+        dataStore.edit {
             it.remove(Keys.SPOTIFY)
             it.remove(Keys.SPOTIFY_ACCOUNT)
         }
     }
 
+    // ── Extra Spotify accounts (plan 2026-11-04 §2.2) ────────────────────
+
+    /**
+     * The extra Spotify account [rowId]'s stored sign-in and whose account it is, from one read
+     * of its one blob (`spotify_extra_<rowId>`, the same [StoredToken] shape as every other
+     * blob). Both null when there is none: never added, cleared, or unreadable after a keyset
+     * reset. Never falls back to the main account's blob.
+     *
+     * @param rowId The account's `spotify_accounts.id`; positive.
+     */
+    suspend fun readSpotifyExtraSignIn(rowId: Long): StoredSpotifySignIn {
+        val stored = dataStore.data.first()[spotifyExtraKey(rowId)]
+            ?.let { runCatching { decryptStored(it) }.getOrNull() }
+            ?.takeIf { it.refreshToken.isNotEmpty() }
+            ?: return StoredSpotifySignIn(token = null, account = null)
+        return StoredSpotifySignIn(
+            token = ServiceToken(stored.accessToken, stored.refreshToken, stored.expiresAtEpoch, stored.scope),
+            account = stored.userId.takeIf { it.isNotBlank() }
+                ?.let { SpotifyProfile(userId = it, displayName = stored.displayName.ifBlank { it }) },
+        )
+    }
+
+    /**
+     * Saves the extra Spotify account [rowId]'s sign-in: its token and whose account it is, in
+     * one blob, so the account can never belong to a different sign-in than the token.
+     */
+    suspend fun saveSpotifyExtra(rowId: Long, token: ServiceToken, account: SpotifyProfile) {
+        val user = UserInfo(id = account.userId, displayName = account.displayName)
+        saveBlob(spotifyExtraKey(rowId), encryptStored(token.toStoredToken(user)))
+    }
+
+    /**
+     * Saves a refreshed token of the extra account [rowId], keeping its account, but only while
+     * its stored sign-in is still [spDcCookie], the cookie it was refreshed from: a removal or a
+     * new sign-in made during the refresh wins (as [saveRefreshedSpotifyToken] for the main).
+     * Returns true when it was written.
+     */
+    suspend fun saveRefreshedSpotifyExtraToken(rowId: Long, spDcCookie: String, refreshed: ServiceToken): Boolean {
+        val key = spotifyExtraKey(rowId)
+        var written = false
+        editSweepingAfterKeysetReset { prefs ->
+            val current = prefs[key]?.let { runCatching { decryptStored(it) }.getOrNull() }
+            current?.afterRefresh(spDcCookie, refreshed)?.let {
+                prefs[key] = encryptStored(it)
+                written = true
+            }
+        }
+        return written
+    }
+
+    /** Forgets the extra Spotify account [rowId]'s sign-in. The main account's and other extras' stay. */
+    suspend fun clearSpotifyExtra(rowId: Long) {
+        dataStore.edit { it.remove(spotifyExtraKey(rowId)) }
+    }
+
     // ── YouTube Music ────────────────────────────────────────────────────
 
     /** Emits the current YouTube Music [ServiceToken], or null if not stored / decryption fails. */
-    val youTubeToken: Flow<ServiceToken?> = context.authDataStore.data.map { prefs ->
+    val youTubeToken: Flow<ServiceToken?> = dataStore.data.map { prefs ->
         prefs[Keys.YOUTUBE]?.let { decryptToken(it) }
     }
 
     /** Emits the current YouTube Music [UserInfo], or null if not stored / decryption fails. */
-    val youTubeUser: Flow<UserInfo?> = context.authDataStore.data.map { prefs ->
+    val youTubeUser: Flow<UserInfo?> = dataStore.data.map { prefs ->
         prefs[Keys.YOUTUBE]?.let { decryptUser(it) }
     }
 
@@ -203,18 +280,18 @@ class EncryptedTokenStore @Inject constructor(
 
     /** Removes the stored YouTube Music credentials. */
     suspend fun clearYouTube() {
-        context.authDataStore.edit { it.remove(Keys.YOUTUBE) }
+        dataStore.edit { it.remove(Keys.YOUTUBE) }
     }
 
     // ── Discord ──────────────────────────────────────────────────────────
 
     /** Emits the current Discord [ServiceToken], or null if not stored / decryption fails. */
-    val discordToken: Flow<ServiceToken?> = context.authDataStore.data.map { prefs ->
+    val discordToken: Flow<ServiceToken?> = dataStore.data.map { prefs ->
         prefs[Keys.DISCORD]?.let { decryptToken(it) }
     }
 
     /** Emits the current Discord [UserInfo], or null if not stored / decryption fails. */
-    val discordUser: Flow<UserInfo?> = context.authDataStore.data.map { prefs ->
+    val discordUser: Flow<UserInfo?> = dataStore.data.map { prefs ->
         prefs[Keys.DISCORD]?.let { decryptUser(it) }
     }
 
@@ -226,7 +303,7 @@ class EncryptedTokenStore @Inject constructor(
 
     /** Removes the stored Discord credentials. */
     suspend fun clearDiscord() {
-        context.authDataStore.edit { it.remove(Keys.DISCORD) }
+        dataStore.edit { it.remove(Keys.DISCORD) }
     }
 
     // ── Cloud storage accounts (OneDrive, …) ─────────────────────────────
@@ -238,7 +315,7 @@ class EncryptedTokenStore @Inject constructor(
      * connected accounts never share a token.
      */
     suspend fun getCloudToken(accountKey: String): ServiceToken? =
-        context.authDataStore.data.first()[cloudKey(accountKey)]?.let { decryptToken(it) }
+        dataStore.data.first()[cloudKey(accountKey)]?.let { decryptToken(it) }
 
     /** Persists a cloud account's token (refresh tokens rotate, so every refresh saves again). */
     suspend fun saveCloudToken(accountKey: String, token: ServiceToken) {
@@ -247,10 +324,10 @@ class EncryptedTokenStore @Inject constructor(
 
     /** Forgets a cloud account's token (disconnect). */
     suspend fun clearCloudToken(accountKey: String) {
-        context.authDataStore.edit { it.remove(cloudKey(accountKey)) }
+        dataStore.edit { it.remove(cloudKey(accountKey)) }
     }
 
-    val soundCloudSession: Flow<com.stash.core.auth.soundcloud.SoundCloudSession?> = context.authDataStore.data.map { prefs ->
+    val soundCloudSession: Flow<com.stash.core.auth.soundcloud.SoundCloudSession?> = dataStore.data.map { prefs ->
         prefs[Keys.SOUNDCLOUD]?.let { encrypted ->
             try {
                 val bytes = encryption.decrypt(Base64.decode(encrypted, Base64.NO_WRAP))
@@ -267,12 +344,17 @@ class EncryptedTokenStore @Inject constructor(
     }
 
     suspend fun clearSoundCloud() {
-        context.authDataStore.edit { it.remove(Keys.SOUNDCLOUD) }
+        dataStore.edit { it.remove(Keys.SOUNDCLOUD) }
     }
 
     private fun cloudKey(accountKey: String): Preferences.Key<String> {
         require(accountKey.matches(CLOUD_ACCOUNT_KEY)) { "bad cloud account key" }
         return stringPreferencesKey(CLOUD_PREFIX + accountKey)
+    }
+
+    private fun spotifyExtraKey(rowId: Long): Preferences.Key<String> {
+        require(rowId > 0) { "bad extra Spotify account row id" }
+        return stringPreferencesKey(SPOTIFY_EXTRA_PREFIX + rowId)
     }
 
     /**
@@ -287,14 +369,14 @@ class EncryptedTokenStore @Inject constructor(
 
     /** One DataStore edit that first drops every blob sealed under a lost keyset (see [saveBlob]). */
     private suspend fun editSweepingAfterKeysetReset(write: (MutablePreferences) -> Unit) {
-        context.authDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             if (encryption.consumeKeysetReset()) {
                 prefs.remove(Keys.SPOTIFY)
                 prefs.remove(Keys.SPOTIFY_ACCOUNT)
                 prefs.remove(Keys.YOUTUBE)
                 prefs.remove(Keys.DISCORD)
                 prefs.remove(Keys.SOUNDCLOUD)
-                prefs.asMap().keys.map { it.name }.filter { it.startsWith(CLOUD_PREFIX) }
+                prefs.asMap().keys.map { it.name }.filter(::isPerAccountKey)
                     .forEach { prefs.remove(stringPreferencesKey(it)) }
             }
             write(prefs)

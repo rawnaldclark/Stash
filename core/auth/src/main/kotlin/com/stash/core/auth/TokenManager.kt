@@ -4,7 +4,9 @@ import com.stash.core.auth.model.AuthService
 import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.model.ServiceToken
 import com.stash.core.auth.model.SpotifyConnectResult
+import com.stash.core.auth.model.SpotifyCookieCheck
 import com.stash.core.auth.model.UserInfo
+import com.stash.core.auth.model.ValidatedSpotifySignIn
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -34,6 +36,13 @@ interface TokenManager {
     /**
      * Returns a valid Spotify access token, or null if the user is not authenticated
      * or the token has expired / is expiring soon.
+     *
+     * **Acting account.** This and every other per-account Spotify read here
+     * ([forceRefreshSpotifyAccessToken], [getSpotifyUsername], [getSpDcCookie],
+     * [getSpotifyClientId], `isAuthenticated(SPOTIFY)`) answer for the extra account named by a
+     * [com.stash.core.auth.spotify.SpotifyAccount] in the caller's coroutine context, and for the
+     * main account when there is none (unchanged). With an extra set, a missing or dead extra
+     * sign-in answers null: never the main account's.
      */
     suspend fun getSpotifyAccessToken(): String?
 
@@ -132,7 +141,10 @@ interface TokenManager {
     /** Removes all stored credentials for the given [service]. */
     suspend fun clearAuth(service: AuthService)
 
-    /** Returns true if valid (non-expired) credentials exist for the given [service]. */
+    /**
+     * Returns true if valid (non-expired) credentials exist for the given [service]. For Spotify,
+     * the acting account's (see [getSpotifyAccessToken]).
+     */
     suspend fun isAuthenticated(service: AuthService): Boolean
 
     /**
@@ -152,7 +164,44 @@ interface TokenManager {
      * known yet (signed in before Stash recorded it). Without it, a later sign-in as another
      * account couldn't be told apart, so the account-swap guard couldn't refuse it. Called while
      * the session is known to work (the sync's auth probe). Best-effort: a failed lookup is tried
-     * again a few hours later.
+     * again a few hours later. The main account's only: acting as an extra, it does nothing (that
+     * session working says nothing about the main's).
      */
     suspend fun rememberSpotifyAccount() = Unit
+
+    // -- Extra Spotify accounts (plan 2026-11-04 §2.2) -----------------------------------------
+    //
+    // An extra is read-only: Stash reads its library, never writes to it. Each has a
+    // `spotify_accounts` row (core:data) and one encrypted sign-in under that row's id. The main
+    // account's sign-in is untouched by all of these.
+
+    /**
+     * Checks an sp_dc cookie with Spotify and says whose account it is, saving NOTHING: the main
+     * account's sign-in, every extra's, and the account record stay exactly as they were. For
+     * adding an extra account or signing one in again; [SpotifyCookieCheck.Valid.isMainAccount]
+     * tells the main account apart ("That's your main account").
+     */
+    suspend fun validateSpotifyCookie(spDcCookie: String): SpotifyCookieCheck
+
+    /**
+     * Saves [signIn] as the sign-in of the extra account whose `spotify_accounts` row is [rowId],
+     * replacing an older sign-in of that account. Refused, with nothing written, unless Spotify
+     * identified the sign-in as [userId] (the row's `user_id`) and it is not the main account's
+     * recorded account: the sign-in under a row must never act as anyone else.
+     *
+     * @return true when saved.
+     */
+    suspend fun saveSpotifyExtra(rowId: Long, userId: String, signIn: ValidatedSpotifySignIn): Boolean
+
+    /** A valid access token of the extra account [rowId], refreshed when due; null when it has no working sign-in. */
+    suspend fun getSpotifyExtraAccessToken(rowId: Long): String?
+
+    /** A new access token of the extra account [rowId] whatever the current one's expiry; null when that fails. */
+    suspend fun forceRefreshSpotifyExtraAccessToken(rowId: Long): String?
+
+    /** Whether the extra account [rowId] has a stored sign-in (it may still have stopped working on Spotify's side). */
+    suspend fun hasSpotifyExtraSignIn(rowId: Long): Boolean
+
+    /** Forgets the extra account [rowId]'s sign-in on this phone. The main account's and other extras' stay. */
+    suspend fun clearSpotifyExtra(rowId: Long)
 }

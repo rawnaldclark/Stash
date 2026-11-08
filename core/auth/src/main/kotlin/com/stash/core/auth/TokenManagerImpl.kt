@@ -5,10 +5,14 @@ import com.stash.core.auth.model.AuthService
 import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.model.ServiceToken
 import com.stash.core.auth.model.SpotifyConnectResult
+import com.stash.core.auth.model.SpotifyCookieCheck
 import com.stash.core.auth.model.UserInfo
+import com.stash.core.auth.model.ValidatedSpotifySignIn
+import com.stash.core.auth.spotify.SpotifyAccount
 import com.stash.core.auth.spotify.SpotifyAuthManager
 import com.stash.core.auth.spotify.SpotifyProfile
 import com.stash.core.auth.store.EncryptedTokenStore
+import java.util.concurrent.ConcurrentHashMap
 import com.stash.core.auth.youtube.YouTubeCookieHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +39,10 @@ import javax.inject.Singleton
  * Observes the encrypted token and user flows for each service and maps them into
  * reactive [AuthState] values. The Spotify access-token getter automatically refreshes
  * expired tokens using the stored sp_dc cookie via [SpotifyAuthManager].
+ *
+ * Spotify reads answer for the acting account ([SpotifyAccount] in the caller's coroutine
+ * context): an extra account's own sign-in when one is set, never the main's (see the
+ * "Extra Spotify accounts" section), and the main account's otherwise, exactly as before.
  */
 @Singleton
 class TokenManagerImpl @Inject constructor(
@@ -90,6 +98,7 @@ class TokenManagerImpl @Inject constructor(
      * The sp_dc cookie is stored in [ServiceToken.refreshToken].
      */
     override suspend fun getSpotifyAccessToken(): String? {
+        actingExtra()?.let { return getSpotifyExtraAccessToken(it) }
         val token = tokenStore.spotifyToken.first() ?: return null
 
         // If the token is still fresh, return it immediately
@@ -138,6 +147,7 @@ class TokenManagerImpl @Inject constructor(
      * then falls back to the token's scope field which contains "username|clientId".
      */
     override suspend fun getSpotifyUsername(): String? {
+        actingExtra()?.let { return tokenStore.readSpotifyExtraSignIn(it).account?.userId }
         // Try the stored user profile (set during connectSpotifyWithCookie).
         val user = tokenStore.spotifyUser.first()
         if (user != null && user.id.isNotEmpty() && user.id != "spotify_user") {
@@ -159,7 +169,7 @@ class TokenManagerImpl @Inject constructor(
      * The client ID is needed for acquiring client tokens for the GraphQL Partner API.
      */
     override suspend fun getSpotifyClientId(): String? {
-        val token = tokenStore.spotifyToken.first() ?: return null
+        val token = actingSignIn() ?: return null
         val scope = token.scope
         if (scope.isEmpty()) return null
         val parts = scope.split(SpotifyAuthManager.SCOPE_DELIMITER)
@@ -172,7 +182,7 @@ class TokenManagerImpl @Inject constructor(
      * Returns the stored sp_dc cookie from the token's refreshToken field.
      */
     override suspend fun getSpDcCookie(): String? {
-        val token = tokenStore.spotifyToken.first() ?: return null
+        val token = actingSignIn() ?: return null
         val spDc = token.refreshToken
         return if (spDc.isNotEmpty()) spDc else null
     }
@@ -182,13 +192,16 @@ class TokenManagerImpl @Inject constructor(
      * This obtains a completely new access token from the sp_dc cookie,
      * which should have a fresh rate-limit window on the Spotify side.
      */
-    override suspend fun forceRefreshSpotifyAccessToken(): String? = spotifyRefreshLock.withLock {
-        val token = tokenStore.spotifyToken.first() ?: return@withLock null
-        val spDcCookie = token.refreshToken
-        if (spDcCookie.isEmpty()) return@withLock null
+    override suspend fun forceRefreshSpotifyAccessToken(): String? {
+        actingExtra()?.let { return forceRefreshSpotifyExtraAccessToken(it) }
+        return spotifyRefreshLock.withLock {
+            val token = tokenStore.spotifyToken.first() ?: return@withLock null
+            val spDcCookie = token.refreshToken
+            if (spDcCookie.isEmpty()) return@withLock null
 
-        val refreshed = spotifyAuthManager.refreshAccessToken(spDcCookie) ?: return@withLock null
-        savedRefresh(spDcCookie, refreshed)
+            val refreshed = spotifyAuthManager.refreshAccessToken(spDcCookie) ?: return@withLock null
+            savedRefresh(spDcCookie, refreshed)
+        }
     }
 
     /**
@@ -257,7 +270,7 @@ class TokenManagerImpl @Inject constructor(
     override suspend fun isAuthenticated(service: AuthService): Boolean {
         return when (service) {
             AuthService.SOUNDCLOUD -> soundCloudSession.first()?.oauthToken != null
-            AuthService.SPOTIFY -> tokenStore.spotifyToken.first()?.let {
+            AuthService.SPOTIFY -> actingSignIn()?.let {
                 it.refreshToken.isNotEmpty()  // sp_dc cookie is the long-lived credential
             } ?: false
             AuthService.YOUTUBE_MUSIC -> tokenStore.youTubeToken.first()?.let {
@@ -422,7 +435,12 @@ class TokenManagerImpl @Inject constructor(
      * Logs (never who) why a sign-in will go unchecked: a rotated Spotify hash turns the guard off
      * for everyone, and a diagnostics bundle should show it.
      */
-    private suspend fun identifySpotifyAccounts(accessToken: String, clientId: String): SpotifySignInAccounts {
+    private suspend fun identifySpotifyAccounts(
+        accessToken: String,
+        clientId: String,
+        logAs: String = "connectSpotifyWithCookie",
+        unchecked: String = "saved unchecked",
+    ): SpotifySignInAccounts {
         val stored = tokenStore.readSpotifySignIn()
         var incoming: SpotifyProfile? = null
         var connected: SpotifyProfile? = stored.account.takeIf { stored.token != null }
@@ -438,12 +456,12 @@ class TokenManagerImpl @Inject constructor(
             work.cancel()
         }
         val found = SpotifySignInAccounts(incoming, connected)
-        if (!inTime) Log.w("StashSync", "connectSpotifyWithCookie: identifying the accounts timed out")
+        if (!inTime) Log.w("StashSync", "$logAs: identifying the accounts timed out")
         when {
             found.incoming == null ->
-                Log.w("StashSync", "connectSpotifyWithCookie: saved unchecked, new sign-in unidentified")
+                Log.w("StashSync", "$logAs: $unchecked, new sign-in unidentified")
             stored.token != null && found.connected == null ->
-                Log.w("StashSync", "connectSpotifyWithCookie: saved unchecked, connected account unknown")
+                Log.w("StashSync", "$logAs: $unchecked, connected account unknown")
         }
         return found
     }
@@ -467,6 +485,8 @@ class TokenManagerImpl @Inject constructor(
     internal var nowMs: () -> Long = System::currentTimeMillis
 
     override suspend fun rememberSpotifyAccount() {
+        // The main account's record only: an extra's session working says nothing about the main's.
+        if (actingExtra() != null) return
         val now = nowMs()
         if (now - spotifyAccountLookupAtMs < SPOTIFY_ACCOUNT_RETRY_MS) return
         val stored = tokenStore.readSpotifySignIn()
@@ -492,6 +512,105 @@ class TokenManagerImpl @Inject constructor(
 
     /** The two accounts a Spotify sign-in is judged on; null is "can't be told". */
     private data class SpotifySignInAccounts(val incoming: SpotifyProfile?, val connected: SpotifyProfile?)
+
+    // -- Extra Spotify accounts (plan 2026-11-04 §2.2) -------------------------
+    //
+    // THE NO-FALLBACK RULE lives here. [actingExtra] picks the account; every per-account read
+    // above branches on it first, and the extra branch only ever reads the extra's own blob
+    // ([EncryptedTokenStore.readSpotifyExtraSignIn]). A missing, unreadable or dead extra
+    // sign-in answers null. Nothing in this section reads `spotifyToken`, the main's blob.
+
+    /** The extra account the calling coroutine acts as ([SpotifyAccount]), or null for the main account. */
+    private suspend fun actingExtra(): Long? = currentCoroutineContext()[SpotifyAccount]?.rowId
+
+    /** The acting account's stored sign-in: the extra's when one is acting (null when it has none), else the main's. */
+    private suspend fun actingSignIn(): ServiceToken? {
+        val extra = actingExtra() ?: return tokenStore.spotifyToken.first()
+        return tokenStore.readSpotifyExtraSignIn(extra).token
+    }
+
+    /**
+     * One refresh lock per extra account, beside the main's [spotifyRefreshLock]: an extra's slow
+     * or failing refresh must never hold up the main's (likes, search, the main's sync) nor
+     * another extra's. Never removed: there are a handful of extras at most.
+     */
+    private val extraRefreshLocks = ConcurrentHashMap<Long, Mutex>()
+
+    private fun extraRefreshLock(rowId: Long): Mutex = extraRefreshLocks.getOrPut(rowId) { Mutex() }
+
+    override suspend fun getSpotifyExtraAccessToken(rowId: Long): String? {
+        val token = tokenStore.readSpotifyExtraSignIn(rowId).token ?: return null
+        if (!token.isExpired && !token.isExpiringSoon) return token.accessToken
+        // Single-flight per account, as the main's: whoever waited re-reads and uses what the first saved.
+        return extraRefreshLock(rowId).withLock {
+            val current = tokenStore.readSpotifyExtraSignIn(rowId).token ?: return@withLock null
+            if (!current.isExpired && !current.isExpiringSoon) return@withLock current.accessToken
+            refreshExtra(rowId, current)
+        }
+    }
+
+    override suspend fun forceRefreshSpotifyExtraAccessToken(rowId: Long): String? =
+        extraRefreshLock(rowId).withLock {
+            val current = tokenStore.readSpotifyExtraSignIn(rowId).token ?: return@withLock null
+            refreshExtra(rowId, current)
+        }
+
+    /**
+     * Refreshes the extra account [rowId] from [current]'s cookie and saves it, only while that is
+     * still its stored sign-in (a removal or new sign-in meanwhile wins, as [savedRefresh] does for
+     * the main). Null when the cookie no longer works: a dead extra, which its sync skips.
+     */
+    private suspend fun refreshExtra(rowId: Long, current: ServiceToken): String? {
+        val spDcCookie = current.refreshToken
+        if (spDcCookie.isEmpty()) return null
+        val refreshed = spotifyAuthManager.refreshAccessToken(spDcCookie) ?: return null
+        if (tokenStore.saveRefreshedSpotifyExtraToken(rowId, spDcCookie, refreshed)) return refreshed.accessToken
+        Log.i("StashSync", "Spotify extra account token refresh dropped: its sign-in changed meanwhile")
+        return tokenStore.readSpotifyExtraSignIn(rowId).token?.takeIf { !it.isExpired }?.accessToken
+    }
+
+    override suspend fun hasSpotifyExtraSignIn(rowId: Long): Boolean =
+        tokenStore.readSpotifyExtraSignIn(rowId).token != null
+
+    override suspend fun clearSpotifyExtra(rowId: Long) {
+        // No lock needed: a refresh in flight saves only over the sign-in it refreshed, and there is none now.
+        tokenStore.clearSpotifyExtra(rowId)
+    }
+
+    /**
+     * Checks [spDcCookie] with Spotify and identifies its account, within the same budget as the
+     * account-swap guard ([identifySpotifyAccounts]), comparing it with the main account. Writes
+     * nothing; the token it got travels in the result to [saveSpotifyExtra].
+     */
+    override suspend fun validateSpotifyCookie(spDcCookie: String): SpotifyCookieCheck {
+        if (spDcCookie.isBlank()) return SpotifyCookieCheck.Invalid
+        val token = spotifyAuthManager.getAccessToken(spDcCookie) ?: return SpotifyCookieCheck.Invalid
+        val clientId = token.scope.split(SpotifyAuthManager.SCOPE_DELIMITER).getOrNull(1).orEmpty()
+        val (incoming, main) = identifySpotifyAccounts(
+            token.accessToken,
+            clientId,
+            logAs = "validateSpotifyCookie",
+            unchecked = "unchecked",
+        )
+        val isMainAccount = if (incoming != null && main != null) main.isSameAccount(incoming) else null
+        Log.d("StashSync", "validateSpotifyCookie: identified=${incoming != null}, isMain=$isMainAccount")
+        return SpotifyCookieCheck.Valid(ValidatedSpotifySignIn(token, incoming), isMainAccount)
+    }
+
+    override suspend fun saveSpotifyExtra(rowId: Long, userId: String, signIn: ValidatedSpotifySignIn): Boolean {
+        val account = signIn.account
+        if (account == null || account.accountKey != SpotifyProfile.accountKeyOf(userId)) {
+            Log.w("StashSync", "saveSpotifyExtra: refused, the sign-in isn't the account its row is for")
+            return false
+        }
+        val main = tokenStore.readSpotifySignIn().account
+        if (main != null && main.isSameAccount(account)) {
+            Log.w("StashSync", "saveSpotifyExtra: refused, that is the main account")
+            return false
+        }
+        tokenStore.saveSpotifyExtra(rowId, signIn.token, account)
+        return true
+    }
 
     private companion object {
         /** The most a sign-in spends finding out whose accounts are involved (see [identifySpotifyAccounts]). */
