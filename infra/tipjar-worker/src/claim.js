@@ -9,7 +9,8 @@
  *   - start: every valid, non-rate-limited request gets the same 202, and the whole lookup (access list, email,
  *     claim write) runs after the response (ctx.waitUntil), so its timing says nothing either. The email is what
  *     differs: a donor (ACCESS_KV access:<hash> with source "kofi", see isDonation, or Ko-fi payments kept under the
- *     hash, kofipay:<hash>:*, that add up to the entry) gets a 6-digit code, valid 10 minutes. Anyone else is told it
+ *     hash, kofipay:<hash>:*, that add up to the entry) or a comped email (isComped, or comp:<hash> from the
+ *     website's admin page) gets a 6-digit code, valid 10 minutes. Anyone else is told it
  *     isn't unlocked yet and that $5 or more on Ko-fi (ENTRY_USD_CENTS, added up per email) unlocks unlimited
  *     lossless: an address with Ko-fi payments under the entry gets the "below_entry" email with its total so far,
  *     any other the "no_donation" one.
@@ -91,7 +92,9 @@ export function isDonation(entry) {
 /**
  * Emails the owner has comped (mods, friends): treated as donors for the claim only. COMPED_EMAILS is a
  * Worker secret, comma/space/newline separated. Nothing is stored in KV and no donation is recorded:
- * no early-access entry, no goal amount, no supporters-list row.
+ * no early-access entry, no goal amount, no supporters-list row. The same goes for an email unlocked by hand
+ * on the website's admin page (KEYS.comp, read in deliverClaim): the list there can be added to one person at a
+ * time, where this secret can only be replaced whole.
  */
 export function isComped(env, email) {
     const raw = typeof env.COMPED_EMAILS === "string" ? env.COMPED_EMAILS : "";
@@ -302,15 +305,16 @@ async function sendNotUnlocked(env, email, cents) {
  * it's sent, store it as the pending claim; for anyone else send the not-unlocked email (sendNotUnlocked), within
  * the global cap. Resolves true when an email went out. Never rejects (it runs in waitUntil).
  *
- * A donor is a comped email, a "kofi" access entry (isDonation), or Ko-fi payments kept under the hash that add up to
- * the entry. The last covers two payments whose webhooks landed close enough together that KV's list() lag hid each
- * from the other, so neither wrote the access entry (src/access.js, recordKofiSupport): they paid $5 and can claim,
- * even before their next payment puts them on the site's list.
+ * A donor is a comped email (COMPED_EMAILS, or unlocked by hand on the website's admin page: comp:<hash>), a "kofi"
+ * access entry (isDonation), or Ko-fi payments kept under the hash that add up to the entry. The last covers two
+ * payments whose webhooks landed close enough together that KV's list() lag hid each from the other, so neither wrote
+ * the access entry (src/access.js, recordKofiSupport): they paid $5 and can claim, even before their next payment puts
+ * them on the site's list.
  */
 export async function deliverClaim(env, email, hash, nowMs = clock.now()) {
     try {
         const nowS = Math.floor(nowMs / 1000);
-        const comped = isComped(env, email);
+        const comped = isComped(env, email) || (await env.ACCESS_KV.get(KEYS.comp(hash))) !== null;
         const entry = comped ? null : await env.ACCESS_KV.get(KEYS.access(hash), "json");
         const cents = comped || isDonation(entry) ? null : await kofiTotalCents(env.ACCESS_KV, hash);
         if (cents !== null && cents < ENTRY_USD_CENTS) {
