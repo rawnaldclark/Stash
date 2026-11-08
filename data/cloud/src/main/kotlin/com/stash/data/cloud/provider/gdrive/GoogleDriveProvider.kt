@@ -111,7 +111,8 @@ class GoogleDriveProvider(
         val entries = mutableListOf<ScanEntry>()
         val prune = mutableListOf<String>()
         for (id in batch) {
-            when (val lookup = lookup(accountId, id, RequestPriority.BACKGROUND)) {
+            // With the file's own app properties: a copy Stash saved carries its song's key.
+            when (val lookup = lookup(accountId, id, RequestPriority.BACKGROUND, fields = PICK_FIELDS)) {
                 is GoogleDriveJson.Lookup.Present -> {
                     val f = lookup.file
                     val name = f.name.orEmpty()
@@ -125,6 +126,10 @@ class GoogleDriveProvider(
                         // Never null: a null would make the scanner ask describeFolder for a
                         // parent drive.file can't see. Names come from the tags or the file name.
                         folders = emptyList(), remotePath = null,
+                        // A picked file that is a song already on the phone (a copy Stash saved, or
+                        // the very bytes of a download) is linked to it, not added a second time.
+                        songKey = f.appProperties?.get(com.stash.data.cloud.upload.UploadKeys.TRACK_KEY),
+                        md5 = f.md5Checksum,
                     )
                 }
                 GoogleDriveJson.Lookup.Gone -> {
@@ -178,6 +183,7 @@ class GoogleDriveProvider(
                 // Names come from the song's own tags (Stash embeds them in its downloads).
                 folders = emptyList(), remotePath = null,
                 songKey = f.appProperties?.get(com.stash.data.cloud.upload.UploadKeys.TRACK_KEY),
+                md5 = f.md5Checksum,
             )
         }
         val next = page.nextPageToken?.takeIf { it.isNotBlank() }
@@ -204,19 +210,31 @@ class GoogleDriveProvider(
     }
 
     /**
-     * `files.get` for [id], classified. [onToken] sees the token each attempt used (the last one
-     * is the one that answered). A "slow down" pauses every Drive caller through the gate, as a
-     * 429 does for the other providers, before the caller gives up for now.
+     * A picked file the scan left out: another copy of a song already linked to a file of this
+     * account. It leaves the pending picks; otherwise it would wait there forever, and a pending
+     * pick turns every later run into a "new picks" pass instead of the full re-check.
+     */
+    override suspend fun leftOut(accountId: Long, root: ScanRoot, itemId: String) {
+        if (root.itemId == UPLOADS_ITEM_ID) return // a listing: nothing waits
+        val folderId = dao.getFolders(accountId).firstOrNull { it.itemId == root.itemId }?.id ?: return
+        picks.remove(folderId, listOf(itemId))
+    }
+
+    /**
+     * `files.get` for [id] with [fields], classified. [onToken] sees the token each attempt used
+     * (the last one is the one that answered). A "slow down" pauses every Drive caller through the
+     * gate, as a 429 does for the other providers, before the caller gives up for now.
      */
     private suspend fun lookup(
         accountId: Long,
         id: String,
         priority: RequestPriority,
+        fields: String = GoogleDriveJson.FILE_FIELDS,
         onToken: (String?) -> Unit = {},
     ): GoogleDriveJson.Lookup {
         val r: ApiResponse = http.execute(priority, { rejected -> tokens.accessToken(provider, accountId, rejected) }) { token ->
             onToken(token)
-            metadataRequest(id, token)
+            metadataRequest(id, token, fields)
         }
         val lookup = GoogleDriveJson.classify(r.code, r.body)
         if (lookup == GoogleDriveJson.Lookup.Throttled) {
@@ -256,9 +274,9 @@ class GoogleDriveProvider(
         usedToken?.let { confirmedTokens[accountId] = it }
     }
 
-    private fun metadataRequest(id: String, token: String?): Request =
+    private fun metadataRequest(id: String, token: String?, fields: String): Request =
         Request.Builder()
-            .url("$API/files/${seg(id)}?fields=${GoogleDriveJson.FILE_FIELDS}&supportsAllDrives=true")
+            .url("$API/files/${seg(id)}?fields=$fields&supportsAllDrives=true")
             .header("Authorization", "Bearer $token")
             .build()
 
@@ -312,6 +330,12 @@ class GoogleDriveProvider(
 
         /** One `files.get` per id; at the gate's ~5/s a page is a few seconds of work, saved after. */
         const val PAGE_SIZE = 25
+
+        /**
+         * What the picks scan asks for: the usual fields plus the file's app properties, which
+         * only a file Stash itself saved has (its song's track key). Readable under drive.file.
+         */
+        const val PICK_FIELDS = "${GoogleDriveJson.FILE_FIELDS},appProperties"
 
         /** The file's bytes. No token in the URL: it goes in the Authorization header. */
         fun mediaUrl(itemId: String): String = "$API/files/${seg(itemId)}?alt=media&supportsAllDrives=true"

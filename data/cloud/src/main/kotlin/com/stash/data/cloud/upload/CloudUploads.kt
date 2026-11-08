@@ -89,6 +89,11 @@ data class UploadStatus(
  * ([start] watches for them). Turning it off sends what it queued back to EXISTING; songs the
  * user saved by hand still go.
  *
+ * A download linked to a file in a Drive (saved there before, relinked by a scan after a
+ * reconnect, or picked there as the same bytes) is in that Drive: its row is DONE there and counts
+ * under "Backed up N songs", never under "Back up N existing". When the link goes (the copy trashed,
+ * the folder or account removed) the row waits again ([CloudDao.removeItems]).
+ *
  * Several Drive accounts: one of them takes saves and backup ([saveAccountId]). A song lives in one
  * Drive. Each account has its own queue state: one signed out or full never holds up another's
  * songs ([CloudUploadRun]), and each has its own status line.
@@ -175,8 +180,10 @@ class CloudUploads @Inject constructor(
             // now (switched off and on again during one big upload): stop it, then start over.
             scheduler.cancel()
             dao.moveWaitingBackups(accountId, now)
-            // Today's downloads are only counted ("Back up N existing"); new ones are sent.
+            // Today's downloads are only counted ("Back up N existing"); new ones are sent. One
+            // already in a Drive (relinked after a reconnect) is counted as backed up there.
             dao.insertUploadsForDownloads(accountId, CloudUploadState.EXISTING.name, now)
+            dao.markLinkedUploadsDone(now)
             settings.setSaveAccount(accountId)
             settings.setBackupAccount(accountId)
             kickIfQueued()
@@ -187,9 +194,14 @@ class CloudUploads @Inject constructor(
         }
     }
 
-    /** "Back up N existing downloads" for [accountId]. */
+    /**
+     * "Back up N existing downloads" for [accountId]. A song found in a Drive since it was counted
+     * is backed up already, never sent again.
+     */
     suspend fun backUpExisting(accountId: Long): Int {
-        val n = dao.queueExistingUploads(accountId, System.currentTimeMillis())
+        val now = System.currentTimeMillis()
+        dao.markLinkedUploadsDone(now)
+        val n = dao.queueExistingUploads(accountId, now)
         clearFull(accountId)
         if (n > 0) scheduler.kick()
         return n
@@ -303,6 +315,15 @@ class CloudUploads @Inject constructor(
     fun start() {
         if (!available || watcher != null) return
         watcher = scope.launch {
+            // Rows counted as waiting for songs that are in a Drive (left by an older build, or by a
+            // reconnect whose scan relinked them after backup counted them) say "Backed up".
+            try {
+                dao.markLinkedUploadsDone(System.currentTimeMillis())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "linked downloads not marked as backed up: ${e.javaClass.simpleName}")
+            }
             // A scan finds a trashed copy with nothing here looking: this is where it comes back.
             // Before the kick, so a queued song isn't sent to the account it left.
             moveUnlinkedBackups()

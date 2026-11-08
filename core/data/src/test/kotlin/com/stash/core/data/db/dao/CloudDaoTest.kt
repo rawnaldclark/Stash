@@ -171,10 +171,10 @@ class CloudDaoTest {
         // The switch and the watcher.
         dao.insertUploadsForDownloads(b, CloudUploadState.EXISTING.name, 1)
         assertEquals(a, dao.getUpload(linked)!!.accountId)
-        // Moving backup, and "Back up N existing".
+        // Moving backup, and "Back up N existing". It is in A's Drive already: backed up there.
         assertEquals(0, dao.moveWaitingBackups(b, 2))
         assertEquals(0, dao.queueExistingUploads(b, 3))
-        assertEquals(CloudUploadState.EXISTING.name, dao.getUpload(linked)!!.state)
+        assertEquals(CloudUploadState.DONE.name, dao.getUpload(linked)!!.state)
         // A tap on Save, with a row and without one.
         assertEquals(1, dao.queueUploads(listOf(linked), b, CloudUploadOrigin.MANUAL.name, 4))
         assertEquals(a, dao.getUpload(linked)!!.accountId)
@@ -236,6 +236,139 @@ class CloudDaoTest {
             assertNull(it.sessionUri)
         }
         assertEquals(b, dao.getUpload(finished)!!.accountId)
+    }
+
+    // ── A download already in a Drive is backed up there (Pixel 5, 2026-11-07) ──
+    //
+    // Reconnecting thenorkralc2 relinked its 27 saved songs, then turning backup on said "Back up
+    // 49 existing downloads", the 27 included, and "Backed up N songs" was gone.
+
+    @Test fun `turning backup on counts a download already linked in a Drive as backed up there, not as existing`() = runTest {
+        val a = driveAccount("a")
+        val b = driveAccount("b")
+        val relinked = download("relinked")
+        val elsewhere = download("elsewhere")
+        val fresh = download("fresh")
+        linkTo(relinked, a)
+        linkTo(elsewhere, b)
+
+        dao.insertUploadsForDownloads(a, CloudUploadState.EXISTING.name, 5)
+
+        dao.getUpload(relinked)!!.let {
+            assertEquals(CloudUploadState.DONE.name, it.state)
+            assertEquals(a, it.accountId)
+            assertEquals("file-$relinked", it.driveFileId)
+        }
+        // In B's Drive: backed up there, whichever account asked.
+        dao.getUpload(elsewhere)!!.let {
+            assertEquals(CloudUploadState.DONE.name, it.state)
+            assertEquals(b, it.accountId)
+        }
+        assertEquals(CloudUploadState.EXISTING.name, dao.getUpload(fresh)!!.state)
+        val counts = dao.observeUploadCounts(a).first().associate { it.state to it.count }
+        assertEquals(mapOf(CloudUploadState.DONE.name to 1, CloudUploadState.EXISTING.name to 1), counts)
+        // The watcher's QUEUED pass doesn't queue a linked song either.
+        val later = download("later")
+        linkTo(later, a)
+        dao.insertUploadsForDownloads(a, CloudUploadState.QUEUED.name, 6)
+        assertEquals(CloudUploadState.DONE.name, dao.getUpload(later)!!.state)
+        assertEquals(0, dao.countQueuedUploads(emptyList()))
+    }
+
+    @Test fun `a relink after backup counted the song makes its row DONE, and a queued one stays queued`() = runTest {
+        val a = driveAccount("a")
+        val counted = download("counted")
+        val queued = download("queued")
+        // Backup was switched on before the reconnect's scan had relinked anything.
+        upload(counted, a, CloudUploadState.EXISTING, CloudUploadOrigin.BACKUP)
+        upload(queued, a, CloudUploadState.QUEUED, CloudUploadOrigin.MANUAL)
+
+        linkTo(counted, a)
+        linkTo(queued, a)
+
+        dao.getUpload(counted)!!.let {
+            assertEquals(CloudUploadState.DONE.name, it.state)
+            assertEquals("file-$counted", it.driveFileId)
+        }
+        // The upload checks a queued song against the copy it finds.
+        assertEquals(CloudUploadState.QUEUED.name, dao.getUpload(queued)!!.state)
+    }
+
+    @Test fun `rows left waiting for songs that are in a Drive are mended, on the account of their link`() = runTest {
+        val a = driveAccount("a")
+        val b = driveAccount("b")
+        val folder = dao.insertFolder(CloudFolderEntity(accountId = a, itemId = "saved", name = "Saved", path = "", addedAt = 1))
+        val here = download("here")
+        val wrongAccount = download("wrong-account")
+        val unlinked = download("unlinked")
+        val queued = download("queued")
+        // Written straight to the table, as an older build left them.
+        for ((track, item) in listOf(here to "f-here", wrongAccount to "f-wrong", queued to "f-queued")) {
+            dao.insertItem(
+                CloudItemEntity(
+                    trackId = track, accountId = a, folderId = folder, itemId = item, name = "f", relativePath = "",
+                    parentItemId = null, cTag = "1", eTag = null, size = 1, mimeType = null, seenGeneration = 1, scannedAt = 1,
+                ),
+            )
+        }
+        upload(here, a, CloudUploadState.EXISTING, CloudUploadOrigin.BACKUP)
+        upload(wrongAccount, b, CloudUploadState.EXISTING, CloudUploadOrigin.BACKUP)
+        dao.setUploadSession(wrongAccount, b, "https://session", 10, "md5", 2)
+        upload(unlinked, a, CloudUploadState.EXISTING, CloudUploadOrigin.BACKUP)
+        upload(queued, a, CloudUploadState.QUEUED, CloudUploadOrigin.BACKUP)
+
+        assertEquals(2, dao.markLinkedUploadsDone(9))
+
+        assertEquals(CloudUploadState.DONE.name, dao.getUpload(here)!!.state)
+        assertEquals("f-here", dao.getUpload(here)!!.driveFileId)
+        dao.getUpload(wrongAccount)!!.let {
+            assertEquals(CloudUploadState.DONE.name, it.state)
+            assertEquals(a, it.accountId)
+            assertNull(it.sessionUri)
+        }
+        assertEquals(CloudUploadState.EXISTING.name, dao.getUpload(unlinked)!!.state)
+        assertEquals(CloudUploadState.QUEUED.name, dao.getUpload(queued)!!.state)
+        // Nothing left to mend.
+        assertEquals(0, dao.markLinkedUploadsDone(10))
+    }
+
+    @Test fun `a song whose copy leaves the Drive waits again instead of staying backed up`() = runTest {
+        val a = driveAccount("a")
+        val song = download("song")
+        val other = download("other")
+        linkTo(song, a)
+        linkTo(other, a)
+        dao.insertUploadsForDownloads(a, CloudUploadState.EXISTING.name, 5)
+        assertEquals(CloudUploadState.DONE.name, dao.getUpload(song)!!.state)
+
+        // The copy was trashed: the scan removes the link.
+        dao.removeItems(listOf(song))
+
+        assertNull(dao.getItemForTrack(song))
+        assertEquals(CloudUploadState.EXISTING.name, dao.getUpload(song)!!.state)
+        assertEquals(CloudUploadState.DONE.name, dao.getUpload(other)!!.state)
+    }
+
+    @Test fun `the scan's view of downloads by their bytes`() = runTest {
+        val a = driveAccount("a")
+        val b = driveAccount("b")
+        val unlinked = dao.insertTrack(
+            TrackEntity(
+                title = "u", artist = "A", source = MusicSource.LOCAL, isDownloaded = true, filePath = "/m/u.wav", fileSizeBytes = 1234,
+            ),
+        )
+        val onA = download("on-a")
+        val onB = download("on-b")
+        linkTo(onA, a)
+        linkTo(onB, b)
+        val streamed = cloudSong("streamed")
+
+        assertEquals(listOf(UnlinkedDownloadFile(unlinked, "/m/u.wav", 1234)), dao.unlinkedDownloadFiles())
+        // Only downloads, only this account's links, by the file's stored version.
+        assertEquals(listOf(LinkedDownloadVersion("1", onA)), dao.linkedDownloadVersions(a))
+        assertEquals(listOf("file-$onA"), dao.accountItemIds(a))
+        assertEquals(listOf("streamed"), dao.accountItemIds(accountId))
+        assertTrue(dao.getTrack(streamed) != null)
     }
 
     @Test fun `saving a song already in another Drive keeps it there, anything else moves`() = runTest {
