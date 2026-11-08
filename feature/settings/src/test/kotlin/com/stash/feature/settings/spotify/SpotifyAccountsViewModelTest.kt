@@ -23,9 +23,12 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -579,6 +582,28 @@ class SpotifyAccountsViewModelTest {
 
     @Test fun `Remove that fails part way says to try again`() = runTest {
         assertThat(remove(null)).containsExactly(OtherAccountNotice.RemoveUnfinished("Sam"))
+    }
+
+    @Test fun `a confirmed Remove finishes even if the screen closes meanwhile`() = runTest {
+        coEvery { accountDao.getById(4) } returns row(4, "sam", "Sam")
+        val gate = CompletableDeferred<Unit>()
+        var finished = false
+        coEvery { remover.remove(4) } coAnswers {
+            gate.await()
+            finished = true
+            SpotifyAccountRemoval.Removed(hiddenRows = 3)
+        }
+        val vm = newVm()
+        vm.requestRemove(4)
+        vm.confirmRemove()
+        advanceUntilIdle()
+
+        // The Accounts screen left for good, mid-removal.
+        vm.viewModelScope.cancel()
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertThat(finished).isTrue()
     }
 
     @Test fun `Cancel on the Remove confirm removes nothing`() = runTest {

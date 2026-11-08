@@ -516,22 +516,25 @@ class SpotifyAccountsViewModel @Inject constructor(
     fun confirmRemove() {
         val accountId = _state.value.confirmRemoveId ?: return
         _state.update { it.copy(confirmRemoveId = null, openAccountId = null) }
+        // Confirmed, so it finishes even if the screen closes meanwhile (as a sign-in's save does):
+        // cut off between forgetting the sign-in and hiding the rows, the account would stay,
+        // signed out, with its playlists still showing.
         viewModelScope.launch {
-            val name = accounts.value.firstOrNull { it.id == accountId }?.name
-                ?: runCatching { accountDao.getById(accountId)?.label }.getOrNull()
-                ?: ""
-            val notice = try {
-                when (remover.remove(accountId)) {
-                    is SpotifyAccountRemoval.Removed -> OtherAccountNotice.Removed(name)
-                    SpotifyAccountRemoval.NotFound -> OtherAccountNotice.AlreadyRemoved
-                    SpotifyAccountRemoval.SignInNotForgotten -> OtherAccountNotice.NotRemoved(name)
+            val notice = withContext(NonCancellable) {
+                val name = accounts.value.firstOrNull { it.id == accountId }?.name
+                    ?: runCatching { accountDao.getById(accountId)?.label }.getOrNull()
+                    ?: ""
+                try {
+                    when (remover.remove(accountId)) {
+                        is SpotifyAccountRemoval.Removed -> OtherAccountNotice.Removed(name)
+                        SpotifyAccountRemoval.NotFound -> OtherAccountNotice.AlreadyRemoved
+                        SpotifyAccountRemoval.SignInNotForgotten -> OtherAccountNotice.NotRemoved(name)
+                    }
+                } catch (e: Exception) {
+                    // The remover forgot the sign-in first, so the account stays, signed out.
+                    Log.w(TAG, "removing another Spotify account failed part way: ${e.javaClass.simpleName}")
+                    OtherAccountNotice.RemoveUnfinished(name)
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                // The remover forgot the sign-in first, so the account stays, signed out.
-                Log.w(TAG, "removing another Spotify account failed part way: ${e.javaClass.simpleName}")
-                OtherAccountNotice.RemoveUnfinished(name)
             }
             signInChanges.update { it + 1 }
             _notices.tryEmit(notice)
