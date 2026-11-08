@@ -280,6 +280,10 @@ private fun OtherAccountRefusal.words(): Pair<String, String> = when (this) {
         mainName?.let { stringResource(R.string.settings_spotify_others_already_connected_body, it) }
             ?: stringResource(R.string.settings_spotify_others_already_connected_body_unnamed)
         )
+    is OtherAccountRefusal.MainUnchecked -> stringResource(R.string.settings_spotify_others_main_unchecked_title) to (
+        mainName?.let { stringResource(R.string.settings_spotify_others_main_unchecked_body, it) }
+            ?: stringResource(R.string.settings_spotify_others_main_unchecked_body_unnamed)
+        )
     OtherAccountRefusal.Unidentified -> stringResource(R.string.settings_spotify_others_unidentified_title) to
         stringResource(R.string.settings_spotify_others_unidentified_body)
     is OtherAccountRefusal.DifferentAccount -> stringResource(R.string.settings_spotify_other_account_title) to

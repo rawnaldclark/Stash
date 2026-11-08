@@ -213,6 +213,11 @@
     <!-- Dialog: Spotify didn't say whose account the sign-in is, so it wasn't added. -->
     <string name="settings_spotify_others_unidentified_title">Couldn\'t tell which account</string>
     <string name="settings_spotify_others_unidentified_body">Spotify didn\'t say which account this is, so Stash can\'t keep it apart from your others. Try again in a moment.</string>
+    <!-- Dialog: Stash couldn't check whether the sign-in is the Spotify account it is already connected to, so nothing was saved. %1$s = that connected account's name. "Reconnect" is the button on its card in Settings > Accounts. -->
+    <string name="settings_spotify_others_main_unchecked_title">Couldn\'t check this account</string>
+    <string name="settings_spotify_others_main_unchecked_body">Stash couldn\'t check this account against %1$s, the Spotify account it\'s connected to, so nothing was saved. Try again in a moment, or reconnect %1$s first.</string>
+    <!-- As settings_spotify_others_main_unchecked_body, when the connected account has no name to show. -->
+    <string name="settings_spotify_others_main_unchecked_body_unnamed">Stash couldn\'t check this account against the Spotify account it\'s connected to, so nothing was saved. Try again in a moment, or reconnect that account first.</string>
     <!-- Dialog (titled "Different Spotify account"): signing an other account in again landed on another account. %1$s = the account's name. -->
     <string name="settings_spotify_others_different_body">That\'s a different Spotify account. To keep %1$s syncing, sign in as %1$s, with the same email or Google account as before.</string>
     <!-- Dialog: the most other accounts are added already. %1$d = how many (3). -->

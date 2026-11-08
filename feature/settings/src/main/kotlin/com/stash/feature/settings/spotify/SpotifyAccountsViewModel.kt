@@ -80,6 +80,13 @@ sealed interface OtherAccountRefusal {
     /** It is the account Stash is connected to already, [mainName] (null when it has none to show). */
     data class AlreadyConnected(val mainName: String?) : OtherAccountRefusal
 
+    /**
+     * Spotify couldn't say whether it is the connected account, [mainName] (that account's own
+     * identity is unknown and couldn't be learned in time). Taking it could list the connected
+     * account twice and move its playlists to the copy, so it is refused until that can be told.
+     */
+    data class MainUnchecked(val mainName: String?) : OtherAccountRefusal
+
     /** Spotify didn't say whose account it is, so it can't be kept apart from the others. */
     data object Unidentified : OtherAccountRefusal
 
@@ -297,7 +304,7 @@ class SpotifyAccountsViewModel @Inject constructor(
     }
 
     private suspend fun add(check: SpotifyCookieCheck.Valid, account: SpotifyProfile): Outcome {
-        if (check.isMainAccount == true) return Outcome.Refused(alreadyConnected())
+        mainAccountRefusal(check)?.let { return Outcome.Refused(it) }
         // Added already: sign that row in again, never a second row for one account.
         accountDao.findByAccount(account.userId)?.let { return save(it, check.signIn, isNew = false) }
         if (accountDao.count() >= MAX_EXTRA_SPOTIFY_ACCOUNTS) return Outcome.Refused(OtherAccountRefusal.Full)
@@ -310,8 +317,25 @@ class SpotifyAccountsViewModel @Inject constructor(
         if (!SpotifyAccount(row.id, row.userId).isAccount(account)) {
             return Outcome.Refused(OtherAccountRefusal.DifferentAccount(row.label))
         }
-        if (check.isMainAccount == true) return Outcome.Refused(alreadyConnected())
+        mainAccountRefusal(check)?.let { return Outcome.Refused(it) }
         return save(row, check.signIn, isNew = false)
+    }
+
+    /**
+     * Why [check] can't be taken as an other account because of the connected (main) account: it
+     * IS that account, or a main account is connected and Spotify couldn't say whether it is
+     * ([SpotifyCookieCheck.Valid.isMainAccount] null: the main account's identity unknown, as on an
+     * install that never recorded it, and not learned within the check's budget). The token store
+     * refuses the main account only once it knows who that is, so an unknown here must not go on
+     * to save: "Continue with Google" signing the main account straight back in would list it
+     * twice and move its playlists to the copy. With no main account connected there is nothing to
+     * confuse it with. Null when it may be taken.
+     */
+    private fun mainAccountRefusal(check: SpotifyCookieCheck.Valid): OtherAccountRefusal? = when {
+        check.isMainAccount == true -> alreadyConnected()
+        check.isMainAccount == null && tokenManager.spotifyAuthState.value !is AuthState.NotConnected ->
+            OtherAccountRefusal.MainUnchecked(mainNameOf(tokenManager.spotifyAuthState.value))
+        else -> null
     }
 
     /**

@@ -133,6 +133,33 @@ class SpotifyAccountsViewModelTest {
         verify(exactly = 1) { webSession.clear() }
     }
 
+    @Test fun `with the connected account's identity unknown, an add is refused, and nothing is saved`() = runTest {
+        // An older install never recorded whose the connected sign-in is, and Spotify couldn't say
+        // in time: this could be the connected account itself ("Continue with Google").
+        signsInAs("rawn", "Rawn", isMain = null)
+        val vm = newVm()
+
+        add(vm)
+
+        assertThat(vm.state.value.refusal).isEqualTo(OtherAccountRefusal.MainUnchecked("Rawn"))
+        coVerify(exactly = 0) { accountDao.addOrFind(any(), any(), any()) }
+        coVerify(exactly = 0) { tokenManager.saveSpotifyExtra(any(), any()) }
+        verify(exactly = 1) { webSession.clear() }
+    }
+
+    @Test fun `with no account connected, there is nothing to confuse an unchecked add with`() = runTest {
+        auth.value = AuthState.NotConnected
+        signsInAs("sam", isMain = null)
+        coEvery { accountDao.addOrFind(any(), any(), any()) } returns row(7, "sam", "Sam")
+        coEvery { tokenManager.saveSpotifyExtra(any(), any()) } returns true
+        val vm = newVm()
+
+        add(vm)
+
+        assertThat(vm.state.value.refusal).isNull()
+        assertThat(vm.state.value.naming).isEqualTo(OtherAccountNaming(7, "Sam"))
+    }
+
     @Test fun `an account Spotify won't name is refused, and nothing is saved`() = runTest {
         signsInAs(null)
         val vm = newVm()
@@ -289,6 +316,33 @@ class SpotifyAccountsViewModelTest {
         assertThat(vm.state.value.refusal).isEqualTo(OtherAccountRefusal.DifferentAccount("Sam"))
         coVerify(exactly = 0) { tokenManager.saveSpotifyExtra(any(), any()) }
         coVerify(exactly = 0) { accountDao.updateSignedOutAt(any(), any()) }
+    }
+
+    @Test fun `signing in again as an account that turns out to be the connected one is refused`() = runTest {
+        coEvery { accountDao.getById(4) } returns row(4, "sam", "Sam", signedOutAt = 1)
+        signsInAs("sam", isMain = true)
+        val vm = newVm()
+
+        vm.startSignInAgain(4)
+        vm.onCookieCaptured("cookie")
+        advanceUntilIdle()
+
+        assertThat(vm.state.value.refusal).isEqualTo(OtherAccountRefusal.AlreadyConnected("Rawn"))
+        coVerify(exactly = 0) { tokenManager.saveSpotifyExtra(any(), any()) }
+        coVerify(exactly = 0) { accountDao.updateSignedOutAt(any(), any()) }
+    }
+
+    @Test fun `signing in again unchecked against the connected account is refused`() = runTest {
+        coEvery { accountDao.getById(4) } returns row(4, "sam", "Sam", signedOutAt = 1)
+        signsInAs("sam", isMain = null)
+        val vm = newVm()
+
+        vm.startSignInAgain(4)
+        vm.onCookieCaptured("cookie")
+        advanceUntilIdle()
+
+        assertThat(vm.state.value.refusal).isEqualTo(OtherAccountRefusal.MainUnchecked("Rawn"))
+        coVerify(exactly = 0) { tokenManager.saveSpotifyExtra(any(), any()) }
     }
 
     @Test fun `signing in again as the same account saves it and clears its signed-out mark`() = runTest {
