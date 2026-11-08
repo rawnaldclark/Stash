@@ -36,11 +36,16 @@ data class SpotifyProfile(
         private val json = Json { ignoreUnknownKeys = true }
 
         /**
-         * A Spotify user id in the form [isSameAccount] compares: trimmed, without the
-         * `spotify:user:` prefix, lower case. The database keys accounts by it, so the same
-         * account read through two shapes of Spotify's answer is one row and one tag.
+         * THE normaliser for Spotify user ids: trimmed, lower case, without the `spotify:user:`
+         * prefix. [isSameAccount] compares by it, and the database keys accounts by it
+         * (`spotify_accounts.user_id`, the `spotify_account` tags, an extra's Liked Songs id),
+         * so the same account read through two shapes of Spotify's answer is one row and one tag.
+         * SQLite compares those columns case-sensitively: every id stored must go through here.
          */
-        fun accountKeyOf(id: String): String = id.trim().removePrefix(USER_URI_PREFIX).lowercase()
+        fun accountKeyOf(id: String): String = id.trim().lowercase().removePrefix(USER_URI_PREFIX)
+
+        /** Whether [id] is already in [accountKeyOf] form, and not blank: what the database may store. */
+        fun isAccountKey(id: String): Boolean = id.isNotBlank() && accountKeyOf(id) == id
 
         private const val USER_URI_PREFIX = "spotify:user:"
 

@@ -91,6 +91,39 @@ class SpotifyAccountDaoTest {
         assertEquals("Sam (work)", sam.label)
     }
 
+    // -- One account, one key, whatever shape its id comes in -----------------
+
+    @Test fun `adding stores the normalised id, and adding the same account again finds its row`() = runTest {
+        val added = dao.addOrFind("spotify:user:LM7D11NSF65N11SOJL4TWWR6T", "Sam", addedAt = 5)
+
+        assertEquals("lm7d11nsf65n11sojl4twwr6t", added.userId)
+        assertEquals("Sam", added.label)
+
+        val again = dao.addOrFind("  Lm7d11nsf65n11sojl4twwr6t ", "Sam again", addedAt = 9)
+        assertEquals("the same row, unchanged", added, again)
+        assertEquals(1, dao.count())
+    }
+
+    @Test fun `an account is found by its id in any shape`() = runTest {
+        val sam = dao.addOrFind("lm7d11nsf65n11sojl4twwr6t", "Sam", addedAt = 5)
+
+        listOf("lm7d11nsf65n11sojl4twwr6t", "LM7D11NSF65N11SOJL4TWWR6T", "spotify:user:lm7d11nsf65n11sojl4twwr6t", " lm7d11nsf65n11sojl4twwr6t ")
+            .forEach { assertEquals(it, sam, dao.findByAccount(it)) }
+        assertNull(dao.findByAccount("kimk"))
+        assertNull(dao.findByAccount("  "))
+        // The raw query compares exactly, which is why callers go through findByAccount.
+        assertNull(dao.getByUserId("LM7D11NSF65N11SOJL4TWWR6T"))
+    }
+
+    @Test fun `a row with an id that isn't normalised can't be built, so never reaches the table`() = runTest {
+        listOf("Sam", " sam", "spotify:user:sam", "").forEach { id ->
+            val refused = runCatching { account(id, "Sam", addedAt = 1) }.exceptionOrNull()
+            assertTrue("'$id' built: $refused", refused is IllegalArgumentException)
+        }
+        assertTrue(runCatching { dao.addOrFind(" ", "Nobody", addedAt = 1) }.exceptionOrNull() is IllegalArgumentException)
+        assertEquals(0, dao.count())
+    }
+
     @Test fun `changing or deleting an account that is gone changes nothing`() = runTest {
         val id = dao.insert(account("sam", "Sam", addedAt = 1))
 

@@ -138,7 +138,9 @@ data class PlaylistEntity(
      * every row made before extra accounts existed, and every non-Spotify row. An extra account's
      * rows carry its Spotify user id (`spotify_accounts.user_id`), not its local row id, so
      * removing and re-adding the account re-adopts them. A playlist or album two accounts both
-     * have is ONE row, owned by one account (the main, when it is one of them).
+     * have is ONE row, owned by one account (the main, when it is one of them). Build a tag with
+     * [com.stash.core.data.sync.SpotifyPlaylistIds.accountTag], which refuses an id that isn't
+     * normalised (SQLite would compare it as another account).
      */
     @ColumnInfo(name = "spotify_account")
     val spotifyAccount: String? = null,

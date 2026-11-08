@@ -104,7 +104,7 @@ data class RemotePlaylistSnapshotEntity(
      * v79: the Spotify account whose sync pass fetched this snapshot (plan 2026-11-04 §2.3), as
      * [PlaylistEntity.spotifyAccount]: NULL for the main account (and every other service), an
      * extra account's Spotify user id otherwise. The diff gives a row the account of the snapshot
-     * applied to it.
+     * applied to it. Built with [com.stash.core.data.sync.SpotifyPlaylistIds.accountTag].
      */
     @ColumnInfo(name = "spotify_account")
     val spotifyAccount: String? = null,

@@ -70,4 +70,22 @@ class SpotifyProfileTest {
 
         assertFalse(a.isSameAccount(SpotifyProfile(userId = "lm7d11nsf65n11sojl4twwr6t", displayName = "Rawn")))
     }
+
+    // -- The one normaliser the database keys accounts by --------------------
+
+    @Test fun `every shape of one user id normalises to one key`() {
+        val shapes = listOf("rawnclark", "RawnClark", "  rawnclark ", "spotify:user:rawnclark", "SPOTIFY:USER:RawnClark")
+
+        assertEquals(setOf("rawnclark"), shapes.map(SpotifyProfile::accountKeyOf).toSet())
+        assertEquals("rawnclark", SpotifyProfile(userId = "Spotify:User:RAWNCLARK", displayName = "Rawn").accountKey)
+        assertTrue(SpotifyProfile("RawnClark", "Rawn").isSameAccount(SpotifyProfile("spotify:user:rawnclark", "x")))
+    }
+
+    @Test fun `only an id already in key form, and not blank, is a key`() {
+        assertTrue(SpotifyProfile.isAccountKey("rawnclark"))
+        assertTrue(SpotifyProfile.isAccountKey("lm7d11nsf65n11sojl4twwr6t"))
+        listOf("RawnClark", " rawnclark", "spotify:user:rawnclark", "", "  ").forEach {
+            assertFalse("'$it' is not a key", SpotifyProfile.isAccountKey(it))
+        }
+    }
 }

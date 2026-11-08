@@ -4,6 +4,8 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
+import com.stash.core.auth.spotify.SpotifyProfile
 import com.stash.core.data.db.entity.SpotifyAccountEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -19,8 +21,35 @@ import kotlinx.coroutines.flow.Flow
 interface SpotifyAccountDao {
 
     /**
-     * Adds an extra account and returns its row id. Throws on a [SpotifyAccountEntity.userId]
-     * already added (unique): look it up with [getByUserId] first and sign that one in again.
+     * The extra account whose Spotify user id is [userId] in any shape (normalised here by
+     * `SpotifyProfile.accountKeyOf`: `Sam`, `spotify:user:sam` and `sam` are one account), or null.
+     * Callers look accounts up through this, never [getByUserId] with an id of their own.
+     */
+    @Transaction
+    suspend fun findByAccount(userId: String): SpotifyAccountEntity? {
+        val key = SpotifyProfile.accountKeyOf(userId)
+        return if (key.isEmpty()) null else getByUserId(key)
+    }
+
+    /**
+     * Adds the extra account [userId] (any shape; stored normalised, see [findByAccount]) named
+     * [label], or returns the row already there for it, unchanged: re-adding an account signs that
+     * row in again rather than adding a copy. One transaction, so two adds can't both insert.
+     *
+     * @return The account's row, new or existing.
+     */
+    @Transaction
+    suspend fun addOrFind(userId: String, label: String, addedAt: Long): SpotifyAccountEntity {
+        val key = SpotifyProfile.accountKeyOf(userId)
+        require(key.isNotEmpty()) { "an extra Spotify account needs a user id" }
+        getByUserId(key)?.let { return it }
+        val id = insert(SpotifyAccountEntity(userId = key, label = label, addedAt = addedAt))
+        return checkNotNull(getById(id)) { "the account row just added is gone" }
+    }
+
+    /**
+     * Inserts [account] as it is and returns its row id; prefer [addOrFind]. Throws on a user id
+     * already added (unique).
      */
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(account: SpotifyAccountEntity): Long
@@ -28,7 +57,10 @@ interface SpotifyAccountDao {
     @Query("SELECT * FROM spotify_accounts WHERE id = :id")
     suspend fun getById(id: Long): SpotifyAccountEntity?
 
-    /** The extra account with this Spotify user id (in `SpotifyProfile.accountKey` form), or null. */
+    /**
+     * The extra account whose stored user id is exactly [userId]: case and shape must already be
+     * the normalised key. Prefer [findByAccount], which normalises.
+     */
     @Query("SELECT * FROM spotify_accounts WHERE user_id = :userId")
     suspend fun getByUserId(userId: String): SpotifyAccountEntity?
 

@@ -4,6 +4,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.stash.core.auth.spotify.SpotifyProfile
 
 /**
  * v79: one EXTRA Spotify account (plan 2026-11-04 §2.1). The main account has no row: it keeps
@@ -27,8 +28,11 @@ data class SpotifyAccountEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     /**
-     * The account's Spotify user id, in the form `SpotifyProfile.accountKey` gives (trimmed, no
-     * `spotify:user:` prefix, lower case): one account is one row. Never shown, never logged.
+     * The account's Spotify user id, normalised by `SpotifyProfile.accountKeyOf` (trimmed, lower
+     * case, no `spotify:user:` prefix): one account is one row, as the unique index compares case
+     * exactly. Add and look up through [com.stash.core.data.db.dao.SpotifyAccountDao.addOrFind] /
+     * [com.stash.core.data.db.dao.SpotifyAccountDao.findByAccount], which normalise; a row built
+     * with an id in any other shape is refused (see `init`). Never shown, never logged.
      */
     @ColumnInfo(name = "user_id")
     val userId: String,
@@ -55,4 +59,12 @@ data class SpotifyAccountEntity(
      */
     @ColumnInfo(name = "signed_out_at")
     val signedOutAt: Long? = null,
-)
+) {
+    init {
+        // Every row is built here, so an id in another shape never reaches the table. A row Room
+        // reads back passed this check when it was written.
+        require(SpotifyProfile.isAccountKey(userId)) {
+            "spotify_accounts.user_id must be normalised (SpotifyProfile.accountKeyOf)"
+        }
+    }
+}
