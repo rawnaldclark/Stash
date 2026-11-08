@@ -318,6 +318,8 @@ class SpotifyJointHideTest {
     // ── Undo ─────────────────────────────────────────────────────────────
 
     @Test fun `Undo after a sync that hid rows of both accounts restores both`() = runTest {
+        // B is a real extra account here: Undo leaves the rows of an account with no row alone.
+        db.spotifyAccountDao().addOrFind(b, label = "B", addedAt = 0L)
         val a2 = row("a2")
         val b2 = row("b2", owner = b)
         val albumB2 = row(album("b2"), owner = b)
