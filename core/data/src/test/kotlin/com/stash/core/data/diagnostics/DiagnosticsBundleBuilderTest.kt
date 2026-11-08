@@ -192,6 +192,17 @@ class DiagnosticsBundleBuilderTest {
         assertTrue(text.contains("== Connection ==\nSpotify: Not connected\nYouTube: Not connected"))
     }
 
+    @Test fun `an unreadable extra-accounts table costs only its own line`() = runTest {
+        coEvery { spotifyAccountDao.getAll() } throws IllegalStateException("locked: sam@example.com")
+        val text = builder().buildText()
+
+        assertTrue(
+            text.contains("== Connection ==\nSpotify: Not connected\nSpotify (extras): unreadable (IllegalStateException)\nYouTube: Not connected"),
+        )
+        // The exception's message (which could name anything) is never copied in.
+        assertTrue(!text.contains("sam@example.com"))
+    }
+
     @Test fun `a failing data source degrades to an unavailable note, not a crash`() = runTest {
         coEvery { downloadQueueDao.getStatusCounts() } throws RuntimeException("db locked")
         val text = builder().buildText()

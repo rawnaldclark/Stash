@@ -180,8 +180,16 @@ class DiagnosticsBundleBuilder @Inject constructor(
      * name the listener gave it, never its Spotify user id (read only to ask whether its sign-in
      * is the row's account), never anything about its sign-in but yes or no.
      */
-    private suspend fun extraSpotifyLines(): List<String> =
-        spotifyAccountDao.getAll().sortedBy { it.id }.mapIndexed { index, row ->
+    private suspend fun extraSpotifyLines(): List<String> {
+        // An unreadable table costs these lines only, not the Spotify and YouTube lines around them.
+        val rows = try {
+            spotifyAccountDao.getAll()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return listOf("Spotify (extras): unreadable (${e.javaClass.simpleName})")
+        }
+        return rows.sortedBy { it.id }.mapIndexed { index, row ->
             val signedIn = runCatching {
                 tokenManager.hasSpotifyExtraSignIn(SpotifyAccount(row.id, row.userId))
             }.getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it else false }
@@ -195,6 +203,7 @@ class DiagnosticsBundleBuilder @Inject constructor(
             val limit = if (index >= MAX_EXTRA_SPOTIFY_ACCOUNTS) " · past the limit, not read" else ""
             "Spotify (${spotifyExtraAccountLabel(row.id)}): $state · $kinds$limit"
         }
+    }
 
     private fun Boolean.onOff(): String = if (this) "on" else "off"
 
