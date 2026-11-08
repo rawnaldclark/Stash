@@ -226,4 +226,19 @@ class SpotifyApiClientSavedAlbumsTest {
 
         assertEquals(setOf("libraryV3", "getAlbum"), requests.map { it.first }.toSet())
     }
+
+    @Test fun `a 429 to one of the account's own reads is counted, though the read swallows it`() = runBlocking {
+        val before = client.rateLimitedAnswers
+        respond = { _, _ -> 429 to """{"error":"rate limited"}""" }
+
+        assertNull(client.getAlbumTracks("FakeAlb1xxxxxxxxxxxxxx"))
+        assertSame(SpotifySavedAlbumsPage.EMPTY, client.getSavedAlbumsPage(offset = 0))
+
+        assertEquals("the album read, then the listing asked in both orders", before + 3, client.rateLimitedAnswers)
+
+        respond = null
+        pages["libraryV3" to 0] = 200 to fixture("libraryv3_saved_albums.json")
+        client.getSavedAlbumsPage(offset = 0)
+        assertEquals("an answer that isn't a 429 adds nothing", before + 3, client.rateLimitedAnswers)
+    }
 }

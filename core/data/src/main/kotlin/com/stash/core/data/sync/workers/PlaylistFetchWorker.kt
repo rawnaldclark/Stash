@@ -629,8 +629,21 @@ class PlaylistFetchWorker @AssistedInject constructor(
             syncPreferencesManager.discoverAutoMixes.first()
         }.onFailure { if (it is CancellationException) throw it }.getOrDefault(true)
 
+        // Spotify's 429s so far: each of the main's reads swallows its own into a failed page, so
+        // the count says whether the main's pass met any. Read only with an extra to protect.
+        val rateLimitedBefore = if (extras.isNotEmpty()) spotifyApiClient.rateLimitedAnswers else 0
         fetchSpotifyAccount(SpotifyPass.main(discoverMixes), run, diagnostics)
-        fetchExtraSpotifyAccounts(extras, run, diagnostics)
+        // Spotify turning the main's requests away: the extras would only add to it, and get the
+        // same answers. They wait for the next sync, their rows left as they are.
+        val extrasHeldBack = when {
+            extras.isEmpty() -> null
+            spotifyApiClient.rateLimitedAnswers > rateLimitedBefore ->
+                "not read this sync: Spotify was turning requests away (HTTP 429) while the main account synced (read on the next sync)"
+            run.albumBudget.failedInARow >= SpotifySavedAlbumsFetcher.FAILURES_TO_STOP ->
+                "not read this sync: the main account's album reads kept failing, as when Spotify turns requests away (read on the next sync)"
+            else -> null
+        }
+        fetchExtraSpotifyAccounts(extras, run, diagnostics, extrasHeldBack)
         // With no extra account at any row, every tag is an orphan's (or the main's): nothing to keep.
         if (extras.isNotEmpty()) keepRowsWithUnprovenOwners(run)
         hideMissingSpotifyRows(run, diagnostics)
@@ -645,6 +658,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
         extras: List<com.stash.core.data.db.entity.SpotifyAccountEntity>,
         run: SpotifySyncRun,
         diagnostics: MutableList<SyncStepResult>,
+        /** Why no extra is read this sync (the main's pass met Spotify's limits); null to read them. */
+        heldBack: String?,
     ) {
         for ((index, row) in extras.withIndex()) {
             currentCoroutineContext().ensureActive()
@@ -657,6 +672,10 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         note = "not read: a sync reads at most $MAX_EXTRA_SPOTIFY_ACCOUNTS extra accounts",
                     ),
                 )
+                continue
+            }
+            if (heldBack != null) {
+                diagnostics.add(SyncStepResult("SPOTIFY", "accountPass", StepStatus.SKIPPED, account = label, note = heldBack))
                 continue
             }
             if (run.outOfTime()) {

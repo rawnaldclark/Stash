@@ -136,6 +136,9 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
     /** Songs per playlist, mix or album id, whoever lists it. */
     private val songs = HashMap<String, List<String>>()
 
+    /** The client's count of 429 answers ([SpotifyApiClient.rateLimitedAnswers]). */
+    private var rateLimited = 0
+
     @Before fun setUp() {
         db = Room.inMemoryDatabaseBuilder(context, StashDatabase::class.java)
             .allowMainThreadQueries()
@@ -176,6 +179,7 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
             SyncResult.Success(acting().mixes.map { SpotifyPlaylistItem(id = it, name = "Mix $it", owner = SpotifyOwner(id = "spotify")) })
         }
         coEvery { spotify.getYearlyMixes() } returns SyncResult.Empty("none")
+        every { spotify.rateLimitedAnswers } answers { rateLimited }
         coEvery { spotify.getSavedAlbumsPage(any(), any(), any()) } answers {
             val lib = acting()
             val offset = secondArg<Int>()
@@ -370,6 +374,39 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
         assertTrue(result is ListenableWorker.Result.Retry)
         assertFalse("B's sign-in wasn't even asked for", userB in tokens.asked)
         assertTrue(db.playlistDao().findBySourceIds(listOf("b1")).isEmpty())
+    }
+
+    @Test fun `a 429 the main's pass met and swallowed keeps every extra for the next sync`() = runBlocking {
+        addExtra(userB)
+        library(null).playlists += "a1"
+        library(userB).playlists += "b1"
+        val bGone = insertRow("b-gone", owner = userB)
+        // The main's Liked Songs page gets a 429: the read reports a failed page, nothing thrown.
+        coEvery { spotify.getLikedSongs(any(), any()) } answers {
+            rateLimited++
+            SyncResult.Error("HTTP 429")
+        }
+
+        val syncId = runFetch()
+
+        assertFalse("B's sign-in wasn't even asked for", userB in tokens.asked)
+        val held = step(syncId, "accountPass", "extra 1")
+        assertEquals(StepStatus.SKIPPED, held.status)
+        assertTrue(held.note!!.contains("HTTP 429"))
+        assertTrue(db.playlistDao().getById(bGone)!!.isActive)
+        assertTrue("the main's results stand", db.remoteSnapshotDao().getPlaylistSnapshotsBySyncId(syncId).any { it.sourcePlaylistId == "a1" })
+    }
+
+    @Test fun `the main's album reads failing until they stop keeps every extra for the next sync`() = runBlocking {
+        addExtra(userB)
+        library(null).albums += listOf(album("a1"), album("a2"), album("a3"))
+        library(userB).playlists += "b1"
+        coEvery { spotify.getAlbumTracks(any()) } returns null
+
+        val syncId = runFetch(withAlbums = true)
+
+        assertFalse(userB in tokens.asked)
+        assertTrue(step(syncId, "accountPass", "extra 1").note!!.contains("album reads kept failing"))
     }
 
     // ── Who runs ─────────────────────────────────────────────────────────
