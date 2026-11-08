@@ -76,7 +76,7 @@ class SpotifyProfileTest {
     @Test fun `every shape of one user id normalises to one key`() {
         val shapes = listOf("rawnclark", "RawnClark", "  rawnclark ", "spotify:user:rawnclark", "SPOTIFY:USER:RawnClark")
 
-        assertEquals(setOf("rawnclark"), shapes.map(SpotifyProfile::accountKeyOf).toSet())
+        assertEquals(setOf("rawnclark"), shapes.map { SpotifyProfile.accountKeyOf(it) }.toSet())
         assertEquals("rawnclark", SpotifyProfile(userId = "Spotify:User:RAWNCLARK", displayName = "Rawn").accountKey)
         assertTrue(SpotifyProfile("RawnClark", "Rawn").isSameAccount(SpotifyProfile("spotify:user:rawnclark", "x")))
     }
