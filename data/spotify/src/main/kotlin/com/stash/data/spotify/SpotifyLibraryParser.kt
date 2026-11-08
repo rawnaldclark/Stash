@@ -156,10 +156,12 @@ fun parseLibraryPage(responseJson: JsonObject): SpotifyLibraryPage {
                     tracks = SpotifyTracksRef(total = totalCount),
                     revisionId = revisionId,
                 ).also {
+                    // No owner id: it is a Spotify account's user id, and this log goes into the
+                    // diagnostics bundle (with several accounts, every account's id would).
                     Log.d(
                         TAG,
                         "parseLibraryPage: playlist '${it.name}' " +
-                            "(id=${it.id}, owner=${it.owner.id}, tracks=$totalCount, revision=${it.revisionId})",
+                            "(id=${it.id}, tracks=$totalCount, revision=${it.revisionId})",
                     )
                 }
             } catch (e: Exception) {
