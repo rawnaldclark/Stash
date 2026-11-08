@@ -32,6 +32,13 @@ import com.stash.feature.settings.components.ListenBrainzAccountCard
 import com.stash.feature.settings.components.SettingsGroupGap
 import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
+import com.stash.feature.settings.spotify.DisconnectAllSpotifyDialog
+import com.stash.feature.settings.spotify.OtherAccountSignIn
+import com.stash.feature.settings.spotify.SpotifyAccountsViewModel
+import com.stash.feature.settings.spotify.SpotifyNoticeDialog
+import com.stash.feature.settings.spotify.SpotifyOtherAccountCards
+import com.stash.feature.settings.spotify.SpotifyOtherAccountsOverlays
+import com.stash.feature.settings.spotify.otherAccountErrorText
 
 /**
  * Settings > Accounts & Sync. One card per account, each carrying its own
@@ -66,6 +73,59 @@ fun SettingsAccountsScreen(
         onDispose {
             if (activity?.isChangingConfigurations != true) viewModel.onWebLoginsClosed()
         }
+    }
+
+    // The other Spotify accounts (plan 2026-11-04 §3): their own ViewModel, this page's. Read up
+    // here, before the sign-in screens below return early, as the cloud focus flag is.
+    val spotifyAccounts: SpotifyAccountsViewModel = hiltViewModel()
+    val otherSpotify by spotifyAccounts.state.collectAsStateWithLifecycle()
+    val otherSpotifyAccounts by spotifyAccounts.accounts.collectAsStateWithLifecycle()
+    val spotifyMainName by spotifyAccounts.mainName.collectAsStateWithLifecycle()
+    val canAddSpotify by spotifyAccounts.canAdd.collectAsStateWithLifecycle()
+    // Its sign-in outlives the page on a tab switch too (the entry is kept): closed the same way.
+    androidx.compose.runtime.DisposableEffect(spotifyAccounts) {
+        onDispose {
+            if (activity?.isChangingConfigurations != true) spotifyAccounts.onScreenClosed()
+        }
+    }
+
+    // Adding another Spotify account, or signing one in again: Spotify's own sign-in, full screen,
+    // with a line on how ("Continue with Google" would land on the connected account).
+    if (otherSpotify.showWebLogin) {
+        val again = (otherSpotify.signIn as? OtherAccountSignIn.Again)
+            ?.let { purpose -> otherSpotifyAccounts.firstOrNull { it.id == purpose.accountId } }
+        com.stash.feature.settings.components.SpotifyLoginWebView(
+            onCookieExtracted = spotifyAccounts::onCookieCaptured,
+            onDismiss = spotifyAccounts::cancelSignIn,
+            onManualFallback = spotifyAccounts::pasteInstead,
+            title = if (again == null) {
+                stringResource(R.string.settings_spotify_others_add_signin_title)
+            } else {
+                stringResource(R.string.settings_spotify_signin_title)
+            },
+            hint = if (again == null) {
+                stringResource(R.string.settings_spotify_others_google_hint)
+            } else {
+                stringResource(R.string.settings_spotify_others_again_hint, again.name)
+            },
+        )
+        return
+    }
+
+    // Its "Paste cookie" fallback, which also shows the check of a cookie the sign-in captured.
+    if (otherSpotify.showPasteDialog) {
+        com.stash.feature.settings.components.SpotifyCookieDialog(
+            isValidating = otherSpotify.validating,
+            errorMessage = otherSpotify.error?.let { otherAccountErrorText(it) },
+            onConnect = { cookie, _ -> spotifyAccounts.submit(cookie) },
+            onDismiss = spotifyAccounts::cancelSignIn,
+            title = if (otherSpotify.signIn is OtherAccountSignIn.Again) {
+                stringResource(R.string.settings_spotify_signin_title)
+            } else {
+                stringResource(R.string.settings_spotify_others_add_signin_title)
+            },
+            askUsername = false,
+        )
     }
 
     // Spotify WebView login (full-screen overlay). Replaces the screen content
@@ -129,6 +189,27 @@ fun SettingsAccountsScreen(
                     Text(stringResource(R.string.settings_ok))
                 }
             },
+        )
+    }
+
+    // A Connect on the Spotify card signed in as one of the other accounts: refused, nothing changed.
+    val spotifyAlreadyOther by viewModel.spotifyAlreadyOtherAccount.collectAsStateWithLifecycle()
+    spotifyAlreadyOther?.let { name ->
+        SpotifyNoticeDialog(
+            title = stringResource(R.string.settings_spotify_already_other_title),
+            body = stringResource(R.string.settings_spotify_already_other_body, name),
+            onDismiss = viewModel::onDismissSpotifyAlreadyOtherAccount,
+        )
+    }
+
+    // Disconnect stopped: one of the other accounts wouldn't sign out on this phone.
+    val spotifyDisconnectStopped by viewModel.spotifyDisconnectStopped.collectAsStateWithLifecycle()
+    spotifyDisconnectStopped?.let { stopped ->
+        SpotifyNoticeDialog(
+            title = stringResource(R.string.settings_spotify_disconnect_stopped_title),
+            body = stopped.name?.let { stringResource(R.string.settings_spotify_disconnect_stopped_body, it) }
+                ?: stringResource(R.string.settings_spotify_disconnect_stopped_body_unnamed),
+            onDismiss = viewModel::onDismissSpotifyDisconnectStopped,
         )
     }
 
@@ -244,17 +325,29 @@ fun SettingsAccountsScreen(
         }
         if (confirmSpotifyDisconnect) {
             val spotifyRefreshMode by viewModel.spotifyRefreshMode.collectAsStateWithLifecycle()
-            com.stash.feature.settings.components.DisconnectAccountDialog(
-                serviceName = "Spotify",
-                note = if (spotifyRefreshMode) stringResource(R.string.settings_disconnect_spotify_refresh_note) else null,
-                onConfirm = {
-                    confirmSpotifyDisconnect = false
-                    // Also sign the WebView out, or the next Connect re-submits the old sp_dc.
-                    com.stash.feature.settings.components.clearSpotifyWebSession()
-                    viewModel.onDisconnectSpotify()
-                },
-                onDismiss = { confirmSpotifyDisconnect = false },
-            )
+            val note = if (spotifyRefreshMode) stringResource(R.string.settings_disconnect_spotify_refresh_note) else null
+            val onConfirm = {
+                confirmSpotifyDisconnect = false
+                // Also sign the WebView out, or the next Connect re-submits the old sp_dc.
+                com.stash.feature.settings.components.clearSpotifyWebSession()
+                viewModel.onDisconnectSpotify()
+            }
+            if (otherSpotifyAccounts.isEmpty()) {
+                com.stash.feature.settings.components.DisconnectAccountDialog(
+                    serviceName = "Spotify",
+                    note = note,
+                    onConfirm = onConfirm,
+                    onDismiss = { confirmSpotifyDisconnect = false },
+                )
+            } else {
+                // The other accounts can't stay without this one (v1): it asks to disconnect them all.
+                DisconnectAllSpotifyDialog(
+                    names = listOfNotNull(spotifyMainName) + otherSpotifyAccounts.map { it.name },
+                    note = note,
+                    onConfirm = onConfirm,
+                    onDismiss = { confirmSpotifyDisconnect = false },
+                )
+            }
         }
         if (confirmYouTubeDisconnect) {
             com.stash.feature.settings.components.DisconnectAccountDialog(
@@ -291,6 +384,24 @@ fun SettingsAccountsScreen(
             } else {
                 null
             },
+        )
+
+        // The other Spotify accounts under it, each a card, then "Add another Spotify account".
+        // Listed whether or not the connected account is (a restored backup brings them back
+        // signed out, and they must stay reachable to sign in again or remove); adding needs it.
+        SpotifyOtherAccountCards(
+            accounts = otherSpotifyAccounts,
+            mainName = spotifyMainName,
+            canAdd = canAddSpotify,
+            onOpen = spotifyAccounts::openAccount,
+            onSignInAgain = spotifyAccounts::startSignInAgain,
+            onAdd = spotifyAccounts::startAdd,
+        )
+        SpotifyOtherAccountsOverlays(
+            viewModel = spotifyAccounts,
+            state = otherSpotify,
+            accounts = otherSpotifyAccounts,
+            mainName = spotifyMainName,
         )
 
         AccountConnectionCard(

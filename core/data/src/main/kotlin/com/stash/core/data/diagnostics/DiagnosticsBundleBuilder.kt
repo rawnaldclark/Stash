@@ -4,9 +4,13 @@ import android.content.Context
 import android.net.Uri
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
+import com.stash.core.auth.spotify.SpotifyAccount
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.SourceAccountDao
+import com.stash.core.data.db.dao.SpotifyAccountDao
+import com.stash.core.data.sync.MAX_EXTRA_SPOTIFY_ACCOUNTS
+import com.stash.core.data.sync.spotifyExtraAccountLabel
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackBlocklistDao
 import com.stash.core.data.db.dao.TrackDao
@@ -56,6 +60,8 @@ class DiagnosticsBundleBuilder @Inject constructor(
     private val downloadQueueDao: DownloadQueueDao,
     private val trackBlocklistDao: TrackBlocklistDao,
     private val sourceAccountDao: SourceAccountDao,
+    /** The extra Spotify accounts: one connection line each, by label only (see [extraSpotifyLines]). */
+    private val spotifyAccountDao: SpotifyAccountDao,
     private val playlistDao: PlaylistDao,
     private val trackDao: TrackDao,
     private val tokenManager: TokenManager,
@@ -160,9 +166,37 @@ class DiagnosticsBundleBuilder @Inject constructor(
         return buildString {
             appendLine("== Connection ==")
             appendLine(connectionLine("Spotify", tokenManager.spotifyAuthState.value, accounts, MusicSource.SPOTIFY))
+            extraSpotifyLines().forEach { appendLine(it) }
             append(connectionLine("YouTube", tokenManager.youTubeAuthState.value, accounts, MusicSource.YOUTUBE))
         }
     }
+
+    /**
+     * One line per extra Spotify account (plan 2026-11-04 §3.7), in the order a sync reads them
+     * (row id): whether its sign-in is on this phone and working, and which kinds it syncs.
+     * "Spotify (extra 3): Connected · playlists=on liked=on albums=on mixes=off".
+     *
+     * PRIVACY: named by its label ([spotifyExtraAccountLabel], the local row id) only. Never the
+     * name the listener gave it, never its Spotify user id (read only to ask whether its sign-in
+     * is the row's account), never anything about its sign-in but yes or no.
+     */
+    private suspend fun extraSpotifyLines(): List<String> =
+        spotifyAccountDao.getAll().sortedBy { it.id }.mapIndexed { index, row ->
+            val signedIn = runCatching {
+                tokenManager.hasSpotifyExtraSignIn(SpotifyAccount(row.id, row.userId))
+            }.getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it else false }
+            val state = when {
+                !signedIn -> "No sign-in on this phone"
+                row.signedOutAt != null -> "Signed out (signed_out_at=${row.signedOutAt})"
+                else -> "Connected"
+            }
+            val kinds = "playlists=${row.syncPlaylists.onOff()} liked=${row.syncLiked.onOff()} " +
+                "albums=${row.syncAlbums.onOff()} mixes=${row.syncMixes.onOff()}"
+            val limit = if (index >= MAX_EXTRA_SPOTIFY_ACCOUNTS) " · past the limit, not read" else ""
+            "Spotify (${spotifyExtraAccountLabel(row.id)}): $state · $kinds$limit"
+        }
+
+    private fun Boolean.onOff(): String = if (this) "on" else "off"
 
     private fun connectionLine(
         label: String,

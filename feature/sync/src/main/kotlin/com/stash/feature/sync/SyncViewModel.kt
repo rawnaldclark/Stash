@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
@@ -99,6 +100,29 @@ data class SpotifySyncPlaylist(
     val stackSongs: Boolean = false,
     /** A saved album ([com.stash.core.data.album.SavedAlbums]): its account page lists it under Albums, never Playlists. */
     val album: Boolean = false,
+    /**
+     * Which Spotify account it is filed under (`playlists.spotify_account`): null for the main
+     * (connected) account, an other account's tag ([SpotifyOtherAccount.tag]) for that one's. Its
+     * card and page on the Sync tab are picked by it.
+     */
+    val spotifyAccount: String? = null,
+)
+
+/**
+ * One of the other Spotify accounts (plan 2026-11-04 §3.7): its own card ("Spotify · Sam") and
+ * page on the Sync tab, beside the main account's.
+ *
+ * @property tag What its rows carry in `playlists.spotify_account` (its normalised Spotify user
+ *   id). Used to pick its rows, never shown.
+ * @property syncAlbums Its own saved-albums switch, shown on its page's Albums tab.
+ * @property syncMixes Its own mixes switch, shown on its page's Mixes tab.
+ */
+data class SpotifyOtherAccount(
+    val id: Long,
+    val tag: String,
+    val name: String,
+    val syncAlbums: Boolean,
+    val syncMixes: Boolean,
 )
 
 /**
@@ -138,8 +162,12 @@ data class SyncUiState(
     val soundCloudConnected: Boolean = false,
     val recentSyncs: List<SyncHistoryInfo> = emptyList(),
     val isSyncing: Boolean = false,
-    /** Spotify playlists available for sync preference toggles. */
+    /** Spotify playlists available for sync preference toggles: every Spotify account's ([SpotifySyncPlaylist.spotifyAccount]). */
     val spotifyPlaylists: List<SpotifySyncPlaylist> = emptyList(),
+    /** The other Spotify accounts, in the order they were added; each has its own card and page. */
+    val spotifyOtherAccounts: List<SpotifyOtherAccount> = emptyList(),
+    /** True once [spotifyOtherAccounts] has been read: an other account's page waits for it. */
+    val spotifyOtherAccountsLoaded: Boolean = false,
     /** YouTube Music playlists available for sync preference toggles. */
     val youTubePlaylists: List<YouTubeSyncPlaylist> = emptyList(),
     val soundCloudPlaylists: List<YouTubeSyncPlaylist> = emptyList(),
@@ -284,6 +312,8 @@ class SyncViewModel @Inject constructor(
     private val playerRepository: com.stash.core.media.PlayerRepository,
     /** Live progress of the songs downloading now, for the Sync tab's Downloads row. */
     private val downloadManager: com.stash.data.download.DownloadManager,
+    /** The other Spotify accounts: a card and a page each, and their own albums and mixes switches. */
+    private val spotifyAccountDao: com.stash.core.data.db.dao.SpotifyAccountDao,
 ) : ViewModel() {
 
     /** The Sync tab's Downloads row: how many run, wait and failed, and how far the running ones are. */
@@ -548,6 +578,7 @@ class SyncViewModel @Inject constructor(
         observeHistory()
         observeLastSync()
         observeSpotifyPlaylists()
+        observeSpotifyOtherAccounts()
         observeYouTubePlaylists()
         observeSoundCloud()
         observeUnmatchedCount()
@@ -1029,11 +1060,49 @@ class SyncViewModel @Inject constructor(
                                 stackable = com.stash.core.data.sync.MixStacking.showsSwitch(e.source, e.type, e.name, e.stackSongs),
                                 stackSongs = e.stackSongs,
                                 album = com.stash.core.data.album.SavedAlbums.isSavedAlbum(e.type, e.source, e.sourceId),
+                                spotifyAccount = e.spotifyAccount,
                             )
                         }
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * The other Spotify accounts, for their cards and pages. A table that can't be read leaves
+     * none (the main account's card and page are as they were), and says it has been read, so an
+     * other account's page shows empty rather than waiting for ever.
+     */
+    private fun observeSpotifyOtherAccounts() {
+        viewModelScope.launch {
+            spotifyAccountDao.observeAll()
+                .map { rows ->
+                    rows.map { SpotifyOtherAccount(it.id, it.userId, it.label, it.syncAlbums, it.syncMixes) }
+                }
+                .catch { e ->
+                    android.util.Log.w("SyncViewModel", "couldn't read the other Spotify accounts", e)
+                    emit(emptyList())
+                }
+                .collect { others ->
+                    _uiState.update { it.copy(spotifyOtherAccounts = others, spotifyOtherAccountsLoaded = true) }
+                }
+        }
+    }
+
+    /** An other account's own saved-albums switch, on its page's Albums tab. */
+    fun onSyncOtherAccountAlbumsChanged(accountId: Long, enabled: Boolean) {
+        viewModelScope.launch {
+            runCatching { spotifyAccountDao.setSyncAlbums(accountId, enabled) }
+                .onFailure { if (it is CancellationException) throw it }
+        }
+    }
+
+    /** An other account's own mixes switch, on its page's Mixes tab. */
+    fun onSyncOtherAccountMixesChanged(accountId: Long, enabled: Boolean) {
+        viewModelScope.launch {
+            runCatching { spotifyAccountDao.setSyncMixes(accountId, enabled) }
+                .onFailure { if (it is CancellationException) throw it }
         }
     }
 

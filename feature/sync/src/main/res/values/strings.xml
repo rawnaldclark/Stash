@@ -142,6 +142,12 @@
     <string name="sync_home_synced_ago">synced %1$s</string>
     <string name="sync_open_library">Open Library</string>
     <string name="sync_account_summary">%1$s · %2$s</string>
+    <!-- The card and page of another Spotify account added in Settings > Accounts (besides the connected one). %1$s = the name the listener gave it. Keep "Spotify" as is. -->
+    <string name="sync_account_spotify_named">Spotify · %1$s</string>
+    <!-- On another Spotify account's page, Mixes tab: that account's own mixes switch (off by default). -->
+    <string name="sync_other_account_mixes_title">Sync this account\'s mixes</string>
+    <string name="sync_other_account_mixes_on">Its Daily Mixes and similar arrive with each sync.</string>
+    <string name="sync_other_account_mixes_off">Off: its mixes aren\'t read, so Home doesn\'t show two of each.</string>
     <plurals name="sync_songs_count">
         <item quantity="one">%d song</item>
         <item quantity="other">%d songs</item>

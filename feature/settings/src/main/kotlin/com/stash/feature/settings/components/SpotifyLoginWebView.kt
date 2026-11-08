@@ -98,6 +98,13 @@ fun SpotifyLoginWebView(
     onDismiss: () -> Unit,
     onManualFallback: () -> Unit,
     modifier: Modifier = Modifier,
+    /** The bar's title: "Sign in to Spotify", or what this sign-in is for ("Add a Spotify account"). */
+    title: String = stringResource(R.string.settings_spotify_signin_title),
+    /**
+     * One line above Spotify's page, when this sign-in needs saying how (adding another account:
+     * "Continue with Google" would sign the connected account straight back in). Null = none.
+     */
+    hint: String? = null,
 ) {
     var isLoading by remember { mutableStateOf(true) }
     var cookieFound by remember { mutableStateOf(false) }
@@ -114,7 +121,7 @@ fun SpotifyLoginWebView(
 
     Column(modifier = modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text(stringResource(R.string.settings_spotify_signin_title)) },
+            title = { Text(title) },
             navigationIcon = {
                 TextButton(onClick = onDismiss) {
                     Text(stringResource(R.string.settings_cancel))
@@ -132,6 +139,18 @@ fun SpotifyLoginWebView(
                 containerColor = MaterialTheme.colorScheme.surface,
             ),
         )
+
+        if (hint != null) {
+            // On the bar's own colour, so it reads as part of the bar rather than of Spotify's page.
+            Surface(color = MaterialTheme.colorScheme.surface) {
+                Text(
+                    text = hint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
+                )
+            }
+        }
 
         if (isLoading) {
             LinearProgressIndicator(

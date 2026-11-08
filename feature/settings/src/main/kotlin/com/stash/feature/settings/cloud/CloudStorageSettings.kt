@@ -69,7 +69,7 @@ import com.stash.core.model.CloudProvider
 import com.stash.feature.settings.R
 import com.stash.data.cloud.CloudAccount
 import com.stash.feature.settings.components.AccountConnectionCard
-import com.stash.feature.settings.components.LogoSize
+import com.stash.feature.settings.components.AccountLetterAvatar
 import com.stash.feature.settings.components.SettingsGroupCard
 import com.stash.feature.settings.components.SettingsNavRow
 import com.stash.feature.settings.components.SettingsPickerRow
@@ -334,24 +334,6 @@ private fun SignedOutUploadRows(status: UploadStatus, takesSaves: Boolean) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = SettingsRowPadH, vertical = SettingsRowPadV),
-        )
-    }
-}
-
-/**
- * The first letter of an account's email in the provider's colour. Telling two accounts apart is
- * all it does: a Google profile photo would need a new column for little more.
- */
-@Composable
-private fun AccountLetterAvatar(label: String, color: Color) {
-    Box(
-        modifier = Modifier.size(LogoSize).clip(CircleShape).background(color),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label.firstOrNull { it.isLetterOrDigit() }?.uppercase() ?: "?",
-            style = MaterialTheme.typography.titleSmall,
-            color = Color.White,
         )
     }
 }

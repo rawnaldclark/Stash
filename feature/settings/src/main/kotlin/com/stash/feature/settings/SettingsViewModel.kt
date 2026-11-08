@@ -79,6 +79,9 @@ import javax.inject.Inject
 private const val CONNECT_SAVE_FAILED =
     "Couldn't finish connecting on this device. Please try again."
 
+/** Shown in the Spotify paste dialog when the cookie gives no signed-in session. */
+private const val SPOTIFY_COOKIE_INVALID = "Invalid or expired sp_dc cookie. Please try again."
+
 /**
  * ViewModel for the Settings screen.
  *
@@ -155,6 +158,12 @@ class SettingsViewModel @Inject constructor(
     /** The line under each "Like on … too" switch, and its "tap to retry". */
     private val likeCoordinator: com.stash.core.data.social.LikeCoordinator,
     private val syncPreferences: com.stash.core.data.sync.SyncPreferencesManager,
+    /**
+     * The other Spotify accounts (plan 2026-11-04 §3): a Connect as one of them is refused, and
+     * Disconnect removes them all first. core:auth can't see them, so both checks live here.
+     */
+    private val spotifyAccountDao: com.stash.core.data.db.dao.SpotifyAccountDao,
+    private val spotifyExtraAccountRemover: com.stash.core.data.sync.SpotifyExtraAccountRemover,
 ) : ViewModel() {
 
     // ── ListenBrainz ────────────────────────────────────────────────────────
@@ -1324,6 +1333,23 @@ class SettingsViewModel @Inject constructor(
                 it.copy(isSpotifyCookieValidating = true, spotifyCookieError = null)
             }
 
+            when (val precheck = precheckSpotifyConnect(cookie)) {
+                MainConnectPrecheck.Proceed -> Unit
+                is MainConnectPrecheck.Failed -> {
+                    _localState.update { it.copy(spotifyCookieError = precheck.message, isSpotifyCookieValidating = false) }
+                    return@launch
+                }
+                is MainConnectPrecheck.AlreadyOther -> {
+                    // Refused, nothing saved. The paste dialog is the wrong place to say why (as for
+                    // a different account below): it closes and the Accounts screen explains.
+                    _localState.update {
+                        it.copy(showSpotifyCookieDialog = false, spotifyCookieError = null, isSpotifyCookieValidating = false)
+                    }
+                    _spotifyAlreadyOtherAccount.value = precheck.name
+                    return@launch
+                }
+            }
+
             when (val result = connectGuarded { tokenManager.connectSpotifyWithCookie(cookie, username) }) {
                 SpotifyConnectResult.Connected -> {
                     // A fresh sp_dc renews the session the last sync found expired.
@@ -1356,7 +1382,7 @@ class SettingsViewModel @Inject constructor(
                             spotifyCookieError = if (result == null) {
                                 CONNECT_SAVE_FAILED
                             } else {
-                                "Invalid or expired sp_dc cookie. Please try again."
+                                SPOTIFY_COOKIE_INVALID
                             },
                             isSpotifyCookieValidating = false,
                         )
@@ -1381,6 +1407,79 @@ class SettingsViewModel @Inject constructor(
     /** The listener read why the Spotify sign-in was refused. */
     fun onDismissSpotifyAccountMismatch() {
         _spotifyAccountMismatch.value = null
+    }
+
+    /** What [precheckSpotifyConnect] found. */
+    private sealed interface MainConnectPrecheck {
+        data object Proceed : MainConnectPrecheck
+
+        /** The sign-in is one of the other accounts, [name]: refused. */
+        data class AlreadyOther(val name: String) : MainConnectPrecheck
+
+        /** The check itself said no (the cookie doesn't sign in) or failed: [message] in the paste dialog. */
+        data class Failed(val message: String) : MainConnectPrecheck
+    }
+
+    /**
+     * A Connect (or Reconnect) on the Spotify card must not take an account that is already one of
+     * the other Spotify accounts: the same account would then be both, its library read twice and
+     * its likes counted as the main account's. core:auth can't see that list, so the cookie is
+     * identified here first ([TokenManager.validateSpotifyCookie], which saves nothing), only while
+     * there are other accounts at all: with none, the connect runs exactly as before. A check that
+     * can't tell whose account it is lets the connect go ahead, as the account-swap guard does: a
+     * guard that can't see must not lock anyone out.
+     */
+    private suspend fun precheckSpotifyConnect(cookie: String): MainConnectPrecheck {
+        val anyOther = try {
+            spotifyAccountDao.count() > 0
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("SettingsViewModel", "couldn't read the other Spotify accounts; connecting unchecked", e)
+            false
+        }
+        if (!anyOther) return MainConnectPrecheck.Proceed
+        return when (val check = connectGuarded { tokenManager.validateSpotifyCookie(cookie.trim()) }) {
+            null -> MainConnectPrecheck.Failed(CONNECT_SAVE_FAILED)
+            com.stash.core.auth.model.SpotifyCookieCheck.Invalid -> MainConnectPrecheck.Failed(SPOTIFY_COOKIE_INVALID)
+            is com.stash.core.auth.model.SpotifyCookieCheck.Valid -> {
+                val other = check.account?.let { account ->
+                    try {
+                        spotifyAccountDao.findByAccount(account.userId)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        android.util.Log.w("SettingsViewModel", "couldn't look the account up among the others; connecting unchecked", e)
+                        null
+                    }
+                }
+                if (other != null) MainConnectPrecheck.AlreadyOther(other.label) else MainConnectPrecheck.Proceed
+            }
+        }
+    }
+
+    private val _spotifyAlreadyOtherAccount = MutableStateFlow<String?>(null)
+
+    /**
+     * Set to an other account's name when a Connect on the Spotify card signed in as it; the
+     * Accounts screen says to remove it first. One screen reads it, like [spotifyAccountMismatch].
+     */
+    val spotifyAlreadyOtherAccount: StateFlow<String?> = _spotifyAlreadyOtherAccount.asStateFlow()
+
+    fun onDismissSpotifyAlreadyOtherAccount() {
+        _spotifyAlreadyOtherAccount.value = null
+    }
+
+    private val _spotifyDisconnectStopped = MutableStateFlow<SpotifyDisconnectStopped?>(null)
+
+    /**
+     * Set when Disconnect stopped because an other account couldn't be signed out on this phone
+     * (nothing more was disconnected); the Accounts screen says so.
+     */
+    val spotifyDisconnectStopped: StateFlow<SpotifyDisconnectStopped?> = _spotifyDisconnectStopped.asStateFlow()
+
+    fun onDismissSpotifyDisconnectStopped() {
+        _spotifyDisconnectStopped.value = null
     }
 
     /**
@@ -1408,14 +1507,55 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * Disconnects the Spotify account by clearing all stored credentials.
+     *
+     * With other Spotify accounts added (plan 2026-11-04 §3.5, v1), every one of them is removed
+     * first, each exactly as its own Remove does it ([com.stash.core.data.sync.SpotifyExtraAccountRemover]:
+     * its sign-in forgotten, its rows hidden, its downloads kept): they sync behind the connected
+     * account and can't stay without it (making one of them the connected account is for later).
+     * Should one not sign out on this phone, nothing more is done, the connected account included,
+     * and [spotifyDisconnectStopped] says which. One already gone (a second tap) counts as removed.
      */
     fun onDisconnectSpotify() {
         viewModelScope.launch {
+            removeOtherSpotifyAccounts()?.let { stopped ->
+                _spotifyDisconnectStopped.value = stopped
+                return@launch
+            }
             musicRepository.cancelPendingDownloadsForSource("SPOTIFY")
             tokenManager.clearAuth(AuthService.SPOTIFY)
             // Nothing left to re-authenticate: the Sync tab's banner stops asking.
             syncStateManager.clearAuthExpiry(spotify = true)
         }
+    }
+
+    /** Removes every other Spotify account, in order; what stopped it, or null when all went. */
+    private suspend fun removeOtherSpotifyAccounts(): SpotifyDisconnectStopped? {
+        val others = try {
+            spotifyAccountDao.getAll()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("SettingsViewModel", "couldn't read the other Spotify accounts; Spotify stays connected", e)
+            return SpotifyDisconnectStopped(name = null)
+        }
+        for (other in others) {
+            val removal = try {
+                spotifyExtraAccountRemover.remove(other.id)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("SettingsViewModel", "removing an other Spotify account failed part way", e)
+                null
+            }
+            when (removal) {
+                is com.stash.core.data.sync.SpotifyAccountRemoval.Removed,
+                com.stash.core.data.sync.SpotifyAccountRemoval.NotFound,
+                -> Unit
+                com.stash.core.data.sync.SpotifyAccountRemoval.SignInNotForgotten, null ->
+                    return SpotifyDisconnectStopped(name = other.label)
+            }
+        }
+        return null
     }
 
     /**

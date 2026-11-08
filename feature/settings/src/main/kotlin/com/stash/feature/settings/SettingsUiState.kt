@@ -244,6 +244,12 @@ sealed interface LastFmAuthState {
 }
 
 /**
+ * Disconnect on the Spotify card stopped before signing anything else out: the other Spotify
+ * account [name] couldn't be signed out on this phone (null when the accounts couldn't be read).
+ */
+data class SpotifyDisconnectStopped(val name: String?)
+
+/**
  * A Spotify sign-in Stash refused because it was another account than the connected one
  * ([com.stash.core.auth.model.SpotifyConnectResult.DifferentAccount]); the Accounts screen says
  * so and how to switch.

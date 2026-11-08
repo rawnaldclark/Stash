@@ -102,6 +102,10 @@ internal fun manageLists(rows: List<SyncPlaylistRow>): ManageLists = ManageLists
  * there. Save is the playlist page's Download switch ([SyncViewModel.onSavePlaylist]),
  * so the two always agree. The Sync tab overhaul, 2026-10-29: this used to be
  * a list of on/off switches whose meaning changed with the mode.
+ *
+ * Each Spotify account has its own page (plan 2026-11-04 §3.7): [spotifyAccountId] null is the
+ * main account's, listing its rows only (it used to list every Spotify row); an other account's id
+ * lists that account's, under "Spotify · Sam", with that account's own albums and mixes switches.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -109,6 +113,7 @@ fun ManagePlaylistsScreen(
     source: SyncSource,
     onBack: () -> Unit,
     onOpenPlaylist: (Long) -> Unit,
+    spotifyAccountId: Long? = null,
     viewModel: SyncViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -138,11 +143,19 @@ fun ManagePlaylistsScreen(
         return
     }
 
-    val rows = uiState.playlistRows().filter { it.source == source }
+    val otherAccountId = spotifyAccountId.takeIf { source == SyncSource.SPOTIFY }
+    // Null on the main account's page, and on an other account's until the accounts are read (or once it's gone).
+    val otherAccount = otherAccountId?.let { id -> uiState.spotifyOtherAccounts.firstOrNull { it.id == id } }
+    val rows = uiState.accountPageRows(source, otherAccountId)
     val (playlists, albums, mixes, liked) = manageLists(rows)
     // Spotify's tab is always there: its switch decides whether saved albums sync at all.
     val showAlbumsTab = source == SyncSource.SPOTIFY || albums.isNotEmpty()
-    val name = when (source) { SyncSource.SPOTIFY -> "Spotify"; SyncSource.SOUNDCLOUD -> "SoundCloud"; else -> "YouTube Music" }
+    val name = when {
+        otherAccount != null -> stringResource(R.string.sync_account_spotify_named, otherAccount.name)
+        source == SyncSource.SPOTIFY -> "Spotify"
+        source == SyncSource.SOUNDCLOUD -> "SoundCloud"
+        else -> "YouTube Music"
+    }
     val brand = if (source == SyncSource.SOUNDCLOUD) androidx.compose.ui.graphics.Color(0xFFFF5500) else if (source == SyncSource.SPOTIFY) StashTheme.extendedColors.spotifyGreen else StashTheme.extendedColors.youtubeRed
 
     var tab by rememberSaveable { mutableStateOf(if (source == SyncSource.SOUNDCLOUD) ManageTab.LIKED else ManageTab.PLAYLISTS) }
@@ -306,10 +319,19 @@ fun ManagePlaylistsScreen(
             // stopped before the first sync pulls any in (#335, #344).
             if (tab == ManageTab.MIXES) {
                 item(key = "mixes-discovery") {
-                    DiscoverMixesRow(
-                        enabled = uiState.discoverAutoMixes,
-                        onChange = viewModel::onDiscoverAutoMixesChanged,
-                    )
+                    when {
+                        // An other Spotify account's mixes have their own switch (off by default).
+                        otherAccount != null -> OtherAccountMixesRow(
+                            enabled = otherAccount.syncMixes,
+                            onChange = { viewModel.onSyncOtherAccountMixesChanged(otherAccount.id, it) },
+                        )
+                        // Its page before the accounts are read: no switch rather than the wrong one.
+                        otherAccountId != null -> Unit
+                        else -> DiscoverMixesRow(
+                            enabled = uiState.discoverAutoMixes,
+                            onChange = viewModel::onDiscoverAutoMixesChanged,
+                        )
+                    }
                 }
                 // What Stack means, once, above the mixes that have it.
                 if (shown.any { it.stackable && !it.userHidden }) {
@@ -326,10 +348,18 @@ fun ManagePlaylistsScreen(
             // Shown before the first album arrives, so saved albums can be kept out from the start.
             if (tab == ManageTab.ALBUMS && source == SyncSource.SPOTIFY) {
                 item(key = "albums-sync") {
-                    SyncSavedAlbumsRow(
-                        enabled = uiState.syncSpotifySavedAlbums,
-                        onChange = viewModel::onSyncSpotifySavedAlbumsChanged,
-                    )
+                    when {
+                        // Each Spotify account's saved albums have their own switch.
+                        otherAccount != null -> SyncSavedAlbumsRow(
+                            enabled = otherAccount.syncAlbums,
+                            onChange = { viewModel.onSyncOtherAccountAlbumsChanged(otherAccount.id, it) },
+                        )
+                        otherAccountId != null -> Unit
+                        else -> SyncSavedAlbumsRow(
+                            enabled = uiState.syncSpotifySavedAlbums,
+                            onChange = viewModel::onSyncSpotifySavedAlbumsChanged,
+                        )
+                    }
                 }
             }
             if (tab == ManageTab.LIKED && source == SyncSource.YOUTUBE) {
@@ -615,6 +645,42 @@ private fun DiscoverMixesRow(
                 } else {
                     "Off — no new mixes are added, and syncs run shorter"
                 },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        com.stash.core.ui.components.StashSwitch(
+            checked = enabled,
+            onCheckedChange = onChange,
+        )
+    }
+}
+
+/**
+ * An other Spotify account's mixes on or off for sync; off by default (its `spotify_accounts.sync_mixes`):
+ * two accounts' "Daily Mix 1" would otherwise sit side by side on Home. Drawn as [DiscoverMixesRow],
+ * which it stands in for on that account's page.
+ */
+@Composable
+private fun OtherAccountMixesRow(
+    enabled: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onChange(!enabled) }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.sync_other_account_mixes_title),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = stringResource(if (enabled) R.string.sync_other_account_mixes_on else R.string.sync_other_account_mixes_off),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -114,6 +114,8 @@ fun SyncScreen(
     // Settings › Accounts: connecting, and an expired sign-in's Reconnect.
     onNavigateToAccounts: () -> Unit = {},
     onManageSource: (SyncSource) -> Unit = {},
+    /** An other Spotify account's card: its own page, by its account id. */
+    onManageSpotifyAccount: (Long) -> Unit = {},
     onOpenHistory: () -> Unit = {},
     onOpenDownloads: () -> Unit = {},
     onOpenPlaylist: (Long) -> Unit = {},
@@ -259,6 +261,7 @@ fun SyncScreen(
                         uiState = uiState,
                         rows = rows,
                         onManageSource = onManageSource,
+                        onManageSpotifyAccount = onManageSpotifyAccount,
                         onAddAccount = onNavigateToAccounts,
                     )
                 }
@@ -392,6 +395,8 @@ internal data class SyncPlaylistRow(
     val stackSongs: Boolean = false,
     /** A saved album: the account page lists it under Albums, and it never counts as a playlist. */
     val album: Boolean = false,
+    /** A Spotify row's account ([SpotifySyncPlaylist.spotifyAccount]): null for the main one's. */
+    val spotifyAccount: String? = null,
 ) {
     /**
      * Kept on this phone: its Save switch, or, in Download mode, switched on for
@@ -403,12 +408,34 @@ internal data class SyncPlaylistRow(
 
 internal fun SyncUiState.playlistRows(): List<SyncPlaylistRow> =
     spotifyPlaylists.map {
-        SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.SPOTIFY, it.userHidden, it.dateAdded, it.stackable, it.stackSongs, it.album)
+        SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.SPOTIFY, it.userHidden, it.dateAdded, it.stackable, it.stackSongs, it.album, it.spotifyAccount)
     } + soundCloudPlaylists.map {
         SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.SOUNDCLOUD, it.userHidden, it.dateAdded)
     } + youTubePlaylists.map {
         SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.YOUTUBE, it.userHidden, it.dateAdded, it.stackable, it.stackSongs, it.album)
     }
+
+/**
+ * One Spotify account's rows (plan 2026-11-04 §3.7): [spotifyAccount] null for the main account's,
+ * an other account's tag ([SpotifyOtherAccount.tag]) for that one's. A playlist two accounts follow
+ * is one row, listed under the account that owns it.
+ */
+internal fun List<SyncPlaylistRow>.ofSpotifyAccount(spotifyAccount: String?): List<SyncPlaylistRow> =
+    filter { it.source == SyncSource.SPOTIFY && it.spotifyAccount == spotifyAccount }
+
+/**
+ * What an account's page lists: [source]'s rows, and for Spotify one account's: the main one's,
+ * or the other account [otherAccountId]'s. That one's page lists nothing until the other accounts
+ * are read, and nothing once it is gone: never the main account's rows under its name, where its
+ * Save all would save them.
+ */
+internal fun SyncUiState.accountPageRows(source: SyncSource, otherAccountId: Long?): List<SyncPlaylistRow> {
+    val rows = playlistRows()
+    if (source != SyncSource.SPOTIFY) return rows.filter { it.source == source }
+    if (otherAccountId == null) return rows.ofSpotifyAccount(null)
+    val other = spotifyOtherAccounts.firstOrNull { it.id == otherAccountId } ?: return emptyList()
+    return rows.ofSpotifyAccount(other.tag)
+}
 
 /**
  * Newest arrivals first. Every cover on the Sync tab reads in this order, so a sync that brings
@@ -808,66 +835,125 @@ private fun SyncingContent(
     }
 }
 
-/** One card per connected account: its covers and counts. Opens its playlists. */
+/** One account's card on the Sync tab: what it is called, its colour, its rows and where a tap goes. */
+private class AccountCardSpec(
+    val key: String,
+    val name: String,
+    val color: Color,
+    val rows: List<SyncPlaylistRow>,
+    /** SoundCloud counts songs, the rest playlists and mixes. */
+    val countsTracks: Boolean,
+    val onClick: () -> Unit,
+)
+
+/**
+ * One card per connected account: its covers and counts. Opens its playlists. Each Spotify
+ * account has its own (plan 2026-11-04 §3.7): the main one's "Spotify", as before, and each other
+ * account's "Spotify · Sam", while the main one is connected (they sync behind it). Two to a row:
+ * with one card, the other half offers the second service, as before.
+ */
 @Composable
 private fun AccountCards(
     uiState: SyncUiState,
     rows: List<SyncPlaylistRow>,
     onManageSource: (SyncSource) -> Unit,
+    onManageSpotifyAccount: (Long) -> Unit,
     onAddAccount: () -> Unit,
 ) {
-    val sources = buildList {
-        if (uiState.spotifyConnected) add(Triple(SyncSource.SPOTIFY, "Spotify", StashTheme.extendedColors.spotifyGreen))
-        if (uiState.youTubeConnected) add(Triple(SyncSource.YOUTUBE, "YouTube Music", StashTheme.extendedColors.youtubeRed))
-        if (uiState.soundCloudConnected) add(Triple(SyncSource.SOUNDCLOUD, "SoundCloud", Color(0xFFFF5500)))
-    }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        sources.forEach { (source, name, color) ->
-            val mine = rows.filter { it.source == source }
-            val playlists = mine.count { it.isOwnPlaylist() }
-            val mixes = mine.count { it.isMix() }
-            // Its playlists' and mixes' covers: saved albums have their own tab, and hundreds of
-            // them would push every playlist out of the card.
-            val arts = mine.filterNot { it.album }.newestFirst()
-                .mapNotNull { it.artUrl }
-                .distinct()
-                .take(4)
-            AccountCard(
-                name = name,
-                brandColor = color,
-                arts = arts,
-                subtitle = if (source == SyncSource.SOUNDCLOUD) pluralStringResource(R.plurals.sync_tracks_count, mine.sumOf { it.trackCount }, mine.sumOf { it.trackCount }) else stringResource(
-                    R.string.sync_account_summary,
-                    pluralStringResource(R.plurals.sync_playlists_count, playlists, playlists),
-                    pluralStringResource(R.plurals.sync_mixes_count, mixes, mixes),
-                ),
-                onClick = { onManageSource(source) },
-                modifier = Modifier.weight(1f),
-            )
-        }
-        // One account connected: the other half offers the second.
-        if (sources.size == 1) {
-            val missingSpotify = !uiState.spotifyConnected
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(18.dp))
-                    .border(1.dp, StashTheme.extendedColors.glassBorder, RoundedCornerShape(18.dp))
-                    .clickable(onClick = onAddAccount)
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
-                    if (missingSpotify) SpotifyMark(40.dp) else YouTubeMusicMark(40.dp)
-                }
-                Text(
-                    text = stringResource(if (missingSpotify) R.string.sync_connect_spotify else R.string.sync_connect_youtube),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
+    val green = StashTheme.extendedColors.spotifyGreen
+    val cards = buildList {
+        if (uiState.spotifyConnected) {
+            add(AccountCardSpec("spotify", "Spotify", green, rows.ofSpotifyAccount(null), false) { onManageSource(SyncSource.SPOTIFY) })
+            uiState.spotifyOtherAccounts.forEach { other ->
+                add(
+                    AccountCardSpec(
+                        key = "spotify:${other.id}",
+                        name = stringResource(R.string.sync_account_spotify_named, other.name),
+                        color = green,
+                        rows = rows.ofSpotifyAccount(other.tag),
+                        countsTracks = false,
+                    ) { onManageSpotifyAccount(other.id) },
                 )
             }
         }
+        if (uiState.youTubeConnected) {
+            add(AccountCardSpec("youtube", "YouTube Music", StashTheme.extendedColors.youtubeRed, rows.filter { it.source == SyncSource.YOUTUBE }, false) { onManageSource(SyncSource.YOUTUBE) })
+        }
+        if (uiState.soundCloudConnected) {
+            add(AccountCardSpec("soundcloud", "SoundCloud", Color(0xFFFF5500), rows.filter { it.source == SyncSource.SOUNDCLOUD }, true) { onManageSource(SyncSource.SOUNDCLOUD) })
+        }
+    }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        cards.chunked(2).forEach { line ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                line.forEach { card ->
+                    androidx.compose.runtime.key(card.key) {
+                        AccountCardFor(card, Modifier.weight(1f))
+                    }
+                }
+                if (line.size == 1) {
+                    if (cards.size == 1) {
+                        // One account connected: the other half offers the second.
+                        AddAccountTile(missingSpotify = !uiState.spotifyConnected, onClick = onAddAccount, modifier = Modifier.weight(1f))
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccountCardFor(card: AccountCardSpec, modifier: Modifier) {
+    val mine = card.rows
+    val playlists = mine.count { it.isOwnPlaylist() }
+    val mixes = mine.count { it.isMix() }
+    // Its playlists' and mixes' covers: saved albums have their own tab, and hundreds of
+    // them would push every playlist out of the card.
+    val arts = mine.filterNot { it.album }.newestFirst()
+        .mapNotNull { it.artUrl }
+        .distinct()
+        .take(4)
+    val tracks = mine.sumOf { it.trackCount }
+    AccountCard(
+        name = card.name,
+        brandColor = card.color,
+        arts = arts,
+        subtitle = if (card.countsTracks) {
+            pluralStringResource(R.plurals.sync_tracks_count, tracks, tracks)
+        } else {
+            stringResource(
+                R.string.sync_account_summary,
+                pluralStringResource(R.plurals.sync_playlists_count, playlists, playlists),
+                pluralStringResource(R.plurals.sync_mixes_count, mixes, mixes),
+            )
+        },
+        onClick = card.onClick,
+        modifier = modifier,
+    )
+}
+
+/** The half beside a lone account card: connect the other service. */
+@Composable
+private fun AddAccountTile(missingSpotify: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(18.dp))
+            .border(1.dp, StashTheme.extendedColors.glassBorder, RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
+            if (missingSpotify) SpotifyMark(40.dp) else YouTubeMusicMark(40.dp)
+        }
+        Text(
+            text = stringResource(if (missingSpotify) R.string.sync_connect_spotify else R.string.sync_connect_youtube),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
 

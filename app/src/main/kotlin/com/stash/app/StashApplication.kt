@@ -296,6 +296,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var storagePreference: com.stash.core.data.prefs.StoragePreference
 
+    /** Forgets other Spotify accounts' sign-ins whose account is gone (a restore, a removal cut short). */
+    @Inject
+    lateinit var spotifyExtraSignInCleanup: com.stash.core.data.sync.SpotifyExtraSignInCleanup
+
     /**
      * Application-scoped coroutine scope for one-shot startup tasks.
      *
@@ -465,6 +469,13 @@ class StashApplication : Application(), Configuration.Provider {
             // Only when something waits, and under the background constraints.
             runCatching { musicRepository.resumeWaitingDownloads() }
                 .onFailure { Log.w("StashStartup", "resuming waiting downloads failed", it) }
+        }
+        // An extra Spotify account's sign-in is kept outside the database, under its row id: a full
+        // restore (which restarts the app into here) can bring a database without that row, and a
+        // removal cut short leaves the sign-in behind. Forget those; every other sign-in stays.
+        applicationScope.launch {
+            runCatching { spotifyExtraSignInCleanup.clearOrphans() }
+                .onFailure { Log.w("StashStartup", "clearing orphaned Spotify sign-ins failed", it) }
         }
         // A playlist delete cut short by the process dying: its playlist is hidden and half
         // emptied, so finish it (last look L-N1).
