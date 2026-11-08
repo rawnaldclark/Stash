@@ -99,6 +99,29 @@ class GoogleDriveScanTest {
     }
 
     @Test
+    fun `the same file picked in two accounts is two songs, and removing one account leaves the other's`() = runTest {
+        picks.add(folderId, listOf("1AAAAAAAAA"))
+        scanner().scan(folderId)
+        val second = dao.insertAccount(CloudAccountEntity(provider = "gdrive", remoteId = "perm-456", displayName = "Sam", email = "sam@example.com", connectedAt = 1))
+        val secondFolder = dao.insertFolder(CloudFolderEntity(accountId = second, itemId = GoogleDriveProvider.PICKS_ITEM_ID, name = "Picked songs", path = "", addedAt = 1))
+        store.save(CloudTokenManager.keyFor(CloudProvider.GOOGLE_DRIVE, second), ServiceToken("tok2", "sam@example.com", 1_000 + 3_000))
+        drive.validTokens += "tok2"
+        picks.add(secondFolder, listOf("1AAAAAAAAA"))
+
+        assertThat(scanner().scan(secondFolder)!!.added).isEqualTo(1)
+
+        val mine = dao.getItem(accountId, "1AAAAAAAAA")!!.trackId
+        val yours = dao.getItem(second, "1AAAAAAAAA")!!.trackId
+        assertThat(mine).isNotEqualTo(yours)
+        assertThat(CloudRef.parse(dao.getTrack(yours)!!.cloudUri)!!.accountId).isEqualTo(second)
+
+        dao.removeAccount(second)
+
+        assertThat(dao.getTrack(yours)).isNull()
+        assertThat(dao.getTrack(mine)).isNotNull()
+    }
+
+    @Test
     fun `picked songs are scanned through alt=media with the bearer header, never a token in a url`() = runTest {
         scanThreePicks()
 

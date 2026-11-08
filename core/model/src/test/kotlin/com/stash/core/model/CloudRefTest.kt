@@ -15,6 +15,16 @@ class CloudRefTest {
     }
 
     @Test
+    fun `the same Drive file in two accounts is two addresses and one cached file`() {
+        val mine = CloudRef(CloudProvider.GOOGLE_DRIVE, 1, "1AbCdEf", "md5")
+        val yours = CloudRef(CloudProvider.GOOGLE_DRIVE, 2, "1AbCdEf", "md5")
+        assertThat(mine.toUri()).isNotEqualTo(yours.toUri())
+        assertThat(CloudRef.parse(yours.toUri())!!.accountId).isEqualTo(2L)
+        // Same file id and md5 means the same bytes: cached once.
+        assertThat(mine.cacheKey).isEqualTo(yours.cacheKey)
+    }
+
+    @Test
     fun `cache key is provider, item and version, never a URL`() {
         val ref = CloudRef(CloudProvider.ONEDRIVE, 3, "ITEM", "ctag-1")
         assertThat(ref.cacheKey).isEqualTo("onedrive:ITEM:ctag-1")
