@@ -42,7 +42,8 @@ sealed interface GooglePickOutcome {
  * Steps: look up who picked (Drive `about`), create or re-link the `cloud_accounts` row, store
  * the token (its refresh slot = the account email, for silent re-authorization), make sure the
  * account's picks folder row exists, queue the new ids in [GooglePickStore] and start a scan of
- * that folder. Ids already in the library aren't queued again.
+ * that folder. Ids already in the library under this account (in either folder row) aren't queued
+ * again.
  *
  * Silent re-authorization finds an account by its email. Without one, Play services answers for
  * whichever account it likes, which with two accounts can be the wrong one, and songs would then
@@ -99,7 +100,10 @@ class GoogleDrivePicks(
         // Songs Stash saved to this Drive (on another phone, or before a reinstall) come along.
         val uploads = uploadsFolder(accountId)
         if (existing == null) scanNow(uploads)
-        val known = dao.folderItemIds(folderId).toSet()
+        // Already a song of this account, in either folder row: a pick, or a copy Stash saved here
+        // that is linked to its download. A picked file that is a song on the phone in another way
+        // (the same bytes, a saved copy not linked yet) is recognised by the scan and linked.
+        val known = dao.accountItemIds(accountId).toSet()
         val fresh = fileIds.filter { it !in known }
         if (fresh.isNotEmpty()) store.add(folderId, fresh)
         // A Reconnect: rows a lost sign-in turned red ("Sign-in expired") would otherwise stay red

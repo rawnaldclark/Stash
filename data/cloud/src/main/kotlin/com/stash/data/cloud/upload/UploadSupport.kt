@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import com.stash.core.data.db.dao.CloudDao
+import com.stash.data.cloud.scan.LocalSongFile
+import com.stash.data.cloud.scan.LocalSongFiles
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -107,6 +109,24 @@ class AndroidLocalAudioFiles @Inject constructor(
     }
 
     private fun isDocument(path: String) = path.startsWith("content://")
+}
+
+/**
+ * [LocalSongFiles] from the library and the phone's own files: what the Drive scan compares a
+ * cloud file's md5 against. Only the downloads the scan asks about are read, and only those whose
+ * size matches ([com.stash.data.cloud.scan.LocalCopies]).
+ */
+class LocalDownloadFiles(private val dao: CloudDao, private val files: LocalAudioFiles) : LocalSongFiles {
+    override suspend fun unlinked(): List<LocalSongFile> =
+        dao.unlinkedDownloadFiles().map { LocalSongFile(it.id, it.filePath, it.sizeBytes) }
+
+    override suspend fun linkedVersions(accountId: Long): Map<String, Long> = buildMap {
+        for (l in dao.linkedDownloadVersions(accountId)) putIfAbsent(l.version.lowercase(Locale.ROOT), l.trackId)
+    }
+
+    override suspend fun size(path: String): Long? = files.size(path)
+
+    override suspend fun md5(path: String): String = files.md5(path)
 }
 
 /** The private tags Stash puts on what it uploads, so a second phone or a reinstall finds them. */
