@@ -1172,6 +1172,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
             // What this account listed, pre-filter (see [spotifyLivenessIds]): the joint hide
             // measures "missing" against it, and a later account's pass treats it as claimed.
             playlistListing.ids += spotifyLivenessIds(userPlaylists.map { it.id })
+            // Every id listed, whatever becomes of the songs in them below: what another account's
+            // rows need of this listing (SpotifyAccountListing.listedAll).
+            playlistListing.listedAll = listingComplete
             // Drop only what the home-feed mix pass already covered (#354).
             // distinctBy: defensive — a playlist must not snapshot twice even if
             // Spotify ever lists it both at the root and inside a folder.
@@ -1341,8 +1344,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 )
             }
 
-            // Hiding a playlist as gone takes the whole inventory: every page listed, every playlist
-            // read. The joint hide, after every account's pass, reads it from the listing.
+            // Hiding this account's own playlist as gone takes its whole inventory: every page
+            // listed, every playlist read. The joint hide, after every account's pass, reads it
+            // from the listing.
             val inventoryComplete = listingComplete && unreadPlaylists.isEmpty()
             playlistListing.complete = inventoryComplete
             val notes = listOfNotNull(

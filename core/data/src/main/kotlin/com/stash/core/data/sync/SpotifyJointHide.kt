@@ -29,11 +29,11 @@ fun spotifyExtraAccountLabel(rowId: Long): String = "extra $rowId"
 
 /**
  * What one Spotify account listed of one kind (its library playlists, or its saved albums) during
- * one sync, for the joint hide ([hideWhatNoSpotifyAccountListed]).
+ * one sync, for the joint hide ([hideWhatNoSpotifyAccountListed]) and for who owns a row.
  *
- * A pass registers it, as incomplete, before it starts that listing, and marks it [complete] only
- * once the walk proved the listing whole. So a pass that fails part way, however it fails, leaves
- * an incomplete listing behind, and an incomplete listing hides nothing for anyone.
+ * A pass registers it, as incomplete, before it starts that listing, and marks it [listedAll] /
+ * [complete] only once the walk proved them. So a pass that fails part way, however it fails,
+ * leaves an incomplete listing behind.
  *
  * @property owner The account, as rows are tagged (`playlists.spotify_account`): null for the
  *   main account, an extra's Spotify user id otherwise.
@@ -42,7 +42,21 @@ class SpotifyAccountListing(val owner: String?) {
     /** Every id the account listed: playlist ids, or saved-album keys (`album:spotify:<id>`). */
     val ids: MutableSet<String> = HashSet()
 
-    /** Whether the listing is provably whole: nothing failed, nothing was skipped over. */
+    /**
+     * Whether [ids] is provably every id the account has of this kind: every page and folder
+     * read, nothing skipped over. Says nothing about the songs inside them: a listed playlist
+     * whose songs couldn't be read is still listed. What the joint hide needs of every OTHER
+     * account's listing before a row may go, and what a row's owner needs before the row may
+     * move to another account.
+     */
+    var listedAll: Boolean = false
+
+    /**
+     * [listedAll], and everything listed was read too (no playlist whose songs couldn't be read).
+     * What the account's OWN rows need before one may be hidden: the rule a single account always
+     * had. For saved albums the same as [listedAll] (an album whose songs couldn't be read never
+     * kept that step from taking un-saved albums out).
+     */
     var complete: Boolean = false
 }
 
@@ -53,9 +67,9 @@ class SpotifySyncListings {
 }
 
 /**
- * Which rows the joint hide takes out, by the owning account (null = main), and why a kind hid
- * nothing ([playlistsKept] / [albumsKept], null when it was free to hide). Worked out by
- * [spotifyRowsToHide]; nothing is written.
+ * Which rows the joint hide takes out, by the owning account (null = main), and why some or all of
+ * a kind were kept ([playlistsKept] / [albumsKept], null when every owner was free to hide; for the
+ * log). Worked out by [spotifyRowsToHide]; nothing is written.
  */
 data class SpotifyHidePlan(
     val playlists: Map<String?, List<Long>>,
@@ -77,9 +91,12 @@ data class SpotifyHideOutcome(
  * sync's accounts listed. Per kind, playlists and saved albums each with their own listings:
  *
  *  1. Only in Refresh mode ([shouldDeactivateMissingPlaylists]), and only when EVERY account that
- *     listed that kind listed it completely. One incomplete listing hides nothing of that kind,
- *     for anyone.
- *  2. Only rows owned by an account that listed that kind this sync. A signed-out, switched-off,
+ *     listed that kind listed every id of it ([SpotifyAccountListing.listedAll]): an account whose
+ *     walk missed a page could have the row, so nothing of that kind goes, for anyone.
+ *  2. Only rows owned by an account that listed that kind this sync, and listed it
+ *     [complete][SpotifyAccountListing.complete]ly: its own songs all read too, as a single
+ *     account always needed. An account with one playlist it couldn't read keeps its own rows,
+ *     and costs no other account anything (its ids are all listed). A signed-out, switched-off,
  *     over-the-limit or skipped account's rows are left alone (NULL is the main account). So is a
  *     row whose tag names an account with no `spotify_accounts` row at all (a merge restore or a
  *     likes-only import copies `playlists.spotify_account` but never the account): no pass can
@@ -114,8 +131,9 @@ private fun missingByOwner(
 ): Pair<Map<String?, List<Long>>, String?> {
     // No account listed this kind (switched off, or no pass ran): nothing to measure against.
     if (listings.isEmpty()) return emptyMap<String?, List<Long>>() to "no account listed its $kind"
-    val allComplete = listings.all { it.complete }
-    if (syncMode == null || !shouldDeactivateMissingPlaylists(syncMode, allComplete)) {
+    // Rule 1: every account's ids, whole. One that missed a page could have any row.
+    val allListed = listings.all { it.listedAll }
+    if (syncMode == null || !shouldDeactivateMissingPlaylists(syncMode, allListed)) {
         val why = when {
             syncMode == null -> "the sync mode couldn't be read"
             syncMode != SyncMode.REFRESH -> "Accumulate never removes"
@@ -123,15 +141,18 @@ private fun missingByOwner(
         }
         return emptyMap<String?, List<Long>>() to why
     }
-    // Rule 2: only the accounts that listed this kind. A tag naming any other account (signed out,
-    // switched off, over the limit, or with no account row behind it at all) is not in here.
-    val owners = listings.mapTo(HashSet()) { it.owner }
+    // Rule 2: only the accounts that listed this kind completely, their own songs read too. A tag
+    // naming any other account (one with something unread, signed out, switched off, over the
+    // limit, or with no account row behind it at all) is not in here.
+    val owners = listings.filter { it.complete }.mapTo(HashSet()) { it.owner }
     val listed = HashSet<String>()
     for (listing in listings) listed += listing.ids
     val missing = candidates
         .filter { it.spotifyAccount in owners && it.sourceId !in listed }
         .groupBy({ it.spotifyAccount }, { it.id })
-    return missing to null
+    // With one account this is exactly as before: its unread playlist keeps all of its rows.
+    val unread = listings.count { !it.complete }
+    return missing to if (unread > 0) "$unread account(s) with $kind they couldn't read keep theirs" else null
 }
 
 /**
@@ -158,8 +179,8 @@ suspend fun hideWhatNoSpotifyAccountListed(
     // Nothing listed at all: no read needed.
     if (listings.playlists.isEmpty() && listings.albums.isEmpty()) return SpotifyHideOutcome()
     val plan = spotifyRowsToHide(playlistDao.getActivePlaylistsBySource(MusicSource.SPOTIFY), syncMode, listings)
-    plan.playlistsKept?.let { if (listings.playlists.isNotEmpty()) Log.i(TAG, "joint hide: kept every Spotify playlist ($it)") }
-    plan.albumsKept?.let { if (listings.albums.isNotEmpty()) Log.i(TAG, "joint hide: kept every Spotify saved album ($it)") }
+    plan.playlistsKept?.let { if (listings.playlists.isNotEmpty()) Log.i(TAG, "joint hide: kept Spotify playlists ($it)") }
+    plan.albumsKept?.let { if (listings.albums.isNotEmpty()) Log.i(TAG, "joint hide: kept Spotify saved albums ($it)") }
     if (plan.isEmpty) return SpotifyHideOutcome()
 
     // The first change this sync makes to the library: Undo must restore from before it.

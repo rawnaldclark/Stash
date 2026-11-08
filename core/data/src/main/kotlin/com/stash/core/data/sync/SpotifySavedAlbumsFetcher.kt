@@ -194,8 +194,10 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
         }
         // Whole only when every album the library counts was listed: a short or shifted walk hides nothing.
         if (total == null || listed.size != total) listingComplete = false
-        // What the joint hide may measure "un-saved" against: a whole walk, by date saved.
-        listing.complete = listingComplete && byDateSaved
+        // What the joint hide may measure "un-saved" against: a whole walk, by date saved. An album
+        // whose songs couldn't be read is still listed, so both say the same here.
+        listing.listedAll = listingComplete && byDateSaved
+        listing.complete = listing.listedAll
 
         if (tally.deferred > 0) syncLog.info("Read ${tally.reads} saved albums; ${tally.deferred} more come with the next syncs")
         Log.i(

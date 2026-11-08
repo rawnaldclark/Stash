@@ -56,10 +56,12 @@ class SpotifyJointHideTest {
 
     private fun album(id: String) = "album:spotify:$id"
 
-    private fun listing(owner: String?, vararg ids: String, complete: Boolean = true) =
+    /** A listing; [complete] false alone means its walk missed a page ([listedAll] false too). */
+    private fun listing(owner: String?, vararg ids: String, complete: Boolean = true, listedAll: Boolean = complete) =
         SpotifyAccountListing(owner).apply {
             this.ids += ids
             this.complete = complete
+            this.listedAll = listedAll
         }
 
     private fun listings(
@@ -112,6 +114,42 @@ class SpotifyJointHideTest {
         assertTrue(active(b2))
         assertTrue(outcome.hiddenPlaylists.isEmpty())
         assertNull("nothing hidden: no restore point taken", db.syncUndoDao().latestPointNow())
+    }
+
+    @Test fun `an extra with a playlist it couldn't read keeps its own rows and blocks nobody else's`() = runTest {
+        val a2 = row("a2")
+        val b2 = row("b2", owner = b)
+        val sharedOwnedByA = row("shared")
+
+        // B listed every id (its unread playlist "b1" included) but couldn't read b1's songs.
+        val outcome = hide(
+            listings(playlists = listOf(listing(null, "a1"), listing(b, "b1", "shared", complete = false, listedAll = true))),
+        )
+
+        assertFalse("the main's own listing is complete: its gone row goes", active(a2))
+        assertTrue("B's own rows wait for a complete read of B", active(b2))
+        assertTrue("B's listed ids still count for everyone", active(sharedOwnedByA))
+        assertEquals(mapOf<String?, Int>(null to 1), outcome.hiddenPlaylists)
+    }
+
+    @Test fun `the main with a playlist it couldn't read keeps its own rows, and B's gone rows still go`() = runTest {
+        val a2 = row("a2")
+        val b2 = row("b2", owner = b)
+
+        hide(listings(playlists = listOf(listing(null, "a1", complete = false, listedAll = true), listing(b, "b1"))))
+
+        assertTrue(active(a2))
+        assertFalse(active(b2))
+    }
+
+    @Test fun `one account with a playlist it couldn't read hides nothing, as a single account always did`() = runTest {
+        val a2 = row("a2")
+
+        val outcome = hide(listings(playlists = listOf(listing(null, "a1", complete = false, listedAll = true))))
+
+        assertTrue(active(a2))
+        assertTrue(outcome.hiddenPlaylists.isEmpty())
+        assertNull(db.syncUndoDao().latestPointNow())
     }
 
     @Test fun `a signed-out account's rows are untouched`() = runTest {

@@ -377,6 +377,21 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
         assertTrue(db.playlistDao().getById(bGone)!!.isActive)
     }
 
+    @Test fun `an extra's playlist it can't read keeps the extra's rows, and the main's gone rows still go`() = runBlocking {
+        addExtra(userB)
+        library(null).playlists += "a-kept"
+        library(userB).playlists += listOf("b-kept", "b-broken")
+        coEvery { spotify.getPlaylistTracks("b-broken") } returns SyncResult.Error("nope")
+        val aGone = insertRow("a-gone")
+        val bGone = insertRow("b-gone", owner = userB)
+
+        val syncId = runFetch()
+
+        assertFalse("every account listed every id, and the main read all of its own", db.playlistDao().getById(aGone)!!.isActive)
+        assertTrue("B couldn't read one of its playlists: B's own rows wait", db.playlistDao().getById(bGone)!!.isActive)
+        assertEquals(StepStatus.ERROR, step(syncId, "getUserPlaylists", "extra 1").status)
+    }
+
     @Test fun `an album the joint hide takes out is named on its account's albums step`() = runBlocking {
         addExtra(userB)
         library(userB).albums += album("kept")
