@@ -124,6 +124,9 @@ internal fun settingsSearchIndex(s: (Int) -> String): List<SettingsSearchEntry> 
         SettingsSearchEntry(s(R.string.settings_library_health_title), SettingsPage.LIBRARY, listOf("duplicates", "missing", "flac upgrade")),
         SettingsSearchEntry(s(R.string.settings_lyrics_recheck_title), SettingsPage.PLAYBACK, listOf("lyrics", "synced")),
         SettingsSearchEntry(s(R.string.settings_listening_history_title), SettingsPage.LIBRARY, listOf("plays", "stats", "import", "recap")),
+        // Library & Storage › Your record's switch (its row is feature:record's; this is its name for search). Also on Daily
+        // Discover's page, which search can't open.
+        SettingsSearchEntry(s(R.string.settings_search_record_in_mixes), SettingsPage.LIBRARY, listOf("your record", "daily discover", "taste", "spotify history", "kept out", "mixes")),
         // Your Stash (Library & Storage › Your Stash): the link's page. Its Cloud and Backups rows only open Accounts & Sync
         // and Library & Storage, which are indexed above and below, so they aren't listed twice.
         SettingsSearchEntry(s(R.string.settings_your_stash_title), SettingsPage.YOUR_STASH, listOf("account", "profile", "devices", "web player", "browser", "computer", "sync", "encrypted", "privacy")),

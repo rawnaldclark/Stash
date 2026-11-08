@@ -492,11 +492,10 @@ class MusicRepositoryImpl @Inject constructor(
     override fun getFlacStorageBytes(): Flow<Long> =
         trackDao.getFlacStorageBytes()
 
-    override fun getSpotifyDownloadedCount(): Flow<Int> =
-        trackDao.getSpotifyDownloadedCount()
-
-    override fun getYouTubeDownloadedCount(): Flow<Int> =
-        trackDao.getYouTubeDownloadedCount()
+    override fun observeSongCountsBySource(inLibrary: Boolean): Flow<Map<MusicSource, Int>> =
+        trackDao.observeSongCountsBySource(inLibrary)
+            .map { rows -> rows.associate { it.source to it.songs } }
+            .distinctUntilChanged()
 
     // ── Playlist queries ────────────────────────────────────────────────
 

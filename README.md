@@ -9,6 +9,7 @@
 [![Latest release](https://img.shields.io/github/v/release/rawnaldclark/Stash?style=for-the-badge&labelColor=0d1117&color=8b5cf6&include_prereleases)](https://github.com/rawnaldclark/Stash/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/rawnaldclark/Stash/total?style=for-the-badge&labelColor=0d1117&color=8b5cf6)](https://github.com/rawnaldclark/Stash/releases)
 [![Stars](https://img.shields.io/github/stars/rawnaldclark/Stash?style=for-the-badge&labelColor=0d1117&color=8b5cf6)](https://github.com/rawnaldclark/Stash/stargazers)
+[![Translation status](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fweblate.paraliyzed.net%2Fapi%2Fprojects%2Fstash-music-app%2Fstatistics%2F&query=%24.translated_percent&label=translations&suffix=%25&style=for-the-badge&labelColor=0d1117&color=8b5cf6)](https://weblate.paraliyzed.net/engage/stash-music-app/)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?style=for-the-badge&logo=discord&logoColor=white&labelColor=0d1117)](https://discord.gg/vcbjEby5PC)
 
 [**Download**](#install) · [**Features**](#what-it-does) · [**Setup**](#first-time-setup) · [**FAQ**](#faq) · [**Support**](#support-stash)
@@ -19,9 +20,9 @@
   <img src="docs/screenshots/hero-dark.webp" alt="Stash on three phones: Home with Daily Discover, Now Playing with a lossless FLAC track, and word-synced lyrics">
 </p>
 
-Stash grabs your Spotify and YouTube Music playlists and mirrors them on your Android phone. Download them, stream them, mix and match. Hi-res when it exists.
+Stash grabs your Spotify and YouTube Music playlists and mirrors them on your Android phone. Download them, stream them. Hi-res when it exists.
 
-No Stash account, no analytics, your logins stay on your phone. Free and open source, forever.
+No Stash account, no analytics, your logins stay encrypted on your phone. Free and open source, forever.
 
 ---
 
@@ -34,15 +35,14 @@ No Stash account, no analytics, your logins stay on your phone. Free and open so
 ####  Your library, one place
 - Spotify + YouTube Music together: liked songs, playlists, daily mixes
 - Your listening wrapped: top songs, stats, and a recap of your month
-- Got your own music in Dropbox, OneDrive or Google Drive? Connect it and stream or download it like everything else (on Google Drive you pick the songs)
+- Got your own music in Dropbox, OneDrive or Google Drive? Connect it to stream or download it.
 
 </td>
     <td width="50%" valign="top">
 
 ####  Download or stream
-- Download your playlists or just stream them. Your call
+- Download your playlists or just stream them.
 - Pick your quality: Lossless, AAC 320 or Opus
-- Downloaded songs play offline, the rest stream
 
 </td>
   </tr>
@@ -139,7 +139,7 @@ The first sync is the slow one (a big library with Download on can take an hour)
 Stash doesn't use Spotify's or YouTube's official APIs, because they don't let apps like this exist. It uses your login instead, the same way your browser does. Your login stays on your phone, encrypted, and only ever goes back to Spotify or YouTube.
 
 <details>
-<summary><b>🎵 Spotify sign-in not working? Paste the cookie</b></summary>
+<summary><b> Spotify sign-in not working? Paste the cookie</b></summary>
 
 1. On a computer, open **[open.spotify.com](https://open.spotify.com)** and make sure you're logged in.
 2. Press **F12** to open Developer Tools.
@@ -154,7 +154,7 @@ Tip: cookies from incognito windows sometimes don't work. Use a normal window.
 </details>
 
 <details>
-<summary><b>📺 YouTube Music sign-in not working? Paste the cookie</b></summary>
+<summary><b> YouTube Music sign-in not working? Paste the cookie</b></summary>
 
 1. On a computer, open **[music.youtube.com](https://music.youtube.com)** and make sure you're logged in.
 2. Press **F12** and click the **Network** tab.
@@ -168,7 +168,7 @@ Same incognito tip as Spotify.
 </details>
 
 <details>
-<summary><b>🎮 Discord status (read this first)</b></summary>
+<summary><b> Discord status (read this first)</b></summary>
 
 Discord has no official way for a phone app to show what you're playing, so Stash does it through your own account's session (the same trick PreMiD and similar tools use). It's not a bot and it only sets your status.
 

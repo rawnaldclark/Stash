@@ -4,9 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,9 +27,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.stash.core.ui.R
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -33,7 +39,9 @@ import com.stash.core.ui.theme.StashTheme
  * "Stream only" / "Download" until 2026-11-01; the preference and its names
  * in code kept the old words). Offline: only downloaded songs play, while Sync
  * still saves switched-on playlists over the network. Online: everything plays
- * and what isn't downloaded streams. Selected tile is
+ * and what isn't downloaded streams. Each tile says so in one short line
+ * under its word ("Streams and plays downloads" / "Downloads only"); the
+ * sheet's old explainer paragraph is gone (2026-11-04). Selected tile is
  * filled with primary-tinted glass; the other is muted. Tapping either
  * fires [onSelect] with the chosen mode (`true` = Online, `false` =
  * Offline). Re-tapping the already-selected tile is a no-op via the
@@ -54,23 +62,34 @@ fun OnlineOfflinePicker(
     onSelect: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // IntrinsicSize.Min + fillMaxHeight: the Online caption can wrap to two lines on
+    // a narrow phone or a large font while "Downloads only" stays on one; both tiles
+    // still take the taller one's height so they read as a pair.
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         ModeTile(
             icon = Icons.Default.CloudQueue,
             label = "Online",
+            caption = stringResource(R.string.mode_online_caption),
             selected = streamingEnabled,
             onClick = { onSelect(true) },
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
         )
         ModeTile(
             icon = Icons.Default.OfflinePin,
             label = "Offline",
+            caption = stringResource(R.string.mode_offline_caption),
             selected = !streamingEnabled,
             onClick = { onSelect(false) },
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
         )
     }
 }
@@ -79,6 +98,7 @@ fun OnlineOfflinePicker(
 private fun ModeTile(
     icon: ImageVector,
     label: String,
+    caption: String,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -102,10 +122,14 @@ private fun ModeTile(
         contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
     }
 
-    // Horizontal layout — icon + label on one line. Half the vertical
-    // height of the original two-stack tile while keeping the same
-    // "two big tap targets" affordance.
-    Row(
+    // Icon + word on the first line, as before; the caption sits under them so what a
+    // mode does is written on the tile you tap. The caption is quieter than the word
+    // (onSurfaceVariant) and dims a little more on the tile that isn't picked, but
+    // stays above 4.5:1 there, in both themes: it is what you read
+    // before choosing. Content starts at the
+    // top rather than centred, so "Online" and "Offline" stay on one line across the
+    // pair when only one caption wraps.
+    Column(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
             .background(bg)
@@ -115,21 +139,29 @@ private fun ModeTile(
                 shape = RoundedCornerShape(10.dp),
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = if (selected) accent else contentColor,
-            modifier = Modifier.size(18.dp),
-        )
-        Spacer(Modifier.width(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (selected) accent else contentColor,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = contentColor,
+                textAlign = TextAlign.Center,
+            )
+        }
+        Spacer(Modifier.height(2.dp))
         Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = contentColor,
+            text = caption,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (selected) 1f else 0.9f),
             textAlign = TextAlign.Center,
         )
     }

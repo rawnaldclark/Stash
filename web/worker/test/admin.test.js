@@ -1,5 +1,6 @@
 import { before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { handle } from "../index.js";
 import { forgetAccessKeys, verifyAccess } from "../access-jwt.js";
 import { b64urlEncode } from "../crypto.js";
@@ -233,6 +234,54 @@ test("add by email (source manual), with or without the email; remove ends acces
     assertSignedOutHome(await (await handle(get("/", { Cookie: cookie }), e)).text());
     assert.equal((await adminPost({ action: "remove", email: "sponsor@example.com" }, e)).headers.get("location"), "/admin?done=not-listed");
     assert.equal((await adminPost({ action: "add", email: "not an email" }, e)).headers.get("location"), "/admin?done=bad-email");
+});
+
+test("Give access with the app box ticked also unlocks the app (comp:<h>), counted on the page; Remove access takes it away", async () => {
+    const e = env();
+    const h = await hashEmail("paypal@example.com");
+    assert.equal((await adminPost({ action: "add", email: " PayPal@Example.com ", app: "yes" }, e)).headers.get("location"), "/admin?done=app-added");
+    assert.equal(e.ACCESS_KV.json(`access:${h}`).source, "manual", "early access too");
+    assert.deepEqual(Object.keys(e.ACCESS_KV.json(`comp:${h}`)).sort(), ["at", "by"]);
+    assert.equal(e.ACCESS_KV.json(`comp:${h}`).by, "owner@example.com");
+    assert.equal(e.EMAIL.sent.length, 0);
+
+    // Without the box: early access only.
+    const friend = await hashEmail("friend@example.com");
+    assert.equal((await adminPost({ action: "add", email: "friend@example.com" }, e)).headers.get("location"), "/admin?done=added");
+    assert.equal(e.ACCESS_KV.json(`comp:${friend}`), null);
+
+    const page = await (await adminGet(await jwt(), e)).text();
+    assert.match(page, /1 unlocked in the app here/);
+    // The real page has the box, named as the Worker reads it, and the count.
+    const astro = readFileSync(new URL("../../src/pages/gate/admin.astro", import.meta.url), "utf8");
+    assert.match(astro, /<input type="checkbox" name="app" value="yes" \/> Also unlock unlimited lossless in the app/);
+    assert.match(astro, /data-fill="app-count"/);
+    const flash = await (await adminGet(await jwt(), e, "/admin?done=app-added")).text();
+    assert.match(flash, /Unlimited Tidal &amp; Qobuz for supporters/);
+
+    // Again, with the welcome email.
+    assert.equal((await adminPost({ action: "add", email: "paypal@example.com", app: "yes", notify: "yes" }, e)).headers.get("location"), "/admin?done=app-added-emailed");
+    assert.equal(e.EMAIL.sent.length, 1);
+
+    assert.equal((await adminPost({ action: "remove", email: "paypal@example.com" }, e)).headers.get("location"), "/admin?done=removed");
+    assert.equal(e.ACCESS_KV.json(`access:${h}`), null);
+    assert.equal(e.ACCESS_KV.json(`comp:${h}`), null);
+    assert.ok(e.ACCESS_KV.json(`access:${friend}`), "nobody else's");
+
+    // Unlocked in the app with no access entry: Remove access still finds it and says removed.
+    await e.ACCESS_KV.put(`comp:${h}`, "{}");
+    assert.equal((await adminPost({ action: "remove", email: "paypal@example.com" }, e)).headers.get("location"), "/admin?done=removed");
+    assert.equal(e.ACCESS_KV.json(`comp:${h}`), null);
+});
+
+test("Give access over a Ko-fi supporter's entry leaves it as kofi (manual would cost them the app's claim)", async () => {
+    const e = env();
+    const h = await hashEmail("giver@example.com");
+    const kofi = { source: "kofi", firstAt: "2026-10-01T00:00:00.000Z", lastAt: "2026-10-01T00:00:00.000Z" };
+    await e.ACCESS_KV.put(`access:${h}`, JSON.stringify(kofi));
+    assert.equal((await adminPost({ action: "add", email: "giver@example.com", app: "yes" }, e)).headers.get("location"), "/admin?done=app-added");
+    assert.deepEqual(e.ACCESS_KV.json(`access:${h}`), kofi);
+    assert.ok(e.ACCESS_KV.json(`comp:${h}`));
 });
 
 test("Remove access also deletes the tip jar's Ko-fi amounts kept for that email (listed or not), nobody else's", async () => {

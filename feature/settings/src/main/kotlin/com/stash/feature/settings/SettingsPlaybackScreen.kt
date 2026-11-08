@@ -1,7 +1,6 @@
 package com.stash.feature.settings
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,9 +19,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.common.constants.StashConstants
+import com.stash.core.ui.R as UiR
 import com.stash.feature.settings.R
 import com.stash.feature.settings.components.SettingsGroupCard
 import com.stash.feature.settings.components.SettingsRowPadH
@@ -74,7 +75,7 @@ fun SettingsPlaybackScreen(
             SettingsGroupCard(
                 rows = buildList {
                     add {
-                        Box(modifier = Modifier.padding(10.dp)) {
+                        Column(modifier = Modifier.padding(10.dp)) {
                             SettingsSegmented(
                                 options = listOf(
                                     stringResource(R.string.settings_mode_online),
@@ -82,6 +83,19 @@ fun SettingsPlaybackScreen(
                                 ),
                                 selectedIndex = if (streamingEnabled) 0 else 1,
                                 onSelect = { viewModel.onStreamingToggle(it == 0) },
+                            )
+                            // What the picked mode does, in the same words as the tiles in the
+                            // Online/Offline sheet (core/ui strings, so the two can't drift).
+                            Text(
+                                text = stringResource(
+                                    if (streamingEnabled) UiR.string.mode_online_caption else UiR.string.mode_offline_caption,
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 8.dp),
                             )
                         }
                     }
