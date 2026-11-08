@@ -801,7 +801,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     RemotePlaylistSnapshotEntity(
                         syncId = syncId,
                         source = MusicSource.SPOTIFY,
-                        sourcePlaylistId = "spotify_liked_songs",
+                        sourcePlaylistId = com.stash.core.data.sync.SpotifyPlaylistIds.MAIN_LIKED_SONGS,
                         playlistName = "Liked Songs",
                         playlistType = PlaylistType.LIKED_SONGS,
                         trackCount = orderedLikedSongs.size,

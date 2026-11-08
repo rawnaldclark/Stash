@@ -59,6 +59,42 @@ sealed interface SpotifyConnectResult {
     data class DifferentAccount(val connectedName: String, val attemptedName: String) : SpotifyConnectResult
 }
 
+/**
+ * A Spotify sign-in Spotify accepted but Stash has NOT saved ([com.stash.core.auth.TokenManager.validateSpotifyCookie]),
+ * carried to [com.stash.core.auth.TokenManager.saveSpotifyExtra] so saving it needs no second (TOTP-guarded,
+ * rate-limited) token exchange. Only core:auth can make one, so a saved extra always went through validation.
+ *
+ * It holds a live credential: [toString] says nothing about it, and it should live no longer than the
+ * add-an-account flow that asked for it.
+ *
+ * @property account Whose account the cookie signs in to, as Spotify's own profile names it. Null when
+ *   Spotify didn't say in time; such a sign-in can't be saved as an extra (its rows are tagged by this id).
+ */
+class ValidatedSpotifySignIn internal constructor(
+    internal val token: ServiceToken,
+    val account: com.stash.core.auth.spotify.SpotifyProfile?,
+) {
+    override fun toString(): String = "ValidatedSpotifySignIn(identified=${account != null})"
+}
+
+/** What checking a Spotify cookie without saving it found ([com.stash.core.auth.TokenManager.validateSpotifyCookie]). */
+sealed interface SpotifyCookieCheck {
+    /** The cookie gave no signed-in session (invalid, expired, or Spotify refused). */
+    data object Invalid : SpotifyCookieCheck
+
+    /**
+     * A working sign-in, not saved.
+     *
+     * @property signIn What [com.stash.core.auth.TokenManager.saveSpotifyExtra] saves.
+     * @property isMainAccount True when it is the main (connected) account, false when it is another account,
+     *   null when either can't be told (Spotify didn't say in time, or no main account is connected).
+     */
+    data class Valid(val signIn: ValidatedSpotifySignIn, val isMainAccount: Boolean?) : SpotifyCookieCheck {
+        /** Whose account it is; null when Spotify didn't say (see [ValidatedSpotifySignIn.account]). */
+        val account: com.stash.core.auth.spotify.SpotifyProfile? get() = signIn.account
+    }
+}
+
 /** Streaming services supported by Stash. */
 enum class AuthService { SPOTIFY, YOUTUBE_MUSIC, DISCORD, SOUNDCLOUD }
 

@@ -1182,7 +1182,13 @@ class DiffWorker @AssistedInject constructor(
         syncMode: SyncMode,
     ) {
         playlistDao.updateLastSynced(localPlaylist.id, System.currentTimeMillis())
-        if (localPlaylist.type == PlaylistType.LIKED_SONGS && localPlaylist.source == MusicSource.SPOTIFY) {
+        // The main account's Liked Songs only: hearts go to the main account, and an extra account's
+        // fetch (`spotify_liked_songs:<userId>`, complete or not) must never stand for the main's.
+        if (
+            localPlaylist.type == PlaylistType.LIKED_SONGS &&
+            localPlaylist.source == MusicSource.SPOTIFY &&
+            localPlaylist.sourceId == com.stash.core.data.sync.SpotifyPlaylistIds.MAIN_LIKED_SONGS
+        ) {
             val complete = !snapshotUnreliable(playlistSnapshot, trackSnapshots)
             // Bookkeeping for like mirroring only: never the sync's failure
             runCatching { likedSongsFetch?.fetched(complete, System.currentTimeMillis()) }

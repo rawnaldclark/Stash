@@ -84,10 +84,10 @@ class TokenManagerSpotifyAccountGuardTest {
 
     private fun manager() = TokenManagerImpl(store, auth, mockk(relaxed = true), mockk(relaxed = true))
 
-    private fun assertNothingWritten() {
+    private fun assertNothingWritten(accountRecorded: Boolean = false) {
         coVerify(exactly = 0) { store.saveSpotifyConnection(any(), any(), any()) }
         coVerify(exactly = 0) { store.saveRefreshedSpotifyToken(any(), any()) }
-        coVerify(exactly = 0) { store.saveSpotifyAccountFor(any(), any()) }
+        if (!accountRecorded) coVerify(exactly = 0) { store.saveSpotifyAccountFor(any(), any()) }
         coVerify(exactly = 0) { store.clearSpotify() }
     }
 
@@ -125,7 +125,11 @@ class TokenManagerSpotifyAccountGuardTest {
         val result = manager().connectSpotifyWithCookie("sam-cookie")
 
         assertEquals(SpotifyConnectResult.DifferentAccount(connectedName = "Rawn", attemptedName = "Sam"), result)
-        assertNothingWritten()
+        // The sign-in is untouched. Only whose it is gets recorded, for Rawn's own cookie, now that
+        // Spotify said: the next attempt is refused without asking again.
+        assertNothingWritten(accountRecorded = true)
+        coVerify(exactly = 1) { store.saveSpotifyAccountFor("rawn-cookie", rawn) }
+        coVerify(exactly = 1) { store.saveSpotifyAccountFor(any(), any()) }
     }
 
     // -- Accepted ------------------------------------------------------------

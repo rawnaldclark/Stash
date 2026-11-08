@@ -24,12 +24,28 @@ data class SpotifyProfile(
      * case, so the same account read through two shapes of Spotify's answer still matches.
      */
     fun isSameAccount(other: SpotifyProfile): Boolean =
-        normalizedId(userId) == normalizedId(other.userId)
+        accountKeyOf(userId) == accountKeyOf(other.userId)
+
+    /**
+     * This account's id in the one form Stash stores it in the database: `spotify_accounts.user_id`,
+     * `playlists.spotify_account` and `remote_playlist_snapshots.spotify_account` (see [accountKeyOf]).
+     */
+    val accountKey: String get() = accountKeyOf(userId)
 
     companion object {
         private val json = Json { ignoreUnknownKeys = true }
 
-        private fun normalizedId(id: String): String = id.trim().removePrefix(USER_URI_PREFIX).lowercase()
+        /**
+         * THE normaliser for Spotify user ids: trimmed, lower case, without the `spotify:user:`
+         * prefix. [isSameAccount] compares by it, and the database keys accounts by it
+         * (`spotify_accounts.user_id`, the `spotify_account` tags, an extra's Liked Songs id),
+         * so the same account read through two shapes of Spotify's answer is one row and one tag.
+         * SQLite compares those columns case-sensitively: every id stored must go through here.
+         */
+        fun accountKeyOf(id: String): String = id.trim().lowercase().removePrefix(USER_URI_PREFIX)
+
+        /** Whether [id] is already in [accountKeyOf] form, and not blank: what the database may store. */
+        fun isAccountKey(id: String): Boolean = id.isNotBlank() && accountKeyOf(id) == id
 
         private const val USER_URI_PREFIX = "spotify:user:"
 

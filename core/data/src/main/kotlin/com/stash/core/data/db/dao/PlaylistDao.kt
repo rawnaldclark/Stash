@@ -584,20 +584,31 @@ interface PlaylistDao {
     // ── Like mirroring: "is it liked on Spotify already?" ────────────────
 
     /**
-     * When the synced Spotify Liked Songs was last read (epoch millis), or null when it never was. A Liked Songs snapshot
-     * carries no revision, so every sync re-diffs it and moves this ([com.stash.core.data.sync.workers.DiffWorker]).
+     * When the main Spotify account's synced Liked Songs was last read (epoch millis), or null when it never was. A Liked
+     * Songs snapshot carries no revision, so every sync re-diffs it and moves this
+     * ([com.stash.core.data.sync.workers.DiffWorker]).
+     *
+     * The main account's row only ([com.stash.core.data.sync.SpotifyPlaylistIds.MAIN_LIKED_SONGS]): hearts go to the main
+     * account, and an extra account's Liked Songs (`spotify_liked_songs:<userId>`) being fresh says nothing about it.
      */
-    @Query("SELECT MAX(last_synced) FROM playlists WHERE type = 'LIKED_SONGS' AND source = 'SPOTIFY'")
+    @Query(
+        "SELECT MAX(last_synced) FROM playlists " +
+            "WHERE type = 'LIKED_SONGS' AND source = 'SPOTIFY' AND source_id = 'spotify_liked_songs'",
+    )
     suspend fun spotifyLikedSongsLastSynced(): Long?
 
-    /** Whether the synced Spotify Liked Songs holds the song: its row, or any row with the same Spotify URI. */
+    /**
+     * Whether the main Spotify account's synced Liked Songs holds the song: its row, or any row with the same Spotify URI.
+     * The main account's row only (see [spotifyLikedSongsLastSynced]): a song liked only on an extra account is not liked
+     * where Stash's hearts go, so it must not count as "already liked there".
+     */
     @Query(
         """
         SELECT EXISTS(
             SELECT 1 FROM playlist_tracks pt
             INNER JOIN playlists p ON p.id = pt.playlist_id
             INNER JOIN tracks t ON t.id = pt.track_id
-            WHERE p.type = 'LIKED_SONGS' AND p.source = 'SPOTIFY'
+            WHERE p.type = 'LIKED_SONGS' AND p.source = 'SPOTIFY' AND p.source_id = 'spotify_liked_songs'
               AND pt.removed_at IS NULL
               AND (pt.track_id = :trackId OR (:spotifyUri IS NOT NULL AND t.spotify_uri = :spotifyUri))
         )
