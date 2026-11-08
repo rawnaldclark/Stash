@@ -56,6 +56,9 @@ class ListenTogetherSessionTest {
         override var durationMs: Long? = 125_000L
         override var ended = false
         override var events: SessionPlayerEvents? = null
+        /** What every play/pause control would read as playWhenReady; null until the session first says. */
+        var intent: Boolean? = null
+        override fun setPlayIntent(playing: Boolean) { intent = playing }
         override fun userQueue() = queue
         override suspend fun saveUserPosition() { calls += "save" }
         override fun enterSession(isHost: Boolean, interceptor: SessionInterceptor) {
@@ -1802,5 +1805,175 @@ class ListenTogetherSessionTest {
         val events = events()
         receive(ServerMessage.Added(by = "h", next = true, count = 0))
         assertThat(events).isEmpty()
+    }
+
+    // ── 2026-11-07 on devices: a guest's song the host's sources never find. The room started it for the guests at its
+    // 8 s deadline, the host's player looked for ~41 s, the host's Pause did nothing, and the skip came only after that.
+
+    /** Hosting a room that knows guest adds: song 1 prepared, the guest "me" ready for it, this phone ("h") still looking. */
+    fun TestScope.hostWaitingOn(upcoming: List<MediaItem> = listOf(item("2"))) {
+        host(upcoming = upcoming, v = 2, qv = 1)
+        syncClock() // room = local + 10 000
+        receive(ServerMessage.Prepare(1, track, 0, 8_000, by = "h"))
+        connection.sent.clear()
+    }
+
+    /** The room's own start at its deadline, 500 ms ahead (room.js START_LEAD_MS), though this host isn't ready. */
+    fun TestScope.roomStartsWithoutTheHost() = receive(
+        ServerMessage.TimelineUpdate(rev = 2, trackKey = 1, positionMs = 0, atRoomMs = testScheduler.currentTime + 10_500, playing = true),
+    )
+
+    @Test fun `a song the host still hasn't got 4 s after the guests started hearing it is skipped for everyone`() = runTest {
+        hostWaitingOn()
+        val events = events()
+        roomStartsWithoutTheHost() // the guests start at room 10 500 = local 500
+        advanceTimeBy(4_499); runCurrent()
+        assertThat(statuses()).isEmpty()
+        assertThat(loads()).isEmpty()
+        advanceTimeBy(1); runCurrent() // local 4 500: 4 s of it on their own, not the ~40 s the resolver takes to give up
+        assertThat(sentNoPings()).containsExactly(
+            ClientMessage.Status("unavailable", 1),
+            ClientMessage.Load(next, 0, emptyList(), "unavailable", qv = 1),
+        ).inOrder()
+        assertThat(ShadowLog.getLogsForTag("ListenTogether").map { it.msg }).contains(
+            "song #1 unavailable: not ready 4000 ms after the room started it for the others",
+        )
+        // The player's own failure, should it still come for that song, changes nothing.
+        player.events!!.onError()
+        assertThat(statuses()).hasSize(1)
+        assertThat(loads()).hasSize(1)
+        // The room's echo: "Skipped Avril 14th: … can't play it" on every phone, as for a song the host couldn't find at all.
+        receive(ServerMessage.Prepare(2, next, 0, 8_000, by = "h", why = "unavailable"))
+        assertThat(events.map { it.kind to it.song }).containsExactly(SessionEvent.Kind.SKIPPED_UNAVAILABLE to "Avril 14th")
+    }
+
+    @Test fun `with nothing after it the room pauses there and the host is told, as when Offline`() = runTest {
+        val notices = notices()
+        hostWaitingOn(upcoming = emptyList())
+        roomStartsWithoutTheHost()
+        advanceTimeBy(4_500); runCurrent()
+        assertThat(sentNoPings()).containsExactly(ClientMessage.Status("unavailable", 1), ClientMessage.Pause).inOrder()
+        assertThat(notices).containsExactly("Session paused: you can't play Avril 14th")
+    }
+
+    @Test fun `a slow find within the 4 s joins the room where it is, and nothing is skipped`() = runTest {
+        hostWaitingOn()
+        roomStartsWithoutTheHost()
+        advanceTimeBy(3_000); runCurrent() // local 3 000 = room 13 000: the guests are 2.5 s in
+        player.calls.clear()
+        player.events!!.onReady()
+        // The next whole room second at least 1 s ahead of 13 000 is 14 000, where the song is at 3 500.
+        assertThat(player.calls).containsExactly("pause", "seek:3500").inOrder()
+        advanceTimeBy(1_000); runCurrent()
+        assertThat(player.calls.last()).isEqualTo("play")
+        advanceTimeBy(30_000); runCurrent()
+        assertThat(statuses().map { it.status }).doesNotContain("unavailable")
+        assertThat(loads()).isEmpty()
+    }
+
+    @Test fun `no clock runs while nobody else hears the song, and it starts when someone does`() = runTest {
+        hostWaitingOn()
+        receive(ServerMessage.Members(listOf(RoomMember("h", "Host", 1, "buffering", v = 2), RoomMember("me", "Me", 2, "buffering", v = 2))))
+        roomStartsWithoutTheHost()
+        advanceTimeBy(30_000); runCurrent()
+        assertThat(statuses()).isEmpty() // alone with it, or everyone still loading: the host's resolver takes the time it needs
+        receive(ServerMessage.Members(listOf(RoomMember("h", "Host", 1, "buffering", v = 2), RoomMember("me", "Me", 2, "ok", v = 2))))
+        advanceTimeBy(3_999); runCurrent()
+        assertThat(statuses()).isEmpty()
+        advanceTimeBy(1); runCurrent()
+        assertThat(statuses()).containsExactly(ClientMessage.Status("unavailable", 1))
+    }
+
+    @Test fun `a listener still loading a song the room plays reports nothing early, as only the host moves the room`() = runTest {
+        join(); syncClock()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1, timeline = RoomTimeline(0, 5_000, true))))
+        connection.sent.clear()
+        advanceTimeBy(30_000); runCurrent()
+        assertThat(statuses()).isEmpty()
+    }
+
+    @Test fun `while the song is still being looked for every control reads playing, so the host's tap is a Pause`() = runTest {
+        hostWaitingOn()
+        // Before the fix the held-paused player read "paused", the toggle sent Play, and the room dropped it.
+        assertThat(player.intent).isTrue()
+        player.interceptor!!.onPause()
+        assertThat(player.intent).isFalse() // at once: ListenTogetherPlayer reads it as the pause returns
+        assertThat(sentNoPings()).containsExactly(ClientMessage.Pause) // the room drops it while preparing…
+        connection.sent.clear()
+        roomStartsWithoutTheHost()
+        assertThat(sentNoPings()).containsExactly(ClientMessage.Pause) // …so its start gets it again
+        receive(ServerMessage.TimelineUpdate(rev = 3, trackKey = 1, positionMs = 0, atRoomMs = 10_000, playing = false, by = "h"))
+        assertThat(pausedLocally()).isFalse()
+        assertThat(player.intent).isFalse()
+        advanceTimeBy(30_000); runCurrent()
+        assertThat(statuses()).isEmpty() // paused, nobody hears it alone: no clock
+        assertThat(player.calls).doesNotContain("play")
+    }
+
+    @Test fun `the host's pause after the room started without it pauses everyone and stops the clock`() = runTest {
+        hostWaitingOn()
+        roomStartsWithoutTheHost()
+        assertThat(player.intent).isTrue()
+        advanceTimeBy(2_000); runCurrent()
+        player.interceptor!!.onPause()
+        assertThat(sentNoPings()).containsExactly(ClientMessage.Pause)
+        receive(ServerMessage.TimelineUpdate(rev = 3, trackKey = 1, positionMs = 1_500, atRoomMs = 12_000, playing = false, by = "h"))
+        advanceTimeBy(10_000); runCurrent()
+        assertThat(statuses()).isEmpty()
+        // Play again with the song still not found: the guests would hear it alone, and its 4 s are spent.
+        player.interceptor!!.onPlay()
+        receive(ServerMessage.TimelineUpdate(rev = 4, trackKey = 1, positionMs = 1_500, atRoomMs = 22_400, playing = true, by = "h"))
+        runCurrent()
+        assertThat(statuses()).containsExactly(ClientMessage.Status("unavailable", 1))
+    }
+
+    @Test fun `a song found unplayable while the host has the room paused moves on, and the next song stays paused`() = runTest {
+        hostWaitingOn()
+        roomStartsWithoutTheHost()
+        player.interceptor!!.onPause()
+        receive(ServerMessage.TimelineUpdate(rev = 3, trackKey = 1, positionMs = 0, atRoomMs = 10_500, playing = false, by = "h"))
+        connection.sent.clear()
+        player.events!!.onError() // the resolver gave up, ~40 s in
+        assertThat(sentNoPings()).containsExactly(
+            ClientMessage.Status("unavailable", 1),
+            ClientMessage.Load(next, 0, emptyList(), "unavailable", qv = 1),
+        ).inOrder()
+        assertThat(player.intent).isFalse()
+        receive(ServerMessage.Prepare(2, next, 0, 8_000, by = "h", why = "unavailable"))
+        player.events!!.onReady()
+        connection.sent.clear()
+        receive(ServerMessage.TimelineUpdate(rev = 5, trackKey = 2, positionMs = 0, atRoomMs = 20_000, playing = true))
+        assertThat(sentNoPings()).containsExactly(ClientMessage.Pause)
+        advanceTimeBy(15_000); runCurrent()
+        assertThat(player.calls).doesNotContain("play")
+    }
+
+    @Test fun `every control reads the room's intent, and a pause reads paused before the room answers`() = runTest {
+        host(v = 2, qv = 1); syncClock()
+        assertThat(player.intent).isFalse() // no song yet
+        receive(ServerMessage.Prepare(1, track, 42_000, 8_000, by = "h"))
+        assertThat(player.intent).isTrue() // the room starts what it prepares: Pause, with a spinner while it loads
+        player.events!!.onReady()
+        receive(ServerMessage.TimelineUpdate(rev = 2, trackKey = 1, positionMs = 42_000, atRoomMs = 11_000, playing = true))
+        assertThat(player.intent).isTrue()
+        player.interceptor!!.onPause()
+        assertThat(player.intent).isFalse()
+        receive(ServerMessage.TimelineUpdate(rev = 3, trackKey = 1, positionMs = 43_000, atRoomMs = 11_500, playing = false, by = "h"))
+        assertThat(player.intent).isFalse()
+        player.interceptor!!.onPlay()
+        assertThat(player.intent).isFalse() // the room's answer starts it
+        receive(ServerMessage.TimelineUpdate(rev = 4, trackKey = 1, positionMs = 43_000, atRoomMs = 12_000, playing = true, by = "h"))
+        assertThat(player.intent).isTrue()
+    }
+
+    @Test fun `a listener's controls read playing while their phone still loads the room's song, and their pause holds`() = runTest {
+        join(); syncClock()
+        receive(ServerMessage.Welcome("me", "tok", state(key = 1, timeline = RoomTimeline(0, 5_000, true))))
+        assertThat(player.intent).isTrue()
+        player.interceptor!!.onPause()
+        assertThat(player.intent).isFalse()
+        player.events!!.onReady()
+        advanceTimeBy(5_000); runCurrent()
+        assertThat(player.calls).doesNotContain("play")
     }
 }

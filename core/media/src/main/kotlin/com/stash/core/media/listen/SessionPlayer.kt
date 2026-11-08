@@ -35,6 +35,13 @@ interface SessionPlayer {
     /** Pitch-preserving speed (PlaybackParameters; Sonic is at the end of the StashRenderersFactory chain). */
     fun setSpeed(speed: Float)
 
+    /**
+     * What every play/pause control should read as this phone's playWhenReady: true while the room plays this song, or
+     * is about to start it, and this phone hasn't paused. The local player itself stays paused until the song is ready
+     * and the room's start time comes, so its own playWhenReady can't say this. The session calls it on every change.
+     */
+    fun setPlayIntent(playing: Boolean)
+
     val positionMs: Long
 
     /** The loaded item's duration, or null while unknown. */

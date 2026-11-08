@@ -2344,6 +2344,9 @@ class StashPlaybackService : MediaLibraryService() {
         /** Player.setPlaybackSpeed keeps pitch at 1, so Sonic time-stretches (spec §4). */
         override fun setSpeed(speed: Float) = master.setPlaybackSpeed(speed)
 
+        /** What the MediaSession's controllers read as playWhenReady: the room's, not the held-paused master's. */
+        override fun setPlayIntent(playing: Boolean) { togetherPlayer?.setPlayIntent(playing) }
+
         override val positionMs: Long get() = master.currentPosition
         override val durationMs: Long? get() = master.duration.takeIf { it != C.TIME_UNSET && it > 0 }
         override val ended: Boolean get() = master.playbackState == Player.STATE_ENDED

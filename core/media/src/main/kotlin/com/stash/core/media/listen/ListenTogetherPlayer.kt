@@ -28,10 +28,28 @@ class ListenTogetherPlayer(player: Player) : ForwardingSimpleBasePlayer(player) 
     private var isHost = false
     private var interceptor: SessionInterceptor? = null
 
+    /**
+     * What this phone means to do in the room ([setPlayIntent]), shown as playWhenReady; null until the session says,
+     * and outside a session, where the wrapped player's own shows. The session holds the local player paused until the
+     * song is ready and the room's start time comes, so the player's own playWhenReady read "paused" all the while a song
+     * resolved, though the room was playing it for the guests: every play/pause button (Now Playing and the mini player
+     * key on playWhenReady, the notification, lock screen and headset on Util.shouldShowPlayButton) then sent Play, which
+     * the room drops when it is already playing, and the host couldn't pause it.
+     */
+    private var playIntent: Boolean? = null
+
     /** Main thread only: invalidateState checks the application looper. */
     fun configure(isHost: Boolean, interceptor: SessionInterceptor?) {
         this.isHost = isHost
         this.interceptor = interceptor
+        if (interceptor == null) playIntent = null
+        invalidateState()
+    }
+
+    /** The session's intent (see [playIntent]). Main thread only; a repeat costs nothing, and outside a session it's dropped. */
+    fun setPlayIntent(playing: Boolean) {
+        if (interceptor == null || playIntent == playing) return
+        playIntent = playing
         invalidateState()
     }
 
@@ -42,7 +60,16 @@ class ListenTogetherPlayer(player: Player) : ForwardingSimpleBasePlayer(player) 
         if (interceptor == null) return state
         val commands = state.availableCommands.buildUpon()
         if (isHost) commands.addAll(*HOST_ADDS) else commands.removeAll(*LISTENER_REMOVES)
-        return state.buildUpon().setAvailableCommands(commands.build()).build()
+        val builder = state.buildUpon().setAvailableCommands(commands.build())
+        playIntent?.let { intent ->
+            builder.setPlayWhenReady(intent, state.playWhenReadyChangeReason)
+            // Ready but held until the room's start time (or for the room's other phones): a wait, shown as loading, so
+            // nothing reads it as playing (isPlaying, which the listening history counts) while nothing sounds.
+            if (intent && !state.playWhenReady && state.playbackState == Player.STATE_READY) {
+                builder.setPlaybackState(Player.STATE_BUFFERING)
+            }
+        }
+        return builder.build()
     }
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
