@@ -29,6 +29,16 @@ data class SyncStepResult(
     val unreadPlaylists: List<String> = emptyList(),
     /** How many playlists [unreadPlaylists] stands for; it holds only the first names. */
     val unreadPlaylistCount: Int = 0,
+    /**
+     * Which of the service's accounts the step read, when it has more than one: an extra Spotify
+     * account's label, "extra N" (plan 2026-11-04 §3.7). Null for the main account (and every
+     * other service), and left out of the JSON then, so a one-account sync records exactly what it
+     * did before.
+     *
+     * PRIVACY: a label only, never the account's user id or its name. Sync History shows these
+     * steps and a shared diagnostics bundle carries them.
+     */
+    val account: String? = null,
 ) {
     companion object {
         /** Names kept per step: the row shows five, a whole failed library would bloat every row. */

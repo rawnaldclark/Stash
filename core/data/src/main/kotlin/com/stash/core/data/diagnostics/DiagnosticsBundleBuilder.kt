@@ -208,8 +208,10 @@ class DiagnosticsBundleBuilder @Inject constructor(
                         emptyList()
                     }
                     steps.forEach { step ->
+                        // PRIVACY: an extra account's step names it by its label ("extra N") only.
+                        val service = step.account?.let { "${step.service} ($it)" } ?: step.service
                         append(
-                            "    ${step.service} · ${step.step} · ${step.status} · " +
+                            "    $service · ${step.step} · ${step.status} · " +
                                 "http=${step.httpCode} · items=${step.itemCount}",
                         )
                         step.errorMessage?.let { append(" · $it") }
