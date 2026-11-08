@@ -697,8 +697,10 @@ class PlaylistFetchWorker @AssistedInject constructor(
     /**
      * One extra account's pass. Contained: whatever it throws, a 429 ([SpotifyApiException])
      * included, is caught here and recorded as this account's step. It never fails or retries the
-     * chain, and never touches what the main account's pass (or another extra's) brought in. What it
-     * listed before failing stays incomplete, so the joint hide hides nothing this sync.
+     * chain, and never touches what the main account's pass (or another extra's) brought in. A
+     * listing it didn't finish stays incomplete, so nothing of that kind is hidden this sync.
+     * Stopped for time ([ExtraAccountOutOfTime]), it is treated as not read instead: an unfinished
+     * listing is dropped, so it holds nobody back.
      *
      * Whether it runs is decided once, by asking for its access token acting as it: null means its
      * sign-in no longer works, so the pass is skipped, its rows left exactly as they are, and
