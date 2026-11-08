@@ -9,7 +9,7 @@
     // Fallback sender. Must be an address on a domain onboarded for Email Sending.
     // Weblate's WEBLATE_DEFAULT_FROM_EMAIL is used instead when it is on the same domain.
     "FROM_ADDRESS": "access@stashfm.app",
-    "FROM_NAME": "Weblate"
+    "FROM_NAME": "Stash"
     // Optional: "ALLOWED_FROM_DOMAIN": "notifications.example.com"  (defaults to FROM_ADDRESS's domain)
   }
 }

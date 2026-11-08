@@ -42,6 +42,13 @@ export const KEYS = {
      * (infra/tipjar-worker/src/access.js). The tip jar writes them; this Worker only deletes them, on Remove access.
      */
     kofiPayPrefix: (h) => `kofipay:${h}:`,
+    /**
+     * Unlocked in the app by hand (Give access with "Also unlock unlimited lossless in the app"): { by, at }, metadata
+     * { at }. The tip jar's supporter claim reads it (infra/tipjar-worker/src/claim.js); it isn't early access or a
+     * donation. Until Remove access.
+     */
+    comp: (h) => `comp:${h}`,
+    compPrefix: "comp:",
     /** The tip jar's hash of HASHCHECK_EMAIL, to spot an EMAIL_PEPPER mismatch between the two Workers. */
     hashCheck: "meta:hashcheck",
 };

@@ -42,11 +42,19 @@ import GoalBar from '../../components/gate/GoalBar.astro';
           <input class="input" id="add-email" name="email" type="email" maxlength="254" required autocomplete="off" />
         </div>
         <label class="check"><input type="checkbox" name="notify" value="yes" /> Email them that they're in</label>
+        <label class="check"><input type="checkbox" name="app" value="yes" /> Also unlock unlimited lossless in the app</label>
         <button type="submit" class="button button-primary button-small">Give access</button>
       </form>
+      <p class="gate-small">
+        For supporters who gave outside Ko-fi (Ko-fi supporters unlock on their own). <span data-fill="app-count">0 unlocked in the app here</span>.
+        To unlock someone already on the list, give them access again with the box ticked.
+      </p>
 
       <h2 class="later" id="remove-title">Remove access</h2>
-      <p>Their sign-in stops working within a few minutes. Any Ko-fi amounts kept toward their $5 are deleted too.</p>
+      <p>
+        Their sign-in stops working within a few minutes. Any Ko-fi amounts kept toward their $5 and their app unlock
+        are deleted too; a phone they already unlocked stays unlocked.
+      </p>
       <form method="post" action="/admin" class="stack" aria-labelledby="remove-title">
         <input type="hidden" name="action" value="remove" />
         <div>

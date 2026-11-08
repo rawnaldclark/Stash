@@ -4,6 +4,7 @@ import android.util.Base64
 import android.util.Log
 import com.stash.core.auth.model.ServiceToken
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -22,6 +23,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -130,6 +132,12 @@ class SpotifyAuthManager @Inject constructor(
 
         /** A hash that keeps failing is re-read from the bundle at most this often. */
         private const val RESCRAPE_MIN_INTERVAL_MS = 10 * 60 * 1000L
+
+        /** Connect and read limits on the client-token POST, sync and sign-in alike. */
+        internal const val CLIENT_TOKEN_TIMEOUT_MS = 15_000
+
+        /** The whole `profileAttributes` request, connect to last byte. */
+        internal const val PROFILE_CALL_TIMEOUT_SECONDS = 10L
 
         private const val WEB_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -472,8 +480,7 @@ class SpotifyAuthManager @Inject constructor(
                 // Spotify fingerprints TLS ClientHello (JA3/JA4) and rejects OkHttp's
                 // fingerprint with HTTP 400. Android's HttpURLConnection uses the
                 // system BoringSSL which has a Chrome-like TLS fingerprint.
-                val url = java.net.URL(SpotifyAuthConfig.CLIENT_TOKEN_ENDPOINT)
-                val conn = url.openConnection() as java.net.HttpURLConnection
+                val conn = openClientTokenConnection()
                 conn.requestMethod = "POST"
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json")
@@ -511,6 +518,135 @@ class SpotifyAuthManager @Inject constructor(
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "getClientToken failed", e)
+                null
+            }
+        }
+    }
+
+    /**
+     * The client-token POST's connection, with timeouts: an `HttpURLConnection` has none by
+     * default, so a stalled network held whoever asked (a sign-in's spinner, a sync) for ever.
+     */
+    internal fun openClientTokenConnection(): java.net.HttpURLConnection =
+        (java.net.URL(SpotifyAuthConfig.CLIENT_TOKEN_ENDPOINT).openConnection() as java.net.HttpURLConnection).apply {
+            connectTimeout = CLIENT_TOKEN_TIMEOUT_MS
+            readTimeout = CLIENT_TOKEN_TIMEOUT_MS
+        }
+
+    /**
+     * Which Spotify account [accessToken] belongs to, from the web player's own `profileAttributes`
+     * query ([SpotifyAuthConfig.HASH_PROFILE_ATTRIBUTES]), or null when Spotify doesn't say (no
+     * network, a rejected token, a rotated hash Stash has no replacement for).
+     *
+     * Takes the token rather than reading the stored one, so a sign-in can be identified BEFORE it
+     * is saved: the account-swap guard in `TokenManagerImpl.connectSpotifyWithCookie` compares it
+     * with the connected account first. The request is `executeGraphQL`'s (same headers, same
+     * client token flow). Never throws, except cancellation.
+     *
+     * @param accessToken A web-player access token from [getAccessToken].
+     * @param clientId The web player's client id (the second half of the token's scope).
+     * @param rescrapeOnMiss On a `PersistedQueryNotFound`, download the live bundle for the current
+     *   hash and retry once. A sync and a new sign-in's lookup do: the bundle is several MB, but a
+     *   miss is rare and the sign-in's budget bounds the wait. Without it, only a hash already
+     *   scraped in this process is tried, for a lookup right after one that could download.
+     */
+    suspend fun fetchProfile(
+        accessToken: String,
+        clientId: String,
+        rescrapeOnMiss: Boolean,
+    ): SpotifyProfile? = withContext(Dispatchers.IO) {
+        if (accessToken.isEmpty() || clientId.isEmpty()) return@withContext null
+        val profile = try {
+            getClientToken(clientId)?.let { lookUpProfile(accessToken, it, rescrapeOnMiss) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "fetchProfile failed: ${e.javaClass.simpleName}")
+            null
+        }
+        Log.d(TAG, "fetchProfile: identified=${profile != null}")
+        profile
+    }
+
+    /** [fetchProfile] once it has a client token: the query, and one retry on a rotated hash. */
+    internal suspend fun lookUpProfile(accessToken: String, clientToken: String, rescrapeOnMiss: Boolean): SpotifyProfile? {
+        val seed = SpotifyAuthConfig.HASH_PROFILE_ATTRIBUTES
+        val body = profileAttributesBody(accessToken, clientToken, seed) ?: return null
+        SpotifyProfile.parseProfileAttributes(body)?.let { return it }
+        if (!body.contains("PersistedQueryNotFound", ignoreCase = true)) return null
+        val operation = SpotifyAuthConfig.OP_PROFILE_ATTRIBUTES
+        val fresh = if (rescrapeOnMiss) {
+            scrapePersistedQueryHash(operation, seed)
+        } else {
+            scrapedHashes?.get(operation)?.takeIf { it != seed }
+        }
+        if (fresh == null) {
+            // Every sign-in is unchecked until this clears: worth finding in a diagnostics bundle.
+            Log.w(TAG, "fetchProfile: $operation hash rotated, no replacement (rescrapeOnMiss=$rescrapeOnMiss)")
+            return null
+        }
+        return profileAttributesBody(accessToken, clientToken, fresh)?.let(SpotifyProfile::parseProfileAttributes)
+    }
+
+    /**
+     * The shared client's limits are per step, so a slow trickle could run on and on. One limit
+     * for the whole profile request, on top of [profileAttributesBody] being cancellable.
+     */
+    internal val profileHttp: OkHttpClient by lazy {
+        okHttpClient.newBuilder().callTimeout(PROFILE_CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS).build()
+    }
+
+    /**
+     * The body of one `profileAttributes` GET, or null on a failed request. A non-2xx answer still
+     * returns its body when it is a persisted-query miss, so [lookUpProfile] can retry the hash.
+     * The answer names the account, so neither body nor id is logged. Sent on OkHttp's threads and
+     * cancelled with the caller: a blocking `execute()` would hold a timed-out sign-in until the
+     * socket gave up.
+     */
+    private suspend fun profileAttributesBody(accessToken: String, clientToken: String, hash: String): String? {
+        val extensions = buildJsonObject {
+            putJsonObject("persistedQuery") {
+                put("version", 1)
+                put("sha256Hash", hash)
+            }
+        }.toString()
+        val url = SpotifyAuthConfig.GRAPHQL_ENDPOINT +
+            "?operationName=${SpotifyAuthConfig.OP_PROFILE_ATTRIBUTES}" +
+            "&variables=${java.net.URLEncoder.encode("{}", "UTF-8")}" +
+            "&extensions=${java.net.URLEncoder.encode(extensions, "UTF-8")}"
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .header("Authorization", "Bearer $accessToken")
+            .header("Client-Token", clientToken)
+            .header("Accept", "application/json")
+            .header("App-Platform", "WebPlayer")
+            .header("Spotify-App-Version", getClientVersion())
+            .header("Origin", "https://open.spotify.com")
+            .header("Referer", "https://open.spotify.com/")
+            .header("User-Agent", WEB_UA)
+            .build()
+        val call = profileHttp.newCall(request)
+        val (code, body) = suspendCancellableCoroutine<Pair<Int, String?>> { cont ->
+            cont.invokeOnCancellation { call.cancel() }
+            call.enqueue(
+                object : okhttp3.Callback {
+                    override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                        if (cont.isActive) cont.resumeWith(Result.failure(e))
+                    }
+
+                    override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                        val read = runCatching { response.use { it.code to it.body?.string() } }
+                        if (cont.isActive) cont.resumeWith(read)
+                    }
+                },
+            )
+        }
+        return when {
+            code in 200..299 -> body
+            body?.contains("PersistedQueryNotFound", ignoreCase = true) == true -> body
+            else -> {
+                Log.w(TAG, "fetchProfile: HTTP $code")
                 null
             }
         }

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthService
 import com.stash.core.auth.model.AuthState
+import com.stash.core.auth.model.SpotifyConnectResult
 import com.stash.core.auth.youtube.YouTubeCookieHelper
 import android.content.Context
 import android.net.Uri
@@ -64,6 +65,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
@@ -152,6 +154,7 @@ class SettingsViewModel @Inject constructor(
     private val syncStateManager: com.stash.core.data.sync.SyncStateManager,
     /** The line under each "Like on … too" switch, and its "tap to retry". */
     private val likeCoordinator: com.stash.core.data.social.LikeCoordinator,
+    private val syncPreferences: com.stash.core.data.sync.SyncPreferencesManager,
 ) : ViewModel() {
 
     // ── ListenBrainz ────────────────────────────────────────────────────────
@@ -1315,43 +1318,85 @@ class SettingsViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
+        spotifyConnectJob?.cancel()
+        spotifyConnectJob = viewModelScope.launch {
             _localState.update {
                 it.copy(isSpotifyCookieValidating = true, spotifyCookieError = null)
             }
 
-            val success = connectGuarded { tokenManager.connectSpotifyWithCookie(cookie, username) }
-
-            if (success == true) {
-                // A fresh sp_dc renews the session the last sync found expired.
-                syncStateManager.clearAuthExpiry(spotify = true)
-                retryLikesAfterSignIn(com.stash.core.data.social.Destination.SPOTIFY)
-                _localState.update {
-                    it.copy(
-                        showSpotifyCookieDialog = false,
-                        spotifyCookieError = null,
-                        isSpotifyCookieValidating = false,
-                    )
+            when (val result = connectGuarded { tokenManager.connectSpotifyWithCookie(cookie, username) }) {
+                SpotifyConnectResult.Connected -> {
+                    // A fresh sp_dc renews the session the last sync found expired.
+                    syncStateManager.clearAuthExpiry(spotify = true)
+                    retryLikesAfterSignIn(com.stash.core.data.social.Destination.SPOTIFY)
+                    _localState.update {
+                        it.copy(
+                            showSpotifyCookieDialog = false,
+                            spotifyCookieError = null,
+                            isSpotifyCookieValidating = false,
+                        )
+                    }
                 }
-            } else {
-                _localState.update {
-                    it.copy(
-                        spotifyCookieError = if (success == null) {
-                            CONNECT_SAVE_FAILED
-                        } else {
-                            "Invalid or expired sp_dc cookie. Please try again."
-                        },
-                        isSpotifyCookieValidating = false,
-                    )
+                is SpotifyConnectResult.DifferentAccount -> {
+                    // Refused, nothing saved: the connected account (and its expired flag,
+                    // and its waiting likes) stay as they were. The paste dialog is the wrong
+                    // place to say why, so it closes and the Accounts screen explains.
+                    _localState.update {
+                        it.copy(
+                            showSpotifyCookieDialog = false,
+                            spotifyCookieError = null,
+                            isSpotifyCookieValidating = false,
+                        )
+                    }
+                    _spotifyAccountMismatch.value = SpotifyAccountMismatch.of(result)
+                }
+                SpotifyConnectResult.Invalid, null -> {
+                    _localState.update {
+                        it.copy(
+                            spotifyCookieError = if (result == null) {
+                                CONNECT_SAVE_FAILED
+                            } else {
+                                "Invalid or expired sp_dc cookie. Please try again."
+                            },
+                            isSpotifyCookieValidating = false,
+                        )
+                    }
                 }
             }
         }
     }
 
+    /** The Spotify sign-in being checked, which Cancel in its dialog drops. */
+    private var spotifyConnectJob: Job? = null
+
+    private val _spotifyAccountMismatch = MutableStateFlow<SpotifyAccountMismatch?>(null)
+
     /**
-     * Dismisses the Spotify cookie input dialog without connecting.
+     * Set when a Spotify sign-in was refused for being another account than the connected one;
+     * the Accounts screen tells the listener how to switch. Kept out of the big [uiState] combine
+     * like [authExpiry]: one screen reads it.
+     */
+    val spotifyAccountMismatch: StateFlow<SpotifyAccountMismatch?> = _spotifyAccountMismatch.asStateFlow()
+
+    /** The listener read why the Spotify sign-in was refused. */
+    fun onDismissSpotifyAccountMismatch() {
+        _spotifyAccountMismatch.value = null
+    }
+
+    /**
+     * True while Spotify syncs in Refresh mode, when the Disconnect confirmation says what a
+     * different account's first sync would do. One dialog reads it, so it stays out of [uiState].
+     */
+    val spotifyRefreshMode: StateFlow<Boolean> = syncPreferences.spotifySyncMode
+        .map { it == com.stash.core.model.SyncMode.REFRESH }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /**
+     * Dismisses the Spotify cookie input dialog without connecting. A check still running is
+     * dropped: nothing is saved until its very last step, and this stops it short of that.
      */
     fun onDismissSpotifyCookieDialog() {
+        spotifyConnectJob?.cancel()
         _localState.update {
             it.copy(
                 showSpotifyCookieDialog = false,
@@ -1380,7 +1425,7 @@ class SettingsViewModel @Inject constructor(
      * unavailable), the exception used to escape this bare viewModelScope
      * launch and crash the app mid sign-in. Cancellation still propagates.
      */
-    private suspend fun connectGuarded(connect: suspend () -> Boolean): Boolean? = try {
+    private suspend fun <T : Any> connectGuarded(connect: suspend () -> T): T? = try {
         connect()
     } catch (e: kotlinx.coroutines.CancellationException) {
         throw e

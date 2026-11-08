@@ -127,7 +127,14 @@ export function cleanTrackLink(b) {
     return track;
 }
 
-/** One song descriptor (the same fields and limits as a mix track), cleaned; null when invalid. Used by Listen Together. */
+/**
+ * The longest a song may be as JSON. The field limits below count characters, but a control character takes 6 in JSON,
+ * and Listen Together must be able to add up how long a queue can get (MAX_QUEUE_CHARS in room.js). A real song at the
+ * longest its fields allow comes to about 2,700.
+ */
+export const MAX_TRACK_JSON_CHARS = 4_000;
+
+/** One song descriptor (the same fields and limits as a mix track), cleaned; null when invalid. Used by Listen Together and Community posts. */
 export function cleanTrack(t) {
     if (!t || typeof t !== "object" || !str(t.t, 1, 500) || !str(t.a, 1, 500)) return null;
     if (!optStr(t.al, 500) || !optStr(t.isrc, 20) || !optStr(t.sp, 40) || !optStr(t.yt, 20) || !optStr(t.by, 16)) return null;
@@ -139,5 +146,5 @@ export function cleanTrack(t) {
     if (art) clean.art = art;
     // A duration outside 1 ms..24 h is dropped, not fatal: positions are clamped to it.
     if (!(Number.isSafeInteger(clean.d) && clean.d >= 1 && clean.d <= 86_400_000)) delete clean.d;
-    return clean;
+    return JSON.stringify(clean).length <= MAX_TRACK_JSON_CHARS ? clean : null;
 }

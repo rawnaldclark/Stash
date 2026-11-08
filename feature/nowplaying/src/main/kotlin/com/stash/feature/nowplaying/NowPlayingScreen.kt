@@ -304,6 +304,8 @@ fun NowPlayingScreen(
     // Listen Together (spec 2026-09-24 §5).
     val together: com.stash.feature.nowplaying.listen.ListenTogetherViewModel = hiltViewModel()
     val togetherState by together.state.collectAsStateWithLifecycle()
+    // Read before the sheet opens, so the host's Offline hint is there on its first frame.
+    val togetherOffline by together.offlineMode.collectAsStateWithLifecycle()
     val room = togetherState as? ListenTogetherState.InRoom
     var showStartTogether by remember { mutableStateOf(false) }
     // Google Cast (spec 2026-10-06 §5). Hidden on phones without Play Services.
@@ -763,6 +765,9 @@ fun NowPlayingScreen(
             onAnswer = together::answerSuggestion,
             onMakeHost = together::makeHost,
             onEditQueue = together::editQueue,
+            offlineMode = togetherOffline,
+            onGuestsAddChange = together::setGuestsAdd,
+            onUnqueue = together::unqueue,
             onCopyLink = { com.stash.feature.nowplaying.listen.copyInvite(toastContext, it) },
             onShare = { com.stash.feature.nowplaying.listen.shareInvite(toastContext, it) },
             onLeave = {
@@ -1201,6 +1206,7 @@ fun NowPlayingScreen(
                                     fullArtText = if (fullArtOn) fullArtTextAnchor else null,
                                     art = {
                                     // -- Album art: NowPlayingBody sizes this slot (a square) --
+                                    Box(Modifier.fillMaxSize()) {
                                     Box(
                                         modifier = Modifier
                                             .fillMaxSize()
@@ -1286,10 +1292,12 @@ fun NowPlayingScreen(
                                         // Full art: a swipe across the art turns its page; the square's own
                                         // gestures (skip, seek, turn over) wait under it.
                                         if (fullArtOn && !reading) com.stash.feature.nowplaying.ui.FullArtSwipe(fullArt)
-                                        if (room != null) {
-                                            // "Maya joined", "Rawn skipped": over the art, so the layout never shifts.
-                                            com.stash.feature.nowplaying.listen.SessionEventChip(together.events, room.myId, Modifier.align(Alignment.TopCenter))
-                                        }
+                                    }
+                                    if (room != null) {
+                                        // "Maya joined", "Sam added Xtal": over the art, so the layout never shifts. Outside the
+                                        // box above: Full art (on by default) makes that box invisible, and the chip with it.
+                                        com.stash.feature.nowplaying.listen.SessionEventChip(together.events, room.myId, Modifier.align(Alignment.TopCenter).then(controlsLayer))
+                                    }
                                     }
                                     },
                                     stack = {

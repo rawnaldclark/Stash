@@ -38,6 +38,27 @@ data class UserInfo(
     val imageUrl: String? = null,
 )
 
+/** What became of a Spotify sign-in handed to `TokenManager.connectSpotifyWithCookie`. */
+sealed interface SpotifyConnectResult {
+    /** Saved: a first sign-in, or the connected account signing in again (an expired session). */
+    data object Connected : SpotifyConnectResult
+
+    /** The cookie gave no signed-in session (invalid, expired, or Spotify refused). Nothing saved. */
+    data object Invalid : SpotifyConnectResult
+
+    /**
+     * A different Spotify account than the connected one. Nothing saved: the connected account's
+     * sign-in, and so its library, stay exactly as they were. Saving it would have replaced that
+     * account silently, and in Refresh mode the next sync would hide its whole library.
+     * Switching accounts stays deliberate: sign out first, then sign in.
+     *
+     * @property connectedName The connected account's name, never blank.
+     * @property attemptedName The new sign-in's account name, never blank. Can equal
+     *   [connectedName]: two accounts may share a display name.
+     */
+    data class DifferentAccount(val connectedName: String, val attemptedName: String) : SpotifyConnectResult
+}
+
 /** Streaming services supported by Stash. */
 enum class AuthService { SPOTIFY, YOUTUBE_MUSIC, DISCORD, SOUNDCLOUD }
 

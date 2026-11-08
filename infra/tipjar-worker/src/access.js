@@ -27,6 +27,11 @@ export const KEYS = {
     /** One Ko-fi payment from an email still under the entry: { cents, at }, the same as metadata. Kept for good. */
     kofiPay: (hash, id) => `kofipay:${hash}:${id}`,
     kofiPayPrefix: (hash) => `kofipay:${hash}:`,
+    /**
+     * Unlocked in the app by hand (the website's admin page, "Also unlock unlimited lossless in the app"): { by, at },
+     * metadata { at }. Read by the claim only (src/claim.js); not early access, not a donation. Until removed there.
+     */
+    comp: (hash) => `comp:${hash}`,
     goalEntry: (month, kind, id) => `goal:${month}:${kind}:${id}`,
     /** In STASH_KV: this Ko-fi transaction's progress, "listed" then "done" (src/index.js). */
     kofiTxn: (id) => `kofitxn:${id}`,

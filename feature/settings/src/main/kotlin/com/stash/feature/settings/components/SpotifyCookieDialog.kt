@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.stash.feature.settings.R
 
 /**
@@ -32,7 +33,9 @@ import com.stash.feature.settings.R
  * triggers validation. An optional error message is shown below the text field
  * when the cookie is invalid or expired.
  *
- * @param isValidating Whether the cookie is currently being validated (shows a spinner).
+ * @param isValidating Whether the cookie is currently being validated (shows a spinner). The
+ *   dialog can still be closed meanwhile: [onDismiss] drops the check, and nothing is saved
+ *   until its very last step.
  * @param errorMessage Error message to display, or null if there is no error.
  * @param onConnect Callback with the entered cookie value when the user taps Connect.
  * @param onDismiss Callback when the dialog is dismissed.
@@ -48,7 +51,9 @@ fun SpotifyCookieDialog(
     var username by remember { mutableStateOf("") }
 
     AlertDialog(
-        onDismissRequest = { if (!isValidating) onDismiss() },
+        onDismissRequest = onDismiss,
+        // Cancel and Back still close it mid-check; a stray tap beside it shouldn't drop a sign-in.
+        properties = DialogProperties(dismissOnClickOutside = !isValidating),
         title = {
             Text(
                 text = stringResource(R.string.settings_spotify_connect_dialog_title),
@@ -152,10 +157,8 @@ fun SpotifyCookieDialog(
             }
         },
         dismissButton = {
-            if (!isValidating) {
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.settings_cancel))
-                }
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.settings_cancel))
             }
         },
     )
