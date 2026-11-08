@@ -65,6 +65,9 @@ internal fun defaultSyncEnabled(type: PlaylistType, online: Boolean): Boolean = 
  * have their own Home rails and Liked Songs its own card. In Download mode a
  * pinned playlist would sit on Home with nothing on the phone, so it waits for
  * its Save switch like before.
+ *
+ * Never an extra Spotify account's ([spotifyAccount] set, plan 2026-11-04 §1.6, §3.3): its first
+ * sync would put that account's whole library on Home. The listener pins what they want.
  */
 internal fun pinOnDiscovery(
     type: PlaylistType,
@@ -72,10 +75,25 @@ internal fun pinOnDiscovery(
     pinNewPlaylists: Boolean,
     source: MusicSource,
     sourceId: String,
+    spotifyAccount: String? = null,
 ): Boolean =
     pinNewPlaylists && streamingMode && type == PlaylistType.CUSTOM &&
+        spotifyAccount == null &&
         // A saved album lives in Library › Albums: 300 synced albums would flood Your playlists.
         !com.stash.core.data.album.SavedAlbums.isSavedAlbum(type, source, sourceId)
+
+/**
+ * Whether applying [snapshot] to an existing row moves the row to the snapshot's account
+ * ([RemotePlaylistSnapshotEntity.spotifyAccount], null = the main): ownership follows the snapshot
+ * (plan 2026-11-04 §2.4). Only a Spotify snapshot over a row the Spotify sync files (source
+ * SPOTIFY) whose tag differs: a row under the same key from anywhere else (a pasted link, source
+ * BOTH) or another service's never takes an account. The main account's pass runs first and
+ * claims what it lists, so a playlist two accounts follow is only ever snapshotted by the main,
+ * and settles on it.
+ */
+internal fun movesToSnapshotAccount(row: PlaylistEntity, snapshot: RemotePlaylistSnapshotEntity): Boolean =
+    snapshot.source == MusicSource.SPOTIFY && row.source == MusicSource.SPOTIFY &&
+        row.spotifyAccount != snapshot.spotifyAccount
 
 /**
  * The type to re-write onto an existing playlist row, or null to leave it.
@@ -303,6 +321,14 @@ class DiffWorker @AssistedInject constructor(
             }
 
             val playlistSnapshots = remoteSnapshotDao.getPlaylistSnapshotsBySyncId(syncId)
+            // The extra Spotify accounts as they are now. A snapshot an extra's pass wrote is applied
+            // only while that account is still here: one removed during this sync stays removed
+            // (its rows hidden), instead of coming straight back from its last pass.
+            val extraSpotifyAccounts = if (playlistSnapshots.any { it.spotifyAccount != null }) {
+                database.spotifyAccountDao().getAll().mapTo(HashSet()) { it.userId }
+            } else {
+                emptySet()
+            }
             val soundCloudSyncMode = if (playlistSnapshots.any { it.source == MusicSource.SOUNDCLOUD })
                 syncPreferencesManager.soundCloudSyncMode.first() else SyncMode.ACCUMULATE
             syncStateManager.onDiffing(playlistsDiffed = 0, totalPlaylists = playlistSnapshots.size)
@@ -314,6 +340,12 @@ class DiffWorker @AssistedInject constructor(
             var skippedUnchanged = 0
 
             for (playlistSnapshot in playlistSnapshots) {
+                val snapshotAccount = playlistSnapshot.spotifyAccount
+                if (playlistSnapshot.source == MusicSource.SPOTIFY && snapshotAccount != null && snapshotAccount !in extraSpotifyAccounts) {
+                    Log.i(TAG, "Snapshot '${playlistSnapshot.playlistName}' is from a Spotify account removed since its pass, skipping")
+                    skippedSwitchedOff++
+                    continue
+                }
                 val applySnapshot: suspend () -> Unit = applySnapshot@ {
                 // Find or create the local playlist (writes, but outside
                 // the per-playlist transaction — it owns its own atomicity
@@ -571,7 +603,16 @@ class DiffWorker @AssistedInject constructor(
         streamingMode: Boolean,
         pinNewPlaylists: Boolean,
     ): PlaylistEntity {
-        val existing = playlistDao.findBySourceId(snapshot.sourcePlaylistId)
+        val found = playlistDao.findBySourceId(snapshot.sourcePlaylistId)
+        // Ownership follows the snapshot (plan 2026-11-04 §2.4), a row taken out of the library
+        // included: it then shows under the account that still has it.
+        val existing = if (found != null && movesToSnapshotAccount(found, snapshot)) {
+            playlistDao.updateSpotifyAccount(found.id, snapshot.spotifyAccount)
+            Log.i(TAG, "'${found.name}' now belongs to ${if (snapshot.spotifyAccount == null) "the main" else "another"} Spotify account")
+            found.copy(spotifyAccount = snapshot.spotifyAccount)
+        } else {
+            found
+        }
         if (existing != null) {
             // A playlist the home feed once called a mix, and the library walk
             // now reports as one the user saved, is re-typed here — see
@@ -645,11 +686,18 @@ class DiffWorker @AssistedInject constructor(
             // Home is decided by PlaylistDao.getAllVisible, not by this flag:
             // Online, a playlist holding streamable tracks shows regardless.
             syncEnabled = defaultSyncEnabled(snapshot.playlistType, streamingMode),
-            pinnedToHomeAt = if (pinOnDiscovery(snapshot.playlistType, streamingMode, pinNewPlaylists, snapshot.source, snapshot.sourcePlaylistId)) {
+            pinnedToHomeAt = if (
+                pinOnDiscovery(
+                    snapshot.playlistType, streamingMode, pinNewPlaylists, snapshot.source, snapshot.sourcePlaylistId,
+                    spotifyAccount = snapshot.spotifyAccount,
+                )
+            ) {
                 System.currentTimeMillis()
             } else {
                 null
             },
+            // The account whose pass found it (null = the main account, and every other service).
+            spotifyAccount = snapshot.spotifyAccount.takeIf { snapshot.source == MusicSource.SPOTIFY },
         )
         val id = playlistDao.insert(newPlaylist)
         // A playlist or mix that wasn't here before is news — arguably the most

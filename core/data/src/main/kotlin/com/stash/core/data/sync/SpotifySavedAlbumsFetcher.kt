@@ -4,13 +4,10 @@ import android.util.Log
 import androidx.room.withTransaction
 import com.stash.core.data.album.SavedAlbums
 import com.stash.core.data.db.StashDatabase
-import com.stash.core.data.db.dao.SyncUndoDao
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
 import com.stash.core.data.db.entity.RemoteTrackSnapshotEntity
 import com.stash.core.data.sync.workers.SpotifyMirrorStamp
-import com.stash.core.data.sync.workers.captureUndoPoint
-import com.stash.core.data.sync.workers.shouldDeactivateMissingPlaylists
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.StepStatus
@@ -57,30 +54,56 @@ import javax.inject.Inject
  *    album already here, nothing is written: its last tracklist stands, and it's read next sync.
  *    Spotify answered either way, so a short read never counts toward the stop.
  *
- * Removal: an album gone from the listing is hidden like a playlist gone from Spotify, by the same
- * rule ([shouldDeactivateMissingPlaylists]: Refresh mode, and a listing that is provably whole: every
- * page by date saved, [SpotifyApiClient.SAVED_ALBUMS_ORDER]), and only ever a row this step synced
- * (source SPOTIFY). A row under the same key from anywhere else (a pasted Spotify link, source BOTH)
- * is the listener's own: this step neither reads, rewrites nor hides it, and when the listener
- * removed it (Remove hides such a copy) it stays out, unless they save it on Spotify after removing
- * it ([savedSinceRemoved]): then it is the sync's again.
+ * Removal: this step only LISTS. An album gone from every account's listing is hidden after every
+ * account's pass by the sync's one joint hide ([hideWhatNoSpotifyAccountListed], plan 2026-11-04
+ * §2.4), by the same rule a playlist gone from Spotify is (Refresh mode, and listings that are
+ * provably whole: here, every page by date saved, [SpotifyApiClient.SAVED_ALBUMS_ORDER]), and only
+ * ever a row a sync filed (source SPOTIFY). A row under the same key from anywhere else (a pasted
+ * Spotify link, source BOTH) is the listener's own: this step neither reads, rewrites nor hides it,
+ * and when the listener removed it (Remove hides such a copy) it stays out, unless they save it on
+ * Spotify after removing it ([savedSinceRemoved]): then it is the sync's again.
+ *
+ * Several Spotify accounts (plan 2026-11-04 §2.3): the sync runs this step once per account, the
+ * main first, each run acting as its account. An album an earlier account listed is "claimed": a
+ * later account counts it as listed but doesn't write it again (one snapshot per album per sync),
+ * so an album two accounts saved is one row, the main's when it is one of them. Every account
+ * shares one [ReadBudget], so a sync reads at most [MAX_READS_PER_SYNC] albums whatever the number
+ * of accounts.
  */
 class SpotifySavedAlbumsFetcher @Inject constructor(
     private val spotify: SpotifyApiClient,
     private val database: StashDatabase,
     private val syncPreferences: SyncPreferencesManager,
-    private val syncUndoDao: SyncUndoDao,
     private val syncLog: SyncLog,
 ) {
 
-    /** What one run did, for the log, the diagnostics and the reading budget. */
-    private class Tally {
+    /**
+     * One sync's album reading, shared by every account's run of this step: the albums read, the
+     * failed reads in a row that stop the reading, and the places taken by albums re-read for
+     * their age. One per sync, so extra accounts add no reads to it (plan 2026-11-04 §5 Wave 2).
+     */
+    class ReadBudget {
+        /** Albums whose songs were read this sync, of [MAX_READS_PER_SYNC]. */
         var reads = 0
+            internal set
+
+        /** Reads in a row that got nothing back; [FAILURES_TO_STOP] of them stop the reading. */
         var failedInARow = 0
-        var unchanged = 0
-        var deferred = 0
+            internal set
+
         /** Albums picked this sync to read again for their age, of [REFRESHES_PER_SYNC]. */
         var duePicked = 0
+            internal set
+
+        /** Whether the reading stopped for this sync, at the cap or on failures in a row. */
+        val spent: Boolean get() = reads >= MAX_READS_PER_SYNC || failedInARow >= FAILURES_TO_STOP
+    }
+
+    /** What one account's run did, for the log and the diagnostics. */
+    private class Tally {
+        var reads = 0
+        var unchanged = 0
+        var deferred = 0
         var refreshed = 0
         var readInPart = 0
         var savedInStash = 0
@@ -89,22 +112,43 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
     }
 
     /**
-     * Lists the saved albums and writes this run's snapshots for [syncId]; hides the albums no longer
-     * saved when [syncMode] and a whole listing allow it. [onAlbumRead] fires once per album read.
+     * Lists one account's saved albums into [listing] and writes this run's snapshots for [syncId].
+     * Hides nothing: [listing] is what the sync's joint hide measures "un-saved" against, and it is
+     * marked complete only when the walk proved it whole (every page, by date saved, the library's
+     * own count met). [onAlbumRead] fires once per album read.
+     *
+     * @param syncMode Only for the step's note on an order that can't prove an album un-saved.
+     * @param listing The account's album listing ([SpotifyAccountListing.owner] tags the snapshots:
+     *   null for the main account). Filled with every album key listed, claimed ones included.
+     * @param accountLabel The account's label for the step ([SyncStepResult.account]); null for the main.
+     * @param claimed Album keys an earlier account listed this sync: counted as listed, not written again.
+     * @param budget The sync's one album-reading budget, shared by every account.
+     *
+     * The main account's switch is its Sync setting, read here: switched off, the step is SKIPPED
+     * and [listing] stays empty and incomplete (the caller drops it). An extra account's switch is
+     * its `spotify_accounts` row's, which the caller checks before calling.
      */
     suspend fun fetch(
         syncId: Long,
         syncMode: SyncMode?,
+        listing: SpotifyAccountListing = SpotifyAccountListing(owner = null),
+        accountLabel: String? = null,
+        claimed: Set<String> = emptySet(),
+        budget: ReadBudget = ReadBudget(),
         onAlbumRead: () -> Unit = {},
         nowMs: Long = System.currentTimeMillis(),
     ): SyncStepResult {
-        val enabled = runCatching { syncPreferences.syncSpotifySavedAlbums.first() }
-            .onFailure { if (it is CancellationException) throw it }
-            .getOrDefault(true)
-        if (!enabled) return SyncStepResult(SERVICE, STEP, StepStatus.SKIPPED)
+        val owner = listing.owner
+        if (owner == null) {
+            val enabled = runCatching { syncPreferences.syncSpotifySavedAlbums.first() }
+                .onFailure { if (it is CancellationException) throw it }
+                .getOrDefault(true)
+            if (!enabled) return SyncStepResult(SERVICE, STEP, StepStatus.SKIPPED)
+        }
 
         val tally = Tally()
-        val listed = HashSet<String>()
+        val listed = listing.ids
+        var claimedSkipped = 0
         val handled = HashSet<String>()
         var total: Int? = null
         var offset = 0
@@ -137,7 +181,12 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
             if (total == null) total = page.totalCount else if (page.totalCount != total) listingComplete = false
             page.listedIds.mapTo(listed) { keyOf(it) }
 
-            handlePage(syncId, page.albums.filter { handled.add(it.id) }, nowMs, tally, onAlbumRead)
+            // An album an earlier account listed this sync is that account's to write: it counts as
+            // listed here (above), and isn't written again.
+            val fresh = page.albums.filter { handled.add(it.id) }
+            val mine = fresh.filter { keyOf(it.id) !in claimed }
+            claimedSkipped += fresh.size - mine.size
+            handlePage(syncId, owner, mine, nowMs, tally, budget, onAlbumRead)
 
             if (page.rawItemCount == 0) break
             offset += page.rawItemCount
@@ -145,21 +194,18 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
         }
         // Whole only when every album the library counts was listed: a short or shifted walk hides nothing.
         if (total == null || listed.size != total) listingComplete = false
-
-        val hidden = if (syncMode != null && shouldDeactivateMissingPlaylists(syncMode, listingComplete && byDateSaved)) {
-            hideMissing(syncId, listed)
-        } else {
-            0
-        }
+        // What the joint hide may measure "un-saved" against: a whole walk, by date saved.
+        listing.complete = listingComplete && byDateSaved
 
         if (tally.deferred > 0) syncLog.info("Read ${tally.reads} saved albums; ${tally.deferred} more come with the next syncs")
-        if (hidden > 0) syncLog.warn("Took $hidden album${if (hidden == 1) "" else "s"} you un-saved on Spotify out of Albums")
         Log.i(
             TAG,
-            "saved albums: listed=${listed.size}/$total pages=$pages order=$order byDateSaved=$byDateSaved " +
+            "saved albums${accountLabel?.let { " ($it)" }.orEmpty()}: listed=${listed.size}/$total pages=$pages " +
+                "order=$order byDateSaved=$byDateSaved " +
                 "read=${tally.reads} refreshed=${tally.refreshed} readInPart=${tally.readInPart} " +
                 "unchanged=${tally.unchanged} deferred=${tally.deferred} unread=${tally.unread.size} " +
-                "savedInStash=${tally.savedInStash} savedAgain=${tally.savedAgain} hidden=$hidden whole=$listingComplete",
+                "savedInStash=${tally.savedInStash} savedAgain=${tally.savedAgain} claimed=$claimedSkipped " +
+                "whole=$listingComplete",
         )
 
         val problem = listOfNotNull(
@@ -172,7 +218,7 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
             "${tally.readInPart} read in part (Spotify gave fewer songs than it counts)".takeIf { tally.readInPart > 0 },
             "${tally.savedAgain} you'd removed, saved on Spotify again: back in Albums".takeIf { tally.savedAgain > 0 },
             "${tally.deferred} left for the next sync".takeIf { tally.deferred > 0 },
-            "$hidden un-saved on Spotify, hidden".takeIf { hidden > 0 },
+            "$claimedSkipped also saved on an account read before, written there".takeIf { claimedSkipped > 0 },
             "listed in Spotify's order \"$order\", not by date saved: none taken out as un-saved"
                 .takeIf { !byDateSaved && pages > 0 && syncMode == SyncMode.REFRESH },
         ).joinToString("; ").ifEmpty { null }
@@ -189,6 +235,7 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
             // Named on the Sync History row with the playlists that couldn't be read.
             unreadPlaylists = tally.unread.take(SyncStepResult.UNREAD_NAMES_STORED),
             unreadPlaylistCount = tally.unread.size,
+            account = accountLabel,
         )
     }
 
@@ -199,9 +246,11 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
      */
     private suspend fun handlePage(
         syncId: Long,
+        owner: String?,
         albums: List<SpotifySavedAlbum>,
         nowMs: Long,
         tally: Tally,
+        budget: ReadBudget,
         onAlbumRead: () -> Unit,
     ) {
         if (albums.isEmpty()) return
@@ -225,12 +274,12 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
         val readBefore = nowMs - REFRESH_AFTER_MS
         val due = HashSet<String>()
         for (album in albums) {
-            if (tally.duePicked >= REFRESHES_PER_SYNC) break
+            if (budget.duePicked >= REFRESHES_PER_SYNC) break
             val row = rows[keyOf(album.id)] ?: continue
             val readAt = row.lastSynced?.toEpochMilli()
             if (sameSave(row, album) && (readAt == null || readAt < readBefore)) {
                 due += row.sourceId
-                tally.duePicked++
+                budget.duePicked++
             }
         }
 
@@ -256,12 +305,14 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
                 stamp != null -> {
                     // Partial, as an unchanged playlist's is: should the stamps ever not match at the
                     // diff, nothing is cleared, and the next sync reads the album in full.
-                    unchanged += albumSnapshot(syncId, album, trackCount = 0, partial = true, snapshotId = stamp, expectedCount = null)
+                    unchanged += albumSnapshot(syncId, owner, album, trackCount = 0, partial = true, snapshotId = stamp, expectedCount = null)
                     tally.unchanged++
                 }
-                tally.reads >= MAX_READS_PER_SYNC || tally.failedInARow >= FAILURES_TO_STOP -> tally.deferred++
+                budget.spent -> tally.deferred++
                 else -> {
-                    if (tally.reads > 0) delay(READ_GAP_MS)
+                    // Spaced across accounts too: the gap follows the sync's last read, whoever's it was.
+                    if (budget.reads > 0) delay(READ_GAP_MS)
+                    budget.reads++
                     tally.reads++
                     val tracks = try {
                         spotify.getAlbumTracks(album.id)
@@ -274,12 +325,12 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
                     when {
                         tracks == null -> {
                             // Nothing came back (Spotify answering 429, say): counts toward the stop.
-                            tally.failedInARow++
+                            budget.failedInARow++
                             tally.unread += album.name
                             syncLog.warn("${album.name} — couldn't read its songs (kept as it was)")
                         }
                         tracks.walkedAll -> {
-                            tally.failedInARow = 0
+                            budget.failedInARow = 0
                             if (key in due) tally.refreshed++
                             read += album to tracks
                         }
@@ -304,7 +355,7 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
                 }
             }
         }
-        writePage(syncId, unchanged, read)
+        writePage(syncId, owner, unchanged, read)
     }
 
     /** Whether [row] is synced here, not taken out, and stamped with [album]'s save: unread unless due or changed. */
@@ -317,6 +368,7 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
     /** A page's snapshots, in one transaction. */
     private suspend fun writePage(
         syncId: Long,
+        owner: String?,
         unchanged: List<RemotePlaylistSnapshotEntity>,
         read: List<Pair<SpotifySavedAlbum, SpotifyAlbumTracklist>>,
     ) {
@@ -328,7 +380,7 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
                 val cover = com.stash.core.common.ArtUrlUpgrader.upgrade(album.coverUrl)
                 val id = snapshots.insertPlaylistSnapshot(
                     albumSnapshot(
-                        syncId, album,
+                        syncId, owner, album,
                         trackCount = tracks.totalCount ?: tracks.tracks.size,
                         partial = !tracks.complete,
                         // Only a whole read is stamped once mirrored, so a partial one is read again.
@@ -356,8 +408,10 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
         }
     }
 
+    /** A saved album's snapshot, tagged with the account ([owner], null = main) whose run wrote it. */
     private fun albumSnapshot(
         syncId: Long,
+        owner: String?,
         album: SpotifySavedAlbum,
         trackCount: Int,
         partial: Boolean,
@@ -374,16 +428,8 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
         partial = partial,
         expectedCount = expectedCount,
         snapshotId = snapshotId,
+        spotifyAccount = owner,
     )
-
-    /** Hides the synced albums not in [listed]; the restore point first, so Undo last sync brings them back. */
-    private suspend fun hideMissing(syncId: Long, listed: Set<String>): Int {
-        val playlistDao = database.playlistDao()
-        val missing = playlistDao.spotifySavedAlbumIdsMissingFrom(listed)
-        if (missing.isEmpty()) return 0
-        captureUndoPoint(syncUndoDao, syncLog, syncId, TAG)
-        return playlistDao.deactivateByIdsChunked(missing)
-    }
 
     private fun keyOf(albumId: String) = SavedAlbums.sourceId(SPOTIFY_KEY, albumId)
 
@@ -414,6 +460,16 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
 
         /** Of [MAX_READS_PER_SYNC], how many may go to albums read [REFRESH_AFTER_DAYS] days ago. */
         const val REFRESHES_PER_SYNC = 100
+
+        /**
+         * [step] (an account's albums step) naming the [hidden] albums the joint hide took out of
+         * that account's rows, as the step did when it still hid them itself.
+         */
+        fun withHidden(step: SyncStepResult, hidden: Int): SyncStepResult {
+            if (hidden <= 0) return step
+            val line = "$hidden un-saved on Spotify, hidden"
+            return step.copy(note = step.note?.let { "$it; $line" } ?: line)
+        }
     }
 }
 

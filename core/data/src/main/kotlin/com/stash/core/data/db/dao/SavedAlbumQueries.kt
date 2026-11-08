@@ -60,6 +60,3 @@ data class SavedAlbumSlot(
     val canonicalTitle: String,
     val canonicalArtist: String,
 )
-
-/** A synced Spotify saved album's row and key ([PlaylistDao.activeSyncedSpotifyAlbums]). */
-data class SyncedAlbumKey(val id: Long, val sourceId: String)

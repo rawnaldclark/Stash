@@ -102,7 +102,13 @@ class DiffWorkerSpotifySavedAlbumsTest {
 
     private suspend fun sync(): Long {
         val syncId = db.syncHistoryDao().insert(SyncHistoryEntity())
-        SpotifySavedAlbumsFetcher(spotify, db, syncPreferencesManager, db.syncUndoDao(), syncLog).fetch(syncId, SyncMode.REFRESH)
+        // The step lists; the sync's joint hide then takes out what the listing no longer holds.
+        val listing = com.stash.core.data.sync.SpotifyAccountListing(owner = null)
+        SpotifySavedAlbumsFetcher(spotify, db, syncPreferencesManager, syncLog).fetch(syncId, SyncMode.REFRESH, listing = listing)
+        com.stash.core.data.sync.hideWhatNoSpotifyAccountListed(
+            db.playlistDao(), db.syncUndoDao(), syncLog, syncId, SyncMode.REFRESH,
+            com.stash.core.data.sync.SpotifySyncListings().apply { albums += listing },
+        )
         val result = buildWorker(syncId).doWork()
         assertTrue("diff must succeed: $result", result is ListenableWorker.Result.Success)
         return syncId
