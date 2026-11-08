@@ -28,6 +28,7 @@ import com.stash.core.data.sync.SpotifySavedAlbumsFetcher
 import com.stash.core.data.sync.SyncElapsedClock
 import com.stash.core.data.sync.SyncLog
 import com.stash.core.data.sync.SyncPreferencesManager
+import com.stash.core.data.sync.SyncStateManager
 import com.stash.core.data.sync.TrackMatcher
 import com.stash.core.data.sync.auth.SpotifyAuthHealthProbe
 import com.stash.core.model.MusicSource
@@ -618,6 +619,21 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
         assertEquals(userB, back.spotifyAccount)
     }
 
+    @Test fun `an account removed while the diff runs stays removed, and nothing new is made for it`() = runBlocking {
+        val bRow = addExtra(userB)
+        library(userB).playlists += "b1"
+        runDiff(runFetch())
+        val b1 = db.playlistDao().findBySourceId("b1")!!.id
+
+        library(userB).playlists += "b-new"
+        val syncId = runFetch()
+        // Removed once the diff has read this sync's snapshots, before it applies any of them.
+        runDiff(syncId, onStart = { SpotifyExtraAccountRemover(db, tokens).remove(bRow) })
+
+        assertFalse("its last pass doesn't bring it back", db.playlistDao().getById(b1)!!.isActive)
+        assertNull("nothing new is made for it", db.playlistDao().findBySourceId("b-new"))
+    }
+
     @Test fun `ownership moves only between the Spotify sync's own rows, and an extra's row is never pinned`() {
         val snapshot = RemotePlaylistSnapshotEntity(
             syncId = 1, source = MusicSource.SPOTIFY, sourcePlaylistId = "p", playlistName = "p",
@@ -836,7 +852,10 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
             .doWork()
     }
 
-    private suspend fun runDiff(syncId: Long) {
+    /** The diff of [syncId]; [onStart] runs once it has read the snapshots, before it applies any. */
+    private suspend fun runDiff(syncId: Long, onStart: (suspend () -> Unit)? = null) {
+        val state = mockk<SyncStateManager>(relaxed = true)
+        if (onStart != null) every { state.onDiffing(0, any()) } answers { runBlocking { onStart() } }
         val result = TestListenableWorkerBuilder<DiffWorker>(context)
             .setInputData(
                 workDataOf(
@@ -858,7 +877,7 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
                     downloadQueueDao = db.downloadQueueDao(),
                     syncHistoryDao = db.syncHistoryDao(),
                     trackMatcher = TrackMatcher(),
-                    syncStateManager = mockk(relaxed = true),
+                    syncStateManager = state,
                     musicRepository = mockk<MusicRepository>(relaxed = true),
                     syncPreferencesManager = prefs,
                     blocklistGuard = mockk<BlocklistGuard> {

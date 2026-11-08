@@ -323,14 +323,6 @@ class DiffWorker @AssistedInject constructor(
             }
 
             val playlistSnapshots = remoteSnapshotDao.getPlaylistSnapshotsBySyncId(syncId)
-            // The extra Spotify accounts as they are now. A snapshot an extra's pass wrote is applied
-            // only while that account is still here: one removed during this sync stays removed
-            // (its rows hidden), instead of coming straight back from its last pass.
-            val extraSpotifyAccounts = if (playlistSnapshots.any { it.spotifyAccount != null }) {
-                database.spotifyAccountDao().getAll().mapTo(HashSet()) { it.userId }
-            } else {
-                emptySet()
-            }
             val soundCloudSyncMode = if (playlistSnapshots.any { it.source == MusicSource.SOUNDCLOUD })
                 syncPreferencesManager.soundCloudSyncMode.first() else SyncMode.ACCUMULATE
             syncStateManager.onDiffing(playlistsDiffed = 0, totalPlaylists = playlistSnapshots.size)
@@ -342,17 +334,28 @@ class DiffWorker @AssistedInject constructor(
             var skippedUnchanged = 0
 
             for (playlistSnapshot in playlistSnapshots) {
-                val snapshotAccount = playlistSnapshot.spotifyAccount
-                if (playlistSnapshot.source == MusicSource.SPOTIFY && snapshotAccount != null && snapshotAccount !in extraSpotifyAccounts) {
-                    Log.i(TAG, "Snapshot '${playlistSnapshot.playlistName}' is from a Spotify account removed since its pass, skipping")
-                    skippedSwitchedOff++
-                    continue
-                }
+                // The extra Spotify account whose pass wrote this snapshot; null for the main account
+                // and every other service. Applied only while that account is still here, checked in
+                // the same transaction as each write below: its removal (one transaction too) lands
+                // wholly before or after, so an account removed during this sync stays removed, its
+                // rows hidden, instead of coming straight back from its last pass.
+                val extraAccount = playlistSnapshot.spotifyAccount.takeIf { playlistSnapshot.source == MusicSource.SPOTIFY }
                 val applySnapshot: suspend () -> Unit = applySnapshot@ {
                 // Find or create the local playlist (writes, but outside
                 // the per-playlist transaction — it owns its own atomicity
                 // and needs its id to drive the block below).
-                val localPlaylist = findOrCreatePlaylist(playlistSnapshot, streamingMode, pinNewPlaylists)
+                val foundOrCreated: PlaylistEntity? = if (extraAccount == null) {
+                    findOrCreatePlaylist(playlistSnapshot, streamingMode, pinNewPlaylists)
+                } else {
+                    database.withTransaction {
+                        if (spotifyAccountGone(extraAccount)) null else findOrCreatePlaylist(playlistSnapshot, streamingMode, pinNewPlaylists)
+                    }
+                }
+                val localPlaylist = foundOrCreated ?: run {
+                    Log.i(TAG, "Snapshot '${playlistSnapshot.playlistName}' is from a Spotify account removed since its pass, skipping")
+                    skippedSwitchedOff++
+                    return@applySnapshot
+                }
 
                 // A mix follows its own Stack switch: stacking accumulates, anything else
                 // mirrors what the service gave this time. The user's own playlists and Liked
@@ -435,6 +438,9 @@ class DiffWorker @AssistedInject constructor(
                 // the transaction stays short — wrapping the whole diff
                 // pass would block the writer during long syncs.
                 val playlistNewTracks = database.withTransaction {
+                    // Removed since the row was found: it is hidden now, and nothing is linked
+                    // into it or queued for it.
+                    if (extraAccount != null && spotifyAccountGone(extraAccount)) return@withTransaction null
                     processPlaylist(
                         playlistSnapshot = playlistSnapshot,
                         localPlaylist = localPlaylist,
@@ -443,6 +449,10 @@ class DiffWorker @AssistedInject constructor(
                         syncId = syncId,
                         streamingMode = streamingMode,
                     )
+                } ?: run {
+                    Log.i(TAG, "'${playlistSnapshot.playlistName}': its Spotify account was removed during the diff, skipping")
+                    skippedSwitchedOff++
+                    return@applySnapshot
                 }
                 newTrackCount += playlistNewTracks
                 playlistsDiffed++
@@ -595,6 +605,13 @@ class DiffWorker @AssistedInject constructor(
             Log.w(TAG, "canonical re-key before the diff failed; diffing anyway", e)
         }
     }
+
+    /**
+     * Whether the extra Spotify account [tag] (a snapshot's `spotify_account`) has no row any more:
+     * removed since its pass. Exact match, as tags are stored (normalised when built).
+     */
+    private suspend fun spotifyAccountGone(tag: String): Boolean =
+        database.spotifyAccountDao().getByUserId(tag) == null
 
     /**
      * Finds an existing local playlist matching the remote snapshot,
