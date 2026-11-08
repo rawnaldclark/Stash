@@ -6,6 +6,7 @@ import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.PlaylistDiagnosticsRow
 import com.stash.core.data.db.dao.SourceAccountDao
+import com.stash.core.data.db.dao.SpotifyAccountDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackBlocklistDao
 import com.stash.core.data.db.dao.TrackDao
@@ -60,9 +61,11 @@ class DiagnosticsBundleBuilderTest {
     // `answers`, not `returns`: the rule creates the folder after this field initialises.
     private val context: Context = mockk(relaxed = true) { every { cacheDir } answers { tmp.root } }
 
+    private val spotifyAccountDao: SpotifyAccountDao = mockk { coEvery { getAll() } returns emptyList() }
+
     private fun builder(contributors: Set<DiagnosticsContributor> = emptySet()) = DiagnosticsBundleBuilder(
         context, syncHistoryDao, downloadQueueDao, trackBlocklistDao,
-        sourceAccountDao, playlistDao, trackDao, tokenManager, crashFileStore, logcatCapture, contributors,
+        sourceAccountDao, spotifyAccountDao, playlistDao, trackDao, tokenManager, crashFileStore, logcatCapture, contributors,
     )
 
     private fun contributor(name: String, body: suspend () -> String) = object : DiagnosticsContributor {
@@ -151,6 +154,53 @@ class DiagnosticsBundleBuilderTest {
 
         assertTrue(text.contains("    SPOTIFY · getUserPlaylists · SUCCESS · http=null · items=4"))
         assertTrue(text.contains("    SPOTIFY (extra 1) · getUserPlaylists · SUCCESS · http=null · items=2"))
+    }
+
+    @Test fun `each extra Spotify account has a connection line by its label, with no name or id`() = runTest {
+        // A user id as Spotify gives Google sign-ups, and a name the listener typed: neither may appear.
+        val signedIn = com.stash.core.data.db.entity.SpotifyAccountEntity(
+            id = 2, userId = "31qpzx7exampleuserid", label = "Samantha Example", addedAt = 1,
+        )
+        val signedOut = com.stash.core.data.db.entity.SpotifyAccountEntity(
+            id = 5, userId = "alex.example", label = "Alex Example", addedAt = 2,
+            syncMixes = true, signedOutAt = 1_700_000_000_000,
+        )
+        val restored = com.stash.core.data.db.entity.SpotifyAccountEntity(
+            id = 9, userId = "jo.example", label = "Jo Example", addedAt = 3, syncLiked = false,
+        )
+        coEvery { spotifyAccountDao.getAll() } returns listOf(restored, signedOut, signedIn)
+        coEvery { tokenManager.hasSpotifyExtraSignIn(match { it.rowId == 2L || it.rowId == 5L }) } returns true
+        coEvery { tokenManager.hasSpotifyExtraSignIn(match { it.rowId == 9L }) } returns false
+
+        val text = builder().buildText()
+
+        val connection = text.substringAfter("== Connection ==").substringBefore("YouTube:")
+        assertEquals(
+            "\nSpotify: Not connected\n" +
+                "Spotify (extra 2): Connected · playlists=on liked=on albums=on mixes=off\n" +
+                "Spotify (extra 5): Signed out (signed_out_at=1700000000000) · playlists=on liked=on albums=on mixes=on\n" +
+                "Spotify (extra 9): No sign-in on this phone · playlists=on liked=off albums=on mixes=off\n",
+            connection,
+        )
+        listOf("Samantha", "Alex Example", "Jo Example", "31qpzx7exampleuserid", "alex.example", "jo.example")
+            .forEach { assertFalse("the report names $it", text.contains(it)) }
+    }
+
+    @Test fun `with no extra Spotify account the connection section is as before`() = runTest {
+        val text = builder().buildText()
+
+        assertTrue(text.contains("== Connection ==\nSpotify: Not connected\nYouTube: Not connected"))
+    }
+
+    @Test fun `an unreadable extra-accounts table costs only its own line`() = runTest {
+        coEvery { spotifyAccountDao.getAll() } throws IllegalStateException("locked: sam@example.com")
+        val text = builder().buildText()
+
+        assertTrue(
+            text.contains("== Connection ==\nSpotify: Not connected\nSpotify (extras): unreadable (IllegalStateException)\nYouTube: Not connected"),
+        )
+        // The exception's message (which could name anything) is never copied in.
+        assertTrue(!text.contains("sam@example.com"))
     }
 
     @Test fun `a failing data source degrades to an unavailable note, not a crash`() = runTest {

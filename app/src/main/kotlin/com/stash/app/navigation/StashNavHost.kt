@@ -357,6 +357,14 @@ private fun StashNavGraph(
                     }
                 },
                 onManageSource = { source -> navController.navigate(ManagePlaylistsRoute(source.name)) },
+                onManageSpotifyAccount = { accountId ->
+                    navController.navigate(ManagePlaylistsRoute(com.stash.feature.sync.SyncSource.SPOTIFY.name, accountId))
+                },
+                onPickFromEverySpotifyAccount = {
+                    navController.navigate(
+                        ManagePlaylistsRoute(com.stash.feature.sync.SyncSource.SPOTIFY.name, everySpotifyAccount = true),
+                    )
+                },
                 onOpenHistory = { navController.navigate(SyncHistoryRoute) },
                 onOpenDownloads = { navController.navigate(DownloadManagementRoute) },
                 onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) },
@@ -374,11 +382,14 @@ private fun StashNavGraph(
             }
         }
         composable<ManagePlaylistsRoute> {
+            val route = it.toRoute<ManagePlaylistsRoute>()
             AboveChrome {
                 ManagePlaylistsScreen(
-                    source = com.stash.feature.sync.SyncSource.valueOf(it.toRoute<ManagePlaylistsRoute>().source),
+                    source = com.stash.feature.sync.SyncSource.valueOf(route.source),
                     onBack = { navController.popBackStack() },
                     onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) },
+                    spotifyAccountId = route.spotifyAccountId.takeIf { id -> id > 0 },
+                    everySpotifyAccount = route.everySpotifyAccount,
                 )
             }
         }

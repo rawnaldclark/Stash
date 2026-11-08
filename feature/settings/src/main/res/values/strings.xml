@@ -181,6 +181,97 @@
     <!-- Same, when the other account has no name of its own to show (it reads the same as the connected one). %1$s = connected account's name. -->
     <string name="settings_spotify_other_account_body_unnamed">Stash is connected to Spotify as %1$s, but you just signed in with a different account. To reconnect %1$s, sign in again with %1$s\'s email or Google account. To switch accounts, tap Disconnect on the Spotify card first.</string>
 
+    <!-- Settings > Accounts > Spotify: the "other accounts". Besides the connected Spotify account (the one hearts go to), up to 3 more can be added. Stash only reads them: their playlists, liked songs, saved albums and, if switched on, mixes. Never call them "extra", "secondary" or "main" in these strings. -->
+    <!-- Under an other account's name on its card. %1$s = the name of the connected Spotify account, which hearts go to. -->
+    <string name="settings_spotify_others_read_only">Read-only: hearts go to %1$s</string>
+    <!-- The same, when the connected account has no name to show (or none is connected). -->
+    <string name="settings_spotify_others_read_only_unnamed">Read-only</string>
+    <!-- Under an other account's name when its sign-in stopped working, or isn't on this phone (after a restore). -->
+    <string name="settings_spotify_others_signed_out">Signed out. Sign in again to keep it syncing.</string>
+    <!-- Button on an other account's card and sheet. -->
+    <string name="settings_spotify_others_sign_in_again">Sign in again</string>
+    <!-- Accessibility: what tapping an other account's card does. -->
+    <string name="settings_spotify_others_open">Open its settings</string>
+    <!-- The row under the Spotify accounts that adds one more. -->
+    <string name="settings_spotify_others_add_title">Add another Spotify account</string>
+    <!-- Under it. %1$s = the name of the connected Spotify account. -->
+    <string name="settings_spotify_others_add_subtitle">Stash reads its playlists and liked songs. Hearts still go to %1$s.</string>
+    <string name="settings_spotify_others_add_subtitle_unnamed">Stash reads its playlists and liked songs.</string>
+    <!-- Title of Spotify's sign-in screen and of the paste dialog when adding an other account. -->
+    <string name="settings_spotify_others_add_signin_title">Add a Spotify account</string>
+    <!-- Shown above Spotify's sign-in page when adding an other account. "Continue with Google" is the button on Spotify's own page: keep Spotify's wording in your language. -->
+    <string name="settings_spotify_others_google_hint">Use \"Continue with Google\" only if the other Spotify account uses a different Google account, or sign in with email.</string>
+    <!-- Shown above Spotify's sign-in page when signing an other account in again. %1$s = that account's name. -->
+    <string name="settings_spotify_others_again_hint">Sign in as %1$s, with the same email or Google account as before.</string>
+    <!-- Errors in the paste dialog while adding or signing in an other account. -->
+    <string name="settings_spotify_others_error_invalid">That sign-in didn\'t work. Try again.</string>
+    <string name="settings_spotify_others_error_not_saved">Couldn\'t finish on this phone. Try again.</string>
+    <!-- Dialog: the account just signed in is the one Stash is already connected to, so it wasn't added. %1$s = its name. -->
+    <string name="settings_spotify_others_already_connected_title">Already connected</string>
+    <string name="settings_spotify_others_already_connected_body">That\'s %1$s, the Spotify account Stash is already connected to. To add another, sign in with a different account. If \"Continue with Google\" signed you straight back in, use the other account\'s email instead.</string>
+    <string name="settings_spotify_others_already_connected_body_unnamed">That\'s the Spotify account Stash is already connected to. To add another, sign in with a different account. If \"Continue with Google\" signed you straight back in, use the other account\'s email instead.</string>
+    <!-- Dialog: Spotify didn't say whose account the sign-in is, so it wasn't added. -->
+    <string name="settings_spotify_others_unidentified_title">Couldn\'t tell which account</string>
+    <string name="settings_spotify_others_unidentified_body">Spotify didn\'t say which account this is, so Stash can\'t keep it apart from your others. Try again in a moment.</string>
+    <!-- Dialog: Stash couldn't check whether the sign-in is the Spotify account it is already connected to, so nothing was saved. %1$s = that connected account's name. "Reconnect" is the button on its card in Settings > Accounts. -->
+    <string name="settings_spotify_others_main_unchecked_title">Couldn\'t check this account</string>
+    <string name="settings_spotify_others_main_unchecked_body">Stash couldn\'t check this account against %1$s, the Spotify account it\'s connected to, so nothing was saved. Try again in a moment, or reconnect %1$s first.</string>
+    <!-- As settings_spotify_others_main_unchecked_body, when the connected account has no name to show. -->
+    <string name="settings_spotify_others_main_unchecked_body_unnamed">Stash couldn\'t check this account against the Spotify account it\'s connected to, so nothing was saved. Try again in a moment, or reconnect that account first.</string>
+    <!-- Dialog (titled "Different Spotify account"): signing an other account in again landed on another account. %1$s = the account's name. -->
+    <string name="settings_spotify_others_different_body">That\'s a different Spotify account. To keep %1$s syncing, sign in as %1$s, with the same email or Google account as before.</string>
+    <!-- Dialog: the most other accounts are added already. %1$d = how many (3). -->
+    <string name="settings_spotify_others_full_title">No room for another account</string>
+    <string name="settings_spotify_others_full_body">Stash syncs up to %1$d other Spotify accounts. Remove one to add another.</string>
+    <!-- Dialog right after adding an account: its name, pre-filled with Spotify's. -->
+    <string name="settings_spotify_others_name_title">Name this account</string>
+    <!-- Dialog title: renaming an other account. -->
+    <string name="settings_spotify_others_rename_title">Rename</string>
+    <string name="settings_spotify_others_name_hint">Shown on its cards in Stash, on this phone only.</string>
+    <!-- Button: keep the pre-filled name. -->
+    <string name="settings_spotify_others_name_skip">Skip</string>
+    <!-- Dialog after naming a new account. %1$s = its name. -->
+    <string name="settings_spotify_others_sync_now_title">Sync now?</string>
+    <string name="settings_spotify_others_sync_now_body">Bring in %1$s\'s playlists and liked songs now, or with the next sync.</string>
+    <string name="settings_spotify_others_sync_now">Sync now</string>
+    <string name="settings_spotify_others_sync_later">Later</string>
+    <!-- An other account's sheet: its name row, then what it syncs. -->
+    <string name="settings_spotify_others_name_row">Name</string>
+    <string name="settings_spotify_others_sync_label">Sync from this account</string>
+    <string name="settings_spotify_others_playlists_title">Playlists</string>
+    <string name="settings_spotify_others_playlists_subtitle">Its own playlists and the ones it follows</string>
+    <string name="settings_spotify_others_liked_title">Liked Songs</string>
+    <string name="settings_spotify_others_liked_subtitle">Shown with your other liked songs from Spotify</string>
+    <string name="settings_spotify_others_albums_title">Saved albums</string>
+    <string name="settings_spotify_others_albums_subtitle">In Library › Albums</string>
+    <string name="settings_spotify_others_mixes_title">Mixes</string>
+    <string name="settings_spotify_others_mixes_subtitle">Daily Mix, Discover Weekly and others. Off keeps Home from showing two of each.</string>
+    <!-- The last row of an other account's sheet. %1$s = its name. -->
+    <string name="settings_spotify_others_remove">Remove %1$s</string>
+    <!-- Confirm before removing an other account. %1$s = its name. Its playlists are hidden, not deleted: adding the same account again brings them back. -->
+    <string name="settings_spotify_others_remove_title">Remove %1$s?</string>
+    <string name="settings_spotify_others_remove_body">Stash signs out of %1$s on this phone and takes its playlists, albums and liked songs out of your library. Songs you\'ve downloaded stay on this phone.\n\nAdd %1$s again any time to bring its playlists back.</string>
+    <string name="settings_spotify_others_remove_confirm">Remove</string>
+    <!-- Short messages at the bottom of the screen. %1$s = the account's name. -->
+    <string name="settings_spotify_others_signed_in_again">%1$s is signed in again.</string>
+    <string name="settings_spotify_others_removed">%1$s removed. Its downloaded songs stay on this phone.</string>
+    <string name="settings_spotify_others_already_removed">That account was already removed.</string>
+    <string name="settings_spotify_others_not_removed">Couldn\'t sign out of %1$s on this phone, so it wasn\'t removed. Try again.</string>
+    <string name="settings_spotify_others_remove_unfinished">Couldn\'t finish removing %1$s. Remove it again to finish.</string>
+    <string name="settings_spotify_others_added_first_sync">%1$s added. Its music comes in with your first sync.</string>
+    <string name="settings_spotify_others_syncing">Syncing now.</string>
+    <!-- Disconnect on the Spotify card while other accounts are added: every Spotify account goes. %1$s = all their names, comma-separated ("Rawn, Sam"). -->
+    <string name="settings_spotify_disconnect_all_title">Disconnect all Spotify accounts?</string>
+    <string name="settings_spotify_disconnect_all_body">Stash signs out of all your Spotify accounts on this phone (%1$s) and stops syncing them. Playlists from your other accounts leave your library, and songs from Spotify still waiting to download are dropped from the queue.\n\nSongs you\'ve already downloaded stay on this phone.</string>
+    <string name="settings_spotify_disconnect_all_confirm">Disconnect all</string>
+    <!-- Dialog: Disconnect stopped because one other account couldn't be signed out on this phone. %1$s = its name. -->
+    <string name="settings_spotify_disconnect_stopped_title">Spotify is still connected</string>
+    <string name="settings_spotify_disconnect_stopped_body">Couldn\'t sign out of %1$s on this phone, so Spotify stays connected. Try again.</string>
+    <string name="settings_spotify_disconnect_stopped_body_unnamed">Couldn\'t sign out of your other Spotify accounts on this phone, so Spotify stays connected. Try again.</string>
+    <!-- Dialog: Connect on the Spotify card signed in as an account already added as an other account; nothing changed. %1$s = its name. -->
+    <string name="settings_spotify_already_other_title">Already added</string>
+    <string name="settings_spotify_already_other_body">%1$s is already one of your other Spotify accounts. To connect it here instead, remove %1$s first, then connect again.</string>
+
     <!-- Settings > Accounts > YouTube Login & Fallbacks -->
     <string name="settings_youtube_signin_title">Sign in to YouTube Music</string>
     <string name="settings_youtube_paste_cookie_action">Paste cookie</string>

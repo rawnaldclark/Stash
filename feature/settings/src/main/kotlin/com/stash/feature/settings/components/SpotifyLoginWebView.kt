@@ -98,6 +98,13 @@ fun SpotifyLoginWebView(
     onDismiss: () -> Unit,
     onManualFallback: () -> Unit,
     modifier: Modifier = Modifier,
+    /** The bar's title: "Sign in to Spotify", or what this sign-in is for ("Add a Spotify account"). */
+    title: String = stringResource(R.string.settings_spotify_signin_title),
+    /**
+     * One line above Spotify's page, when this sign-in needs saying how (adding another account:
+     * "Continue with Google" would sign the connected account straight back in). Null = none.
+     */
+    hint: String? = null,
 ) {
     var isLoading by remember { mutableStateOf(true) }
     var cookieFound by remember { mutableStateOf(false) }
@@ -114,7 +121,7 @@ fun SpotifyLoginWebView(
 
     Column(modifier = modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text(stringResource(R.string.settings_spotify_signin_title)) },
+            title = { Text(title) },
             navigationIcon = {
                 TextButton(onClick = onDismiss) {
                     Text(stringResource(R.string.settings_cancel))
@@ -132,6 +139,18 @@ fun SpotifyLoginWebView(
                 containerColor = MaterialTheme.colorScheme.surface,
             ),
         )
+
+        if (hint != null) {
+            // On the bar's own colour, so it reads as part of the bar rather than of Spotify's page.
+            Surface(color = MaterialTheme.colorScheme.surface) {
+                Text(
+                    text = hint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
+                )
+            }
+        }
 
         if (isLoading) {
             LinearProgressIndicator(
@@ -232,6 +251,18 @@ fun SpotifyLoginWebView(
                     }.also { webViewRef = it }
                 },
                 modifier = Modifier.fillMaxSize(),
+                // Leaving the sign-in (Cancel, Back, a captured cookie handed over, the screen
+                // closed) ends its page: a load still running could otherwise call back after the
+                // sign-in is gone. Its client is swapped for a plain one first, so nothing reaches
+                // [capture] once released. A captured cookie was handed over before this runs (the
+                // hand-over is what closes the sign-in), so every caller, the connected account's
+                // Connect included, has what it needs.
+                onRelease = { webView ->
+                    webView.stopLoading()
+                    webView.webViewClient = WebViewClient()
+                    webView.destroy()
+                    if (webViewRef === webView) webViewRef = null
+                },
             )
         }
 

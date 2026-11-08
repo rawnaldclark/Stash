@@ -104,6 +104,17 @@ class SpotifyAccountDaoTest {
         assertEquals(1, dao.count())
     }
 
+    @Test fun `add says whether it added the row or found it there`() = runTest {
+        val first = dao.add("spotify:user:Sam", "Sam", addedAt = 5)
+        assertTrue("added", first.added)
+        assertEquals("sam", first.row.userId)
+
+        val second = dao.add("SAM", "Sam again", addedAt = 9)
+        assertEquals("found, not added", false, second.added)
+        assertEquals("the same row, unchanged", first.row, second.row)
+        assertEquals(1, dao.count())
+    }
+
     @Test fun `an account is found by its id in any shape`() = runTest {
         val sam = dao.addOrFind("lm7d11nsf65n11sojl4twwr6t", "Sam", addedAt = 5)
 

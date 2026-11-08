@@ -10,6 +10,12 @@ import com.stash.core.data.db.entity.SpotifyAccountEntity
 import kotlinx.coroutines.flow.Flow
 
 /**
+ * What [SpotifyAccountDao.add] did: [row] is the account's row; [added] is true when this call
+ * inserted it, false when it was there already.
+ */
+data class SpotifyAccountAddition(val row: SpotifyAccountEntity, val added: Boolean)
+
+/**
  * The extra Spotify accounts (plan 2026-11-04 §2.1); the main account has no row here.
  *
  * Deleting a row deletes only the row: the account's sign-in (token store) and its playlist rows
@@ -39,12 +45,23 @@ interface SpotifyAccountDao {
      * @return The account's row, new or existing.
      */
     @Transaction
-    suspend fun addOrFind(userId: String, label: String, addedAt: Long): SpotifyAccountEntity {
+    suspend fun addOrFind(userId: String, label: String, addedAt: Long): SpotifyAccountEntity =
+        add(userId, label, addedAt).row
+
+    /**
+     * [addOrFind], also saying whether the row was added by this call
+     * ([SpotifyAccountAddition.added]) or was already there. A caller that takes a row back out
+     * when what goes with it fails (Settings' add, when the sign-in won't save) must take back
+     * only a row it added: one already there is someone's account.
+     */
+    @Transaction
+    suspend fun add(userId: String, label: String, addedAt: Long): SpotifyAccountAddition {
         val key = SpotifyProfile.accountKeyOf(userId)
         require(key.isNotEmpty()) { "an extra Spotify account needs a user id" }
-        getByUserId(key)?.let { return it }
+        getByUserId(key)?.let { return SpotifyAccountAddition(it, added = false) }
         val id = insert(SpotifyAccountEntity(userId = key, label = label, addedAt = addedAt))
-        return checkNotNull(getById(id)) { "the account row just added is gone" }
+        val row = checkNotNull(getById(id)) { "the account row just added is gone" }
+        return SpotifyAccountAddition(row, added = true)
     }
 
     /**

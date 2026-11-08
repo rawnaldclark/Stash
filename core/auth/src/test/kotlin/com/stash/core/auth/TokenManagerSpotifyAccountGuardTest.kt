@@ -197,6 +197,69 @@ class TokenManagerSpotifyAccountGuardTest {
         assertNothingWritten()
     }
 
+    // -- Connecting a sign-in validateSpotifyCookie already checked ----------
+    // Settings checks a Connect against the other Spotify accounts first; it then connects from that
+    // check: one token exchange, the guard deciding exactly as connectSpotifyWithCookie's does.
+
+    private suspend fun checked(manager: TokenManagerImpl, cookie: String) =
+        (manager.validateSpotifyCookie(cookie) as com.stash.core.auth.model.SpotifyCookieCheck.Valid).signIn
+
+    @Test fun `a checked sign-in as the connected account connects, with one token exchange`() = runTest {
+        val user = slot<UserInfo>()
+        coEvery { store.saveSpotifyConnection(any(), capture(user), any()) } returns Unit
+        val manager = manager()
+
+        val result = manager.connectSpotifyWithSignIn(checked(manager, "rawn-new-cookie"))
+
+        assertEquals(SpotifyConnectResult.Connected, result)
+        coVerify(exactly = 1) { auth.getAccessToken("rawn-new-cookie") }
+        coVerify(exactly = 1) { store.saveSpotifyConnection(match { it.refreshToken == "rawn-new-cookie" && it.scope == "rawnclark|webclient" }, any(), rawn) }
+        assertEquals(UserInfo(id = "rawnclark", displayName = "Rawn"), user.captured)
+    }
+
+    @Test fun `a checked sign-in as a different account is refused and nothing is written`() = runTest {
+        val manager = manager()
+
+        val result = manager.connectSpotifyWithSignIn(checked(manager, "sam-cookie"))
+
+        assertEquals(SpotifyConnectResult.DifferentAccount(connectedName = "Rawn", attemptedName = "Sam"), result)
+        assertNothingWritten()
+        coVerify(exactly = 1) { auth.getAccessToken("sam-cookie") }
+    }
+
+    @Test fun `a checked sign-in Spotify didn't name is saved, as the cookie connect saves it`() = runTest {
+        coEvery { auth.fetchProfile("sam-access", "webclient", true) } returns null
+        val manager = manager()
+
+        val result = manager.connectSpotifyWithSignIn(checked(manager, "sam-cookie"), username = "Sam's phone")
+
+        assertEquals(SpotifyConnectResult.Connected, result)
+        coVerify(exactly = 1) { store.saveSpotifyConnection(any(), UserInfo("Sam's phone", "Sam's phone"), null) }
+    }
+
+    @Test fun `a checked sign-in while signed out is accepted and recorded`() = runTest {
+        storedToken.value = null
+        storedAccount.value = null
+        val manager = manager()
+
+        val result = manager.connectSpotifyWithSignIn(checked(manager, "sam-cookie"))
+
+        assertEquals(SpotifyConnectResult.Connected, result)
+        coVerify(exactly = 1) { store.saveSpotifyConnection(any(), any(), sam) }
+    }
+
+    @Test fun `an unrecorded connected account learned by the check refuses a different checked sign-in`() = runTest {
+        storedAccount.value = null
+        coEvery { auth.getAccessToken("rawn-cookie") } returns token("rawn-live", "rawn-cookie")
+        coEvery { auth.fetchProfile("rawn-live", "webclient", false) } returns rawn
+        val manager = manager()
+
+        val result = manager.connectSpotifyWithSignIn(checked(manager, "sam-cookie"))
+
+        assertEquals(SpotifyConnectResult.DifferentAccount(connectedName = "Rawn", attemptedName = "Sam"), result)
+        assertNothingWritten(accountRecorded = true)
+    }
+
     // -- A sign-in never waits long on identifying anyone --------------------
 
     private val identifyBudgetMs = 20_000L

@@ -39,6 +39,9 @@ import com.stash.feature.settings.R
  * @param errorMessage Error message to display, or null if there is no error.
  * @param onConnect Callback with the entered cookie value when the user taps Connect.
  * @param onDismiss Callback when the dialog is dismissed.
+ * @param title The dialog's title: "Connect Spotify", or what this sign-in is for.
+ * @param askUsername Offers the optional username field. Only the connected account's "Connected
+ *   as" uses it; another account added under it is named once it is in.
  */
 @Composable
 fun SpotifyCookieDialog(
@@ -46,6 +49,8 @@ fun SpotifyCookieDialog(
     errorMessage: String?,
     onConnect: (String, String) -> Unit,
     onDismiss: () -> Unit,
+    title: String = stringResource(R.string.settings_spotify_connect_dialog_title),
+    askUsername: Boolean = true,
 ) {
     var cookieValue by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
@@ -56,7 +61,7 @@ fun SpotifyCookieDialog(
         properties = DialogProperties(dismissOnClickOutside = !isValidating),
         title = {
             Text(
-                text = stringResource(R.string.settings_spotify_connect_dialog_title),
+                text = title,
                 style = MaterialTheme.typography.headlineSmall,
             )
         },
@@ -110,31 +115,33 @@ fun SpotifyCookieDialog(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                if (askUsername) {
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                // Username is optional: the sp_dc exchange resolves the account
-                // server-side, and library/playlist sync runs over the cookie
-                // session (not the username). Offered only for a nicer
-                // "Connected as …" label and as a fallback for the newer
-                // opaque access tokens that carry no username.
-                OutlinedTextField(
-                    value = username,
-                    onValueChange = { username = it },
-                    label = { Text(stringResource(R.string.settings_spotify_username_label)) },
-                    placeholder = { Text(stringResource(R.string.settings_spotify_username_placeholder)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    enabled = !isValidating,
-                )
+                    // Username is optional: the sp_dc exchange resolves the account
+                    // server-side, and library/playlist sync runs over the cookie
+                    // session (not the username). Offered only for a nicer
+                    // "Connected as …" label and as a fallback for the newer
+                    // opaque access tokens that carry no username.
+                    OutlinedTextField(
+                        value = username,
+                        onValueChange = { username = it },
+                        label = { Text(stringResource(R.string.settings_spotify_username_label)) },
+                        placeholder = { Text(stringResource(R.string.settings_spotify_username_placeholder)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = !isValidating,
+                    )
 
-                Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
 
-                Text(
-                    text = stringResource(R.string.settings_spotify_username_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 4.dp),
-                )
+                    Text(
+                        text = stringResource(R.string.settings_spotify_username_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 4.dp),
+                    )
+                }
             }
         },
         confirmButton = {
