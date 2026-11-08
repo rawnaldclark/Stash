@@ -116,6 +116,11 @@ fun SyncScreen(
     onManageSource: (SyncSource) -> Unit = {},
     /** An other Spotify account's card: its own page, by its account id. */
     onManageSpotifyAccount: (Long) -> Unit = {},
+    /**
+     * Picking what to save from Spotify ("Save to this phone", "Choose what's on this phone"): one
+     * page with every Spotify account's playlists, each account's under its name.
+     */
+    onPickFromEverySpotifyAccount: () -> Unit = {},
     onOpenHistory: () -> Unit = {},
     onOpenDownloads: () -> Unit = {},
     onOpenPlaylist: (Long) -> Unit = {},
@@ -129,10 +134,16 @@ fun SyncScreen(
     var showModeSheet by remember { mutableStateOf(false) }
     var showSchedule by remember { mutableStateOf(false) }
 
+    // Picking what goes on the phone: Spotify's page for it lists every Spotify account, so an
+    // account added before the first sync isn't left off (its own page is behind its own card).
+    val openToPick: (SyncSource) -> Unit = { source ->
+        if (source == SyncSource.SPOTIFY) onPickFromEverySpotifyAccount() else onManageSource(source)
+    }
+
     // "Save to this phone" on the first-sync sheet: straight to the playlists to pick from.
     LaunchedEffect(uiState.openManageFor) {
         uiState.openManageFor?.let {
-            onManageSource(it)
+            openToPick(it)
             viewModel.onManageOpened()
         }
     }
@@ -239,7 +250,7 @@ fun SyncScreen(
                         saved = savedRows,
                         songsOnPhone = uiState.syncStatus.songCountFor(streamingMode),
                         syncedAgo = rememberSyncedAgo(uiState.lastSyncFinishedAt),
-                        onChoose = { firstSource?.let(onManageSource) },
+                        onChoose = { firstSource?.let(openToPick) },
                         onSync = viewModel::onSyncNow,
                         onOpenPlaylist = onOpenPlaylist,
                     )
@@ -429,12 +440,36 @@ internal fun List<SyncPlaylistRow>.ofSpotifyAccount(spotifyAccount: String?): Li
  * are read, and nothing once it is gone: never the main account's rows under its name, where its
  * Save all would save them.
  */
-internal fun SyncUiState.accountPageRows(source: SyncSource, otherAccountId: Long?): List<SyncPlaylistRow> {
+internal fun SyncUiState.accountPageRows(
+    source: SyncSource,
+    otherAccountId: Long?,
+    everySpotifyAccount: Boolean = false,
+): List<SyncPlaylistRow> {
     val rows = playlistRows()
     if (source != SyncSource.SPOTIFY) return rows.filter { it.source == source }
+    if (everySpotifyAccount) return spotifyAccountGroups().flatMap { it.rows }
     if (otherAccountId == null) return rows.ofSpotifyAccount(null)
     val other = spotifyOtherAccounts.firstOrNull { it.id == otherAccountId } ?: return emptyList()
     return rows.ofSpotifyAccount(other.tag)
+}
+
+/**
+ * One Spotify account's rows on the page that lists every account's: [otherAccount] null for
+ * the main account's.
+ */
+internal data class SpotifyAccountGroup(val otherAccount: SpotifyOtherAccount?, val rows: List<SyncPlaylistRow>)
+
+/**
+ * Every Spotify account's rows, account by account: the main account's first, then each other
+ * account's in the order they were added. A removed account's rows (its tag, no account) are on
+ * none. For picking what to save in Download mode ("Save to this phone" on the first sync, "Choose
+ * what's on this phone"), where an account's playlists must not be missed for being on another
+ * page.
+ */
+internal fun SyncUiState.spotifyAccountGroups(): List<SpotifyAccountGroup> {
+    val rows = playlistRows()
+    return listOf(SpotifyAccountGroup(null, rows.ofSpotifyAccount(null))) +
+        spotifyOtherAccounts.map { SpotifyAccountGroup(it, rows.ofSpotifyAccount(it.tag)) }
 }
 
 /**

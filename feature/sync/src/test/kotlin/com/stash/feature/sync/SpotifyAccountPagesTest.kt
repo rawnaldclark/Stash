@@ -62,6 +62,34 @@ class SpotifyAccountPagesTest {
         assertEquals(listOf(9L), state.page(SyncSource.YOUTUBE, null))
     }
 
+    // -- Picking what to save: every account on one page (first sync, "Choose what's on this phone") --
+
+    @Test fun `the page for picking what to save lists every account's rows, account by account`() {
+        // Main first, then each other account in the order added; a removed account's on none.
+        assertEquals(listOf(1L, 5L, 2L, 3L), state.accountPageRows(SyncSource.SPOTIFY, null, everySpotifyAccount = true).map { it.id })
+        assertEquals(
+            listOf(null to listOf(1L, 5L), sam to listOf(2L), alex to listOf(3L)),
+            state.spotifyAccountGroups().map { it.otherAccount to it.rows.map { row -> row.id } },
+        )
+    }
+
+    @Test fun `an account added before the first sync is on the picking page`() {
+        // Its own page is behind its own card; picking from the first-sync sheet must not miss it.
+        val firstSync = state.copy(spotifyPlaylists = listOf(spotify(1, null), spotify(2, "sam")), spotifyOtherAccounts = listOf(sam))
+
+        assertEquals(listOf(1L), firstSync.page(SyncSource.SPOTIFY, null))
+        assertEquals(listOf(1L, 2L), firstSync.accountPageRows(SyncSource.SPOTIFY, null, everySpotifyAccount = true).map { it.id })
+    }
+
+    @Test fun `with no other accounts the picking page is the main account's page`() {
+        val onlyMain = state.copy(spotifyOtherAccounts = emptyList())
+
+        assertEquals(
+            onlyMain.page(SyncSource.SPOTIFY, null),
+            onlyMain.accountPageRows(SyncSource.SPOTIFY, null, everySpotifyAccount = true).map { it.id },
+        )
+    }
+
     @Test fun `each account's card counts its own rows`() {
         val rows = state.playlistRows()
 

@@ -162,10 +162,15 @@ data class MixBrowseRoute(val rail: String)
 /**
  * Full-screen per-source playlist management; [source] is a [SyncSource] name. For Spotify,
  * [spotifyAccountId] picks an other Spotify account's page by its account id; 0 (no such id) is
- * the main account's.
+ * the main account's. [everySpotifyAccount] is the page that lists every Spotify account's, for
+ * picking what to save.
  */
 @Serializable
-data class ManagePlaylistsRoute(val source: String, val spotifyAccountId: Long = 0L)
+data class ManagePlaylistsRoute(
+    val source: String,
+    val spotifyAccountId: Long = 0L,
+    val everySpotifyAccount: Boolean = false,
+)
 
 /** The Sync tab's "History, blocked songs, undo" screen. */
 @Serializable data object SyncHistoryRoute

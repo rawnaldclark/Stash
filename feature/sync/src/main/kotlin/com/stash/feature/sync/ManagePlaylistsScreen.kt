@@ -106,6 +106,8 @@ internal fun manageLists(rows: List<SyncPlaylistRow>): ManageLists = ManageLists
  * Each Spotify account has its own page (plan 2026-11-04 §3.7): [spotifyAccountId] null is the
  * main account's, listing its rows only (it used to list every Spotify row); an other account's id
  * lists that account's, under "Spotify · Sam", with that account's own albums and mixes switches.
+ * [everySpotifyAccount] lists every Spotify account's on one page, each account's under its name
+ * with its own switches: for picking what to save in Download mode, so no account is missed.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -114,6 +116,7 @@ fun ManagePlaylistsScreen(
     onBack: () -> Unit,
     onOpenPlaylist: (Long) -> Unit,
     spotifyAccountId: Long? = null,
+    everySpotifyAccount: Boolean = false,
     viewModel: SyncViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -143,10 +146,13 @@ fun ManagePlaylistsScreen(
         return
     }
 
-    val otherAccountId = spotifyAccountId.takeIf { source == SyncSource.SPOTIFY }
+    val every = everySpotifyAccount && source == SyncSource.SPOTIFY
+    val otherAccountId = spotifyAccountId.takeIf { source == SyncSource.SPOTIFY && !every }
     // Null on the main account's page, and on an other account's until the accounts are read (or once it's gone).
     val otherAccount = otherAccountId?.let { id -> uiState.spotifyOtherAccounts.firstOrNull { it.id == id } }
-    val rows = uiState.accountPageRows(source, otherAccountId)
+    // Every account's page, account by account; with only the main account it is just its page.
+    val groups = if (every && uiState.spotifyOtherAccounts.isNotEmpty()) uiState.spotifyAccountGroups() else null
+    val rows = uiState.accountPageRows(source, otherAccountId, everySpotifyAccount = every)
     val (playlists, albums, mixes, liked) = manageLists(rows)
     // Spotify's tab is always there: its switch decides whether saved albums sync at all.
     val showAlbumsTab = source == SyncSource.SPOTIFY || albums.isNotEmpty()
@@ -318,19 +324,11 @@ fun ManagePlaylistsScreen(
             // The discovery switch shows even with no mixes yet, so they can be
             // stopped before the first sync pulls any in (#335, #344).
             if (tab == ManageTab.MIXES) {
-                item(key = "mixes-discovery") {
-                    when {
-                        // An other Spotify account's mixes have their own switch (off by default).
-                        otherAccount != null -> OtherAccountMixesRow(
-                            enabled = otherAccount.syncMixes,
-                            onChange = { viewModel.onSyncOtherAccountMixesChanged(otherAccount.id, it) },
-                        )
-                        // Its page before the accounts are read: no switch rather than the wrong one.
-                        otherAccountId != null -> Unit
-                        else -> DiscoverMixesRow(
-                            enabled = uiState.discoverAutoMixes,
-                            onChange = viewModel::onDiscoverAutoMixesChanged,
-                        )
+                // Every account's page: each account's switch heads its own group below.
+                if (groups == null) {
+                    item(key = "mixes-discovery") {
+                        // An other account's page before the accounts are read: no switch rather than the wrong one.
+                        if (otherAccount != null || otherAccountId == null) MixesSwitchFor(otherAccount, uiState, viewModel)
                     }
                 }
                 // What Stack means, once, above the mixes that have it.
@@ -346,20 +344,9 @@ fun ManagePlaylistsScreen(
                 }
             }
             // Shown before the first album arrives, so saved albums can be kept out from the start.
-            if (tab == ManageTab.ALBUMS && source == SyncSource.SPOTIFY) {
+            if (tab == ManageTab.ALBUMS && source == SyncSource.SPOTIFY && groups == null) {
                 item(key = "albums-sync") {
-                    when {
-                        // Each Spotify account's saved albums have their own switch.
-                        otherAccount != null -> SyncSavedAlbumsRow(
-                            enabled = otherAccount.syncAlbums,
-                            onChange = { viewModel.onSyncOtherAccountAlbumsChanged(otherAccount.id, it) },
-                        )
-                        otherAccountId != null -> Unit
-                        else -> SyncSavedAlbumsRow(
-                            enabled = uiState.syncSpotifySavedAlbums,
-                            onChange = viewModel::onSyncSpotifySavedAlbumsChanged,
-                        )
-                    }
+                    if (otherAccount != null || otherAccountId == null) SpotifyAlbumsSwitchFor(otherAccount, uiState, viewModel)
                 }
             }
             if (tab == ManageTab.LIKED && source == SyncSource.YOUTUBE) {
@@ -369,6 +356,41 @@ fun ManagePlaylistsScreen(
                         onChange = viewModel::onYoutubeLikedStudioOnlyChanged,
                     )
                 }
+            }
+
+            val rowContent: @Composable (SyncPlaylistRow) -> Unit = { row ->
+                PlaylistSaveRow(
+                    row = row,
+                    saved = row.saved(streamOnly),
+                    onToggle = { viewModel.onSavePlaylist(row.id, it) },
+                    onSetInLibrary = { viewModel.onSetInLibrary(row.id, it) },
+                    onSetStack = { viewModel.onSetStack(row.id, it) },
+                    onOpen = { onOpenPlaylist(row.id) },
+                )
+            }
+            val (out, inLibrary) = shown.partition { it.userHidden }
+
+            // Every account's page: each account under its name, its own switch first on Mixes and
+            // Albums (shown with nothing under it yet, as on its own page), then its rows.
+            groups?.forEach { group ->
+                val other = group.otherAccount
+                val groupKey = other?.id ?: 0L
+                val groupIds = group.rows.mapTo(HashSet()) { it.id }
+                val inThisTab = inLibrary.filter { it.id in groupIds }
+                val switchFirst = tab == ManageTab.MIXES || tab == ManageTab.ALBUMS
+                if (inThisTab.isEmpty() && !switchFirst) return@forEach
+                item(key = "group-$groupKey") {
+                    AccountGroupHeader(
+                        name = other?.let { stringResource(R.string.sync_account_spotify_named, it.name) } ?: "Spotify",
+                    )
+                }
+                if (tab == ManageTab.MIXES) {
+                    item(key = "group-$groupKey-mixes") { MixesSwitchFor(other, uiState, viewModel) }
+                }
+                if (tab == ManageTab.ALBUMS) {
+                    item(key = "group-$groupKey-albums") { SpotifyAlbumsSwitchFor(other, uiState, viewModel) }
+                }
+                items(inThisTab, key = { it.id }) { rowContent(it) }
             }
 
             if (shown.isEmpty()) {
@@ -385,18 +407,7 @@ fun ManagePlaylistsScreen(
                     )
                 }
             } else {
-                val rowContent: @Composable (SyncPlaylistRow) -> Unit = { row ->
-                    PlaylistSaveRow(
-                        row = row,
-                        saved = row.saved(streamOnly),
-                        onToggle = { viewModel.onSavePlaylist(row.id, it) },
-                        onSetInLibrary = { viewModel.onSetInLibrary(row.id, it) },
-                        onSetStack = { viewModel.onSetStack(row.id, it) },
-                        onOpen = { onOpenPlaylist(row.id) },
-                    )
-                }
-                val (out, inLibrary) = shown.partition { it.userHidden }
-                items(inLibrary, key = { it.id }) { rowContent(it) }
+                if (groups == null) items(inLibrary, key = { it.id }) { rowContent(it) }
                 // What was taken out folds away; a search opens it, so a match is never hidden.
                 if (out.isNotEmpty()) {
                     val open = showOut || q.isNotBlank()
@@ -652,6 +663,49 @@ private fun DiscoverMixesRow(
         com.stash.core.ui.components.StashSwitch(
             checked = enabled,
             onCheckedChange = onChange,
+        )
+    }
+}
+
+/**
+ * The Mixes tab's switch for an account: [other]'s own (off by default), or with null the main
+ * account's (and other services'), "Discover mixes automatically".
+ */
+@Composable
+private fun MixesSwitchFor(other: SpotifyOtherAccount?, uiState: SyncUiState, viewModel: SyncViewModel) {
+    if (other != null) {
+        OtherAccountMixesRow(enabled = other.syncMixes, onChange = { viewModel.onSyncOtherAccountMixesChanged(other.id, it) })
+    } else {
+        DiscoverMixesRow(enabled = uiState.discoverAutoMixes, onChange = viewModel::onDiscoverAutoMixesChanged)
+    }
+}
+
+/** The Albums tab's saved-albums switch for a Spotify account: [other]'s own, or with null the main account's. */
+@Composable
+private fun SpotifyAlbumsSwitchFor(other: SpotifyOtherAccount?, uiState: SyncUiState, viewModel: SyncViewModel) {
+    if (other != null) {
+        SyncSavedAlbumsRow(enabled = other.syncAlbums, onChange = { viewModel.onSyncOtherAccountAlbumsChanged(other.id, it) })
+    } else {
+        SyncSavedAlbumsRow(enabled = uiState.syncSpotifySavedAlbums, onChange = viewModel::onSyncSpotifySavedAlbumsChanged)
+    }
+}
+
+/** An account's name over its rows on the page that lists every Spotify account's: its dot as the page header's. */
+@Composable
+private fun AccountGroupHeader(name: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(StashTheme.extendedColors.spotifyGreen))
+        Text(
+            text = name,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

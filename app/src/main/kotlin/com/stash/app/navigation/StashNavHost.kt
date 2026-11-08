@@ -360,6 +360,11 @@ private fun StashNavGraph(
                 onManageSpotifyAccount = { accountId ->
                     navController.navigate(ManagePlaylistsRoute(com.stash.feature.sync.SyncSource.SPOTIFY.name, accountId))
                 },
+                onPickFromEverySpotifyAccount = {
+                    navController.navigate(
+                        ManagePlaylistsRoute(com.stash.feature.sync.SyncSource.SPOTIFY.name, everySpotifyAccount = true),
+                    )
+                },
                 onOpenHistory = { navController.navigate(SyncHistoryRoute) },
                 onOpenDownloads = { navController.navigate(DownloadManagementRoute) },
                 onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) },
@@ -384,6 +389,7 @@ private fun StashNavGraph(
                     onBack = { navController.popBackStack() },
                     onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) },
                     spotifyAccountId = route.spotifyAccountId.takeIf { id -> id > 0 },
+                    everySpotifyAccount = route.everySpotifyAccount,
                 )
             }
         }
