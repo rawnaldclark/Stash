@@ -15,9 +15,12 @@ import kotlin.coroutines.CoroutineContext
  * `isAuthenticated(SPOTIFY)`. So a sync pass wrapped in [withSpotifyAccount] makes every
  * `SpotifyApiClient` call in it act as that extra, with no account parameter threaded through.
  *
- * **The safety rule.** With an extra set, a missing or dead extra sign-in answers null. It never
- * falls back to the main account's token: an extra's pass would otherwise read the main's library
- * as the extra's. The rule lives in `TokenManagerImpl` (`actingExtra()` and `extraSignIn()`).
+ * **The safety rule.** With an extra set, nothing answers with the main account's sign-in: an
+ * extra's pass would otherwise read the main's library as the extra's. Without a sign-in of its
+ * own every read answers null; with one that has died, the access token and forced refresh answer
+ * null and the cookie, username and client id answer with the extra's own stored values (see
+ * `TokenManager.getSpotifyAccessToken`). So a pass runs only when the access token is non-null.
+ * The rule lives in `TokenManagerImpl` (`actingExtra()` and `extraSignIn()`).
  *
  * **Why the user id too.** The sign-in is stored under the row id, outside the database, so a
  * database restored from a backup (another phone's, or an older one) can give a row id to a

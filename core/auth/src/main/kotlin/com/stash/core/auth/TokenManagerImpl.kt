@@ -430,8 +430,10 @@ class TokenManagerImpl @Inject constructor(
      *
      * The connected account is the recorded one; otherwise (signed in before Stash recorded it) it
      * is asked of Spotify with the stored cookie, which works when the session wasn't really dead.
-     * An unidentified sign-in can't be refused, so that isn't asked then. Nothing is saved here: a
-     * refused sign-in must leave the stored one exactly as it was.
+     * An unidentified sign-in can't be refused, so that isn't asked then. The sign-ins are never
+     * saved here: a refused sign-in must leave the stored one exactly as it was. The one write is
+     * whose the stored sign-in is, once Spotify has said so with that sign-in's own cookie
+     * ([recordMainAccountLearned]): what [rememberSpotifyAccount] would record, learned sooner.
      *
      * Logs (never who) why a sign-in will go unchecked: a rotated Spotify hash turns the guard off
      * for everyone, and a diagnostics bundle should show it.
@@ -457,6 +459,7 @@ class TokenManagerImpl @Inject constructor(
             work.cancel()
         }
         val found = SpotifySignInAccounts(incoming, connected)
+        if (stored.token != null && stored.account == null) recordMainAccountLearned(stored.token, found.connected)
         if (!inTime) Log.w("StashSync", "$logAs: identifying the accounts timed out")
         when {
             found.incoming == null ->
@@ -465,6 +468,27 @@ class TokenManagerImpl @Inject constructor(
                 Log.w("StashSync", "$logAs: $unchecked, connected account unknown")
         }
         return found
+    }
+
+    /**
+     * Records [learned] as whose the main account's stored sign-in [mainSignIn] is, after Spotify
+     * named it with that sign-in's own cookie ([askSpotifyWhoIs]). An older install has no record
+     * until [rememberSpotifyAccount] succeeds; meanwhile the account-swap guard has to ask Spotify
+     * each time, and [saveSpotifyExtra] can't tell the main account apart. Written only while
+     * [mainSignIn] is still the stored sign-in ([EncryptedTokenStore.saveSpotifyAccountFor]), never
+     * while an extra account acts (its context names an extra, not the main), and best-effort: a
+     * failed write costs the record, never the sign-in in progress.
+     */
+    private suspend fun recordMainAccountLearned(mainSignIn: ServiceToken, learned: SpotifyProfile?) {
+        if (learned == null || actingExtra() != null) return
+        try {
+            val written = tokenStore.saveSpotifyAccountFor(mainSignIn.refreshToken, learned)
+            Log.d("StashSync", "Spotify main account learned from Spotify: recorded=$written")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("StashSync", "couldn't record the Spotify main account: ${e.javaClass.simpleName}")
+        }
     }
 
     /** Whose [stored] sign-in is, asked of Spotify with its cookie; null when it can't say. */
@@ -618,6 +642,8 @@ class TokenManagerImpl @Inject constructor(
             Log.w("StashSync", "saveSpotifyExtra: refused, the sign-in isn't the account its row is for")
             return false
         }
+        // The main account's recorded account: on an older install, the one validateSpotifyCookie
+        // just learned from Spotify and recorded ([recordMainAccountLearned]) counts.
         val main = tokenStore.readSpotifySignIn().account
         if (main != null && main.isSameAccount(identified)) {
             Log.w("StashSync", "saveSpotifyExtra: refused, that is the main account")

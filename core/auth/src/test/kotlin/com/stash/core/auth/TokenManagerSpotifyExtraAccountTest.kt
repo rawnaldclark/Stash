@@ -65,13 +65,25 @@ class TokenManagerSpotifyExtraAccountTest {
     /** The main account: Rawn, signed in, his token fresh. */
     private val mainToken = MutableStateFlow<ServiceToken?>(token("rawn-access", "rawn-cookie", scope = "rawnclark|main-client"))
 
+    /** Whose the main sign-in is, as recorded (`spotify_account`); null on an install from before Stash recorded it. */
+    private var recordedMain: SpotifyProfile? = rawn
+
     /** Extra accounts by row id: what each `spotify_extra_<rowId>` blob holds. */
     private val extras = mutableMapOf<Long, StoredSpotifySignIn>()
 
     private val store = mockk<EncryptedTokenStore>(relaxed = true) {
         every { spotifyToken } returns mainToken
         every { spotifyUser } returns MutableStateFlow(UserInfo("rawnclark", "Rawn"))
-        coEvery { readSpotifySignIn() } answers { StoredSpotifySignIn(mainToken.value, rawn) }
+        coEvery { readSpotifySignIn() } answers { StoredSpotifySignIn(mainToken.value, recordedMain) }
+        // Recorded only for the stored sign-in it was looked up with, as the real store does.
+        coEvery { saveSpotifyAccountFor(any(), any()) } answers {
+            if (mainToken.value?.refreshToken == firstArg<String>()) {
+                recordedMain = secondArg()
+                true
+            } else {
+                false
+            }
+        }
         every { youTubeToken } returns MutableStateFlow(null)
         every { youTubeUser } returns MutableStateFlow(null)
         every { discordToken } returns MutableStateFlow(null)
@@ -335,6 +347,53 @@ class TokenManagerSpotifyExtraAccountTest {
 
         assertEquals(true, check.isMainAccount)
         assertNothingSaved()
+    }
+
+    /** An older install: the main sign-in works, but whose it is was never recorded; Spotify can say. */
+    private fun olderMainSignIn() {
+        recordedMain = null
+        coEvery { auth.getAccessToken("rawn-cookie") } returns token("rawn-live", "rawn-cookie", scope = "rawnclark|main-client")
+        coEvery { auth.fetchProfile("rawn-live", "main-client", false) } returns rawn
+        // The listener signs in as the main account again, in the add-an-account flow.
+        coEvery { auth.getAccessToken("rawn-cookie-2") } returns token("rawn-access-2", "rawn-cookie-2")
+        coEvery { auth.fetchProfile("rawn-access-2", "webclient", true) } returns rawn
+    }
+
+    @Test fun `an older main sign-in learns its account from a validation, and can't then be saved as an extra`() = runTest {
+        olderMainSignIn()
+        val manager = manager()
+
+        val check = manager.validateSpotifyCookie("rawn-cookie-2") as SpotifyCookieCheck.Valid
+
+        assertEquals(true, check.isMainAccount)
+        // Recorded for the main's own stored cookie, as rememberSpotifyAccount would.
+        coVerify(exactly = 1) { store.saveSpotifyAccountFor("rawn-cookie", rawn) }
+        assertEquals(rawn, recordedMain)
+        // Even a caller that ignored isMainAccount can't save the main account as an extra.
+        assertFalse(manager.saveSpotifyExtra(SpotifyAccount(7, rawn.userId), check.signIn))
+        coVerify(exactly = 0) { store.saveSpotifyExtra(any(), any(), any()) }
+        // Nothing else of the main's sign-in changed.
+        coVerify(exactly = 0) { store.saveSpotifyConnection(any(), any(), any()) }
+        assertEquals("rawn-access", mainToken.value?.accessToken)
+    }
+
+    @Test fun `while an extra acts, what Spotify says about the main isn't recorded`() = runTest {
+        olderMainSignIn()
+
+        withSpotifyAccount(samRow) { manager().validateSpotifyCookie("rawn-cookie-2") }
+
+        coVerify(exactly = 0) { store.saveSpotifyAccountFor(any(), any()) }
+        assertNull(recordedMain)
+    }
+
+    @Test fun `a main account Spotify can't name stays unrecorded`() = runTest {
+        olderMainSignIn()
+        coEvery { auth.getAccessToken("rawn-cookie") } returns null // its session really is dead
+
+        val check = manager().validateSpotifyCookie("rawn-cookie-2") as SpotifyCookieCheck.Valid
+
+        assertNull(check.isMainAccount)
+        coVerify(exactly = 0) { store.saveSpotifyAccountFor(any(), any()) }
     }
 
     @Test fun `an account Spotify doesn't name can't be told apart`() = runTest {

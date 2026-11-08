@@ -41,8 +41,19 @@ interface TokenManager {
      * ([forceRefreshSpotifyAccessToken], [getSpotifyUsername], [getSpDcCookie],
      * [getSpotifyClientId], `isAuthenticated(SPOTIFY)`) answer for the extra account named by a
      * [com.stash.core.auth.spotify.SpotifyAccount] in the caller's coroutine context, and for the
-     * main account when there is none (unchanged). With an extra set, a missing or dead extra
-     * sign-in answers null: never the main account's.
+     * main account when there is none (unchanged). With an extra set, none of them ever answers
+     * with the main account's sign-in. What each answers for the extra:
+     *  - **No sign-in of its own** (none stored, unreadable after a keyset reset, or one stored
+     *    under its row that is another account's): every one of them answers null, and
+     *    `isAuthenticated(SPOTIFY)` false.
+     *  - **A stored sign-in that has died** (its cookie no longer works on Spotify's side): only
+     *    this and [forceRefreshSpotifyAccessToken] answer null, once the refresh fails. The
+     *    cookie, username and client id still answer with the extra's own stored values, and
+     *    `isAuthenticated(SPOTIFY)` true: a stored cookie can't be known dead without a refresh.
+     *
+     * So whether an extra's sync pass runs is decided by
+     * [getSpotifyExtraAccessToken]`(account) != null` (or this, acting as it), never by
+     * `isAuthenticated(SPOTIFY)` or [hasSpotifyExtraSignIn], which only say a sign-in is stored.
      */
     suspend fun getSpotifyAccessToken(): String?
 
@@ -195,16 +206,21 @@ interface TokenManager {
      */
     suspend fun saveSpotifyExtra(account: com.stash.core.auth.spotify.SpotifyAccount, signIn: ValidatedSpotifySignIn): Boolean
 
-    /** A valid access token of the extra [account], refreshed when due; null when it has no working sign-in of its own. */
+    /**
+     * A valid access token of the extra [account], refreshed when due; null when it has no
+     * working sign-in of its own (none, another account's, or one whose refresh fails). The test
+     * for whether the account's sync pass runs.
+     */
     suspend fun getSpotifyExtraAccessToken(account: com.stash.core.auth.spotify.SpotifyAccount): String?
 
     /** A new access token of the extra [account] whatever the current one's expiry; null when that fails. */
     suspend fun forceRefreshSpotifyExtraAccessToken(account: com.stash.core.auth.spotify.SpotifyAccount): String?
 
     /**
-     * Whether the extra [account] has a stored sign-in of its own (it may still have stopped
-     * working on Spotify's side). False after a keyset reset, or when the row's sign-in is another
-     * account's (a restored backup): either way the account must sign in again.
+     * Whether the extra [account] has a stored sign-in of its own. It may still have stopped
+     * working on Spotify's side: whether its sync runs is [getSpotifyExtraAccessToken]` != null`,
+     * not this. False after a keyset reset, or when the row's sign-in is another account's (a
+     * restored backup): either way the account must sign in again.
      */
     suspend fun hasSpotifyExtraSignIn(account: com.stash.core.auth.spotify.SpotifyAccount): Boolean
 

@@ -260,6 +260,20 @@ class EncryptedTokenStore internal constructor(
         dataStore.edit { it.remove(spotifyExtraKey(rowId)) }
     }
 
+    /**
+     * The row ids that have an extra Spotify sign-in stored (a `spotify_extra_<rowId>` blob),
+     * readable or not. Sign-ins outlive their rows when a row goes without its sign-in being
+     * cleared (a restored backup, a removal cut short): comparing this with the
+     * `spotify_accounts` rows finds the ones to clear. Never includes the main account's.
+     */
+    suspend fun spotifyExtraRowIds(): Set<Long> =
+        dataStore.data.first().asMap().keys.mapNotNullTo(mutableSetOf()) { key ->
+            key.name.takeIf { it.startsWith(SPOTIFY_EXTRA_PREFIX) }
+                ?.removePrefix(SPOTIFY_EXTRA_PREFIX)
+                ?.toLongOrNull()
+                ?.takeIf { it > 0 }
+        }
+
     // ── YouTube Music ────────────────────────────────────────────────────
 
     /** Emits the current YouTube Music [ServiceToken], or null if not stored / decryption fails. */
