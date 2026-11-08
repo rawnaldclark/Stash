@@ -855,7 +855,8 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
     /** The diff of [syncId]; [onStart] runs once it has read the snapshots, before it applies any. */
     private suspend fun runDiff(syncId: Long, onStart: (suspend () -> Unit)? = null) {
         val state = mockk<SyncStateManager>(relaxed = true)
-        if (onStart != null) every { state.onDiffing(0, any()) } answers { runBlocking { onStart() } }
+        // The diff's "0 of N" once it has read the N snapshots (its earlier bare onDiffing() is 0 of 0).
+        if (onStart != null) every { state.onDiffing(0, match { it > 0 }) } answers { runBlocking { onStart() } }
         val result = TestListenableWorkerBuilder<DiffWorker>(context)
             .setInputData(
                 workDataOf(
