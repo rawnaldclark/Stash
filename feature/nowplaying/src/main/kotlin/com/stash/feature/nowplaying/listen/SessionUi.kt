@@ -178,7 +178,17 @@ fun SessionBar(room: ListenTogetherState.InRoom, onClick: () -> Unit, modifier: 
         FaceStack(room.members, room.hostId)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyMedium,
+                // Now Playing's ink, like everything drawn straight on it: white on the dark ground and on Full art,
+                // plum-black on the light one. Left to the content colour it was black everywhere, because the player
+                // sheet sits outside the app's Scaffold and nothing above it provides one.
+                color = com.stash.feature.nowplaying.ui.npInk(),
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Text(
                 subtitle,
                 style = MaterialTheme.typography.labelSmall,
