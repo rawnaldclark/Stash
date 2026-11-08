@@ -218,8 +218,18 @@ class SpotifyAccountsViewModel @Inject constructor(
 
     private fun openSignIn(purpose: OtherAccountSignIn) {
         signInJob?.cancel()
+        // The account's sheet closes ("Sign in again" on it): it would otherwise come back over the
+        // check's dialog once the sign-in screen gives way to it. The outcome says how it went.
         _state.update {
-            it.copy(signIn = purpose, showWebLogin = true, showPasteDialog = false, validating = false, error = null, refusal = null)
+            it.copy(
+                signIn = purpose,
+                showWebLogin = true,
+                showPasteDialog = false,
+                validating = false,
+                error = null,
+                refusal = null,
+                openAccountId = null,
+            )
         }
     }
 

@@ -318,6 +318,23 @@ class SpotifyAccountsViewModelTest {
         coVerify(exactly = 0) { accountDao.updateSignedOutAt(any(), any()) }
     }
 
+    @Test fun `Sign in again from an account's sheet closes the sheet, so it can't cover the check`() = runTest {
+        coEvery { accountDao.getById(4) } returns row(4, "sam", "Sam", signedOutAt = 1)
+        coEvery { tokenManager.validateSpotifyCookie(any()) } coAnswers { awaitCancellation() }
+        val vm = newVm()
+        vm.openAccount(4)
+
+        vm.startSignInAgain(4)
+        assertThat(vm.state.value.openAccountId).isNull()
+
+        // The check under way, in the paste dialog: still no sheet.
+        vm.onCookieCaptured("cookie")
+        advanceUntilIdle()
+        assertThat(vm.state.value.showPasteDialog).isTrue()
+        assertThat(vm.state.value.openAccountId).isNull()
+        vm.cancelSignIn()
+    }
+
     @Test fun `signing in again as an account that turns out to be the connected one is refused`() = runTest {
         coEvery { accountDao.getById(4) } returns row(4, "sam", "Sam", signedOutAt = 1)
         signsInAs("sam", isMain = true)
