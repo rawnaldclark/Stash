@@ -23,7 +23,27 @@
 import { cleanTrack } from "./validate.js";
 
 export const MAX_MEMBERS = 10;
+/** How long a song's handshake waits for the guests' phones: a slow guest is started without, and joins late. */
 export const PREPARE_MS = 8_000;
+/**
+ * The room waits for its host's phone, not just PREPARE_MS (owner decision 2026-11-07): only the host moves the room on,
+ * so a song it doesn't have yet must not play for the guests alone. Its app (v ≥ HOST_WAIT_V) gives up on a song it can't
+ * get within HOST_PREPARE_MS of its prepare and reports it unavailable, which skips it for everyone. Keep in sync with
+ * HOST_PREPARE_MS in the app's ListenTogetherSession.
+ */
+export const HOST_PREPARE_MS = 20_000;
+/**
+ * The room's own end to that wait, for a host that never says (its app stuck, or killed with the socket still open):
+ * then it starts without the host, as it always did at PREPARE_MS. Past HOST_PREPARE_MS so the app's own report, which
+ * counts from the prepare it received a round trip later, always arrives first.
+ */
+export const HOST_WAIT_CAP_MS = 25_000;
+/**
+ * The first app version that gives up on a song within HOST_PREPARE_MS. An older host app (every release before guest
+ * adds says no `v`) only gives up when its player fails, ~45 s in, or never: it is waited for no longer than PREPARE_MS,
+ * as before.
+ */
+export const HOST_WAIT_V = 2;
 export const START_LEAD_MS = 500;
 export const COMMAND_LEAD_MS = 400;
 export const HANDOVER_MS = 60_000;
@@ -37,7 +57,10 @@ export const MAX_QUEUE = 200;
 export const REACT_GAP_MS = 1_000;
 /** The six reactions. Keep in sync with RoomProtocol.EMOJI in core/model. */
 export const EMOJI = ["\u2764\uFE0F", "\u{1F525}", "\u{1F602}", "\u{1F62E}", "\u{1F44F}", "\u{1F3B6}"];
-/** What this room speaks: 2 = guests can add songs (`add`, `unqueue`, `settings`, `qv`). Keep in sync with RoomProtocol.VERSION. */
+/**
+ * What this room speaks: 2 = guests can add songs (`add`, `unqueue`, `settings`, `qv`), and a host app on 2 gives up on a
+ * song within HOST_PREPARE_MS, so the room waits for it (HOST_WAIT_V). Keep in sync with RoomProtocol.VERSION.
+ */
 export const PROTOCOL_V = 2;
 /** Songs one guest may have waiting in the queue at once (owner decision 7, 2026-11-04). The host's only cap is MAX_QUEUE. */
 export const MAX_GUEST_WAITING = 20;
@@ -115,7 +138,10 @@ export function publicState(s) {
     return {
         rev: s.rev, host: s.host, track: s.track, trackKey: s.trackKey, timeline: s.timeline, queue: s.queue,
         members: publicMembers(s), suggestions: s.suggestions,
-        phase: s.phase.kind === "preparing" ? { ...s.phase } : { kind: "playing" },
+        // The guests' deadline only, as always: the host's is the room's business.
+        phase: s.phase.kind === "preparing"
+            ? { kind: "preparing", trackKey: s.phase.trackKey, deadlineMs: s.phase.deadlineMs }
+            : { kind: "playing" },
         v: PROTOCOL_V, guestsAdd: guestsCanAdd(s), qv: s.qv ?? 0,
     };
 }
@@ -131,12 +157,15 @@ export function preview(s) {
     };
 }
 
-/** The earliest pending timer: room expiry, empty-room close, a 60 s handover/prune, the prepare deadline (§2). */
+/**
+ * The earliest pending timer: room expiry, empty-room close, a 60 s handover/prune, the prepare deadline (§2): the
+ * guests' while the host is ready, else the end of the wait for the host (the guests' alone would start nothing).
+ */
 export function nextAlarm(s) {
     const times = [s.createdAt + MAX_AGE_MS];
     if (connected(s).length === 0) times.push(s.lastLeftAt + EMPTY_CLOSE_MS);
     for (const m of s.members) if (m.leftAt !== null) times.push(m.leftAt + HANDOVER_MS);
-    if (s.phase.kind === "preparing") times.push(s.phase.deadlineMs);
+    if (s.phase.kind === "preparing") times.push(hostSettled(s) ? s.phase.deadlineMs : hostDeadline(s));
     return Math.min(...times);
 }
 
@@ -293,6 +322,31 @@ function setHostQueue(ctx, pick, left = null) {
 const stateMsg = (s, to = "all") => ({ to, msg: { t: "state", state: publicState(s) } });
 /** Every connected phone has either buffered the song or can't get it, so nobody is worth waiting for. */
 const allSettled = (s) => connected(s).every((m) => m.status === "ok" || m.status === "unavailable");
+/**
+ * Nothing left to wait for from the host: it has the song or has said it can't get it, it isn't connected (a drop or a
+ * handover in progress: the guests aren't held for a phone that isn't there), or its app is from before HOST_WAIT_V.
+ */
+function hostSettled(s) {
+    const host = findConnected(s, s.host);
+    return !host || (host.v ?? 1) < HOST_WAIT_V || host.status === "ok" || host.status === "unavailable";
+}
+/** When the room stops waiting for its host. A room preparing since before this rule had only the one deadline. */
+const hostDeadline = (s) => s.phase.hostDeadlineMs ?? s.phase.deadlineMs;
+/**
+ * A song's handshake is over: every phone is settled; or the guests' time is up and the host is settled (a slow guest
+ * joins late, the host is never left behind); or the room has waited for its host as long as it will.
+ */
+function startDue(s, now) {
+    if (s.phase.kind !== "preparing") return false;
+    if (now >= hostDeadline(s)) return true;
+    return hostSettled(s) && (allSettled(s) || now >= s.phase.deadlineMs);
+}
+/** Starts the song if its handshake is over: after anything that may settle it (a status, a leave, a new host, the alarm). */
+function startIfDue(ctx) {
+    if (!startDue(ctx.s, ctx.now)) return false;
+    startPlayback(ctx);
+    return true;
+}
 
 /** [by] names the member who caused the change (play, pause, seek); the room's own start has none. */
 function setTimeline(ctx, timeline, by) {
@@ -450,7 +504,7 @@ const EVENTS = {
         if (connected(s).length === 0) s.lastLeftAt = now;
         s.rev++;
         ctx.out.push(membersMsg(s));
-        if (s.phase.kind === "preparing" && allSettled(s)) startPlayback(ctx);
+        startIfDue(ctx); // the last phone waited for left, or the host did: the guests aren't held for it
         return true;
     },
 
@@ -485,10 +539,8 @@ const EVENTS = {
             }
             changed = true;
         }
-        if (s.phase.kind === "preparing" && now >= s.phase.deadlineMs) {
-            startPlayback(ctx);
-            changed = true;
-        }
+        // The guests' deadline (with the host ready), or the end of the wait for the host. A new 60 s heir counts as host.
+        if (startIfDue(ctx)) changed = true;
         return changed;
     },
 };
@@ -503,7 +555,7 @@ const MESSAGES = {
         s.trackKey++;
         setHostQueue(ctx, msg.why === "pick", left);
         s.timeline = { positionMs: cleanPosition(msg.positionMs, track) ?? 0, atRoomMs: now, playing: false };
-        s.phase = { kind: "preparing", trackKey: s.trackKey, deadlineMs: now + PREPARE_MS };
+        s.phase = { kind: "preparing", trackKey: s.trackKey, deadlineMs: now + PREPARE_MS, hostDeadlineMs: now + HOST_WAIT_CAP_MS };
         for (const m of connected(s)) m.status = "buffering";
         s.rev++;
         ctx.out.push({ to: "all", msg: {
@@ -526,11 +578,13 @@ const MESSAGES = {
         member.status = value;
         s.rev++;
         ctx.out.push(membersMsg(s));
-        if (s.phase.kind === "preparing" && allSettled(s)) startPlayback(ctx);
+        // Everyone settled; or the host settling after the guests' deadline, when the room was waiting only for it.
+        startIfDue(ctx);
         return true;
     },
 
-    // ponytail: play/pause/seek during the ≤8 s ready handshake are dropped; the handshake starts playback anyway.
+    // ponytail: play/pause/seek during the ready handshake (≤8 s, ≤25 s while it waits for a v2 host) are dropped; the
+    // handshake starts playback anyway, and the app sends a pause again once it has.
     play(ctx) {
         const { s, now } = ctx;
         if (s.phase.kind !== "playing" || s.timeline.playing || !s.track) return false;
@@ -666,6 +720,8 @@ const MESSAGES = {
         setHost(s, msg.memberId);
         s.rev++;
         switchChanged(ctx, before, false); // the new host's own switch (or an older app's approvals) rules from now
+        // Mid-handshake the room was waiting for the old host: now it waits for the new one, or starts if that one is ready.
+        startIfDue(ctx);
         ctx.out.push(stateMsg(s));
         return true;
     },

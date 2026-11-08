@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { step, preview, EMOJI, MAX_MEMBERS, MAX_QUEUE_CHARS } from "../src/room.js";
+import {
+    step, preview, EMOJI, MAX_MEMBERS, MAX_QUEUE_CHARS, PREPARE_MS, HOST_PREPARE_MS, HOST_WAIT_CAP_MS,
+} from "../src/room.js";
 
 const T0 = 1_000_000;
 const TRACK = { t: "Avril 14th", a: "Aphex Twin", d: 125000, isrc: "GBBPW0100025" };
@@ -934,4 +936,121 @@ test("suggestions can't carry a queue past the frame limit: a song over 4,000 ch
     assert.equal(s.suggestions.length, 0, "they all went in");
     const frame = JSON.stringify({ t: "load", track: worst(99), positionMs: 0, queue: s.queue, qv: s.qv, why: "skip" });
     assert.ok(frame.length < 262_144, `${frame.length} characters`);
+});
+
+// ── The room waits for its host (owner decision 2026-11-07) ──────────────────────────────────────────────────────────
+
+/** Host "h" and guests "a", "b" on apps that give up on a song within HOST_PREPARE_MS (v 2); TRACK loaded at T0 + 100. */
+function waitParty() {
+    let s = created();
+    s = hello(s, "h", { hostKeyOk: true, v: 2 }).state;
+    s = hello(s, "a", { at: T0 + 1, v: 2 }).state;
+    s = hello(s, "b", { at: T0 + 2, v: 2 }).state;
+    return loaded(s).state;
+}
+const LOAD = T0 + 100;
+const unavailable = (s, from, at, trackKey = 1) => send(s, from, { t: "status", status: "unavailable", trackKey }, at);
+
+test("the guests are ready and the host isn't: nobody starts, and the alarm is the end of the wait for the host", () => {
+    assert.equal(HOST_PREPARE_MS, 20_000);
+    assert.ok(HOST_WAIT_CAP_MS > HOST_PREPARE_MS, "the app's own report comes first");
+    let s = waitParty();
+    s = ready(s, "a").state;
+    const r = ready(s, "b", LOAD + 300);
+    assert.equal(sent(r, "timeline").length, 0);
+    assert.equal(r.state.phase.kind, "preparing");
+    assert.equal(r.alarmAt, LOAD + HOST_WAIT_CAP_MS);
+    const deadline = step(r.state, { type: "alarm" }, LOAD + PREPARE_MS);
+    assert.equal(deadline.state, r.state, "the guests' deadline starts nothing without the host");
+    // The host has it 15 s in: everyone starts together, 500 ms later.
+    const go = ready(r.state, "h", LOAD + 15_000);
+    assert.deepEqual(sent(go, "timeline").map((o) => [o.msg.atRoomMs, o.msg.playing]), [[LOAD + 15_500, true]]);
+});
+
+test("a slow guest still waits only 8 s once the host is ready, and joins late", () => {
+    let s = ready(waitParty(), "h").state;
+    s = ready(s, "a").state;
+    assert.equal(step(s, { type: "alarm" }, LOAD + PREPARE_MS - 1).state, s);
+    const r = step(s, { type: "alarm" }, LOAD + PREPARE_MS);
+    assert.equal(sent(r, "timeline")[0].msg.atRoomMs, LOAD + PREPARE_MS + 500);
+});
+
+test("a host ready after the guests' deadline starts the song at once, without the slow guest", () => {
+    let s = ready(waitParty(), "a").state;
+    s = step(s, { type: "alarm" }, LOAD + PREPARE_MS).state; // b isn't ready, and the host is still looking
+    assert.equal(s.phase.kind, "preparing");
+    const r = ready(s, "h", LOAD + 12_000);
+    assert.equal(sent(r, "timeline")[0].msg.atRoomMs, LOAD + 12_500);
+});
+
+test("a host that can't get the song says so and is waited for no longer: its next load follows", () => {
+    let s = ready(waitParty(), "a").state;
+    s = ready(s, "b").state;
+    const r = unavailable(s, "h", LOAD + 20_200);
+    assert.equal(sent(r, "timeline").length, 1, "as for any phone that can't play it, the way the app's skip has always run");
+    const next = send(r.state, "h", { t: "load", track: NEXT, positionMs: 0, queue: [], why: "unavailable" }, LOAD + 20_250);
+    assert.equal(sent(next, "prepare")[0].msg.why, "unavailable");
+    assert.equal(next.state.phase.kind, "preparing");
+});
+
+test("a host that never says is waited for 25 s from the load, then the room starts without it", () => {
+    let s = ready(waitParty(), "a").state;
+    s = ready(s, "b").state;
+    assert.equal(step(s, { type: "alarm" }, LOAD + HOST_WAIT_CAP_MS - 1).state, s);
+    const r = step(s, { type: "alarm" }, LOAD + HOST_WAIT_CAP_MS);
+    assert.equal(sent(r, "timeline")[0].msg.playing, true);
+    assert.equal(r.state.phase.kind, "playing");
+});
+
+test("an older host app (no v) is waited for 8 s, as before: it only gives up when its player fails", () => {
+    let s = ready(loaded().state, "a").state; // party(): h, a and b on released apps
+    s = ready(s, "b").state;
+    assert.equal(s.phase.kind, "preparing", "its own status is still buffering");
+    assert.equal(send(s, "a", { t: "ping", c: 1 }, LOAD + 300).alarmAt, LOAD + PREPARE_MS);
+    const go = step(s, { type: "alarm" }, LOAD + PREPARE_MS);
+    assert.equal(sent(go, "timeline")[0].msg.playing, true);
+});
+
+test("the host dropping while the room waits for it starts the song for the guests", () => {
+    let s = ready(waitParty(), "a").state;
+    s = ready(s, "b").state;
+    const r = step(s, { type: "close", from: "h" }, LOAD + 5_000);
+    assert.equal(sent(r, "timeline")[0].msg.playing, true);
+});
+
+test("a host back mid-handshake is waited for again, within the same 25 s", () => {
+    let s = step(waitParty(), { type: "close", from: "h" }, LOAD + 1_000).state; // nobody ready yet: still preparing
+    s = hello(s, "h2", { resumeToken: "tok-h", at: LOAD + 2_000, v: 2 }).state;
+    s = ready(s, "a").state;
+    const r = ready(s, "b", LOAD + 3_000);
+    assert.equal(r.state.phase.kind, "preparing");
+    assert.equal(r.alarmAt, LOAD + HOST_WAIT_CAP_MS);
+    assert.equal(sent(ready(r.state, "h", LOAD + 4_000), "timeline").length, 1);
+});
+
+test("handing over while the room waits for the host starts it if the new host is ready, else waits for that one", () => {
+    let s = ready(waitParty(), "a").state;
+    s = step(s, { type: "alarm" }, LOAD + PREPARE_MS).state; // b is slow, h still looking: waiting on h
+    const toReady = send(s, "h", { t: "makeHost", memberId: "a" }, LOAD + 9_000);
+    assert.equal(sent(toReady, "timeline")[0].msg.playing, true);
+    assert.equal(sent(toReady, "state")[0].msg.state.timeline.playing, true, "the new host's state already says it started");
+    const toSlow = send(s, "h", { t: "makeHost", memberId: "b" }, LOAD + 9_000);
+    assert.equal(sent(toSlow, "timeline").length, 0);
+    assert.equal(toSlow.alarmAt, LOAD + HOST_WAIT_CAP_MS);
+    assert.equal(sent(ready(toSlow.state, "b", LOAD + 10_000), "timeline").length, 1);
+});
+
+test("phones see only the guests' deadline, never the host's", () => {
+    const r = hello(waitParty(), "c", { at: LOAD + 50, v: 2 });
+    assert.deepEqual(sent(r, "welcome")[0].msg.state.phase, { kind: "preparing", trackKey: 1, deadlineMs: LOAD + PREPARE_MS });
+});
+
+test("a room stored mid-handshake before this rule keeps its one deadline", () => {
+    let s = ready(waitParty(), "a").state;
+    s = ready(s, "b").state;
+    const old = structuredClone(s);
+    delete old.phase.hostDeadlineMs;
+    const r = step(old, { type: "msg", from: "a", msg: { t: "ping", c: 1 } }, LOAD + 400);
+    assert.equal(r.alarmAt, LOAD + PREPARE_MS);
+    assert.equal(sent(step(old, { type: "alarm" }, LOAD + PREPARE_MS), "timeline").length, 1);
 });
