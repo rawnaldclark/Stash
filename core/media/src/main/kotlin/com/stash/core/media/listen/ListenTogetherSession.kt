@@ -95,13 +95,9 @@ class ListenTogetherSession(
      * prepares, so a phone that hasn't paused means to play it, however its own player looks ([meansToPlay]).
      */
     private var roomPreparingKey = NONE
-    /**
-     * The host's wait for a song the room already plays for someone else ([watchHostLate]): the song it is for, the local
-     * time it runs out, and the timer. One budget per song, so a pause and a Play don't start it over.
-     */
-    private var lateKey = NONE
-    private var lateDeadline = 0L
-    private var lateJob: Job? = null
+    /** [clock] when this phone began preparing [loadedKey]: a host gives up on it [HOST_PREPARE_MS] later ([giveUpIfStillLooking]). */
+    private var preparedAt = 0L
+    private var prepareLimitJob: Job? = null
     private var lastStatus: String? = null
     private var reconnecting = false
     private var versionMismatch = false
@@ -335,8 +331,11 @@ class ListenTogetherSession(
         isHost = s.host != null && s.host == myId
         if (isHost != wasHost) player.enterSession(isHost, interceptor) // makeHost or a 60 s handover
         // The song ended while nobody could move the room on (the old host left), or the new host can't play it: they do.
-        if (isHost && !wasHost) {
-            if (s.trackKey == loadedKey && cantPlayCurrentSong()) advanceNow(UNAVAILABLE) else if (songFinished()) advanceNow()
+        // Handed the room while still looking for its song, the room now waits for this phone: within the same limit.
+        if (isHost && !wasHost) when {
+            s.trackKey == loadedKey && cantPlayCurrentSong() -> advanceNow(UNAVAILABLE)
+            songFinished() -> advanceNow()
+            s.trackKey == loadedKey -> giveUpIfStillLooking(loadedKey)
         }
         publish()
         val track = s.track ?: return
@@ -358,6 +357,13 @@ class ListenTogetherSession(
         startJob?.cancel()
         stopDrift()
         player.pause()
+        // Every role keeps the time: a guest handed the room mid-handshake is held to the same limit.
+        preparedAt = clock()
+        prepareLimitJob?.cancel()
+        prepareLimitJob = sessionScope?.launch {
+            delay(HOST_PREPARE_MS)
+            giveUpIfStillLooking(key)
+        }
         publish()
         Log.i(TAG, "prepare #$key '${track.title}'")
         // Inline in the event collector, so every later message waits for it: keep it a DB lookup,
@@ -466,51 +472,37 @@ class ListenTogetherSession(
         return t.trackKey == key && t.playing
     }
 
-    /** After anything that may change [meansToPlay] or the host's wait for a late song: tell the controls, and watch. */
+    /** After anything that may change [meansToPlay]: every play/pause control reads it. */
     private fun intentChanged() {
         if (code == null) return
         player.setPlayIntent(meansToPlay())
-        watchHostLate()
     }
 
     /**
-     * The room starts a song at its prepare deadline (room.js PREPARE_MS, 8 s) whether the host's phone is ready or not,
-     * and only the host moves the room on. A song the host's sources can't find (the resolver tries every source and
-     * retries, ~40 s) therefore played for the guests alone until the whole chain gave up, the host silent all along.
-     *
-     * So in a room the host gives such a song [HOST_LATE_GRACE_MS] from the moment someone else starts hearing it. Ready
-     * by then, it joins at the room's position like any late phone ([applyTimeline]). Not, and it reports the song
-     * unplayable: the room moves everyone on (or stops), with the same notices as a song it couldn't find at all.
-     * Nobody else hearing it (alone in the room, the guests still loading, the room paused) costs nothing, so no clock
-     * runs then, and normal playback's resolver is untouched. The budget is per song, so a pause doesn't refill it.
+     * The room waits for its host's phone before it starts a song (room.js HOST_PREPARE_MS, owner decision 2026-11-07),
+     * since only the host moves the room on: a song the host doesn't have yet must not play for the guests alone. So the
+     * host can't take as long as its resolver would (every source, then retries: ~40 s for a song none of them has). It
+     * gives up [HOST_PREPARE_MS] after it began preparing the song and reports it unplayable, which moves everyone on (or
+     * stops the room) with the same notices as a song it couldn't find at all. Ready by then, the room starts it for
+     * everyone together. Called when that time is up, and when this phone is handed the room mid-handshake.
      */
-    private fun watchHostLate() {
-        val key = loadedKey
-        val playing = timeline?.takeIf { it.trackKey == key && it.playing }
-        val late = isHost && !pausedLocally && key != NONE && readyKey != key && unavailableKey != key && othersHearIt()
-        if (!late || playing == null) {
-            lateJob?.cancel()
-            lateJob = null
-            return
-        }
-        if (lateJob?.isActive == true) return
-        if (lateKey != key) {
-            lateKey = key
-            // From when they start hearing it: the room's start time, while that's still ahead.
-            val ahead = clockSync.roomNow(clock())?.let { (playing.atRoomMs - it).coerceAtLeast(0) } ?: 0L
-            lateDeadline = clock() + ahead + HOST_LATE_GRACE_MS
-        }
-        lateJob = sessionScope?.launch {
-            val wait = lateDeadline - clock()
-            if (wait > 0) delay(wait)
-            lateJob = null
-            if (loadedKey == key) markUnavailable(key, "not ready ${HOST_LATE_GRACE_MS} ms after the room started it for the others")
-        }
+    private fun giveUpIfStillLooking(key: Int) {
+        if (!isHost || key != loadedKey || readyKey == key || unavailableKey == key) return
+        if (clock() - preparedAt < HOST_PREPARE_MS) return
+        markUnavailable(key, "not ready ${HOST_PREPARE_MS} ms after its prepare")
     }
 
-    /** Someone else in the room is playing the song: ready for it (`ok`, how the room stores `ready`) or playing it off time. */
-    private fun othersHearIt(): Boolean =
-        room?.members.orEmpty().any { it.id != myId && (it.status == MEMBER_OK || it.status == DRIFTING) }
+    /**
+     * This guest has the song and the room is holding it for the host's phone, so the session bar says "Waiting for
+     * Rawn…" rather than leave the spinner unexplained.
+     */
+    private fun waitingForHost(): Boolean {
+        val r = room ?: return false
+        val key = loadedKey
+        if (isHost || key == NONE || roomPreparingKey != key || readyKey != key) return false
+        val host = r.members.firstOrNull { it.id == r.host } ?: return false
+        return host.status != MEMBER_OK && host.status != UNAVAILABLE
+    }
 
     private fun cantPlayCurrentSong() = loadedKey != NONE && unavailableKey == loadedKey
 
@@ -560,7 +552,7 @@ class ListenTogetherSession(
         timeline = t
         room = room?.copy(timeline = RoomTimeline(t.positionMs, t.atRoomMs, t.playing))
         applyTimeline()
-        intentChanged()
+        publish() // the controls' intent, and "Waiting for …" ends as the room starts the song
     }
 
     private fun hostCantPlay(): Boolean {
@@ -1024,7 +1016,7 @@ class ListenTogetherSession(
         code = null; url = null; myId = null; token = null; room = null; isHost = false; pendingLoad = null; loadsInFlight = 0
         welcomed = false; unplayableInARow = 0; skipNoticeKey = NONE; heldAdds.clear(); awaitingAdds.clear()
         timeline = null; applied = null; loadedKey = NONE; itemKey = NONE; readyKey = NONE; unavailableKey = NONE; lastStatus = null
-        roomPreparingKey = NONE; lateKey = NONE; lateDeadline = 0L; lateJob = null // the job died with sessionScope
+        roomPreparingKey = NONE; preparedAt = 0L; prepareLimitJob = null // the job died with sessionScope
         reconnecting = false; versionMismatch = false; history.clear(); radioTriedKey = NONE
         seenMembers.clear(); memberNames.clear(); pendingLeaves.clear() // their jobs died with sessionScope
         pausedLocally = false
@@ -1078,6 +1070,7 @@ class ListenTogetherSession(
                 code = code, url = url, myId = id, isHost = isHost, hostId = r.host,
                 members = r.members, suggestions = r.suggestions, reconnecting = reconnecting,
                 unavailable = cantPlayCurrentSong(),
+                waitingForHost = waitingForHost(),
                 versionMismatch = versionMismatch,
                 pausedLocally = pausedLocally,
                 track = r.track,
@@ -1121,12 +1114,11 @@ class ListenTogetherSession(
         const val LEAVE_GRACE_MS = 15_000L
         const val JOIN_LEAD_MS = 1_000L
         /**
-         * How long a host's phone keeps looking for a song the room is already playing for someone else ([watchHostLate]):
-         * past the room's 8 s prepare window, at most this many seconds of the song for the guests on their own. A
-         * resolve that lands in time costs the host at most this plus [JOIN_LEAD_MS] and a second's rounding of the song's
-         * start; one that never will (no source has it: every source is tried and retried, ~40 s) is skipped for everyone.
+         * How long the room waits for the host's phone to get a song before it is skipped for everyone
+         * ([giveUpIfStillLooking]). Keep in sync with HOST_PREPARE_MS in room.js, whose own cap (HOST_WAIT_CAP_MS, 25 s)
+         * only ends the wait for a host that never says.
          */
-        const val HOST_LATE_GRACE_MS = 4_000L
+        const val HOST_PREPARE_MS = 20_000L
         const val DRIFT_TICK_MS = 1_000L
         const val SEEK_HOLD_MS = 2_000L
         const val FIRST_PINGS = 5

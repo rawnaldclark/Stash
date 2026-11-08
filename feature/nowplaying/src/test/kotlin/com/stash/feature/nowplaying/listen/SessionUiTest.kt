@@ -2,7 +2,9 @@ package com.stash.feature.nowplaying.listen
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.media.listen.SessionEvent
+import com.stash.core.model.listen.RoomMember
 import com.stash.core.model.share.SharedTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -149,5 +151,19 @@ class SessionUiTest {
         val before = listOf(a, b, c, d)
         val now = listOf(a, c, d) // b left
         assertEquals(listOf(a, d, c), now.withMove(uid(before, d), listOf(uid(before, a), uid(before, b))))
+    }
+
+    private fun guestRoom(waitingForHost: Boolean, unavailable: Boolean = false) = ListenTogetherState.InRoom(
+        code = "K7QA2PXM", url = "https://stashfm.app/l/K7QA2PXM", myId = "me", isHost = false, hostId = "h",
+        members = listOf(RoomMember("h", "Pixel5", 1, "buffering"), RoomMember("me", "Me", 2, "ok")), suggestions = emptyList(),
+        waitingForHost = waitingForHost, unavailable = unavailable,
+    )
+
+    @Test
+    fun `a guest whose song the room holds for the host's phone is told who it waits for`() {
+        assertEquals("Waiting for Pixel5…", sessionSubtitle(guestRoom(waitingForHost = true)))
+        assertEquals("Pixel5 is hosting", sessionSubtitle(guestRoom(waitingForHost = false)))
+        // This phone's own trouble still comes first.
+        assertEquals("This song isn't available to you", sessionSubtitle(guestRoom(waitingForHost = true, unavailable = true)))
     }
 }

@@ -154,22 +154,29 @@ internal fun sessionTitle(room: ListenTogetherState.InRoom): String {
     return if (others.isEmpty()) "Waiting for friends to join" else "Listening with ${nameList(others.map { it.name ?: "Someone" })}"
 }
 
-/** "Listening with Maya, Sam": who's here, who hosts. Tapping it opens the Session sheet. */
-@Composable
-fun SessionBar(room: ListenTogetherState.InRoom, onClick: () -> Unit, modifier: Modifier = Modifier) {
+/** The bar's second line. This song's trouble outranks who hosts: the faces' amber ring already says that. */
+internal fun sessionSubtitle(room: ListenTogetherState.InRoom): String {
     val host = room.members.firstOrNull { it.id == room.hostId }
-    val title = sessionTitle(room)
     val waiting = if (room.isHost) room.suggestions.size else 0
-    // This song's trouble outranks who hosts: the faces' amber ring already says that.
-    val subtitle = when {
+    return when {
         room.reconnecting -> "Reconnecting…"
         room.unavailable -> "This song isn't available to you"
+        // The room holds a song until the host's phone has it: why this phone, ready, shows a spinner.
+        room.waitingForHost -> "Waiting for ${host?.name ?: "the host"}…"
         room.versionMismatch -> "Your version may be seconds off" // the longer spec wording didn't fit the bar
         waiting > 0 -> if (waiting == 1) "1 suggestion waiting" else "$waiting suggestions waiting"
         room.isHost -> "You're hosting · ${room.members.size} in the room"
         host != null -> "${host.name ?: "Someone"} is hosting"
         else -> "The host will be right back"
     }
+}
+
+/** "Listening with Maya, Sam": who's here, who hosts. Tapping it opens the Session sheet. */
+@Composable
+fun SessionBar(room: ListenTogetherState.InRoom, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val title = sessionTitle(room)
+    val waiting = if (room.isHost) room.suggestions.size else 0
+    val subtitle = sessionSubtitle(room)
     val shape = RoundedCornerShape(18.dp)
     Row(
         modifier = modifier

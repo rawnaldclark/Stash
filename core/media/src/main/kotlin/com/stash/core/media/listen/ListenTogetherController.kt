@@ -36,6 +36,8 @@ sealed interface ListenTogetherState {
         val reconnecting: Boolean = false,
         /** "This song isn't available to you". */
         val unavailable: Boolean = false,
+        /** "Waiting for Rawn…": this guest has the song, and the room is holding it until the host's phone has it too. */
+        val waitingForHost: Boolean = false,
         /** "Your version may be a few seconds off": duration differs from the host's by over 2 s (spec §4). */
         val versionMismatch: Boolean = false,
         /** Paused on this phone by an unplug or a call while the room plays on: "Paused — tap to rejoin". */
