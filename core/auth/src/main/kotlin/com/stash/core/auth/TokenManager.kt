@@ -171,6 +171,19 @@ interface TokenManager {
     suspend fun connectSpotifyWithCookie(spDcCookie: String, username: String = ""): SpotifyConnectResult
 
     /**
+     * [connectSpotifyWithCookie] for a sign-in [validateSpotifyCookie] already checked: the same
+     * account-swap guard (a different account than the connected one is refused, with nothing
+     * written; one that can't be told is saved) and the same save, judged on the accounts that
+     * check found, with NO second token exchange. Spotify rate-limits that exchange: a second one
+     * right after the first can come back 429 and read as an invalid cookie. For a caller that had
+     * to know whose the sign-in is before connecting it (Settings, while other Spotify accounts are
+     * added). Never [SpotifyConnectResult.Invalid]: the check already found the session working.
+     *
+     * @param username As [connectSpotifyWithCookie]'s.
+     */
+    suspend fun connectSpotifyWithSignIn(signIn: ValidatedSpotifySignIn, username: String = ""): SpotifyConnectResult
+
+    /**
      * Learns and records which Spotify account the stored sign-in belongs to, when that isn't
      * known yet (signed in before Stash recorded it). Without it, a later sign-in as another
      * account couldn't be told apart, so the account-swap guard couldn't refuse it. Called while

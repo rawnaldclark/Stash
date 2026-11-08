@@ -69,10 +69,15 @@ sealed interface SpotifyConnectResult {
  *
  * @property account Whose account the cookie signs in to, as Spotify's own profile names it. Null when
  *   Spotify didn't say in time; such a sign-in can't be saved as an extra (its rows are tagged by this id).
+ * @property connected The main (connected) account as the check found it: null when none was connected
+ *   or it couldn't be told. [com.stash.core.auth.TokenManager.connectSpotifyWithSignIn]'s account-swap
+ *   guard judges by it, as [com.stash.core.auth.TokenManager.connectSpotifyWithCookie]'s judges by its own
+ *   lookup.
  */
 class ValidatedSpotifySignIn internal constructor(
     internal val token: ServiceToken,
     val account: com.stash.core.auth.spotify.SpotifyProfile?,
+    internal val connected: com.stash.core.auth.spotify.SpotifyProfile? = null,
 ) {
     override fun toString(): String = "ValidatedSpotifySignIn(identified=${account != null})"
 }

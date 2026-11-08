@@ -1333,8 +1333,10 @@ class SettingsViewModel @Inject constructor(
                 it.copy(isSpotifyCookieValidating = true, spotifyCookieError = null)
             }
 
-            when (val precheck = precheckSpotifyConnect(cookie)) {
-                MainConnectPrecheck.Proceed -> Unit
+            // Null: connect from the cookie. Checked already: from that check, no second token exchange.
+            val checked: com.stash.core.auth.model.ValidatedSpotifySignIn? = when (val precheck = precheckSpotifyConnect(cookie)) {
+                MainConnectPrecheck.ConnectCookie -> null
+                is MainConnectPrecheck.ConnectChecked -> precheck.signIn
                 is MainConnectPrecheck.Failed -> {
                     _localState.update { it.copy(spotifyCookieError = precheck.message, isSpotifyCookieValidating = false) }
                     return@launch
@@ -1350,7 +1352,14 @@ class SettingsViewModel @Inject constructor(
                 }
             }
 
-            when (val result = connectGuarded { tokenManager.connectSpotifyWithCookie(cookie, username) }) {
+            val connected = connectGuarded {
+                if (checked == null) {
+                    tokenManager.connectSpotifyWithCookie(cookie, username)
+                } else {
+                    tokenManager.connectSpotifyWithSignIn(checked, username)
+                }
+            }
+            when (val result = connected) {
                 SpotifyConnectResult.Connected -> {
                     // A fresh sp_dc renews the session the last sync found expired.
                     syncStateManager.clearAuthExpiry(spotify = true)
@@ -1411,7 +1420,11 @@ class SettingsViewModel @Inject constructor(
 
     /** What [precheckSpotifyConnect] found. */
     private sealed interface MainConnectPrecheck {
-        data object Proceed : MainConnectPrecheck
+        /** No other accounts: connect from the cookie, exactly as before they existed. */
+        data object ConnectCookie : MainConnectPrecheck
+
+        /** Checked, and not one of the other accounts (or not identified): connect [signIn]. */
+        data class ConnectChecked(val signIn: com.stash.core.auth.model.ValidatedSpotifySignIn) : MainConnectPrecheck
 
         /** The sign-in is one of the other accounts, [name]: refused. */
         data class AlreadyOther(val name: String) : MainConnectPrecheck
@@ -1427,7 +1440,9 @@ class SettingsViewModel @Inject constructor(
      * identified here first ([TokenManager.validateSpotifyCookie], which saves nothing), only while
      * there are other accounts at all: with none, the connect runs exactly as before. A check that
      * can't tell whose account it is lets the connect go ahead, as the account-swap guard does: a
-     * guard that can't see must not lock anyone out.
+     * guard that can't see must not lock anyone out. A sign-in it checked is connected from that
+     * check ([TokenManager.connectSpotifyWithSignIn]): one token exchange, not two, so a rate-limited
+     * second exchange can't turn a good cookie into "invalid".
      */
     private suspend fun precheckSpotifyConnect(cookie: String): MainConnectPrecheck {
         val anyOther = try {
@@ -1438,7 +1453,7 @@ class SettingsViewModel @Inject constructor(
             android.util.Log.w("SettingsViewModel", "couldn't read the other Spotify accounts; connecting unchecked", e)
             false
         }
-        if (!anyOther) return MainConnectPrecheck.Proceed
+        if (!anyOther) return MainConnectPrecheck.ConnectCookie
         return when (val check = connectGuarded { tokenManager.validateSpotifyCookie(cookie.trim()) }) {
             null -> MainConnectPrecheck.Failed(CONNECT_SAVE_FAILED)
             com.stash.core.auth.model.SpotifyCookieCheck.Invalid -> MainConnectPrecheck.Failed(SPOTIFY_COOKIE_INVALID)
@@ -1453,7 +1468,7 @@ class SettingsViewModel @Inject constructor(
                         null
                     }
                 }
-                if (other != null) MainConnectPrecheck.AlreadyOther(other.label) else MainConnectPrecheck.Proceed
+                if (other != null) MainConnectPrecheck.AlreadyOther(other.label) else MainConnectPrecheck.ConnectChecked(check.signIn)
             }
         }
     }

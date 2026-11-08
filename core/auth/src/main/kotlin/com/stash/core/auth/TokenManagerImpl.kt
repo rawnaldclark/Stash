@@ -367,10 +367,32 @@ class TokenManagerImpl @Inject constructor(
      */
     override suspend fun connectSpotifyWithCookie(spDcCookie: String, username: String): SpotifyConnectResult {
         val token = spotifyAuthManager.getAccessToken(spDcCookie) ?: return SpotifyConnectResult.Invalid
+        val clientId = token.scope.split(SpotifyAuthManager.SCOPE_DELIMITER).getOrNull(1) ?: ""
+        val (incoming, connected) = identifySpotifyAccounts(token.accessToken, clientId)
+        return connectSpotify(token, incoming, connected, username)
+    }
 
+    /**
+     * The sign-in [validateSpotifyCookie] checked, connected as [connectSpotifyWithCookie] would
+     * connect it: the token and both accounts are the ones that check found ([identifySpotifyAccounts]
+     * ran there, with the same budget and the same recording of a learned main account), so the
+     * guard decides exactly as it would have, without a second token exchange.
+     */
+    override suspend fun connectSpotifyWithSignIn(signIn: ValidatedSpotifySignIn, username: String): SpotifyConnectResult =
+        connectSpotify(signIn.token, signIn.account, signIn.connected, username)
+
+    /**
+     * The account-swap guard and the save, shared by both connects: [incoming] is whose [token]
+     * is, [connected] whose the stored sign-in is (null when either can't be told).
+     */
+    private suspend fun connectSpotify(
+        token: ServiceToken,
+        incoming: SpotifyProfile?,
+        connected: SpotifyProfile?,
+        username: String,
+    ): SpotifyConnectResult {
         val scopeParts = token.scope.split(SpotifyAuthManager.SCOPE_DELIMITER)
         val clientId = scopeParts.getOrNull(1) ?: ""
-        val (incoming, connected) = identifySpotifyAccounts(token.accessToken, clientId)
 
         if (connected != null && incoming != null && !connected.isSameAccount(incoming)) {
             Log.w("StashSync", "connectSpotifyWithCookie: refused, a different account than the connected one")
@@ -633,7 +655,7 @@ class TokenManagerImpl @Inject constructor(
         )
         val isMainAccount = if (incoming != null && main != null) main.isSameAccount(incoming) else null
         Log.d("StashSync", "validateSpotifyCookie: identified=${incoming != null}, isMain=$isMainAccount")
-        return SpotifyCookieCheck.Valid(ValidatedSpotifySignIn(token, incoming), isMainAccount)
+        return SpotifyCookieCheck.Valid(ValidatedSpotifySignIn(token, incoming, connected = main), isMainAccount)
     }
 
     override suspend fun saveSpotifyExtra(account: SpotifyAccount, signIn: ValidatedSpotifySignIn): Boolean {

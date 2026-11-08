@@ -526,10 +526,13 @@ class SettingsViewModelTest {
     private fun otherAccount(id: Long, userId: String, label: String) =
         com.stash.core.data.db.entity.SpotifyAccountEntity(id = id, userId = userId, label = label, addedAt = id)
 
-    /** A cookie that signs in as [userId] ([ValidatedSpotifySignIn] can only be made by core:auth). */
-    private fun signedInAs(userId: String, isMain: Boolean? = false): com.stash.core.auth.model.SpotifyCookieCheck.Valid {
+    /**
+     * A cookie that signs in as [userId] (null: Spotify didn't say whose). [ValidatedSpotifySignIn]
+     * can only be made by core:auth.
+     */
+    private fun signedInAs(userId: String?, isMain: Boolean? = false): com.stash.core.auth.model.SpotifyCookieCheck.Valid {
         val signIn = mockk<com.stash.core.auth.model.ValidatedSpotifySignIn> {
-            every { account } returns com.stash.core.auth.spotify.SpotifyProfile(userId, userId.replaceFirstChar { it.uppercase() })
+            every { account } returns userId?.let { com.stash.core.auth.spotify.SpotifyProfile(it, it.replaceFirstChar { c -> c.uppercase() }) }
         }
         return com.stash.core.auth.model.SpotifyCookieCheck.Valid(signIn, isMain)
     }
@@ -551,11 +554,12 @@ class SettingsViewModelTest {
         assertThat(vm.spotifyAlreadyOtherAccount.value).isNull()
     }
 
-    @Test fun `with other accounts, a Connect as a new account connects as before`() = runTest {
+    @Test fun `with other accounts, a Connect as a new account connects from the one check`() = runTest {
         coEvery { spotifyAccountDao.count() } returns 1
-        coEvery { tokenManager.validateSpotifyCookie("rawn-cookie") } returns signedInAs("rawn", isMain = true)
+        val check = signedInAs("rawn", isMain = true)
+        coEvery { tokenManager.validateSpotifyCookie("rawn-cookie") } returns check
         coEvery { spotifyAccountDao.findByAccount("rawn") } returns null
-        coEvery { tokenManager.connectSpotifyWithCookie("rawn-cookie", "") } returns
+        coEvery { tokenManager.connectSpotifyWithSignIn(any(), any()) } returns
             com.stash.core.auth.model.SpotifyConnectResult.Connected
         val vm = newVm()
 
@@ -563,7 +567,42 @@ class SettingsViewModelTest {
         advanceUntilIdle()
 
         assertThat(vm.spotifyAlreadyOtherAccount.value).isNull()
-        coVerify(exactly = 1) { tokenManager.connectSpotifyWithCookie("rawn-cookie", "") }
+        // One token exchange: the check's. A second one (a 429 away from "invalid") is never made.
+        coVerify(exactly = 1) { tokenManager.validateSpotifyCookie(any()) }
+        coVerify(exactly = 1) { tokenManager.connectSpotifyWithSignIn(check.signIn, "") }
+        coVerify(exactly = 0) { tokenManager.connectSpotifyWithCookie(any(), any()) }
+        coVerify(exactly = 1) { likeCoordinator.retry(com.stash.core.data.social.Destination.SPOTIFY) }
+    }
+
+    @Test fun `with other accounts, a sign-in Spotify didn't name still connects, as the guard lets it`() = runTest {
+        coEvery { spotifyAccountDao.count() } returns 1
+        val check = signedInAs(null, isMain = null)
+        coEvery { tokenManager.validateSpotifyCookie(any()) } returns check
+        coEvery { tokenManager.connectSpotifyWithSignIn(any(), any()) } returns
+            com.stash.core.auth.model.SpotifyConnectResult.Connected
+        val vm = newVm()
+
+        vm.onConnectSpotifyWithCookie("rawn-cookie", "Rawn's phone")
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { spotifyAccountDao.findByAccount(any()) }
+        coVerify(exactly = 1) { tokenManager.connectSpotifyWithSignIn(check.signIn, "Rawn's phone") }
+        assertThat(vm.spotifyAlreadyOtherAccount.value).isNull()
+    }
+
+    @Test fun `with other accounts, the checked sign-in as a different account is still refused`() = runTest {
+        coEvery { spotifyAccountDao.count() } returns 1
+        coEvery { tokenManager.validateSpotifyCookie(any()) } returns signedInAs("kim", isMain = false)
+        coEvery { spotifyAccountDao.findByAccount("kim") } returns null
+        coEvery { tokenManager.connectSpotifyWithSignIn(any(), any()) } returns
+            com.stash.core.auth.model.SpotifyConnectResult.DifferentAccount(connectedName = "Rawn", attemptedName = "Kim")
+        val vm = newVm()
+
+        vm.onConnectSpotifyWithCookie("kim-cookie", "")
+        advanceUntilIdle()
+
+        assertThat(vm.spotifyAccountMismatch.value).isEqualTo(SpotifyAccountMismatch("Rawn", "Kim"))
+        coVerify(exactly = 0) { likeCoordinator.retry(any()) }
     }
 
     @Test fun `with no other accounts, the Connect isn't checked first`() = runTest {
