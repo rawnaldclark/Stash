@@ -843,6 +843,10 @@ class PlaylistFetchWorker @AssistedInject constructor(
      * account at all (a removed one, or one a backup carried in) goes to the account that lists
      * it, as it always did. With no extra accounts there is nothing to do, and this isn't called.
      *
+     * Only an extra's snapshot is ever tagged back. One from the main account always moves the
+     * row to the main: a playlist the main lists settles on it (plan 2026-11-04 §2.4, §3.5), and
+     * the main is never removed, so the row can't then be hidden with an extra that wasn't read.
+     *
      * Not caught: a snapshot left over a row it would wrongly take must never reach the diff, so
      * a failure here fails the fetch (and the chain) instead.
      */

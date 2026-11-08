@@ -28,9 +28,10 @@ interface RemoteSnapshotDao {
     suspend fun insertPlaylistSnapshots(snapshots: List<RemotePlaylistSnapshotEntity>): List<Long>
 
     /**
-     * This sync's Spotify snapshots that would move a row to another account at the diff: the
-     * row (source SPOTIFY, same key) is tagged with an account other than the snapshot's
-     * (`spotify_account`, null = the main). Liked Songs never: each account has its own row.
+     * This sync's EXTRA-account Spotify snapshots that would move a row to another account at the
+     * diff: the row (source SPOTIFY, same key) is tagged with an account other than the snapshot's
+     * (`spotify_account`, null = the main). Liked Songs never: each account has its own row. The
+     * main account's snapshots never: what the main lists settles on it (plan 2026-11-04 §2.4).
      */
     @Query(
         """
@@ -39,6 +40,7 @@ interface RemoteSnapshotDao {
         JOIN playlists p ON p.source_id = s.source_playlist_id
         WHERE s.sync_id = :syncId AND s.source = 'SPOTIFY' AND p.source = 'SPOTIFY'
           AND s.playlist_type != 'LIKED_SONGS'
+          AND s.spotify_account IS NOT NULL
           AND p.spotify_account IS NOT s.spotify_account
         """
     )

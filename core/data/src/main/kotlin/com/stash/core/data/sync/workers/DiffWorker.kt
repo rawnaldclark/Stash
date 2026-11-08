@@ -89,9 +89,10 @@ internal fun pinOnDiscovery(
  * SPOTIFY) whose tag differs: a row under the same key from anywhere else (a pasted link, source
  * BOTH) or another service's never takes an account. The main account's pass runs first and
  * claims what it lists, so a playlist two accounts follow is only ever snapshotted by the main,
- * and settles on it. The fetch tags a snapshot back to the row's account when that account's
- * listing wasn't whole this sync (PlaylistFetchWorker.keepRowsWithUnprovenOwners), so a row only
- * moves away from an account whose listing proved it no longer has it.
+ * and settles on it. The fetch tags an extra's snapshot back to the row's account when that
+ * account's listing wasn't whole this sync (PlaylistFetchWorker.keepRowsWithUnprovenOwners), so a
+ * row only moves to an extra away from an account whose listing proved it no longer has it. A
+ * snapshot from the main always takes the row.
  */
 internal fun movesToSnapshotAccount(row: PlaylistEntity, snapshot: RemotePlaylistSnapshotEntity): Boolean =
     snapshot.source == MusicSource.SPOTIFY && row.source == MusicSource.SPOTIFY &&

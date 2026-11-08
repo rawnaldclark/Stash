@@ -299,6 +299,20 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
         assertTrue(db.playlistDao().getById(t)!!.isActive)
     }
 
+    @Test fun `the main takes over a row it lists from an extra that wasn't read, and removing that extra keeps it`() = runBlocking {
+        val bRow = addExtra(userB)
+        library(null).playlists += "p"
+        library(userB).playlists += "p"
+        val p = insertRow("p", owner = userB)
+        tokens.dead += userB
+
+        runDiff(runFetch())
+
+        assertNull("the main lists it: the main's now", db.playlistDao().getById(p)!!.spotifyAccount)
+        SpotifyExtraAccountRemover(db, tokens).remove(bRow)
+        assertTrue("the main still follows it", db.playlistDao().getById(p)!!.isActive)
+    }
+
     @Test fun `a row whose account is gone goes to the account that lists it`() = runBlocking {
         addExtra(userB)
         library(userB).playlists += "o"
