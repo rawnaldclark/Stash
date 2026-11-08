@@ -136,6 +136,16 @@ internal fun yourStashUi(
 }
 
 /**
+ * A cloud account row's second line. Signed out it drops the address, unless the provider has [several]
+ * accounts: two rows must never read the same.
+ */
+internal fun cloudRowSubtitle(row: CloudAccountRow, several: Boolean, signedOut: String): String = when {
+    row.signedIn -> row.account.label
+    several -> "${row.account.label} · $signedOut"
+    else -> signedOut
+}
+
+/**
  * What a device row's second line says. The age is measured against [serverTime], the server's clock when the list was
  * read, so a phone with a wrong clock still says "today" for a browser used today. Moved here unchanged from the old
  * Link Stash on the web screen.

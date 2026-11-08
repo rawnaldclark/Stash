@@ -1099,6 +1099,31 @@
     <string name="settings_cloud_gdrive_add_songs_title">Add songs from Google Drive</string>
     <string name="settings_cloud_gdrive_add_songs_subtitle">Stash sees only the songs you pick.</string>
     <string name="settings_cloud_gdrive_account_unidentified">Google didn\'t say which account this is, so Stash can\'t keep it apart from your other Google Drive account.</string>
+    <string name="settings_cloud_gdrive_add_account_title">Add another Google account</string>
+    <string name="settings_cloud_gdrive_add_account_subtitle">You pick the account, then its songs.</string>
+    <string name="settings_cloud_gdrive_already_connected">Already connected as %1$s.</string>
+    <plurals name="settings_cloud_gdrive_already_connected_adding">
+        <item quantity="one">Already connected as %1$s. Adding %2$d song.</item>
+        <item quantity="other">Already connected as %1$s. Adding %2$d songs.</item>
+    </plurals>
+    <string name="settings_cloud_gdrive_save_here_title">Save and back up to this account</string>
+    <string name="settings_cloud_gdrive_saving_to">Saves and backup go to %1$s from now on. Songs already saved stay where they are.</string>
+    <plurals name="settings_cloud_gdrive_waiting_on">
+        <item quantity="one">%1$d song is waiting on %2$s.</item>
+        <item quantity="other">%1$d songs are waiting on %2$s.</item>
+    </plurals>
+    <plurals name="settings_cloud_gdrive_already_in">
+        <item quantity="one">%1$d song is already in %2$s.</item>
+        <item quantity="other">%1$d songs are already in %2$s.</item>
+    </plurals>
+    <plurals name="settings_cloud_gdrive_waiting_for_reconnect">
+        <item quantity="one">%1$d song is waiting for a reconnect</item>
+        <item quantity="other">%1$d songs are waiting for a reconnect</item>
+    </plurals>
+    <string name="settings_cloud_disconnected">%1$s disconnected.</string>
+    <string name="settings_cloud_disconnect_failed">Couldn\'t disconnect %1$s. Try again.</string>
+    <string name="settings_cloud_folder_removed">Folder removed.</string>
+    <string name="settings_cloud_folder_remove_failed">Couldn\'t remove this folder. Try again.</string>
     <string name="settings_cloud_folder_add_title">Add a music folder</string>
     <string name="settings_cloud_folder_add_subtitle">Read-only. Your files stay as they are.</string>
     <string name="settings_cloud_disconnect_dialog_title">Disconnect %1$s?</string>
@@ -1112,6 +1137,8 @@
         <item quantity="other">%d downloaded songs stay on this phone.</item>
     </plurals>
     <string name="settings_cloud_disconnect_dialog_gdrive_pending">Songs waiting to be saved to it won\'t be.</string>
+    <string name="settings_cloud_disconnect_dialog_backup_off">Backup turns off until you turn it on for another account.</string>
+    <string name="settings_cloud_disconnect_dialog_saves_move">Save to Google Drive will use %1$s.</string>
     <string name="settings_cloud_disconnect_dialog_untouched">Your files in %1$s are not touched.</string>
 
     <string name="settings_cloud_folders_section_title">Cloud folders</string>

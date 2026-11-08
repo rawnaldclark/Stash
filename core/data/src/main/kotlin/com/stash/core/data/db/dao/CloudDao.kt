@@ -55,6 +55,9 @@ data class LinkedDownloadVersion(val version: String, val trackId: Long)
 /** How many of an account's upload rows are in one [CloudUploadState]. */
 data class CloudUploadCount(val state: String, val count: Int)
 
+/** How many songs of a save have their upload row on [accountId], and how many of those have a file there. */
+data class CloudUploadsElsewhere(val accountId: Long, val songs: Int, val inDrive: Int)
+
 /** What removing cloud songs did: rows deleted, and downloaded songs kept as local files. */
 data class CloudRemoval(val deletedTracks: Int, val keptAsLocal: Int)
 
@@ -520,9 +523,24 @@ interface CloudDao {
     )
     suspend fun moveWaitingBackups(accountId: Long, now: Long): Int
 
+    /** Where [trackIds] went instead of [accountId]: their rows on other accounts, by account. */
+    @Query(
+        """
+        SELECT u.account_id AS accountId, COUNT(*) AS songs,
+            SUM(EXISTS (SELECT 1 FROM cloud_items i WHERE i.track_id = u.track_id AND i.account_id = u.account_id)) AS inDrive
+        FROM cloud_uploads u
+        WHERE u.track_id IN (:trackIds) AND u.account_id != :accountId
+        GROUP BY u.account_id
+        """,
+    )
+    suspend fun uploadsElsewhere(trackIds: List<Long>, accountId: Long): List<CloudUploadsElsewhere>
+
     /**
-     * Queues [trackIds] (already checked uploadable) for [accountId]. A song already queued stays
-     * as it is; any other row (saved before, skipped, failed, waiting) is queued again: the worker
+     * Queues [trackIds] (already checked uploadable) for [accountId]. A song still waiting on
+     * another account with nothing sent yet (queued there, no upload session open) moves here, as
+     * backup's waiting songs move when the choice changes: its session fields are cleared and it
+     * starts fresh. One part-way through an upload there (a session open) stays and finishes there:
+     * nothing is cancelled. Any other row (saved before, skipped, failed, waiting) is queued again: the worker
      * finds a copy still in Drive by its tag and only links it again. A song already in another
      * Drive (saved there, or linked to a file there by that Drive's scan) is checked there, never
      * copied here: a song lives in one Drive, and a second copy would come back from the first
@@ -543,7 +561,16 @@ interface CloudDao {
                         origin = origin, queuedAt = now, updatedAt = now,
                     ),
                 )
-                row.state == CloudUploadState.QUEUED.name -> continue
+                row.state == CloudUploadState.QUEUED.name -> {
+                    val target = home ?: accountId
+                    if (row.accountId == target || row.sessionUri != null) continue
+                    updateUpload(
+                        row.copy(
+                            accountId = target, origin = origin, updatedAt = now, attempts = 0, error = null,
+                            sessionUri = null, sessionSize = null, sessionMd5 = null, bytesSent = 0,
+                        ),
+                    )
+                }
                 else -> {
                     val target = home ?: if (row.state == CloudUploadState.DONE.name) row.accountId else accountId
                     updateUpload(

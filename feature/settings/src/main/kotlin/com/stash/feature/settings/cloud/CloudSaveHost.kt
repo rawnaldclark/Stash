@@ -1,5 +1,6 @@
 package com.stash.feature.settings.cloud
 
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -14,9 +15,12 @@ import androidx.lifecycle.viewModelScope
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.CloudProvider
 import com.stash.core.ui.components.CloudSaveTarget
+import com.stash.core.ui.components.LocalAppSnackbar
 import com.stash.core.ui.components.LocalSaveToCloud
 import com.stash.data.cloud.CloudLibrary
 import com.stash.data.cloud.upload.CloudUploads
+import com.stash.data.cloud.upload.SavedElsewhere
+import com.stash.feature.settings.R
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -29,6 +33,24 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+/**
+ * A save's toast: [message] in words already ([CloudUploads.message]), then where songs stayed, whose
+ * words live in string resources.
+ */
+data class CloudSaveToast(val message: String, val elsewhere: List<SavedElsewhere> = emptyList())
+
+/** A [CloudSaveToast] in words: "Saving 2 songs. 3 songs are waiting on ron@gmail.com." */
+internal fun CloudSaveToast.text(context: Context): String {
+    val resources = context.resources
+    val stayed = elsewhere.flatMap { place ->
+        listOfNotNull(
+            resources.getQuantityString(R.plurals.settings_cloud_gdrive_waiting_on, place.waiting, place.waiting, place.account).takeIf { place.waiting > 0 },
+            resources.getQuantityString(R.plurals.settings_cloud_gdrive_already_in, place.inDrive, place.inDrive, place.account).takeIf { place.inDrive > 0 },
+        )
+    }
+    return (listOf(message) + stayed).filter { it.isNotEmpty() }.joinToString(" ")
+}
 
 /**
  * Behind every "Save to Google Drive" menu entry: whether there is a Drive to save to, and the
@@ -47,18 +69,18 @@ class CloudSaveViewModel @Inject constructor(
         .map { list -> uploads.available && list.any { it.provider == CloudProvider.GOOGLE_DRIVE } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
-    val messages: SharedFlow<String> = _messages.asSharedFlow()
+    private val _messages = MutableSharedFlow<CloudSaveToast>(extraBufferCapacity = 4)
+    val messages: SharedFlow<CloudSaveToast> = _messages.asSharedFlow()
 
     fun save(target: CloudSaveTarget) {
         viewModelScope.launch {
             val message = try {
-                CloudUploads.message(uploads.save(trackIds(target)))
+                uploads.save(trackIds(target)).let { CloudSaveToast(CloudUploads.message(it), it.elsewhere) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 android.util.Log.w("CloudSave", "save to Drive failed: ${e.javaClass.simpleName}")
-                "Couldn't save to Google Drive. Try again."
+                CloudSaveToast("Couldn't save to Google Drive. Try again.")
             }
             _messages.tryEmit(message)
         }
@@ -74,7 +96,7 @@ class CloudSaveViewModel @Inject constructor(
 
 /**
  * Provides [LocalSaveToCloud] to [content] while Google Drive is connected (so the menus show
- * "Save to Google Drive"), and toasts what each save did.
+ * "Save to Google Drive"), and says what each save did.
  */
 @Composable
 fun CloudSaveHost(
@@ -83,9 +105,25 @@ fun CloudSaveHost(
 ) {
     val connected by viewModel.connected.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    LaunchedEffect(viewModel) {
-        viewModel.messages.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+    val show = rememberCloudMessages()
+    LaunchedEffect(viewModel, show) {
+        viewModel.messages.collect { show(it.text(context)) }
     }
     val save = remember(viewModel) { viewModel::save }
     CompositionLocalProvider(LocalSaveToCloud provides if (connected) save else null) { content() }
+}
+
+/**
+ * Shows a cloud message on the app's snackbar, which wraps to as many lines as it needs. A toast is
+ * cut to two lines, and these messages carry email addresses: "Saving 2 songs. 3 songs are waiting
+ * on ron.clark@gmail.com." lost its end, the part that matters. A toast only where there's no
+ * snackbar (a preview, a test).
+ */
+@Composable
+internal fun rememberCloudMessages(): (String) -> Unit {
+    val snackbar = LocalAppSnackbar.current
+    val context = LocalContext.current
+    return remember(snackbar, context) {
+        if (snackbar != null) snackbar::show else { text -> Toast.makeText(context, text, Toast.LENGTH_LONG).show() }
+    }
 }

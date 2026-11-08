@@ -9,6 +9,8 @@ android {
             // Return Kotlin defaults from stubbed Android SDK methods so
             // android.util.Log calls in production code don't throw in JVM tests.
             isReturnDefaultValues = true
+            // The cloud cards' tests draw real strings and logos under Robolectric.
+            isIncludeAndroidResources = true
         }
     }
 }
@@ -52,4 +54,9 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
     testImplementation(libs.truth)
     testImplementation(libs.mockk)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("androidx.compose.ui:ui-test-manifest")
 }

@@ -2,6 +2,7 @@ package com.stash.data.cloud.provider.gdrive
 
 import com.stash.core.data.db.dao.CloudDao
 import com.stash.core.data.db.entity.CloudAccountEntity
+import com.stash.core.data.db.entity.CloudScanStatus
 import com.stash.core.model.CloudProvider
 import com.stash.data.cloud.auth.CloudTokenManager
 import com.stash.data.cloud.auth.TokenResult
@@ -18,7 +19,11 @@ sealed interface GooglePickOutcome {
         val isNewAccount: Boolean,
         val added: Int,
         val alreadyThere: Int,
-    ) : GooglePickOutcome
+        val email: String? = null,
+    ) : GooglePickOutcome {
+        /** What tells this account apart from another: its email, when it has one. */
+        val label: String get() = email ?: displayName
+    }
 
     data object Cancelled : GooglePickOutcome
     data class Failed(val message: String) : GooglePickOutcome
@@ -100,11 +105,12 @@ class GoogleDrivePicks(
         // (the same bytes, a saved copy not linked yet) is recognised by the scan and linked.
         val known = dao.accountItemIds(accountId).toSet()
         val fresh = fileIds.filter { it !in known }
-        if (fresh.isNotEmpty()) {
-            store.add(folderId, fresh)
-            scanNow(folderId)
-        }
-        return GooglePickOutcome.Added(accountId, who.displayName, existing == null, fresh.size, fileIds.size - fresh.size)
+        if (fresh.isNotEmpty()) store.add(folderId, fresh)
+        // A Reconnect: rows a lost sign-in turned red ("Sign-in expired") would otherwise stay red
+        // next to a card that says connected, until the next scan up to 12 hours away.
+        val red = if (existing == null) emptyList() else dao.getFolders(accountId).filter { it.lastScanStatus == CloudScanStatus.ERROR.name }.map { it.id }
+        (red + listOfNotNull(folderId.takeIf { fresh.isNotEmpty() })).distinct().forEach { scanNow(it) }
+        return GooglePickOutcome.Added(accountId, who.displayName, existing == null, fresh.size, fileIds.size - fresh.size, email)
     }
 
     /** The account's picks folder row, made on first use. */
