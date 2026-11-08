@@ -216,6 +216,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
     private val spotifySavedAlbums: com.stash.core.data.sync.SpotifySavedAlbumsFetcher? = null,
     /** The extra Spotify accounts (plan 2026-11-04): each gets its own pass after the main's. */
     private val spotifyAccountDao: com.stash.core.data.db.dao.SpotifyAccountDao? = null,
+    /** The clock of [EXTRA_ACCOUNTS_BACKGROUND_BUDGET_MS]; the phone's own when not given (tests give theirs). */
+    syncClock: com.stash.core.data.sync.SyncElapsedClock? = null,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -250,6 +252,16 @@ class PlaylistFetchWorker @AssistedInject constructor(
 
         /** Snapshot ids bound in one re-tag write, well inside SQLite's bind limit. */
         private const val SNAPSHOT_IDS_PER_WRITE = 500
+
+        /**
+         * How long a sync running in the background may have run before the extra Spotify
+         * accounts are left for the next sync. Android 12+ stops a background job at about 10
+         * minutes, and a scheduled sync can't go foreground ([promoteToForeground]): stopped, it
+         * starts again from scratch, and an extra's first sync (every playlist read) could be
+         * stopped every time. What is left of the 10 minutes is for YouTube, SoundCloud and the
+         * rest. A sync in the foreground has no limit, as before.
+         */
+        internal const val EXTRA_ACCOUNTS_BACKGROUND_BUDGET_MS = 6 * 60 * 1000L
 
         // Shared reason string for auth-expiry short-circuit so the
         // sync_history FAILED row and the SyncStateManager onError call
@@ -286,6 +298,23 @@ class PlaylistFetchWorker @AssistedInject constructor(
     /** The Spotify sync mode this run read, handed to the diff ([KEY_SPOTIFY_SYNC_MODE]). */
     @Volatile
     private var spotifySyncModeThisRun: SyncMode? = null
+
+    private val clock = syncClock ?: com.stash.core.data.sync.SyncElapsedClock()
+
+    /** When [doWork] started, on [clock]: the system's job limit counts from about here. */
+    @Volatile
+    private var startedAtMs = 0L
+
+    /** Whether [promoteToForeground] worked: a foreground sync has no job time limit. */
+    @Volatile
+    private var inForeground = false
+
+    /**
+     * Whether a background sync has used [EXTRA_ACCOUNTS_BACKGROUND_BUDGET_MS]: the extra Spotify
+     * accounts not read yet wait for the next sync, and one being read stops before its next read.
+     */
+    private fun outOfTimeForExtraAccounts(): Boolean =
+        !inForeground && clock.nowMs() - startedAtMs >= EXTRA_ACCOUNTS_BACKGROUND_BUDGET_MS
 
     private fun markYoutubeIncomplete(reason: String) {
         if (youtubeInventoryComplete.compareAndSet(true, false)) {
@@ -357,17 +386,21 @@ class PlaylistFetchWorker @AssistedInject constructor(
      * as a regular job, exactly as before — a missing notification is no reason
      * to fail the sync. Mirrors [TrackDownloadWorker]'s safeSetForeground, but
      * lets a stopped sync's cancellation through.
+     *
+     * @return whether the fetch now runs in the foreground (no job time limit).
      */
-    private suspend fun promoteToForeground() {
+    private suspend fun promoteToForeground(): Boolean =
         try {
             setForeground(getForegroundInfo())
+            true
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             Log.w(TAG, "setForeground failed (backgrounded / foreground-restricted); fetching as a regular job", e)
+            false
         }
-    }
 
     override suspend fun doWork(): Result {
+        startedAtMs = clock.nowMs()
         // Step 1: Create a sync history record. Only one sync runs at a time, so a
         // row still open now belongs to a chain that was replaced while paused
         // between steps: close it as interrupted, not "Running" until the next launch.
@@ -447,7 +480,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
 
             // Step 3: Transition to fetching playlists. This is the long part,
             // so ask to run it as a foreground service first.
-            promoteToForeground()
+            inForeground = promoteToForeground()
             syncStateManager.onFetchingPlaylists()
             syncHistoryDao.updateStatus(syncId, SyncState.FETCHING_PLAYLISTS)
 
@@ -583,6 +616,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
         val run = SpotifySyncRun(
             syncId, mode,
             extraTags = extras.mapTo(HashSet()) { SpotifyPlaylistIds.accountTag(it.userId) },
+            outOfTime = ::outOfTimeForExtraAccounts,
         )
 
         // Auto-mix discovery is opt-OUT (#335, #344). These are playlists the
@@ -621,6 +655,18 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     SyncStepResult(
                         "SPOTIFY", "accountLimit", StepStatus.SKIPPED, account = label,
                         note = "not read: a sync reads at most $MAX_EXTRA_SPOTIFY_ACCOUNTS extra accounts",
+                    ),
+                )
+                continue
+            }
+            if (run.outOfTime()) {
+                // A background sync near the system's limit: read next time, its rows left as they
+                // are and nobody else's held back (as a signed-out account's).
+                Log.i(TAG, "fetchSpotifyPlaylists: $label — out of time for a background sync, not read")
+                diagnostics.add(
+                    SyncStepResult(
+                        "SPOTIFY", "accountPass", StepStatus.SKIPPED, account = label,
+                        note = "not read this sync: a sync in the background gets about 10 minutes, and the accounts before it used most of them (read on the next sync)",
                     ),
                 )
                 continue
@@ -666,6 +712,20 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 syncLog.info("Spotify · ${row.label.ifBlank { "another account" }}…")
                 fetchSpotifyAccount(SpotifyPass.extra(row), run, diagnostics)
             }
+        } catch (e: ExtraAccountOutOfTime) {
+            // Stopped before its next read. What it read stays (the diff applies it, and the next
+            // sync skips what is unchanged since), and it holds nobody back: a listing it didn't
+            // finish is dropped, so only its own rows wait, as a signed-out account's do.
+            val tag = SpotifyPlaylistIds.accountTag(row.userId)
+            run.listings.playlists.removeAll { it.owner == tag && !it.listedAll }
+            run.listings.albums.removeAll { it.owner == tag && !it.listedAll }
+            Log.i(TAG, "fetchSpotifyPlaylists: $label — out of time for a background sync, stopped part way")
+            diagnostics.add(
+                SyncStepResult(
+                    "SPOTIFY", "accountPass", StepStatus.SKIPPED, account = label,
+                    note = "stopped part way: a sync in the background gets about 10 minutes (the rest is read on the next sync)",
+                ),
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -915,6 +975,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         homeFeedMixIds += mix.id
                         // An earlier account's pass already snapshotted it this sync.
                         if (mix.id in claimedBefore) continue
+                        stopIfOutOfTime(pass, run)
                         try {
                             val mixNumber = Regex("""\d+""").find(mix.name)?.value?.toIntOrNull()
 
@@ -1046,6 +1107,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
             var likedPagesFetched = 0
 
             while (true) {
+                stopIfOutOfTime(pass, run)
                 // Bounded: if the persisted query ever stopped honouring
                 // `offset`, every page would come back full and this loop
                 // would never end, growing allLikedSongs without limit.
@@ -1285,6 +1347,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
             }
 
             for (playlist in customPlaylists) {
+                // Before anything of this playlist is written: a stop never leaves half a snapshot.
+                stopIfOutOfTime(pass, run)
                 try {
                     val trustedStamp = mirrorStamps[playlist.id]
                         ?.takeIf { isStampable(playlist.id, PlaylistType.CUSTOM) }
@@ -1491,6 +1555,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 claimed = claimedBefore,
                 budget = run.albumBudget,
                 onAlbumRead = ::reportPlaylistFetched,
+                // An extra's albums past the time left wait for the next sync, as past the budget.
+                stopReading = if (pass.owner != null) run.outOfTime else NEVER_OUT_OF_TIME,
             )
             // The main account's switch is off: it listed nothing, so it has nothing to measure.
             if (step.status == StepStatus.SKIPPED) run.listings.albums.remove(listing)
@@ -1501,6 +1567,15 @@ class PlaylistFetchWorker @AssistedInject constructor(
             Log.e(TAG, "fetchSpotifySavedAlbums: failed", e)
             diagnostics.add(SyncStepResult("SPOTIFY", "getSavedAlbums", StepStatus.ERROR, errorMessage = e.message, account = pass.label))
         }
+    }
+
+    /**
+     * Stops an extra account's pass ([ExtraAccountOutOfTime]) once a background sync is out of
+     * time ([SpotifySyncRun.outOfTime]). Called only between reads, before anything of the next one
+     * is written. Never stops the main account's pass, which runs exactly as it always did.
+     */
+    private fun stopIfOutOfTime(pass: SpotifyPass, run: SpotifySyncRun) {
+        if (pass.owner != null && run.outOfTime()) throw ExtraAccountOutOfTime()
     }
 
     /**
@@ -2068,12 +2143,25 @@ internal class SpotifySyncRun(
     val syncId: Long,
     val mode: SyncMode?,
     val extraTags: Set<String> = emptySet(),
+    /** Whether a background sync is out of time for extra accounts ([PlaylistFetchWorker.EXTRA_ACCOUNTS_BACKGROUND_BUDGET_MS]). */
+    val outOfTime: () -> Boolean = NEVER_OUT_OF_TIME,
 ) {
     val claimed: MutableSet<String> = HashSet()
     val listings = SpotifySyncListings()
     val albumBudget = SpotifySavedAlbumsFetcher.ReadBudget()
     val labels: MutableMap<String?, String?> = HashMap()
 }
+
+/** A sync with no time limit for extra accounts (the foreground, and the main account's pass). */
+private val NEVER_OUT_OF_TIME: () -> Boolean = { false }
+
+/**
+ * An extra account's pass stopped because a background sync is out of time
+ * ([PlaylistFetchWorker.EXTRA_ACCOUNTS_BACKGROUND_BUDGET_MS]). A [CancellationException], like
+ * kotlinx's own timeout, so every catch-all in the pass lets it through to the pass's caller,
+ * which catches it by type. It never leaves the pass: the sync itself carries on.
+ */
+private class ExtraAccountOutOfTime : CancellationException("out of time for extra Spotify accounts in a background sync")
 
 /**
  * [message] with every mention of the account id [userId] masked, for a step an extra account's

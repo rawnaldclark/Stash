@@ -123,6 +123,9 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
      * @param accountLabel The account's label for the step ([SyncStepResult.account]); null for the main.
      * @param claimed Album keys an earlier account listed this sync: counted as listed, not written again.
      * @param budget The sync's one album-reading budget, shared by every account.
+     * @param stopReading Whether to read no more albums this sync (an extra account's run in a
+     *   background sync out of time): the rest wait for the next sync, as past [budget]. The
+     *   listing itself still runs whole.
      *
      * The main account's switch is its Sync setting, read here: switched off, the step is SKIPPED
      * and [listing] stays empty and incomplete (the caller drops it). An extra account's switch is
@@ -137,6 +140,7 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
         budget: ReadBudget = ReadBudget(),
         onAlbumRead: () -> Unit = {},
         nowMs: Long = System.currentTimeMillis(),
+        stopReading: () -> Boolean = { false },
     ): SyncStepResult {
         val owner = listing.owner
         if (owner == null) {
@@ -186,7 +190,7 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
             val fresh = page.albums.filter { handled.add(it.id) }
             val mine = fresh.filter { keyOf(it.id) !in claimed }
             claimedSkipped += fresh.size - mine.size
-            handlePage(syncId, owner, mine, nowMs, tally, budget, onAlbumRead)
+            handlePage(syncId, owner, mine, nowMs, tally, budget, onAlbumRead, stopReading)
 
             if (page.rawItemCount == 0) break
             offset += page.rawItemCount
@@ -254,6 +258,7 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
         tally: Tally,
         budget: ReadBudget,
         onAlbumRead: () -> Unit,
+        stopReading: () -> Boolean,
     ) {
         if (albums.isEmpty()) return
         val playlistDao = database.playlistDao()
@@ -310,7 +315,7 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
                     unchanged += albumSnapshot(syncId, owner, album, trackCount = 0, partial = true, snapshotId = stamp, expectedCount = null)
                     tally.unchanged++
                 }
-                budget.spent -> tally.deferred++
+                budget.spent || stopReading() -> tally.deferred++
                 else -> {
                     // Spaced across accounts too: the gap follows the sync's last read, whoever's it was.
                     if (budget.reads > 0) delay(READ_GAP_MS)

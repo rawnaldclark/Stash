@@ -3,10 +3,13 @@ package com.stash.core.data.sync.workers
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import androidx.work.ForegroundUpdater
 import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
+import androidx.work.impl.utils.futures.SettableFuture
 import androidx.work.testing.TestListenableWorkerBuilder
+import androidx.work.testing.WorkManagerTestInitHelper
 import androidx.work.workDataOf
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthService
@@ -22,6 +25,7 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.SpotifyExtraAccountRemover
 import com.stash.core.data.sync.SpotifyPlaylistIds
 import com.stash.core.data.sync.SpotifySavedAlbumsFetcher
+import com.stash.core.data.sync.SyncElapsedClock
 import com.stash.core.data.sync.SyncLog
 import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.data.sync.TrackMatcher
@@ -101,6 +105,17 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
 
     private val userB = "userb"
     private val userC = "userc"
+
+    /** The worker's clock; a fake read takes as long as a test says ([takesMinutes]). */
+    private val clock = object : SyncElapsedClock() {
+        var now = 1_000_000L
+        override fun nowMs() = now
+    }
+
+    /** A sync started in the background on Android 12+: it can't go foreground. */
+    private val refusesForeground = ForegroundUpdater { _, _, _ ->
+        SettableFuture.create<Void>().apply { setException(IllegalStateException("started in the background")) }
+    }
 
     /** One account's Spotify library, as the fake answers it while that account acts. */
     private class Library {
@@ -469,6 +484,65 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
         assertNull(step(syncId, "getSavedAlbums", null).note)
     }
 
+    // ── A background sync's time ─────────────────────────────────────────
+
+    @Test fun `in a background sync out of time, an extra waits for the next sync and holds nobody back`() = runBlocking {
+        addExtra(userB)
+        library(null).playlists += "a-kept"
+        library(userB).playlists += "b1"
+        val aGone = insertRow("a-gone")
+        val bGone = insertRow("b-gone", owner = userB)
+        takesMinutes("a-kept", 7)
+
+        val syncId = runFetch()
+
+        assertFalse("B's sign-in wasn't even asked for", userB in tokens.asked)
+        val skipped = step(syncId, "accountPass", "extra 1")
+        assertEquals(StepStatus.SKIPPED, skipped.status)
+        assertTrue(skipped.note!!.startsWith("not read this sync"))
+        assertTrue("B's rows are left as they are", db.playlistDao().getById(bGone)!!.isActive)
+        assertFalse("the main's hide isn't held back", db.playlistDao().getById(aGone)!!.isActive)
+        assertNull("not taken for signed out", db.spotifyAccountDao().getByUserId(userB)!!.signedOutAt)
+    }
+
+    @Test fun `an extra running out of time stops before its next read, keeps what it read, and holds nobody back`() = runBlocking {
+        addExtra(userB)
+        library(null).playlists += "a-kept"
+        library(userB).playlists += listOf("b1", "b2")
+        val aGone = insertRow("a-gone")
+        val bGone = insertRow("b-gone", owner = userB)
+        takesMinutes("b1", 7)
+
+        val syncId = runFetch()
+
+        coVerify(exactly = 0) { spotify.getPlaylistTracks("b2") }
+        val snapshots = db.remoteSnapshotDao().getPlaylistSnapshotsBySyncId(syncId).associateBy { it.sourcePlaylistId }
+        assertEquals("what it read stays", userB, snapshots.getValue("b1").spotifyAccount)
+        assertFalse("b2" in snapshots)
+        val stopped = step(syncId, "accountPass", "extra 1")
+        assertEquals(StepStatus.SKIPPED, stopped.status)
+        assertTrue(stopped.note!!.startsWith("stopped part way"))
+        assertTrue("B's own rows wait for a whole read", db.playlistDao().getById(bGone)!!.isActive)
+        assertFalse("B listed every id: the main's hide goes ahead", db.playlistDao().getById(aGone)!!.isActive)
+
+        runDiff(syncId)
+
+        assertEquals(listOf("b1-1", "b1-2"), titlesIn(db.playlistDao().findBySourceId("b1")!!.id))
+    }
+
+    @Test fun `a sync in the foreground has no time limit`() = runBlocking {
+        WorkManagerTestInitHelper.initializeTestWorkManager(context)
+        addExtra(userB)
+        library(null).playlists += "a-kept"
+        library(userB).playlists += listOf("b1", "b2")
+        takesMinutes("a-kept", 30)
+
+        val syncId = runFetch(foreground = true)
+
+        val tagged = db.remoteSnapshotDao().getPlaylistSnapshotsBySyncId(syncId).filter { it.spotifyAccount == userB }
+        assertEquals(setOf("b1", "b2"), tagged.map { it.sourcePlaylistId }.toSet())
+    }
+
     // ── Diff: Home, Download, removal ────────────────────────────────────
 
     @Test fun `an extra's new playlist is not pinned to Home after Stream everything, and starts with Download off`() = runBlocking {
@@ -591,6 +665,14 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
 
     private fun songsOf(id: String) = songs[id] ?: listOf("$id-1", "$id-2")
 
+    /** Reading playlist [id]'s songs takes [minutes] on the worker's clock. */
+    private fun takesMinutes(id: String, minutes: Long) {
+        coEvery { spotify.getPlaylistTracks(id) } answers {
+            clock.now += minutes * 60_000
+            SyncResult.Success(SpotifyPlaylistTracks(songsOf(id).map(::track), countVerified = true, revisionId = revision))
+        }
+    }
+
     private fun listed(id: String) = SpotifyPlaylistItem(
         id = id,
         name = "Playlist $id",
@@ -673,17 +755,19 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
 
     // ── Runners ──────────────────────────────────────────────────────────
 
-    private suspend fun runFetch(withAlbums: Boolean = false): Long {
-        val result = runFetchResult(withAlbums)
+    private suspend fun runFetch(withAlbums: Boolean = false, foreground: Boolean = false): Long {
+        val result = runFetchResult(withAlbums, foreground)
         assertTrue("fetch must succeed: $result", result is ListenableWorker.Result.Success)
         return (result as ListenableWorker.Result.Success).outputData.getLong(PlaylistFetchWorker.KEY_SYNC_ID, -1L)
     }
 
-    private suspend fun runFetchResult(withAlbums: Boolean = false): ListenableWorker.Result {
+    /** One fetch; in the background (no foreground service, so the time limit applies) unless [foreground]. */
+    private suspend fun runFetchResult(withAlbums: Boolean = false, foreground: Boolean = false): ListenableWorker.Result {
         // Each sync starts with the main account's pass, which asks the fake client for nothing
         // that reads a token: the account the last sync's last pass acted as must not carry over.
         tokens.actingNow = null
         return TestListenableWorkerBuilder<PlaylistFetchWorker>(context)
+            .apply { if (!foreground) setForegroundUpdater(refusesForeground) }
             .setWorkerFactory(object : WorkerFactory() {
                 override fun createWorker(
                     appContext: Context,
@@ -708,6 +792,7 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
                     syncUndoDao = db.syncUndoDao(),
                     spotifySavedAlbums = if (withAlbums) SpotifySavedAlbumsFetcher(spotifyClient, db, prefs, syncLog) else null,
                     spotifyAccountDao = db.spotifyAccountDao(),
+                    syncClock = clock,
                 )
             })
             .build()
