@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ListenRoom, MSG_PER_SECOND } from "../src/listen-room.js";
+import { ListenRoom, MSG_PER_SECOND, EDIT_BURST, EDITS_PER_SECOND } from "../src/listen-room.js";
 import { sha256Hex } from "../src/store.js";
 import { fakeCtx, fakeSocket } from "./fake-room.js";
 
@@ -177,4 +177,50 @@ test("setAlarm is only written when the alarm time moves", async () => {
     const writes = ctx.alarmWrites;
     await connect(ctx, room, {}); // state changes, the 12 h expiry doesn't
     assert.equal(ctx.alarmWrites, writes);
+});
+
+test("a guest's 25 songs in one add are one message: the socket stays open and 20 go in", async () => {
+    const clock = { t: 1_000 };
+    const { ctx, room } = await openRoom(clock);
+    const host = await connect(ctx, room, { hostKey: "KEY", v: 2, guestsAdd: true });
+    const guest = await connect(ctx, room, { name: "Sam", v: 2 });
+    const tracks = Array.from({ length: 25 }, (_, i) => ({ t: `S${i}`, a: "A" }));
+    await room.webSocketMessage(guest, JSON.stringify({ t: "add", tracks, next: true }));
+    assert.equal(guest.closed, false);
+    assert.equal(host.sent.filter((m) => m.t === "queue").at(-1).queue.length, 20);
+    assert.deepEqual(host.sent.filter((m) => m.t === "added").map((m) => m.count), [20]);
+});
+
+test("with guest adds off, an add's songs become suggestions with ids of their own", async () => {
+    const clock = { t: 1_000 };
+    const { ctx, room } = await openRoom(clock);
+    const host = await connect(ctx, room, { hostKey: "KEY", v: 2, guestsAdd: false });
+    const guest = await connect(ctx, room, { v: 2 });
+    await room.webSocketMessage(guest, JSON.stringify({ t: "add", tracks: [{ t: "A", a: "B" }, { t: "C", a: "D" }], next: true }));
+    const ids = host.sent.filter((m) => m.t === "suggestions").at(-1).suggestions.map((x) => x.id);
+    assert.equal(ids.length, 2);
+    assert.notEqual(ids[0], ids[1]);
+});
+
+test("a client looping add and unqueue is ignored past the burst, not closed; real use never meets the limit", async () => {
+    const clock = { t: 1_000 };
+    const { ctx, room } = await openRoom(clock);
+    const host = await connect(ctx, room, { hostKey: "KEY", v: 2, guestsAdd: true });
+    const guest = await connect(ctx, room, { name: "Sam", v: 2 });
+    const add = (t) => room.webSocketMessage(guest, JSON.stringify({ t: "add", tracks: [{ t, a: "A" }], next: true }));
+    const queues = () => host.sent.filter((m) => m.t === "queue").length;
+    for (let i = 0; i < EDIT_BURST; i++) await add(`S${i}`);
+    assert.equal(queues(), EDIT_BURST, "a burst all goes in");
+    await add("over");
+    assert.equal(guest.closed, false);
+    assert.equal(queues(), EDIT_BURST, "nobody gets another whole queue");
+    assert.deepEqual(guest.sent.at(-1), { t: "added", by: guest.deserializeAttachment().memberId, next: true, count: 0 }, "the sender still gets its answer");
+    assert.equal(host.sent.filter((m) => m.t === "added").at(-1).count, 1, "only the sender heard that one");
+    await room.webSocketMessage(guest, JSON.stringify({ t: "unqueue", track: { t: "S0", a: "A", by: guest.deserializeAttachment().memberId }, at: 0 }));
+    assert.equal(queues(), EDIT_BURST, "a swipe counts too");
+    clock.t += 1_000 / EDITS_PER_SECOND;
+    await add("later");
+    assert.equal(queues(), EDIT_BURST + 1, "and it comes back at the steady rate");
+    await room.webSocketMessage(guest, JSON.stringify({ t: "ping", c: 1 }));
+    assert.ok(guest.sent.some((m) => m.t === "pong"), "other messages aren't held up");
 });
