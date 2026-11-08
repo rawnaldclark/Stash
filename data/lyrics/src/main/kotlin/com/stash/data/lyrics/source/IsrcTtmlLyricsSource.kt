@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit
  * Word-synced TTML from a static store keyed by ISRC (lrc.red, Binimum).
  *
  * [onDemandOnly]: asked only for a track being played or just downloaded, never by a library-wide
- * pass. First in the chain (see `LyricsModule`); its failures count as misses.
+ * pass, and always after every other source, Spicy Lyrics included (see `LyricsModule`).
  *
  * The ISRC is the track's own when it has one; a clean 404 on it is a miss, with no search
  * (searching would only find another version of the song). Without one, [IsrcResolver] looks it

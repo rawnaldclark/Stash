@@ -20,14 +20,23 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.roundToLong
 
 /**
- * Spicy Lyrics (api.spicylyrics.org): best available sync for a Spotify track id.
- * Syllable -> word-synced TTML (built here, parsed like Apple's), Line -> synced LRC; Static (untimed) and
- * anything new is a miss, so the sources after it get their turn. In a walk its failures are misses (it is
- * on-demand-only); a 429 or an open skip window throws, so an upgrade pass stops instead of moving past
- * tracks Spicy never answered.
+ * Spicy Lyrics (api.spicylyrics.org): best available sync for a track.
+ * Syllable -> word-synced TTML (built here, parsed like Apple's), Line -> synced LRC.
+ * Static (plain text) is a miss: taking it would stop the walk before LRCLIB and KuGou, which
+ * often have the song line-synced.
  * Looks the track up by [LyricsQuery.spotifyTrackId], else its [LyricsQuery.isrc], else an ISRC from
  * lrc.red's search, else an Apple Music id found through iTunes; with none it is a clean miss.
  * Blank [apiKey] + default [baseUrl] -> off. Blank [apiKey] + custom [baseUrl] (a proxy that adds the key) -> no auth header.
+ *
+ * [onDemandOnly]: asked only for a track being played or just downloaded (in its place right after
+ * Apple, see `LyricsModule`), and by the word-synced upgrades that ask the on-demand sources (Now
+ * Playing's action, "Re-check library", the follow-up after a line-synced answer).
+ *
+ * Failures: 404 is a plain miss. A 429, 401/403, any other failed status, a transport failure or a
+ * 200 that isn't JSON (a Cloudflare challenge page, say) opens a [SKIP_WINDOW_MS] window, so a host in
+ * trouble isn't asked again on every song. A 429 and an open window THROW ([AppleTtmlLyricsSource.HttpStatusException] /
+ * [SkippedException]): a walk reads that as a miss (an on-demand source can't fail it), an upgrade pass
+ * as RATE_LIMITED / PAUSED instead of moving past tracks Spicy never answered. Anything else is a miss.
  */
 class SpicyLyricsSource(
     client: OkHttpClient,
@@ -60,7 +69,8 @@ class SpicyLyricsSource(
         if (skipWindowOpen()) throw SkippedException()
         // Spotify id first (it finds community syncs the other ids can't), then the track's own ISRC,
         // then an ISRC from lrc.red's search, then an Apple Music id from iTunes. Only the last two cost
-        // a request, and both are normally cached by now (lrc.red runs first; Apple's source shares the iTunes lookup).
+        // a request, and whichever source asks first pays for it: IsrcResolver is shared with lrc.red and
+        // Binimum (which run after this), AppleMusicIdResolver with Apple's source (which runs before it).
         val trackId = query.spotifyTrackId
             ?: normalizeIsrc(query.isrc)
             ?: isrcFromTitleArtist(query)
@@ -78,17 +88,17 @@ class SpicyLyricsSource(
         }
         if (json == null) return@withContext null
 
+        // Not JSON at all: the host (or something in front of it) is in trouble, not the song.
         val root = try {
             JSONObject(json)
         } catch (e: JSONException) {
-            // A 200 that isn't JSON (a proxy or CDN error page): a miss, not worth a skip window.
-            Log.w(TAG, "spicy response for $trackId isn't JSON: ${json.take(80).replace('\n', ' ')}")
+            openSkipWindow("a 200 that isn't JSON (${json.length} chars)")
             return@withContext null
         }
         val result = runCatching { parse(root, trackId) }
             .onFailure { Log.w(TAG, "spicy response for $trackId didn't parse", it) }
             .getOrNull()
-        Log.d(TAG, "spicy $trackId (\"${query.title}\") -> ${result?.let { if (it.ttml != null) "syllable" else "line/static" } ?: "miss"}")
+        Log.d(TAG, "spicy $trackId (\"${query.title}\") -> ${result?.let { if (it.ttml != null) "syllable" else "line" } ?: "miss"}")
         result
     }
 
