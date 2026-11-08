@@ -584,7 +584,8 @@ class LyricsRepository @Inject constructor(
         }
         return when (failures.first()) {
             is AppleTtmlLyricsSource.AppleSkippedException,
-            is IsrcLyricsHostBreaker.SkippedException -> TtmlUpgradeResult.PAUSED
+            is IsrcLyricsHostBreaker.SkippedException,
+            is SpicyLyricsSource.SkippedException -> TtmlUpgradeResult.PAUSED
             is InterruptedIOException ->
                 if (cleanMisses > 0) TtmlUpgradeResult.UNCONFIRMED_MISS else TtmlUpgradeResult.NOT_READY
             else ->

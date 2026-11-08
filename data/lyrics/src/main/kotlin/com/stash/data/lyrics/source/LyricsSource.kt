@@ -41,7 +41,7 @@ data class LyricsQuery(
      */
     val onDemand: Boolean = false,
 
-    /** Spotify track id (22 chars), when known. Read by [SpicyLyricsSource]; null skips that source. */
+    /** Spotify track id (22 chars), when known. Read by [SpicyLyricsSource], which falls back to [isrc], then to ids it looks up by title/artist. */
     val spotifyTrackId: String? = null,
 )
 

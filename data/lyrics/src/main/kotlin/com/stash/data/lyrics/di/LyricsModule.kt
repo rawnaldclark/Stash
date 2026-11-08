@@ -3,6 +3,7 @@ package com.stash.data.lyrics.di
 import android.content.Context
 import com.stash.core.common.Clock
 import com.stash.core.common.SystemClock
+import com.stash.data.lyrics.source.AppleMusicIdResolver
 import com.stash.data.lyrics.source.AppleTtmlLyricsSource
 import com.stash.data.lyrics.source.InnerTubeLyricsGateway
 import com.stash.data.lyrics.source.InnerTubeLyricsGatewayImpl
@@ -113,6 +114,13 @@ abstract class LyricsModule {
             )
         }
 
+        @Provides
+        @Singleton
+        fun provideAppleMusicIdResolver(
+            okHttpClient: OkHttpClient,
+            @ApplicationContext context: Context,
+        ): AppleMusicIdResolver = AppleMusicIdResolver(okHttpClient, versionName(context))
+
         /**
          * Spicy Lyrics through its contributor's proxy, which adds the Spicy key and caches by
          * track id (so no key is in the APK). Same DNS-over-HTTPS as the other lyrics hosts (`LyricsDns`).
@@ -122,10 +130,16 @@ abstract class LyricsModule {
         fun provideSpicyLyricsSource(
             okHttpClient: OkHttpClient,
             @ApplicationContext context: Context,
+            clock: Clock,
+            isrcResolver: IsrcResolver,
+            appleMusicIds: AppleMusicIdResolver,
         ): SpicyLyricsSource = SpicyLyricsSource(
             client = okHttpClient,
             appVersionName = versionName(context),
-            baseUrl = "https://proxy.paraliyzed.net/spicy",
+            baseUrl = SPICY_PROXY_URL,
+            clock = clock,
+            isrcResolver = isrcResolver,
+            appleMusicIds = appleMusicIds,
         )
 
         /** title/artist -> ISRC for the lrc.red/Binimum sources; same DNS, User-Agent and breaker as they use. */
@@ -146,11 +160,12 @@ abstract class LyricsModule {
         fun provideAppleTtmlLyricsSource(
             okHttpClient: OkHttpClient,
             @ApplicationContext context: Context,
+            appleMusicIds: AppleMusicIdResolver,
         ): AppleTtmlLyricsSource {
             val versionName = context.packageManager
                 .getPackageInfo(context.packageName, 0)
                 .versionName ?: "unknown"
-            return AppleTtmlLyricsSource(okHttpClient, versionName)
+            return AppleTtmlLyricsSource(okHttpClient, versionName, appleIds = appleMusicIds)
         }
 
         /** KuGou: synced LRC for most of what LRCLIB misses; between LRCLIB and the plain-text fallback. */
@@ -178,5 +193,8 @@ abstract class LyricsModule {
         @Singleton
         @LrclibBaseUrl
         fun provideLrclibBaseUrl(): String = LrclibLyricsSource.DEFAULT_BASE_URL
+
+        /** The proxy that adds Spicy's key and caches by track id. No trailing slash; the /spicy prefix is the route in server.js. */
+        private const val SPICY_PROXY_URL = "https://proxy.paraliyzed.net/spicy"
     }
 }
