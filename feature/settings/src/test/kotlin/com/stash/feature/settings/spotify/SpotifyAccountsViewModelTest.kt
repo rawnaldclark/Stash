@@ -302,6 +302,21 @@ class SpotifyAccountsViewModelTest {
         coVerify(exactly = 0) { accountDao.addOrFind(any(), any(), any()) }
     }
 
+    @Test fun `a cookie the sign-in screen hands over after Cancel opens nothing and checks nothing`() = runTest {
+        val vm = newVm()
+        vm.startAdd()
+        vm.cancelSignIn()
+
+        // A page load that finished just after Cancel.
+        vm.onCookieCaptured("late-cookie")
+        advanceUntilIdle()
+
+        assertThat(vm.state.value.showPasteDialog).isFalse()
+        assertThat(vm.state.value.showWebLogin).isFalse()
+        assertThat(vm.state.value.signIn).isNull()
+        coVerify(exactly = 0) { tokenManager.validateSpotifyCookie(any()) }
+    }
+
     // -- Signing in again --------------------------------------------------------------------
 
     @Test fun `signing in again as a different account is refused, and nothing is saved`() = runTest {

@@ -251,6 +251,18 @@ fun SpotifyLoginWebView(
                     }.also { webViewRef = it }
                 },
                 modifier = Modifier.fillMaxSize(),
+                // Leaving the sign-in (Cancel, Back, a captured cookie handed over, the screen
+                // closed) ends its page: a load still running could otherwise call back after the
+                // sign-in is gone. Its client is swapped for a plain one first, so nothing reaches
+                // [capture] once released. A captured cookie was handed over before this runs (the
+                // hand-over is what closes the sign-in), so every caller, the connected account's
+                // Connect included, has what it needs.
+                onRelease = { webView ->
+                    webView.stopLoading()
+                    webView.webViewClient = WebViewClient()
+                    webView.destroy()
+                    if (webViewRef === webView) webViewRef = null
+                },
             )
         }
 

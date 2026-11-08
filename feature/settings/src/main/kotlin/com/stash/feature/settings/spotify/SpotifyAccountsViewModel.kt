@@ -256,6 +256,8 @@ class SpotifyAccountsViewModel @Inject constructor(
      * sign-in does.
      */
     fun onCookieCaptured(cookie: String) {
+        // A page load landing after Cancel: no sign-in to give it to, and no dialog to open for it.
+        if (_state.value.signIn == null) return
         _state.update { it.copy(showWebLogin = false, showPasteDialog = true) }
         submit(cookie)
     }
