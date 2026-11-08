@@ -127,8 +127,9 @@ import kotlinx.serialization.json.Json
         com.stash.core.data.db.entity.TrackAliasEntity::class,
         com.stash.core.data.db.entity.TrackMergeLogEntity::class,
         com.stash.core.data.db.entity.DuplicateDismissalEntity::class,
+        com.stash.core.data.db.entity.SpotifyAccountEntity::class,
     ],
-    version = 78,
+    version = 79,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -205,6 +206,8 @@ abstract class StashDatabase : RoomDatabase() {
     abstract fun libraryArtDao(): com.stash.core.data.db.dao.LibraryArtDao
 
     abstract fun duplicateDao(): com.stash.core.data.db.dao.DuplicateDao
+
+    abstract fun spotifyAccountDao(): com.stash.core.data.db.dao.SpotifyAccountDao
 
     companion object {
         const val DATABASE_NAME = "stash.db"
@@ -2018,6 +2021,32 @@ abstract class StashDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v78 -> v79: more than one Spotify account, foundation (plan 2026-11-04 §2.1, §2.3).
+         * Additive only, nothing backfilled:
+         *  - `playlists.spotify_account` and `remote_playlist_snapshots.spotify_account`, nullable:
+         *    which Spotify account owns a row / fetched a snapshot. NULL is the main account, so
+         *    every existing row stays the main's, exactly today's behaviour.
+         *  - `spotify_accounts`: the EXTRA accounts (the main has no row), empty; one account per
+         *    Spotify user id. Their sign-ins live in the encrypted token store, never here.
+         */
+        val MIGRATION_78_79 = object : Migration(78, 79) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `playlists` ADD COLUMN `spotify_account` TEXT")
+                db.execSQL("ALTER TABLE `remote_playlist_snapshots` ADD COLUMN `spotify_account` TEXT")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `spotify_accounts` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`user_id` TEXT NOT NULL, `label` TEXT NOT NULL, `added_at` INTEGER NOT NULL, " +
+                        "`sync_playlists` INTEGER NOT NULL DEFAULT 1, `sync_liked` INTEGER NOT NULL DEFAULT 1, " +
+                        "`sync_albums` INTEGER NOT NULL DEFAULT 1, `sync_mixes` INTEGER NOT NULL DEFAULT 0, " +
+                        "`signed_out_at` INTEGER)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_spotify_accounts_user_id` ON `spotify_accounts` (`user_id`)",
+                )
+            }
+        }
+
         /** Edit order tables start empty, so existing playlists retain their native order. */
         val MIGRATION_73_74 = object : Migration(73, 74) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -2182,6 +2211,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_75_76,
                 MIGRATION_76_77,
                 MIGRATION_77_78,
+                MIGRATION_78_79,
             )
         }
     }

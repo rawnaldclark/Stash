@@ -52,6 +52,9 @@ object DatabaseModule {
     fun provideCloudDao(db: StashDatabase): com.stash.core.data.db.dao.CloudDao = db.cloudDao()
 
     @Provides
+    fun provideSpotifyAccountDao(db: StashDatabase): com.stash.core.data.db.dao.SpotifyAccountDao = db.spotifyAccountDao()
+
+    @Provides
     fun providePlaylistDao(db: StashDatabase): PlaylistDao = db.playlistDao()
 
     @Provides

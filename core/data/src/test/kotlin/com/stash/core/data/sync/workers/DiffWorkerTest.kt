@@ -1127,6 +1127,58 @@ class DiffWorkerTest {
         }
     }
 
+    @Test
+    fun `only the main account's Liked Songs note the fetch, never an extra account's`() = runBlocking {
+        // Hearts go to the main account (plan 2026-11-04 §2.4): an extra account's Liked Songs, complete
+        // or not, must neither vouch for the main's ("not liked there") nor take the main's note away.
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val fetch = com.stash.core.data.social.SpotifyLikedSongsFetch(
+            androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(scope = scope) {
+                File(tmp.root, "like_mirror.preferences_pb")
+            },
+        )
+        val extraLiked = com.stash.core.data.sync.SpotifyPlaylistIds.extraLikedSongs("lm7d11nsf65n11sojl4twwr6t")
+        try {
+            db.playlistDao().insert(
+                PlaylistEntity(
+                    name = "Liked Songs", source = MusicSource.SPOTIFY, sourceId = "spotify_liked_songs",
+                    type = PlaylistType.LIKED_SONGS, syncEnabled = true,
+                )
+            )
+            db.playlistDao().insert(
+                PlaylistEntity(
+                    name = "Liked Songs", source = MusicSource.SPOTIFY, sourceId = extraLiked,
+                    type = PlaylistType.LIKED_SONGS, syncEnabled = true, spotifyAccount = "lm7d11nsf65n11sojl4twwr6t",
+                )
+            )
+            fun fetched(sourceId: String, partial: Boolean) {
+                val snapshot = RemotePlaylistSnapshotEntity(
+                    id = 4L, syncId = 1L, source = MusicSource.SPOTIFY, sourcePlaylistId = sourceId,
+                    playlistName = "Liked Songs", playlistType = PlaylistType.LIKED_SONGS, partial = partial,
+                )
+                coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(snapshot)
+                coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(4L) } returns emptyList()
+            }
+
+            // An extra account's complete fetch is not the main's.
+            fetched(extraLiked, partial = false)
+            assertTrue(buildWorker(likedSongsFetch = fetch).doWork() is androidx.work.ListenableWorker.Result.Success)
+            assertNull("an extra's complete fetch notes nothing", fetch.completeAt())
+
+            fetched("spotify_liked_songs", partial = false)
+            assertTrue(buildWorker(likedSongsFetch = fetch).doWork() is androidx.work.ListenableWorker.Result.Success)
+            val mainNote = fetch.completeAt()
+            assertTrue("the main's complete fetch is noted", mainNote != null)
+
+            // An extra account's partial fetch leaves the main's note alone.
+            fetched(extraLiked, partial = true)
+            assertTrue(buildWorker(likedSongsFetch = fetch).doWork() is androidx.work.ListenableWorker.Result.Success)
+            assertEquals(mainNote, fetch.completeAt())
+        } finally {
+            scope.cancel()
+        }
+    }
+
     private suspend fun syncLikedPlaylistArt(existingArt: String?, snapshotArt: String?): String? {
         val playlistId = db.playlistDao().insert(
             PlaylistEntity(

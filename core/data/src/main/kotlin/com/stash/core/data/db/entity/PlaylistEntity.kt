@@ -132,4 +132,14 @@ data class PlaylistEntity(
      */
     @ColumnInfo(name = "stack_songs", defaultValue = "0")
     val stackSongs: Boolean = false,
+
+    /**
+     * v79: which Spotify account owns this row (plan 2026-11-04 §2.3). NULL is the main account:
+     * every row made before extra accounts existed, and every non-Spotify row. An extra account's
+     * rows carry its Spotify user id (`spotify_accounts.user_id`), not its local row id, so
+     * removing and re-adding the account re-adopts them. A playlist or album two accounts both
+     * have is ONE row, owned by one account (the main, when it is one of them).
+     */
+    @ColumnInfo(name = "spotify_account")
+    val spotifyAccount: String? = null,
 )
