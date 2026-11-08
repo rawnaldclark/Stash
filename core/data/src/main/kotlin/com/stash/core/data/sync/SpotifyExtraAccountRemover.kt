@@ -38,7 +38,10 @@ class SpotifyExtraAccountRemover @Inject constructor(
         val accounts = database.spotifyAccountDao()
         val hidden = database.withTransaction {
             val row = accounts.getById(rowId) ?: return@withTransaction null
-            val hidden = database.playlistDao().hideSpotifyAccountRows(SpotifyPlaylistIds.accountTag(row.userId))
+            val tag = SpotifyPlaylistIds.accountTag(row.userId)
+            val hidden = database.playlistDao().hideSpotifyAccountRows(tag)
+            // No Undo of an earlier sync brings them back without an account to sync them.
+            database.syncUndoDao().keepSpotifyAccountRowsHidden(tag)
             accounts.delete(rowId)
             hidden
         } ?: return null

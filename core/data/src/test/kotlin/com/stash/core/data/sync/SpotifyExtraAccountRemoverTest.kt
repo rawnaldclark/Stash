@@ -123,4 +123,34 @@ class SpotifyExtraAccountRemoverTest {
         assertFalse(db.playlistDao().getById(b1)!!.isActive)
         assertNull(db.spotifyAccountDao().getById(b))
     }
+
+    @Test fun `Undo of a sync from before the removal doesn't bring the account's rows back`() = runTest {
+        val b = account(userB)
+        val a1 = row("a1", owner = null)
+        val b1 = row("b1", owner = userB)
+        db.syncUndoDao().captureOnce(syncId = 1, nowEpochMs = 1L)
+        // The sync behind the point hid a row of each account; then the listener removed B.
+        db.playlistDao().deactivateByIdsChunked(listOf(a1, b1))
+        remover.remove(b)
+
+        assertEquals("only the main's row counts as changed", 1, db.syncUndoDao().countChangedPlaylists(1, 1L))
+        db.syncUndoDao().restore(1)
+
+        assertTrue(db.playlistDao().getById(a1)!!.isActive)
+        assertFalse("no account to sync it: stays hidden", db.playlistDao().getById(b1)!!.isActive)
+    }
+
+    @Test fun `Undo never shows a row whose account has no row at all`() = runTest {
+        // A tag a backup carried in, with no spotify_accounts row behind it.
+        val orphan = row("o1", owner = "ghost")
+        val a1 = row("a1", owner = null)
+        db.syncUndoDao().captureOnce(syncId = 1, nowEpochMs = 1L)
+        db.playlistDao().deactivateByIdsChunked(listOf(orphan, a1))
+
+        assertEquals(1, db.syncUndoDao().countChangedPlaylists(1, 1L))
+        db.syncUndoDao().restore(1)
+
+        assertFalse(db.playlistDao().getById(orphan)!!.isActive)
+        assertTrue(db.playlistDao().getById(a1)!!.isActive)
+    }
 }
