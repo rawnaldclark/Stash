@@ -1959,9 +1959,12 @@ internal class SpotifyPass(
             albums = true,
         )
 
-        /** An extra account, as its row's switches say. Its user id is used exactly as the row stores it. */
+        /**
+         * An extra account, as its row's switches say. Its user id is used exactly as the row stores
+         * it, through [SpotifyPlaylistIds.accountTag] (which refuses one that isn't normalised).
+         */
         fun extra(row: com.stash.core.data.db.entity.SpotifyAccountEntity) = SpotifyPass(
-            owner = row.userId,
+            owner = SpotifyPlaylistIds.accountTag(row.userId),
             label = spotifyExtraAccountLabel(row.id),
             likedSongsId = SpotifyPlaylistIds.extraLikedSongs(row.userId),
             mixes = row.syncMixes,

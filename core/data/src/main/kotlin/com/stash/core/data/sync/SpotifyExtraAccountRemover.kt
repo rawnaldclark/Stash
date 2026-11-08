@@ -38,7 +38,7 @@ class SpotifyExtraAccountRemover @Inject constructor(
         val accounts = database.spotifyAccountDao()
         val hidden = database.withTransaction {
             val row = accounts.getById(rowId) ?: return@withTransaction null
-            val hidden = database.playlistDao().hideSpotifyAccountRows(row.userId)
+            val hidden = database.playlistDao().hideSpotifyAccountRows(SpotifyPlaylistIds.accountTag(row.userId))
             accounts.delete(rowId)
             hidden
         } ?: return null
