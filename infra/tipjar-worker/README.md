@@ -292,8 +292,8 @@ gave. Rows from then on, and rows it can't date, are skipped and counted
 ("Skipped, from 2026-11-02 on or undated"); since then the webhook lets an
 email in by amount. After a re-import (say, to recover from an
 `EMAIL_PEPPER` mismatch), add anyone who has given $5 or more since
-2026-11-02 by hand: on the admin page for the website, and in
-`COMPED_EMAILS` for the app's supporter claim.
+2026-11-02 by hand on the admin page: Give access, with "Also unlock
+unlimited lossless in the app" ticked for the app's supporter claim.
 
 ## Supporter claim
 
@@ -311,12 +311,15 @@ POST path is still the Ko-fi webhook and every GET path the list, as before.
 - **Who counts as a donor:** an `access:<hash>` entry with `source: "kofi"`
   (the webhook, at $5 or more added up per email, and the Ko-fi CSV import
   write it; everyone from before the $5 entry keeps theirs), or `kofipay`
-  entries that add up to $5 or more (the webhook race above), or an email in
-  the `COMPED_EMAILS` secret. The website's `approved`, `manual` and `open`
-  entries are early access, not donations. Someone added by hand on the
-  admin page can't claim until their Ko-fi donations reach $5, or until
-  they're in `COMPED_EMAILS` (the way to give the claim to a PayPal or
-  GitHub Sponsors donor).
+  entries that add up to $5 or more (the webhook race above), or a comped
+  email: a `comp:<hash>` entry (the admin page's Give access with "Also
+  unlock unlimited lossless in the app" ticked, the way to give the claim
+  to a PayPal or GitHub Sponsors donor; Remove access takes it away), or an
+  email in the `COMPED_EMAILS` secret (the older way: a list that can only
+  be replaced whole, never read back). The website's `approved`, `manual`
+  and `open` entries are early access, not donations: someone given access
+  without the box ticked can't claim until their Ko-fi donations reach $5.
+  Give access never turns a Ko-fi supporter's `kofi` entry into `manual`.
 - **start never reveals donor status.** The answer is the same 202 either
   way, and the lookup, the claim write and the email all happen after the
   response (`waitUntil`). A donor's email holds a 6-digit code, valid 10
@@ -474,6 +477,7 @@ email hash above.
 | --- | --- | --- | --- |
 | `access:<hash>` | tip jar webhook, the import script, the website's admin page, the website's open window | `{source: "kofi", firstAt, lastAt}`, or `{source: "approved" or "manual", by, at}`; `by` is the maintainer who added it. An open-window sign-up (`web/worker/open.js`) is `{source: "open", at}` with the same in metadata; a Ko-fi donation that brings the email to $5 overwrites it as a supporter | Until removed on the admin page |
 | `kofipay:<hash>:<id>` | tip jar webhook (since 2026-11-02, with `EMAIL_PEPPER` set) | One Ko-fi payment from an email not yet on the list as `kofi`, in US cents: `{cents, at}`, the same as metadata; `<id>` is Ko-fi's transaction id. Added up toward the $5 entry, and read by the claim (a code at $5 or more, else its `below_entry` email) | Until the email is removed on the admin page (Remove access deletes them too) |
+| `comp:<hash>` | the website's admin page (Give access with "Also unlock unlimited lossless in the app") | `{by, at}`, metadata `{at}`: unlocked in the app by hand. Read only by the supporter claim (a code, like a donor); not early access, not a donation, not on the supporters list or the goal | Until Remove access on the admin page |
 | `goal:<YYYY-MM>:kofi:<id>` | tip jar webhook | One Ko-fi donation; metadata `{cents, source, at, orig?}` | Forever |
 | `goal:<YYYY-MM>:manual:<id>` | the website's admin page | One donation added by hand; metadata `{cents, source, at, by}` | Until removed on the admin page |
 | `meta:hashcheck` | tip jar webhook (when it changes), the import script | The hash of `hashcheck@stashfm.app`, to spot a pepper mismatch | Until replaced |

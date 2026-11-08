@@ -232,6 +232,27 @@ test("a comped email's code isn't held back by the no-donation cap", async () =>
     }
 });
 
+test("an email unlocked on the website's admin page (comp:<hash>) gets a code, and verify mints a token", async () => {
+    const e = claimEnv(); // no COMPED_EMAILS, no access entry, no Ko-fi payments
+    const h = await hashEmail("paypal@example.com", PEPPER);
+    await e.ACCESS_KV.put(`comp:${h}`, JSON.stringify({ by: "owner@example.com", at: "2026-11-07T00:00:00.000Z" }));
+    await start(e, " PayPal@Example.com ");
+    assert.equal(e.MAILER.calls.length, 1);
+    assert.equal(e.MAILER.calls[0].body.kind, "code");
+    const ok = await verifyReq(e, e.MAILER.calls[0].body.code, "paypal@example.com");
+    assert.equal(ok.status, 200);
+    assert.equal(checkToken((await ok.json()).token).payload.tier, "supporter");
+    assert.equal([...e.ACCESS_KV.map.keys()].filter((k) => k.startsWith("access:") || k.startsWith("goal:")).length, 0, "no donation recorded");
+});
+
+test("one person's comp entry unlocks nobody else: another address gets the no-donation email and no claim", async () => {
+    const e = claimEnv();
+    await e.ACCESS_KV.put(`comp:${await hashEmail("paypal@example.com", PEPPER)}`, "{}");
+    await start(e, "stranger@example.org");
+    assert.deepEqual(e.MAILER.calls.map((c) => c.body), [{ email: "stranger@example.org", kind: "no_donation" }]);
+    assert.equal(e.CLAIMS_DB.count("claims"), 0);
+});
+
 test("only source kofi is a donation: approved, manual and open entries get the no-donation email", async () => {
     assert.equal(isDonation({ source: "kofi" }), true);
     for (const source of ["approved", "manual", "open", "", "Ko-fi"]) {
