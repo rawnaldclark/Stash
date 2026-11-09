@@ -207,6 +207,12 @@ android {
             buildConfigField("String", "SYNC_BASE_URL", "\"$syncReleaseBaseUrl\"")
             buildConfigField("Boolean", "WEB_LINK_ENABLED", "true")
             manifestPlaceholders["webLinkEnabled"] = "true"
+            // ARM only in the release APK. x86/x86_64 were ~71 MB of the universal APK (each ABI
+            // carries its own ffmpeg + python zips) for CPUs no phone at minSdk 26 has. This filters
+            // the AAR libs as well as app/src/main/jniLibs. Still one Stash.apk, so the in-app updater
+            // (first .apk asset) and releases/latest/download/Stash.apk keep working. Debug stays
+            // universal so x86_64 emulators can run it.
+            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
             // R8 minification is DISABLED because youtubedl-android embeds
             // Chaquopy (Python runtime) + Apache Commons Compress + native
             // binaries that use extensive reflection. R8 obfuscation renames
