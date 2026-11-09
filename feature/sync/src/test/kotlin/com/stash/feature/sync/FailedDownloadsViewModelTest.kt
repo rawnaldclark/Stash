@@ -56,6 +56,8 @@ class FailedDownloadsViewModelTest {
         coEvery { dao.atomicallyClaimForRetry(42) } returns 1
         vm.retry(42)
         coVerify(exactly = 1) { enqueuer.enqueue(42) }
+        // The tap ends a Pause: a paused retry would wait for Resume without saying so.
+        coVerify(exactly = 1) { resumer.clearHold() }
     }
 
     @Test fun `retry does not enqueue when row is no longer FAILED`() = runTest {

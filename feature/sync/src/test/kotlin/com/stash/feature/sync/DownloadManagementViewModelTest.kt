@@ -156,6 +156,7 @@ class DownloadManagementViewModelTest {
         val vm = newVm()
         vm.retry(9)
         coVerify(exactly = 1) { enqueuer.enqueue(9) }
+        coVerify(exactly = 1) { resumer.clearHold() }
     }
 
     @Test fun `cancel delegates to cancellation controller`() = runTest {

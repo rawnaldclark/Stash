@@ -17,6 +17,11 @@ import com.stash.core.data.files.LocalFileOps
 import com.stash.core.data.files.TrackFileReplacement
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.sync.DownloadJobRegistry
+import com.stash.core.data.sync.DownloadQueueResumer
+import com.stash.core.data.sync.DownloadQueueState
+import com.stash.core.data.sync.ResumeTrigger
+import com.stash.core.data.sync.WaitingHold
+import com.stash.core.data.sync.classifier.DownloadFailureClassifier
 import com.stash.core.data.sync.SyncStateManager
 import com.stash.core.data.sync.TrackDownloadOutcome
 import com.stash.core.data.sync.TrackDownloader
@@ -66,6 +71,11 @@ class TrackDownloadWorkerStopRestoreTest {
     private val trackDownloader = mockk<TrackDownloader>()
     private val syncHistoryDao = mockk<SyncHistoryDao>(relaxed = true)
     private val syncStateManager = mockk<SyncStateManager>(relaxed = true)
+    private val resumer = mockk<DownloadQueueResumer>(relaxed = true)
+    private var paused = false
+    private val queueState = mockk<DownloadQueueState>(relaxed = true).also {
+        coEvery { it.isPaused() } answers { paused }
+    }
     private lateinit var keptFile: File
 
     @Before fun setUp() {
@@ -171,6 +181,76 @@ class TrackDownloadWorkerStopRestoreTest {
         verify(exactly = 0) { syncStateManager.onWaitingForNetwork() }
     }
 
+    @Test fun `chain - a stop for the job's time limit says it continues shortly, not that it waits for a network`() = runBlocking {
+        val queueId = queueFirstDownload()
+        val run = stopChainMidDownload(WorkInfo.STOP_REASON_TIMEOUT)
+
+        assertTrue(run.exceptionOrNull() is CancellationException)
+        assertEquals(DownloadStatus.PENDING, db.downloadQueueDao().getStatusById(queueId))
+        coVerify(exactly = 0) { syncHistoryDao.updateStatus(any(), SyncState.CANCELLED, any(), any()) }
+        verify(exactly = 1) { syncStateManager.onContinuingShortly() }
+        verify(exactly = 0) { syncStateManager.onWaitingForNetwork() }
+    }
+
+    @Test fun `only a lost connection, or no reason below Android 12, reads as waiting for a network`() {
+        assertTrue(TrackDownloadWorker.stopWaitsForNetwork(WorkInfo.STOP_REASON_CONSTRAINT_CONNECTIVITY, sdkInt = 33))
+        assertTrue(TrackDownloadWorker.stopWaitsForNetwork(WorkInfo.STOP_REASON_UNKNOWN, sdkInt = 30))
+        assertFalse(TrackDownloadWorker.stopWaitsForNetwork(WorkInfo.STOP_REASON_UNKNOWN, sdkInt = 33))
+        assertFalse(TrackDownloadWorker.stopWaitsForNetwork(WorkInfo.STOP_REASON_TIMEOUT, sdkInt = 33))
+        assertFalse(TrackDownloadWorker.stopWaitsForNetwork(WorkInfo.STOP_REASON_FOREGROUND_SERVICE_TIMEOUT, sdkInt = 35))
+    }
+
+    @Test fun `chain - a song a network blip left waiting is downloaded after the sync`() = runBlocking {
+        val queueId = queueFirstDownload()
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns TrackDownloadOutcome.Failed("Connection reset by peer")
+
+        val result = chainWorker().doWork()
+
+        assertEquals(1, result.outputData.getInt(TrackDownloadWorker.KEY_WAITING, -1))
+        assertEquals(WaitingHold.NONE.name, result.outputData.getString(TrackDownloadWorker.KEY_WAITING_HOLD))
+        assertEquals(DownloadStatus.PENDING, db.downloadQueueDao().getStatusById(queueId))
+        coVerify(exactly = 1) { resumer.resume(ResumeTrigger.AUTO, DownloadQueueResumer.AFTER_SYNC_DELAY) }
+    }
+
+    @Test fun `chain - songs queued while it ran (Retry all) are downloaded after it`() = runBlocking {
+        queueFirstDownload()
+        val landed = tmp.newFile("landed.opus").apply { writeBytes(ByteArray(20_000)) }
+        var retried = 0L
+        coEvery { trackDownloader.downloadTrack(any(), any()) } coAnswers {
+            // Retry all during the sync: a song back in the queue that this run's list doesn't have.
+            if (retried == 0L) retried = queueFirstDownload()
+            TrackDownloadOutcome.Success(landed.absolutePath)
+        }
+
+        val result = chainWorker().doWork()
+
+        assertEquals("nothing of its own left", 0, result.outputData.getInt(TrackDownloadWorker.KEY_WAITING, -1))
+        assertEquals(DownloadStatus.PENDING, db.downloadQueueDao().getStatusById(retried))
+        coVerify(exactly = 1) { resumer.resume(ResumeTrigger.AUTO, DownloadQueueResumer.AFTER_SYNC_DELAY) }
+    }
+
+    @Test fun `chain - with nothing left waiting, nothing is scheduled`() = runBlocking {
+        queueFirstDownload()
+        val landed = tmp.newFile("landed.opus").apply { writeBytes(ByteArray(20_000)) }
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns TrackDownloadOutcome.Success(landed.absolutePath)
+
+        chainWorker().doWork()
+
+        coVerify(exactly = 0) { resumer.resume(any(), any(), any()) }
+    }
+
+    @Test fun `chain - paused, its songs wait and the summary is told they are paused`() = runBlocking {
+        paused = true
+        val queueId = queueFirstDownload()
+
+        val result = chainWorker().doWork()
+
+        assertEquals(1, result.outputData.getInt(TrackDownloadWorker.KEY_WAITING, -1))
+        assertEquals(WaitingHold.PAUSED.name, result.outputData.getString(TrackDownloadWorker.KEY_WAITING_HOLD))
+        assertEquals(DownloadStatus.PENDING, db.downloadQueueDao().getStatusById(queueId))
+        coVerify(exactly = 0) { trackDownloader.downloadTrack(any(), any()) }
+    }
+
     /** A song downloading for the first time, queued for a sync. */
     private suspend fun queueFirstDownload(): Long {
         val trackId = db.trackDao().insert(song())
@@ -250,7 +330,7 @@ class TrackDownloadWorkerStopRestoreTest {
                     audioDurationExtractor = mockk(relaxed = true),
                     blocklistGuard = mockk(relaxed = true),
                     streamingPreference = mockk(relaxed = true),
-                    classifier = mockk(relaxed = true),
+                    classifier = DownloadFailureClassifier(),
                     reconciliationUseCase = mockk(relaxed = true),
                     fileExistenceSessionFactory = mockk(relaxed = true),
                     fileAdopter = mockk(relaxed = true),
@@ -258,8 +338,8 @@ class TrackDownloadWorkerStopRestoreTest {
                     flacUpgradeSweeper = mockk(relaxed = true),
                     downloadJobs = DownloadJobRegistry(),
                     fileReplacement = TrackFileReplacement(db.trackDao(), LocalFileOps(appContext)),
-                    queueState = mockk(relaxed = true),
-                    resumer = mockk(relaxed = true),
+                    queueState = queueState,
+                    resumer = resumer,
                     singleTrackDownloadEnqueuer = mockk(relaxed = true),
                 )
             })

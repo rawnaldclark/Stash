@@ -331,6 +331,23 @@ class DiscoveryDownloadWorkerTest {
         verify(exactly = 1) { syncNotificationManager.showRateLimited(any()) }
     }
 
+    @Test fun `after eight rate-limited rounds the drain stops rescheduling and the songs wait`() = runTest {
+        every { workerParams.inputData } returns
+            androidx.work.workDataOf(TrackDownloadWorker.KEY_RATE_LIMIT_ROUND to TrackDownloadWorker.MAX_RATE_LIMIT_ROUNDS)
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns
+            listOf(entry(id = 100L, trackId = 1L), entry(id = 101L, trackId = 2L))
+        coEvery { trackDao.getById(any()) } answers { stubTrack(firstArg()) }
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns
+            TrackDownloadOutcome.Failed("ERROR: [youtube] abc: HTTP Error 429: Too Many Requests")
+
+        val result = newWorker().doWork()
+
+        assertEquals(androidx.work.ListenableWorker.Result.success(), result)
+        coVerify(exactly = 1) { downloadQueueDao.revertToPendingAfterInterruption(100L, any(), DownloadFailureType.RATE_LIMITED) }
+        // Hours of 429s: no more "Downloads slowed down", no more wake-ups; the next start takes them.
+        verify(exactly = 0) { syncNotificationManager.showRateLimited(any()) }
+    }
+
     @Test fun `a paused queue downloads nothing`() = runTest {
         coEvery { queueState.isPaused() } returns true
         coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry(id = 100L, trackId = 1L))

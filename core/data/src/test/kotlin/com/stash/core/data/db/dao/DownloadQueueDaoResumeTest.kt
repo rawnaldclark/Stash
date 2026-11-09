@@ -26,9 +26,10 @@ import java.time.Instant
 
 /**
  * The queries the resume run (downloads that continue on their own) reads, against a real database:
- * - [DownloadQueueDao.hasResumableSyncDownload] answers yes exactly when the sync's own feeders
- *   ([DownloadQueueDao.getAllPendingBySources] and [DownloadQueueDao.getRetryableBySources]) would
- *   return a row, so a resume never starts for nothing and never misses a row a sync would take.
+ * - [DownloadQueueDao.hasResumableSyncDownload] answers yes exactly when the sync's pending feeder
+ *   ([DownloadQueueDao.getAllPendingBySources]) would return a row: failed rows with retries left
+ *   ride along with a run but never start one, or a song that keeps failing woke it up forever.
+ * - [DownloadQueueDao.refundRetries] gives a retry back to rows a systemic failure sent back.
  * - [DownloadQueueDao.deferInProgressForTrack] defers the claimed row of a song with two rows.
  * - [DownloadQueueDao.revertToPendingKeepingRetries] puts a row back without using a retry.
  */
@@ -50,8 +51,8 @@ class DownloadQueueDaoResumeTest {
 
     @After fun tearDown() { db.close() }
 
-    /** One row per case: the EXISTS query and the two feeders must agree on every one. */
-    @Test fun `hasResumableSyncDownload agrees with the sync's own feeders`() = runTest {
+    /** One row per case: the EXISTS query and the pending feeder must agree on every one. */
+    @Test fun `hasResumableSyncDownload agrees with the sync's pending feeder`() = runTest {
         val cases = listOf<Pair<String, suspend () -> Unit>>(
             "a pending sync row in a switched-on playlist" to {
                 dao.insert(row(track(MusicSource.YOUTUBE, inSyncedPlaylist = true), syncId = syncId))
@@ -97,8 +98,7 @@ class DownloadQueueDaoResumeTest {
             db.clearAllTables()
             syncId = db.syncHistoryDao().insert(SyncHistoryEntity())
             seed()
-            val feeders = dao.getAllPendingBySources(sources) + dao.getRetryableBySources(sources)
-            assertEquals(name, feeders.isNotEmpty(), dao.hasResumableSyncDownload(sources))
+            assertEquals(name, dao.getAllPendingBySources(sources).isNotEmpty(), dao.hasResumableSyncDownload(sources))
         }
     }
 
@@ -107,6 +107,26 @@ class DownloadQueueDaoResumeTest {
         assertEquals(false, dao.hasResumableSyncDownload(sources))
         dao.insert(row(track(MusicSource.YOUTUBE, inSyncedPlaylist = true), syncId = syncId))
         assertEquals(true, dao.hasResumableSyncDownload(sources))
+    }
+
+    @Test fun `a failed row with retries left rides along but never starts a run`() = runTest {
+        val sources = listOf("YOUTUBE", "BOTH")
+        dao.insert(row(track(MusicSource.YOUTUBE, inSyncedPlaylist = true), syncId = syncId, status = DownloadStatus.FAILED, retries = 1))
+
+        assertEquals("a sync's run still takes it", 1, dao.getRetryableBySources(sources).size)
+        assertEquals(false, dao.hasResumableSyncDownload(sources))
+    }
+
+    @Test fun `refundRetries gives one retry back to pending rows only`() = runTest {
+        val back = dao.insert(row(track(MusicSource.YOUTUBE, true), syncId = syncId, retries = 2))
+        val none = dao.insert(row(track(MusicSource.YOUTUBE, true), syncId = syncId, retries = 0))
+        val failed = dao.insert(row(track(MusicSource.YOUTUBE, true), syncId = syncId, status = DownloadStatus.FAILED, retries = 3))
+
+        assertEquals(2, dao.refundRetries(listOf(back, none, failed)))
+
+        assertEquals(1, dao.getById(back)!!.retryCount)
+        assertEquals("never below zero", 0, dao.getById(none)!!.retryCount)
+        assertEquals(3, dao.getById(failed)!!.retryCount)
     }
 
     @Test fun `a deferral finds the claimed row of a song with two rows`() = runTest {

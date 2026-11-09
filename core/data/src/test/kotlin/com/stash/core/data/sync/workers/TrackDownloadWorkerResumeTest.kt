@@ -88,6 +88,7 @@ class TrackDownloadWorkerResumeTest {
         coEvery { it.isSyncDownloadRunning() } returns false
     }
     private val notifications = mockk<SyncNotificationManager>(relaxed = true)
+    private val singleEnqueuer = mockk<com.stash.core.data.sync.SingleTrackDownloadEnqueuer>(relaxed = true)
 
     @Before fun setUp() = runBlocking {
         WorkManagerTestInitHelper.initializeTestWorkManager(context)
@@ -107,6 +108,9 @@ class TrackDownloadWorkerResumeTest {
         assertEquals(ListenableWorker.Result.success(), result)
         songs.forEach { assertEquals(DownloadStatus.COMPLETED, db.downloadQueueDao().getStatusById(it)) }
         coVerify(exactly = 2) { trackDownloader.downloadTrack(any(), any()) }
+        // Songs land again: the out-of-space hold and "Downloads slowed down" go.
+        verify { queueState.setStorageFull(false) }
+        verify { notifications.cancelRateLimited() }
     }
 
     @Test fun `does nothing in Online mode`() = runBlocking {
@@ -130,14 +134,22 @@ class TrackDownloadWorkerResumeTest {
         coVerify(exactly = 0) { trackDownloader.downloadTrack(any(), any()) }
     }
 
-    @Test fun `leaves the queue to a sync that is downloading`() = runBlocking {
+    @Test fun `a sync that is downloading takes the queue, and the run tries again after it`() = runBlocking {
         coEvery { resumer.isSyncDownloadRunning() } returns true
         val song = queueSyncSong(1)
 
-        worker().doWork()
+        val result = worker().doWork()
 
+        // Retry all while a sync runs: the sync's list doesn't have the retried songs, so the run
+        // comes back (WorkManager's backoff) instead of ending and leaving them for tomorrow.
+        assertEquals(ListenableWorker.Result.retry(), result)
         assertEquals(DownloadStatus.PENDING, db.downloadQueueDao().getStatusById(song))
         coVerify(exactly = 0) { trackDownloader.downloadTrack(any(), any()) }
+        assertEquals(
+            "the last attempt stops asking",
+            ListenableWorker.Result.success(),
+            worker(attempt = TrackDownloadWorker.MAX_ATTEMPTS - 1).doWork(),
+        )
     }
 
     @Test fun `a network failure leaves the song pending with one retry used and asks to retry`() = runBlocking {
@@ -206,8 +218,65 @@ class TrackDownloadWorkerResumeTest {
         val rows = songs.map { db.downloadQueueDao().getById(it)!! }
         rows.forEach { assertEquals(DownloadStatus.PENDING, it.status) }
         assertEquals("only the song that hit the limit used a retry", listOf(1, 0, 0), rows.map { it.retryCount }.sortedDescending())
-        coVerify(exactly = 1) { resumer.resume(ResumeTrigger.AUTO, DownloadQueueResumer.RATE_LIMIT_DELAY) }
+        coVerify(exactly = 1) { resumer.resume(ResumeTrigger.AUTO, DownloadQueueResumer.RATE_LIMIT_DELAY, 1) }
         verify(exactly = 1) { notifications.showRateLimited(any()) }
+    }
+
+    @Test fun `after eight rate-limited rounds in a row, nothing is scheduled and the songs wait`() = runBlocking {
+        val songs = (1..2).map { queueSyncSong(it) }
+        repeat(DownloadSlots.COUNT - 1) { check(slots.permits.tryAcquire()) }
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns
+            TrackDownloadOutcome.Failed("ERROR: [youtube] abc: HTTP Error 429: Too Many Requests")
+
+        val result = try {
+            worker(
+                input = workDataOf(
+                    TrackDownloadWorker.KEY_RESUME to true,
+                    TrackDownloadWorker.KEY_RATE_LIMIT_ROUND to TrackDownloadWorker.MAX_RATE_LIMIT_ROUNDS,
+                ),
+            ).doWork()
+        } finally {
+            repeat(DownloadSlots.COUNT - 1) { slots.permits.release() }
+        }
+
+        assertEquals(ListenableWorker.Result.success(), result)
+        songs.forEach { assertEquals(DownloadStatus.PENDING, db.downloadQueueDao().getStatusById(it)) }
+        coVerify(exactly = 0) { resumer.resume(any(), any(), any()) }
+        verify(exactly = 0) { notifications.showRateLimited(any()) }
+    }
+
+    @Test fun `every song failing the same transient way gives the retries back and backs off`() = runBlocking {
+        val songs = (1..TrackDownloadWorker.SYSTEMIC_FAILURE_MIN).map { queueSyncSong(it) }
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns TrackDownloadOutcome.Failed("Connection reset by peer")
+
+        val result = worker().doWork()
+
+        // A captive portal, an extractor broken for everyone: the songs weren't the problem.
+        assertEquals(ListenableWorker.Result.retry(), result)
+        songs.map { db.downloadQueueDao().getById(it)!! }.forEach {
+            assertEquals(DownloadStatus.PENDING, it.status)
+            assertEquals("no retry used", 0, it.retryCount)
+            assertEquals(DownloadFailureType.NETWORK, it.failureType)
+        }
+    }
+
+    @Test fun `fewer failures than the threshold still use their retries`() = runBlocking {
+        val songs = (1 until TrackDownloadWorker.SYSTEMIC_FAILURE_MIN).map { queueSyncSong(it) }
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns TrackDownloadOutcome.Failed("Connection reset by peer")
+
+        worker().doWork()
+
+        songs.forEach { assertEquals(1, db.downloadQueueDao().getById(it)!!.retryCount) }
+    }
+
+    @Test fun `a systemic failure is one transient type, at least five, with nothing landed`() {
+        val five = List(TrackDownloadWorker.SYSTEMIC_FAILURE_MIN) { DownloadFailureType.NETWORK }
+        assertEquals(true, systemicFailure(downloaded = 0, failures = five))
+        assertEquals(true, systemicFailure(0, List(5) { DownloadFailureType.UNKNOWN }))
+        assertEquals("a song landed", false, systemicFailure(downloaded = 1, failures = five))
+        assertEquals("too few", false, systemicFailure(0, five.drop(1)))
+        assertEquals("mixed", false, systemicFailure(0, five.dropLast(1) + DownloadFailureType.UNKNOWN))
+        assertEquals("not transient", false, systemicFailure(0, List(5) { DownloadFailureType.NO_MATCH }))
     }
 
     @Test fun `a song a live job holds is left alone, a claim nobody holds is taken back`() = runBlocking {
@@ -287,6 +356,55 @@ class TrackDownloadWorkerResumeTest {
         verify(exactly = 1) { notifications.showStorageFull() }
     }
 
+    @Test fun `single retry - a rate limit queues the song again in 15 minutes, counting the round`() = runBlocking {
+        val song = queueFailedSong()
+        check(db.downloadQueueDao().atomicallyClaimForRetry(song) == 1)
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns
+            TrackDownloadOutcome.Failed("ERROR: [youtube] abc: HTTP Error 429: Too Many Requests")
+
+        val result = worker(input = workDataOf(TrackDownloadWorker.KEY_QUEUE_ID to song)).doWork()
+
+        assertEquals(ListenableWorker.Result.success(), result)
+        val row = db.downloadQueueDao().getById(song)!!
+        assertEquals(DownloadStatus.PENDING, row.status)
+        assertEquals(0, row.retryCount)
+        assertEquals(DownloadFailureType.RATE_LIMITED, row.failureType)
+        coVerify(exactly = 1) { singleEnqueuer.enqueueLater(song, DownloadQueueResumer.RATE_LIMIT_DELAY, 1) }
+        verify(exactly = 1) { notifications.showRateLimited(any()) }
+    }
+
+    @Test fun `single retry - after eight rate-limited rounds the failure shows instead of queuing again`() = runBlocking {
+        val song = queueFailedSong()
+        check(db.downloadQueueDao().atomicallyClaimForRetry(song) == 1)
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns
+            TrackDownloadOutcome.Failed("ERROR: [youtube] abc: HTTP Error 429: Too Many Requests")
+
+        val result = worker(
+            input = workDataOf(
+                TrackDownloadWorker.KEY_QUEUE_ID to song,
+                TrackDownloadWorker.KEY_RATE_LIMIT_ROUND to TrackDownloadWorker.MAX_RATE_LIMIT_ROUNDS,
+            ),
+        ).doWork()
+
+        assertEquals(ListenableWorker.Result.success(), result)
+        val row = db.downloadQueueDao().getById(song)!!
+        assertEquals(DownloadStatus.FAILED, row.status)
+        assertEquals(DownloadFailureType.RATE_LIMITED, row.failureType)
+        coVerify(exactly = 0) { singleEnqueuer.enqueueLater(any(), any(), any()) }
+    }
+
+    @Test fun `single retry - paused, a queued retry waits for Resume`() = runBlocking {
+        paused = true
+        val song = queueFailedSong()
+        check(db.downloadQueueDao().atomicallyClaimForRetry(song) == 1)
+
+        val result = worker(input = workDataOf(TrackDownloadWorker.KEY_QUEUE_ID to song)).doWork()
+
+        assertEquals(ListenableWorker.Result.success(), result)
+        assertEquals(DownloadStatus.PENDING, db.downloadQueueDao().getStatusById(song))
+        coVerify(exactly = 0) { trackDownloader.downloadTrack(any(), any()) }
+    }
+
     /** A song whose download failed on a network error, for Retry. */
     private suspend fun queueFailedSong(retries: Int = 0): Long {
         val id = queueSyncSong(100 + retries)
@@ -350,7 +468,7 @@ class TrackDownloadWorkerResumeTest {
                     fileReplacement = TrackFileReplacement(db.trackDao(), LocalFileOps(appContext)),
                     queueState = queueState,
                     resumer = resumer,
-                    singleTrackDownloadEnqueuer = mockk(relaxed = true),
+                    singleTrackDownloadEnqueuer = singleEnqueuer,
                     downloadSlots = slots,
                 )
             })

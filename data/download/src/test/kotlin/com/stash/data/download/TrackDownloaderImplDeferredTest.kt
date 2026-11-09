@@ -113,31 +113,6 @@ class TrackDownloaderImplDeferredTest {
     }
 
     @Test
-    fun `yt-dlp's ERROR line survives the warnings printed before it`() {
-        val warnings = (1..6).joinToString("\n") {
-            "WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; " +
-                "to use another runtime add --js-runtimes RUNTIME[:PATH] to your command/config. YouTube extraction " +
-                "without a JS runtime has been deprecated, and some formats may be missing. $it"
-        }
-        val stderr = warnings + "\nERROR: [youtube] abc123: HTTP Error 429: Too Many Requests\n"
-
-        val text = ytDlpFailureText(stderr)
-
-        assertTrue(text, text.contains("HTTP Error 429"))
-        assertTrue("only the error lines", !text.contains("WARNING"))
-    }
-
-    @Test
-    fun `with no ERROR line, the end of what yt-dlp printed is kept`() {
-        val stderr = "x".repeat(800) + " No space left on device"
-
-        val text = ytDlpFailureText(stderr)
-
-        assertTrue(text.endsWith("No space left on device"))
-        assertTrue(text.length <= 500)
-    }
-
-    @Test
     fun `Deferred result with no claimed row still returns Deferred`() = runTest {
         // Edge case: queue entry already cleaned up. The translator must not
         // crash; it must still return Deferred so the worker chain doesn't

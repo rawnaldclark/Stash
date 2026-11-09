@@ -118,7 +118,8 @@ class DownloadQueueResumer @Inject constructor(
 
     /**
      * Runs whatever is waiting. [ResumeTrigger.AUTO] does nothing while paused or out of space;
-     * [ResumeTrigger.USER] clears both first. Online mode never downloads a sync's rows (the
+     * [ResumeTrigger.USER] and [ResumeTrigger.RETRY] clear both first. [rateLimitRound] is the
+     * rate-limited round this start follows (see [TrackDownloadWorker.KEY_RATE_LIMIT_ROUND]). Online mode never downloads a sync's rows (the
      * sync's own step refuses them there too), but the drain of rows the user asked for runs in
      * either mode, as it always has. [initialDelay] holds the resume run back (a sync that left
      * songs, YouTube asking us to wait); the drain starts only on an undelayed call.

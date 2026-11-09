@@ -226,4 +226,50 @@ class DownloadFailureClassifierTest {
         assertEquals(Lane.STORAGE_FULL, DownloadFailureClassifier.laneFor(DownloadFailureType.STORAGE_FULL, 0))
         assertEquals(Lane.STORAGE_FULL, DownloadFailureClassifier.laneFor(DownloadFailureType.STORAGE_FULL, 99))
     }
+
+    // ── yt-dlp's whole stderr: WARNING lines first, the ERROR at the end ──
+
+    private val warnings = """
+        WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add --js-runtimes RUNTIME[:PATH] to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing.
+        WARNING: [youtube] abc123: nsig extraction failed: Some formats may be missing
+    """.trimIndent()
+
+    private fun stderr(vararg tail: String) = (listOf(warnings) + tail).joinToString(separator = System.lineSeparator())
+
+    private fun classifyDownload(text: String) = classifier.classify(FailureContext(phase = DownloadPhase.DOWNLOADING, errorText = text))
+
+    @Test fun `multi-line - a 429 after the warnings is a rate limit`() {
+        assertEquals(
+            DownloadFailureType.RATE_LIMITED,
+            classifyDownload(stderr("ERROR: [youtube] abc123: Unable to download webpage: HTTP Error 429: Too Many Requests")),
+        )
+    }
+
+    @Test fun `multi-line - the bot check after the warnings is a rate limit`() {
+        assertEquals(
+            DownloadFailureType.RATE_LIMITED,
+            classifyDownload(stderr("ERROR: [youtube] abc123: Sign in to confirm you’re not a bot. Use --cookies for the authentication.")),
+        )
+    }
+
+    @Test fun `multi-line - ENOSPC after the warnings is a full phone`() {
+        assertEquals(
+            DownloadFailureType.STORAGE_FULL,
+            classifyDownload(stderr("[download] Destination: /cache/abc123.webm", "ERROR: unable to write data: [Errno 28] No space left on device")),
+        )
+    }
+
+    @Test fun `multi-line - ENOSPC from ffmpeg is a full phone, not an ffmpeg failure`() {
+        assertEquals(
+            DownloadFailureType.STORAGE_FULL,
+            classifyDownload(stderr("ERROR: Postprocessing: ffmpeg exited with code 1: av_interleaved_write_frame(): No space left on device")),
+        )
+    }
+
+    @Test fun `multi-line - ENOSPC after a timed-out read is a full phone, not a network blip`() {
+        assertEquals(
+            DownloadFailureType.STORAGE_FULL,
+            classifyDownload(stderr("ERROR: The read operation timed out", "ERROR: unable to write data: [Errno 28] No space left on device")),
+        )
+    }
 }

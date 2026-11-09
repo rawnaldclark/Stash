@@ -308,6 +308,13 @@ class SyncViewModelTest {
     }
 
     @Test
+    fun `Stop also pauses downloads, so nothing starts again on its own`() {
+        newVm().onStopSync()
+        // Without it, the resume run took the songs the sync left as soon as the app came back.
+        coVerify(exactly = 1) { downloadQueueResumer.pause() }
+    }
+
+    @Test
     fun `turning Auto-sync off cancels the daily schedule`() = runTest {
         every { prefs.preferences } returns MutableStateFlow(SyncPreferences(autoSyncEnabled = true))
         val vm = newVm()
