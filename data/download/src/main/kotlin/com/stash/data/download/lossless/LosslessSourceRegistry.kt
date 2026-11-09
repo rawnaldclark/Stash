@@ -101,17 +101,13 @@ class LosslessSourceRegistry @Inject constructor(
     /** The sources [resolve] asks, in order. */
     private suspend fun chain(): List<LosslessSource> =
         // Test toggles (outage drills): filter the chain to a single source so a
-        // forced download exercises that source even when the Qobuz proxies are
-        // healthy. A miss falls through to a normal null return (no quota to
-        // protect).
+        // forced download exercises that source even when Tidal would answer. A miss
+        // falls through to a normal null return (no quota to protect).
         if (streamingPreference.isForceQbdlxOnly()) {
             orderedSources().filter { it.id == QBDLX_SOURCE_ID }
         } else {
-            // Normal chain skips parked (host-down) sources. qbdlx self-gates on
-            // LosslessAvailability. The force toggle above bypasses the filter so
-            // a manual test can still reach a source on demand, and
-            // orderedSources()/Settings still list them.
-            withOwnTidalFirst(orderedSources().filterNot { it.id in PARKED_SOURCE_IDS }).let { normal ->
+            // qbdlx self-gates on LosslessAvailability.
+            withOwnTidalFirst(orderedSources()).let { normal ->
                 // "Test: skip Qobuz (Tidal first)" — debug builds only (the accessor is
                 // gated). Leaves out the Qobuz source so a download goes to Tidal.
                 if (streamingPreference.isSkipQobuz()) {
@@ -189,11 +185,5 @@ class LosslessSourceRegistry @Inject constructor(
 
         /** [com.stash.data.download.lossless.tidal.TidalLosslessSource.SOURCE_ID]. */
         private const val TIDAL_SOURCE_ID = "tidal_bitchord"
-
-        /**
-         * Lossless sources parked out of the NORMAL resolve chain because their
-         * upstreams are down for us (2026-07-01): kennyy.com.br is health-down.
-         */
-        val PARKED_SOURCE_IDS = setOf("kennyy_qobuz")
     }
 }

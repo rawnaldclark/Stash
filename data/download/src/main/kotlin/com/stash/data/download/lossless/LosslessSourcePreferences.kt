@@ -395,12 +395,10 @@ class LosslessSourcePreferences @Inject constructor(
          *    endpoint is asked first. Nothing calls [setPriorityOrder] today; if a
          *    manual order is ever offered, that rule has to respect it, so streaming
          *    and Settings follow it too.
-         * 3. kennyy_qobuz — Qobuz Hi-Res FLAC via qobuz.kennyy.com.br. PARKED
-         *    (host down for us) — see [LosslessSourceRegistry.PARKED_SOURCE_IDS].
          *
          * Every rung is user-owned OR build-carried: 1 self-gates off without a
          * connected Qobuz account, 2 without a server (the user's own, or the Tidal
-         * relay in the signed config), and 3 is parked. With nothing of the user's
+         * relay in the signed config). With nothing of the user's
          * own connected, a build carrying the Tidal relay still resolves through 2
          * with no user action; a build without one reaches NO lossless source at
          * all and falls back to lossy.
@@ -408,7 +406,6 @@ class LosslessSourcePreferences @Inject constructor(
         val DEFAULT_PRIORITY: List<String> = listOf(
             "qbdlx_qobuz",
             "tidal_bitchord",
-            "kennyy_qobuz",
         )
 
         /**

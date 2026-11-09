@@ -40,7 +40,6 @@ import com.stash.core.data.sync.workers.TagEnrichmentWorker
 import com.stash.core.data.sync.workers.ArtistGenreWorker
 import com.stash.core.data.sync.workers.TrackInfoEnrichmentWorker
 import com.stash.core.data.sync.workers.UpdateCheckWorker
-import com.stash.core.media.streaming.KennyyHealthProbe
 import com.stash.data.download.lossless.LosslessRetryScheduler
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.ytdlp.YtDlpUpdateWorker
@@ -188,13 +187,6 @@ class StashApplication : Application(), Configuration.Provider {
      */
     @Inject
     lateinit var losslessRetryScheduler: LosslessRetryScheduler
-
-    /**
-     * Cold-start Kennyy health probe. Parked with kennyy: the ProcessLifecycle
-     * observer registered in [onCreate] no longer starts it.
-     */
-    @Inject
-    lateinit var kennyyHealthProbe: KennyyHealthProbe
 
     @Inject
     lateinit var handoffOffers: com.stash.core.media.handoff.HandoffOffers
@@ -363,10 +355,6 @@ class StashApplication : Application(), Configuration.Provider {
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
-                    // PARKED 2026-07-01: kennyy is out of the lossless chain (host
-                    // down for us — see LosslessSourceRegistry.PARKED_SOURCE_IDS),
-                    // so its health probe is parked too.
-                    // kennyyHealthProbe.start()
                     // The playback service stops itself after five idle minutes and the
                     // controller drops with it; the next tap then pays ~1 s of service
                     // start (Pixel 6, 2026-09-06). Reconnect while the user is still
@@ -385,7 +373,6 @@ class StashApplication : Application(), Configuration.Provider {
                 }
 
                 override fun onStop(owner: LifecycleOwner) {
-                    // kennyyHealthProbe.stop()
                     // The BotGuard WebView is ~50 MB; drop it while backgrounded, it
                     // rebuilds on the next play (or the next onStart pre-warm).
                     applicationScope.launch { innerTubeClient.releasePoTokens() }
@@ -711,7 +698,7 @@ class StashApplication : Application(), Configuration.Provider {
         // were removed when Library reverted to downloaded-only. They populated
         // is_streamable for the "show streamable rows in Library" surface that
         // no longer exists. Streaming-tap availability is determined per-call
-        // by KennyySource at the moment the user taps a search result.
+        // by the streaming chain at the moment the user taps a search result.
 
         // Start the local listening-history recorder + optional Last.fm
         // and YouTube Music scrobbler. All are safe to start unconditionally —

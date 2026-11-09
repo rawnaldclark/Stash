@@ -30,7 +30,7 @@ annotation class StreamCache
 
 /**
  * Hilt-provides the Media3 [SimpleCache] used to cache streamed bytes
- * from online playback (KennyySource / Qobuz).
+ * from online playback (Qobuz, Tidal, YouTube).
  *
  * Separate cache instance from `PreviewCacheModule` so eviction policies
  * don't collide — short preview snippets and full streamed tracks have

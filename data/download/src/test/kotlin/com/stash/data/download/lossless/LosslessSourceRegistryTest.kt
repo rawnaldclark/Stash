@@ -122,38 +122,17 @@ class LosslessSourceRegistryTest {
     }
 
     @Test
-    fun `a parked qobuz proxy is skipped and an active source serves the normal chain`() = runTest {
-        coEvery { prefs.priorityOrderNow() } returns
-            LosslessSourcePreferences.DEFAULT_PRIORITY
-        coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
-        coEvery { healthGate.isDegraded(any()) } returns false
-
-        val lucidaResult = flacResult("lucida")
-        // kennyy is parked (PARKED_SOURCE_IDS): the normal resolve
-        // chain must skip it entirely, never even calling resolve().
-        val kennyy = fakeSource("kennyy_qobuz", flacResult("kennyy_qobuz"))
-        val lucida = fakeSource("lucida", lucidaResult)
-
-        val registry = registry(linkedSetOf(kennyy, lucida))
-        val result = registry.resolve(query)
-
-        assertThat(result).isEqualTo(lucidaResult)
-        coVerify(exactly = 0) { kennyy.resolve(any()) } // parked
-        coVerify(exactly = 1) { lucida.resolve(any()) }
-    }
-
-    @Test
     fun `no source resolves when all are degraded`() = runTest {
         acceptAnyQuality()
-        val kennyy = fakeSource("kennyy_qobuz", flacResult("kennyy_qobuz"))
-        val squid = fakeSource("squid_qobuz", flacResult("squid_qobuz"))
+        val qbdlx = fakeSource("qbdlx_qobuz", flacResult("qbdlx_qobuz"))
+        val tidal = fakeSource("tidal_bitchord", flacResult("tidal_bitchord"))
         coEvery { healthGate.isDegraded(any()) } returns true
 
-        val registry = registry(linkedSetOf(kennyy, squid))
+        val registry = registry(linkedSetOf(qbdlx, tidal))
 
         assertThat(registry.resolve(query)).isNull()
-        coVerify(exactly = 0) { kennyy.resolve(any()) }
-        coVerify(exactly = 0) { squid.resolve(any()) }
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
+        coVerify(exactly = 0) { tidal.resolve(any()) }
     }
 
     @Test
@@ -193,7 +172,7 @@ class LosslessSourceRegistryTest {
     }
 
     @Test
-    fun `no lookup could search while every source is off, degraded, broken, failing or parked`() = runTest {
+    fun `no lookup could search while every source is off, degraded, broken or failing`() = runTest {
         acceptAnyQuality()
         coEvery { healthGate.isDegraded(any()) } returns false
         coEvery { healthGate.isDegraded("degraded") } returns true
@@ -203,7 +182,6 @@ class LosslessSourceRegistryTest {
             sourceInState("broken", circuitBroken = true),
             // Its last call failed (a network error answers null like a miss does).
             sourceInState("failing", recentFailures = 1),
-            sourceInState("kennyy_qobuz"), // parked: resolve never asks it
         )
 
         assertThat(registry(sources).canSearchNow()).isFalse()

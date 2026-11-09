@@ -4,34 +4,15 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * Wire models for the qobuz.squid.wtf JSON API. The deployed Next.js
- * proxy at `qobuz.squid.wtf/api/...` wraps every Qobuz response in a
- * `{success, data, error}` envelope and otherwise passes the upstream
- * Qobuz catalog payload through verbatim. We model only what the
- * matcher and resolver consume; everything else falls through under
- * the parser's `ignoreUnknownKeys = true` and disappears silently.
+ * Wire models for the Qobuz catalog payload (first written for the
+ * since-removed qobuz.squid.wtf proxy, which passed it through verbatim).
+ * We model only what the matcher and resolver consume; everything else
+ * falls through under the parser's `ignoreUnknownKeys = true` and
+ * disappears silently.
  *
- * If the squid.wtf wire shape drifts, untyped fields default to safe
- * zero/null values rather than failing deserialisation — what we want
- * for a third-party reverse-engineered API.
+ * If the wire shape drifts, untyped fields default to safe zero/null
+ * values rather than failing deserialisation.
  */
-
-// ── Envelope ────────────────────────────────────────────────────────────
-
-/**
- * Common response envelope. squid.wtf returns this shape for every
- * `/api/...` route. On a clean response, [success] is true and [data] is
- * non-null; on a validation failure (HTTP 400), [success] is false and
- * [error] carries a short human-readable message. Upstream Qobuz
- * blocking (region lock, throttling) typically surfaces as HTTP 4xx —
- * caller deals with that separately via [QobuzApiException].
- */
-@Serializable
-data class SquidWtfEnvelope<T>(
-    val success: Boolean = false,
-    val data: T? = null,
-    val error: String? = null,
-)
 
 // ── Search (`/api/get-music`) ───────────────────────────────────────────
 

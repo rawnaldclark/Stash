@@ -18,9 +18,8 @@ object StreamService {
     const val YOUTUBE = "YouTube"
 
     fun displayName(origin: String?): String? = when (origin) {
-        // The ORIGIN constants of QbdlxStreamResolver / KennyyStreamResolver
-        // (private companions), pinned by StreamServiceTest.
-        "qbdlx", "kennyy" -> QOBUZ
+        // QbdlxStreamResolver's ORIGIN (a private companion), pinned by StreamServiceTest.
+        "qbdlx" -> QOBUZ
         TidalStreamResolver.ORIGIN -> TIDAL
         JioSaavnStreamResolver.ORIGIN -> JIOSAAVN
         YouTubeStreamResolver.ORIGIN -> YOUTUBE

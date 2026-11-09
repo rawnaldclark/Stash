@@ -49,8 +49,6 @@ import javax.inject.Singleton
  *   relay for neither FLAC nor AAC, since AAC counts toward the same allowance (a user's own
  *   server still serves, and so does a user's own Qobuz account). Playback falls to JioSaavn
  *   and YouTube.
- *   PARKED (2026-07-01, host down for us — commented out of the chain in
- *   [resolve]): [KennyyStreamResolver] (`kennyy.com.br`).
  *   2. [YouTubeStreamResolver] — yt-dlp / InnerTube extraction. Last
  *      resort, reached only when the track genuinely isn't in the Qobuz
  *      catalog (Bandcamp re-uploads, region-exclusive, underground
@@ -76,7 +74,6 @@ import javax.inject.Singleton
  */
 @Singleton
 class StreamSourceRegistry internal constructor(
-    private val kennyy: KennyyStreamResolver,
     private val qbdlx: QbdlxStreamResolver,
     private val jiosaavn: JioSaavnStreamResolver,
     private val youtube: YouTubeStreamResolver,
@@ -104,7 +101,6 @@ class StreamSourceRegistry internal constructor(
 ) {
     @Inject
     constructor(
-        kennyy: KennyyStreamResolver,
         qbdlx: QbdlxStreamResolver,
         jiosaavn: JioSaavnStreamResolver,
         youtube: YouTubeStreamResolver,
@@ -119,7 +115,7 @@ class StreamSourceRegistry internal constructor(
         soundCloud: SoundCloudStreamResolver,
         availability: LosslessAvailability,
     ) : this(
-        kennyy, qbdlx, jiosaavn, youtube, streamingPreference,
+        qbdlx, jiosaavn, youtube, streamingPreference,
         losslessSourceHealth, losslessPrefs, Dispatchers.IO, diagnosticsLog, tidal, losslessQuota,
         qualityPolicy, cloudCopies, soundCloud, availability,
     )
@@ -322,10 +318,6 @@ class StreamSourceRegistry internal constructor(
                 // both-sources-down outage).
                 if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
             } else {
-                // PARKED 2026-07-01: the kennyy host is down for us. Kept in
-                // sync with LosslessSourceRegistry.PARKED_SOURCE_IDS (download side).
-                // add("kennyy" to kennyy::resolve)
-
                 // Prefer Tidal AAC: Tidal's 320 kbps AAC (`?aac=only&hires=0`, the AAC
                 // download mode's request) ahead of Qobuz, for a listener saving data. Only
                 // where the Tidal rung itself runs (foreground, Lossless on, a relay set), and

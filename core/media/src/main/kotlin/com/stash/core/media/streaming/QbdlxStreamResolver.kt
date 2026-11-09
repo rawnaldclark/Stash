@@ -30,7 +30,7 @@ import javax.inject.Singleton
  *    see [QbdlxQobuzSource.isEnabledForStreaming]).
  *  - qbdlx has no confident match for the track.
  *  - The returned URL has no `etsp` parameter (un-refreshable URLs aren't
- *    safe to cache — see [KennyyStreamResolver] KDoc).
+ *    safe to cache).
  */
 @Singleton
 class QbdlxStreamResolver @Inject constructor(
