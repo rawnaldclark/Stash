@@ -426,8 +426,8 @@ class HomeViewModel @Inject constructor(
      * so connecting an account or the source recovering retires it on its own.
      *
      * Keyed on [LosslessAvailability.anyUserOwned], deliberately not
-     * `anyConfigured`: a configured-but-dead PUBLIC relay is precisely the
-     * outage this banner exists for, and its call to action — connect your own
+     * `anySourceConfigured`: Stash's Tidal relay configured but failing is precisely
+     * the outage this banner exists for, and its call to action — connect your own
      * account — is exactly what that user still needs to do.
      */
     private val losslessOfflineFlow = combine(
@@ -536,15 +536,18 @@ class HomeViewModel @Inject constructor(
     fun onSelectGenre(label: String) { genreFilter.value = label }
 
     val uiState: StateFlow<HomeUiState> = combine(
-        // Paired so uiState stays within the 5-flow typed combine overload.
-        combine(homePlaylistFlow, likedCardFlow) { home, liked -> home to liked },
+        // Grouped so uiState stays within the 5-flow typed combine overload.
+        combine(homePlaylistFlow, likedCardFlow, streamingPreference.enabled) { home, liked, online ->
+            Triple(home, liked, online)
+        },
         losslessBannersFlow,
         tipJarRepository.state,
         metadataBackfillBannerFlow,
         discoveryFlow,
-    ) { (home, likedCard), (losslessPrompt, showLosslessOffline), tipJar, metadataBackfillBanner, discovery ->
+    ) { (home, likedCard, online), (losslessPrompt, showLosslessOffline), tipJar, metadataBackfillBanner, discovery ->
         HomeUiState(
-            hero = home.hero,
+            // Offline mode plays only downloads, and Daily Discover is all streamed finds: the card says so.
+            hero = home.hero?.let { if (online) it else it.copy(offline = true) },
             heroBuilding = home.heroBuilding,
             isLoading = false,
             losslessPrompt = losslessPrompt,

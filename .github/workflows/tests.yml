@@ -49,12 +49,41 @@ jobs:
       - name: Fix gradlew permission
         run: chmod +x gradlew
 
+      # Tuning's pitch engine is native code (core/media/src/main/cpp). The same NDK and CMake
+      # versions as core/media/build.gradle.kts pins: change them together.
+      - name: Install NDK and CMake
+        run: echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" "cmake;3.22.1" > /dev/null
+
       # `--continue` for the same reason as the unit-tests job: a compile error
       # in one module otherwise hides every other module's.
       - name: Compile every module's unit tests
         run: ./gradlew compileDebugUnitTestKotlin --continue --no-daemon
 
-  # The share Worker's tests (mixes, rooms, Community), then the sync Worker, tip jar, lossless relay and Last.fm proxy.
+  # Tuning's engine core (core/media/src/main/cpp/stash_tuning_core.h, the code the app runs)
+  # built for this runner and checked for pitch (55 to 1320 Hz at 44.1 and 96 kHz, within 0.5 Hz)
+  # and for the latency the output stage relies on (within 1 ms). It is what catches a vendored
+  # Signalsmith header that lost the STASH PATCH; the instrumented test checks the same on a phone.
+  native-pitch-test:
+    name: Native pitch test
+    if: >-
+      github.event_name != 'push' ||
+      github.ref == 'refs/heads/master' ||
+      contains(github.event.head_commit.message, '[do test]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Build and run the pitch test
+        run: |
+          cmake -S core/media/src/test/cpp -B build/tuning-host -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/tuning-host --parallel
+          ctest --test-dir build/tuning-host --output-on-failure -V
+
+  # The share Worker's tests (mixes, rooms, Community), then the sync Worker, tip jar, Tidal relay, lossless config
+  # publisher and Last.fm proxy.
   # They import only local files, so no npm install.
   worker-tests:
     name: Share worker tests
@@ -89,10 +118,15 @@ jobs:
         working-directory: infra/tipjar-worker
         run: node --no-warnings --test test/*.test.js
 
-      # The lossless relay (Qobuz mint, quotas, account rotation): the most abuse-sensitive Worker, so its suite
-      # must not only run by hand. node:sqlite stands in for D1; local imports only.
-      - name: Run the lossless relay's tests
-        working-directory: infra/lossless-relay
+      # The Tidal relay (seats, pacing, caps, the daily lossless counter, supporter tokens): the most
+      # abuse-sensitive Worker, so its suite must not only run by hand. node:sqlite stands in for D1; local imports only.
+      - name: Run the Tidal relay's tests
+        working-directory: infra/tidal-relay
+        run: node --no-warnings --test test/*.test.js
+
+      # The signed lossless.json publisher (Tidal relay url/token, relay_key, the relays kill switch). Local imports only.
+      - name: Run the lossless config publisher's tests
+        working-directory: infra/lossless-config
         run: node --no-warnings --test test/*.test.js
 
       # The Last.fm proxy (param allowlist, canonical cache key, per-network miss limit). Local imports only.
@@ -147,6 +181,11 @@ jobs:
       - name: Fix gradlew permission
         run: chmod +x gradlew
 
+      # Tuning's pitch engine is native code (core/media/src/main/cpp). The same NDK and CMake
+      # versions as core/media/build.gradle.kts pins: change them together.
+      - name: Install NDK and CMake
+        run: echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" "cmake;3.22.1" > /dev/null
+
       - name: Run all unit tests
         run: ./gradlew testDebugUnitTest --continue --no-daemon
 
@@ -182,6 +221,11 @@ jobs:
 
       - name: Fix gradlew permission
         run: chmod +x gradlew
+
+      # Tuning's pitch engine is native code (core/media/src/main/cpp). The same NDK and CMake
+      # versions as core/media/build.gradle.kts pins: change them together.
+      - name: Install NDK and CMake
+        run: echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" "cmake;3.22.1" > /dev/null
 
       - name: Assemble debug APK
         env:

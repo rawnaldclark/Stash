@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -120,7 +121,7 @@ fun FailedDownloadsGroupCard(
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = display.groupTitle,
+                    text = stringResource(display.groupTitle),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -246,12 +247,13 @@ private fun FailedDownloadRowItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            val reason = stringResource(display.shortLabel)
             val subtitle = buildString {
                 if (!row.playlistName.isNullOrBlank()) {
                     append(row.playlistName)
                     append(" \u00B7 ")
                 }
-                append(display.shortLabel)
+                append(reason)
             }
             Text(
                 text = subtitle,

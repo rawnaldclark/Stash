@@ -32,6 +32,52 @@ class SignalPathExplainerTest {
         mixerFormat = format, miss = miss,
     )
 
+    @Test fun `tuning shows on the Stash line and the headline`() {
+        val v = SignalPathExplainer.explain(flac2496, matched(96_000, SampleFormat.INT24), dspActive = false, tuningHz = 432f)!!
+        val stash = v.stages.first { it.title == "Stash" }
+        assertThat(stash.detail).isEqualTo("Retuned to A = 432 Hz in 32-bit float (no truncation)")
+        assertThat(stash.ok).isFalse()
+        assertThat(v.quality).isEqualTo(SignalQuality.ENHANCED)
+        assertThat(v.headline).isEqualTo("Lossless + retuned to A = 432 Hz")
+    }
+
+    @Test fun `a fractional reference keeps its decimal`() {
+        val v = SignalPathExplainer.explain(flac1644, matched(44_100, SampleFormat.INT24), false, tuningHz = 431.5f)!!
+        assertThat(v.stages.first { it.title == "Stash" }.detail).startsWith("Retuned to A = 431.5 Hz")
+    }
+
+    @Test fun `tuning with the EQ names both`() {
+        val v = SignalPathExplainer.explain(flac2496, matched(96_000, SampleFormat.INT24), dspActive = true, tuningHz = 444f)!!
+        assertThat(v.stages.first { it.title == "Stash" }.detail)
+            .isEqualTo("Retuned to A = 444 Hz · EQ / normalization in 32-bit float (no truncation)")
+        assertThat(v.headline).isEqualTo("Lossless + retuned + your EQ")
+    }
+
+    @Test fun `bit-perfect chosen while tuned explains the matched fallback`() {
+        val v = SignalPathExplainer.explain(
+            flac2496, matched(96_000, SampleFormat.INT24, miss = BitPerfectMiss.TUNING), false, tuningHz = 432f,
+        )!!
+        val android = v.stages.first { it.title == "Android" }
+        assertThat(android.detail).isEqualTo("Matched to 96 kHz / 24-bit, not resampled (bit-perfect needs standard tuning)")
+        assertThat(android.ok).isTrue()
+    }
+
+    @Test fun `standard tuning reads as untouched`() {
+        val v = SignalPathExplainer.explain(flac2496, matched(96_000, SampleFormat.INT24), false, tuningHz = null)!!
+        assertThat(v.stages.first { it.title == "Stash" }.detail).startsWith("Untouched")
+        assertThat(v.headline).isEqualTo("Hi-Res, not resampled")
+        // A 440 that slips through is still standard.
+        val same = SignalPathExplainer.explain(flac2496, matched(96_000, SampleFormat.INT24), false, tuningHz = 440f)!!
+        assertThat(same).isEqualTo(v)
+    }
+
+    @Test fun `a lossy source stays lossy, retuned or not`() {
+        val opus = SourceFormat("Opus", lossless = false, sampleRate = 48_000, bitsPerSample = null, channelCount = 2)
+        val v = SignalPathExplainer.explain(opus, matched(48_000, SampleFormat.INT24), false, tuningHz = 432f)!!
+        assertThat(v.quality).isEqualTo(SignalQuality.LOSSY)
+        assertThat(v.stages.first { it.title == "Stash" }.detail).startsWith("Retuned to A = 432 Hz")
+    }
+
     @Test fun `no output yet means nothing to explain`() {
         assertThat(SignalPathExplainer.explain(flac2496, null, false)).isNull()
     }

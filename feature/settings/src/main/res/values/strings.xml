@@ -91,6 +91,10 @@
     <string name="settings_license_label">License</string>
     <string name="settings_album_art_credit">Album art</string>
     <string name="settings_album_art_credit_detail">Back covers and inside pages come from the Cover Art Archive and Discogs. This app uses Discogs\' API but is not affiliated with, sponsored or endorsed by Discogs. \'Discogs\' is a trademark of Zink Media, LLC.</string>
+    <string name="settings_open_source_notices">Open-source notices</string>
+    <string name="settings_open_source_notices_detail">Tuning is built on Signalsmith Stretch and Signalsmith Linear (MIT License).</string>
+    <string name="settings_open_source_notices_body" translatable="false">Signalsmith Stretch\nCopyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd.\n\nSignalsmith Linear\nCopyright (c) 2025 Signalsmith Audio\n\nMIT License\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</string>
+    <string name="settings_open_source_notices_close">Close</string>
     <string name="settings_checking_updates_toast">Checking for updates…</string>
     <string name="settings_checking_updates">Checking…</string>
     <string name="settings_check_updates">Check for updates</string>
@@ -134,7 +138,7 @@
     <string name="settings_support_goal">%1$s of %2$s this month</string>
     <!-- A supporter's card: thanks and their status instead of the ask. -->
     <string name="settings_support_thanks_title">Thank you for supporting Stash</string>
-    <string name="settings_support_thanks_line">You\'re a supporter: unlimited Tidal &amp; Qobuz is on.</string>
+    <string name="settings_support_thanks_line">You\'re a supporter: unlimited Tidal is on.</string>
     <string name="settings_support_donate_again">Donate again</string>
     <!-- Settings › About: the GitHub star row (the Support card also has a small "Star" button, and TalkBack reads
          this title for it). -->
@@ -281,18 +285,6 @@
     <string name="settings_youtube_how_to_get_cookies_steps">1. Open a Private/Incognito window\n2. Go to music.youtube.com and log in\n3. Press F12 to open DevTools\n4. Go to Network tab, click any request\n5. Find \'Cookie\' in Request Headers\n6. Copy the ENTIRE cookie value\n\nMust contain: SAPISID, LOGIN_INFO, SID</string>
     <string name="settings_youtube_cookie_label">Cookie</string>
     <string name="settings_youtube_cookie_placeholder">Paste your cookie here</string>
-    <string name="settings_youtube_credentials_title">YouTube Music Credentials</string>
-    <string name="settings_youtube_credentials_desc">Enter your Google Cloud OAuth credentials. Create them at console.cloud.google.com with the \"TVs and Limited Input devices\" type and enable the YouTube Data API v3.</string>
-    <string name="settings_youtube_client_id_label">Client ID</string>
-    <string name="settings_youtube_client_secret_label">Client Secret</string>
-    <string name="settings_youtube_save_connect">Save &amp; Connect</string>
-    <string name="settings_youtube_device_code_instructions">Go to the URL below and enter this code:</string>
-    <string name="settings_youtube_copy_code">Copy Code</string>
-    <string name="settings_youtube_copy_code_cd">Copy code</string>
-    <string name="settings_youtube_open_browser">Open Browser</string>
-    <string name="settings_youtube_open_browser_cd">Open browser</string>
-    <string name="settings_youtube_waiting_authorization">Waiting for authorization…</string>
-    <string name="settings_youtube_device_code_clip_label">YouTube Code</string>
     <string name="settings_lastfm_connect_first">Connect Last.fm first.</string>
     <string name="settings_lastfm_reach_error">Couldn\'t reach Last.fm. Your plays stay queued and will be sent later.</string>
     <string name="settings_lastfm_no_new_scrobbles">No new scrobbles to send.</string>
@@ -509,7 +501,7 @@
     <string name="settings_lossless_subtitle_off">Off: songs play from JioSaavn or YouTube</string>
     <string name="settings_lossless_subtitle_no_source">No lossless source set up yet</string>
     <string name="settings_lossless_subtitle_active">Streams in FLAC</string>
-    <string name="settings_qobuz_no_source_warning">No lossless source configured — connect your Qobuz account below</string>
+    <string name="settings_qobuz_no_source_warning">No lossless source configured — connect your own Qobuz account below</string>
     <string name="settings_qobuz_account_title">Your Qobuz account</string>
     <string name="settings_connected_as">Connected as %1$s</string>
     <string name="settings_qobuz_connected_token">Connected (token)</string>
@@ -549,22 +541,12 @@
     <string name="settings_lossy_fallback_switch_label">JioSaavn, then YouTube, when there\'s no lossless match</string>
     <string name="settings_lossy_fallback_switch_label_aac">JioSaavn, then YouTube, when Tidal has no AAC</string>
     <string name="settings_advanced">Advanced</string>
-    <string name="settings_custom_relay_desc">Point Stash at your own lossless relay. It takes priority over Stash\'s.</string>
-    <string name="settings_custom_endpoint_label">Custom lossless endpoint</string>
     <string name="settings_url_placeholder">https://…</string>
-    <string name="settings_test">Test</string>
-    <string name="settings_testing">Testing…</string>
-    <string name="settings_reachable">Reachable</string>
-    <string name="settings_not_reachable">Not reachable</string>
     <string name="settings_bitchord_desc">Optional: use your own BitChord server for Tidal instead of Stash\'s. Leave blank otherwise.</string>
     <string name="settings_bitchord_server_label">Custom Tidal server (optional)</string>
     <string name="settings_access_token_label">Access token (optional)</string>
     <string name="settings_bitchord_token_saved">A token is saved</string>
     <string name="settings_bitchord_token_hint">Only if your own server sets ACCESS_TOKEN</string>
-    <string name="settings_squid_captcha_desc">qobuz.squid.wtf captcha: paste the captcha_verified_at cookie value directly.</string>
-    <string name="settings_squid_captcha_label">captcha_verified_at value</string>
-    <string name="settings_squid_captcha_placeholder">e.g. 1777687404951</string>
-    <string name="settings_reset_lossless_attempts">Reset lossless attempts</string>
     <string name="settings_equalizer_title">Equalizer</string>
 
     <!-- Settings > Audio & Quality > Lossless tiers -->
@@ -591,12 +573,36 @@
     <string name="settings_hires_bit_perfect_dialog_body">In bit-perfect mode Android doesn\'t touch the volume: your DAC sets it. If your DAC has no volume control of its own, the phone\'s volume keys may stop working and music can play at full level.\n\nTurn the volume down before you press play. EQ, normalization and crossfade are bypassed while bit-perfect is active.</string>
     <string name="settings_hires_bit_perfect_confirm">Use bit-perfect</string>
 
+    <!-- Settings > Audio & Quality > Output > Tuning (TuningSection) -->
+    <string name="settings_tuning_title">Tuning</string>
+    <string name="settings_tuning_value_standard">Standard</string>
+    <string name="settings_tuning_value_hz">A = %1$s Hz</string>
+    <string name="settings_tuning_subtitle_lower">A little lower in pitch. Same speed.</string>
+    <string name="settings_tuning_subtitle_higher">A little higher in pitch. Same speed.</string>
+    <string name="settings_tuning_unavailable">Not available on this phone</string>
+    <string name="settings_tuning_cents_lower">%1$s cents lower</string>
+    <string name="settings_tuning_cents_higher">%1$s cents higher</string>
+    <string name="settings_tuning_cents_standard">Standard pitch, as recorded</string>
+    <string name="settings_tuning_preset_standard">%1$s · Standard</string>
+    <string name="settings_tuning_preset_528">%1$s · C = %2$s</string>
+    <string name="settings_tuning_preset_baroque">%1$s · Baroque</string>
+    <string name="settings_tuning_slider">Tuning reference</string>
+    <string name="settings_tuning_exact_label">Exact Hz</string>
+    <string name="settings_tuning_exact_range">Any value from %1$s to %2$s Hz</string>
+    <string name="settings_tuning_exact_lowest">Sets %1$s Hz, the lowest</string>
+    <string name="settings_tuning_exact_highest">Sets %1$s Hz, the highest</string>
+    <string name="settings_tuning_exact_invalid">Type a number, like %1$s or %2$s</string>
+    <string name="settings_tuning_set">Set</string>
+    <string name="settings_tuning_reset">Back to %1$s</string>
+    <string name="settings_tuning_hz_suffix">Hz</string>
+    <string name="settings_tuning_footer">Applies to everything you play, streamed or downloaded. Speed and lyrics don\'t change. Not used while casting. Bit-perfect turns off while tuning is on.</string>
+
     <!-- Settings > Audio & Quality > SupporterSection -->
-    <string name="settings_supporter_active">Supporter · unlimited Tidal &amp; Qobuz</string>
+    <string name="settings_supporter_active">Supporter · unlimited Tidal</string>
     <string name="settings_supporter_remove_from_device">Remove from this device</string>
-    <string name="settings_supporter_offer">Unlimited Tidal &amp; Qobuz for supporters</string>
-    <string name="settings_supporter_sheet_title">Unlimited Tidal &amp; Qobuz</string>
-    <string name="settings_supporter_sheet_desc">$5 or more on Ko-fi unlocks unlimited Tidal and Qobuz, FLAC and AAC. Enter the email you used on Ko-fi and we\'ll send you a code.</string>
+    <string name="settings_supporter_offer">Unlimited Tidal for supporters</string>
+    <string name="settings_supporter_sheet_title">Unlimited Tidal</string>
+    <string name="settings_supporter_sheet_desc">$5 or more on Ko-fi unlocks unlimited Tidal, FLAC and AAC. Enter the email you used on Ko-fi and we\'ll send you a code.</string>
     <string name="settings_supporter_kofi_email_label">Ko-fi email</string>
     <string name="settings_supporter_email_code_button">Email me a code</string>
     <string name="settings_supporter_code_sent_desc">If %1$s is on our Ko-fi list, a code is on its way. It can take a minute.</string>

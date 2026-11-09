@@ -10,6 +10,7 @@ import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.sync.DownloadJobRegistry
 import com.stash.core.model.DownloadStatus
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
@@ -180,7 +181,7 @@ class LibraryReconciliationRequeueTest {
         assertEquals(MusicSource.YOUTUBE, db.trackDao().getById(liked)!!.source)
         val run = db.syncHistoryDao().insert(SyncHistoryEntity())
 
-        val result = LibraryReconciliationUseCase(db.downloadQueueDao(), db.trackDao(), spotifyOnly, db.playlistDao())
+        val result = LibraryReconciliationUseCase(db.downloadQueueDao(), db.trackDao(), spotifyOnly, db.playlistDao(), DownloadJobRegistry())
             .reconcile(syncId = run)
 
         assertEquals(1, result.unqueuedRequeued)
@@ -208,7 +209,7 @@ class LibraryReconciliationRequeueTest {
         db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = youtubePlaylist, trackId = song, position = 0))
         val run = db.syncHistoryDao().insert(SyncHistoryEntity())
 
-        val result = LibraryReconciliationUseCase(db.downloadQueueDao(), db.trackDao(), spotifyOnly, db.playlistDao())
+        val result = LibraryReconciliationUseCase(db.downloadQueueDao(), db.trackDao(), spotifyOnly, db.playlistDao(), DownloadJobRegistry())
             .reconcile(syncId = run)
 
         assertEquals(0, result.unqueuedRequeued)
@@ -235,7 +236,7 @@ class LibraryReconciliationRequeueTest {
         assertEquals(run, db.downloadQueueDao().getByTrackId(song)!!.syncId)
     }
 
-    private fun reconciler() = LibraryReconciliationUseCase(db.downloadQueueDao(), db.trackDao(), tokens, db.playlistDao())
+    private fun reconciler() = LibraryReconciliationUseCase(db.downloadQueueDao(), db.trackDao(), tokens, db.playlistDao(), DownloadJobRegistry())
 
     /** The switched-on playlist [missingSong] puts its songs in; returns its id. */
     private suspend fun syncedPlaylist(): Long =

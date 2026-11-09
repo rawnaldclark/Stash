@@ -78,11 +78,22 @@ class MixGeneratorShortfallFillTest {
             stubRecipe(discoveryRatio = 0.85f, targetLength = 40),
         )
 
-        // librarySlots = (40 * (1f - 0.85f)).toInt() = 5 (float precision:
-        // 1f - 0.85f = 0.14999998, * 40 = 5.9999..., truncated). The key
+        // librarySlots = 40 - 34 recommendations = 6 (MixSlots; the old
+        // truncation of 40 * (1f - 0.85f) = 5.9999... made it 5). The key
         // assertion is that this is far below targetLength = 40 — i.e. no
         // shortfall fill triggered.
-        assertEquals(5, result.size)
+        assertEquals(6, result.size)
+    }
+
+    @Test fun `the shipped Daily Discover never reads the downloads`() = runTest {
+        coEvery { trackDao.getAllDownloaded() } returns (1L..50L).map { stubTrack(it) }
+        val daily = StashMixDefaults.ALL.single { it.name == "Daily Discover" }.copy(id = 1L)
+
+        val result = generator.generate(daily)
+
+        // All 40 places are recommendations (materializeMix fills them); none are downloads.
+        assertTrue("expected empty, got ${result.size}", result.isEmpty())
+        coVerify(exactly = 0) { trackDao.getAllDownloaded() }
     }
 
     @Test fun `pure discovery recipe at ratio = 1_0 returns empty library slice`() = runTest {

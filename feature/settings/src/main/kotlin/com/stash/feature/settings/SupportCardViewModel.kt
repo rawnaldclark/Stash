@@ -6,7 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.stash.core.data.supporter.SupporterRepository
 import com.stash.core.data.tipjar.DonationGoalRepository
 import com.stash.data.download.lossless.quota.LosslessQuota
-import com.stash.data.download.lossless.relay.LosslessConfigFetcher
+import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.feature.settings.components.SupportCardState
 import com.stash.feature.settings.components.supportCardState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,10 +28,10 @@ class SupportCardViewModel @Inject constructor(
     private val goals: DonationGoalRepository,
     supporter: SupporterRepository,
     quota: LosslessQuota,
-    config: LosslessConfigFetcher,
+    availability: LosslessAvailability,
 ) : ViewModel() {
 
-    val state: StateFlow<SupportCardState> = combine(supporterRows(quota, config, supporter), goals.goal) { row, goal -> supportCardState(row, goal) }
+    val state: StateFlow<SupportCardState> = combine(supporterRows(quota, availability, supporter), goals.goal) { row, goal -> supportCardState(row, goal) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SupportCardState())
 
     init {

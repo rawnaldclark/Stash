@@ -40,8 +40,6 @@ import com.stash.core.data.sync.workers.TagEnrichmentWorker
 import com.stash.core.data.sync.workers.ArtistGenreWorker
 import com.stash.core.data.sync.workers.TrackInfoEnrichmentWorker
 import com.stash.core.data.sync.workers.UpdateCheckWorker
-import com.stash.core.media.streaming.KennyyHealthProbe
-import com.stash.core.media.streaming.SquidCookieAutoRefresher
 import com.stash.data.download.lossless.LosslessRetryScheduler
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.ytdlp.YtDlpUpdateWorker
@@ -56,6 +54,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
@@ -124,6 +123,14 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var downloadQueueDao: DownloadQueueDao
 
+    /** Which download rows a job in this process holds: a cold start leaves their claims alone. */
+    @Inject
+    lateinit var downloadJobs: com.stash.core.data.sync.DownloadJobRegistry
+
+    /** Downloads continue on their own: at a cold start and when the app comes back. */
+    @Inject
+    lateinit var downloadQueueResumer: com.stash.core.data.sync.DownloadQueueResumer
+
     @Inject
     lateinit var trackDao: TrackDao
 
@@ -182,31 +189,13 @@ class StashApplication : Application(), Configuration.Provider {
 
     /**
      * v0.9.17: eager-bound observer that enqueues [LosslessRetryWorker]
-     * on cookie change / lastKnownBadCookie clear / circuit-breaker
-     * reset events. `lateinit` + `@Inject` makes Hilt construct the
-     * singleton when this field is first touched at [onCreate]; we then
-     * call its `start()` to wire up the three reactive collectors.
+     * on circuit-breaker resets, the daily allowance's reset, a Download
+     * quality change and Tidal coming free. `lateinit` + `@Inject` makes Hilt
+     * construct the singleton when this field is first touched at [onCreate];
+     * we then call its `start()` to wire up the reactive collectors.
      */
     @Inject
     lateinit var losslessRetryScheduler: LosslessRetryScheduler
-
-    /**
-     * Auto-refresher for the squid.wtf captcha cookie. Activated by
-     * the ProcessLifecycle observer registered in [onCreate] — only
-     * runs when (1) Kennyy is unhealthy AND (2) the app is in the
-     * foreground/STARTED window. Idle no-op otherwise.
-     */
-    @Inject
-    lateinit var squidCookieAutoRefresher: SquidCookieAutoRefresher
-
-    /**
-     * Cold-start Kennyy health probe. Started by the ProcessLifecycle
-     * observer registered in [onCreate] alongside [squidCookieAutoRefresher]
-     * so it runs an immediate ground-truth check on app STARTED, setting
-     * Kennyy health before the first play.
-     */
-    @Inject
-    lateinit var kennyyHealthProbe: KennyyHealthProbe
 
     @Inject
     lateinit var handoffOffers: com.stash.core.media.handoff.HandoffOffers
@@ -230,7 +219,7 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var mirrorSignal: com.stash.core.data.weblink.mirror.LibraryChangeSignal
 
     /**
-     * The signed runtime relay list — the APK ships no relay hostname. Started
+     * The signed runtime config (Stash's Tidal relay) — the APK ships no relay hostname. Started
      * from [onCreate]: loads the cached config, then fetches and signature-checks
      * a fresh one immediately and every 6 h.
      */
@@ -366,26 +355,15 @@ class StashApplication : Application(), Configuration.Provider {
         // async startup work completes).
         SingletonImageLoader.setSafe { ctx -> CoilConfiguration.build(ctx, okHttpClient) }
         syncNotificationManager.createChannels()
-        // Squid cookie auto-refresher: start when the app moves to STARTED,
-        // stop when it moves to STOPPED. ProcessLifecycle is the right
-        // scope vs Activity-scoped because rotation/recreation shouldn't
-        // interrupt a refresh in progress. The refresher itself gates on
-        // KennyyHealthMonitor.isHealthy, so it stays idle when Kennyy is
-        // up. Registered here (before the applicationScope.launch blocks)
-        // so it's observing as early as possible; the first STARTED event
-        // doesn't fire until after onCreate completes anyway.
+        // Foreground/background work: ProcessLifecycle rather than an Activity,
+        // so rotation/recreation doesn't count as leaving. Registered here
+        // (before the applicationScope.launch blocks) so it's observing as
+        // early as possible; the first STARTED event doesn't fire until after
+        // onCreate completes anyway.
         mirrorSignal.start()
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
-                    // PARKED 2026-07-01: kennyy + squid are out of the lossless
-                    // chain (hosts down for us — see
-                    // LosslessSourceRegistry.PARKED_SOURCE_IDS), so their
-                    // background keep-alives are parked too: no point probing
-                    // kennyy health or refreshing the squid captcha cookie for
-                    // sources nothing consults. Uncomment on re-enable.
-                    // squidCookieAutoRefresher.start()
-                    // kennyyHealthProbe.start()
                     // The playback service stops itself after five idle minutes and the
                     // controller drops with it; the next tap then pays ~1 s of service
                     // start (Pixel 6, 2026-09-06). Reconnect while the user is still
@@ -401,11 +379,20 @@ class StashApplication : Application(), Configuration.Provider {
                     webRemote.onForeground()
                     // ...and an open Recap story carries its song on.
                     recapAudio.onAppForeground()
+                    // ...and songs left queued carry on downloading (at most once a minute; not while
+                    // paused or out of space): some phones drop scheduled jobs when the app is swiped away.
+                    applicationScope.launch {
+                        try {
+                            downloadQueueResumer.onForeground()
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Log.w("StashStartup", "resuming downloads on foreground failed", e)
+                        }
+                    }
                 }
 
                 override fun onStop(owner: LifecycleOwner) {
-                    // squidCookieAutoRefresher.stop()
-                    // kennyyHealthProbe.stop()
                     // The BotGuard WebView is ~50 MB; drop it while backgrounded, it
                     // rebuilds on the next play (or the next onStart pre-warm).
                     applicationScope.launch { innerTubeClient.releasePoTokens() }
@@ -452,23 +439,45 @@ class StashApplication : Application(), Configuration.Provider {
             runCatching { musicRepository.runMigrations() }
                 .onFailure { Log.w("StashStartup", "runMigrations failed", it) }
         }
-        // Reset stale IN_PROGRESS download_queue rows left over from an
-        // interrupted worker run / process death. The worker bulk-marks rows
-        // IN_PROGRESS and relies on the NEXT run's resetStaleInProgress() to
-        // flip leftovers back — but that next run may never come (e.g. in
-        // streaming mode the drain is skipped), so they linger forever showing
-        // "downloading". At a fresh process start no worker is running, so any
-        // IN_PROGRESS row is by definition stale and safe to reset.
+        // Hand back IN_PROGRESS download_queue rows left over from an
+        // interrupted worker run / process death, or they linger forever showing
+        // "downloading". Only claims no live job holds: WorkManager can restart a
+        // worker in this new process before this coroutine runs, and resetting the
+        // row that worker just claimed let another runner download the song twice.
         applicationScope.launch {
             runCatching {
-                val reset = downloadQueueDao.resetStaleInProgress()
+                val reset = downloadJobs.releaseDeadClaims(downloadQueueDao)
                 if (reset > 0) Log.i("StashStartup", "reset $reset stale IN_PROGRESS download rows -> PENDING")
             }.onFailure { Log.w("StashStartup", "stale IN_PROGRESS reset failed", it) }
             // Then pick waiting downloads back up (#474), Stash Mixes on or off: a
             // run cancelled or cut short leaves them otherwise until the next tap.
-            // Only when something waits, and under the background constraints.
-            runCatching { musicRepository.resumeWaitingDownloads() }
-                .onFailure { Log.w("StashStartup", "resuming waiting downloads failed", it) }
+            // Only when something waits, and under the background constraints: the
+            // songs a sync queued (the resume run) and the ones the user asked for
+            // (the drain). Not while the user has paused downloads.
+            try {
+                downloadQueueResumer.resume(com.stash.core.data.sync.ResumeTrigger.AUTO)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("StashStartup", "resuming waiting downloads failed", e)
+            }
+        }
+        // Switching Download mode from Online to Offline: the songs a sync queued (listed under
+        // "Downloads when you switch to Offline") start now, not at the next app start.
+        applicationScope.launch {
+            streamingPreference.enabled
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { online ->
+                    if (online) return@collect
+                    try {
+                        downloadQueueResumer.resume(com.stash.core.data.sync.ResumeTrigger.AUTO)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w("StashStartup", "resuming downloads after switching to Offline failed", e)
+                    }
+                }
         }
         // An extra Spotify account's sign-in is kept outside the database, under its row id: a full
         // restore (which restarts the app into here) can bring a database without that row, and a
@@ -731,7 +740,7 @@ class StashApplication : Application(), Configuration.Provider {
         // were removed when Library reverted to downloaded-only. They populated
         // is_streamable for the "show streamable rows in Library" surface that
         // no longer exists. Streaming-tap availability is determined per-call
-        // by KennyySource at the moment the user taps a search result.
+        // by the streaming chain at the moment the user taps a search result.
 
         // Start the local listening-history recorder + optional Last.fm
         // and YouTube Music scrobbler. All are safe to start unconditionally —
@@ -745,10 +754,9 @@ class StashApplication : Application(), Configuration.Provider {
         // Generic listen sinks (ListenBrainz). No-ops until connected.
         listenSinkCoordinator.start()
 
-        // Wire the three reactive triggers (cookie change /
-        // lastKnownBadCookie transition / rate-limiter circuit-reset
-        // event) that enqueue LosslessRetryWorker for the strict-FLAC
-        // deferred set. Touching the @Inject field here forces Hilt
+        // Wire the reactive triggers (breaker reset, allowance reset, Download
+        // quality change, Tidal free again) that enqueue LosslessRetryWorker
+        // for the strict-FLAC deferred set. Touching the @Inject field here forces Hilt
         // to construct the singleton if Dagger hasn't already.
         losslessRetryScheduler.start()
 
@@ -790,7 +798,9 @@ class StashApplication : Application(), Configuration.Provider {
                 nowMs = System::currentTimeMillis,
                 maxAgeMs = LOSSLESS_CONFIG_MAX_AGE_UNDER_SAVER_MS,
                 loadCached = { losslessConfigFetcher.loadCached() },
-                hasCached = { losslessConfigFetcher.relays.value.isNotEmpty() },
+                // The cache is worth deferring on only when it carries the Tidal relay, the one
+                // thing the app reads from it.
+                hasCached = { losslessConfigFetcher.tidalRelay.value != null },
                 startRefreshing = { losslessConfigFetcher.start(applicationScope) },
             )
             if (start != com.stash.core.common.power.SaverDeferral.Start.SAVER_OFF_AT_START) {
@@ -832,6 +842,10 @@ class StashApplication : Application(), Configuration.Provider {
      *      Supabase access + refresh tokens), `force_arcod_only`, and the retired
      *      rescue-banner flag. Nothing opens that DataStore any more, so the file
      *      is deleted outright.
+     * v4 — the shared Qobuz relay and squid.wtf: the custom relay endpoint
+     *      (`custom_lossless_endpoint`) and the squid.wtf captcha cookie
+     *      (`squid_wtf_captcha_verified_at`, `squid_wtf_captcha_set_at_ms`),
+     *      whose Settings fields went with them.
      */
     private suspend fun maybePurgeRetiredSourceArtifacts() {
         val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
@@ -1050,34 +1064,24 @@ class StashApplication : Application(), Configuration.Provider {
      *   re-tuned and — like Deep Cuts — now seeds via the tag engine
      *   (RecipeTagResolver → TagPoolBuilder), falling back to the user's top genres
      *   for builtins with no explicit tags. Daily Discover stays ARTIST_SIMILAR.
+     * - v3: Daily Discover 100% recommendations (discoveryRatio 0.85 → 1.0): its 5
+     *   download places, which barely ever changed, go to 5 more finds.
      *
      * @return true when a retune ran this launch, so the cold start rebuilds the mixes now.
      */
     private suspend fun maybeRetuneStashMixes(): Boolean {
-        val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
-        val stored = prefs.getInt("stash_mix_recipe_tuning_version", 0)
+        val prefs = getSharedPreferences(StashMixDefaults.TUNING_PREFS_NAME, MODE_PRIVATE)
+        // A replace-restore removes this key (StashMixDefaults.rearmRetune), so a backup's old recipe values are retuned too.
+        val stored = prefs.getInt(StashMixDefaults.TUNING_VERSION_KEY, 0)
         if (stored >= STASH_MIX_RECIPE_TUNING_VERSION) return false
 
-        var totalUpdated = 0
-        for (recipe in StashMixDefaults.ALL.filter { it.isBuiltin }) {
-            val updated = stashMixRecipeDao.retuneBuiltin(
-                name = recipe.name,
-                discoveryRatio = recipe.discoveryRatio,
-                freshnessWindowDays = recipe.freshnessWindowDays,
-                targetLength = recipe.targetLength,
-                affinityBias = recipe.affinityBias,
-                seedStrategy = recipe.seedStrategy,
-                moodKeysCsv = recipe.moodKeysCsv,
-                tagSampleDepth = recipe.tagSampleDepth,
-            )
-            totalUpdated += updated
-        }
+        val totalUpdated = StashMixDefaults.retuneBuiltins(stashMixRecipeDao)
         Log.i(
             "StashMigration",
             "Retuned $totalUpdated builtin mix recipe(s) to v$STASH_MIX_RECIPE_TUNING_VERSION",
         )
         prefs.edit()
-            .putInt("stash_mix_recipe_tuning_version", STASH_MIX_RECIPE_TUNING_VERSION)
+            .putInt(StashMixDefaults.TUNING_VERSION_KEY, STASH_MIX_RECIPE_TUNING_VERSION)
             .apply()
         return true
     }
@@ -1318,9 +1322,10 @@ class StashApplication : Application(), Configuration.Provider {
          * Bump to re-run [maybePurgeRetiredSourceArtifacts] (one-shot cleanup of
          * credentials a removed source left on disk). v2 adds the qbdlx token
          * pool's cached third-party tokens and the retired amz toggle; v3 the
-         * arcod session and toggles.
+         * arcod session and toggles; v4 the retired custom relay endpoint and
+         * squid.wtf captcha cookie.
          */
-        private const val ANTRA_PURGE_VERSION = 3
+        private const val ANTRA_PURGE_VERSION = 4
 
         /** v0.9.104: pin every already-synced playlist to Home, once. */
         private const val SYNCED_PLAYLISTS_PIN_VERSION = 1
@@ -1370,8 +1375,10 @@ class StashApplication : Application(), Configuration.Provider {
          *    move from library-substrate to recommendation-substrate
          *    (85% discovery, 15% library). Deep Cuts switches seed
          *    strategy from NONE to TRACK_SIMILAR.
+         *  - v2 = v0.9.40 tag engine: Deep Cuts re-pointed to TAG_GRAPH.
+         *  - v3: Daily Discover 100% recommendations.
          */
-        private const val STASH_MIX_RECIPE_TUNING_VERSION = 2
+        private const val STASH_MIX_RECIPE_TUNING_VERSION = 3
 
         /**
          * Bump when [maybeCleanupDiscoveryLibraryHits] should run again.

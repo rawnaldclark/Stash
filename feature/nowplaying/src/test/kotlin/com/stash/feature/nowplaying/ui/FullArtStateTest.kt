@@ -14,7 +14,8 @@ import org.robolectric.RobolectricTestRunner
 
 /**
  * A new song's front answers the skip at once; pages taking turns within a song, or turned by
- * hand, keep the slow crossfade.
+ * hand, keep the slow crossfade. Turned on, the art comes out, on the front when its first page
+ * fails or is slow.
  */
 @RunWith(RobolectricTestRunner::class)
 class FullArtStateTest {
@@ -260,5 +261,185 @@ class FullArtStateTest {
         val afterWake = currentTime
         state.awaitWake(STILL_TICK_MS)
         assertEquals(STILL_TICK_MS, currentTime - afterWake)
+    }
+
+    // Full art turned on and staying square (2026-11-08: "have to press the arrows several times"):
+    // the art grows only once the page on screen is in hand, and that used to be able to never happen.
+
+    private fun FullArtState.inHand(vararg keys: String) {
+        loaded = keys.associateWith { Unit }
+    }
+
+    private fun FullArtState.growTo(target: Boolean = true) = fullArtGrowTo(target, visible = true, ready = ready)
+
+    @Test
+    fun `a first page that fails gives way to the front at once, and the art comes out`() {
+        val state = FullArtState()
+        val told = mutableListOf<Int>()
+        state.onPage = { told += it }
+        state.show(listOf(page("front:a"), page("back:a")))
+        state.inHand("front:a")
+        // Opened on the back (the square art was showing it), which can't load.
+        state.open(now = 1_000L, position = 0L, start = 1)
+        state.tick(1_016L, 0L, playing = true, failed = setOf("back:a"), still = false)
+
+        assertTrue(state.ready)
+        assertEquals(listOf("front:a"), state.shown.map { it.page.key })
+        // The square art follows, so turning full art off lands on the page it shows.
+        assertEquals(0, told.last())
+        assertEquals(1f, state.growTo())
+    }
+
+    @Test
+    fun `a first page not in hand after the grace falls back to the front`() {
+        val state = FullArtState()
+        state.show(listOf(page("front:a"), page("back:a"), page("inside:a")))
+        state.inHand("front:a")
+        state.open(now = 1_000L, position = 0L, start = 2)
+
+        // Still coming within the grace: it waits for it, the art held in the square.
+        state.tick(1_000L + FIRST_PAGE_GRACE_MS - 1, 0L, playing = true, failed = emptySet(), still = false)
+        assertFalse(state.ready)
+        assertEquals("inside:a", state.shown.last().page.key)
+        assertEquals(null, state.growTo())
+
+        state.tick(1_000L + FIRST_PAGE_GRACE_MS, 0L, playing = true, failed = emptySet(), still = false)
+        assertTrue(state.ready)
+        assertEquals(listOf("front:a"), state.shown.map { it.page.key })
+        // Shown whole at once, not faded in from nothing as the art grows.
+        assertEquals(1_000L + FIRST_PAGE_GRACE_MS - state.shown.last().fadeMs, state.shown.last().bornMs)
+        assertEquals(1f, state.growTo())
+    }
+
+    @Test
+    fun `with motion still, the first still tick past the grace falls back`() {
+        val state = FullArtState()
+        state.show(listOf(page("front:a"), page("back:a")))
+        state.inHand("front:a")
+        state.open(now = 1_000L, position = 0L, start = 1)
+        state.tick(1_000L + STILL_TICK_MS, 0L, playing = false, failed = emptySet(), still = true)
+        assertTrue(state.ready)
+        assertEquals("front:a", state.shown.last().page.key)
+    }
+
+    @Test
+    fun `a slow front waits for itself, and a failed one gives way to the next page`() {
+        val state = FullArtState()
+        state.show(listOf(page("front:a"), page("back:a")))
+        state.inHand()
+        state.open(now = 1_000L, position = 0L, start = 0)
+        state.tick(2_000L, 0L, playing = true, failed = emptySet(), still = false)
+        assertFalse(state.ready)
+        assertEquals("front:a", state.shown.last().page.key)
+
+        state.inHand("back:a")
+        state.tick(2_016L, 0L, playing = true, failed = setOf("front:a"), still = false)
+        assertTrue(state.ready)
+        assertEquals("back:a", state.shown.last().page.key)
+    }
+
+    @Test
+    fun `with every page failed, the square art stays`() {
+        val state = FullArtState()
+        state.show(listOf(page("front:a"), page("back:a")))
+        state.inHand()
+        state.open(now = 1_000L, position = 0L, start = 1)
+        state.tick(2_000L, 0L, playing = true, failed = setOf("front:a", "back:a"), still = false)
+        assertFalse(state.ready)
+        assertEquals(null, state.growTo())
+    }
+
+    @Test
+    fun `closing clears ready and the pages shown, so a reopen waits for its own page`() {
+        val state = FullArtState()
+        state.show(listOf(page("front:a"), page("back:a")))
+        state.open(now = 1_000L, position = 0L, start = 0)
+        state.tick(1_016L, 0L, playing = true, failed = emptySet(), still = false)
+        assertTrue(state.ready)
+
+        // Shrunk back into the square: the layer leaves, and its pages in hand with it.
+        state.close()
+        assertFalse(state.ready)
+        assertTrue(state.shown.isEmpty())
+
+        // Reopened: nothing in hand yet. It used to start ready from the last open and grow out over
+        // an empty page (the square hidden), then freeze part-way when the open cleared it.
+        state.inHand()
+        assertEquals("held in the square", null, state.growTo())
+        state.open(now = 5_000L, position = 0L, start = 0)
+        state.tick(5_016L, 0L, playing = true, failed = emptySet(), still = false)
+        assertFalse(state.ready)
+        assertEquals(null, state.growTo())
+
+        state.inHand("front:a")
+        state.tick(5_032L, 0L, playing = true, failed = emptySet(), still = false)
+        assertTrue(state.ready)
+        assertEquals(1f, state.growTo())
+    }
+
+    @Test
+    fun `a reopen tells the square art its page again`() {
+        val state = FullArtState()
+        val told = mutableListOf<Int>()
+        state.onPage = { told += it }
+        state.show(listOf(page("front:a"), page("back:a")))
+        state.open(now = 1_000L, position = 0L, start = 0)
+        state.tick(1_016L, 0L, playing = true, failed = emptySet(), still = false)
+        state.close()
+
+        state.show(listOf(page("front:a"), page("back:a")))
+        state.open(now = 5_000L, position = 0L, start = 0)
+        state.tick(5_016L, 0L, playing = true, failed = emptySet(), still = false)
+        assertEquals(listOf(0, 0), told)
+    }
+
+    @Test
+    fun `turned off and on again while it grows, it heads straight back out`() {
+        val state = FullArtState()
+        state.show(listOf(page("front:a"), page("back:a")))
+        state.open(now = 1_000L, position = 0L, start = 0)
+        state.tick(1_016L, 0L, playing = true, failed = emptySet(), still = false)
+        assertEquals(1f, state.growTo())
+
+        // A second tap mid-grow: back into the square, whatever the flag says.
+        assertEquals(0f, state.growTo(target = false))
+        assertEquals(0f, fullArtGrowTo(target = false, visible = true, ready = false))
+
+        // A third tap before it had shrunk away (the layer never left, so it never closed): the same
+        // page is in hand, so it stays ready and grows out again, never held part-way.
+        state.open(now = 1_300L, position = 300L, start = 0)
+        assertTrue(state.ready)
+        assertEquals(1f, state.growTo())
+        state.tick(1_316L, 316L, playing = true, failed = emptySet(), still = false)
+        assertTrue(state.ready)
+        assertEquals("front:a", state.shown.last().page.key)
+    }
+
+    @Test
+    fun `turned on again mid-shrink onto a page not in hand, it waits in the square, then comes out`() {
+        val state = FullArtState()
+        state.show(listOf(page("front:a"), page("back:a")))
+        state.inHand("front:a")
+        state.open(now = 1_000L, position = 0L, start = 0)
+        state.tick(1_016L, 0L, playing = true, failed = emptySet(), still = false)
+        assertTrue(state.ready)
+
+        // Reopened on the back, not in hand: not ready, so the square isn't hidden over a page that
+        // can't be drawn (it hides only while the art is out and ready).
+        state.open(now = 1_300L, position = 300L, start = 1)
+        assertFalse(state.ready)
+        assertEquals(null, state.growTo())
+
+        // Held only until the grace: then the front, which is in hand.
+        state.tick(1_300L + FIRST_PAGE_GRACE_MS, 700L, playing = true, failed = emptySet(), still = false)
+        assertTrue(state.ready)
+        assertEquals("front:a", state.shown.last().page.key)
+        assertEquals(1f, state.growTo())
+    }
+
+    @Test
+    fun `leaving the top of the sheet snaps the art back into the square, ready or not`() {
+        assertEquals(0f, fullArtGrowTo(target = false, visible = false, ready = true))
+        assertEquals(0f, fullArtGrowTo(target = false, visible = false, ready = false))
     }
 }

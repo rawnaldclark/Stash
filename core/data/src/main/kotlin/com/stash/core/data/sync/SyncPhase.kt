@@ -29,6 +29,15 @@ sealed interface SyncPhase {
         override val progress: Float = 0f
     }
 
+    /**
+     * The download step was stopped by the system (the job's time limit, the OS reclaiming it),
+     * not by the app and not for a lost connection: WorkManager runs it again soon, so the sync
+     * isn't over and isn't waiting for a network either.
+     */
+    data object ContinuingShortly : SyncPhase {
+        override val progress: Float = 0.30f
+    }
+
     /** Refreshing or validating OAuth tokens. */
     data object Authenticating : SyncPhase {
         override val progress: Float = 0.05f

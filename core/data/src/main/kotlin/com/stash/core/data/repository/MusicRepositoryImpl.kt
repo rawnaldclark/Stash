@@ -83,6 +83,8 @@ class MusicRepositoryImpl @Inject constructor(
     private val lastFmRecommendationSource: LastFmRecommendationSource,
     private val sharedMixDao: com.stash.core.data.db.dao.SharedMixDao,
     private val downloadJobs: com.stash.core.data.sync.DownloadJobRegistry,
+    /** A download tap clears the user's Pause. Null only in tests that never tap. */
+    private val downloadQueueState: com.stash.core.data.sync.DownloadQueueState? = null,
 ) : MusicRepository {
 
     // ── Deletion event plumbing ─────────────────────────────────────────
@@ -788,7 +790,8 @@ class MusicRepositoryImpl @Inject constructor(
         // Drive THIS row through TrackDownloadWorker single-track mode, which
         // downloads regardless of streaming mode and the sync/discovery
         // partition — unlike the chain/discovery drains, which skip in streaming
-        // mode (the reason the stuck sync rows never drained).
+        // mode (the reason the stuck sync rows never drained). A tap also ends a Pause.
+        clearDownloadPause()
         singleTrackDownloadEnqueuer.enqueue(queueId)
         return DownloadRequestResult.QUEUED
     }
@@ -897,6 +900,19 @@ class MusicRepositoryImpl @Inject constructor(
         if (downloadQueueDao.hasPendingDiscoveryDownload()) startDiscoveryDrain(background = !tap)
     }
 
+    /** See [startDiscoveryDrain]. Never fails the tap: the download it starts matters more. */
+    private suspend fun clearDownloadPause() {
+        val state = downloadQueueState ?: return
+        try {
+            if (state.isPaused()) state.setPaused(false)
+            state.setStorageFull(false)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("MusicRepository", "clearing the download pause failed", e)
+        }
+    }
+
     /**
      * Drops the download rows nobody asked for (#532): no drain takes them any
      * more, so they would sit in Downloads as queued forever. Never fails its
@@ -937,6 +953,9 @@ class MusicRepositoryImpl @Inject constructor(
     // internal, not private, only so MusicRepositoryDownloadSwitchRaceTest can stub it on a spy.
     internal suspend fun startDiscoveryDrain(background: Boolean, anyNetwork: Boolean = false) {
         if (!background) {
+            // A tap asks for songs now: it ends a Pause (and an out-of-space hold), or the
+            // drain it starts would see the pause and download nothing.
+            clearDownloadPause()
             val constraints = constraintsForManualTrigger(downloadNetworkPreference.current())
             DRAIN_START_LOCK.withLock {
                 val runs = WorkManager.getInstance(context)

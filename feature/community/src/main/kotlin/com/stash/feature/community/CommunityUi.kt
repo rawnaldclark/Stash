@@ -1,12 +1,9 @@
 package com.stash.feature.community
 
 import androidx.annotation.StringRes
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.compositeOver
 import com.stash.core.data.community.CommunityRepository
 import com.stash.core.data.community.CommunityResult
 import com.stash.core.model.community.CommunityPost
-import com.stash.core.ui.ambient.contrastRatio
 import com.stash.feature.community.CommunityViewModel.Tab
 
 /*
@@ -110,12 +107,6 @@ internal const val HERO_SCRIM_ALPHA = 0.7f
 /** The hero's quieter lines: what the post is, and who posted it and when (white at these alphas). */
 internal const val HERO_FACTS_ALPHA = 0.8f
 internal const val HERO_POSTER_ALPHA = 0.72f
-
-/** WCAG contrast of white text at [textAlpha] on the hero over a blurred cover of [backdrop]'s colour. */
-internal fun heroTextContrast(backdrop: Color, textAlpha: Float): Double {
-    val ground = Color.Black.copy(alpha = HERO_SCRIM_ALPHA).compositeOver(backdrop)
-    return contrastRatio(Color.White.copy(alpha = textAlpha).compositeOver(ground), ground)
-}
 
 /**
  * The vote pill as drawn: the score, which arrow is lit (this phone's vote), and whether it takes taps (not on your own

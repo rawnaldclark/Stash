@@ -1,6 +1,7 @@
 package com.stash.feature.settings
 
 import android.widget.Toast
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,6 +62,8 @@ fun SettingsAboutScreen(
         // left with "Checking for updates…" and silence (#377) — so watch the
         // work and say what it concluded.
         var checking by remember { mutableStateOf(false) }
+        var showNotices by remember { mutableStateOf(false) }
+        if (showNotices) OpenSourceNoticesDialog(onDismiss = { showNotices = false })
         // A check that finds an update opens the update sheet (over the app, held by the scaffold).
         val updates: com.stash.feature.settings.update.UpdateAskViewModel = androidx.hilt.navigation.compose.hiltViewModel()
         LaunchedEffect(context) {
@@ -102,6 +105,14 @@ fun SettingsAboutScreen(
                             val open = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(STASH_GITHUB_URL))
                             runCatching { context.startActivity(open) }
                         },
+                    )
+                },
+                {
+                    // The MIT notices of the code Stash ships inside it (Tuning's pitch engine).
+                    SettingsNavRow(
+                        title = stringResource(R.string.settings_open_source_notices),
+                        subtitle = stringResource(R.string.settings_open_source_notices_detail),
+                        onClick = { showNotices = true },
                     )
                 },
                 {
@@ -177,4 +188,25 @@ fun SettingsAboutScreen(
             ),
         )
     }
+}
+
+/** The licence notices of third-party code built into Stash, scrollable. */
+@Composable
+private fun OpenSourceNoticesDialog(onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { androidx.compose.material3.Text(stringResource(R.string.settings_open_source_notices)) },
+        text = {
+            androidx.compose.material3.Text(
+                text = stringResource(R.string.settings_open_source_notices_body),
+                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                modifier = Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
+            )
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                androidx.compose.material3.Text(stringResource(R.string.settings_open_source_notices_close))
+            }
+        },
+    )
 }

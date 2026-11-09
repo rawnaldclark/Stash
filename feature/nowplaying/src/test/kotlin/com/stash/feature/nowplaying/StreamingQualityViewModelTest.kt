@@ -49,7 +49,7 @@ class StreamingQualityViewModelTest {
         every { preferTidalAac } returns this@StreamingQualityViewModelTest.preferTidalAac
     }
     private val availability: LosslessAvailability = mockk {
-        every { qbdlxEnabled } returns sourceSetUp
+        every { anySourceConfigured } returns sourceSetUp
     }
     private val streaming: StreamingPreference = mockk {
         every { enabled } returns streamOnly

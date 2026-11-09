@@ -2,10 +2,8 @@ package com.stash.data.download.lossless
 
 import com.google.common.truth.Truth.assertThat
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
-import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
-import com.stash.data.download.lossless.relay.LosslessRelayClient
-import com.stash.data.download.lossless.relay.RelayEntry
+import com.stash.data.download.lossless.relay.TidalRelay
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -16,41 +14,21 @@ import org.junit.Test
 
 class LosslessAvailabilityTest {
     private val login = MutableStateFlow(false)
-    private val configRelays = MutableStateFlow<List<RelayEntry>>(emptyList())
-    private val custom = MutableStateFlow<String?>(null)
+    private val stashTidal = MutableStateFlow<TidalRelay?>(null)
     private val tidalServer = MutableStateFlow<String?>(null)
     private val loginEmail = MutableStateFlow<String?>(null)
     private val store: QbdlxCredentialStore = mockk {
         every { hasLogin } returns login
         every { connectedEmailFlow } returns loginEmail
     }
-    private val config: LosslessConfigFetcher = mockk { every { relays } returns configRelays }
+    private val config: LosslessConfigFetcher = mockk { every { tidalRelay } returns stashTidal }
     private val prefs: LosslessSourcePreferences = mockk {
-        every { customLosslessEndpoint } returns custom
         every { bitchordEndpoint } returns tidalServer
     }
-    private val relayClient: LosslessRelayClient = mockk()
-    private var now = 1_000_000_000_000L
-    private val quota = LosslessQuota.inMemory { now }
-    private val a = LosslessAvailability(store, config, prefs, relayClient, quota)
+    private val a = LosslessAvailability(store, config, prefs)
 
-    private fun stubNow(loginLive: Boolean = false, customNow: String? = null, cooled: Set<String> = emptySet()) {
+    private fun stubNow(loginLive: Boolean = false) {
         coEvery { store.loginLive() } returns loginLive
-        coEvery { prefs.customLosslessEndpointNow() } returns customNow
-        every { relayClient.isCooled(any()) } answers { firstArg<String>() in cooled }
-    }
-
-    @Test fun `a spent day's allowance leaves the config relays out of fileUrlAvailableNow, not a live login`() = runTest {
-        configRelays.value = listOf(RelayEntry("https://r1"))
-        stubNow()
-        assertThat(a.fileUrlAvailableNow()).isTrue()
-        quota.onHeaders("500/500", "${now / 1000 + 3600}")
-        assertThat(a.fileUrlAvailableNow()).isFalse()
-        stubNow(loginLive = true)
-        assertThat(a.fileUrlAvailableNow()).isTrue()
-        now += 3_600_000 // the reset
-        stubNow()
-        assertThat(a.fileUrlAvailableNow()).isTrue()
     }
 
     @Test fun `nothing configured - every predicate false`() = runTest {
@@ -58,33 +36,48 @@ class LosslessAvailabilityTest {
         assertThat(a.qbdlxEnabledNow()).isFalse()
         assertThat(a.fileUrlAvailableNow()).isFalse()
         assertThat(a.anyUserOwnedNow()).isFalse()
+        assertThat(a.anySourceConfigured.first()).isFalse()
     }
 
-    @Test fun `relay configured - enabled, but not user-owned`() = runTest {
-        configRelays.value = listOf(RelayEntry("https://r.example", 1)); stubNow()
-        assertThat(a.qbdlxEnabledNow()).isTrue()
-        assertThat(a.fileUrlAvailableNow()).isTrue()
+    /** The shared Qobuz pool is gone: Stash's Tidal relay alone never turns the Qobuz rung on. */
+    @Test fun `Stash's Tidal relay - a source is configured, but the Qobuz rung stays off`() = runTest {
+        stashTidal.value = TidalRelay("https://tidal.stash.example", null); stubNow()
+        assertThat(a.anySourceConfigured.first()).isTrue()
+        assertThat(a.qbdlxEnabledNow()).isFalse()
+        assertThat(a.fileUrlAvailableNow()).isFalse()
         assertThat(a.anyUserOwnedNow()).isFalse()
     }
 
+    @Test fun `the user's own Tidal server counts as a configured source`() = runTest {
+        tidalServer.value = "https://tidal.mine.example"
+        assertThat(a.anySourceConfigured.first()).isTrue()
+        assertThat(a.qbdlxEnabledNow()).isFalse()
+    }
+
+    /** Their own server never touches Stash's relay: no allowance, nothing for a supporter code to lift. */
+    @Test fun `Stash's Tidal relay is in use only without a Tidal server of their own`() = runTest {
+        assertThat(a.stashTidalRelayInUse.first()).isFalse() // no relay in the config
+        stashTidal.value = TidalRelay("https://tidal.stash.example", null)
+        assertThat(a.stashTidalRelayInUse.first()).isTrue()
+        login.value = true // their own Qobuz account still falls back to Stash's Tidal
+        assertThat(a.stashTidalRelayInUse.first()).isTrue()
+        tidalServer.value = "https://tidal.example.org"
+        assertThat(a.stashTidalRelayInUse.first()).isFalse()
+    }
+
     @Test fun `ownAccountLiveNow is the live login and nothing else`() = runTest {
-        // A configured relay is a shared, capped budget — it must never count as "own".
-        configRelays.value = listOf(RelayEntry("https://r.example", 1)); stubNow(loginLive = false)
+        stashTidal.value = TidalRelay("https://tidal.stash.example", null); stubNow(loginLive = false)
         assertThat(a.ownAccountLiveNow()).isFalse()
         stubNow(loginLive = true)
         assertThat(a.ownAccountLiveNow()).isTrue()
     }
 
-    @Test fun `a cooled relay is still configured but not available now`() = runTest {
-        configRelays.value = listOf(RelayEntry("https://r.example", 1)); stubNow(cooled = setOf("https://r.example"))
-        assertThat(a.qbdlxEnabledNow()).isTrue()
-        assertThat(a.fileUrlAvailableNow()).isFalse()
-    }
-
-    @Test fun `BYO login is user-owned and available`() = runTest {
+    @Test fun `BYO login is user-owned, configured and available`() = runTest {
         login.value = true; stubNow(loginLive = true)
+        assertThat(a.qbdlxEnabledNow()).isTrue()
         assertThat(a.fileUrlAvailableNow()).isTrue()
         assertThat(a.anyUserOwnedNow()).isTrue()
+        assertThat(a.anySourceConfigured.first()).isTrue()
     }
 
     @Test fun `a dead-cooled login is still enabled but not available now`() = runTest {
@@ -93,25 +86,18 @@ class LosslessAvailabilityTest {
         assertThat(a.fileUrlAvailableNow()).isFalse()
     }
 
-    @Test fun `custom endpoint is user-owned - cooled custom is not available`() = runTest {
-        custom.value = "https://mine.example"; stubNow(customNow = "https://mine.example", cooled = setOf("https://mine.example"))
-        assertThat(a.anyUserOwnedNow()).isTrue()
-        assertThat(a.qbdlxEnabledNow()).isTrue()
-        assertThat(a.fileUrlAvailableNow()).isFalse()
-    }
-
-    // ── routingRows: what Settings › Audio renders ──────────────────────────
+    // ── routingRows: what Settings › Lossless sources renders ───────────────
 
     private suspend fun rows() = a.routingRows.first()
 
     private suspend fun row(id: String) = rows().single { it.id == id }
 
-    @Test fun `nothing configured - qobuz and relay rows are not configured`() = runTest {
+    @Test fun `nothing configured - qobuz and tidal rows are not configured`() = runTest {
         assertThat(row("qobuz").state).isEqualTo(RoutingState.NOT_CONFIGURED)
         assertThat(row("qobuz").detail).isEqualTo("not connected")
-        assertThat(row("relay").state).isEqualTo(RoutingState.NOT_CONFIGURED)
-        assertThat(row("relay").detail).isEqualTo("not configured")
-        assertThat(rows().map { it.id }).containsExactly("qobuz", "relay").inOrder()
+        assertThat(row("tidal").state).isEqualTo(RoutingState.NOT_CONFIGURED)
+        assertThat(row("tidal").detail).isEqualTo("not configured")
+        assertThat(rows().map { it.id }).containsExactly("qobuz", "tidal").inOrder()
     }
 
     @Test fun `a connected account shows its email`() = runTest {
@@ -126,37 +112,33 @@ class LosslessAvailabilityTest {
         assertThat(row("qobuz").detail).isEqualTo("connected (token)")
     }
 
-    @Test fun `a config relay makes the relay row configured`() = runTest {
-        configRelays.value = listOf(RelayEntry("https://r.example", 1))
-        assertThat(row("relay").state).isEqualTo(RoutingState.CONFIGURED)
-        assertThat(row("relay").detail).isEqualTo("configured")
+    @Test fun `Stash's Tidal relay makes the Tidal row configured`() = runTest {
+        stashTidal.value = TidalRelay("https://tidal.stash.example", null)
+        assertThat(row("tidal").label).isEqualTo("Tidal")
+        assertThat(row("tidal").state).isEqualTo(RoutingState.CONFIGURED)
+        assertThat(row("tidal").detail).isEqualTo("configured")
+        assertThat(rows().map { it.id }).containsExactly("qobuz", "tidal").inOrder()
     }
 
-    @Test fun `a custom endpoint adds its own row - absent otherwise`() = runTest {
-        assertThat(rows().map { it.id }).doesNotContain("custom")
-        custom.value = "https://mine.example"
-        assertThat(row("custom").state).isEqualTo(RoutingState.CONFIGURED)
-        // Before Stash lossless: QbdlxFileUrlRouter asks it first. The list used to say the reverse.
-        assertThat(rows().map { it.id }).containsExactly("qobuz", "custom", "relay").inOrder()
-    }
-
-    @Test fun `with a login too, the custom endpoint still comes before Stash lossless`() = runTest {
-        login.value = true; custom.value = "https://mine.example"
-        assertThat(rows().map { it.id }).containsExactly("qobuz", "custom", "relay").inOrder()
+    @Test fun `no retired rows - neither the custom endpoint nor the Qobuz relay`() = runTest {
+        login.value = true
+        stashTidal.value = TidalRelay("https://tidal.stash.example", null)
+        assertThat(rows().map { it.id }).containsNoneOf("custom", "relay")
     }
 
     // ── The user's own Tidal server ─────────────────────────────────────────
 
-    @Test fun `no Tidal server - no Tidal row, and Qobuz leads`() = runTest {
-        assertThat(rows().map { it.id }).doesNotContain("tidal")
+    @Test fun `no Tidal server of their own - Qobuz leads`() = runTest {
         assertThat(a.ownTidalFirstNow(LosslessQualityTier.HI_RES)).isFalse()
     }
 
-    @Test fun `own Tidal server and no own Qobuz - it leads above CD, listed before Stash lossless`() = runTest {
+    @Test fun `own Tidal server and no own Qobuz - it leads above CD`() = runTest {
         tidalServer.value = "https://tidal.mine.example"
+        stashTidal.value = TidalRelay("https://tidal.stash.example", null)
         assertThat(a.ownTidalFirstNow(LosslessQualityTier.HI_RES)).isTrue()
         assertThat(a.ownTidalFirstNow(LosslessQualityTier.MAX)).isTrue()
-        assertThat(rows().map { it.id }).containsExactly("qobuz", "tidal", "relay").inOrder()
+        // One Tidal row: the user's server replaces Stash's relay.
+        assertThat(rows().map { it.id }).containsExactly("qobuz", "tidal").inOrder()
         assertThat(row("tidal").label).isEqualTo("Custom Tidal server")
         assertThat(row("tidal").state).isEqualTo(RoutingState.CONFIGURED)
         // The list can't follow the tier (it differs by network, and between streams and
@@ -172,19 +154,12 @@ class LosslessAvailabilityTest {
         assertThat(a.ownTidalFirstNow(LosslessQualityTier.CD)).isFalse()
     }
 
-    @Test fun `own Tidal server and own Qobuz login - Qobuz keeps the lead, Tidal after Stash lossless`() = runTest {
+    @Test fun `own Tidal server and own Qobuz login - Qobuz keeps the lead`() = runTest {
         tidalServer.value = "https://tidal.mine.example"
         login.value = true
         assertThat(a.ownTidalFirstNow(LosslessQualityTier.HI_RES)).isFalse()
-        assertThat(rows().map { it.id }).containsExactly("qobuz", "relay", "tidal").inOrder()
+        assertThat(rows().map { it.id }).containsExactly("qobuz", "tidal").inOrder()
         assertThat(row("tidal").detail).isEqualTo("configured")
-    }
-
-    @Test fun `own Tidal server and a custom Qobuz endpoint - the endpoint keeps the lead`() = runTest {
-        tidalServer.value = "https://tidal.mine.example"
-        custom.value = "https://mine.example"
-        assertThat(a.ownTidalFirstNow(LosslessQualityTier.HI_RES)).isFalse()
-        assertThat(rows().map { it.id }).containsExactly("qobuz", "custom", "relay", "tidal").inOrder()
     }
 
     /** BitChord's own form carries the server's ACCESS_TOKEN as the path; Settings and diagnostics print rows. */

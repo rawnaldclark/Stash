@@ -18,21 +18,22 @@ import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.async
 
 /**
- * [LosslessSource] backed by the Qobuz catalog through the DIRECT Qobuz API.
- * Catalog search is tokenless (web app_id); the file URL comes from
- * [QbdlxFileUrlRouter] (BYO login → custom endpoint → config relays);
- * [LosslessAvailability] gates both enablement and every resolve so an
- * unavailable file-URL path costs zero catalog HTTP.
+ * [LosslessSource] backed by the Qobuz catalog through the DIRECT Qobuz API, for
+ * the user's own connected Qobuz account only ("Direct Qobuz"). Catalog search is
+ * tokenless (web app_id); the file URL comes from [QbdlxFileUrlRouter], signed with
+ * that account. [LosslessAvailability] gates both enablement (an account is
+ * connected) and every resolve (its login is live), so without one this source
+ * costs zero catalog HTTP and the chain goes on to Tidal.
  *
- * Keeps [com.stash.data.download.lossless.qobuz.QobuzSource]'s resolve /
- * resolveImmediate split: background [resolve] respects the rate limiter +
- * breaker; user-initiated [resolveImmediate] bypasses both but still reports
- * outcomes so the breaker state stays accurate.
+ * Keeps the retired squid.wtf source's resolve / resolveImmediate split:
+ * background [resolve] respects the rate limiter + breaker; user-initiated
+ * [resolveImmediate] bypasses both but still reports outcomes so the breaker
+ * state stays accurate.
  *
  * The [AggregatorRateLimiter] breaker tracks CATALOG health only: a search
- * success resets the counter before the file-URL call, a dead credential arrives
- * as a [QbdlxResolveResult.TokenDead] value, and relay outages are the relay
- * client's per-base cooldowns. Only repeated catalog failures can open it.
+ * success resets the counter before the file-URL call, and a dead credential arrives
+ * as a [QbdlxResolveResult.TokenDead] value (the login then cools in
+ * [QbdlxCredentialStore]). Only repeated catalog failures can open it.
  */
 @Singleton
 class QbdlxQobuzSource @Inject constructor(
@@ -68,7 +69,7 @@ class QbdlxQobuzSource @Inject constructor(
     // ── Internals ───────────────────────────────────────────────────────
 
     private suspend fun resolveInternal(query: TrackQuery, bypassRateLimit: Boolean, requestedQuality: Int?): SourceResult? {
-        // Availability FIRST: a cooled relay / dead login must cost zero catalog HTTP.
+        // Availability FIRST: a cooling login must cost zero catalog HTTP.
         if (!availability.fileUrlAvailableNow()) {
             Log.d(TAG, "no file-url path available right now — skipping '${query.title}'")
             return null
@@ -164,8 +165,8 @@ class QbdlxQobuzSource @Inject constructor(
         )
 
     /**
-     * Wraps an API call with rate-limiter bookkeeping (mirrors
-     * [com.stash.data.download.lossless.qobuz.QobuzSource]'s `callLimited`).
+     * Wraps an API call with rate-limiter bookkeeping (as the retired squid.wtf
+     * source's `callLimited` did).
      * Returns null on rate-limit denial / api error (already reported) — and
      * also when the block itself returns null (the router having no path), which
      * is not a health failure. [QbdlxAuthException] is RETHROWN — only [search]

@@ -527,10 +527,10 @@ class TrackActionsDelegate @Inject constructor(
                             _userMessages.tryEmit("Not available as AAC yet")
                         }
                         is SearchDownloadStatus.WaitingForAllowance -> {
-                            // Today's Tidal & Qobuz allowance is used up; it goes out after the reset.
+                            // Today's Tidal allowance is used up; it goes out after the reset.
                             _downloadingIds.update { it - key }
                             _waitingForLosslessIds.update { it + key }
-                            _userMessages.tryEmit("Daily Tidal & Qobuz limit reached. It downloads after the reset.")
+                            _userMessages.tryEmit("Daily Tidal limit reached. It downloads after the reset.")
                         }
                         is SearchDownloadStatus.WaitingForTidal -> {
                             // Tidal had no answer yet (busy); the retry sweep tries again shortly.

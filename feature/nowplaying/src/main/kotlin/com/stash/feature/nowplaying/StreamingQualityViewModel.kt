@@ -55,7 +55,7 @@ class StreamingQualityViewModel @Inject constructor(
     /** Null until read; eager, so the sheet opens on the real values, not a flash of defaults. */
     internal val state: StateFlow<StreamingQualityState?> = combine(
         losslessPrefs.enabled,
-        losslessAvailability.qbdlxEnabled,
+        losslessAvailability.anySourceConfigured,
         qualityPrefs.saveData,
         qualityPrefs.preferTidalAac,
     ) { lossless, sourceSetUp, saveData, preferTidalAac ->

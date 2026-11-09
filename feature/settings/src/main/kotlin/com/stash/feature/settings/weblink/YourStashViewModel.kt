@@ -6,7 +6,7 @@ import com.stash.core.data.supporter.SupporterRepository
 import com.stash.core.model.CloudProvider
 import com.stash.data.cloud.CloudLibrary
 import com.stash.data.download.lossless.quota.LosslessQuota
-import com.stash.data.download.lossless.relay.LosslessConfigFetcher
+import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.feature.settings.SupporterRow
 import com.stash.feature.settings.cloud.CloudAccountRow
 import com.stash.feature.settings.supporterRow
@@ -30,7 +30,7 @@ import kotlinx.coroutines.flow.stateIn
 @HiltViewModel
 class YourStashViewModel @Inject constructor(
     quota: LosslessQuota,
-    config: LosslessConfigFetcher,
+    availability: LosslessAvailability,
     supporter: SupporterRepository,
     private val cloud: CloudLibrary,
 ) : ViewModel() {
@@ -38,7 +38,7 @@ class YourStashViewModel @Inject constructor(
     /** The supporter row as Lossless sources shows it; null before the first read. */
     val supporter: StateFlow<SupporterRow?> = combine(
         quota.state,
-        combine(config.relays, config.tidalRelay) { relays, tidal -> relays.isNotEmpty() || tidal != null },
+        availability.stashTidalRelayInUse,
         supporter.token,
     ) { allowance, relayConfigured, token ->
         supporterRow(allowance, relayConfigured, token != null)

@@ -52,4 +52,17 @@ class PlaybackSpeedTextTest {
         assertEquals(4, speedPresetColumns(rowWidthPx = 312, widestChipPx = 72, gapPx = 8))
         assertEquals(2, speedPresetColumns(rowWidthPx = 312, widestChipPx = 73, gapPx = 8))
     }
+
+    @Test fun `the speed action names a non-standard tuning`() {
+        assertEquals("Playback speed", speedActionLabel(1f, null))
+        assertEquals("Playback speed · A432", speedActionLabel(1f, "A432"))
+        assertEquals("Playback speed · 1.25x", speedActionLabel(1.25f, null))
+        assertEquals("Playback speed · 1.25x · A431,5", speedActionLabel(1.25f, "A431,5"))
+    }
+
+    @Test fun `the speed action is on for a speed or a tuning`() {
+        assertEquals(false, speedActionActive(1f, 440f))
+        assertEquals(true, speedActionActive(1f, 432f))
+        assertEquals(true, speedActionActive(0.75f, 440f))
+    }
 }

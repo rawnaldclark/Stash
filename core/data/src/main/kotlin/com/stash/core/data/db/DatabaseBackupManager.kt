@@ -55,10 +55,16 @@ private const val COMMUNITY_KEY_FILE = "community_preference.preferences_pb"
 /**
  * The DataStore files a backup never carries and a restore never writes, matched by prefix like
  * the Community key: that key, and the Ko-fi supporter token ([SupporterRepository]), which a
- * backup file must not hand to whoever holds it (a new phone claims again by email). The install
- * id and the day's lossless count do ride along.
+ * backup file must not hand to whoever holds it (a new phone claims again by email), and the
+ * download queue's Pause ([com.stash.core.data.sync.DownloadQueueState]), which restored onto a
+ * new phone left it paused with no reason it could see. The install id and the day's lossless
+ * count do ride along.
  */
-private val NEVER_BACKED_UP = listOf(COMMUNITY_KEY_FILE, SupporterRepository.DATASTORE_FILE)
+private val NEVER_BACKED_UP = listOf(
+    COMMUNITY_KEY_FILE,
+    SupporterRepository.DATASTORE_FILE,
+    com.stash.core.data.sync.DownloadQueueState.DATASTORE_FILE,
+)
 
 private fun neverBackedUp(fileName: String): Boolean = NEVER_BACKED_UP.any { fileName.startsWith(it) }
 
@@ -753,6 +759,7 @@ class DatabaseBackupManager @Inject constructor(
                 rearmCanonicalRecompute(runNow = false)
                 rearmDuplicateCleanup(runNow = false)
                 rearmMixPinCleanup(runNow = false)
+                rearmMixRecipeRetune()
             }
 
             // 5. Read the restored Tree URI from DataStore — only meaningful
@@ -832,6 +839,24 @@ class DatabaseBackupManager @Inject constructor(
             throw e
         } catch (e: Exception) {
             android.util.Log.w("BackupManager", "Couldn't re-arm the mix pin cleanup", e)
+        }
+    }
+
+    /**
+     * A replace-restore swaps in the backup's built-in mix recipes, and one made before the current
+     * tuning brings back its old values (before v3, a Daily Discover with 5 download places). The
+     * tuning flag lives in SharedPreferences, which a restore leaves alone, so it is re-armed here:
+     * the restart retunes the built-ins and rebuilds the mixes
+     * ([com.stash.core.data.mix.StashMixDefaults.rearmRetune]). A merge copies no recipes, so it has
+     * nothing to re-arm. Best-effort, like [rearmCanonicalRecompute].
+     */
+    private fun rearmMixRecipeRetune() {
+        try {
+            com.stash.core.data.mix.StashMixDefaults.rearmRetune(
+                context.getSharedPreferences(com.stash.core.data.mix.StashMixDefaults.TUNING_PREFS_NAME, Context.MODE_PRIVATE),
+            )
+        } catch (e: Exception) {
+            android.util.Log.w("BackupManager", "Couldn't re-arm the built-in mix retune", e)
         }
     }
 

@@ -58,6 +58,9 @@ class CommunityViewModel @Inject constructor(
     /** Post id → the vote last asked for, while a request for that post is out (main thread only). */
     private val voting = mutableMapOf<String, Int>()
 
+    /** The posts whose listening history a tap on a dimmed arrow is checking now (main thread only). */
+    private val checking = mutableSetOf<String>()
+
     /** The posts heard on this phone ([CommunityRepository.heardIds]), laid over each list as it loads. */
     private var heardHere: Set<String> = emptySet()
 
@@ -127,12 +130,13 @@ class CommunityViewModel @Inject constructor(
 
     /**
      * Your own posts can't be voted on; one request per post is out at a time, and a tap meanwhile is sent after it.
-     * A post not heard yet takes no vote, only the note saying why (taking a vote back is always allowed).
+     * A post not heard yet takes no vote, only the note saying why (taking a vote back is always allowed), unless its
+     * song turns out to be in this phone's listening history ([listenFirst]).
      */
     fun vote(post: CommunityPost, tapped: Int) {
         if (post.mine) return
         if (post.needsListen(tapped)) {
-            _state.update { it.copy(voteNote = VoteNote.LISTEN_FIRST) }
+            listenFirst(post, tapped)
             return
         }
         val value = post.nextVote(tapped)
@@ -162,6 +166,24 @@ class CommunityViewModel @Inject constructor(
             } finally {
                 voting.remove(post.id)
             }
+        }
+    }
+
+    /**
+     * A dimmed arrow was tapped. When one of the post's songs was played anywhere in Stash since it went up, it counts
+     * as heard after all ([CommunityRepository.heardFromHistory], which saves its mark): the pill wakes and the vote goes
+     * as usual. Otherwise the note says to play it first. Another tap on the post while it checks is dropped.
+     */
+    private fun listenFirst(post: CommunityPost, tapped: Int) {
+        if (!checking.add(post.id)) return
+        viewModelScope.launch {
+            val heard = try { repository.heardFromHistory(post) } finally { checking.remove(post.id) }
+            if (!heard) {
+                _state.update { it.copy(voteNote = VoteNote.LISTEN_FIRST) }
+                return@launch
+            }
+            patch(post.id) { it.copy(heard = true) }
+            vote((_state.value.posts?.firstOrNull { it.id == post.id } ?: post).copy(heard = true), tapped)
         }
     }
 

@@ -4,34 +4,15 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * Wire models for the qobuz.squid.wtf JSON API. The deployed Next.js
- * proxy at `qobuz.squid.wtf/api/...` wraps every Qobuz response in a
- * `{success, data, error}` envelope and otherwise passes the upstream
- * Qobuz catalog payload through verbatim. We model only what the
- * matcher and resolver consume; everything else falls through under
- * the parser's `ignoreUnknownKeys = true` and disappears silently.
+ * Wire models for the Qobuz catalog payload (first written for the
+ * since-removed qobuz.squid.wtf proxy, which passed it through verbatim).
+ * We model only what the matcher and resolver consume; everything else
+ * falls through under the parser's `ignoreUnknownKeys = true` and
+ * disappears silently.
  *
- * If the squid.wtf wire shape drifts, untyped fields default to safe
- * zero/null values rather than failing deserialisation — what we want
- * for a third-party reverse-engineered API.
+ * If the wire shape drifts, untyped fields default to safe zero/null
+ * values rather than failing deserialisation.
  */
-
-// ── Envelope ────────────────────────────────────────────────────────────
-
-/**
- * Common response envelope. squid.wtf returns this shape for every
- * `/api/...` route. On a clean response, [success] is true and [data] is
- * non-null; on a validation failure (HTTP 400), [success] is false and
- * [error] carries a short human-readable message. Upstream Qobuz
- * blocking (region lock, throttling) typically surfaces as HTTP 4xx —
- * caller deals with that separately via [QobuzApiException].
- */
-@Serializable
-data class SquidWtfEnvelope<T>(
-    val success: Boolean = false,
-    val data: T? = null,
-    val error: String? = null,
-)
 
 // ── Search (`/api/get-music`) ───────────────────────────────────────────
 
@@ -41,11 +22,9 @@ data class QobuzSearchData(
     val tracks: QobuzTrackList? = null,
     val albums: QobuzAlbumList? = null,
     /**
-     * Set when the caller passed a Qobuz URL as the query — squid.wtf
-     * parses the URL, runs the matching get-* call, and tags the
-     * result with `albums` | `tracks` | `artists` so the UI knows
-     * which section to surface. Stash always passes free-text, so
-     * this is informational only.
+     * Set when the caller passed a Qobuz URL as the query (a tag of
+     * `albums` | `tracks` | `artists` saying which section to surface).
+     * Stash always passes free-text, so this is informational only.
      */
     val switchTo: String? = null,
 )
@@ -134,10 +113,9 @@ data class QobuzImage(
 // ── Download URL (`/api/download-music`) ────────────────────────────────
 
 /**
- * Result of `/api/download-music`. squid.wtf strips the upstream Qobuz
- * `mime_type` / `sampling_rate` / `bit_depth` / `restrictions` fields
- * and returns just the signed CDN URL — region/streamable issues
- * surface as HTTP 4xx on this call rather than an in-payload field.
+ * A signed CDN URL for a file (the shape the retired squid.wtf proxy's
+ * `/api/download-music` returned: just the URL, with region/streamable
+ * issues surfacing as HTTP 4xx rather than an in-payload field).
  *
  * The URL is short-lived (signed Akamai CDN); resolve-and-download
  * must be tightly coupled — don't cache.
@@ -148,9 +126,8 @@ data class QobuzDownloadData(
 )
 
 /**
- * Quality codes accepted by `/api/download-music?quality=…`. The values
- * are upstream Qobuz `format_id` integers (preserved verbatim by
- * squid.wtf). Not a Kotlin enum so the wire ints stay stable.
+ * Qobuz quality codes: the upstream `format_id` integers. Not a Kotlin
+ * enum so the wire ints stay stable.
  */
 object QobuzQuality {
     /** MP3 320 kbps — last-resort lossy fallback. */
@@ -163,9 +140,9 @@ object QobuzQuality {
     const val FLAC_HIRES_96: Int = 7
 
     /**
-     * Hi-res FLAC up to 24-bit / 192 kHz when available. squid.wtf's
-     * own default — Qobuz returns highest-available <= requested, so
-     * asking for 27 always gets you the best the source has.
+     * Hi-res FLAC up to 24-bit / 192 kHz when available. Qobuz returns
+     * highest-available <= requested, so asking for 27 always gets you
+     * the best the source has.
      */
     const val FLAC_HIRES_192: Int = 27
 }

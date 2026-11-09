@@ -73,7 +73,7 @@ class CloudCopyFinderTest {
     private val track = TrackEntity(id = 7L, title = "Reckoner", artist = "Radiohead", album = "In Rainbows", durationMs = 290_000L)
 
     private fun registry(prefer: Boolean, finder: CloudCopyFinder) = StreamSourceRegistry(
-        mockk(), mockk(), qbdlx, mockk { coEvery { resolve(any()) } returns null }, mockk(), streamingPreference,
+        qbdlx, mockk { coEvery { resolve(any()) } returns null }, mockk(), streamingPreference,
         LosslessSourceHealth(), losslessPrefs, Dispatchers.IO, PlaybackDiagnosticsLog(), null, null,
         mockk<StreamQualityPolicy>(relaxed = true) { coEvery { preferCloudCopies() } returns prefer },
         finder,
@@ -103,7 +103,7 @@ class CloudCopyFinderTest {
         coEvery { losslessPrefs.enabledNow() } returns false
         val youtube = mockk<YouTubeStreamResolver> { coEvery { resolve(any(), any()) } returns StreamUrl("https://y/x", Long.MAX_VALUE, origin = "youtube") }
         val r = StreamSourceRegistry(
-            mockk(), mockk(), qbdlx, mockk { coEvery { resolve(any()) } returns null }, youtube, streamingPreference,
+            qbdlx, mockk { coEvery { resolve(any()) } returns null }, youtube, streamingPreference,
             LosslessSourceHealth(), losslessPrefs, Dispatchers.IO, PlaybackDiagnosticsLog(), null, null,
             mockk<StreamQualityPolicy>(relaxed = true) { coEvery { preferCloudCopies() } returns true },
             finderWith(copy(9, "Reckoner")),

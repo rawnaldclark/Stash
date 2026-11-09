@@ -12,7 +12,10 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
-/** The 30 s that let you vote on a Community post (contract 2026-11-03): only playing time of its songs, played from it. */
+/**
+ * The 30 s that let you vote on a Community post (contract 2026-11-03): only playing time of its songs, played from it
+ * or from the Community tab's Play all / Shuffle.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
 class CommunityListenTrackerTest {
     private val player = MutableStateFlow(PlayerState())
@@ -190,6 +193,65 @@ class CommunityListenTrackerTest {
         show(2, source = PlaybackSource.Community(OTHER, "late night"))
         play(30_000)
         assertThat(heard).containsExactly(OTHER)
+    }
+
+    // -- The Community tab's Play all / Shuffle ------------------------------------------------------------------
+
+    private val chart = CommunityListenTracker.CHART_SOURCE
+
+    @Test fun `the chart's songs count each for the post they came from`() = runTest {
+        val tracker = tracker()
+        tracker.beginChart(); tracker.chartPost(POST, listOf(1L)); runCurrent()
+        tracker.chartPost(OTHER, listOf(2L)) // the next post, added behind the first
+        show(1, source = chart)
+        play(29_999)
+        assertThat(heard).isEmpty()
+        play(1)
+        assertThat(heard).containsExactly(POST)
+        show(2, source = chart)
+        play(30_000)
+        assertThat(heard).containsExactly(POST, OTHER).inOrder()
+    }
+
+    @Test fun `30 s spread over two chart posts marks neither`() = runTest {
+        val tracker = tracker()
+        tracker.beginChart(); tracker.chartPost(POST, listOf(1L)); tracker.chartPost(OTHER, listOf(2L)); runCurrent()
+        show(1, source = chart)
+        play(20_000)
+        show(2, source = chart)
+        play(20_000)
+        assertThat(heard).isEmpty()
+    }
+
+    @Test fun `a song two chart posts hold counts for both`() = runTest {
+        val tracker = tracker()
+        tracker.beginChart(); tracker.chartPost(POST, listOf(1L)); tracker.chartPost(OTHER, listOf(1L, 2L)); runCurrent()
+        show(1, source = chart)
+        play(30_000)
+        assertThat(heard).containsExactly(POST, OTHER)
+    }
+
+    @Test fun `playback started elsewhere ends the chart's count, and a post added after that isn't counted`() = runTest {
+        val tracker = tracker()
+        tracker.beginChart(); tracker.chartPost(POST, listOf(1L)); runCurrent()
+        show(1, source = chart)
+        play(10_000)
+        show(1, source = PlaybackSource.Library)
+        play(60_000)
+        tracker.chartPost(OTHER, listOf(1L))
+        show(1, source = chart)
+        play(60_000)
+        assertThat(heard).isEmpty()
+    }
+
+    @Test fun `a chart post that arrives late never joins a post's own Play`() = runTest {
+        val tracker = tracker()
+        tracker.begin(POST, listOf(1L)); runCurrent()
+        show(1)
+        play(10_000)
+        tracker.chartPost(OTHER, listOf(1L))
+        play(20_000)
+        assertThat(heard).containsExactly(POST)
     }
 
     private companion object {

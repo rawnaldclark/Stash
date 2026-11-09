@@ -25,6 +25,9 @@ enum class BitPerfectMiss {
     /** Bit-perfect only holds at 1x: time-stretching rewrites every sample. */
     SPEED,
 
+    /** Tuning retunes every sample (a reference other than 440 Hz); it wins over bit-perfect. */
+    TUNING,
+
     /**
      * Held off for a Listen Together session, whose drift correction nudges
      * the speed all session long (see [HiResOutputController.setBitPerfectHeld]).
@@ -86,6 +89,8 @@ object MixerSelection {
      *   room for the mixer's own math in the shared case.
      * - [bitPerfectHeld] (a Listen Together session) plans rate matching at
      *   every speed, so the session's speed nudges never change the plan.
+     * - [tuned] (Tuning away from 440 Hz) rewrites every sample, so it plans
+     *   rate matching too: the song's own rate, in float, never resampled.
      */
     fun choose(
         options: List<MixerOption>,
@@ -94,6 +99,7 @@ object MixerSelection {
         channelCount: Int,
         speed: Float,
         bitPerfectHeld: Boolean = false,
+        tuned: Boolean = false,
     ): MixerDecision {
         if (mode == HiResOutputMode.STANDARD) return MixerDecision.Shared(MixerDecision.Reason.MODE_STANDARD)
         val atRate = options.filter { it.sampleRate == sampleRate && it.format != null }
@@ -107,7 +113,7 @@ object MixerSelection {
         } else {
             null
         }
-        if (bp != null && speed == 1f && !bitPerfectHeld) return MixerDecision.Configure(bp, trackFormat = bp.format!!)
+        if (bp != null && speed == 1f && !tuned && !bitPerfectHeld) return MixerDecision.Configure(bp, trackFormat = bp.format!!)
 
         val shared = atRate
             .filter { !it.bitPerfect }
@@ -118,10 +124,12 @@ object MixerSelection {
             .firstOrNull()
             ?: return MixerDecision.Shared(MixerDecision.Reason.RATE_UNSUPPORTED_BY_DAC)
         // The real blocker first: a DAC with no bit-perfect mode here would
-        // miss it at any speed and outside any session.
+        // miss it at any speed and outside any session; Tuning stays on after
+        // the session ends and at every speed.
         val miss = when {
             !wantBitPerfect -> null
             bp == null -> BitPerfectMiss.NOT_OFFERED
+            tuned -> BitPerfectMiss.TUNING
             bitPerfectHeld -> BitPerfectMiss.LISTEN_TOGETHER
             else -> BitPerfectMiss.SPEED
         }

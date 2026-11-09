@@ -6,22 +6,19 @@ import javax.inject.Singleton
 
 /**
  * Per-source content-health gate. When a source is observed serving a
- * degraded URL (preview sample / lossy downgrade — see [LosslessUrlInspector])
- * it is marked degraded for [COOLDOWN_MS], so subsequent resolves skip it
+ * degraded file (a preview sample or a lossy downgrade, e.g. the duration
+ * backstop in DownloadManager) it is marked degraded for [COOLDOWN_MS], so subsequent resolves skip it
  * cheaply instead of paying a wasted round-trip per track.
  *
- * **Independent per source** — kennyy and squid share a leaked Qobuz app_id
- * so they often degrade together, but they recover independently (observed
- * 2026-06-04: squid recovered while kennyy stayed 401). Coupling would
- * wrongly keep a recovered source disabled, so each id has its own entry.
+ * **Independent per source** — sources that share an upstream often degrade
+ * together but recover independently (observed 2026-06-04 on the since-removed
+ * Qobuz proxies). Coupling would wrongly keep a recovered source disabled, so
+ * each id has its own entry.
  *
  * **Passive recovery** — when the cooldown lapses the source is simply
  * retried by the next real resolve; if it's still degraded the inspector
- * re-marks it. No dedicated canary track is needed because the inspector
- * rejects a degraded recovery attempt before the user ever sees it. This is
- * the content-health layer; Kennyy's network-health
- * [com.stash.core.media.streaming.KennyyHealthMonitor] is separate and
- * unchanged.
+ * re-marks it. This is the content-health layer; breakers and rate limits
+ * live in [AggregatorRateLimiter].
  *
  * The injectable [nowMs] clock keeps this fully unit-testable; Hilt uses the
  * no-arg secondary constructor (System time).

@@ -22,7 +22,7 @@ dependencies {
     implementation(project(":core:media"))
     // Still required after the SyncStatusCard relocation: the lossless
     // retry/backfill banners on Home read MetadataBackfillState,
-    // LosslessRetryWorker, KennyySource, QobuzSource, and the
+    // LosslessRetryWorker and the
     // AggregatorRateLimiter from this module.
     implementation(project(":data:download"))
     // v0.9.36: LyricsBackfillState snapshot for the LyricsBackfillBanner

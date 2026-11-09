@@ -2,10 +2,9 @@
 # The /privacy page. Built from the README's "What Stash talks to" and "Privacy"
 # sections, plus SECURITY.md's "Handling Your Credentials". When the README's
 # list of hosts changes, change it here too, in the same words where you can.
-# The README's two parked hosts are left out on purpose: the app never calls them.
 #
 # Figures that come straight from code. Check them when that code changes:
-#   relay counts kept 7 days plus today  QUOTA_KEEP_DAYS, infra/lossless-relay/src/db.js
+#   Tidal relay counts, 7 days + today   USAGE_KEEP_DAYS, the Tidal relay's src/quota.js
 #   linked device removed after 90 days  DEVICE_IDLE_DAYS, infra/sync-worker/src/space.js
 #   what's playing kept 7 days           SLOT_KEEP_DAYS, infra/sync-worker/src/space.js
 #   a send kept 7 days                   SEND_KEEP_DAYS, infra/sync-worker/src/space.js
@@ -24,7 +23,7 @@
 # Google's OAuth verification links to /privacy#cloud-storage. Don't rename it.
 #
 # Shown as "Last updated" on the page. Change it whenever this file changes.
-updated: 2026-11-04
+updated: 2026-11-08
 ---
 
 ## The short version
@@ -38,7 +37,7 @@ updated: 2026-11-04
 
 ## What Stash talks to
 
-Stash has no account server, but it isn't a two-service app either. This is everything the official release APK can reach, and what for. A build you make yourself from a plain checkout reaches strictly less: it has no Last.fm keys or proxy and no relay config.
+Stash has no account server, but it isn't a two-service app either. This is everything the official release APK can reach, and what for. A build you make yourself from a plain checkout reaches strictly less: it has no Last.fm keys or proxy and no Tidal relay config.
 
 ### Spotify and YouTube
 
@@ -55,12 +54,13 @@ Qobuz catalog requests go straight from your phone to `www.qobuz.com`, with no a
 
 - **Qobuz on Home** (`www.qobuz.com`): the New Releases, Top Albums and Qobuz Playlists rows. No account needed and **on by default**. Turning off "Qobuz discovery on Home" in Settings › Library & Storage, or hiding those rows in Home layout, stops these requests.
 - **Qobuz on artist pages** (`www.qobuz.com`): Qobuz is sent the artist's name, to fill in albums YouTube is missing, and an album's id when you open one of those albums. This runs whatever the Home setting is, and no setting turns it off.
-- **Qobuz lossless lookups** (`www.qobuz.com`): while Lossless is on, which is the default, every song about to stream (including the next one up) or about to download is looked up here first, by its ISRC or by artist and title. This happens with or without an account, and even when the song then plays from somewhere else, so Qobuz learns what you play. Turning Lossless off in Settings › Audio & Quality stops these lookups, except when you ask for FLAC yourself with "Find in FLAC" in Now Playing or "Upgrade to FLAC" in Library.
+- **Qobuz lossless lookups** (`www.qobuz.com`): only with your own Qobuz account connected. While Lossless is on, which is the default, every song about to stream (including the next one up) or about to download is looked up here first, by its ISRC or by artist and title. This happens even when the song then plays from somewhere else, so Qobuz learns what you play. Without an account, Qobuz isn't asked for lossless at all. Turning Lossless off in Settings › Audio & Quality stops these lookups, except when you ask for FLAC yourself with "Find in FLAC" in Now Playing or "Upgrade to FLAC" in Library.
 - **Your own Qobuz account** (`www.qobuz.com`): only if you connect one in Settings › Audio & Quality. Connecting sends your Qobuz email and password to Qobuz once, to get a token; Stash keeps the token and your email, not the password. Each FLAC link is then requested with that token. While Lossless is on and your account is working, songs you scroll past in search results and on artist and album pages are also looked up ahead of time, so they start faster.
-- **`stash-relay.rawnaldclark.workers.dev`**: the project's lossless relay, used only by the official release build. With no Qobuz account or relay endpoint of your own, Stash asks it for every FLAC link. With your own account connected, Stash asks your account first. It uses the relay for a song when the request on your account fails, and for every song while Qobuz is rejecting your login. Your login is retried once a minute, so a login Qobuz no longer accepts keeps using the relay until you sign in again or disconnect it. With your own relay endpoint set, the project's relay is used when yours fails.
-- **What the relay is sent and keeps**: the Qobuz track id and format of each song, whether it's a download (Stash marks sync, playlist and mix downloads, their retries and its FLAC upgrade passes; anything else counts as playing, including songs you download from Search or an artist or album page), and a random id for your install. Nothing else about you, and never a credential, so this host learns what an anonymous install listens to. Like any server, it sees your IP address, and it uses it for a per-connection rate limit; for IPv6, the relay uses only the part of the address that identifies your connection. When it has to ask Qobuz for a new link instead of reusing a recent one, it adds one to a daily count for your install id, stored with a scrambled form of that address (a salted hash), and to a daily count for the scrambled address itself. That enforces the daily limits and shows when one connection poses as many installs. These counts are kept for the current day and the 7 before it, then deleted, and stay restorable by the owner from Cloudflare's database backups for up to 30 days. The relay's log line for each of those requests shows the track, the format, the first 8 characters of your install id, whether it's a download, your country, and which Cloudflare location answered. The relay hands back a short-lived link, never the audio. If you set your own relay endpoint instead, it is sent the same, and what it keeps is up to whoever runs it.
-- **Qobuz's audio CDN** (today `streaming-qobuz-std.akamaized.net`): where the FLAC itself comes from, whether the link came from your account or the project's relay. The address comes back with each link, so it can change. It sees your IP address and which file you're getting. Share diagnostics, when you use it, also checks that this CDN, the relay and the relay config host answer.
-- **`stash-tipjar.rawnaldclark.workers.dev/lossless.json`**: the signed relay config and its `.sig`, fetched at every cold start and every 6 hours after by the official release build. This URL *is* in the APK; it is fetched with nothing of yours connected, like the tip jar list on the same host. A plain checkout has no config URL and skips it.
+- **The project's Tidal relay**: used only by the official release build, which gets its address from the signed config below; the hostname isn't in the APK. With no Qobuz account of your own, Stash asks it for every lossless link. With your own account connected, Stash asks your account first. It uses the Tidal relay for a song when the request on your account fails, and for every song while Qobuz is rejecting your login. Your login is retried once a minute, so a login Qobuz no longer accepts keeps going to Tidal until you sign in again or disconnect it. With your own Tidal server set (Custom Tidal server, under Advanced in Settings › Audio & Quality › Lossless sources), Stash asks yours instead of the project's relay, and what it keeps is up to whoever runs it.
+- **What the Tidal relay is sent and keeps**: the song's artist and title, to find it on Tidal (and again as hints with the stream request); the Tidal track id; whether you want AAC; the app's build number; a random id for your install, sent with a signature that proves it; and your supporter code, if you claimed one. Nothing else about you, and never a credential, so this host learns what an anonymous install listens to. It hands back a short-lived link, and the audio comes from Tidal's CDN; only the first small setup piece of some streams (the part that describes the file) passes through the relay so your phone can play it. Like any server, it sees your IP address, and it uses it for per-connection rate limits. It keeps daily counts for your install id and for a scrambled form of your connection's address (a salted hash). These counts are kept for the current day and the 7 before it, then deleted, and stay restorable by the owner from Cloudflare's database backups for up to 30 days. Its log line for each stream shows the Tidal track id, how it was served and the format, not your install id.
+- **The retired Qobuz relay**: earlier builds also used a Qobuz relay the project ran. It no longer answers. Its database (daily counts for install ids and for salted hashes of connection addresses) is kept for up to about 30 days after it was shut down, then deleted.
+- **Qobuz's audio CDN** (today `streaming-qobuz-std.akamaized.net`): where the FLAC itself comes from when it comes from your Qobuz account. The address comes back with each link, so it can change. It sees your IP address and which file you're getting. Share diagnostics, when you use it, also checks that this CDN, the project's Tidal relay and its config host answer.
+- **`stash-tipjar.rawnaldclark.workers.dev/lossless.json`**: the signed config for the project's Tidal relay, and its `.sig`, fetched at every cold start and every 6 hours after by the official release build. This URL *is* in the APK; it is fetched with nothing of yours connected, like the tip jar list on the same host. A plain checkout has no config URL and skips it.
 - **JioSaavn** (`www.jiosaavn.com`, `aac.saavncdn.com`): the AAC 320 fallback when nothing lossless matched.
 
 ### Lyrics
@@ -174,7 +174,7 @@ Some of the requests above happen without you tapping anything. These are all of
 
 - A visitor id from `music.youtube.com` and a security check with `www.youtube.com`, so YouTube playback starts sooner. This runs even if you never play anything from YouTube.
 - With a connection: a warm-up request to `music.youtube.com`, the Stash and yt-dlp update checks on `api.github.com` (a newer yt-dlp is downloaded from GitHub when there is one), and a test run of yt-dlp on one public YouTube video, through `www.youtube.com`.
-- In the official release build, the relay config, then every 6 hours while Stash runs.
+- In the official release build, the Tidal relay config, then every 6 hours while Stash runs.
 - A fill-in for missing album art on downloaded songs. Their artist and title go to Last.fm through the proxy, or Stash uses the song's YouTube thumbnail from `i.ytimg.com`.
 - On Wi-Fi, an artist-photo lookup that sends `music.youtube.com` the name of each artist in your library that has no photo yet. It also runs after each sync.
 - Downloads you started that are still waiting are picked up again, and retried later.
@@ -195,7 +195,7 @@ Some of the requests above happen without you tapping anything. These are all of
 
 **While Lossless is on**, which is the default:
 
-- With Download on, after downloads finish: a pass that looks for FLAC copies of downloaded songs that came in lossy, in Qobuz's catalog, then through your account or the relay.
+- With Download on, after downloads finish: a pass that looks for FLAC copies of downloaded songs that came in lossy, through your Qobuz account if you connected one, then Tidal.
 
 **Only if you turn it on**: Auto-sync, which syncs your library on the days and at the time you pick; and scrobbling, likes mirroring, YouTube Music history, Discord Rich Presence and cloud storage, as described above.
 

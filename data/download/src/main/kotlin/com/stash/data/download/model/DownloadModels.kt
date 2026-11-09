@@ -1,23 +1,5 @@
 package com.stash.data.download.model
 
-import com.stash.core.model.Track
-
-/**
- * Describes everything needed to download a single track's audio.
- *
- * @property track         the library track this download is for.
- * @property youtubeUrl    a pre-resolved YouTube URL, or null if a search is needed.
- * @property searchQuery   query string used to find the track on YouTube (e.g. "Artist - Title official audio").
- * @property qualityArgs   yt-dlp CLI arguments controlling audio quality and format.
- * @property outputDir     absolute path to the directory where the file should be written.
- */
-data class DownloadRequest(
-    val track: Track,
-    val youtubeUrl: String? = null,
-    val searchQuery: String,
-    val qualityArgs: List<String>,
-    val outputDir: String,
-)
 
 /**
  * Real-time progress snapshot for an in-flight download.

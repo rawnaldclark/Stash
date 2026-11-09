@@ -12,7 +12,7 @@
     <string name="np_quality_data_saver_subtitle">Lower quality streams on mobile data</string>
     <string name="np_quality_prefer_tidal_aac_title">Prefer Tidal AAC while streaming</string>
     <string name="np_quality_prefer_tidal_aac_subtitle">Smaller streams when Tidal has the song</string>
-    <string name="np_quality_allowance_note">FLAC and Tidal AAC both count toward today\'s Tidal &amp; Qobuz allowance. Lossless off saves it.</string>
+    <string name="np_quality_allowance_note">FLAC and AAC from Tidal count toward today\'s Tidal allowance; your own Qobuz account doesn\'t. Lossless off saves it.</string>
 
     <!-- Play on (Remote v2, spec 2026-11-03 §3, §6): the cast button's sheet lists this phone, the linked browsers and the
          Cast speakers. A browser is named as it was linked: "Chrome on Windows"; its app alone is "Chrome". -->
@@ -104,4 +104,22 @@
     <string name="listen_someone">Someone</string>
     <!-- TalkBack's action on a song in Up next: the host on any song, a guest on their own. -->
     <string name="listen_remove_from_up_next">Remove from Up next</string>
+    <!-- Tuning, in the Playback speed sheet (same words as Settings > Audio & Quality > Tuning). -->
+    <string name="np_tuning_heading_standard">Tuning · Standard</string>
+    <string name="np_tuning_heading_hz">Tuning · A = %1$s Hz</string>
+    <!-- After "Playback speed · " on the speed action while tuning isn't 440: "A432". -->
+    <string name="np_tuning_action_mark">A%1$s</string>
+    <string name="np_tuning_custom">Custom</string>
+    <string name="np_tuning_custom_title">Custom tuning</string>
+    <string name="np_tuning_exact_label">Exact Hz</string>
+    <string name="np_tuning_hz_suffix">Hz</string>
+    <string name="np_tuning_exact_range">Any value from %1$s to %2$s Hz</string>
+    <string name="np_tuning_exact_lowest">Sets %1$s Hz, the lowest</string>
+    <string name="np_tuning_exact_highest">Sets %1$s Hz, the highest</string>
+    <string name="np_tuning_exact_invalid">Type a number, like %1$s or %2$s</string>
+    <string name="np_tuning_cents_lower">%1$s cents lower</string>
+    <string name="np_tuning_cents_higher">%1$s cents higher</string>
+    <string name="np_tuning_cents_standard">Standard pitch, as recorded</string>
+    <string name="np_tuning_set">Set</string>
+    <string name="np_tuning_cancel">Cancel</string>
 </resources>
