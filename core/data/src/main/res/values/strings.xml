@@ -7,4 +7,29 @@
     <!-- AppUpdater: downloaded while Stash was in the background, where Android won't show its install confirm. -->
     <string name="update_ready_notification_title">Stash %1$s is ready to install</string>
     <string name="update_ready_notification_text">Tap to install it.</string>
+    <!-- Download notifications: songs a sync queued, downloading outside a sync (the resume run). -->
+    <string name="notif_downloads_title">Downloading songs</string>
+    <string name="notif_downloads_preparing">Preparing…</string>
+    <!-- Progress: done of all, e.g. "12 of 40". -->
+    <string name="notif_downloads_progress">%1$d of %2$d</string>
+    <!-- Progress with songs waiting for a lossless copy: "12 of 40 · 3 waiting for lossless". -->
+    <string name="notif_downloads_progress_waiting">%1$d of %2$d · %3$d waiting for lossless</string>
+    <string name="notif_action_pause">Pause</string>
+    <string name="notif_action_resume">Resume</string>
+    <!-- The phone ran out of space: downloads stop until Resume. -->
+    <string name="notif_storage_full_title">Downloads paused</string>
+    <string name="notif_storage_full_text">Your phone is out of space. Free up space, then tap Resume.</string>
+    <!-- YouTube asked us to wait (HTTP 429). The time downloads try again, in the phone's format ("14:20"). -->
+    <string name="notif_rate_limited_title">Downloads slowed down</string>
+    <string name="notif_rate_limited_text">YouTube asked us to wait. Trying again around %1$s.</string>
+    <!-- The sync summary when songs are left: "Downloaded 37 songs · 3 will try again later · 2 failed". -->
+    <plurals name="notif_summary_downloaded">
+        <item quantity="one">Downloaded %d song</item>
+        <item quantity="other">Downloaded %d songs</item>
+    </plurals>
+    <string name="notif_summary_try_later">%1$d will try again later</string>
+    <string name="notif_summary_failed">%1$d failed</string>
+    <!-- The summary when the songs left wait for the user: "3 paused", "3 waiting for space". -->
+    <string name="notif_summary_paused">%1$d paused</string>
+    <string name="notif_summary_no_space">%1$d waiting for space</string>
 </resources>

@@ -55,10 +55,16 @@ private const val COMMUNITY_KEY_FILE = "community_preference.preferences_pb"
 /**
  * The DataStore files a backup never carries and a restore never writes, matched by prefix like
  * the Community key: that key, and the Ko-fi supporter token ([SupporterRepository]), which a
- * backup file must not hand to whoever holds it (a new phone claims again by email). The install
- * id and the day's lossless count do ride along.
+ * backup file must not hand to whoever holds it (a new phone claims again by email), and the
+ * download queue's Pause ([com.stash.core.data.sync.DownloadQueueState]), which restored onto a
+ * new phone left it paused with no reason it could see. The install id and the day's lossless
+ * count do ride along.
  */
-private val NEVER_BACKED_UP = listOf(COMMUNITY_KEY_FILE, SupporterRepository.DATASTORE_FILE)
+private val NEVER_BACKED_UP = listOf(
+    COMMUNITY_KEY_FILE,
+    SupporterRepository.DATASTORE_FILE,
+    com.stash.core.data.sync.DownloadQueueState.DATASTORE_FILE,
+)
 
 private fun neverBackedUp(fileName: String): Boolean = NEVER_BACKED_UP.any { fileName.startsWith(it) }
 

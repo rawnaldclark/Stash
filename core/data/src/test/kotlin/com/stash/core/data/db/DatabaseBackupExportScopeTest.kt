@@ -207,6 +207,26 @@ class DatabaseBackupExportScopeTest {
         }
     }
 
+    @Test fun `settings leave out the download pause, which belongs to this phone's queue`() = runTest {
+        // Restored onto a new phone, a pause or an out-of-space hold would stop every download
+        // there with nothing on screen saying why.
+        val queueState = context.preferencesDataStoreFile("download_queue_state")
+        val theme = context.preferencesDataStoreFile("theme_preferences")
+        queueState.parentFile?.mkdirs()
+        for (f in listOf(queueState, theme)) f.writeText(f.name)
+        try {
+            manager.exportDatabase(Uri.fromFile(out), BackupExportScope.SETTINGS_ONLY).getOrThrow()
+
+            ZipFile(out).use { zip ->
+                val names = zip.entries().toList().map { it.name }
+                assertTrue("the pause must not", "datastore/download_queue_state.preferences_pb" !in names)
+                assertTrue("other settings still do", "datastore/theme_preferences.preferences_pb" in names)
+            }
+        } finally {
+            for (f in listOf(queueState, theme)) f.delete()
+        }
+    }
+
     @Test fun `a settings restore ignores a supporter token in an older archive`() = runTest {
         val zipFile = File(context.cacheDir, "old-settings-${System.nanoTime()}.zip")
         ZipOutputStream(FileOutputStream(zipFile)).use { zip ->

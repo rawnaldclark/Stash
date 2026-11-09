@@ -191,6 +191,10 @@
         <receiver
             android:name="com.stash.core.data.update.UpdateInstallReceiver"
             android:exported="false" />
+        <!-- The download notifications' Pause and Resume (only the app's own PendingIntents reach it). -->
+        <receiver
+            android:name="com.stash.core.data.sync.DownloadControlReceiver"
+            android:exported="false" />
         <receiver
             android:name="com.stash.core.data.sync.BootReceiver"
             android:exported="true"

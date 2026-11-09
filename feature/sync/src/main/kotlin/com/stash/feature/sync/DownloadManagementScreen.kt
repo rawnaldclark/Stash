@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -20,6 +21,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,12 +41,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.data.sync.QueueRunState
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.sync.components.DownloadManagementRow
 
@@ -71,6 +81,8 @@ fun DownloadManagementScreen(
                 state = state,
                 onBack = onBack,
                 onSelectTab = viewModel::selectTab,
+                onPause = viewModel::pause,
+                onResume = viewModel::resumeDownloads,
             )
             when (state.selectedTab) {
                 DownloadManagementTab.QUEUE -> QueueContent(
@@ -82,6 +94,7 @@ fun DownloadManagementScreen(
                 DownloadManagementTab.HISTORY -> HistoryContent(
                     state = state,
                     onRetry = viewModel::retry,
+                    onRetryAllFailed = viewModel::retryAllFailed,
                     onClearHistory = viewModel::clearHistory,
                 )
             }
@@ -94,6 +107,8 @@ private fun DownloadsHeader(
     state: DownloadManagementUiState,
     onBack: () -> Unit,
     onSelectTab: (DownloadManagementTab) -> Unit,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
 ) {
     val extendedColors = StashTheme.extendedColors
     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -113,14 +128,17 @@ private fun DownloadsHeader(
             color = MaterialTheme.colorScheme.onBackground,
         )
         Text(
-            text = when {
-                state.downloading.isNotEmpty() -> "${state.downloading.size} downloading · ${state.queued.size} queued"
-                state.queued.isNotEmpty() -> "${state.queued.size} queued"
-                else -> "Queue and recent download history"
-            },
+            text = queueStatusText(state),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        state.queueButton?.let { button ->
+            Spacer(Modifier.height(12.dp))
+            QueueActionButton(
+                button = button,
+                onClick = if (button == QueueButton.PAUSE) onPause else onResume,
+            )
+        }
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
@@ -134,6 +152,68 @@ private fun DownloadsHeader(
                 label = { Text("History (${state.history.size})") },
             )
         }
+    }
+}
+
+/**
+ * The line under the title: the counts, then what the queue waits for, e.g.
+ * "37 queued · Waiting for Wi-Fi". Out of space says only that.
+ */
+@Composable
+private fun queueStatusText(state: DownloadManagementUiState): String {
+    val runState = state.runState
+    if (runState is QueueRunState.StorageFull) return stringResource(R.string.downloads_state_storage_full)
+    val downloading = state.downloading.size
+    val queued = state.queued.size
+    val idle = stringResource(R.string.downloads_subtitle_idle)
+    // A state only explains songs that wait: "Paused" over an empty queue explained nothing.
+    if (downloading + queued == 0) return idle
+    val parts = mutableListOf<String>()
+    if (downloading > 0) parts += pluralStringResource(R.plurals.downloads_count_downloading, downloading, downloading)
+    if (queued > 0) parts += pluralStringResource(R.plurals.downloads_count_queued, queued, queued)
+    when (runState) {
+        QueueRunState.WaitingForWifi -> parts += stringResource(R.string.downloads_state_wifi)
+        QueueRunState.WaitingForConnection -> parts += stringResource(R.string.downloads_state_connection)
+        QueueRunState.Paused -> parts += stringResource(R.string.downloads_state_paused)
+        is QueueRunState.RetryAt -> {
+            val time = android.text.format.DateFormat.getTimeFormat(LocalContext.current).format(java.util.Date(runState.atMs))
+            parts += stringResource(R.string.downloads_state_retry_at, time)
+        }
+        else -> Unit
+    }
+    return if (parts.isEmpty()) idle else parts.joinToString(" · ")
+}
+
+/** Pause, Download now or Resume downloads, in the Retry all button's style. */
+@Composable
+private fun QueueActionButton(button: QueueButton, onClick: () -> Unit) {
+    val (icon, label) = when (button) {
+        QueueButton.PAUSE -> Icons.Default.Pause to stringResource(R.string.downloads_pause)
+        QueueButton.DOWNLOAD_NOW -> Icons.Default.Download to stringResource(R.string.downloads_download_now)
+        QueueButton.RESUME -> Icons.Default.PlayArrow to stringResource(R.string.downloads_resume)
+    }
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Icon(icon, null, Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label)
+    }
+}
+
+/** Retry all failed (N): every failed song back to the queue at once. */
+@Composable
+private fun RetryAllFailedButton(count: Int, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Icon(Icons.Default.Refresh, null, Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(stringResource(R.string.downloads_retry_all_failed, count))
     }
 }
 
@@ -187,6 +267,12 @@ private fun QueueContent(
                 DownloadRowCard(item, onCancel = onCancel, onRetry = onRetry)
             }
         }
+        if (state.offlineOnly.isNotEmpty()) {
+            item(key = "offline_label") { SectionLabel(stringResource(R.string.downloads_offline_section)) }
+            items(state.offlineOnly, key = { "offline_${it.queueId}" }) { item ->
+                DownloadRowCard(item, onCancel = onCancel, onRetry = onRetry)
+            }
+        }
     }
 }
 
@@ -194,6 +280,7 @@ private fun QueueContent(
 private fun HistoryContent(
     state: DownloadManagementUiState,
     onRetry: (Long) -> Unit,
+    onRetryAllFailed: () -> Unit,
     onClearHistory: () -> Unit,
 ) {
     if (!state.isLoading && state.history.isEmpty()) {
@@ -207,6 +294,11 @@ private fun HistoryContent(
     ) {
         item(key = "clear_history") {
             ClearButton(label = "Clear history", onClick = onClearHistory)
+        }
+        if (state.retryableFailedCount > 0) {
+            item(key = "retry_all_failed") {
+                RetryAllFailedButton(count = state.retryableFailedCount, onClick = onRetryAllFailed)
+            }
         }
         item(key = "recent_label") { SectionLabel("Recent") }
         items(state.history, key = { "history_${it.queueId}" }) { item ->

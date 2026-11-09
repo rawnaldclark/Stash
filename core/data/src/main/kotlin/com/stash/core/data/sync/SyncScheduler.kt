@@ -61,6 +61,9 @@ class SyncScheduler @Inject constructor(
 
         /** Tag on the fetch step of a chain the trigger started; "Sync now" chains lack it. */
         const val SCHEDULED_TAG = "sync_scheduled"
+
+        /** Tag on the chain's download step: the resume run and the Downloads screen look for it. */
+        const val DOWNLOAD_STEP_TAG = "sync_download"
         private const val TAG = "SyncScheduler"
     }
 
@@ -457,7 +460,7 @@ class SyncScheduler @Inject constructor(
 
         val downloadWork = OneTimeWorkRequestBuilder<TrackDownloadWorker>()
             .setConstraints(downloadConstraints)
-            .addTag("sync_download")
+            .addTag(DOWNLOAD_STEP_TAG)
             .build()
 
         val finalizeWork = OneTimeWorkRequestBuilder<SyncFinalizeWorker>()

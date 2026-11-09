@@ -28,7 +28,7 @@ import com.stash.feature.sync.SyncViewModel
 
 /**
  * The Downloads row above Auto-sync, in [SyncLinkRow]'s shape: "Downloads" and, on the right, what's going
- * on ("2 downloading · 14 waiting · 1 failed", or "None running"). While songs download, a thin bar under
+ * on ("2 downloading · 14 waiting · 1 failed", or "None running"), then what holds them back ("Paused"). While songs download, a thin bar under
  * the row shows how far they are together. A tap opens the Downloads screen.
  */
 @Composable
@@ -43,6 +43,13 @@ internal fun SyncDownloadsRow(
         }
         if (summary.waiting > 0) add(pluralStringResource(R.plurals.sync_downloads_waiting, summary.waiting, summary.waiting))
         if (summary.failed > 0) add(pluralStringResource(R.plurals.sync_downloads_failed, summary.failed, summary.failed))
+        when (summary.hold) {
+            SyncViewModel.DownloadsHold.PAUSED -> add(stringResource(R.string.downloads_state_paused))
+            SyncViewModel.DownloadsHold.STORAGE_FULL -> add(stringResource(R.string.sync_downloads_state_storage_full))
+            SyncViewModel.DownloadsHold.WAITING_FOR_WIFI -> add(stringResource(R.string.downloads_state_wifi))
+            SyncViewModel.DownloadsHold.WAITING_FOR_CONNECTION -> add(stringResource(R.string.downloads_state_connection))
+            null -> Unit
+        }
     }
     val trailing = if (parts.isEmpty()) stringResource(R.string.sync_downloads_none) else parts.joinToString(" · ")
     Column(modifier.fillMaxWidth()) {
@@ -64,8 +71,13 @@ internal fun SyncDownloadsRow(
             Text(
                 text = trailing,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (summary.failed > 0 && summary.downloading == 0) MaterialTheme.colorScheme.error
-                else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (summary.hold == SyncViewModel.DownloadsHold.STORAGE_FULL ||
+                    (summary.failed > 0 && summary.downloading == 0)
+                ) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
             )
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
