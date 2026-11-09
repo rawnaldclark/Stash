@@ -192,4 +192,47 @@ class CommunityViewModelTest {
         revision.value = 1; advanceUntilIdle()
         assertThat(vm.state.value.posts).containsExactly(post())
     }
+
+    // -- Heard from the listening history -------------------------------------------------------------------------
+
+    @Test fun `the owner's case - a dimmed arrow on a song played in full hours ago votes, with no note`() = runTest(dispatcher) {
+        // Not heard as far as the list knows: no mark here, and the server has none. The song was played from the
+        // Library three hours ago, after it was posted (CommunityRepositoryTest has the history itself).
+        val waiting = post().copy(heard = false)
+        coEvery { repo.feed(100) } returns CommunityResult.Ok(listOf(waiting))
+        coEvery { repo.heardFromHistory(waiting) } returns true
+        coEvery { repo.vote("AAAAAAAA", 1) } returns CommunityResult.Ok(VoteCounts(up = 4, down = 1, myVote = 1))
+        val vm = CommunityViewModel(repo, mockk(relaxed = true))
+        vm.show(Tab.HOME); advanceUntilIdle()
+        vm.vote(waiting, 1); advanceUntilIdle()
+        coVerify(exactly = 1) { repo.heardFromHistory(waiting) }
+        coVerify(exactly = 1) { repo.vote("AAAAAAAA", 1) }
+        assertThat(vm.state.value.voteNote).isNull()
+        assertThat(vm.state.value.posts).containsExactly(post(up = 4, myVote = 1)) // heard, and voted
+    }
+
+    @Test fun `a song not in the history since it went up still gets the note, checked once however often it's tapped`() = runTest(dispatcher) {
+        val waiting = post().copy(heard = false)
+        coEvery { repo.feed(100) } returns CommunityResult.Ok(listOf(waiting))
+        coEvery { repo.heardFromHistory(any()) } coAnswers { delay(500); false }
+        val vm = CommunityViewModel(repo, mockk(relaxed = true))
+        vm.show(Tab.HOME); advanceUntilIdle()
+        vm.vote(waiting, 1); runCurrent()
+        vm.vote(waiting, 1) // tapped again while it checks
+        advanceUntilIdle()
+        coVerify(exactly = 1) { repo.heardFromHistory(any()) }
+        coVerify(exactly = 0) { repo.vote(any(), any()) }
+        assertThat(vm.state.value.voteNote).isEqualTo(VoteNote.LISTEN_FIRST)
+        assertThat(vm.state.value.posts).containsExactly(waiting)
+    }
+
+    @Test fun `a heard post, or taking a vote back, never asks the history`() = runTest(dispatcher) {
+        coEvery { repo.feed(100) } returns CommunityResult.Ok(listOf(post()))
+        coEvery { repo.vote(any(), any()) } returns CommunityResult.Ok(VoteCounts(up = 3, down = 1, myVote = 0))
+        val vm = CommunityViewModel(repo, mockk(relaxed = true))
+        vm.show(Tab.HOME); advanceUntilIdle()
+        vm.vote(post(), 1); advanceUntilIdle()
+        vm.vote(post(up = 4, myVote = 1).copy(heard = false), 1); advanceUntilIdle()
+        coVerify(exactly = 0) { repo.heardFromHistory(any()) }
+    }
 }
