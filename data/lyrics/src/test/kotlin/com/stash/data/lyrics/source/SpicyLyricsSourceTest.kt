@@ -362,7 +362,7 @@ class SpicyLyricsSourceTest {
         assertEquals(2, calls)
     }
 
-    @Test fun `no Spotify id, no ISRC and no search to make: no request`() = runTest {
+    @Test fun `no Spotify id, no ISRC and no search to make, so no request`() = runTest {
         serve(syllable)
         assertNull(source().resolve(query(spotifyTrackId = null)))
         assertEquals(0, calls)
