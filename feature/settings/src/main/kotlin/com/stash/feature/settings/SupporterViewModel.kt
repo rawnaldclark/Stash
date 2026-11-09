@@ -1,5 +1,7 @@
 package com.stash.feature.settings
 
+import android.content.Context
+import android.content.res.Resources
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.supporter.ClaimResult
@@ -9,6 +11,7 @@ import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.quota.LosslessQuotaRefresher
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -55,11 +58,14 @@ data class SupporterClaimUi(
  */
 @HiltViewModel
 class SupporterViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val supporter: SupporterRepository,
     private val refresher: LosslessQuotaRefresher,
     private val quota: LosslessQuota,
     config: LosslessConfigFetcher,
 ) : ViewModel() {
+
+    private val res: Resources get() = context.resources
 
     val row: StateFlow<SupporterRow> = supporterRows(quota, config, supporter)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SupporterRow.Hidden)
@@ -68,7 +74,7 @@ class SupporterViewModel @Inject constructor(
     val claim: StateFlow<SupporterClaimUi> = _claim.asStateFlow()
 
     /** Asks the tip jar to email a code to [email]. */
-    fun sendCode(email: String) = launchStep { supporter.claimStart(email).let { r -> _claim.value.after(r, email.trim()) } }
+    fun sendCode(email: String) = launchStep { supporter.claimStart(email).let { r -> _claim.value.after(r, email.trim(), res) } }
 
     /** The code step's "Send a new code": the same address again. */
     fun resendCode() = sendCode(_claim.value.email)
@@ -83,55 +89,50 @@ class SupporterViewModel @Inject constructor(
                     // relays again even when this refresh fails offline.
                     quota.liftSpent()
                     refresher.refreshNow()
-                    _claim.value.unlocked(confirmed = quota.current()?.unlimited == true)
+                    _claim.value.unlocked(confirmed = quota.current()?.unlimited == true, res = res)
                 }
-                else -> _claim.value.after(r, email)
+                else -> _claim.value.after(r, email, res)
             }
         }
     }
 
-    /** Back to the email step (a different address, or a code that can no longer be used). */
-    fun startOver() = _claim.update { SupporterClaimUi() }
+    /** Empties the code field and returns to the email step without closing. */
+    fun startOver() {
+        _claim.value = SupporterClaimUi()
+    }
 
-    /** The sheet was closed: the next open starts fresh. */
-    fun reset() = _claim.update { if (it.busy) it else SupporterClaimUi() }
-
-    /** Removes the code from this device; the relays then count it as free. */
+    /** Forgets any stored code on this device; the relays then count this device as free again. */
     fun removeCode() {
         viewModelScope.launch {
             supporter.clear()
             refresher.refreshNow()
+            _claim.value = SupporterClaimUi()
         }
-        _claim.update { SupporterClaimUi() }
     }
 
-    /** Runs [step] once at a time with the sheet busy, and shows what it returns. */
-    private fun launchStep(step: suspend () -> SupporterClaimUi) {
-        if (_claim.value.busy) return
-        _claim.update { it.copy(busy = true, message = null) }
+    fun reset() {
+        _claim.value = SupporterClaimUi()
+    }
+
+    private fun launchStep(block: suspend () -> SupporterClaimUi) {
         viewModelScope.launch {
-            _claim.value = step().copy(busy = false)
+            _claim.update { it.copy(busy = true, message = null) }
+            val next = block()
+            _claim.value = next.copy(busy = false)
         }
     }
 }
 
-/**
- * The supporter state as it changes: the relays' last allowance, whether this build has an owner relay at all, and
- * whether a code is stored. Shared by the Lossless sources row and Settings' Support card, so both always agree.
- */
+/** Combines quota, configured relays, and token presence into a single row state. */
 internal fun supporterRows(
     quota: LosslessQuota,
     config: LosslessConfigFetcher,
     supporter: SupporterRepository,
-): Flow<SupporterRow> = combine(
-    quota.state,
-    combine(config.relays, config.tidalRelay) { relays, tidal -> relays.isNotEmpty() || tidal != null },
-    supporter.token,
-) { allowance, relayConfigured, token ->
+): Flow<SupporterRow> = combine(quota.state, config.relays, config.tidalRelay, supporter.token) { allowance, relays, tidal, token ->
+    val relayConfigured = relays.isNotEmpty() || tidal != null
     supporterRow(allowance, relayConfigured, token != null)
 }
 
-/** The supporter row for what the relays last said ([allowance]: limit null = unlimited). */
 internal fun supporterRow(allowance: LosslessAllowance?, relayConfigured: Boolean, hasToken: Boolean): SupporterRow = when {
     !relayConfigured -> SupporterRow.Hidden
     allowance?.unlimited == true -> SupporterRow.Supporter(hasToken)
@@ -139,21 +140,21 @@ internal fun supporterRow(allowance: LosslessAllowance?, relayConfigured: Boolea
 }
 
 /** The sheet after [r] for [email]: the next step, or the same step with a plain message. */
-internal fun SupporterClaimUi.after(r: ClaimResult, email: String): SupporterClaimUi = when (r) {
+internal fun SupporterClaimUi.after(r: ClaimResult, email: String, res: Resources): SupporterClaimUi = when (r) {
     // A second code to the same address (the code step's "Send a new code") says it went.
     ClaimResult.CodeSent ->
         if (step == SupporterClaimUi.Step.Code) {
-            SupporterClaimUi(step = step, email = email, message = "A new code is on its way.", messageIsError = false)
+            SupporterClaimUi(step = step, email = email, message = res.getString(R.string.settings_supporter_msg_code_sent), messageIsError = false)
         } else {
             SupporterClaimUi(step = SupporterClaimUi.Step.Code, email = email)
         }
-    ClaimResult.Unlocked -> unlocked(confirmed = true)
-    ClaimResult.BadEmail -> failed("That doesn't look like an email address. Check it and try again.")
+    ClaimResult.Unlocked -> unlocked(confirmed = true, res = res)
+    ClaimResult.BadEmail -> failed(res.getString(R.string.settings_supporter_msg_bad_email))
     // Wrong, expired, or used up: the tip jar no longer says which. "Send a new code" sits below.
-    ClaimResult.BadCode -> failed("That code didn't work. Check it, or send a new one.")
-    is ClaimResult.RateLimited -> failed(rateLimitedMessage(r.retryAfterSec))
-    ClaimResult.NotConfigured -> failed("Unlocking isn't available right now. Please try again later.")
-    ClaimResult.Unreachable -> failed("Couldn't reach Stash. Check your connection and try again.")
+    ClaimResult.BadCode -> failed(res.getString(R.string.settings_supporter_msg_bad_code))
+    is ClaimResult.RateLimited -> failed(rateLimitedMessage(r.retryAfterSec, res))
+    ClaimResult.NotConfigured -> failed(res.getString(R.string.settings_supporter_msg_not_configured))
+    ClaimResult.Unreachable -> failed(res.getString(R.string.settings_supporter_msg_unreachable))
 }
 
 private fun SupporterClaimUi.failed(text: String) = copy(message = text, messageIsError = true)
@@ -162,15 +163,15 @@ private fun SupporterClaimUi.failed(text: String) = copy(message = text, message
  * A right code: [confirmed] when the relays now report unlimited (the sheet closes); otherwise
  * the code is kept and the sheet says the relays have not confirmed it yet.
  */
-internal fun SupporterClaimUi.unlocked(confirmed: Boolean): SupporterClaimUi =
+internal fun SupporterClaimUi.unlocked(confirmed: Boolean, res: Resources): SupporterClaimUi =
     if (confirmed) copy(done = true, message = null)
-    else copy(message = "Code accepted. Unlimited Tidal & Qobuz shows here once Stash confirms it.", messageIsError = false)
+    else copy(message = res.getString(R.string.settings_supporter_msg_unlocked_pending), messageIsError = false)
 
 /** `429` is the tip jar's rate limiter (code requests and code tries alike). */
-private fun rateLimitedMessage(retryAfterSec: Long?): String {
+private fun rateLimitedMessage(retryAfterSec: Long?, res: Resources): String {
     val minutes = retryAfterSec?.let { (it + 59) / 60 }
     return when {
-        minutes != null && minutes > 1 -> "Too many tries. Wait $minutes minutes."
-        else -> "Too many tries. Wait a minute."
+        minutes != null && minutes > 1 -> res.getString(R.string.settings_supporter_msg_rate_limited_mins, minutes)
+        else -> res.getString(R.string.settings_supporter_msg_rate_limited_min)
     }
 }

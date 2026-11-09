@@ -87,28 +87,28 @@ class WebLibraryImportViewModel @Inject constructor(
         fun selectionOf(p: LibraryPick) = ImportSelection(likes = p.takesLikes, plays = p.takesPlays, playlistIds = p.ticked)
 
         /** "This file has 1,204 likes, 5,000 plays and 14 playlists." */
-        fun introOf(c: WebLibraryContent, what: String = "This file has"): String {
+        fun introOf(c: WebLibraryContent, res: android.content.res.Resources, what: String = res.getString(R.string.web_library_import_intro_this_file_has)): String {
             val parts = buildList {
-                add(plural(c.likes.size, "like", "likes"))
-                add(plural(c.history.size, "play", "plays"))
-                add(plural(c.playlists.size, "playlist", "playlists"))
+                add(res.getQuantityString(R.plurals.web_library_export_likes, c.likes.size, c.likes.size))
+                add(res.getQuantityString(R.plurals.web_library_export_plays, c.history.size, c.history.size))
+                add(res.getQuantityString(R.plurals.web_library_export_playlists, c.playlists.size, c.playlists.size))
             }
-            return "$what ${parts[0]}, ${parts[1]} and ${parts[2]}."
+            return res.getString(R.string.web_library_import_intro_body, what, parts[0], parts[1], parts[2])
         }
+
+        fun introOf(c: WebLibraryContent, what: String, res: android.content.res.Resources): String = introOf(c, res, what)
 
         /** "Added 40 likes, 3 playlists and 120 plays." (what was new; what was already here is not counted again) */
-        fun resultText(r: WebLibraryImportResult): String {
+        fun resultText(r: WebLibraryImportResult, res: android.content.res.Resources): String {
             val added = buildList {
-                if (r.likesAdded > 0) add(plural(r.likesAdded, "like", "likes"))
-                if (r.playlistsAdded > 0) add(plural(r.playlistsAdded, "playlist", "playlists"))
-                if (r.playlistsUpdated > 0) add("new songs in " + plural(r.playlistsUpdated, "playlist", "playlists") + " you had")
-                if (r.playsAdded > 0) add(plural(r.playsAdded, "play", "plays"))
+                if (r.likesAdded > 0) add(res.getQuantityString(R.plurals.web_library_export_likes, r.likesAdded, r.likesAdded))
+                if (r.playlistsAdded > 0) add(res.getQuantityString(R.plurals.web_library_export_playlists, r.playlistsAdded, r.playlistsAdded))
+                if (r.playlistsUpdated > 0) add(res.getQuantityString(R.plurals.web_library_import_playlists_updated, r.playlistsUpdated, r.playlistsUpdated))
+                if (r.playsAdded > 0) add(res.getQuantityString(R.plurals.web_library_export_plays, r.playsAdded, r.playsAdded))
             }
-            if (added.isEmpty()) return "Nothing new: you already had all of it."
+            if (added.isEmpty()) return res.getString(R.string.web_library_import_result_nothing_new)
             val list = if (added.size == 1) added[0] else added.dropLast(1).joinToString(", ") + " and " + added.last()
-            return "Added $list."
+            return res.getString(R.string.web_library_import_result_added, list)
         }
-
-        private fun plural(n: Int, one: String, many: String) = if (n == 1) "1 $one" else "%,d $many".format(n)
     }
 }

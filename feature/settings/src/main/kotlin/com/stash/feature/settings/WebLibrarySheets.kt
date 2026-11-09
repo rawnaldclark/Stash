@@ -102,12 +102,13 @@ private fun TargetChooser(targets: List<SendTarget>, onPick: (SendTarget) -> Uni
 /** "Import from Stash on the web": the picker with what the file holds, the wait, and what it added (spec §2.3). */
 @Composable
 fun WebLibraryImportSheets(vm: WebLibraryImportViewModel) {
+    val resources = androidx.compose.ui.platform.LocalContext.current.resources
     val state by vm.state.collectAsStateWithLifecycle()
     when (val s = state) {
         WebLibraryImportState.Idle -> Unit
         is WebLibraryImportState.Choosing -> LibraryPickerSheet(
             title = stringResource(R.string.web_library_import_what_to_import),
-            intro = WebLibraryImportViewModel.introOf(s.content),
+            intro = WebLibraryImportViewModel.introOf(s.content, resources),
             pick = s.pick,
             onPick = vm::updatePick,
             actions = listOf(PickerAction(stringResource(R.string.web_library_import_action_import), vm::import, primary = true)),
@@ -126,7 +127,7 @@ fun WebLibraryImportSheets(vm: WebLibraryImportViewModel) {
             containerColor = MaterialTheme.colorScheme.surface,
             shape = MaterialTheme.shapes.large,
             title = { Text(stringResource(R.string.web_library_import_done_title), style = MaterialTheme.typography.titleLarge) },
-            text = { Text(WebLibraryImportViewModel.resultText(s.result), style = MaterialTheme.typography.bodyMedium) },
+            text = { Text(WebLibraryImportViewModel.resultText(s.result, resources), style = MaterialTheme.typography.bodyMedium) },
             confirmButton = { TextButton(onClick = vm::dismiss) { Text(stringResource(R.string.web_library_export_ok)) } },
         )
         is WebLibraryImportState.Failed -> AlertDialog(
