@@ -54,6 +54,8 @@ class LibraryReconciliationUseCase @Inject constructor(
     private val playlistDao: PlaylistDao,
     /** Which rows a job in this process is downloading right now: their claims stay. */
     private val downloadJobs: DownloadJobRegistry,
+    /** The one-time pass over old cancels, which the requeue waits for. Null only in tests that don't need it. */
+    private val loneCancelBackfill: com.stash.core.data.db.LoneCancelBackfill? = null,
 ) {
     companion object {
         const val TOTAL_STEPS = 5
@@ -139,7 +141,10 @@ class LibraryReconciliationUseCase @Inject constructor(
         // since #474 it downloaded them unasked at every app start, Stream-only
         // included (#532). They also hid their songs from the next sync's requeue.
         // A song cancelled during this sync (Clear queue while it runs) waits for the next one:
-        // this sync is what the user stopped.
+        // this sync is what the user stopped. On the first launch after the update, the one-time
+        // pass over old cancels goes first (LoneCancelBackfill.ensureRan): a lone cancel it hasn't
+        // marked yet would be queued here and its row dropped, so it could never be marked.
+        if (syncId != null) loneCancelBackfill?.ensureRan()
         val unqueued = if (syncId != null) downloadQueueDao.getUnqueuedTrackIds(connectedSources, runningSync = syncId) else emptyList()
         // A song already on the phone as another row is never downloaded a second time
         // (SameSongRule.isLibraryCopy, the check a tap, a Download switch and the sync ask): the

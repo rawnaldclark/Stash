@@ -13,6 +13,7 @@ import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
+import com.stash.core.data.db.LoneCancelBackfill
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.KEPT_OUT_MARK
@@ -178,6 +179,37 @@ class MusicRepositoryQueuePlaylistTest {
         assertEquals(2, repo.queueKeptPlaylists(runningSync = next))
         songs.forEach { song -> assertEquals(listOf("PENDING"), statusesOf(song)) }
     }
+
+    /**
+     * Review of #873, R2-3: a playlist's Download on the first launch after the update, before the
+     * one-time pass over old cancels has run. It waits for the pass, so a song cancelled on its
+     * own before the mark stays out instead of losing its row to the re-queue.
+     */
+    @Test fun `on the first launch after the update a playlist's Download waits for the pass over old cancels`() = runTest {
+        val pid = playlist("Kept", keepOffline = true)
+        val lone = member(pid, 0, track("Cancelled on its own"))
+        val cleared = (1..2).map { member(pid, it, track("Cleared $it")) }
+        val dao = db.downloadQueueDao()
+        val since = LoneCancelBackfill.CLEAR_QUEUE_SINCE_MS
+        val loneRow = dao.insert(oldCancel(lone, since + DAY))
+        cleared.forEachIndexed { i, song -> dao.insert(oldCancel(song, since + 2 * DAY + 40L * i)) }
+        val prefs = context.getSharedPreferences("lone_cancels_download_test", Context.MODE_PRIVATE)
+            .also { it.edit().clear().commit() }
+        val pass = LoneCancelBackfill(dao, prefs, now = { LoneCancelBackfill.MARK_SINCE_MS + DAY })
+        val repo = repo(loneCancelBackfill = pass)
+
+        assertEquals(2, repo.setPlaylistDownload(pid, on = true))
+
+        cleared.forEach { song -> assertEquals(listOf("PENDING"), statusesOf(song)) }
+        assertEquals(listOf("SKIPPED"), statusesOf(lone))
+        assertEquals(KEPT_OUT_MARK, dao.getById(loneRow)!!.errorMessage)
+        assertEquals("nothing more to offer", 0, repo.countSongsToQueue(pid))
+    }
+
+    /** A cancelled row for [trackId] finished at [at], as a build before the mark wrote it. */
+    private fun oldCancel(trackId: Long, at: Long) = DownloadQueueEntity(
+        trackId = trackId, status = DownloadStatus.SKIPPED, completedAt = java.time.Instant.ofEpochMilli(at),
+    )
 
     /** Every queue row [trackId] has, by status. */
     private fun statusesOf(trackId: Long): List<String> =
@@ -726,6 +758,7 @@ class MusicRepositoryQueuePlaylistTest {
         downloadQueueDao: DownloadQueueDao = db.downloadQueueDao(),
         enqueuer: SingleTrackDownloadEnqueuer = mockk(relaxed = true),
         playlistDao: PlaylistDao = db.playlistDao(),
+        loneCancelBackfill: LoneCancelBackfill? = null,
     ): MusicRepositoryImpl {
         // "Run recommendations when" at its default: it must never reach a download.
         val network = mockk<DownloadNetworkPreference>()
@@ -754,6 +787,11 @@ class MusicRepositoryQueuePlaylistTest {
             lastFmRecommendationSource = mockk(relaxed = true),
             sharedMixDao = mockk(relaxed = true),
             downloadJobs = com.stash.core.data.sync.DownloadJobRegistry(),
+            loneCancelBackfill = loneCancelBackfill,
         )
+    }
+
+    private companion object {
+        const val DAY = 86_400_000L
     }
 }

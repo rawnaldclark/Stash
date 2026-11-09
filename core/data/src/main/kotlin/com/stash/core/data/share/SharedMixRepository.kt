@@ -226,12 +226,18 @@ class SharedMixRepository @Inject constructor(
      * ponytail: a follow update's background queueing ([applyUpdate]) doesn't take [downloadLock],
      * so an off landing mid-update can let that update's new songs through. Take the lock there too,
      * re-reading sync_enabled inside it, if that ever shows up.
+     *
+     * Returns how many songs on queued now (0 for off).
      */
-    suspend fun setDownload(playlistId: Long, on: Boolean) {
+    suspend fun setDownload(playlistId: Long, on: Boolean): Int {
         playlistDao.setSyncEnabled(playlistId, on)
-        downloadLock.withLock {
-            if (on) musicRepository.queueDownloadsForPlaylist(playlistId)
-            else database.downloadQueueDao().cancelWaitingForPlaylist(playlistId)
+        return downloadLock.withLock {
+            if (on) {
+                musicRepository.queueDownloadsForPlaylist(playlistId)
+            } else {
+                database.downloadQueueDao().cancelWaitingForPlaylist(playlistId)
+                0
+            }
         }
     }
 

@@ -85,6 +85,8 @@ class MusicRepositoryImpl @Inject constructor(
     private val downloadJobs: com.stash.core.data.sync.DownloadJobRegistry,
     /** A download tap clears the user's Pause. Null only in tests that never tap. */
     private val downloadQueueState: com.stash.core.data.sync.DownloadQueueState? = null,
+    /** The one-time pass over old cancels, which a playlist's Download waits for. Null only in tests that don't need it. */
+    private val loneCancelBackfill: com.stash.core.data.db.LoneCancelBackfill? = null,
 ) : MusicRepository {
 
     // ── Deletion event plumbing ─────────────────────────────────────────
@@ -1022,43 +1024,15 @@ class MusicRepositoryImpl @Inject constructor(
         // earlier Download-mode sync queued would wait forever (and count as
         // handled below). Hand them to the drain this starts instead.
         val moved = if (streamingPreference.current()) downloadQueueDao.moveSyncRowsToDiscovery(playlistId) else 0
-        val tracks = trackDao.getByPlaylist(playlistId, includeStreamable = true)
-            .first()
-        // A match the user dismissed stays dismissed, and a track with a row
-        // already queued, failed or cancelled on its own keeps that one row. That
-        // makes this safe to call after every sync (#474) without re-trying the
-        // same unmatchable songs, or piling duplicate rows into Failed downloads.
-        // A song Clear queue cancelled is queued again: Clear queue stops an
-        // attempt, it doesn't keep the song out (DownloadQueueDao.KEPT_OUT_MARK);
-        // though not by the sync it was cancelled during (runningSync).
-        val candidates = tracks.filter { !it.isDownloaded && !it.matchDismissed && !it.soundCloudPreview }
-        if (candidates.isEmpty()) return moved
-
-        // Where each song sits, and which songs the user took out, read once for the copies below.
-        val memberships = playlistDao.getCrossRefsForPlaylist(playlistId).associateBy { it.trackId }
-        val copyLinks = linkedMapOf<Long, com.stash.core.data.db.entity.PlaylistTrackCrossRef>()
-        // The phone's copies of these songs, read at once (libraryCopiesOf). A failed read reads as
-        // none: the songs download as before.
-        val copies = try {
-            trackDao.libraryCopiesOf(candidates)
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            android.util.Log.w("MusicRepository", "library-copy lookup failed for playlist $playlistId", e)
-            emptyMap()
+        val plan = planDownloads(playlistId, runningSync)
+        if (plan.songs.isEmpty() && plan.copyLinks.isEmpty()) return moved
+        if (!stillWanted()) return 0
+        if (plan.copyLinks.isNotEmpty()) {
+            playlistDao.insertCrossRefsIfAbsent(plan.copyLinks)
+            playlistDao.updateTrackCount(playlistId, trackDao.countByPlaylist(playlistId, includeStreamable = true))
+            android.util.Log.i("MusicRepository", "playlist $playlistId: ${plan.copyLinks.size} song(s) already on the phone, linked instead of downloaded")
         }
-        val entries = candidates.mapNotNull { entity ->
-            if (downloadQueueDao.hasRowToLeaveAlone(entity.id, runningSync)) return@mapNotNull null
-            // Already on the phone as another row (a hand download, a copy synced from the other
-            // service): never downloaded a second time (a second file, a second row in Downloads).
-            // The copy is linked here, where the song sits, as the sync links its own (DiffWorker),
-            // unless it is a member already or one the user took out (never brought back). The
-            // song's own row stays as it is.
-            val copy = copies[entity.id]
-            if (copy != null) {
-                if (copy.id !in memberships) copyLinks.putIfAbsent(copy.id, copyLink(playlistId, copy.id, memberships[entity.id]))
-                return@mapNotNull null
-            }
+        val entries = plan.songs.map { entity ->
             com.stash.core.data.db.entity.DownloadQueueEntity(
                 trackId = entity.id,
                 syncId = null,
@@ -1066,16 +1040,67 @@ class MusicRepositoryImpl @Inject constructor(
                 youtubeUrl = entity.youtubeId?.let { "https://music.youtube.com/watch?v=$it" },
             )
         }
-        if (!stillWanted()) return 0
-        if (copyLinks.isNotEmpty()) {
-            playlistDao.insertCrossRefsIfAbsent(copyLinks.values.toList())
-            playlistDao.updateTrackCount(playlistId, trackDao.countByPlaylist(playlistId, includeStreamable = true))
-            android.util.Log.i("MusicRepository", "playlist $playlistId: ${copyLinks.size} song(s) already on the phone, linked instead of downloaded")
-        }
         // Checked again, its stopped cancel dropped and its row filed in one transaction (queueSongs).
         val queued = if (entries.isEmpty()) 0 else downloadQueueDao.queueSongs(entries, runningSync)
         return moved + queued
     }
+
+    /** What a Download on a playlist does now ([planDownloads]): the songs it queues, and the copies it links instead. */
+    private class DownloadPlan(
+        val songs: List<com.stash.core.data.db.entity.TrackEntity>,
+        val copyLinks: List<com.stash.core.data.db.entity.PlaylistTrackCrossRef>,
+    )
+
+    /**
+     * Which of [playlistId]'s songs a Download queues now, one rule for the queueing
+     * ([insertDownloadsForPlaylist]) and the page's count ([countSongsToQueue]). Reads only.
+     *
+     * A match the user dismissed stays dismissed, a SoundCloud preview never downloads, and a song
+     * with a row already queued, failed or cancelled on its own keeps that one row. That makes a
+     * Download safe after every sync (#474) without re-trying the same unmatchable songs, or piling
+     * duplicate rows into Failed downloads. A song Clear queue cancelled is queued again: Clear
+     * queue stops an attempt, it doesn't keep the song out (DownloadQueueDao.KEPT_OUT_MARK); though
+     * not by the sync it was cancelled during ([runningSync]).
+     *
+     * A song already on the phone as another row (a hand download, a copy synced from the other
+     * service) is never downloaded a second time (a second file, a second row in Downloads). Its
+     * copy is linked where the song sits, as the sync links its own (DiffWorker), unless it is a
+     * member already or one the user took out (never brought back). The song's own row stays.
+     *
+     * Waits for the one-time pass over old cancels first ([com.stash.core.data.db.LoneCancelBackfill.ensureRan]):
+     * queueing drops a song's unmarked cancel, so a lone one it hadn't marked yet would be lost.
+     */
+    private suspend fun planDownloads(playlistId: Long, runningSync: Long?): DownloadPlan {
+        loneCancelBackfill?.ensureRan()
+        val candidates = trackDao.getByPlaylist(playlistId, includeStreamable = true).first()
+            .filter { !it.isDownloaded && !it.matchDismissed && !it.soundCloudPreview }
+        val leave = downloadQueueDao.songsToLeaveAlone(candidates.map { it.id }, runningSync)
+        val open = candidates.filter { it.id !in leave }
+        if (open.isEmpty()) return DownloadPlan(emptyList(), emptyList())
+
+        // Where each song sits, and which songs the user took out, read once for the copies below.
+        val memberships = playlistDao.getCrossRefsForPlaylist(playlistId).associateBy { it.trackId }
+        // The phone's copies of these songs, read at once (libraryCopiesOf). A failed read reads as
+        // none: the songs download as before.
+        val copies = try {
+            trackDao.libraryCopiesOf(open)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("MusicRepository", "library-copy lookup failed for playlist $playlistId", e)
+            emptyMap()
+        }
+        val copyLinks = linkedMapOf<Long, com.stash.core.data.db.entity.PlaylistTrackCrossRef>()
+        val songs = open.filter { entity ->
+            val copy = copies[entity.id] ?: return@filter true
+            if (copy.id !in memberships) copyLinks.putIfAbsent(copy.id, copyLink(playlistId, copy.id, memberships[entity.id]))
+            false
+        }
+        return DownloadPlan(songs, copyLinks.values.toList())
+    }
+
+    override suspend fun countSongsToQueue(playlistId: Long): Int =
+        withContext(Dispatchers.IO) { planDownloads(playlistId, runningSync = null).songs.size }
 
     /**
      * The membership that puts [copyId] in [playlistId] where the song it stands for sits
@@ -1104,10 +1129,9 @@ class MusicRepositoryImpl @Inject constructor(
         if (kept()) insertDownloadsForPlaylist(playlistId, stillWanted = kept, runningSync = runningSync) else 0
     }
 
-    /** A kept playlist's missing songs, queued and started like a tap. */
-    internal suspend fun queueKeptPlaylist(playlistId: Long) {
-        if (insertKeptPlaylist(playlistId) > 0) startDiscoveryDrain(background = false)
-    }
+    /** A kept playlist's missing songs, queued and started like a tap. Returns rows queued. */
+    internal suspend fun queueKeptPlaylist(playlistId: Long): Int =
+        insertKeptPlaylist(playlistId).also { if (it > 0) startDiscoveryDrain(background = false) }
 
     override suspend fun keepPlaylistsOffline(playlistIds: List<Long>) {
         if (playlistIds.isEmpty()) return
@@ -1118,15 +1142,12 @@ class MusicRepositoryImpl @Inject constructor(
         if (queued > 0) startDiscoveryDrain(background = false)
     }
 
-    override suspend fun setPlaylistDownload(playlistId: Long, on: Boolean) {
+    override suspend fun setPlaylistDownload(playlistId: Long, on: Boolean): Int {
         // The switch itself is written first, outside the lock, so a flip lands
         // at once, even while an earlier one is still queueing: that one reads
         // it again before inserting. The last position wins.
         playlistDao.setKeepOffline(playlistId, on)
-        if (on) {
-            queueKeptPlaylist(playlistId)
-            return
-        }
+        if (on) return queueKeptPlaylist(playlistId)
         KEEP_OFFLINE_LOCK.withLock {
             // Off stops what hasn't started: the songs still waiting go (a song
             // running now finishes). Songs already downloaded stay (owner's call).
@@ -1140,6 +1161,7 @@ class MusicRepositoryImpl @Inject constructor(
                 downloadQueueDao.cancelDownloadsWithNoEnabledPlaylist()
             }
         }
+        return 0
     }
 
     /** A playlist kept on the phone (#474) downloads what the user adds to it. Never fails the add. */

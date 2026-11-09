@@ -158,16 +158,35 @@ class MusicRepositoryLibraryCopyTest {
         assertNotNull("still removed", db.playlistDao().getCrossRef(pid, handDownload)!!.removedAt)
     }
 
+    /**
+     * Review of #873, R2-2: the page's "Download N more" counts with the switch's own rule, so it
+     * never offers a song whose copy on the phone the switch links instead, or a SoundCloud preview.
+     */
+    @Test fun `the page's count is what the Download switch queues, no copy on the phone and no preview`() = runTest {
+        song("Starting Over", file = "/music/starting-over.flac")
+        val pid = playlist("Road Trip", PlaylistType.CUSTOM)
+        member(pid, 0, song("Never Heard"))
+        member(pid, 1, song("Starting Over"))
+        member(pid, 2, song("Thirty Seconds", preview = true))
+
+        val repo = repo()
+        assertEquals(1, repo.countSongsToQueue(pid))
+        assertEquals(1, repo.setPlaylistDownload(pid, on = true))
+        assertEquals(0, repo.countSongsToQueue(pid))
+    }
+
     // ── Fixtures ───────────────────────────────────────────────────────────
 
-    /** A row as the library stores it; [file] makes it a download. */
+    /** A row as the library stores it; [file] makes it a download, [preview] a SoundCloud preview. */
     private suspend fun song(
         title: String,
         youtubeId: String? = null,
         file: String? = null,
         lengthMs: Long = 304_000L,
+        preview: Boolean = false,
     ): Long = db.trackDao().insert(
         TrackEntity(
+            soundCloudPreview = preview,
             title = title,
             artist = "LSD and the Search for God",
             durationMs = lengthMs,

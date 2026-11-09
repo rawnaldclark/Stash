@@ -46,6 +46,8 @@ class LinkImporterTest {
     @Before fun setUp() {
         db = Room.inMemoryDatabaseBuilder(context, StashDatabase::class.java).allowMainThreadQueries().build()
         music = mockk(relaxUnitFun = true)
+        // It returns how many songs it queued now, so relaxUnitFun no longer covers it.
+        coEvery { music.setPlaylistDownload(any(), any()) } returns 0
         coEvery { music.ensureExactTrackPersisted(any()) } coAnswers {
             val s = firstArg<SharedTrack>()
             db.trackDao().insert(

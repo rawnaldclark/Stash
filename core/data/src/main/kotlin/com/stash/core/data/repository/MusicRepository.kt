@@ -353,8 +353,17 @@ interface MusicRepository {
      * every later sync (plus every add to it) queues what it gains. Off stops
      * new downloads and deletes nothing; in Download mode it also turns the
      * playlist's sync off, since a synced playlist downloads through sync.
+     * Returns how many songs on queued now (0 for off).
      */
-    suspend fun setPlaylistDownload(playlistId: Long, on: Boolean)
+    suspend fun setPlaylistDownload(playlistId: Long, on: Boolean): Int
+
+    /**
+     * How many of [playlistId]'s songs a Download on it would queue now, by the rule
+     * [setPlaylistDownload] and [queueDownloadsForPlaylist] queue with: not a SoundCloud preview,
+     * not a song whose copy on the phone is linked instead, not one with a row it leaves alone.
+     * The page's "Download N more" counts with it, so it never offers songs a tap wouldn't queue.
+     */
+    suspend fun countSongsToQueue(playlistId: Long): Int
 
     /**
      * [setPlaylistDownload] on for every one of [playlistIds] (the account page's Save all): each

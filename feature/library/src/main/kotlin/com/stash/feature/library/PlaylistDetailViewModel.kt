@@ -20,6 +20,7 @@ import com.stash.core.model.Track
 import com.stash.core.ui.util.withSearchFilter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -30,10 +31,14 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 /**
@@ -57,9 +62,11 @@ data class PlaylistDetailUiState(
 /**
  * The page's Download button (#474). [downloaded] of [total] counts the whole playlist, never the
  * search-filtered list, less the songs that won't download unless the user acts (failed, cancelled
- * on its own, match dismissed). [followed]: a read-only followed mix, whose button sits in its
- * follow block. [nothingQueued]: none of the playlist's songs is waiting or running
- * ([DownloadQueueDao.observeHasQueuedSongs]).
+ * on its own, match dismissed) and SoundCloud previews, which never do. [followed]: a read-only
+ * followed mix, whose button sits in its follow block. [nothingQueued]: none of the playlist's
+ * songs is waiting or running ([DownloadQueueDao.observeHasQueuedSongs]), and no tap is still
+ * filing them. When [stalled], [total] is [downloaded] plus the songs a tap would really queue
+ * ([MusicRepository.countSongsToQueue]).
  */
 data class DownloadButtonState(
     val on: Boolean,
@@ -74,7 +81,8 @@ data class DownloadButtonState(
     /**
      * On, songs missing, and none of them on its way: Clear queue stopped them, say. "Downloading"
      * would claim work that isn't happening, so the button offers the missing songs instead, and a
-     * tap queues them with Download staying on (turning it off is a button of its own then).
+     * tap queues them with Download staying on (turning it off is a button of its own then). Only
+     * songs a tap would queue count; with none, the playlist reads Downloaded.
      */
     val stalled: Boolean get() = on && !complete && nothingQueued
 
@@ -95,7 +103,7 @@ data class DownloadButtonState(
  *
  * The `playlistId` is extracted from the navigation [SavedStateHandle].
  */
-@OptIn(FlowPreview::class)
+@OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class PlaylistDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
@@ -200,6 +208,13 @@ class PlaylistDetailViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
+     * Taps turning Download on that are still filing their rows. The switch lands first and the rows
+     * up to a second later (a query per song), and meanwhile the button would read stalled, with
+     * "Turn off" beside it, a tap away. So it reads as queued until the rows show in the queue.
+     */
+    private val queueingTaps = MutableStateFlow(0)
+
+    /**
      * The page's Download button (#474); null = this page has none. Imported mixes and playlists,
      * the user's own included, get one. Stash Mixes, Your Downloads and Liked Songs don't. A
      * read-only followed mix gets it in its follow block, where it is "Download this mix" (its
@@ -208,16 +223,18 @@ class PlaylistDetailViewModel @Inject constructor(
      * copy. Reads the raw follow row, not [follow]: that one can land a frame later, and the button
      * would flash in the wrong place. A song that won't download unless the user acts (failed,
      * cancelled on its own, match dismissed; [DownloadQueueDao.observeGivenUpTrackIds]) is left out
-     * of the count, so the button never sits at "Downloading 11 of 12" forever. A song Clear queue
-     * cancelled still counts: it isn't on the phone. With none of the songs queued the button says
-     * "Download N more", and a tap queues them ([DownloadButtonState.stalled]).
+     * of the count, so the button never sits at "Downloading 11 of 12" forever. So is a SoundCloud
+     * preview. A song Clear queue cancelled still counts: it isn't on the phone. With none of the
+     * songs queued the button says "Download N more", N counted by the tap's own rule, and a tap
+     * queues them ([DownloadButtonState.stalled]).
      */
     val downloadButton: StateFlow<DownloadButtonState?> = combine(
         combine(_playlist, streamingPreference.enabled, sharedMixRepository.observe(playlistId), ::Triple),
         playlistTracks,
         downloadQueueDao.observeGivenUpTrackIds(playlistId),
         downloadQueueDao.observeHasQueuedSongs(playlistId),
-    ) { (playlist, streamOnly, shared), tracks, givenUpIds, queued ->
+        queueingTaps,
+    ) { (playlist, streamOnly, shared), tracks, givenUpIds, queued, queueing ->
         val followed = shared?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER &&
             shared.status == com.stash.core.data.db.entity.SharedMixEntity.STATUS_ACTIVE
         val on = when {
@@ -232,12 +249,26 @@ class PlaylistDetailViewModel @Inject constructor(
             DownloadButtonState(
                 on = it,
                 downloaded = tracks.count { t -> t.isDownloaded },
-                total = tracks.count { t -> t.isDownloaded || t.id !in givenUp },
+                total = tracks.count { t -> t.isDownloaded || (t.id !in givenUp && !t.soundCloudPreview) },
                 followed = followed,
-                nothingQueued = !queued,
+                nothingQueued = !queued && queueing == 0,
             )
         }
+    }.distinctUntilChanged().mapLatest { state ->
+        // Stalled, the button offers what a tap would really queue: not a song whose copy on the
+        // phone a tap links instead, say. Nothing to queue reads Downloaded, not an offer.
+        if (state?.stalled == true) state.copy(total = state.downloaded + songsATapQueues(state)) else state
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** [MusicRepository.countSongsToQueue]; a failed read falls back to every missing song. */
+    private suspend fun songsATapQueues(state: DownloadButtonState): Int = try {
+        musicRepository.countSongsToQueue(playlistId)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        android.util.Log.w("PlaylistDetailVM", "counting the songs to download failed", e)
+        state.total - state.downloaded
+    }
 
     /**
      * A tap on the Download button. Off → on queues what's missing; on → off cancels the songs
@@ -258,21 +289,31 @@ class PlaylistDetailViewModel @Inject constructor(
         setDownload(on = false, button)
     }
 
+    /** The message says what the tap really queued, never what the button promised. */
     private fun setDownload(on: Boolean, button: DownloadButtonState) {
         viewModelScope.launch {
-            val changed = followAction("change download for") {
-                if (button.followed) sharedMixRepository.setDownload(playlistId, on)
-                else musicRepository.setPlaylistDownload(playlistId, on)
+            if (on) queueingTaps.update { it + 1 }
+            try {
+                var queued = 0
+                val changed = followAction("change download for") {
+                    queued = if (button.followed) sharedMixRepository.setDownload(playlistId, on)
+                    else musicRepository.setPlaylistDownload(playlistId, on)
+                }
+                _userMessages.tryEmit(
+                    when {
+                        !changed -> "Couldn't change that. Try again."
+                        !on -> "Stopped. Downloaded songs stay on your phone."
+                        queued > 0 -> "Downloading $queued ${songs(queued)}"
+                        button.downloaded >= button.total -> "Every song is already on your phone."
+                        else -> "Nothing more to download."
+                    },
+                )
+                if (on && queued > 0) {
+                    withTimeoutOrNull(QUEUED_SHOWS_MS) { downloadQueueDao.observeHasQueuedSongs(playlistId).firstOrNull { it } }
+                }
+            } finally {
+                if (on) queueingTaps.update { it - 1 }
             }
-            val missing = button.total - button.downloaded
-            _userMessages.tryEmit(
-                when {
-                    !changed -> "Couldn't change that. Try again."
-                    !on -> "Stopped. Downloaded songs stay on your phone."
-                    missing > 0 -> "Downloading $missing ${songs(missing)}"
-                    else -> "Every song is already on your phone."
-                },
-            )
         }
     }
 
@@ -760,5 +801,8 @@ class PlaylistDetailViewModel @Inject constructor(
     private companion object {
         /** Playlist types whose page has a Download button (#474). */
         val DOWNLOAD_BUTTON_TYPES = setOf(PlaylistType.DAILY_MIX, PlaylistType.CUSTOM)
+
+        /** How long a tap waits for its rows to show in the queue before the button may read stalled again. */
+        const val QUEUED_SHOWS_MS = 2_000L
     }
 }

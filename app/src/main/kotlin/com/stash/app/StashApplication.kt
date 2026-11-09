@@ -123,6 +123,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var downloadQueueDao: DownloadQueueDao
 
+    /** The one-time pass over old cancels; a sync's requeue waits for this same instance. */
+    @Inject
+    lateinit var loneCancelBackfill: com.stash.core.data.db.LoneCancelBackfill
+
     /** Which download rows a job in this process holds: a cold start leaves their claims alone. */
     @Inject
     lateinit var downloadJobs: com.stash.core.data.sync.DownloadJobRegistry
@@ -439,8 +443,8 @@ class StashApplication : Application(), Configuration.Provider {
             runCatching { musicRepository.runMigrations() }
                 .onFailure { Log.w("StashStartup", "runMigrations failed", it) }
         }
-        // Before any sync's requeue can look at the queue: a song cancelled on its own
-        // before this build must stay out (LoneCancelBackfill). One quick UPDATE.
+        // A song cancelled on its own before this build must stay out (LoneCancelBackfill). One
+        // quick UPDATE; a sync's requeue and a playlist's Download wait for it (ensureRan).
         applicationScope.launch { maybeMarkLoneCancels() }
         // Hand back IN_PROGRESS download_queue rows left over from an
         // interrupted worker run / process death, or they linger forever showing
@@ -1164,17 +1168,12 @@ class StashApplication : Application(), Configuration.Provider {
     /**
      * Once per install (and again after a restored backup re-arms it), see
      * [com.stash.core.data.db.LoneCancelBackfill]: songs cancelled one by one before
-     * Clear queue stopped keeping songs out stay out.
+     * Clear queue stopped keeping songs out stay out. On IO; a failure is logged there and the
+     * next launch tries again.
      */
     private suspend fun maybeMarkLoneCancels() {
-        try {
-            val marked = com.stash.core.data.db.LoneCancelBackfill.forContext(this, downloadQueueDao).runOnce() ?: return
-            Log.i("StashMigration", "maybeMarkLoneCancels: $marked song(s) cancelled on their own before the mark stay out")
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.w("StashMigration", "maybeMarkLoneCancels failed; the next launch tries again", e)
-        }
+        val marked = loneCancelBackfill.ensureRan() ?: return
+        Log.i("StashMigration", "maybeMarkLoneCancels: $marked song(s) cancelled on their own before the mark stay out")
     }
 
     /**

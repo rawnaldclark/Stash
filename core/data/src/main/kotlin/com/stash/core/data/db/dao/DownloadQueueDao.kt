@@ -347,6 +347,10 @@ interface DownloadQueueDao {
     """)
     suspend fun songsToLeaveAloneRaw(trackIds: List<Long>, runningSync: Long?, leaveWaiting: Boolean): List<Long>
 
+    /** [songsToLeaveAloneRaw] over any number of songs (chunked for the bind cap). */
+    suspend fun songsToLeaveAlone(trackIds: List<Long>, runningSync: Long?, leaveWaiting: Boolean = true): Set<Long> =
+        trackIds.chunkedForBind { songsToLeaveAloneRaw(it, runningSync, leaveWaiting) }.toSet()
+
     /** The songs of [trackIds] whose stopped cancel ([dropStoppedCancelsRaw]'s rows) was the user's own ask. */
     @Query("""
         SELECT DISTINCT track_id FROM download_queue
@@ -361,7 +365,7 @@ interface DownloadQueueDao {
      * Files [entries] (one new row per song), as a playlist's Download and a sync's requeue do, in
      * one transaction. Returns how many went in.
      *
-     * - Each song is checked again here ([songsToLeaveAloneRaw]): a Retry in History or a tap can
+     * - Each song is checked again here ([songsToLeaveAlone]): a Retry in History or a tap can
      *   give it a live row after the caller looked, and two live rows let two runners take it.
      * - The stopped cancels of the songs that go are dropped ([dropStoppedCancels]), so History
      *   doesn't list them as cancelled while they download.
@@ -375,8 +379,7 @@ interface DownloadQueueDao {
         runningSync: Long?,
         leaveWaiting: Boolean = true,
     ): Int {
-        val leave = entries.map { it.trackId }
-            .chunkedForBind { songsToLeaveAloneRaw(it, runningSync, leaveWaiting) }.toSet()
+        val leave = songsToLeaveAlone(entries.map { it.trackId }, runningSync, leaveWaiting)
         val going = entries.filter { it.trackId !in leave }
         if (going.isEmpty()) return 0
         val ids = going.map { it.trackId }

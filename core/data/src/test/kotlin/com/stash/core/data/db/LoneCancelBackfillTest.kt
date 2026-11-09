@@ -8,6 +8,10 @@ import com.stash.core.data.db.dao.KEPT_OUT_MARK
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.DownloadStatus
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -128,6 +132,49 @@ class LoneCancelBackfillTest {
         burst.forEach { assertNull(dao.getById(it)!!.errorMessage) }
     }
 
+    /**
+     * Review of #873, R2-4: a new phone runs the pass for the first time over a backup from the old
+     * one. A Clear queue of one song made there by a build with the mark is not a lone cancel.
+     */
+    @Test fun `a cancel from after the mark existed is never marked, even on a first run long after`() = runTest {
+        val beforeTheMark = row(MARK_SINCE - DAY)
+        val oneSongClearQueue = row(MARK_SINCE + DAY)
+
+        assertEquals(1, backfill(now = MARK_SINCE + 30 * DAY).runOnce())
+
+        assertTrue(keptOut(beforeTheMark))
+        assertNull(dao.getById(oneSongClearQueue)!!.errorMessage)
+    }
+
+    /** Review of #873, R2-3: the launch's call and a sync's requeue can ask at once. */
+    @Test fun `ensureRan runs the pass once however many ask at once, then it is a flag read`() = runTest {
+        val lone = row(CLEAR_QUEUE + DAY)
+        val b = backfill()
+
+        val results = listOf(async { b.ensureRan() }, async { b.ensureRan() }).map { it.await() }
+
+        assertEquals(listOf(1), results.filterNotNull())
+        assertTrue(keptOut(lone))
+        assertNull(b.ensureRan())
+    }
+
+    @Test fun `a pass that fails lets the requeue go on, and the next launch tries again`() = runTest {
+        val failing = mockk<DownloadQueueDao> {
+            coEvery { markLoneCancelsKeptOut(any(), any(), any()) } throws IllegalStateException("disk full")
+        }
+        assertNull(LoneCancelBackfill(failing, prefs, now = { FIRST_RUN }).ensureRan())
+        assertEquals(false, prefs.getBoolean(LoneCancelBackfill.DONE_KEY, false))
+
+        row(CLEAR_QUEUE + DAY)
+        assertEquals(1, backfill().ensureRan())
+        coVerify(exactly = 1) { failing.markLoneCancelsKeptOut(any(), any(), any()) }
+    }
+
+    @Test fun `the mark first existed in c1675692`() {
+        // c1675692 "Clear queue stops the attempt, it doesn't keep the songs out", 2026-11-09 12:40:38 -0500.
+        assertEquals(Instant.parse("2026-11-09T17:40:38Z").toEpochMilli(), MARK_SINCE)
+    }
+
     @Test fun `Clear queue first existed in 8008e294`() {
         // 8008e294 "Downloads queue: ... Clear queue and Clear history", 2026-10-29 11:03:28 -0400.
         assertEquals(Instant.parse("2026-10-29T15:03:28Z").toEpochMilli(), CLEAR_QUEUE)
@@ -135,6 +182,7 @@ class LoneCancelBackfillTest {
 
     private companion object {
         const val CLEAR_QUEUE = LoneCancelBackfill.CLEAR_QUEUE_SINCE_MS
+        const val MARK_SINCE = LoneCancelBackfill.MARK_SINCE_MS
         const val DAY = 86_400_000L
         const val FIRST_RUN = CLEAR_QUEUE + 10 * DAY
     }
