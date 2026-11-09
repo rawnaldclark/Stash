@@ -21,8 +21,8 @@ GLOBAL_DAILY_CAP = "63787"
 NETWORK_DAILY_CAP = "2000"
 NETWORK_SEARCH_DAILY_CAP = "2000" # uncached (upstream) searches per network per day; cache hits are free
 EDGE_BASE = "https://stash-tidal-edge.stashfm.deno.net" # tidal-edge on Deno Deploy (Tidal's CDN refuses Cloudflare); ?web=1 signs links for it with the EDGE_SECRET secret
-# The daily lossless counter shared with the Qobuz relay (QUOTA_DB below): free FLAC answers per verified install
-# per UTC day, Qobuz and Tidal together. Over it: 429 daily_lossless_cap (?aac=1 gets AAC instead).
+# The daily lossless counter (QUOTA_DB below; the retired Qobuz relay counted there too): free FLAC answers per
+# verified install per UTC day. Over it: 429 daily_lossless_cap (?aac=1 gets AAC instead).
 FREE_LOSSLESS_DAILY = "300" # 500→400→300 on 2026-10-20 (frees capacity for average users)
 MIN_APP_BUILD = "0" # 0 disables the minimum supported app build gate
 # Supporters (X-Stash-Entitlement token from the tip jar, src/quota.js): unlimited lossless, verified with this
@@ -75,6 +75,6 @@ crons = ["17 * * * *"]
 # DASH_SIGNING_KEY (optional, >= 32 random chars) signs /dash links. Without it they fall back to
 # ACCESS_TOKEN, which ships in every install, so anyone could forge them. Setting it voids links
 # signed earlier (they last at most an hour).
-# RELAY_KEY / RELAY_KEY_PREV: the SAME values as the Qobuz relay's secrets of that name (the app signs both relays
-# with one key). They verify the X-Stash-Install signature for the daily lossless counter; without RELAY_KEY the
-# install headers are ignored and the counter is off.
+# RELAY_KEY / RELAY_KEY_PREV: RELAY_KEY is the SAME value as lossless.json's relay_key (infra/lossless-config; the
+# app signs with it), and as the retired Qobuz relay's secret of that name. They verify the X-Stash-Install
+# signature for the daily lossless counter; without RELAY_KEY the install headers are ignored and the counter is off.

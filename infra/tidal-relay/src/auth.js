@@ -9,7 +9,8 @@ export const MAX_SKEW_S = 300;
  * with the key used as its UTF-8 string (not hex-decoded), `ts` within ±MAX_SKEW_S of the server clock.
  * `keys` holds the current key and, during a rotation, the previous one; blanks are skipped.
  * Pure: header values as strings, server clock in unix seconds. Never throws.
- * KEEP IN SYNC with infra/lossless-relay/src/auth.js (the Qobuz relay's verifySigned; same key, RELAY_KEY).
+ * The app side is RelaySigner.kt in data/download. The Qobuz relay's copy of this function
+ * (infra/lossless-relay) was removed in 2026-11; this is the only server copy now.
  * Here: /stream signs "td:<trackId>", /quota signs "quota".
  */
 export function verifySigned({ install, ts, auth } = {}, middle, nowSec, keys) {

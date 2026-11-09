@@ -8,8 +8,10 @@
  *   node scripts/publish-config.mjs publish <key.pem> <input.json>   sign, upload both KV keys, read back, verify
  *   node scripts/publish-config.mjs verify [<key.pem>]               fetch the live pair and report (verifies when the key is given)
  *
- * input.json: {"relays":[{"base":"https://…","priority":1}],"relay_key":"<the Worker's RELAY_KEY secret>"}
- * `relays: []` is the kill switch. Keep key.pem and input.json OUTSIDE the repo.
+ * input.json: {"relays":[],"relay_key":"<RELAY_KEY>","tidal_relay_url":"https://stash-tidal-relay.rawnaldclark.workers.dev","tidal_relay_token":"<ACCESS_TOKEN>"}
+ * relay_key is stash-tidal-relay's RELAY_KEY secret (the app signs its install headers with it). Leaving out relay_key or
+ * tidal_relay_url switches Tidal off in every installed app. `relays: []` is the kill switch for the Qobuz relay list.
+ * Keep key.pem and input.json OUTSIDE the repo. See ../README.md.
  * `updated_at` is never hand-edited: it becomes max(now, live + 1), so the device's rollback floor always passes.
  * Needs a wrangler login (or CLOUDFLARE_API_TOKEN). Temp paths must not contain spaces (npx runs through a shell).
  */
