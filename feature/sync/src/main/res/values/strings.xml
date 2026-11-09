@@ -219,6 +219,19 @@
         <item quantity="one">%1$s and %2$d more</item>
         <item quantity="other">%1$s and %2$d more</item>
     </plurals>
+    <string name="sync_history_mode_online">Online</string>
+    <string name="sync_history_mode_offline">Offline</string>
+    <string name="sync_history_surfaced">surfaced</string>
+    <string name="sync_history_downloaded">downloaded</string>
+    <string name="sync_history_cancelled">Cancelled</string>
+    <string name="sync_history_failed">Sync failed</string>
+    <plurals name="sync_history_failed_tracks">
+        <item quantity="one">%d failed</item>
+        <item quantity="other">%d failed</item>
+    </plurals>
+    <string name="sync_history_error">Error: %s</string>
+    <string name="sync_history_diagnostics">Diagnostics</string>
+    <string name="sync_history_no_details">No further details recorded</string>
 
     <!-- Sync tab overhaul: an account's playlists -->
     <string name="sync_manage_all_in_library">All in your library</string>

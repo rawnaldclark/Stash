@@ -15,15 +15,21 @@ import com.stash.feature.sync.components.formatSyncDuration
  * NPEs in unit tests. Keeping it out makes this function pure and unit-testable.
  * `formatSyncDuration` / `formatSyncBytes` are pure Kotlin and stay inline.
  */
-fun SyncHistoryInfo.toRecentSyncRow(relativeTime: String): RecentSyncRow {
+fun SyncHistoryInfo.toRecentSyncRow(
+    relativeTime: String,
+    onlineLabel: String = "Online",
+    offlineLabel: String = "Offline",
+    surfacedNoun: String = "surfaced",
+    downloadedNoun: String = "downloaded",
+): RecentSyncRow {
     val online = streamingMode
     return RecentSyncRow(
         id = id,
-        modeLabel = when (online) { true -> "Online"; false -> "Offline"; null -> null },
+        modeLabel = when (online) { true -> onlineLabel; false -> offlineLabel; null -> null },
         relativeTime = relativeTime,
         duration = formatSyncDuration(startedAt, completedAt),
         added = if (online == true) newTracksFound else tracksDownloaded,
-        addedNoun = if (online == true) "surfaced" else "downloaded",
+        addedNoun = if (online == true) surfacedNoun else downloadedNoun,
         playlists = playlistsChecked,
         sizeLabel = formatSyncBytes(bytesDownloaded),
         failed = tracksFailed,
@@ -42,3 +48,14 @@ fun SyncHistoryInfo.toRecentSyncRow(relativeTime: String): RecentSyncRow {
         unreadNames = unreadPlaylists.names,
     )
 }
+
+fun SyncHistoryInfo.toRecentSyncRow(
+    relativeTime: String,
+    res: android.content.res.Resources,
+): RecentSyncRow = toRecentSyncRow(
+    relativeTime = relativeTime,
+    onlineLabel = res.getString(R.string.sync_history_mode_online),
+    offlineLabel = res.getString(R.string.sync_history_mode_offline),
+    surfacedNoun = res.getString(R.string.sync_history_surfaced),
+    downloadedNoun = res.getString(R.string.sync_history_downloaded),
+)
