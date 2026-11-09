@@ -30,8 +30,6 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
-import com.stash.data.download.lossless.relay.LosslessDownloadPurpose
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import com.stash.data.download.model.DownloadStatus
@@ -325,40 +323,5 @@ class DownloadManagerDeferTest {
         coVerify(exactly = 1) { tidalAacResolver.resolve(any(), any(), any()) }
         // The resolver had nothing, so the strict-FLAC download waits as before.
         assertTrue("expected Deferred, got $result", result is TrackDownloadResult.Deferred)
-    }
-
-    /** What the relay client does on a "paced" answer: note it on the caller's label, return no URL. */
-    private fun registryPacesDownloads() {
-        coEvery { losslessRegistry.resolve(any()) } coAnswers {
-            currentCoroutineContext()[LosslessDownloadPurpose]?.pacedRetryAfterSec = 3600
-            null
-        }
-    }
-
-    @Test
-    fun `a paced download waits for FLAC even with the YouTube fallback on`() = runTest {
-        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.LOSSLESS
-        coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns true
-        coEvery { playlistDao.isTrackInStashMix(any()) } returns false
-        registryPacesDownloads()
-
-        val result = newSubject().downloadTrack(track = stubTrack(), preResolvedUrl = null)
-
-        assertTrue("a paced download must defer, got $result", result is TrackDownloadResult.Deferred)
-    }
-
-    @Test
-    fun `a paced Stash Mix track keeps its exemption and does not defer`() = runTest {
-        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.LOSSLESS
-        coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns true
-        coEvery { playlistDao.isTrackInStashMix(any()) } returns true
-        registryPacesDownloads()
-        coEvery { albumMatchExecutor.findTrackInAlbum(any(), any(), any(), any()) } returns null
-        coEvery { searchExecutor.search(any(), any()) } returns emptyList()
-        coEvery { searchExecutor.searchYtDlpDirect(any(), any()) } returns emptyList()
-
-        val result = newSubject().downloadTrack(track = stubTrack(), preResolvedUrl = null)
-
-        assertFalse("a Stash Mix track must not wait, got $result", result is TrackDownloadResult.Deferred)
     }
 }

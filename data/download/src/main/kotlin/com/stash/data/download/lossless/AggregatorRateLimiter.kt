@@ -80,7 +80,7 @@ class AggregatorRateLimiter @Inject constructor() {
      * observed inside [stateOf] / [acquire]. v0.9.17+ consumers
      * (LosslessRetryScheduler) use this to know when to re-attempt
      * deferred tracks for sources the user can't manually un-stick
-     * (kennyy server outages that clear organically).
+     * (outages that clear organically).
      *
      * Buffer of 8 with no replay: at most a small handful of resets
      * happen in quick succession (manual reset + timeout-driven reset
@@ -90,20 +90,7 @@ class AggregatorRateLimiter @Inject constructor() {
     val circuitResetEvents: SharedFlow<String> = _circuitResetEvents.asSharedFlow()
 
     init {
-        // Kennyy operator handles traffic from Monochrome's web UI users at
-        // higher rates than the conservative default. Start at 3x the default
-        // (1 token / 3s, burst 4); auto-backoff via reportRateLimited will
-        // ratchet down if the operator's actual threshold is lower.
-        configs["kennyy_qobuz"] = Config(
-            tokensPerSecond = 1.0 / 3.0,   // 1 token / 3 seconds
-            burstCapacity = 4.0,
-            backoff429Ms = 60_000L,        // 1 min pause on 429
-            circuitBreakAfter = 5,
-            circuitBreakDurationMs = 30 * 60_000L, // 30 min
-        )
-
-        // qbdlx (direct www.qobuz.com on the user's own connected account, or a
-        // relay). Slowest of the lossless sources: it hits Qobuz directly with
+        // qbdlx (direct www.qobuz.com on the user's own connected account). Slowest of the lossless sources: it hits Qobuz directly with
         // signed requests on accounts whose abuse heuristics we must not trip,
         // so 1 token / 3s, burst 2. CRITICAL: a Qobuz 429 = "slow down", NOT a
         // health failure, so `rateLimitTripsBreaker = false` (a 429 applies the

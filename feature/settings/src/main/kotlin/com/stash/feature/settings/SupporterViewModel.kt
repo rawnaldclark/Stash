@@ -7,7 +7,7 @@ import com.stash.core.data.supporter.SupporterRepository
 import com.stash.data.download.lossless.quota.LosslessAllowance
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.quota.LosslessQuotaRefresher
-import com.stash.data.download.lossless.relay.LosslessConfigFetcher
+import com.stash.data.download.lossless.LosslessAvailability
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.Flow
@@ -22,10 +22,10 @@ import kotlinx.coroutines.launch
 
 /** Settings → Audio & Quality's supporter row, under the "Lossless today" line. */
 sealed interface SupporterRow {
-    /** No owner relay configured: there is no allowance to lift. */
+    /** Stash's Tidal relay is not this listener's (none configured, or their own server): no allowance to lift. */
     data object Hidden : SupporterRow
 
-    /** "Unlimited lossless for supporters", opening the claim sheet. [hasToken]: one is stored but not honoured. */
+    /** "Unlimited Tidal for supporters", opening the claim sheet. [hasToken]: one is stored but not honoured. */
     data class Offer(val hasToken: Boolean) : SupporterRow
 
     /** The relays report unlimited. [hasToken]: this device holds the code (it can be removed). */
@@ -58,10 +58,10 @@ class SupporterViewModel @Inject constructor(
     private val supporter: SupporterRepository,
     private val refresher: LosslessQuotaRefresher,
     private val quota: LosslessQuota,
-    config: LosslessConfigFetcher,
+    availability: LosslessAvailability,
 ) : ViewModel() {
 
-    val row: StateFlow<SupporterRow> = supporterRows(quota, config, supporter)
+    val row: StateFlow<SupporterRow> = supporterRows(quota, availability, supporter)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SupporterRow.Hidden)
 
     private val _claim = MutableStateFlow(SupporterClaimUi())
@@ -116,22 +116,23 @@ class SupporterViewModel @Inject constructor(
 }
 
 /**
- * The supporter state as it changes: the relays' last allowance, whether this build has an owner relay at all, and
+ * The supporter state as it changes: the Tidal relay's last allowance, whether this listener uses Stash's Tidal relay at
+ * all (in the config, and no Tidal server of their own: [LosslessAvailability.stashTidalRelayInUse]), and
  * whether a code is stored. Shared by the Lossless sources row and Settings' Support card, so both always agree.
  */
 internal fun supporterRows(
     quota: LosslessQuota,
-    config: LosslessConfigFetcher,
+    availability: LosslessAvailability,
     supporter: SupporterRepository,
 ): Flow<SupporterRow> = combine(
     quota.state,
-    combine(config.relays, config.tidalRelay) { relays, tidal -> relays.isNotEmpty() || tidal != null },
+    availability.stashTidalRelayInUse,
     supporter.token,
 ) { allowance, relayConfigured, token ->
     supporterRow(allowance, relayConfigured, token != null)
 }
 
-/** The supporter row for what the relays last said ([allowance]: limit null = unlimited). */
+/** The supporter row for what the relay last said ([allowance]: limit null = unlimited). */
 internal fun supporterRow(allowance: LosslessAllowance?, relayConfigured: Boolean, hasToken: Boolean): SupporterRow = when {
     !relayConfigured -> SupporterRow.Hidden
     allowance?.unlimited == true -> SupporterRow.Supporter(hasToken)
@@ -164,7 +165,7 @@ private fun SupporterClaimUi.failed(text: String) = copy(message = text, message
  */
 internal fun SupporterClaimUi.unlocked(confirmed: Boolean): SupporterClaimUi =
     if (confirmed) copy(done = true, message = null)
-    else copy(message = "Code accepted. Unlimited Tidal & Qobuz shows here once Stash confirms it.", messageIsError = false)
+    else copy(message = "Code accepted. Unlimited Tidal shows here once Stash confirms it.", messageIsError = false)
 
 /** `429` is the tip jar's rate limiter (code requests and code tries alike). */
 private fun rateLimitedMessage(retryAfterSec: Long?): String {

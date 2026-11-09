@@ -272,22 +272,12 @@
     <string name="settings_lossy_fallback_switch_label">JioSaavn y luego YouTube, cuando no hay equivalente sin pérdida</string>
     <string name="settings_lossy_fallback_switch_label_aac">JioSaavn y luego YouTube, cuando Tidal no tiene AAC</string>
     <string name="settings_advanced">Avanzado</string>
-    <string name="settings_custom_relay_desc">Configura Stash para usar tu propio servidor intermediario de audio sin pérdida. Tiene prioridad sobre el de Stash.</string>
-    <string name="settings_custom_endpoint_label">Endpoint sin pérdida personalizado</string>
     <string name="settings_url_placeholder">https://…</string>
-    <string name="settings_test">Probar</string>
-    <string name="settings_testing">Probando…</string>
-    <string name="settings_reachable">Alcanzable</string>
-    <string name="settings_not_reachable">No alcanzable</string>
     <string name="settings_bitchord_desc">Opcional: usa tu propio servidor BitChord para Tidal en lugar del de Stash. Déjalo en blanco en caso contrario.</string>
     <string name="settings_bitchord_server_label">Servidor Tidal personalizado (opcional)</string>
     <string name="settings_access_token_label">Token de acceso (opcional)</string>
     <string name="settings_bitchord_token_saved">Hay un token guardado</string>
     <string name="settings_bitchord_token_hint">Solo si tu propio servidor establece ACCESS_TOKEN</string>
-    <string name="settings_squid_captcha_desc">Captcha de qobuz.squid.wtf: pega directamente el valor de la cookie captcha_verified_at.</string>
-    <string name="settings_squid_captcha_label">Valor de captcha_verified_at</string>
-    <string name="settings_squid_captcha_placeholder">p. ej. 1777687404951</string>
-    <string name="settings_reset_lossless_attempts">Restablecer intentos sin pérdida</string>
     <string name="settings_equalizer_title">Ecualizador</string>
     <!-- Settings > Audio & Quality > Lossless tiers -->
     <string name="settings_lossless_tier_max">Máx. (24 bits/192 kHz)</string>
@@ -312,11 +302,7 @@
     <string name="settings_hires_bit_perfect_dialog_body">En modo bit-perfect Android no toca el volumen: tu DAC lo establece. Si tu DAC no tiene control de volumen, las teclas de volumen del teléfono pueden dejar de funcionar y la música puede reproducirse a volumen máximo.\n\nBaja el volumen antes de iniciar la reproducción. El ecualizador, la normalización y el crossfade se omiten mientras el modo bit-perfect esté activo.</string>
     <string name="settings_hires_bit_perfect_confirm">Usar bit-perfect</string>
     <!-- Settings > Audio & Quality > SupporterSection -->
-    <string name="settings_supporter_active">Mecenas · Tidal y Qobuz ilimitados</string>
     <string name="settings_supporter_remove_from_device">Eliminar de este dispositivo</string>
-    <string name="settings_supporter_offer">Tidal y Qobuz ilimitados para mecenas</string>
-    <string name="settings_supporter_sheet_title">Tidal y Qobuz ilimitados</string>
-    <string name="settings_supporter_sheet_desc">Una aportación de 5 $ o más en Ko-fi desbloquea el acceso ilimitado a Tidal y Qobuz, además de FLAC y AAC. Introduce el correo que usaste en Ko-fi y te enviaremos un código.</string>
     <string name="settings_supporter_kofi_email_label">Correo de Ko-fi</string>
     <string name="settings_supporter_email_code_button">Enviar código por correo</string>
     <string name="settings_supporter_code_sent_desc">Si %1$s está en nuestra lista de Ko-fi, un código está en camino. Puede tardar un minuto.</string>

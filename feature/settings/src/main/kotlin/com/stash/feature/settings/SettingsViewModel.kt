@@ -43,7 +43,6 @@ import com.stash.data.download.files.MoveLibraryCoordinator
 import com.stash.data.download.files.MoveLibraryState
 import com.stash.data.download.files.ReorganizeLibraryCoordinator
 import com.stash.data.download.files.ReorganizeLibraryState
-import com.stash.data.download.lossless.AggregatorRateLimiter
 import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourcePreferences
@@ -51,10 +50,7 @@ import com.stash.data.download.lossless.RoutingRow
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
 import com.stash.data.download.lossless.qbdlx.QobuzAccountConnector
 import com.stash.data.download.lossless.qbdlx.QobuzLoginResult
-import com.stash.data.download.lossless.qobuz.QobuzSource
-import com.stash.data.download.lossless.relay.LosslessRelayClient
 import com.stash.data.download.prefs.StreamingQualityPreferences
-import com.stash.feature.settings.components.squidCaptchaStatus
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.QualityTier
 import com.stash.core.model.ThemeMode
@@ -124,8 +120,6 @@ class SettingsViewModel @Inject constructor(
     private val youTubeScrobblerState: YouTubeScrobblerState,
     private val losslessPrefs: LosslessSourcePreferences,
     private val streamingQualityPrefs: StreamingQualityPreferences,
-    private val losslessRateLimiter: AggregatorRateLimiter,
-    private val qobuzSource: QobuzSource,
     private val qbdlxCredentialStore: QbdlxCredentialStore,
     private val losslessAvailability: LosslessAvailability,
     private val qobuzAccountConnector: QobuzAccountConnector,
@@ -142,7 +136,6 @@ class SettingsViewModel @Inject constructor(
     private val listenBrainzApiClient: com.stash.core.data.listenbrainz.ListenBrainzApiClient,
     private val listenSinkCoordinator: com.stash.core.data.listen.ListenSinkCoordinator,
     private val listenSubmissionDao: com.stash.core.data.db.dao.ListenSubmissionDao,
-    private val relayClient: LosslessRelayClient,
     /**
      * Issue #255 — Last.fm-as-a-source lifecycle. Connect/disconnect
      * reconcile the "Recommended by Last.fm" recipe so the Sync-tab
@@ -392,7 +385,7 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * Test-only "Force YouTube fallback" toggle. When on,
-     * [StreamSourceRegistry] skips Kennyy/Squid and streams every track
+     * [StreamSourceRegistry] skips the lossless rungs and streams every track
      * via YouTube — surfaced as a switch in the Diagnostics card so the
      * lossless-down fallback path can be reproduced on demand.
      */
@@ -487,18 +480,18 @@ class SettingsViewModel @Inject constructor(
     private val _localState = MutableStateFlow(LocalState())
 
     /**
-     * True when NO lossless path is configured (no connected account, no custom
-     * endpoint, no relay) — drives the Settings "connect your account" line.
-     * Derived from [LosslessAvailability] rather than the credential store: the
-     * store now knows only about the user's own connected account, and a custom
-     * endpoint or a relay is a working lossless path without one.
+     * True when NO lossless path is configured (no connected Qobuz account, no Tidal
+     * server of the user's own, no Tidal relay in the signed config) — drives the
+     * Settings "no lossless source" line. Derived from [LosslessAvailability] rather
+     * than the credential store: the store knows only about the user's own connected
+     * account, and Tidal is a working lossless path without one.
      *
      * MUST stay declared above the [init] block: Kotlin initializes properties
      * top-to-bottom, and anything in `init` that touches this field before its
      * declaration reads null → NPE opening Settings.
      */
     val qbdlxExpired: StateFlow<Boolean> =
-        losslessAvailability.qbdlxEnabled.map { !it }
+        losslessAvailability.anySourceConfigured.map { !it }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /**
@@ -509,52 +502,6 @@ class SettingsViewModel @Inject constructor(
     val losslessRouting: StateFlow<List<RoutingRow>> =
         losslessAvailability.routingRows
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    // -- Custom lossless endpoint --------------------------------------------
-
-    /** Result of the manual "Test" — reachability only, never health. */
-    enum class EndpointTestState { IDLE, TESTING, REACHABLE, UNREACHABLE }
-
-    private val _customEndpointTest = MutableStateFlow(EndpointTestState.IDLE)
-    val customEndpointTest: StateFlow<EndpointTestState> = _customEndpointTest
-
-    /** "Must be an https:// URL" while the last commit was rejected, else null. */
-    private val _customEndpointError = MutableStateFlow<String?>(null)
-    val customEndpointError: StateFlow<String?> = _customEndpointError
-
-    /**
-     * The user's own relay base, normalised, or null. `QbdlxFileUrlRouter` puts it
-     * ahead of every relay from runtime config, so this field is the whole feature.
-     */
-    val customEndpoint: StateFlow<String?> =
-        losslessPrefs.customLosslessEndpoint
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-
-    /**
-     * Commits the field on IME Done / focus loss (the screen never calls this per
-     * keystroke — `https://re` must never be persisted as a base). Blank means
-     * "clear it", which is a valid instruction and not an error; anything else
-     * that [LosslessSourcePreferences.normaliseEndpoint] rejects is.
-     */
-    fun onCustomEndpointCommitted(raw: String) {
-        val trimmed = raw.trim()
-        val normalised = LosslessSourcePreferences.normaliseEndpoint(trimmed)
-        if (trimmed.isNotEmpty() && normalised == null) {
-            _customEndpointError.value = "Must be an https:// URL"
-            return
-        }
-        _customEndpointError.value = null
-        // A commit invalidates the last test result — it described the old base.
-        // This lives here and NOT in an `onEach` on [customEndpoint]: that operator
-        // runs inside the WhileSubscribed(5_000) share, so leaving Settings for more
-        // than five seconds and coming back silently wiped a "Reachable" the user
-        // had just earned, with nothing having changed.
-        _customEndpointTest.value = EndpointTestState.IDLE
-        viewModelScope.launch { losslessPrefs.setCustomLosslessEndpoint(normalised) }
-    }
-
-    /** Typing clears the rejection — it described text that is no longer in the field. */
-    fun onCustomEndpointEdited() { _customEndpointError.value = null }
 
     // -- Tidal via a self-hosted BitChord server ------------------------------
 
@@ -580,7 +527,12 @@ class SettingsViewModel @Inject constructor(
     private val _bitchordEndpointError = MutableStateFlow<String?>(null)
     val bitchordEndpointError: StateFlow<String?> = _bitchordEndpointError
 
-    /** Commit-on-Done, same rules as [onCustomEndpointCommitted]; blank clears it. */
+    /**
+     * Commits the field on IME Done / focus loss (the screen never calls this per
+     * keystroke — `https://re` must never be persisted as a base). Blank means
+     * "clear it", which is a valid instruction and not an error; anything else
+     * that [LosslessSourcePreferences.normaliseEndpoint] rejects is.
+     */
     fun onBitchordEndpointCommitted(raw: String) {
         val trimmed = raw.trim()
         val normalised = LosslessSourcePreferences.normaliseEndpoint(trimmed)
@@ -597,30 +549,6 @@ class SettingsViewModel @Inject constructor(
     /** Blank clears the stored token. */
     fun onBitchordTokenCommitted(raw: String) {
         viewModelScope.launch { losslessPrefs.setBitchordAccessToken(raw) }
-    }
-
-    /** The in-flight probe, so a second Test cannot be answered by the first. */
-    private var testJob: Job? = null
-
-    /** No endpoint set = nothing to test; the button is disabled for the same reason. */
-    fun onTestCustomEndpoint() {
-        val base = customEndpoint.value ?: return
-        // A probe runs up to 8s and the field stays editable throughout: without
-        // cancelling the previous one AND re-checking what is on screen, a probe of
-        // the OLD base returned and painted a green "Reachable" beside the new one —
-        // a measurement of a URL the user had already replaced.
-        testJob?.cancel()
-        _customEndpointTest.value = EndpointTestState.TESTING
-        testJob = viewModelScope.launch {
-            val reachable = relayClient.probe(base)
-            if (customEndpoint.value == base) {
-                _customEndpointTest.value = if (reachable) {
-                    EndpointTestState.REACHABLE
-                } else {
-                    EndpointTestState.UNREACHABLE
-                }
-            }
-        }
     }
 
     /**
@@ -694,9 +622,7 @@ class SettingsViewModel @Inject constructor(
         youTubeHistoryScrobbler.pendingCount(),
         losslessPrefs.enabled,
         losslessPrefs.downloadMode,
-        losslessPrefs.captchaCookieValue,
         losslessPrefs.qualityTier,
-        qobuzSource.lastKnownBadCookie,
         likePreferences.heartDefaultStash,
         likePreferences.heartDefaultSpotify,
         likePreferences.heartDefaultYtMusic,
@@ -742,9 +668,7 @@ class SettingsViewModel @Inject constructor(
         val ytPendingCount = v.next<Int>()
         val losslessEnabled = v.next<Boolean>()
         val downloadMode = v.next<com.stash.core.model.DownloadMode>()
-        val squidWtfCaptchaCookie = (v.next<String?>()).orEmpty()
         val losslessQualityTier = v.next<LosslessQualityTier>()
-        val lastKnownBadCookie = v.next<String?>()
         val heartDefaultStash = v.next<Boolean>()
         val heartDefaultSpotify = v.next<Boolean>()
         val heartDefaultYtMusic = v.next<Boolean>()
@@ -824,8 +748,6 @@ class SettingsViewModel @Inject constructor(
             ytPendingCount = ytPendingCount,
             losslessEnabled = losslessEnabled,
             downloadMode = downloadMode,
-            squidWtfCaptchaCookie = squidWtfCaptchaCookie,
-            squidCaptchaStatus = squidCaptchaStatus(squidWtfCaptchaCookie, lastKnownBadCookie),
             losslessQualityTier = losslessQualityTier,
             streamingWifiTier = streamingWifiTier,
             streamingCellularTier = streamingCellularTier,
@@ -2086,7 +2008,7 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * Master switch for the lossless-source pipeline. When true, the
-     * download path tries the squid.wtf-proxied Qobuz registry before
+     * download path tries the lossless registry (own Qobuz, then Tidal) before
      * falling back to yt-dlp; when false (default), yt-dlp runs as it
      * always has and the lossless code is dead at runtime.
      */
@@ -2127,17 +2049,6 @@ class SettingsViewModel @Inject constructor(
     fun onYoutubeFallbackChanged(value: Boolean) {
         viewModelScope.launch {
             losslessPrefs.setYoutubeFallbackEnabled(value)
-        }
-    }
-
-    /**
-     * Persists the user-pasted `captcha_verified_at` cookie value
-     * for qobuz.squid.wtf. Empty / blank input clears the stored value.
-     * Whitespace is trimmed inside [LosslessSourcePreferences.setCaptchaCookieValue].
-     */
-    fun onSquidWtfCaptchaCookieChanged(value: String) {
-        viewModelScope.launch {
-            losslessPrefs.setCaptchaCookieValue(value)
         }
     }
 
@@ -2210,18 +2121,6 @@ class SettingsViewModel @Inject constructor(
 
     fun onPreferCloudCopiesChanged(value: Boolean) =
         viewModelScope.launch { streamingQualityPrefs.setPreferCloudCopies(value) }
-
-    /**
-     * Clear the rate-limiter's circuit breaker for the squid.wtf
-     * source. Useful when the breaker tripped on a transient outage
-     * and the user knows the source is back up — skips the 30-min
-     * organic timeout. No-op if the breaker isn't currently tripped.
-     */
-    fun onResetLosslessRateLimiter() {
-        viewModelScope.launch {
-            losslessRateLimiter.reset(QobuzSource.SOURCE_ID)
-        }
-    }
 
     // -- Library & Likes (v0.9.13) ------------------------------------------
 

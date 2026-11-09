@@ -40,8 +40,6 @@ import com.stash.core.data.sync.workers.TagEnrichmentWorker
 import com.stash.core.data.sync.workers.ArtistGenreWorker
 import com.stash.core.data.sync.workers.TrackInfoEnrichmentWorker
 import com.stash.core.data.sync.workers.UpdateCheckWorker
-import com.stash.core.media.streaming.KennyyHealthProbe
-import com.stash.core.media.streaming.SquidCookieAutoRefresher
 import com.stash.data.download.lossless.LosslessRetryScheduler
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.ytdlp.YtDlpUpdateWorker
@@ -182,31 +180,13 @@ class StashApplication : Application(), Configuration.Provider {
 
     /**
      * v0.9.17: eager-bound observer that enqueues [LosslessRetryWorker]
-     * on cookie change / lastKnownBadCookie clear / circuit-breaker
-     * reset events. `lateinit` + `@Inject` makes Hilt construct the
-     * singleton when this field is first touched at [onCreate]; we then
-     * call its `start()` to wire up the three reactive collectors.
+     * on circuit-breaker resets, the daily allowance's reset, a Download
+     * quality change and Tidal coming free. `lateinit` + `@Inject` makes Hilt
+     * construct the singleton when this field is first touched at [onCreate];
+     * we then call its `start()` to wire up the reactive collectors.
      */
     @Inject
     lateinit var losslessRetryScheduler: LosslessRetryScheduler
-
-    /**
-     * Auto-refresher for the squid.wtf captcha cookie. Activated by
-     * the ProcessLifecycle observer registered in [onCreate] — only
-     * runs when (1) Kennyy is unhealthy AND (2) the app is in the
-     * foreground/STARTED window. Idle no-op otherwise.
-     */
-    @Inject
-    lateinit var squidCookieAutoRefresher: SquidCookieAutoRefresher
-
-    /**
-     * Cold-start Kennyy health probe. Started by the ProcessLifecycle
-     * observer registered in [onCreate] alongside [squidCookieAutoRefresher]
-     * so it runs an immediate ground-truth check on app STARTED, setting
-     * Kennyy health before the first play.
-     */
-    @Inject
-    lateinit var kennyyHealthProbe: KennyyHealthProbe
 
     @Inject
     lateinit var handoffOffers: com.stash.core.media.handoff.HandoffOffers
@@ -230,7 +210,7 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var mirrorSignal: com.stash.core.data.weblink.mirror.LibraryChangeSignal
 
     /**
-     * The signed runtime relay list — the APK ships no relay hostname. Started
+     * The signed runtime config (Stash's Tidal relay) — the APK ships no relay hostname. Started
      * from [onCreate]: loads the cached config, then fetches and signature-checks
      * a fresh one immediately and every 6 h.
      */
@@ -366,26 +346,15 @@ class StashApplication : Application(), Configuration.Provider {
         // async startup work completes).
         SingletonImageLoader.setSafe { ctx -> CoilConfiguration.build(ctx, okHttpClient) }
         syncNotificationManager.createChannels()
-        // Squid cookie auto-refresher: start when the app moves to STARTED,
-        // stop when it moves to STOPPED. ProcessLifecycle is the right
-        // scope vs Activity-scoped because rotation/recreation shouldn't
-        // interrupt a refresh in progress. The refresher itself gates on
-        // KennyyHealthMonitor.isHealthy, so it stays idle when Kennyy is
-        // up. Registered here (before the applicationScope.launch blocks)
-        // so it's observing as early as possible; the first STARTED event
-        // doesn't fire until after onCreate completes anyway.
+        // Foreground/background work: ProcessLifecycle rather than an Activity,
+        // so rotation/recreation doesn't count as leaving. Registered here
+        // (before the applicationScope.launch blocks) so it's observing as
+        // early as possible; the first STARTED event doesn't fire until after
+        // onCreate completes anyway.
         mirrorSignal.start()
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
-                    // PARKED 2026-07-01: kennyy + squid are out of the lossless
-                    // chain (hosts down for us — see
-                    // LosslessSourceRegistry.PARKED_SOURCE_IDS), so their
-                    // background keep-alives are parked too: no point probing
-                    // kennyy health or refreshing the squid captcha cookie for
-                    // sources nothing consults. Uncomment on re-enable.
-                    // squidCookieAutoRefresher.start()
-                    // kennyyHealthProbe.start()
                     // The playback service stops itself after five idle minutes and the
                     // controller drops with it; the next tap then pays ~1 s of service
                     // start (Pixel 6, 2026-09-06). Reconnect while the user is still
@@ -404,8 +373,6 @@ class StashApplication : Application(), Configuration.Provider {
                 }
 
                 override fun onStop(owner: LifecycleOwner) {
-                    // squidCookieAutoRefresher.stop()
-                    // kennyyHealthProbe.stop()
                     // The BotGuard WebView is ~50 MB; drop it while backgrounded, it
                     // rebuilds on the next play (or the next onStart pre-warm).
                     applicationScope.launch { innerTubeClient.releasePoTokens() }
@@ -731,7 +698,7 @@ class StashApplication : Application(), Configuration.Provider {
         // were removed when Library reverted to downloaded-only. They populated
         // is_streamable for the "show streamable rows in Library" surface that
         // no longer exists. Streaming-tap availability is determined per-call
-        // by KennyySource at the moment the user taps a search result.
+        // by the streaming chain at the moment the user taps a search result.
 
         // Start the local listening-history recorder + optional Last.fm
         // and YouTube Music scrobbler. All are safe to start unconditionally —
@@ -745,10 +712,9 @@ class StashApplication : Application(), Configuration.Provider {
         // Generic listen sinks (ListenBrainz). No-ops until connected.
         listenSinkCoordinator.start()
 
-        // Wire the three reactive triggers (cookie change /
-        // lastKnownBadCookie transition / rate-limiter circuit-reset
-        // event) that enqueue LosslessRetryWorker for the strict-FLAC
-        // deferred set. Touching the @Inject field here forces Hilt
+        // Wire the reactive triggers (breaker reset, allowance reset, Download
+        // quality change, Tidal free again) that enqueue LosslessRetryWorker
+        // for the strict-FLAC deferred set. Touching the @Inject field here forces Hilt
         // to construct the singleton if Dagger hasn't already.
         losslessRetryScheduler.start()
 
@@ -790,7 +756,9 @@ class StashApplication : Application(), Configuration.Provider {
                 nowMs = System::currentTimeMillis,
                 maxAgeMs = LOSSLESS_CONFIG_MAX_AGE_UNDER_SAVER_MS,
                 loadCached = { losslessConfigFetcher.loadCached() },
-                hasCached = { losslessConfigFetcher.relays.value.isNotEmpty() },
+                // The cache is worth deferring on only when it carries the Tidal relay, the one
+                // thing the app reads from it.
+                hasCached = { losslessConfigFetcher.tidalRelay.value != null },
                 startRefreshing = { losslessConfigFetcher.start(applicationScope) },
             )
             if (start != com.stash.core.common.power.SaverDeferral.Start.SAVER_OFF_AT_START) {
@@ -832,6 +800,10 @@ class StashApplication : Application(), Configuration.Provider {
      *      Supabase access + refresh tokens), `force_arcod_only`, and the retired
      *      rescue-banner flag. Nothing opens that DataStore any more, so the file
      *      is deleted outright.
+     * v4 — the shared Qobuz relay and squid.wtf: the custom relay endpoint
+     *      (`custom_lossless_endpoint`) and the squid.wtf captcha cookie
+     *      (`squid_wtf_captcha_verified_at`, `squid_wtf_captcha_set_at_ms`),
+     *      whose Settings fields went with them.
      */
     private suspend fun maybePurgeRetiredSourceArtifacts() {
         val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
@@ -1318,9 +1290,10 @@ class StashApplication : Application(), Configuration.Provider {
          * Bump to re-run [maybePurgeRetiredSourceArtifacts] (one-shot cleanup of
          * credentials a removed source left on disk). v2 adds the qbdlx token
          * pool's cached third-party tokens and the retired amz toggle; v3 the
-         * arcod session and toggles.
+         * arcod session and toggles; v4 the retired custom relay endpoint and
+         * squid.wtf captcha cookie.
          */
-        private const val ANTRA_PURGE_VERSION = 3
+        private const val ANTRA_PURGE_VERSION = 4
 
         /** v0.9.104: pin every already-synced playlist to Home, once. */
         private const val SYNCED_PLAYLISTS_PIN_VERSION = 1

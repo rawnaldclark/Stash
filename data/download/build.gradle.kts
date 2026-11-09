@@ -106,10 +106,10 @@ dependencies {
     testImplementation("app.cash.turbine:turbine:1.1.0")
     testImplementation("org.mockito:mockito-core:5.14.2")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
-    // MockK for QobuzSource tests — suspend-function mocking is cleaner
+    // MockK — suspend-function mocking is cleaner
     // than Mockito's, and matches the pattern used in :core:media tests.
     testImplementation(libs.mockk)
-    // MockWebServer for QobuzApiClient tests — fake server, real OkHttp client.
+    // MockWebServer — fake server, real OkHttp client.
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     // Robolectric — Android environment for DataStore-backed pref tests
     // (LosslessSourcePreferencesYoutubeFallbackTest), mirroring the

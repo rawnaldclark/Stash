@@ -60,10 +60,10 @@ data class LosslessAllowance(val used: Int, val limit: Int?, val resetsAtSec: Lo
 sealed interface LosslessQuotaNotice {
     val resetsAtMs: Long
 
-    /** [left] of [limit] Tidal & Qobuz answers (FLAC or AAC) remain today ([LosslessQuota.WARN_LEFT] or fewer). */
+    /** [left] of [limit] Tidal answers (FLAC or AAC) remain today ([LosslessQuota.WARN_LEFT] or fewer). */
     data class RunningLow(val left: Int, val limit: Int, override val resetsAtMs: Long) : LosslessQuotaNotice
 
-    /** All [limit] are spent; Tidal and Qobuz resume at [resetsAtMs]. */
+    /** All [limit] are spent; Stash's Tidal relay resumes at [resetsAtMs]. */
     data class Spent(val limit: Int, override val resetsAtMs: Long) : LosslessQuotaNotice
 }
 

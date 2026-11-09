@@ -300,7 +300,7 @@ class DiffWorker @AssistedInject constructor(
             // track rows still land in the `tracks` table (the metadata is
             // needed regardless — Home playlist surfaces + playlist detail
             // rely on it) but skip the `download_queue` enqueue. Tracks
-            // become available via streaming-tap through KennyySource.
+            // become available via streaming-tap through the streaming chain.
             val streamingMode = streamingPreference.current()
             val pinNewPlaylists = syncPreferencesManager.pinNewPlaylists.first()
 

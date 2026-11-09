@@ -75,8 +75,8 @@ class StreamingPreference @Inject constructor(
     }
 
     /**
-     * Test-only toggle. When `true`, [StreamSourceRegistry] skips Kennyy
-     * and Squid and resolves every streaming track via the YouTube
+     * Test-only toggle. When `true`, [StreamSourceRegistry] skips the
+     * lossless rungs and resolves every streaming track via the YouTube
      * fallback resolver only — used to reproduce the lossless-down path
      * on demand. Default `false` (normal use).
      */
@@ -87,7 +87,7 @@ class StreamingPreference @Inject constructor(
     /**
      * Test-only toggle. When `true`, BOTH the streaming ([StreamSourceRegistry])
      * and lossless-download ([LosslessSourceRegistry]) registries route through
-     * the qbdlx (direct-Qobuz) source ONLY — kennyy/squid/YouTube are
+     * the qbdlx (direct-Qobuz) source ONLY — Tidal/YouTube are
      * removed from play so a track either resolves via qbdlx or fails visibly.
      * Used to exercise qbdlx on demand (it normally ranks last and is hard to
      * trigger). Default `false` (normal use).

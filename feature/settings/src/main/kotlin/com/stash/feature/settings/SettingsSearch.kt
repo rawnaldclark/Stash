@@ -101,7 +101,7 @@ internal fun settingsSearchIndex(s: (Int) -> String): List<SettingsSearchEntry> 
         SettingsSearchEntry(s(R.string.settings_lossless_sources_title), SettingsPage.LOSSLESS_SOURCES, listOf("routing", "allowance", "daily limit", "quota", "tidal", "qobuz")),
         SettingsSearchEntry(s(R.string.settings_qobuz_account_title), SettingsPage.LOSSLESS_SOURCES, listOf("sign in", "login", "subscription")),
         SettingsSearchEntry(s(R.string.settings_supporter_offer), SettingsPage.LOSSLESS_SOURCES, listOf("supporter", "ko fi", "kofi", "unlock", "code", "donate")),
-        SettingsSearchEntry(s(R.string.settings_advanced), SettingsPage.LOSSLESS_SOURCES, listOf("endpoint", "relay", "bitchord", "captcha", "reset")),
+        SettingsSearchEntry(s(R.string.settings_advanced), SettingsPage.LOSSLESS_SOURCES, listOf("relay", "bitchord", "tidal server")),
         // Accounts & Sync
         SettingsSearchEntry("Spotify", SettingsPage.ACCOUNTS, listOf("connect", "sign in", "login")),
         SettingsSearchEntry("YouTube Music", SettingsPage.ACCOUNTS, listOf("google", "connect", "sign in", "login")),

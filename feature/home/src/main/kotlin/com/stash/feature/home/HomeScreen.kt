@@ -1064,8 +1064,7 @@ private fun MixActionRow(
  * "Try lossless audio" Home banner. Shows when the user has
  * lossless turned off (explicit save, since v0.9.8 fresh installs
  * default to ON) and hasn't dismissed. Tapping routes to Settings,
- * where the existing Audio Quality card hosts the toggle + captcha
- * setup flow.
+ * where the Audio Quality card hosts the toggle.
  */
 @Composable
 private fun LosslessConnectBanner(
@@ -1095,7 +1094,7 @@ private fun LosslessConnectBanner(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Studio-quality FLAC downloads via Qobuz. Tap to set up.",
+                    text = "Studio-quality FLAC from Tidal or your own Qobuz account. Tap to set up.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1136,11 +1135,11 @@ private fun LosslessConnectBanner(
  *
  * The two surfaces agree on the states that matter, but they are NOT the same
  * predicate, deliberately: Home keys on `LosslessAvailability.anyUserOwned`
- * (BYO login || custom endpoint) so a dead PUBLIC relay cannot hide the
+ * (a connected Qobuz account) so a failing Stash Tidal relay cannot hide the
  * "connect your own account" offer — that outage is what the banner is for.
- * Settings keys on `qbdlxExpired` (!qbdlxEnabled: BYO login || custom
- * endpoint || a config relay), which counts relays. So they diverge on exactly one case:
- * a user with nothing but a public config relay still gets this banner, and
+ * Settings keys on `qbdlxExpired` (!anySourceConfigured: a Qobuz account || a
+ * Tidal server), which counts Stash's Tidal relay. So they diverge on exactly one
+ * case: a user with nothing but Stash's Tidal relay still gets this banner, and
  * should — Home asks "is there anything of yours to connect?", Settings asks
  * "is what you configured still a path?".
  */
@@ -1172,7 +1171,7 @@ private fun LosslessOfflineBanner(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Stash is falling back to lossy audio. " +
+                    text = "No lossless source is answering, so Stash is falling back to lossy audio. " +
                         "Connect your own Qobuz account for FLAC.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

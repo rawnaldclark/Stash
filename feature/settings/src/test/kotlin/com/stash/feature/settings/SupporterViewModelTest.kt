@@ -6,9 +6,7 @@ import com.stash.core.data.supporter.SupporterRepository
 import com.stash.data.download.lossless.quota.LosslessAllowance
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.quota.LosslessQuotaRefresher
-import com.stash.data.download.lossless.relay.LosslessConfigFetcher
-import com.stash.data.download.lossless.relay.RelayEntry
-import com.stash.data.download.lossless.relay.TidalRelay
+import com.stash.data.download.lossless.LosslessAvailability
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -40,15 +38,14 @@ class SupporterViewModelTest {
         every { this@mockk.token } returns this@SupporterViewModelTest.token
     }
     private val refresher: LosslessQuotaRefresher = mockk()
-    private val config: LosslessConfigFetcher = mockk {
-        every { relays } returns MutableStateFlow(listOf(RelayEntry("https://relay.example")))
-        every { tidalRelay } returns MutableStateFlow<TidalRelay?>(null)
+    private val availability: LosslessAvailability = mockk {
+        every { stashTidalRelayInUse } returns MutableStateFlow(true)
     }
 
     @Before fun setUp() = Dispatchers.setMain(UnconfinedTestDispatcher())
     @After fun tearDown() = Dispatchers.resetMain()
 
-    private fun vm() = SupporterViewModel(supporter, refresher, quota, config)
+    private fun vm() = SupporterViewModel(supporter, refresher, quota, availability)
 
     @Test fun `the row follows the relays' limit, not the token`() {
         assertThat(supporterRow(null, relayConfigured = false, hasToken = false)).isEqualTo(SupporterRow.Hidden)
