@@ -241,6 +241,8 @@ class DownloadManagementViewModel @Inject constructor(
 
     fun retry(queueId: Long) = viewModelScope.launch {
         if (downloadQueueDao.atomicallyClaimForRetry(queueId) == 1) {
+            // A tap ends a Pause, or the retry would wait for Resume without saying so.
+            resumer.clearHold()
             downloadEnqueuer.enqueue(queueId)
             message.value = "Download queued"
         }

@@ -536,13 +536,13 @@ class DownloadManager @Inject constructor(
             is DownloadResult.Success -> dlResult.file
             is DownloadResult.YtDlpError -> {
                 emitProgress(track.id, 0f, DownloadStatus.FAILED)
-                return TrackDownloadResult.Failed("yt-dlp: ${dlResult.message.take(500)}")
+                return TrackDownloadResult.Failed("yt-dlp: ${ytDlpFailureText(dlResult.message)}")
             }
             is DownloadResult.NoOutput -> {
                 emitProgress(track.id, 0f, DownloadStatus.FAILED)
                 val detail = buildString {
                     append("yt-dlp produced no output file.")
-                    dlResult.stderr?.let { append(" stderr: ${it.take(300)}") }
+                    dlResult.stderr?.let { append(" stderr: ${ytDlpFailureText(it, max = 300)}") }
                 }
                 return TrackDownloadResult.Failed(detail)
             }
@@ -1481,4 +1481,16 @@ class DownloadManager @Inject constructor(
     private fun emitProgress(trackId: Long, progress: Float, status: DownloadStatus) {
         _progress.tryEmit(DownloadProgress(trackId, progress, 0, status))
     }
+}
+
+/**
+ * What a failed yt-dlp run said, for the queue row and the failure classifier: its `ERROR:` lines,
+ * else the end of what it printed. yt-dlp prints its WARNING lines first and the ERROR line last,
+ * and the first 500 characters (what was kept before) often held only warnings, so a 429, a bot
+ * check or a full disk read as an unknown error and burned a retry on every song.
+ */
+internal fun ytDlpFailureText(stderr: String, max: Int = 500): String {
+    val errors = stderr.lineSequence().map { it.trim() }.filter { it.startsWith("ERROR:") }.joinToString("\n")
+    val text = errors.ifEmpty { stderr.trim() }
+    return if (text.length <= max) text else text.takeLast(max)
 }

@@ -312,6 +312,11 @@ class SyncNotificationManager @Inject constructor(
         notificationManager.notify(NOTIFICATION_ID_RATE_LIMITED, notification)
     }
 
+    /** A song landed again after YouTube asked us to wait: "Downloads slowed down" goes. */
+    fun cancelRateLimited() {
+        notificationManager.cancel(NOTIFICATION_ID_RATE_LIMITED)
+    }
+
     /** The resume run ended: its progress notification goes (one posted outside the foreground would stay). */
     fun cancelResumeProgress() {
         notificationManager.cancel(NOTIFICATION_ID_RESUME)
@@ -324,22 +329,43 @@ class SyncNotificationManager @Inject constructor(
     }
 
     /**
+     * The summary's text when songs are left: "Downloaded 37 songs · 3 will try again later ·
+     * 2 failed", or "· 3 paused" / "· 3 waiting for space" when they wait for the user.
+     */
+    fun summaryText(newTracks: Int, failed: Int, waiting: Int, hold: WaitingHold): String = buildList {
+        add(context.resources.getQuantityString(R.plurals.notif_summary_downloaded, newTracks, newTracks))
+        if (waiting > 0) {
+            add(
+                when (hold) {
+                    WaitingHold.NONE -> context.getString(R.string.notif_summary_try_later, waiting)
+                    WaitingHold.PAUSED -> context.getString(R.string.notif_summary_paused, waiting)
+                    WaitingHold.NO_SPACE -> context.getString(R.string.notif_summary_no_space, waiting)
+                },
+            )
+        }
+        if (failed > 0) add(context.getString(R.string.notif_summary_failed, failed))
+    }.joinToString(" · ")
+
+    /**
      * Show a summary notification after sync completion.
      *
      * @param newTracks        Number of new tracks downloaded.
      * @param playlistsChecked Number of playlists that were inspected.
      * @param failed           Number of tracks that failed to download.
-     * @param waiting          Songs the sync left queued, which download later on their own.
-     *                         With any left (or failed) the summary says so and opens Downloads,
-     *                         instead of "Everything up to date".
+     * @param waiting          Songs the sync left queued. With any left (or failed) the summary
+     *                         says so and opens Downloads, instead of "Everything up to date".
+     * @param hold             Why they wait: on their own they try again later, but paused or
+     *                         out of space they wait for the user, and the summary says that.
      */
-    fun showSummary(newTracks: Int, playlistsChecked: Int, failed: Int, waiting: Int = 0) {
+    fun showSummary(
+        newTracks: Int,
+        playlistsChecked: Int,
+        failed: Int,
+        waiting: Int = 0,
+        hold: WaitingHold = WaitingHold.NONE,
+    ) {
         if (waiting > 0 || failed > 0) {
-            val text = buildList {
-                add(context.resources.getQuantityString(R.plurals.notif_summary_downloaded, newTracks, newTracks))
-                if (waiting > 0) add(context.getString(R.string.notif_summary_try_later, waiting))
-                if (failed > 0) add(context.getString(R.string.notif_summary_failed, failed))
-            }.joinToString(" · ")
+            val text = summaryText(newTracks, failed, waiting, hold)
             val notification = NotificationCompat.Builder(context, CHANNEL_SYNC_SUMMARY)
                 .setContentTitle("Sync Complete")
                 .setContentText(text)
@@ -408,4 +434,16 @@ class SyncNotificationManager @Inject constructor(
             .build()
         notificationManager.notify(NOTIFICATION_ID_FLAC_SUMMARY, notification)
     }
+}
+
+/** Why songs a sync left queued wait, for its summary ([SyncNotificationManager.showSummary]). */
+enum class WaitingHold {
+    /** They download later on their own. */
+    NONE,
+
+    /** The user paused downloads: they wait for Resume. */
+    PAUSED,
+
+    /** The phone is out of space: they wait for room and Resume. */
+    NO_SPACE,
 }

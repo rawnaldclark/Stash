@@ -56,6 +56,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
@@ -412,8 +413,13 @@ class StashApplication : Application(), Configuration.Provider {
                     // ...and songs left queued carry on downloading (at most once a minute; not while
                     // paused or out of space): some phones drop scheduled jobs when the app is swiped away.
                     applicationScope.launch {
-                        runCatching { downloadQueueResumer.onForeground() }
-                            .onFailure { Log.w("StashStartup", "resuming downloads on foreground failed", it) }
+                        try {
+                            downloadQueueResumer.onForeground()
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Log.w("StashStartup", "resuming downloads on foreground failed", e)
+                        }
                     }
                 }
 
@@ -481,8 +487,30 @@ class StashApplication : Application(), Configuration.Provider {
             // Only when something waits, and under the background constraints: the
             // songs a sync queued (the resume run) and the ones the user asked for
             // (the drain). Not while the user has paused downloads.
-            runCatching { downloadQueueResumer.resume(com.stash.core.data.sync.ResumeTrigger.AUTO) }
-                .onFailure { Log.w("StashStartup", "resuming waiting downloads failed", it) }
+            try {
+                downloadQueueResumer.resume(com.stash.core.data.sync.ResumeTrigger.AUTO)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("StashStartup", "resuming waiting downloads failed", e)
+            }
+        }
+        // Switching Download mode from Online to Offline: the songs a sync queued (listed under
+        // "Downloads when you switch to Offline") start now, not at the next app start.
+        applicationScope.launch {
+            streamingPreference.enabled
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { online ->
+                    if (online) return@collect
+                    try {
+                        downloadQueueResumer.resume(com.stash.core.data.sync.ResumeTrigger.AUTO)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w("StashStartup", "resuming downloads after switching to Offline failed", e)
+                    }
+                }
         }
         // An extra Spotify account's sign-in is kept outside the database, under its row id: a full
         // restore (which restarts the app into here) can bring a database without that row, and a

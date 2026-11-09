@@ -313,4 +313,6 @@
     <string name="downloads_offline_section">Downloads when you switch to Offline</string>
     <!-- The Sync tab's Downloads row, after its counts, when it is out of space (the other states reuse downloads_state_*). -->
     <string name="sync_downloads_state_storage_full">Out of space</string>
+    <!-- The system stopped a sync's downloads for a moment (its time limit); they carry on by themselves. -->
+    <string name="sync_continuing_shortly">Continuing shortly...</string>
 </resources>

@@ -17,8 +17,6 @@ import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.workers.DiscoveryDownloadWorker
 import com.stash.core.data.sync.workers.TrackDownloadWorker
-import com.stash.core.data.sync.workers.constraintsForManualTrigger
-import com.stash.core.model.DownloadNetworkMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -26,7 +24,8 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.atomic.AtomicLong
@@ -40,8 +39,16 @@ enum class ResumeTrigger {
     /** Something on its own: a cold start, the app coming back, a sync that left songs, a retry later. */
     AUTO,
 
-    /** The user: Resume, Download now, Retry all. Clears the pause and the out-of-space hold. */
+    /** The user: Resume, Download now. Clears the pause and the out-of-space hold, and runs on any network. */
     USER,
+
+    /**
+     * Retry all / Retry group: the user's tap, so it clears the pause and the out-of-space hold and
+     * takes over a waiting run, but it downloads under the automatic rules (the Sync tab's Wi-Fi
+     * only, a battery that isn't low): the run takes the whole queue, not just the retried songs,
+     * and that must not go over mobile data the user said not to use.
+     */
+    RETRY,
 }
 
 /** What the download queue is doing, for the Downloads screen, the Sync tab and the tests. */
@@ -116,8 +123,8 @@ class DownloadQueueResumer @Inject constructor(
      * either mode, as it always has. [initialDelay] holds the resume run back (a sync that left
      * songs, YouTube asking us to wait); the drain starts only on an undelayed call.
      */
-    suspend fun resume(trigger: ResumeTrigger, initialDelay: Duration = Duration.ZERO) {
-        if (trigger == ResumeTrigger.USER) {
+    suspend fun resume(trigger: ResumeTrigger, initialDelay: Duration = Duration.ZERO, rateLimitRound: Int = 0) {
+        if (trigger != ResumeTrigger.AUTO) {
             clearHold()
         } else if (queueState.isPaused() || queueState.storageFull.value) {
             return
@@ -125,7 +132,7 @@ class DownloadQueueResumer @Inject constructor(
         if (!streamingPreference.current() &&
             downloadQueueDao.hasResumableSyncDownload(connectedDownloadSources(tokenManager))
         ) {
-            enqueueResumeRun(trigger, initialDelay)
+            enqueueResumeRun(trigger, initialDelay, rateLimitRound)
         }
         if (initialDelay == Duration.ZERO) musicRepository.resumeWaitingDownloads(tap = trigger == ResumeTrigger.USER)
     }
@@ -159,25 +166,26 @@ class DownloadQueueResumer @Inject constructor(
         queueState.setPaused(true)
         workManager.cancelUniqueWork(TrackDownloadWorker.RESUME_WORK_NAME)
         workManager.cancelUniqueWork(DiscoveryDownloadWorker.UNIQUE_WORK_NAME)
+        // Single retries too (their backoff, a rate-limit round, a lossless re-queue): a song
+        // stopped half way hands its claim back as it stops.
+        workManager.cancelAllWorkByTag(SingleTrackDownloadEnqueuer.TAG)
         if (isSyncDownloadRunning()) syncScheduler.cancelSync()
         syncNotificationManager.cancelDownloadProgress()
     }
 
     /**
      * Retry all / Retry group, after the rows were claimed back to PENDING ([ids]): one resume
-     * instead of a job per song. A row neither run would take (a sync's row in Online mode, a
-     * song from a service that isn't connected any more) still gets its own retry, as before.
+     * ([ResumeTrigger.RETRY]) instead of a job per song. A row neither run would take (a song from
+     * a service that isn't connected any more) still gets its own retry, as before. In Online mode
+     * a sync's row only goes back to the queue: it downloads once the user switches to Offline,
+     * which is where the Downloads screen lists it.
      */
     suspend fun retryClaimed(ids: List<Long>) {
         if (ids.isEmpty()) return
         // Read who takes what before anything starts: a run that claims a row first would hide it here.
-        val takenByResume = if (streamingPreference.current()) {
-            emptySet()
-        } else {
-            downloadQueueDao.getAllPendingBySources(connectedDownloadSources(tokenManager)).mapTo(HashSet()) { it.id }
-        }
+        val takenByResume = downloadQueueDao.getAllPendingBySources(connectedDownloadSources(tokenManager)).mapTo(HashSet()) { it.id }
         val takenByDrain = downloadQueueDao.pendingDiscoveryDownloads().mapTo(HashSet()) { it.id }
-        resume(ResumeTrigger.USER)
+        resume(ResumeTrigger.RETRY)
         ids.filterNot { it in takenByResume || it in takenByDrain }.forEach { singleTrackDownloadEnqueuer.enqueue(it) }
     }
 
@@ -197,19 +205,28 @@ class DownloadQueueResumer @Inject constructor(
      * One caller at a time: a cold start and the app coming to the front can both read "nothing
      * waiting" at once.
      */
-    private suspend fun enqueueResumeRun(trigger: ResumeTrigger, initialDelay: Duration) = RESUME_LOCK.withLock {
+    private suspend fun enqueueResumeRun(trigger: ResumeTrigger, initialDelay: Duration, rateLimitRound: Int) = RESUME_LOCK.withLock {
         val runs = workManager.getWorkInfosForUniqueWorkFlow(TrackDownloadWorker.RESUME_WORK_NAME).first()
         val running = runs.any { it.state == WorkInfo.State.RUNNING }
         val waiting = runs.filter { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.BLOCKED }
         val constraints = when (trigger) {
-            ResumeTrigger.USER -> constraintsForManualTrigger(DownloadNetworkMode.ANY_NETWORK)
-            ResumeTrigger.AUTO -> autoConstraints()
+            ResumeTrigger.USER -> userConstraints()
+            ResumeTrigger.RETRY, ResumeTrigger.AUTO -> autoConstraints()
         }
         val policy = resumePolicy(trigger, running, waiting.map { it.constraints.requiredNetworkType }, constraints.requiredNetworkType)
             ?: return@withLock
-        Log.i(TAG, "resume run: trigger=$trigger policy=$policy delay=$initialDelay network=${constraints.requiredNetworkType}")
-        TrackDownloadWorker.enqueueResume(context, constraints, policy, initialDelay).await()
+        Log.i(TAG, "resume run: trigger=$trigger policy=$policy delay=$initialDelay network=${constraints.requiredNetworkType} round=$rateLimitRound")
+        TrackDownloadWorker.enqueueResume(context, constraints, policy, initialDelay, rateLimitRound).await()
     }
+
+    /**
+     * The user's own start (Resume, Download now): any connection, and no battery rule. With
+     * battery-not-low, Resume on a low battery read as a button that did nothing (the run waited
+     * while the screen said it was about to start).
+     */
+    private fun userConstraints(): Constraints = Constraints.Builder()
+        .setRequiredNetworkType(NetworkType.CONNECTED)
+        .build()
 
     /**
      * An automatic start's constraints: the Sync tab's Wi-Fi only, exactly as a scheduled sync's
@@ -238,7 +255,9 @@ class DownloadQueueResumer @Inject constructor(
         ) { chain, resume, drain, single ->
             chain.filter { SyncScheduler.DOWNLOAD_STEP_TAG in it.tags } + resume + drain + single
         }
-        return combine(work, queueState.paused, queueState.storageFull, networkKind()) { infos, paused, full, network ->
+        // The clock re-reads the state every few seconds: "Trying again at 14:20" moves on once
+        // 14:20 has passed, instead of staying until something else changes.
+        return combine(work, queueState.paused, queueState.storageFull, networkKind(), clock()) { infos, paused, full, network, now ->
             runStateOf(
                 paused = paused,
                 storageFull = full,
@@ -246,9 +265,17 @@ class DownloadQueueResumer @Inject constructor(
                 waiting = infos.filter { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.BLOCKED }
                     .map { WaitingRun(it.constraints.requiredNetworkType, it.nextScheduleTimeMillis) },
                 network = network,
-                nowMs = System.currentTimeMillis(),
+                nowMs = now,
             )
         }.distinctUntilChanged()
+    }
+
+    /** The time now, again every [CLOCK_TICK_MS] while collected. */
+    private fun clock(): Flow<Long> = flow {
+        while (true) {
+            emit(System.currentTimeMillis())
+            delay(CLOCK_TICK_MS)
+        }
     }
 
     /** The default network, each time it changes; NONE while there is none. Registered while collected. */
@@ -267,10 +294,12 @@ class DownloadQueueResumer @Inject constructor(
                 trySend(NetworkKind.NONE)
             }
         }
-        val registered = cm != null && runCatching { cm.registerDefaultNetworkCallback(callback) }.isSuccess
+        // The connection as it is now, first: an assumed NONE until the callback answered flashed
+        // "Waiting for a connection" on the screen's first frame.
         trySend(current())
+        val registered = cm != null && runCatching { cm.registerDefaultNetworkCallback(callback) }.isSuccess
         awaitClose { if (registered) runCatching { cm?.unregisterNetworkCallback(callback) } }
-    }.onStart { emit(NetworkKind.NONE) }.distinctUntilChanged()
+    }.distinctUntilChanged()
 
     private fun kindOf(caps: NetworkCapabilities): NetworkKind = when {
         !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) -> NetworkKind.NONE
@@ -293,6 +322,9 @@ class DownloadQueueResumer @Inject constructor(
         /** YouTube asked us to wait (HTTP 429, its bot check): the next try, this long after. */
         val RATE_LIMIT_DELAY: Duration = 15.minutes
 
+        /** How often [runState] re-reads the time. */
+        const val CLOCK_TICK_MS = 15_000L
+
         private val RESUME_LOCK = Mutex()
 
         /**
@@ -305,7 +337,7 @@ class DownloadQueueResumer @Inject constructor(
             waitingNetworks: List<NetworkType>,
             network: NetworkType,
         ): ExistingWorkPolicy? = when (trigger) {
-            ResumeTrigger.USER -> when {
+            ResumeTrigger.USER, ResumeTrigger.RETRY -> when {
                 !running -> ExistingWorkPolicy.REPLACE
                 waitingNetworks.isEmpty() -> ExistingWorkPolicy.APPEND_OR_REPLACE
                 else -> null

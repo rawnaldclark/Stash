@@ -625,8 +625,13 @@ class SyncViewModel @Inject constructor(
             syncPreferencesManager.setAutoSyncPausedAfterUndo(false)
         }
         // ...and a download Pause (or an out-of-space hold), or its download step would download nothing.
-        runCatching { downloadQueueResumer.clearHold() }
-            .onFailure { android.util.Log.w("SyncViewModel", "clearing the download pause failed", it) }
+        try {
+            downloadQueueResumer.clearHold()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("SyncViewModel", "clearing the download pause failed", e)
+        }
         syncScheduler.triggerManualSync(wifiOnly)
     }
 
@@ -731,7 +736,18 @@ class SyncViewModel @Inject constructor(
      * the top of the tab stops saying "Syncing...".
      */
     fun onStopSync() {
-        viewModelScope.launch { syncScheduler.cancelSync() }
+        viewModelScope.launch {
+            syncScheduler.cancelSync()
+            // Stopped stays stopped, like the notification's Pause: downloads don't start again
+            // on their own (the app coming back, a cold start) until Resume, Sync now or a tap.
+            try {
+                downloadQueueResumer.pause()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("SyncViewModel", "pausing downloads after Stop failed", e)
+            }
+        }
     }
 
     /**

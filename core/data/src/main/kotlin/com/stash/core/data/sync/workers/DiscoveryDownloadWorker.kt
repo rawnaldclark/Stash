@@ -113,8 +113,10 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
             constraints: Constraints,
             policy: ExistingWorkPolicy = ExistingWorkPolicy.REPLACE,
             initialDelay: kotlin.time.Duration = kotlin.time.Duration.ZERO,
+            rateLimitRound: Int = 0,
         ): Operation {
             val work = OneTimeWorkRequestBuilder<DiscoveryDownloadWorker>()
+                .setInputData(androidx.work.workDataOf(TrackDownloadWorker.KEY_RATE_LIMIT_ROUND to rateLimitRound))
                 .setConstraints(constraints)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
                 .apply {
@@ -256,19 +258,32 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
             }
             ItemResult.RATE_LIMITED -> {
                 // A retry with the usual backoff would ask again within a minute: try again in
-                // about 15, as a fresh run queued behind this one.
+                // about 15, as a fresh run queued behind this one, counting the rounds. After
+                // MAX_RATE_LIMIT_ROUNDS the songs wait for the next start instead.
+                val next = inputData.getInt(TrackDownloadWorker.KEY_RATE_LIMIT_ROUND, 0) + 1
+                if (next > TrackDownloadWorker.MAX_RATE_LIMIT_ROUNDS) {
+                    Log.w(TAG, "YouTube kept asking us to wait; the songs wait for the next start")
+                    return Result.success()
+                }
                 val delay = DownloadQueueResumer.RATE_LIMIT_DELAY
-                Log.w(TAG, "YouTube asked us to wait; next drain in $delay")
+                Log.w(TAG, "YouTube asked us to wait; next drain in $delay (round $next)")
                 syncNotificationManager.showRateLimited(System.currentTimeMillis() + delay.inWholeMilliseconds)
-                runCatching {
-                    enqueueOneTime(applicationContext, resumer.autoConstraints(), ExistingWorkPolicy.APPEND_OR_REPLACE, delay)
-                }.onFailure { Log.w(TAG, "couldn't schedule the drain after the rate limit", it) }
+                try {
+                    enqueueOneTime(applicationContext, resumer.autoConstraints(), ExistingWorkPolicy.APPEND_OR_REPLACE, delay, next)
+                } catch (ce: CancellationException) {
+                    throw ce
+                } catch (e: Exception) {
+                    Log.w(TAG, "couldn't schedule the drain after the rate limit", e)
+                }
                 return Result.success()
             }
             else -> Unit
         }
-        // A song that landed proves there is room again.
-        if (completed > 0) queueState.setStorageFull(false)
+        // A song that landed proves there is room again, and that YouTube lets us through.
+        if (completed > 0) {
+            queueState.setStorageFull(false)
+            syncNotificationManager.cancelRateLimited()
+        }
         if (interrupted > 0 && runAttemptCount + 1 < MAX_ATTEMPTS) {
             Log.i(TAG, "$interrupted song(s) left for a transient failure; retrying (attempt ${runAttemptCount + 1})")
             return Result.retry()
@@ -315,7 +330,10 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
                 // What the downloader threw, if it threw: its cause chain classifies a network drop.
                 var thrown: Exception? = null
                 val outcome = try {
-                    downloadSlots.holding { trackDownloader.downloadTrack(track, queueItem.youtubeUrl) }
+                    // The claimed row rides along, so a deferral defers this row only.
+                    withContext(com.stash.core.data.sync.ClaimedQueueRow(queueItem.id)) {
+                        downloadSlots.holding { trackDownloader.downloadTrack(track, queueItem.youtubeUrl) }
+                    }
                 } catch (cancelled: CancellationException) {
                     // Re-thrown first, before anything classifies it: a stop is never a failure.
                     throw cancelled

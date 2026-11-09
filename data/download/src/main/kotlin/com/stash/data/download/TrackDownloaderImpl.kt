@@ -4,9 +4,11 @@ import android.util.Log
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.files.LocalFileOps
 import com.stash.core.data.files.TrackFileReplacement
+import com.stash.core.data.sync.ClaimedQueueRow
 import com.stash.core.data.sync.TrackDownloadOutcome
 import com.stash.core.data.sync.TrackDownloader
 import com.stash.core.model.Track
+import kotlinx.coroutines.currentCoroutineContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -72,10 +74,15 @@ class TrackDownloaderImpl @Inject constructor(
             // meanwhile, or it would vanish from the Library while it waits.
             is TrackDownloadResult.Deferred -> {
                 // The row keeps why it waits, for the Downloads screen, Now Playing and the sweep.
-                // The claimed row, found by its status: a song can have two rows (a sync's and
-                // a tap's), and the oldest one getByTrackId answered with left the claimed one
-                // IN_PROGRESS.
-                downloadQueueDao.deferInProgressForTrack(track.id, result.reason.code)
+                // The row this download's runner claimed (ClaimedQueueRow): a song can have two
+                // rows (a sync's and a tap's), each claimed by its own runner, and only this one
+                // waits. Without a claim in the context, the song's IN_PROGRESS row.
+                val claimed = currentCoroutineContext()[ClaimedQueueRow]?.queueId
+                if (claimed != null) {
+                    downloadQueueDao.deferIfInProgress(claimed, result.reason.code)
+                } else {
+                    downloadQueueDao.deferInProgressForTrack(track.id, result.reason.code)
+                }
                 fileReplacement.restoreKeptFile(track.id, track.filePath)
                 TrackDownloadOutcome.Deferred
             }

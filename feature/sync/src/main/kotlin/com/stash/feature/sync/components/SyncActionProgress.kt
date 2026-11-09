@@ -14,6 +14,8 @@ import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.res.stringResource
+import com.stash.feature.sync.R
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -75,7 +77,7 @@ fun SyncActionProgress(
             }
             Spacer(Modifier.width(8.dp))
             Text(
-                text = phaseLabel(phase),
+                text = syncPhaseText(phase),
                 style = MaterialTheme.typography.labelLarge,
             )
         }
@@ -114,6 +116,11 @@ fun SyncActionProgress(
         )
     }
 }
+
+/** [phaseLabel], with the phases whose words live in strings.xml. */
+@Composable
+internal fun syncPhaseText(phase: SyncPhase): String =
+    if (phase is SyncPhase.ContinuingShortly) stringResource(R.string.sync_continuing_shortly) else phaseLabel(phase)
 
 /** Human-readable label for the current sync phase. */
 internal fun phaseLabel(phase: SyncPhase): String = when (phase) {

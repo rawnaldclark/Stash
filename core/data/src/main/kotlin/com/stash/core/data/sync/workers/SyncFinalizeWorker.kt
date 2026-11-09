@@ -46,6 +46,10 @@ class SyncFinalizeWorker @AssistedInject constructor(
         val failed = inputData.getInt(TrackDownloadWorker.KEY_FAILED, 0)
         // Songs the download step left queued: the summary says they try again later.
         val waiting = inputData.getInt(TrackDownloadWorker.KEY_WAITING, 0)
+        // ...and why: paused or out of space they wait for the user, not "try again later".
+        val hold = inputData.getString(TrackDownloadWorker.KEY_WAITING_HOLD)
+            ?.let { name -> com.stash.core.data.sync.WaitingHold.entries.firstOrNull { it.name == name } }
+            ?: com.stash.core.data.sync.WaitingHold.NONE
 
         if (syncId == -1L) {
             syncStateManager.onError("SyncFinalizeWorker: missing sync ID")
@@ -108,6 +112,7 @@ class SyncFinalizeWorker @AssistedInject constructor(
                 playlistsChecked = playlistsChecked,
                 failed = failed,
                 waiting = waiting,
+                hold = hold,
             )
 
             // Transition to completed state.

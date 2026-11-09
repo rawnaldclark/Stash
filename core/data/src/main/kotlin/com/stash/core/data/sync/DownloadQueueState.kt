@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStore
+import androidx.core.app.NotificationManagerCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,13 +16,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** The download queue's pause, kept apart from every settings DataStore: a backup never carries it. */
+/** The download queue's pause, kept apart from every settings DataStore: a backup never carries it (DatabaseBackupManager). */
 private val Context.downloadQueueStateStore: DataStore<Preferences> by preferencesDataStore(
-    name = "download_queue_state",
+    name = DownloadQueueState.DATASTORE_FILE,
     corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
 )
 
@@ -54,7 +56,20 @@ class DownloadQueueState @Inject constructor(
     private val _storageFull = MutableStateFlow(false)
     val storageFull: StateFlow<Boolean> = _storageFull.asStateFlow()
 
+    /**
+     * The out-of-space hold. Clearing it (Resume, a tap, a song that landed) also takes down the
+     * "Downloads paused" notification, wherever it is cleared from: left up, it said downloads
+     * were paused while they ran.
+     */
     fun setStorageFull(value: Boolean) {
-        _storageFull.value = value
+        val was = _storageFull.getAndUpdate { value }
+        if (was && !value) {
+            runCatching { NotificationManagerCompat.from(context).cancel(SyncNotificationManager.NOTIFICATION_ID_DOWNLOADS_PAUSED) }
+        }
+    }
+
+    companion object {
+        /** Its DataStore file's name, which backups leave out. */
+        const val DATASTORE_FILE = "download_queue_state"
     }
 }

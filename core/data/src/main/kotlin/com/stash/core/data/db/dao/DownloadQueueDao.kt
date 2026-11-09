@@ -392,10 +392,12 @@ interface DownloadQueueDao {
     suspend fun getRetryableBySources(sources: List<String>): List<DownloadQueueEntity>
 
     /**
-     * Whether a sync's download step would find anything to do right now: a row
-     * [getAllPendingBySources] or [getRetryableBySources] returns. The resume run
-     * (DownloadQueueResumer) asks this before it starts, so a start with nothing to
-     * download never posts a notification. Same joins and checks as those two.
+     * Whether a sync's download step has a song waiting for it: a row
+     * [getAllPendingBySources] returns. The resume run (DownloadQueueResumer) asks this
+     * before it starts, so a start with nothing to download never posts a notification.
+     * PENDING only, like [hasPendingDiscoveryDownload] (#474): failed rows
+     * ([getRetryableBySources]) ride along when a run has real work, but never start one,
+     * or every app start re-ran the whole Failed list. Same joins and checks.
      */
     @Query("""
         SELECT EXISTS(
@@ -405,7 +407,7 @@ interface DownloadQueueDao {
                 ON bl.canonical_key = (t.canonical_artist || '|' || t.canonical_title)
                 OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
                 OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
-            WHERE (dq.status = 'PENDING' OR (dq.status = 'FAILED' AND dq.retry_count < 3))
+            WHERE dq.status = 'PENDING'
               AND """ + FROM_A_CONNECTED_SOURCE + """
               AND bl.canonical_key IS NULL
               AND """ + TAKEN_BY_A_SYNC_DOWNLOAD + """
@@ -809,7 +811,7 @@ interface DownloadQueueDao {
                failure_type = :lastFailureType,
                retry_count = retry_count + 1,
                completed_at = NULL
-         WHERE id = :queueId
+         WHERE id = :queueId AND status = 'IN_PROGRESS'
     """)
     suspend fun revertToPendingAfterInterruption(
         queueId: Long,
@@ -835,6 +837,19 @@ interface DownloadQueueDao {
         lastErrorMessage: String?,
         lastFailureType: DownloadFailureType,
     ): Int
+
+    /**
+     * Gives back the retry a failure used, for songs that went back to the queue when a whole
+     * batch failed the same transient way (no connection that works, an extractor broken for
+     * everyone): the songs weren't the problem, and burning a retry for each turned the whole
+     * queue FAILED within hours. Only rows still waiting.
+     */
+    @Query("""
+        UPDATE download_queue
+           SET retry_count = CASE WHEN retry_count > 0 THEN retry_count - 1 ELSE 0 END
+         WHERE id IN (:ids) AND status = 'PENDING'
+    """)
+    suspend fun refundRetries(ids: List<Long>): Int
 
     /**
      * Stamp a YouTube URL onto a pending queue row that doesn't have one

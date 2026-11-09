@@ -67,13 +67,14 @@ class SingleTrackDownloadEnqueuer @Inject constructor(
     /**
      * The same song again after [delay], when YouTube asked us to wait (HTTP 429, its bot check):
      * a retry with the usual backoff would ask again within a minute. Queued behind the run that
-     * calls this (APPEND_OR_REPLACE), which [enqueue]'s KEEP would drop.
+     * calls this (APPEND_OR_REPLACE), which [enqueue]'s KEEP would drop. [rateLimitRound] counts
+     * the rounds, so the worker stops after [TrackDownloadWorker.MAX_RATE_LIMIT_ROUNDS].
      */
-    suspend fun enqueueLater(queueId: Long, delay: Duration) {
+    suspend fun enqueueLater(queueId: Long, delay: Duration, rateLimitRound: Int = 0) {
         WorkManager.getInstance(context).enqueueUniqueWork(
             workName(queueId),
             ExistingWorkPolicy.APPEND_OR_REPLACE,
-            request(queueId, initialDelay = delay),
+            request(queueId, initialDelay = delay, rateLimitRound = rateLimitRound),
         )
     }
 
@@ -81,10 +82,11 @@ class SingleTrackDownloadEnqueuer @Inject constructor(
      * A transient failure (a network drop, say) hands the row back and asks WorkManager to retry
      * ([TrackDownloadWorker]'s single-song mode): exponential from a minute.
      */
-    private suspend fun request(queueId: Long, initialDelay: Duration) = OneTimeWorkRequestBuilder<TrackDownloadWorker>()
+    private suspend fun request(queueId: Long, initialDelay: Duration, rateLimitRound: Int = 0) = OneTimeWorkRequestBuilder<TrackDownloadWorker>()
         .setInputData(
             Data.Builder()
                 .putLong(TrackDownloadWorker.KEY_QUEUE_ID, queueId)
+                .putInt(TrackDownloadWorker.KEY_RATE_LIMIT_ROUND, rateLimitRound)
                 .build()
         )
         .setConstraints(constraintsForManualTrigger(downloadNetworkPreference.current()))

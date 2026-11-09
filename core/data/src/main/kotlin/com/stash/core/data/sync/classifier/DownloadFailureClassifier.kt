@@ -25,32 +25,36 @@ class DownloadFailureClassifier @Inject constructor() {
         val text = ctx.errorText?.lowercase().orEmpty()
         val causes = ctx.causeChain
 
-        // 0. Rate limit, before auth: YouTube's bot check says "Sign in to confirm
+        // 0. A full phone, before everything: "No space left on device" is unambiguous, and a
+        // message that also mentions ffmpeg or a timeout (the muxer's write failed, a retry
+        // timed out) must not read as a song that failed for good, or as a network blip.
+        if (STORAGE_FULL_TEXT.any { it in text }) return DownloadFailureType.STORAGE_FULL
+
+        // 1. Rate limit, before auth: YouTube's bot check says "Sign in to confirm
         // you're not a bot", which the auth text below would take for a login.
         if (ctx.httpStatus == 429) return DownloadFailureType.RATE_LIMITED
         if (RATE_LIMIT_TEXT.any { it in text }) return DownloadFailureType.RATE_LIMITED
 
-        // 1. Auth (status takes priority over text)
+        // 2. Auth (status takes priority over text)
         if (ctx.httpStatus in 401..403) return DownloadFailureType.AUTH_EXPIRED
         if (AUTH_TEXT.any { it in text }) return DownloadFailureType.AUTH_EXPIRED
 
-        // 2. Provider unavailability
+        // 3. Provider unavailability
         if (PROVIDER_TEXT.any { it in text }) return DownloadFailureType.PROVIDER_UNAVAILABLE
 
-        // 3. Network
+        // 4. Network
         if (NETWORK_TEXT.any { it in text }) return DownloadFailureType.NETWORK
         if (causes.any { it in NETWORK_CAUSES }) return DownloadFailureType.NETWORK
 
-        // 4. ffmpeg — text patterns are specific enough that phase gating
+        // 5. ffmpeg — text patterns are specific enough that phase gating
         // isn't needed (worker can't distinguish sub-phases anyway).
         if (FFMPEG_TEXT.any { it in text }) return DownloadFailureType.FFMPEG_ERROR
 
-        // 5. Storage: a full phone first, whatever the phase, since it stops the batch.
-        if (STORAGE_FULL_TEXT.any { it in text }) return DownloadFailureType.STORAGE_FULL
+        // 6. Storage
         if (ctx.phase == DownloadPhase.STORAGE) return DownloadFailureType.STORAGE_ERROR
         if (STORAGE_TEXT.any { it in text } || SAF_WORD.containsMatchIn(text)) return DownloadFailureType.STORAGE_ERROR
 
-        // 6. Catchall
+        // 7. Catchall
         Log.w(TAG, "UNKNOWN failure: phase=${ctx.phase} status=${ctx.httpStatus} text=${ctx.errorText}")
         return DownloadFailureType.UNKNOWN
     }

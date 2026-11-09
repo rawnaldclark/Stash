@@ -34,6 +34,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.library.LibraryReconciliationUseCase
 import com.stash.core.data.mapper.toDomain
+import com.stash.core.data.sync.ClaimedQueueRow
 import com.stash.core.data.sync.DownloadQueueResumer
 import com.stash.core.data.sync.DownloadQueueState
 import com.stash.core.data.sync.ResumeTrigger
@@ -120,6 +121,33 @@ class TrackDownloadWorker @AssistedInject constructor(
         const val KEY_WAITING = "waiting"
 
         /**
+         * Chain mode's output: why [KEY_WAITING]'s songs wait, a [com.stash.core.data.sync.WaitingHold]
+         * name. Paused or out of space they wait for the user, and the summary says so.
+         */
+        const val KEY_WAITING_HOLD = "waiting_hold"
+
+        /**
+         * Input-data key: how many times in a row YouTube has asked this run's line of runs to wait.
+         * Each rate-limited stop queues a fresh run (WorkManager's backoff would ask again within a
+         * minute), which resets [runAttemptCount]; this counts the rounds instead.
+         */
+        const val KEY_RATE_LIMIT_ROUND = "rate_limit_round"
+
+        /**
+         * After this many rate-limited rounds in a row (about two hours), nothing reschedules: the
+         * songs stay queued for the next start (the app coming back, a sync, Resume). A single retry
+         * shows as failed instead.
+         */
+        const val MAX_RATE_LIMIT_ROUNDS = 8
+
+        /**
+         * A batch that tried at least this many songs, landed none, and saw every one fail the same
+         * transient way (NETWORK or UNKNOWN) stops: something is wrong for every song (a captive
+         * portal, an extractor broken for everyone), so it gives the retries back and backs off.
+         */
+        const val SYSTEMIC_FAILURE_MIN = 5
+
+        /**
          * Optional input-data key. When present and non-`-1L`, the worker
          * runs in single-track mode against exactly this `download_queue`
          * row instead of the full sync-chain pass. Used by
@@ -156,9 +184,10 @@ class TrackDownloadWorker @AssistedInject constructor(
             constraints: Constraints,
             policy: ExistingWorkPolicy,
             initialDelay: Duration = Duration.ZERO,
+            rateLimitRound: Int = 0,
         ): Operation {
             val request = OneTimeWorkRequestBuilder<TrackDownloadWorker>()
-                .setInputData(workDataOf(KEY_RESUME to true))
+                .setInputData(workDataOf(KEY_RESUME to true, KEY_RATE_LIMIT_ROUND to rateLimitRound))
                 .setConstraints(constraints)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
                 .apply {
@@ -173,12 +202,27 @@ class TrackDownloadWorker @AssistedInject constructor(
          * wasn't stopped at all: the run is over. Any other reason (a lost connection, the job's time
          * limit, the OS) means WorkManager runs it again.
          */
-        internal fun stoppedForGood(stopReason: Int): Boolean =
+        fun stoppedForGood(stopReason: Int): Boolean =
             stopReason == WorkInfo.STOP_REASON_CANCELLED_BY_APP || stopReason == WorkInfo.STOP_REASON_NOT_STOPPED
+
+        /**
+         * Whether a stop that isn't for good was a lost connection: below Android 12 the system
+         * doesn't say why ([WorkInfo.STOP_REASON_UNKNOWN]), and a lost connection is the likely
+         * reason. Anything else (the job's time limit, the OS reclaiming it) isn't about the network.
+         */
+        fun stopWaitsForNetwork(stopReason: Int, sdkInt: Int = android.os.Build.VERSION.SDK_INT): Boolean =
+            stopReason == WorkInfo.STOP_REASON_CONSTRAINT_CONNECTIVITY ||
+                (stopReason == WorkInfo.STOP_REASON_UNKNOWN && sdkInt < android.os.Build.VERSION_CODES.S)
     }
 
     /** Why a batch stopped starting songs before the end. */
-    internal enum class BatchStop { STORAGE_FULL, RATE_LIMITED }
+    internal enum class BatchStop {
+        STORAGE_FULL,
+        RATE_LIMITED,
+
+        /** Every song tried failed the same transient way: see [SYSTEMIC_FAILURE_MIN]. */
+        SYSTEMIC,
+    }
 
     /**
      * What a batch did.
@@ -329,6 +373,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                         KEY_DOWNLOADED to 0,
                         KEY_FAILED to 0,
                         KEY_WAITING to total,
+                        KEY_WAITING_HOLD to com.stash.core.data.sync.WaitingHold.PAUSED.name,
                     )
                 )
             }
@@ -432,13 +477,17 @@ class TrackDownloadWorker @AssistedInject constructor(
 
             runLosslessUpgradeSweep(tally.downloadedTrackIds)
 
-            afterBatch(tally)
-            if (tally.stoppedBy == null && tally.interrupted > 0) {
-                // Songs a network blip (or a mid-run sign-in problem) sent back to the
-                // queue: they used to wait for tomorrow's sync. The resume run takes
-                // them in a couple of minutes, under the background rules.
-                runCatching { resumer.resume(ResumeTrigger.AUTO, DownloadQueueResumer.AFTER_SYNC_DELAY) }
-                    .onFailure { Log.w(TAG, "couldn't schedule the resume run for ${tally.interrupted} song(s)", it) }
+            afterBatch(tally, rateLimitRound = 0)
+            if (tally.stoppedBy == null || tally.stoppedBy == BatchStop.SYSTEMIC) {
+                // Songs a network blip (or a mid-run sign-in problem) sent back to the queue,
+                // and songs queued while this ran (a Retry all, which the resume run left to
+                // this step): they used to wait for tomorrow's sync. The resume run takes them
+                // in a couple of minutes, under the background rules.
+                bestEffort("schedule the resume run after the sync") {
+                    if (tally.leftWaiting > 0 || downloadQueueDao.hasResumableSyncDownload(connectedSources)) {
+                        resumer.resume(ResumeTrigger.AUTO, DownloadQueueResumer.AFTER_SYNC_DELAY)
+                    }
+                }
             }
 
             return Result.success(
@@ -447,6 +496,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                     KEY_DOWNLOADED to finalDownloaded,
                     KEY_FAILED to finalFailed,
                     KEY_WAITING to tally.leftWaiting,
+                    KEY_WAITING_HOLD to holdOf(tally).name,
                 )
             )
         } catch (ce: kotlinx.coroutines.CancellationException) {
@@ -472,12 +522,16 @@ class TrackDownloadWorker @AssistedInject constructor(
                     )
                 }
                 syncStateManager.reset()
-            } else {
-                // A lost connection, the job's time limit, the OS: WorkManager runs this
-                // step again, so the sync isn't over. Its history row stays open and the
-                // Sync tab says it is waiting, instead of "Cancelled" followed by a sync
-                // reappearing later with no explanation.
+            } else if (stopWaitsForNetwork(stopReason)) {
+                // A lost connection: WorkManager runs this step again when it is back, so the
+                // sync isn't over. Its history row stays open and the Sync tab says it is
+                // waiting, instead of "Cancelled" followed by a sync reappearing later with no
+                // explanation.
                 syncStateManager.onWaitingForNetwork()
+            } else {
+                // The job's time limit, the OS: WorkManager runs it again soon, and the network
+                // is fine, so the Sync tab says so rather than "Waiting for network".
+                syncStateManager.onContinuingShortly()
             }
             // Only SyncFinalizeWorker dismissed the progress notification, and a
             // stopped chain never reaches it. When the run was not foreground
@@ -517,9 +571,11 @@ class TrackDownloadWorker @AssistedInject constructor(
             return Result.success()
         }
         if (resumer.isSyncDownloadRunning()) {
-            // The sync's own step takes the same rows; it leaves any it can't finish for the next resume.
-            Log.i(TAG, "Resume: a sync is downloading; leaving the queue to it")
-            return Result.success()
+            // The sync's own step takes the same rows, but only the ones queued when it started:
+            // songs queued since (a Retry all) would wait for the next start. Try again after it
+            // (WorkManager's backoff), and the sync's end schedules a run too.
+            Log.i(TAG, "Resume: a sync is downloading; trying again after it")
+            return if (runAttemptCount + 1 < MAX_ATTEMPTS) Result.retry() else Result.success()
         }
         // Claims no live job holds (a killed process, a stopped worker) go back to waiting first.
         downloadJobs.releaseDeadClaims(downloadQueueDao)
@@ -563,10 +619,13 @@ class TrackDownloadWorker @AssistedInject constructor(
                 "Resume: downloaded=${tally.downloaded} failed=${tally.failed} deferred=${tally.deferred} " +
                     "waiting=${tally.leftWaiting} stoppedBy=${tally.stoppedBy}",
             )
-            afterBatch(tally)
+            afterBatch(tally, rateLimitRound = inputData.getInt(KEY_RATE_LIMIT_ROUND, 0))
+            val attemptsLeft = runAttemptCount + 1 < MAX_ATTEMPTS
             return when {
+                // Every song failed the same transient way: back off, as for a network blip.
+                tally.stoppedBy == BatchStop.SYSTEMIC -> if (attemptsLeft) Result.retry() else Result.success()
                 tally.stoppedBy != null -> Result.success()
-                tally.interrupted > 0 && runAttemptCount + 1 < MAX_ATTEMPTS -> Result.retry()
+                tally.interrupted > 0 && attemptsLeft -> Result.retry()
                 else -> Result.success()
             }
         } finally {
@@ -612,10 +671,11 @@ class TrackDownloadWorker @AssistedInject constructor(
 
     /**
      * After a batch, either mode: a full phone holds the queue and says so; YouTube asking us to
-     * wait schedules the next try in about 15 minutes and says so quietly; a batch that landed a
-     * song proves there is room again.
+     * wait schedules the next try in about 15 minutes and says so quietly, at most
+     * [MAX_RATE_LIMIT_ROUNDS] times in a row ([rateLimitRound] is this run's); a batch that landed
+     * a song proves there is room again and that YouTube lets us through.
      */
-    private suspend fun afterBatch(tally: BatchTally) {
+    private suspend fun afterBatch(tally: BatchTally, rateLimitRound: Int) {
         when (tally.stoppedBy) {
             BatchStop.STORAGE_FULL -> {
                 Log.w(TAG, "Out of space: ${tally.leftWaiting} song(s) left queued until Resume")
@@ -623,13 +683,44 @@ class TrackDownloadWorker @AssistedInject constructor(
                 syncNotificationManager.showStorageFull()
             }
             BatchStop.RATE_LIMITED -> {
+                val next = rateLimitRound + 1
+                if (next > MAX_RATE_LIMIT_ROUNDS) {
+                    // Hours of 429s: stop waking up for it. The songs stay queued for the next start.
+                    Log.w(TAG, "YouTube kept asking us to wait ($rateLimitRound rounds): ${tally.leftWaiting} song(s) wait for the next start")
+                    return
+                }
                 val delay = DownloadQueueResumer.RATE_LIMIT_DELAY
-                Log.w(TAG, "YouTube asked us to wait: ${tally.leftWaiting} song(s) left queued, next try in $delay")
+                Log.w(TAG, "YouTube asked us to wait: ${tally.leftWaiting} song(s) left queued, next try in $delay (round $next)")
                 syncNotificationManager.showRateLimited(System.currentTimeMillis() + delay.inWholeMilliseconds)
-                runCatching { resumer.resume(ResumeTrigger.AUTO, delay) }
-                    .onFailure { Log.w(TAG, "couldn't schedule the resume run after the rate limit", it) }
+                bestEffort("schedule the resume run after the rate limit") {
+                    resumer.resume(ResumeTrigger.AUTO, delay, rateLimitRound = next)
+                }
             }
-            null -> if (tally.downloaded > 0) queueState.setStorageFull(false)
+            BatchStop.SYSTEMIC -> Log.w(TAG, "Every song failed the same way: ${tally.leftWaiting} song(s) wait, no retries used")
+            null -> if (tally.downloaded > 0) downloadsWorkAgain()
+        }
+    }
+
+    /** A song landed: the out-of-space hold and "Downloads slowed down" go. */
+    private fun downloadsWorkAgain() {
+        queueState.setStorageFull(false)
+        syncNotificationManager.cancelRateLimited()
+    }
+
+    /** Why the songs a chain batch left wait, for its summary. */
+    private fun holdOf(tally: BatchTally): com.stash.core.data.sync.WaitingHold = when (tally.stoppedBy) {
+        BatchStop.STORAGE_FULL -> com.stash.core.data.sync.WaitingHold.NO_SPACE
+        else -> com.stash.core.data.sync.WaitingHold.NONE
+    }
+
+    /** Runs [block], logging a failure; a stop (CancellationException) still propagates. */
+    private suspend inline fun bestEffort(what: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            Log.w(TAG, "couldn't $what", e)
         }
     }
 
@@ -664,9 +755,21 @@ class TrackDownloadWorker @AssistedInject constructor(
         val firstError = AtomicReference<String?>(null)
         val stoppedBy = AtomicReference<BatchStop?>(null)
         val downloadedTrackIds = java.util.Collections.synchronizedSet(mutableSetOf<Long>())
+        // Every failure's type, and the songs a transient failure sent back with a retry used:
+        // a batch where every song failed the same transient way gives those retries back.
+        val failureTypes = java.util.Collections.synchronizedList(mutableListOf<DownloadFailureType>())
+        val transientRetryIds = java.util.Collections.synchronizedList(mutableListOf<Long>())
+
+        /** Notes a failure's type, and stops the batch once every song tried failed the same transient way. */
+        fun noteFailure(type: DownloadFailureType) {
+            failureTypes.add(type)
+            if (systemicFailure(downloadedCount.get(), failureTypes)) stoppedBy.compareAndSet(null, BatchStop.SYSTEMIC)
+        }
 
         /** Tallies a failed song's fate, and stops the batch on a full phone or a rate limit. */
-        fun count(fate: FailureFate, error: String?, recordError: Boolean) {
+        fun count(fate: FailureFate, type: DownloadFailureType, queueId: Long, error: String?, recordError: Boolean) {
+            if (fate == FailureFate.INTERRUPTED && type in SYSTEMIC_TYPES) transientRetryIds.add(queueId)
+            if (fate == FailureFate.FAILED || fate == FailureFate.INTERRUPTED) noteFailure(type)
             when (fate) {
                 FailureFate.FAILED -> {
                     if (recordError && error != null) firstError.compareAndSet(null, error)
@@ -735,6 +838,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                                     completedAt = System.currentTimeMillis(),
                                 )
                                 failedCount.incrementAndGet()
+                                noteFailure(type)
                                 return@launch
                             }
 
@@ -766,11 +870,14 @@ class TrackDownloadWorker @AssistedInject constructor(
 
                             keptPath = trackEntity.filePath
                             val track = trackEntity.toDomain()
-                            val outcome = downloadSlots.holding {
-                                trackDownloader.downloadTrack(
-                                    track = track,
-                                    preResolvedUrl = queueItem.youtubeUrl,
-                                )
+                            // The claimed row rides along, so a deferral defers this row only.
+                            val outcome = withContext(ClaimedQueueRow(queueItem.id)) {
+                                downloadSlots.holding {
+                                    trackDownloader.downloadTrack(
+                                        track = track,
+                                        preResolvedUrl = queueItem.youtubeUrl,
+                                    )
+                                }
                             }
 
                             when (outcome) {
@@ -904,6 +1011,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                                     fileReplacement.restoreKeptFile(queueItem.trackId, trackEntity.filePath)
                                     firstError.compareAndSet(null, err)
                                     failedCount.incrementAndGet()
+                                    noteFailure(DownloadFailureType.NO_MATCH)
                                 }
                                 is TrackDownloadOutcome.Failed -> {
                                     Log.e(TAG, "Download failed for ${track.artist} - ${track.title}: ${outcome.error}")
@@ -916,10 +1024,8 @@ class TrackDownloadWorker @AssistedInject constructor(
                                         )
                                     )
                                     val truncated = outcome.error.take(1000)
-                                    // A failure for good bumps retry_count separately to
-                                    // match prior tally semantics for terminal failures.
-                                    val fate = settleFailure(queueItem, type, truncated, trackEntity.filePath, countRetryWhenFinal = true)
-                                    count(fate, truncated, recordError = true)
+                                    val fate = settleFailure(queueItem, type, truncated, trackEntity.filePath)
+                                    count(fate, type, queueItem.id, truncated, recordError = true)
                                 }
                                 is TrackDownloadOutcome.Deferred -> {
                                     // v0.9.17 strict-FLAC: lossless source unavailable
@@ -975,8 +1081,8 @@ class TrackDownloadWorker @AssistedInject constructor(
                                 )
                             )
                             val truncated = e.message?.take(1000)
-                            val fate = settleFailure(queueItem, type, truncated, keptPath, countRetryWhenFinal = false)
-                            count(fate, truncated, recordError = false)
+                            val fate = settleFailure(queueItem, type, truncated, keptPath)
+                            count(fate, type, queueItem.id, truncated, recordError = false)
                         }
 
                         onResolved(
@@ -992,6 +1098,14 @@ class TrackDownloadWorker @AssistedInject constructor(
             }
         }
         // supervisorScope waits for all launched coroutines to complete.
+
+        // Every song tried failed the same transient way: the songs weren't the problem, so the
+        // retries those failures used go back. A song that landed after the stop means it wasn't
+        // systemic after all, and the retries stay used.
+        if (stoppedBy.get() == BatchStop.SYSTEMIC && systemicFailure(downloadedCount.get(), failureTypes)) {
+            val refunded = withContext(NonCancellable) { downloadQueueDao.refundRetries(transientRetryIds.toList()) }
+            Log.w(TAG, "Every song tried failed with ${failureTypes.firstOrNull()}: gave back $refunded retr${if (refunded == 1) "y" else "ies"}")
+        }
 
         return BatchTally(
             total = items.size,
@@ -1021,10 +1135,11 @@ class TrackDownloadWorker @AssistedInject constructor(
         type: DownloadFailureType,
         message: String?,
         keptPath: String?,
-        countRetryWhenFinal: Boolean,
     ): FailureFate = when (DownloadFailureClassifier.laneFor(type, queueItem.retryCount)) {
         FailureLane.FINAL -> {
-            if (countRetryWhenFinal) downloadQueueDao.incrementRetryCount(queueItem.id)
+            // Always a retry used, thrown or returned: a failure for good that left the count
+            // alone stayed retryable ([DownloadQueueDao.getRetryableBySources]) forever.
+            downloadQueueDao.incrementRetryCount(queueItem.id)
             downloadQueueDao.failIfInProgress(
                 id = queueItem.id,
                 errorMessage = message,
@@ -1082,6 +1197,14 @@ class TrackDownloadWorker @AssistedInject constructor(
         // flow is shared with a possibly-running chain sync and overwriting it would
         // stomp the chain's progress counter. The Failed Downloads viewer reads queue
         // rows directly via DownloadQueueDao.getFailedDownloads().
+        //
+        // Paused: nothing downloads until Resume. A tap clears the pause before it queues a
+        // single retry, so this holds only the retries already queued (backoff, a rate limit,
+        // a lossless re-queue).
+        if (queueState.isPaused()) {
+            Log.i(TAG, "Single-track mode: downloads are paused; leaving queue $queueId")
+            return Result.success()
+        }
         val entry = downloadQueueDao.getById(queueId)
         if (entry == null) {
             Log.w(TAG, "Single-track mode: queue row $queueId not found")
@@ -1168,11 +1291,13 @@ class TrackDownloadWorker @AssistedInject constructor(
         }
 
         val outcome = try {
-            downloadSlots.holding {
-                trackDownloader.downloadTrack(
-                    track = track,
-                    preResolvedUrl = entry.youtubeUrl,
-                )
+            withContext(ClaimedQueueRow(entry.id)) {
+                downloadSlots.holding {
+                    trackDownloader.downloadTrack(
+                        track = track,
+                        preResolvedUrl = entry.youtubeUrl,
+                    )
+                }
             }
         } catch (ce: kotlinx.coroutines.CancellationException) {
             // WorkManager stopped us. Don't mark the row FAILED: a user skip
@@ -1253,8 +1378,8 @@ class TrackDownloadWorker @AssistedInject constructor(
                     id = entry.id,
                     completedAt = System.currentTimeMillis(),
                 )
-                // A song that landed proves there is room again.
-                queueState.setStorageFull(false)
+                // A song that landed proves there is room again, and that YouTube lets us through.
+                downloadsWorkAgain()
                 Log.i(TAG, "Single-track mode: Success for queue ${entry.id}")
             }
             is TrackDownloadOutcome.Failed -> {
@@ -1319,13 +1444,17 @@ class TrackDownloadWorker @AssistedInject constructor(
                 Log.w(TAG, "Single-track mode: out of space for queue ${entry.id}; held until Resume")
                 Result.success()
             }
-            lane == FailureLane.RATE_LIMITED -> {
+            lane == FailureLane.RATE_LIMITED && inputData.getInt(KEY_RATE_LIMIT_ROUND, 0) < MAX_RATE_LIMIT_ROUNDS -> {
+                // Queued again in about 15 minutes, counting the rounds: past MAX_RATE_LIMIT_ROUNDS
+                // the retry shows as failed (the branch below) instead of waking up forever.
+                val next = inputData.getInt(KEY_RATE_LIMIT_ROUND, 0) + 1
                 downloadQueueDao.revertToPendingKeepingRetries(entry.id, message, type)
                 val delay = DownloadQueueResumer.RATE_LIMIT_DELAY
                 syncNotificationManager.showRateLimited(System.currentTimeMillis() + delay.inWholeMilliseconds)
-                runCatching { singleTrackDownloadEnqueuer.enqueueLater(entry.id, delay) }
-                    .onFailure { Log.w(TAG, "couldn't queue queue ${entry.id} again after the rate limit", it) }
-                Log.w(TAG, "Single-track mode: rate limited for queue ${entry.id}; trying again in $delay")
+                bestEffort("queue queue ${entry.id} again after the rate limit") {
+                    singleTrackDownloadEnqueuer.enqueueLater(entry.id, delay, rateLimitRound = next)
+                }
+                Log.w(TAG, "Single-track mode: rate limited for queue ${entry.id}; trying again in $delay (round $next)")
                 Result.success()
             }
             lane == FailureLane.RETRY && attemptsLeft -> {
@@ -1449,4 +1578,20 @@ class TrackDownloadWorker @AssistedInject constructor(
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
         )
     }
+}
+
+/** The transient failure types a whole batch can fail with at once (see [TrackDownloadWorker.SYSTEMIC_FAILURE_MIN]). */
+private val SYSTEMIC_TYPES = setOf(DownloadFailureType.NETWORK, DownloadFailureType.UNKNOWN)
+
+/**
+ * Whether a batch that landed [downloaded] songs and saw [failures] failed the same transient way
+ * every time, often enough to stop: at least [TrackDownloadWorker.SYSTEMIC_FAILURE_MIN] tried,
+ * none landed, one type, NETWORK or UNKNOWN.
+ */
+internal fun systemicFailure(downloaded: Int, failures: List<DownloadFailureType>): Boolean {
+    if (downloaded > 0) return false
+    val seen = synchronized(failures) { failures.toList() }
+    if (seen.size < TrackDownloadWorker.SYSTEMIC_FAILURE_MIN) return false
+    val type = seen.first()
+    return type in SYSTEMIC_TYPES && seen.all { it == type }
 }

@@ -29,4 +29,7 @@
     </plurals>
     <string name="notif_summary_try_later">%1$d will try again later</string>
     <string name="notif_summary_failed">%1$d failed</string>
+    <!-- The summary when the songs left wait for the user: "3 paused", "3 waiting for space". -->
+    <string name="notif_summary_paused">%1$d paused</string>
+    <string name="notif_summary_no_space">%1$d waiting for space</string>
 </resources>

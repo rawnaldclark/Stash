@@ -98,7 +98,11 @@ class FailedDownloadsViewModel @Inject constructor(
     fun retry(queueId: Long) = viewModelScope.launch {
         val claimed = downloadQueueDao.atomicallyClaimForRetry(queueId)
         // SQL UPDATE matches at most one row by PK; claim returns 1 (won) or 0 (lost race / already advanced).
-        if (claimed == 1) downloadEnqueuer.enqueue(queueId)
+        if (claimed == 1) {
+            // A tap ends a Pause, or the retry would wait for Resume without saying so.
+            resumer.clearHold()
+            downloadEnqueuer.enqueue(queueId)
+        }
     }
 
     /**
