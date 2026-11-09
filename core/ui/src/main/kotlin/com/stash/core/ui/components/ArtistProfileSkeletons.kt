@@ -12,26 +12,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun ArtistHeroSkeleton(modifier: Modifier = Modifier) {
-    Column(
-        modifier.fillMaxWidth().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        ShimmerPlaceholder(Modifier.size(96.dp), shape = CircleShape)
-        Spacer(Modifier.height(16.dp))
-        ShimmerPlaceholder(
-            Modifier.height(28.dp).width(180.dp),
-            shape = RoundedCornerShape(6.dp),
-        )
-        Spacer(Modifier.height(8.dp))
-        ShimmerPlaceholder(
-            Modifier.height(14.dp).width(120.dp),
-            shape = RoundedCornerShape(4.dp),
-        )
-    }
-}
-
-@Composable
 fun PopularListSkeleton(rows: Int = 5, modifier: Modifier = Modifier) {
     Column(modifier.padding(horizontal = 16.dp)) {
         repeat(rows) {
