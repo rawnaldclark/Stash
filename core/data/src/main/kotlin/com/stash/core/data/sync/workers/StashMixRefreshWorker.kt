@@ -723,8 +723,15 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // newest-first.
         // #287: consider the recipe's whole DONE backlog (bounded) instead of
         // a thin newest-first window — rotation needs breadth to rotate over.
+        // distinct() before the cut: one song can have several DONE queue rows
+        // for the recipe (seen on a phone: 60 repeats in the first 500), and a
+        // repeat let the rotation pick it twice. The second insert was dropped
+        // (same playlist + track), leaving a gap in the positions and a count
+        // one higher than the rows (39 rows, "40 tracks"). distinct() keeps the
+        // first, newest occurrence, so the order stays newest-first.
         val rawCandidateIds = playlistDao
             .getStreamableOrDoneTrackIdsForRecipe(recipe.id)
+            .distinct()
             .take(SURVIVOR_POOL_LIMIT)
         val notInLibrary = rawCandidateIds.filter { it !in librarySet }
         // Your record's taste: a find it keeps out (hidden on Spotify, always skipped) leaves before the window is cut, so the mix
@@ -791,11 +798,13 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // same openers, same art, same count — users read Refresh as a no-op.
         // Library-led mixes keep their library-first order.
         val discoveryFirst = recipe.discoveryRatio >= 0.5f
+        // distinct(): a song is one row in the playlist (a repeat insert is
+        // dropped), so the list written, compared and counted holds it once.
         val finalOrderedIds = if (discoveryFirst) {
             discoveryTrackIds + tracks.map { it.id }
         } else {
             tracks.map { it.id } + discoveryTrackIds
-        }
+        }.distinct()
         val totalCount = finalOrderedIds.size
 
         // v0.9.42: idempotency short-circuit. If the playlist already exists

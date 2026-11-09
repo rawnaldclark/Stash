@@ -359,6 +359,45 @@ class StashMixRefreshWorkerStreamOnlyMaterializeTest {
         coVerify(exactly = 0) { trackDao.getAllDownloaded() }
     }
 
+    // ── A song with several DONE queue rows ────────────────────────────────
+    // The candidate query returns one row per DONE queue row, and a song can
+    // have several for the recipe (on a phone: 1017 rows, 812 songs, 60 repeats
+    // in the first 500). A repeat could be picked twice; the second insert was
+    // dropped, leaving 39 rows, a gap at one position, and a count of 40.
+
+    @Test fun `repeated finds are linked once - 45 rows of 35 songs make a 35-song mix`() = runTest {
+        val finds = (1000L until 1035L).flatMap { if (it < 1010L) listOf(it, it) else listOf(it) }
+        assertEquals(45, finds.size)
+
+        val linked = linkedFrom(finds)
+
+        assertEquals(35, linked.size)
+        assertEquals("no song twice", linked.toSet().size, linked.size)
+        assertEquals(finds.toSet(), linked.toSet())
+    }
+
+    @Test fun `repeated finds are linked once - with 60 songs among 80 rows all 40 places are distinct`() = runTest {
+        val finds = (1000L until 1060L).flatMap { if (it % 3 == 0L) listOf(it, it) else listOf(it) }
+        assertEquals(80, finds.size)
+
+        val linked = linkedFrom(finds)
+
+        // replaceMixMembership writes this list and counts its size: 40 rows, "40 tracks".
+        assertEquals(40, linked.size)
+        assertEquals("no song twice", 40, linked.toSet().size)
+    }
+
+    @Test fun `repeats don't use up the 500-row window - songs past it still fill the mix`() = runTest {
+        // 500 rows of just 10 songs, then 40 more songs: cutting before removing the
+        // repeats would leave 10 to choose from.
+        val finds = List(500) { 1000L + it % 10 } + (2000L until 2040L)
+
+        val linked = linkedFrom(finds)
+
+        assertEquals(40, linked.size)
+        assertEquals(40, linked.toSet().size)
+    }
+
     /** The shipped Daily Discover: all recommendations, 40 places (StashMixDefaults). */
     private fun recipe(id: Long, name: String, playlistId: Long?) = StashMixRecipeEntity(
         id = id,

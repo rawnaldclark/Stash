@@ -89,7 +89,7 @@ class HomeViewModelTest {
 
     /** Offline mode plays only downloads, and Daily Discover is all streamed finds: no "30 tracks" promise. */
     @Test
-    fun `in Offline mode the hero shows the switch-to-Online hint`() = runTest {
+    fun `in Offline mode the hero shows the Go Online hint`() = runTest {
         val daily = dailyDiscover(id = 7L, trackCount = 30)
         val vm = buildVm(playlists = listOf(daily), builtinIds = listOf(7L), streamingEnabled = false)
 

@@ -1,5 +1,6 @@
 package com.stash.core.data.mix
 
+import android.content.SharedPreferences
 import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.db.entity.StashMixRecipeEntity
 
@@ -18,6 +19,24 @@ import com.stash.core.data.db.entity.StashMixRecipeEntity
  * non-destructively update surviving built-in rows in place.
  */
 object StashMixDefaults {
+
+    /** The app's one-time-migration flags file (SharedPreferences), where the tuning flag lives. */
+    const val TUNING_PREFS_NAME = "stash_migrations"
+
+    /**
+     * Which built-in tuning this install has, in [TUNING_PREFS_NAME]. `StashApplication.maybeRetuneStashMixes`
+     * runs [retuneBuiltins] while it is below the current version, then records that version.
+     */
+    const val TUNING_VERSION_KEY = "stash_mix_recipe_tuning_version"
+
+    /**
+     * Asks the next cold start to retune the built-ins again. A replace-restore swaps in the backup's recipe rows (one
+     * made before tuning v3 holds an 85% Daily Discover), while this flag, in SharedPreferences that a restore leaves
+     * alone, still says the current tuning ran. Written to disk at once, since a restore restarts the app straight after.
+     */
+    fun rearmRetune(prefs: SharedPreferences) {
+        prefs.edit().remove(TUNING_VERSION_KEY).commit()
+    }
 
     suspend fun seedIfNeeded(dao: StashMixRecipeDao) {
         if (dao.countBuiltins() > 0) return

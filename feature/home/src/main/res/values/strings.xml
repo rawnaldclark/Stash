@@ -9,5 +9,5 @@
     <!-- TalkBack for a song card. %1$s is its title, %2$s its artist. -->
     <string name="home_song_card">%1$s by %2$s</string>
     <!-- The Daily Discover card in Offline mode, in place of its track count: its songs are all streamed recommendations -->
-    <string name="home_daily_discover_offline">Switch to Online to hear today\'s finds</string>
+    <string name="home_daily_discover_offline">Go Online for today\'s finds</string>
 </resources>

@@ -1056,8 +1056,9 @@ class StashApplication : Application(), Configuration.Provider {
      * @return true when a retune ran this launch, so the cold start rebuilds the mixes now.
      */
     private suspend fun maybeRetuneStashMixes(): Boolean {
-        val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
-        val stored = prefs.getInt("stash_mix_recipe_tuning_version", 0)
+        val prefs = getSharedPreferences(StashMixDefaults.TUNING_PREFS_NAME, MODE_PRIVATE)
+        // A replace-restore removes this key (StashMixDefaults.rearmRetune), so a backup's old recipe values are retuned too.
+        val stored = prefs.getInt(StashMixDefaults.TUNING_VERSION_KEY, 0)
         if (stored >= STASH_MIX_RECIPE_TUNING_VERSION) return false
 
         val totalUpdated = StashMixDefaults.retuneBuiltins(stashMixRecipeDao)
@@ -1066,7 +1067,7 @@ class StashApplication : Application(), Configuration.Provider {
             "Retuned $totalUpdated builtin mix recipe(s) to v$STASH_MIX_RECIPE_TUNING_VERSION",
         )
         prefs.edit()
-            .putInt("stash_mix_recipe_tuning_version", STASH_MIX_RECIPE_TUNING_VERSION)
+            .putInt(StashMixDefaults.TUNING_VERSION_KEY, STASH_MIX_RECIPE_TUNING_VERSION)
             .apply()
         return true
     }

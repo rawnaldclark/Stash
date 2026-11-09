@@ -906,4 +906,51 @@ class DatabaseBackupMergeTest {
             listOf("", "-journal", "-wal", "-shm", ".rollback").forEach { File(liveFile.path + it).delete() }
         }
     }
+
+    // ── Built-in mix tuning (StashMixDefaults) ───────────────────────────
+    //
+    // A backup made before tuning v3 holds an 85% Daily Discover. The tuning flag
+    // lives in SharedPreferences, which a restore leaves alone, so a replace
+    // re-arms it and the restart retunes the restored row.
+
+    private val tuning get() = context.getSharedPreferences(
+        com.stash.core.data.mix.StashMixDefaults.TUNING_PREFS_NAME, Context.MODE_PRIVATE,
+    )
+
+    @Test
+    fun `replace re-arms the built-in mix retune`() = runTest {
+        tuning.edit().putInt(com.stash.core.data.mix.StashMixDefaults.TUNING_VERSION_KEY, 3).commit() // retuned on this phone
+        val uri = buildBackupZip { backup ->
+            backup.stashMixRecipeDao().insert(
+                com.stash.core.data.db.entity.StashMixRecipeEntity(
+                    name = "Daily Discover", discoveryRatio = 0.85f, targetLength = 40,
+                    seedStrategy = "ARTIST_SIMILAR", isBuiltin = true,
+                ),
+            )
+        }
+        val liveFile = context.getDatabasePath(StashDatabase.DATABASE_NAME)
+        liveFile.parentFile?.mkdirs()
+        try {
+            val result = manager.importDatabase(uri, BackupImportScope.LIBRARY_REPLACE)
+
+            assertTrue("restore failed: ${result.exceptionOrNull()}", result.isSuccess)
+            assertFalse(
+                "the restart after the restore retunes the built-ins again",
+                tuning.contains(com.stash.core.data.mix.StashMixDefaults.TUNING_VERSION_KEY),
+            )
+        } finally {
+            listOf("", "-journal", "-wal", "-shm", ".rollback").forEach { File(liveFile.path + it).delete() }
+        }
+    }
+
+    @Test
+    fun `merge leaves the built-in mix tuning alone - it copies no recipes`() = runTest {
+        tuning.edit().putInt(com.stash.core.data.mix.StashMixDefaults.TUNING_VERSION_KEY, 3).commit()
+        val uri = buildBackupZip { backup -> backup.trackDao().insert(track("Song", spotifyUri = "spotify:track:s")) }
+
+        val result = manager.importDatabase(uri, BackupImportScope.LIBRARY_MERGE)
+
+        assertTrue("merge failed: ${result.exceptionOrNull()}", result.isSuccess)
+        assertEquals(3, tuning.getInt(com.stash.core.data.mix.StashMixDefaults.TUNING_VERSION_KEY, 0))
+    }
 }
