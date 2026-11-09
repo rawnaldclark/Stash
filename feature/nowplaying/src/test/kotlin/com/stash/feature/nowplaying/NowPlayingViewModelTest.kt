@@ -1107,3 +1107,51 @@ class NowPlayingViewModelQueueUndoTest {
         }
     }
 }
+
+/**
+ * The Full art toggle turns the stored layout over in one write. It used to write the opposite of
+ * the screen's copy: two quick taps wrote the same value, and a tap before the copy loaded wrote
+ * "on" over whatever was stored.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class NowPlayingViewModelFullArtToggleTest {
+
+    private val dispatcher = UnconfinedTestDispatcher()
+
+    @Before fun setUp() { Dispatchers.setMain(dispatcher) }
+    @After fun tearDown() { Dispatchers.resetMain() }
+
+    private val preference: NowPlayingPreference = mockk(relaxed = true)
+
+    private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
+        playerRepository = mockk(relaxed = true) {
+            every { playerState } returns MutableStateFlow(PlayerState())
+            every { currentPosition } returns MutableStateFlow(0L)
+        },
+        musicRepository = mockk(relaxed = true) {
+            every { observeTrackById(any()) } returns flowOf(null)
+            every { observeTrackByYoutubeId(any()) } returns flowOf(null)
+        },
+        likeCoordinator = mockk(relaxed = true) { every { mirrorFailures } returns MutableSharedFlow() },
+        losslessUpgrader = mockk(relaxed = true),
+        lyricsRepository = mockk(relaxed = true),
+        lyricsPreference = mockk(relaxed = true),
+        nowPlayingPreference = preference,
+        lyricsSidecarWriter = mockk(relaxed = true),
+        appContext = mockk(relaxed = true),
+        sleepTimerController = mockk(relaxed = true),
+        ytMusicApiClient = mockk(relaxed = true),
+    )
+
+    @Test fun `two quick taps before the preference has answered are two flips of what is stored`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+        assertEquals("nothing collected: the screen's copy is still unknown", null, vm.fullArt.value)
+
+        vm.onToggleFullArt()
+        vm.onToggleFullArt()
+        advanceUntilIdle()
+
+        coVerify(exactly = 2) { preference.toggleFullArt() }
+    }
+}
