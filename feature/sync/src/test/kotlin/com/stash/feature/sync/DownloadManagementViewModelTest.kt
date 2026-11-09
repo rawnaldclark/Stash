@@ -175,6 +175,7 @@ class DownloadManagementViewModelTest {
         assertEquals(QueueButton.DOWNLOAD_NOW, queueButtonFor(QueueRunState.RetryAt(1L), activeCount = 37))
         assertEquals(null, queueButtonFor(QueueRunState.WaitingForConnection, activeCount = 37))
         assertEquals(QueueButton.RESUME, queueButtonFor(QueueRunState.Paused, activeCount = 37))
+        assertEquals("paused over an empty queue: nothing to resume", null, queueButtonFor(QueueRunState.Paused, activeCount = 0))
         assertEquals(QueueButton.RESUME, queueButtonFor(QueueRunState.StorageFull, activeCount = 37))
         assertEquals("queued with nothing set to run them", QueueButton.RESUME, queueButtonFor(QueueRunState.Idle, activeCount = 37))
         // Nothing queued: nothing to pause or start, but a pause can always be lifted.

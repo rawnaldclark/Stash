@@ -119,11 +119,14 @@ data class DownloadManagementUiState(
  * | Running, or about to | Pause |
  * | Waiting for Wi-Fi, or for a retry | Download now (any network) |
  * | Waiting for a connection | none: nothing would help |
- * | Paused, out of space | Resume downloads |
+ * | Paused, with songs queued | Resume downloads |
+ * | Out of space | Resume downloads |
  * | Songs queued, nothing set to run them | Resume downloads |
  */
 internal fun queueButtonFor(state: QueueRunState, activeCount: Int): QueueButton? = when (state) {
-    QueueRunState.Paused, QueueRunState.StorageFull -> QueueButton.RESUME
+    // Paused over an empty queue: Resume would start nothing.
+    QueueRunState.Paused -> QueueButton.RESUME.takeIf { activeCount > 0 }
+    QueueRunState.StorageFull -> QueueButton.RESUME
     QueueRunState.Running, QueueRunState.Scheduled -> QueueButton.PAUSE.takeIf { activeCount > 0 }
     QueueRunState.WaitingForWifi, is QueueRunState.RetryAt -> QueueButton.DOWNLOAD_NOW.takeIf { activeCount > 0 }
     QueueRunState.WaitingForConnection -> null

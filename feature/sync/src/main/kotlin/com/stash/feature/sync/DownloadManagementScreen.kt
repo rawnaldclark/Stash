@@ -166,8 +166,8 @@ private fun queueStatusText(state: DownloadManagementUiState): String {
     val downloading = state.downloading.size
     val queued = state.queued.size
     val idle = stringResource(R.string.downloads_subtitle_idle)
-    // A paused queue says so even when empty; otherwise a state only explains songs that wait.
-    if (downloading + queued == 0 && runState != QueueRunState.Paused) return idle
+    // A state only explains songs that wait: "Paused" over an empty queue explained nothing.
+    if (downloading + queued == 0) return idle
     val parts = mutableListOf<String>()
     if (downloading > 0) parts += pluralStringResource(R.plurals.downloads_count_downloading, downloading, downloading)
     if (queued > 0) parts += pluralStringResource(R.plurals.downloads_count_queued, queued, queued)
