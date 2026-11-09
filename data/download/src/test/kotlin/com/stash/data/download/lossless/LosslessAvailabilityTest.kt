@@ -54,6 +54,17 @@ class LosslessAvailabilityTest {
         assertThat(a.qbdlxEnabledNow()).isFalse()
     }
 
+    /** Their own server never touches Stash's relay: no allowance, nothing for a supporter code to lift. */
+    @Test fun `Stash's Tidal relay is in use only without a Tidal server of their own`() = runTest {
+        assertThat(a.stashTidalRelayInUse.first()).isFalse() // no relay in the config
+        stashTidal.value = TidalRelay("https://tidal.stash.example", null)
+        assertThat(a.stashTidalRelayInUse.first()).isTrue()
+        login.value = true // their own Qobuz account still falls back to Stash's Tidal
+        assertThat(a.stashTidalRelayInUse.first()).isTrue()
+        tidalServer.value = "https://tidal.example.org"
+        assertThat(a.stashTidalRelayInUse.first()).isFalse()
+    }
+
     @Test fun `ownAccountLiveNow is the live login and nothing else`() = runTest {
         stashTidal.value = TidalRelay("https://tidal.stash.example", null); stubNow(loginLive = false)
         assertThat(a.ownAccountLiveNow()).isFalse()

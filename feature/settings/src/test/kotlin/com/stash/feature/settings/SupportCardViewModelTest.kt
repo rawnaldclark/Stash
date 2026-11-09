@@ -6,8 +6,7 @@ import com.stash.core.data.tipjar.DonationGoal
 import com.stash.core.data.tipjar.DonationGoalRepository
 import com.stash.data.download.lossless.quota.LosslessAllowance
 import com.stash.data.download.lossless.quota.LosslessQuota
-import com.stash.data.download.lossless.relay.LosslessConfigFetcher
-import com.stash.data.download.lossless.relay.TidalRelay
+import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.feature.settings.components.GoalLine
 import com.stash.feature.settings.components.SupportCardState
 import io.mockk.coEvery
@@ -34,12 +33,12 @@ class SupportCardViewModelTest {
     private val allowance = MutableStateFlow<LosslessAllowance?>(null)
     private val token = MutableStateFlow<String?>(null)
     private val goal = MutableStateFlow<DonationGoal?>(null)
-    private val tidal = MutableStateFlow<TidalRelay?>(TidalRelay("https://tidal.example", null))
+    private val stashRelayInUse = MutableStateFlow(true)
 
     private val quota: LosslessQuota = mockk { every { state } returns allowance }
     private val supporter: SupporterRepository = mockk { every { this@mockk.token } returns this@SupportCardViewModelTest.token }
-    private val config: LosslessConfigFetcher = mockk {
-        every { tidalRelay } returns this@SupportCardViewModelTest.tidal
+    private val availability: LosslessAvailability = mockk {
+        every { stashTidalRelayInUse } returns stashRelayInUse
     }
     private val goals: DonationGoalRepository = mockk {
         every { this@mockk.goal } returns this@SupportCardViewModelTest.goal
@@ -49,7 +48,7 @@ class SupportCardViewModelTest {
     @Before fun setUp() = Dispatchers.setMain(UnconfinedTestDispatcher())
     @After fun tearDown() = Dispatchers.resetMain()
 
-    private fun vm() = SupportCardViewModel(goals, supporter, quota, config)
+    private fun vm() = SupportCardViewModel(goals, supporter, quota, availability)
 
     @Test fun `opening Settings asks for the goal once`() {
         vm()
@@ -78,8 +77,8 @@ class SupportCardViewModelTest {
         assertThat(vm.state.value.goal).isNotNull()
     }
 
-    @Test fun `without an owner relay nobody is thanked as a supporter`() = runTest {
-        tidal.value = null
+    @Test fun `without Stash's Tidal relay in use (none, or their own server) nobody is thanked as a supporter`() = runTest {
+        stashRelayInUse.value = false
         val vm = vm()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
         assertThat(vm.state.value.supporter).isFalse()

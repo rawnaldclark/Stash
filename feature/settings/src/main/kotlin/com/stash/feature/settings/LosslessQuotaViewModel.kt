@@ -6,7 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.stash.data.download.lossless.quota.LosslessAllowance
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.quota.LosslessQuotaText
-import com.stash.data.download.lossless.relay.LosslessConfigFetcher
+import com.stash.data.download.lossless.LosslessAvailability
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -14,7 +14,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 
@@ -27,7 +26,7 @@ import kotlinx.coroutines.flow.stateIn
 class LosslessQuotaViewModel @Inject constructor(
     @ApplicationContext context: Context,
     private val quota: LosslessQuota,
-    config: LosslessConfigFetcher,
+    availability: LosslessAvailability,
 ) : ViewModel() {
 
     private val minuteTicks = flow {
@@ -40,7 +39,7 @@ class LosslessQuotaViewModel @Inject constructor(
     /** The line, or null when it should not show. */
     val line: StateFlow<String?> = combine(
         quota.state,
-        config.tidalRelay.map { it != null },
+        availability.stashTidalRelayInUse,
         minuteTicks,
     ) { allowance, relayConfigured, _ ->
         // On the relay's clock, like the rung: the line turns over when its day does.
@@ -54,8 +53,8 @@ class LosslessQuotaViewModel @Inject constructor(
 
 /**
  * "Tidal today: 212 / 300 · resets 8:00 PM" for [allowance] as of [nowMs] (a day that has
- * reset reads 0 used), or "… Unlimited (supporter)". Null — the line is hidden — when no relay
- * is configured or nothing is known yet. [time] formats the reset in local time.
+ * reset reads 0 used), or "… Unlimited (supporter)". Null — the line is hidden — when Stash's
+ * Tidal relay is not this listener's (none configured, or their own server) or nothing is known yet. [time] formats the reset in local time.
  */
 internal fun losslessTodayLine(
     allowance: LosslessAllowance?,

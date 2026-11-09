@@ -64,6 +64,16 @@ class LosslessAvailability @Inject constructor(
             login || ownTidal != null || stashTidal != null
         }
 
+    /**
+     * Stash's Tidal relay is this listener's Tidal: it is in the signed config and they have no
+     * Tidal server of their own (whose answers never touch Stash's relay). Only then do the daily
+     * allowance and the supporter unlock mean anything to them.
+     */
+    val stashTidalRelayInUse: Flow<Boolean> =
+        combine(config.tidalRelay, prefs.bitchordEndpoint) { stashTidal, ownTidal ->
+            stashTidal != null && ownTidal == null
+        }
+
     val anyUserOwned: Flow<Boolean> = credentialStore.hasLogin
     suspend fun anyUserOwnedNow(): Boolean = anyUserOwned.first()
 
