@@ -35,6 +35,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.mutableStateOf
@@ -103,20 +105,22 @@ private fun DownloadsHeader(
                 .size(48.dp)
                 .background(extendedColors.glassBackground, CircleShape),
         ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.sync_back))
         }
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "Downloads",
+            text = stringResource(R.string.sync_downloads_title),
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
         )
+        val downloadingStr = pluralStringResource(R.plurals.sync_downloads_downloading, state.downloading.size, state.downloading.size)
+        val queuedStr = pluralStringResource(R.plurals.sync_downloads_queued, state.queued.size, state.queued.size)
         Text(
             text = when {
-                state.downloading.isNotEmpty() -> "${state.downloading.size} downloading · ${state.queued.size} queued"
-                state.queued.isNotEmpty() -> "${state.queued.size} queued"
-                else -> "Queue and recent download history"
+                state.downloading.isNotEmpty() -> stringResource(R.string.sync_downloads_downloading_and_queued, downloadingStr, queuedStr)
+                state.queued.isNotEmpty() -> queuedStr
+                else -> stringResource(R.string.sync_downloads_header_default)
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -126,12 +130,12 @@ private fun DownloadsHeader(
             FilterChip(
                 selected = state.selectedTab == DownloadManagementTab.QUEUE,
                 onClick = { onSelectTab(DownloadManagementTab.QUEUE) },
-                label = { Text("Queue (${state.active.size})") },
+                label = { Text(stringResource(R.string.sync_downloads_tab_queue, state.active.size)) },
             )
             FilterChip(
                 selected = state.selectedTab == DownloadManagementTab.HISTORY,
                 onClick = { onSelectTab(DownloadManagementTab.HISTORY) },
-                label = { Text("History (${state.history.size})") },
+                label = { Text(stringResource(R.string.sync_downloads_tab_history, state.history.size)) },
             )
         }
     }
@@ -146,8 +150,8 @@ private fun QueueContent(
 ) {
     if (!state.isLoading && state.active.isEmpty()) {
         EmptyDownloads(
-            title = "No downloads in progress",
-            subtitle = "New downloads will appear here.",
+            title = stringResource(R.string.sync_downloads_empty_queue_title),
+            subtitle = stringResource(R.string.sync_downloads_empty_queue_subtitle),
         )
         return
     }
@@ -158,20 +162,19 @@ private fun QueueContent(
     ) {
         item(key = "clear_queue") {
             ClearButton(
-                label = "Clear queue",
+                label = stringResource(R.string.sync_downloads_clear_queue),
                 onClick = onClearQueue,
-                confirm = "Every waiting download is cancelled and the ones running now stop. " +
-                    "Cancelled songs come back the next time you download them.",
+                confirm = stringResource(R.string.sync_downloads_clear_queue_confirm),
             )
         }
         if (state.downloading.isNotEmpty()) {
-            item(key = "downloading_label") { SectionLabel("Downloading") }
+            item(key = "downloading_label") { SectionLabel(stringResource(R.string.sync_downloads_section_downloading)) }
             items(state.downloading, key = { "active_${it.queueId}" }) { item ->
                 DownloadRowCard(item, onCancel = onCancel, onRetry = onRetry)
             }
         }
         if (state.queued.isNotEmpty()) {
-            item(key = "queued_label") { SectionLabel("Up next") }
+            item(key = "queued_label") { SectionLabel(stringResource(R.string.sync_downloads_section_up_next)) }
             itemsIndexed(state.queued, key = { _, item -> "queued_${item.queueId}" }) { index, item ->
                 DownloadRowCard(
                     item = item,
@@ -182,7 +185,7 @@ private fun QueueContent(
             }
         }
         if (state.waiting.isNotEmpty()) {
-            item(key = "waiting_label") { SectionLabel(state.waitingLabel) }
+            item(key = "waiting_label") { SectionLabel(stringResource(state.waitingLabelRes())) }
             items(state.waiting, key = { "waiting_${it.queueId}" }) { item ->
                 DownloadRowCard(item, onCancel = onCancel, onRetry = onRetry)
             }
@@ -197,7 +200,10 @@ private fun HistoryContent(
     onClearHistory: () -> Unit,
 ) {
     if (!state.isLoading && state.history.isEmpty()) {
-        EmptyDownloads(title = "No download history yet", subtitle = "Completed and failed downloads will appear here.")
+        EmptyDownloads(
+            title = stringResource(R.string.sync_downloads_empty_history_title),
+            subtitle = stringResource(R.string.sync_downloads_empty_history_subtitle),
+        )
         return
     }
     LazyColumn(
@@ -206,9 +212,9 @@ private fun HistoryContent(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item(key = "clear_history") {
-            ClearButton(label = "Clear history", onClick = onClearHistory)
+            ClearButton(label = stringResource(R.string.sync_downloads_clear_history), onClick = onClearHistory)
         }
-        item(key = "recent_label") { SectionLabel("Recent") }
+        item(key = "recent_label") { SectionLabel(stringResource(R.string.sync_downloads_section_recent)) }
         items(state.history, key = { "history_${it.queueId}" }) { item ->
             DownloadRowCard(item, onCancel = {}, onRetry = onRetry)
         }
@@ -250,13 +256,13 @@ private fun ClearButton(label: String, onClick: () -> Unit, confirm: String? = n
     if (asking && confirm != null) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { asking = false },
-            title = { Text("$label?") },
+            title = { Text(stringResource(R.string.sync_downloads_clear_confirm_title, label)) },
             text = { Text(confirm) },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = { asking = false; onClick() }) { Text(label) }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { asking = false }) { Text("Keep") }
+                androidx.compose.material3.TextButton(onClick = { asking = false }) { Text(stringResource(R.string.sync_downloads_keep)) }
             },
         )
     }

@@ -16,6 +16,68 @@
     <string name="sync_downloads_subtitle">View current downloads, queue, and history</string>
     <string name="sync_downloads_cd">Open downloads</string>
 
+    <!-- Download Management Screen -->
+    <plurals name="sync_downloads_queued">
+        <item quantity="one">%d queued</item>
+        <item quantity="other">%d queued</item>
+    </plurals>
+    <string name="sync_downloads_downloading_and_queued">%1$s · %2$s</string>
+    <string name="sync_downloads_header_default">Queue and recent download history</string>
+    <string name="sync_downloads_tab_queue">Queue (%d)</string>
+    <string name="sync_downloads_tab_history">History (%d)</string>
+    <string name="sync_downloads_empty_queue_title">No downloads in progress</string>
+    <string name="sync_downloads_empty_queue_subtitle">New downloads will appear here.</string>
+    <string name="sync_downloads_clear_queue">Clear queue</string>
+    <string name="sync_downloads_clear_queue_confirm">Every waiting download is cancelled and the ones running now stop. Cancelled songs come back the next time you download them.</string>
+    <string name="sync_downloads_section_downloading">Downloading</string>
+    <string name="sync_downloads_section_up_next">Up next</string>
+    <string name="sync_downloads_section_recent">Recent</string>
+    <string name="sync_downloads_empty_history_title">No download history yet</string>
+    <string name="sync_downloads_empty_history_subtitle">Completed and failed downloads will appear here.</string>
+    <string name="sync_downloads_clear_history">Clear history</string>
+    <string name="sync_downloads_clear_confirm_title">%s?</string>
+    <string name="sync_downloads_keep">Keep</string>
+    <string name="sync_downloads_queue_position">#%1$d · %2$s</string>
+    <string name="sync_downloads_cd_cancel">Cancel %s</string>
+    <string name="sync_downloads_cd_retry">Retry %s</string>
+
+    <!-- Download Management waiting reasons & section headers -->
+    <string name="sync_downloads_waiting_generic">Waiting</string>
+    <string name="sync_downloads_waiting_aac">Not available as AAC yet</string>
+    <string name="sync_downloads_waiting_reset">Waiting for the daily reset</string>
+    <string name="sync_downloads_waiting_tidal">Waiting for Tidal</string>
+    <string name="sync_downloads_waiting_fallback">Waiting for Lossy fallback</string>
+    <string name="sync_downloads_waiting_lossless">Waiting for lossless</string>
+
+    <string name="sync_downloads_waiting_aac_item">Not available as AAC yet</string>
+    <string name="sync_downloads_waiting_reset_item">Waiting for the daily reset</string>
+    <string name="sync_downloads_waiting_tidal_item">Tidal is busy. Trying again shortly.</string>
+    <string name="sync_downloads_waiting_fallback_item">Waiting for Lossy fallback to be on</string>
+    <string name="sync_downloads_waiting_lossless_item">Waiting for a lossless source</string>
+
+    <!-- Download Management phase labels -->
+    <string name="sync_downloads_phase_cancelled">Cancelled</string>
+    <string name="sync_downloads_phase_matching">Finding a match</string>
+    <string name="sync_downloads_phase_downloading">Downloading</string>
+    <string name="sync_downloads_phase_processing">Processing</string>
+    <string name="sync_downloads_phase_tagging">Adding metadata</string>
+    <string name="sync_downloads_phase_in_progress">In progress</string>
+    <string name="sync_downloads_phase_queued">Queued</string>
+    <string name="sync_downloads_phase_downloaded">Downloaded</string>
+    <string name="sync_downloads_phase_needs_review">Needs review</string>
+    <string name="sync_downloads_phase_failed">Failed</string>
+
+    <!-- Download Management feedback messages -->
+    <string name="sync_downloads_msg_cancelled">Download cancelled</string>
+    <string name="sync_downloads_msg_cancel_failed">Download could not be cancelled</string>
+    <string name="sync_downloads_msg_nothing_to_cancel">Nothing to cancel</string>
+    <plurals name="sync_downloads_msg_cancelled_count">
+        <item quantity="one">Cancelled %d download</item>
+        <item quantity="other">Cancelled %d downloads</item>
+    </plurals>
+    <string name="sync_downloads_msg_history_cleared">History cleared</string>
+    <string name="sync_downloads_msg_queued">Download queued</string>
+
     <!-- Source Dashboard Stats & Empty Hints -->
     <string name="sync_source_stat_mixes">MIXES</string>
     <string name="sync_source_stat_playlists">PLAYLISTS</string>

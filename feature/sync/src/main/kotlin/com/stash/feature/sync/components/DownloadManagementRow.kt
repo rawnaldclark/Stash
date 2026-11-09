@@ -30,10 +30,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import coil3.compose.AsyncImage
 import com.stash.core.model.DownloadStatus
 import com.stash.feature.sync.DownloadManagementAction
 import com.stash.feature.sync.DownloadManagementItem
+import com.stash.feature.sync.R
 
 @Composable
 fun DownloadManagementRow(
@@ -91,8 +93,9 @@ fun DownloadManagementRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(3.dp))
+            val phase = if (item.phaseLabelRes != 0) stringResource(item.phaseLabelRes) else item.phaseLabel
             Text(
-                text = if (queuePosition != null) "#$queuePosition · ${item.phaseLabel}" else item.phaseLabel,
+                text = if (queuePosition != null) stringResource(R.string.sync_downloads_queue_position, queuePosition, phase) else phase,
                 style = MaterialTheme.typography.labelSmall,
                 color = if (item.status == DownloadStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
             )
@@ -108,10 +111,10 @@ fun DownloadManagementRow(
         Spacer(Modifier.width(8.dp))
         when (item.action) {
             DownloadManagementAction.CANCEL -> IconButton(onClick = { onCancel(item.queueId) }) {
-                Icon(Icons.Default.Close, "Cancel ${item.title}")
+                Icon(Icons.Default.Close, stringResource(R.string.sync_downloads_cd_cancel, item.title))
             }
             DownloadManagementAction.RETRY -> IconButton(onClick = { onRetry(item.queueId) }) {
-                Icon(Icons.Default.Refresh, "Retry ${item.title}")
+                Icon(Icons.Default.Refresh, stringResource(R.string.sync_downloads_cd_retry, item.title))
             }
             DownloadManagementAction.NONE -> if (item.status == DownloadStatus.IN_PROGRESS) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)

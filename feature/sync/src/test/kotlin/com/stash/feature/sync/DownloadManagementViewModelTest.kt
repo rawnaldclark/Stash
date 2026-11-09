@@ -80,7 +80,18 @@ class DownloadManagementViewModelTest {
             ),
             state.waiting.map { it.phaseLabel },
         )
+        assertEquals(
+            listOf(
+                R.string.sync_downloads_waiting_aac_item,
+                R.string.sync_downloads_waiting_tidal_item,
+                R.string.sync_downloads_waiting_reset_item,
+                R.string.sync_downloads_waiting_fallback_item,
+                R.string.sync_downloads_waiting_lossless_item,
+            ),
+            state.waiting.map { it.phaseLabelRes },
+        )
         assertEquals("Waiting", state.waitingLabel)
+        assertEquals(R.string.sync_downloads_waiting_generic, state.waitingLabelRes())
         // The reason code is not shown as an error.
         assertEquals(null, state.waiting.first().errorMessage)
     }
@@ -92,6 +103,7 @@ class DownloadManagementViewModelTest {
         val state = DownloadManagementViewModel(dao, manager, enqueuer, cancellation).uiState.first { !it.isLoading }
 
         assertEquals("Waiting for the daily reset", state.waitingLabel)
+        assertEquals(R.string.sync_downloads_waiting_reset, state.waitingLabelRes())
     }
 
     @Test fun `every actionable status offers a way out`() = runTest {
