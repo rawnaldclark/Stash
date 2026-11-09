@@ -269,4 +269,48 @@
     <string name="failed_matches_find_use">Use this version</string>
     <!-- Dismiss dialog: artist, title -->
     <string name="failed_matches_dismiss_body">\'%1$s — %2$s\' won\'t be downloaded during future syncs. To pick the right version instead, tap the song and find it yourself.</string>
+    <!-- Failed downloads: each reason's group heading, and the short reason under a song. -->
+    <string name="failure_auth_group">Sign-in expired</string>
+    <string name="failure_auth_short">Sign-in expired</string>
+    <string name="failure_storage_full_group">Phone out of space</string>
+    <string name="failure_storage_full_short">Out of space</string>
+    <string name="failure_storage_group">Storage unreachable</string>
+    <string name="failure_storage_short">Storage error</string>
+    <string name="failure_network_group">Network errors</string>
+    <string name="failure_network_short">Network error</string>
+    <string name="failure_rate_limited_group">YouTube asked us to wait</string>
+    <string name="failure_rate_limited_short">Slowed down by YouTube</string>
+    <string name="failure_provider_group">Source unavailable</string>
+    <string name="failure_provider_short">Source unavailable</string>
+    <string name="failure_ffmpeg_group">Encoding errors</string>
+    <string name="failure_ffmpeg_short">Encoding error</string>
+    <string name="failure_unknown_group">Other errors</string>
+    <string name="failure_unknown_short">Unknown error</string>
+    <!-- Failed downloads and the Downloads screen's History: retries every failed song at once. -->
+    <string name="downloads_retry_all_failed">Retry all failed (%1$d)</string>
+
+    <!-- Downloads screen: the line under the title says what the queue is doing, joined with " · ". -->
+    <plurals name="downloads_count_downloading">
+        <item quantity="one">%d downloading</item>
+        <item quantity="other">%d downloading</item>
+    </plurals>
+    <plurals name="downloads_count_queued">
+        <item quantity="one">%d queued</item>
+        <item quantity="other">%d queued</item>
+    </plurals>
+    <string name="downloads_state_wifi">Waiting for Wi-Fi</string>
+    <string name="downloads_state_connection">Waiting for a connection</string>
+    <string name="downloads_state_paused">Paused</string>
+    <!-- A retry is scheduled: the time it starts, in the phone's own format ("14:20"). -->
+    <string name="downloads_state_retry_at">Trying again at %1$s</string>
+    <string name="downloads_state_storage_full">Paused: your phone is out of space</string>
+    <string name="downloads_subtitle_idle">Queue and recent download history</string>
+    <!-- The button beside that line. -->
+    <string name="downloads_pause">Pause</string>
+    <string name="downloads_download_now">Download now</string>
+    <string name="downloads_resume">Resume downloads</string>
+    <!-- Online mode: songs a sync queued, which only download in Offline mode. -->
+    <string name="downloads_offline_section">Downloads when you switch to Offline</string>
+    <!-- The Sync tab's Downloads row, after its counts, when it is out of space (the other states reuse downloads_state_*). -->
+    <string name="sync_downloads_state_storage_full">Out of space</string>
 </resources>

@@ -3,6 +3,7 @@ package com.stash.core.data.sync.classifier
 import com.stash.core.model.DownloadFailureType
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import com.stash.core.data.sync.classifier.DownloadFailureClassifier.FailureLane as Lane
 
 class DownloadFailureClassifierTest {
 
@@ -20,9 +21,38 @@ class DownloadFailureClassifierTest {
     @Test fun `login-required text maps to AUTH_EXPIRED`() {
         val result = classifier.classify(FailureContext(
             phase = DownloadPhase.DOWNLOADING,
-            errorText = "Sign in to confirm you're not a bot. Use --cookies",
+            errorText = "ERROR: [youtube] abc: Login required to view this video",
         ))
         assertEquals(DownloadFailureType.AUTH_EXPIRED, result)
+    }
+
+    // ── Rate limits: YouTube slowing us down is not a login problem ─────
+
+    @Test fun `HTTP 429 text maps to RATE_LIMITED`() {
+        val result = classifier.classify(FailureContext(
+            phase = DownloadPhase.DOWNLOADING,
+            errorText = "ERROR: Unable to download webpage: HTTP Error 429: Too Many Requests",
+        ))
+        assertEquals(DownloadFailureType.RATE_LIMITED, result)
+    }
+
+    @Test fun `status 429 maps to RATE_LIMITED`() {
+        val result = classifier.classify(FailureContext(
+            phase = DownloadPhase.MATCHING,
+            errorText = null,
+            httpStatus = 429,
+        ))
+        assertEquals(DownloadFailureType.RATE_LIMITED, result)
+    }
+
+    @Test fun `the bot check maps to RATE_LIMITED, with either apostrophe`() {
+        for (text in listOf(
+            "Sign in to confirm you're not a bot. Use --cookies",
+            "ERROR: [youtube] abc: Sign in to confirm you’re not a bot",
+        )) {
+            val result = classifier.classify(FailureContext(phase = DownloadPhase.DOWNLOADING, errorText = text))
+            assertEquals(text, DownloadFailureType.RATE_LIMITED, result)
+        }
     }
 
     @Test fun `video unavailable maps to PROVIDER_UNAVAILABLE`() {
@@ -66,12 +96,46 @@ class DownloadFailureClassifierTest {
         assertEquals(DownloadFailureType.FFMPEG_ERROR, result)
     }
 
-    @Test fun `ENOSPC at STORAGE phase maps to STORAGE_ERROR`() {
+    // ── Storage: a full phone stops the batch, other storage errors don't ─
+
+    @Test fun `ENOSPC at STORAGE phase maps to STORAGE_FULL`() {
         val result = classifier.classify(FailureContext(
             phase = DownloadPhase.STORAGE,
             errorText = "ENOSPC: no space left on device",
         ))
+        assertEquals(DownloadFailureType.STORAGE_FULL, result)
+    }
+
+    @Test fun `no space left while downloading maps to STORAGE_FULL`() {
+        val result = classifier.classify(FailureContext(
+            phase = DownloadPhase.DOWNLOADING,
+            errorText = "java.io.IOException: write failed: No space left on device",
+        ))
+        assertEquals(DownloadFailureType.STORAGE_FULL, result)
+    }
+
+    @Test fun `permission denied at STORAGE phase stays STORAGE_ERROR`() {
+        val result = classifier.classify(FailureContext(
+            phase = DownloadPhase.STORAGE,
+            errorText = "open failed: EACCES (Permission denied)",
+        ))
         assertEquals(DownloadFailureType.STORAGE_ERROR, result)
+    }
+
+    @Test fun `a SAF write failure maps to STORAGE_ERROR`() {
+        val result = classifier.classify(FailureContext(
+            phase = DownloadPhase.DOWNLOADING,
+            errorText = "Could not create SAF file 'Song.opus' under content://tree",
+        ))
+        assertEquals(DownloadFailureType.STORAGE_ERROR, result)
+    }
+
+    @Test fun `text containing unsafe is no longer STORAGE_ERROR`() {
+        val result = classifier.classify(FailureContext(
+            phase = DownloadPhase.DOWNLOADING,
+            errorText = "WARNING: unsafe file extension, skipping",
+        ))
+        assertEquals(DownloadFailureType.UNKNOWN, result)
     }
 
     @Test fun `unrecognised text maps to UNKNOWN`() {
@@ -125,5 +189,41 @@ class DownloadFailureClassifierTest {
 
     @Test fun `isTerminal NONE is false`() {
         assertEquals(false, DownloadFailureClassifier.isTerminal(DownloadFailureType.NONE))
+    }
+
+    @Test fun `isTerminal RATE_LIMITED and STORAGE_FULL are false`() {
+        assertEquals(false, DownloadFailureClassifier.isTerminal(DownloadFailureType.RATE_LIMITED))
+        assertEquals(false, DownloadFailureClassifier.isTerminal(DownloadFailureType.STORAGE_FULL))
+    }
+
+    // ── laneFor: one rule for every runner ──────────────────────────────
+
+    @Test fun `a transient failure retries until the limit, then fails for good`() {
+        val limit = DownloadFailureClassifier.TRANSIENT_RETRY_LIMIT
+        for (type in listOf(
+            DownloadFailureType.NETWORK, DownloadFailureType.AUTH_EXPIRED,
+            DownloadFailureType.STORAGE_ERROR, DownloadFailureType.UNKNOWN,
+        )) {
+            assertEquals(Lane.RETRY, DownloadFailureClassifier.laneFor(type, retryCount = limit - 1))
+            assertEquals(Lane.FINAL, DownloadFailureClassifier.laneFor(type, retryCount = limit))
+        }
+    }
+
+    @Test fun `a source failure is final at once`() {
+        assertEquals(Lane.FINAL, DownloadFailureClassifier.laneFor(DownloadFailureType.PROVIDER_UNAVAILABLE, 0))
+        assertEquals(Lane.FINAL, DownloadFailureClassifier.laneFor(DownloadFailureType.FFMPEG_ERROR, 0))
+    }
+
+    @Test fun `a rate limit has its own lane until the limit`() {
+        assertEquals(Lane.RATE_LIMITED, DownloadFailureClassifier.laneFor(DownloadFailureType.RATE_LIMITED, 0))
+        assertEquals(
+            Lane.FINAL,
+            DownloadFailureClassifier.laneFor(DownloadFailureType.RATE_LIMITED, DownloadFailureClassifier.TRANSIENT_RETRY_LIMIT),
+        )
+    }
+
+    @Test fun `a full phone never ends a song's retries`() {
+        assertEquals(Lane.STORAGE_FULL, DownloadFailureClassifier.laneFor(DownloadFailureType.STORAGE_FULL, 0))
+        assertEquals(Lane.STORAGE_FULL, DownloadFailureClassifier.laneFor(DownloadFailureType.STORAGE_FULL, 99))
     }
 }
