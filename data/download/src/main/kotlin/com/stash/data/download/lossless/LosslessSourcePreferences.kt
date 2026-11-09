@@ -51,7 +51,6 @@ class LosslessSourcePreferences @Inject constructor(
     private val priorityKey = stringPreferencesKey("priority_order")
     private val minQualityKey = stringPreferencesKey("min_quality")
     private val enabledKey = booleanPreferencesKey("enabled")
-    private val customLosslessEndpointKey = stringPreferencesKey("custom_lossless_endpoint")
     private val bitchordEndpointKey = stringPreferencesKey("bitchord_endpoint")
     private val bitchordAccessTokenKey = stringPreferencesKey("bitchord_access_token")
     private val captchaCookieKey = stringPreferencesKey("squid_wtf_captcha_verified_at")
@@ -63,11 +62,13 @@ class LosslessSourcePreferences @Inject constructor(
     private val tidalAacFallbackKey = booleanPreferencesKey("tidal_aac_fallback")
     private val downloadModeKey = stringPreferencesKey("download_mode")
     // Retained only so [purgeRetiredSourceKeys] can delete them from existing
-    // installs; the antra and arcod sources were removed.
+    // installs; the antra and arcod sources and the custom endpoint were removed.
     private val antraSessionKey = stringPreferencesKey("antra_session_cookie")
     private val antraCfClearanceKey = stringPreferencesKey("antra_cf_clearance_cookie")
     private val antraUsernameKey = stringPreferencesKey("antra_username")
     private val arcodRescueDismissedKey = booleanPreferencesKey("arcod_rescue_dismissed")
+    // The custom relay endpoint, retired with the shared Qobuz relay (2026-11).
+    private val customLosslessEndpointKey = stringPreferencesKey("custom_lossless_endpoint")
 
     /**
      * Master switch for the lossless-source pipeline. When false, the
@@ -91,7 +92,7 @@ class LosslessSourcePreferences @Inject constructor(
      *
      * The catch fails OPEN — `emit(true)`, the same default the `map` documents
      * above. Deliberate: failing to `false` would switch lossless off for a
-     * paying user on one transient IOException. (Contrast [customLosslessEndpoint]
+     * paying user on one transient IOException. (Contrast [bitchordEndpoint]
      * and the dismissal flags below, whose defaults happen to be the closed ones.)
      * Note `catch {}` COMPLETES the flow: after an error these emit their fallback
      * once and never re-emit for the process lifetime.
@@ -103,33 +104,12 @@ class LosslessSourcePreferences @Inject constructor(
     suspend fun enabledNow(): Boolean = enabled.first()
 
     /**
-     * A user-supplied lossless relay base URL (Settings › Audio › Advanced), or
-     * null. Outranks the public relay from runtime config when set — an explicit
-     * choice beats an implicit one. Stored normalised: https only, no trailing
-     * slash, no query. The APK ships no default. Deduped (the store re-emits on
-     * every unrelated write) and fail-closed (a read error must not terminate a
-     * `combine`).
-     */
-    val customLosslessEndpoint: Flow<String?> = context.losslessDataStore.data.map { prefs ->
-        prefs[customLosslessEndpointKey]?.takeIf { it.isNotBlank() }
-    }.distinctUntilChanged().catch { emit(null) }
-
-    suspend fun customLosslessEndpointNow(): String? = customLosslessEndpoint.first()
-
-    suspend fun setCustomLosslessEndpoint(raw: String?) {
-        val v = normaliseEndpoint(raw)
-        context.losslessDataStore.edit { prefs ->
-            if (v == null) prefs.remove(customLosslessEndpointKey) else prefs[customLosslessEndpointKey] = v
-        }
-    }
-
-    /**
      * The user's own self-hosted BitChord Lossless Relay (Tidal), or null = the Tidal
      * rung uses Stash's relay from the signed config, when it carries one. Set, it
      * replaces that relay and, with none of the user's own Qobuz set up, leads the
-     * lossless chain above CD quality ([LosslessAvailability.ownTidalFirst]). Same normalisation as
-     * [customLosslessEndpoint] (https only, no query, no trailing slash), so a path
-     * prefix survives: BitChord's own `https://host/<ACCESS_TOKEN>` form works as-is.
+     * lossless chain above CD quality ([LosslessAvailability.ownTidalFirst]). Stored normalised by
+     * [normaliseEndpoint] (https only, no query, no trailing slash), so a path prefix
+     * survives: BitChord's own `https://host/<ACCESS_TOKEN>` form works as-is.
      * The APK ships no default — the user's server spends ONE person's Tidal account,
      * so it is never shared through the signed runtime config. Deduped and fail-closed.
      */
@@ -311,9 +291,10 @@ class LosslessSourcePreferences @Inject constructor(
 
     /**
      * One-shot cleanup for removed sources: deletes the harvested antra.hoshi.cfd
-     * session cookie, cf_clearance cookie and username, and arcod's retired banner
-     * flag, so no stale login state lingers on disk. Called once at startup (see
-     * StashApplication). No-op when the keys are absent.
+     * session cookie, cf_clearance cookie and username, arcod's retired banner
+     * flag and the retired custom relay endpoint, so no stale login state or
+     * dead setting lingers on disk. Called once at startup (see StashApplication).
+     * No-op when the keys are absent.
      */
     suspend fun purgeRetiredSourceKeys() {
         context.losslessDataStore.edit { prefs ->
@@ -321,6 +302,7 @@ class LosslessSourcePreferences @Inject constructor(
             prefs.remove(antraCfClearanceKey)
             prefs.remove(antraUsernameKey)
             prefs.remove(arcodRescueDismissedKey)
+            prefs.remove(customLosslessEndpointKey)
         }
     }
 

@@ -834,6 +834,8 @@ class StashApplication : Application(), Configuration.Provider {
      *      Supabase access + refresh tokens), `force_arcod_only`, and the retired
      *      rescue-banner flag. Nothing opens that DataStore any more, so the file
      *      is deleted outright.
+     * v4 — the shared Qobuz relay: the custom relay endpoint
+     *      (`custom_lossless_endpoint`), whose Settings field went with it.
      */
     private suspend fun maybePurgeRetiredSourceArtifacts() {
         val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
@@ -1320,9 +1322,9 @@ class StashApplication : Application(), Configuration.Provider {
          * Bump to re-run [maybePurgeRetiredSourceArtifacts] (one-shot cleanup of
          * credentials a removed source left on disk). v2 adds the qbdlx token
          * pool's cached third-party tokens and the retired amz toggle; v3 the
-         * arcod session and toggles.
+         * arcod session and toggles; v4 the retired custom relay endpoint.
          */
-        private const val ANTRA_PURGE_VERSION = 3
+        private const val ANTRA_PURGE_VERSION = 4
 
         /** v0.9.104: pin every already-synced playlist to Home, once. */
         private const val SYNCED_PLAYLISTS_PIN_VERSION = 1
