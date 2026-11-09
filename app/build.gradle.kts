@@ -76,6 +76,17 @@ val lastFmExtraApiKeys: String =
 val lastFmProxyUrl: String =
     localProperties.getProperty("lastfm.proxyUrl") ?: System.getenv("LASTFM_PROXY_URL").orEmpty()
 
+// ── The app's own locales (androidResources.localeFilters below) ──────────────
+//
+// Read from the values-<lang>[-r<REGION>] folders of every module, so a translation added later is
+// never filtered out by accident: values-de-rDE gives "de" and "de-rDE".
+val appOwnLocales: List<String> = rootProject.subprojects
+    .flatMap { (it.projectDir.resolve("src/main/res").listFiles() ?: emptyArray()).toList() }
+    .mapNotNull { Regex("values-([a-z]{2,3})(-r[A-Z]{2})?").matchEntire(it.name) }
+    .flatMap { m -> listOf(m.groupValues[1], m.groupValues[1] + m.groupValues[2]) }
+    .distinct()
+    .sorted()
+
 // ── Cloud storage libraries (spec 2026-10-19-cloud-storage-design.md) ─────
 //
 // Public-client ids (PKCE, no secret) from `local.properties` or env vars (CI):
@@ -207,6 +218,12 @@ android {
             buildConfigField("String", "SYNC_BASE_URL", "\"$syncReleaseBaseUrl\"")
             buildConfigField("Boolean", "WEB_LINK_ENABLED", "true")
             manifestPlaceholders["webLinkEnabled"] = "true"
+            // ARM only in the release APK. x86/x86_64 were ~71 MB of the universal APK (each ABI
+            // carries its own ffmpeg + python zips) for CPUs no phone at minSdk 26 has. This filters
+            // the AAR libs as well as app/src/main/jniLibs. Still one Stash.apk, so the in-app updater
+            // (first .apk asset) and releases/latest/download/Stash.apk keep working. Debug stays
+            // universal so x86_64 emulators can run it.
+            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
             // R8 minification is DISABLED because youtubedl-android embeds
             // Chaquopy (Python runtime) + Apache Commons Compress + native
             // binaries that use extensive reflection. R8 obfuscation renames
@@ -244,7 +261,22 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { compose = true; buildConfig = true }
-    androidResources { generateLocaleConfig = true }
+    androidResources {
+        generateLocaleConfig = true
+        // Library strings only in the app's own languages. Libraries (appcompat, Cast, mediarouter,
+        // play-services, ...) ship ~80 locales; unfiltered they fill half of resources.arsc.
+        // aapt2 matches these exactly ("de" does NOT keep "de-rDE"), so appOwnLocales names both
+        // the plain code and the region of every values-* folder in our modules: drop one and the
+        // app loses that translation and the language picker loses the language. The default
+        // (unqualified) strings always stay.
+        localeFilters += appOwnLocales
+        // The libraries' other regions of those languages that v0.9.123 shipped, and tl, the
+        // older code for Filipino that AndroidX still uses (ours is fil-rPH).
+        localeFilters += listOf(
+            "en", "en-rAU", "en-rCA", "en-rGB", "en-rIN",
+            "es-rUS", "fr-rCA", "pt-rPT", "tl", "zh-rHK", "zh-rTW",
+        )
+    }
     packaging {
         jniLibs {
             // Must extract native libs to disk so ffmpeg/ffprobe executables and

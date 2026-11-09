@@ -21,10 +21,3 @@ sealed class SyncResult<out T> {
         val httpCode: Int? = null,
     ) : SyncResult<Nothing>()
 }
-
-/** Unwrap a [SyncResult] containing a list, returning empty on non-success. */
-fun <T> SyncResult<List<T>>.getOrEmpty(): List<T> = when (this) {
-    is SyncResult.Success -> data
-    is SyncResult.Empty -> emptyList()
-    is SyncResult.Error -> emptyList()
-}

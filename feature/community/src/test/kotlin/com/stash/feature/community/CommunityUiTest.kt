@@ -1,11 +1,13 @@
 package com.stash.feature.community
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.community.CommunityRepository
 import com.stash.core.data.community.CommunityResult
 import com.stash.core.data.community.VoteCounts
 import com.stash.core.model.community.CommunityPost
+import com.stash.core.ui.ambient.contrastRatio
 import com.stash.feature.community.CommunityViewModel.Tab
 import com.stash.feature.community.CommunityViewModel.UiState
 import io.mockk.coEvery
@@ -368,4 +370,10 @@ class CommunityUiTest {
         assertThat(voteNoteFor(CommunityResult.Rejected("gone"))).isNull()
         assertThat(voteNoteFor(CommunityResult.Failed("HTTP 503"))).isNull()
     }
+}
+
+/** WCAG contrast of white text at [textAlpha] on the hero over a blurred cover of [backdrop]'s colour. */
+private fun heroTextContrast(backdrop: Color, textAlpha: Float): Double {
+    val ground = Color.Black.copy(alpha = HERO_SCRIM_ALPHA).compositeOver(backdrop)
+    return contrastRatio(Color.White.copy(alpha = textAlpha).compositeOver(ground), ground)
 }
