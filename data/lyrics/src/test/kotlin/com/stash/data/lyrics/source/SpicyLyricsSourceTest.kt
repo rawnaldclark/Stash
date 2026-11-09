@@ -3,6 +3,7 @@ package com.stash.data.lyrics.source
 import com.stash.core.common.Clock
 import com.stash.data.lyrics.parser.TtmlParser
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
 import okhttp3.Dns
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -11,6 +12,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -62,10 +64,15 @@ class SpicyLyricsSourceTest {
     private fun source(baseUrl: String = server.url("/spicy").toString()) =
         SpicyLyricsSource(client, "test", baseUrl = baseUrl, clock = clock, lyricsDns = Dns.SYSTEM)
 
-    private fun query(spotifyTrackId: String? = TRACK_ID, interactive: Boolean = true) = LyricsQuery(
+    private fun query(
+        spotifyTrackId: String? = TRACK_ID,
+        isrc: String? = null,
+        interactive: Boolean = true,
+        searchForIds: Boolean = false,
+    ) = LyricsQuery(
         trackId = 1L, title = "Song", artist = "Artist", album = null, albumArtist = null,
-        durationMs = 200_000L, youtubeVideoId = null, interactive = interactive, onDemand = true,
-        spotifyTrackId = spotifyTrackId,
+        durationMs = 200_000L, youtubeVideoId = null, isrc = isrc, interactive = interactive, onDemand = true,
+        spotifyTrackId = spotifyTrackId, searchForIds = searchForIds,
     )
 
     private fun serve(body: String, code: Int = 200) {
@@ -198,8 +205,127 @@ class SpicyLyricsSourceTest {
         assertPausesFor { serve("oops", code = 503) }
     }
 
-    @Test fun `a 429 pauses the source too`() = runTest {
-        assertPausesFor { serve("slow down", code = 429) }
+    @Test fun `a 429 pauses the source too, and is thrown so an upgrade pass hears about it`() = runTest {
+        assertPausesFor(rateLimited = true) { serve("slow down", code = 429) }
+    }
+
+    @Test fun `without a Spotify id the track's own ISRC is asked, normalised`() = runTest {
+        serve(syllable)
+        source().resolve(query(spotifyTrackId = null, isrc = "us-aaa-00-00001"))
+        assertEquals("/spicy/v1/lyrics/USAAA0000001", server.takeRequest().requestUrl!!.encodedPath)
+    }
+
+    @Test fun `the Spotify id wins over the ISRC`() = runTest {
+        serve(syllable)
+        source().resolve(query(isrc = "USAAA0000001"))
+        assertEquals("/spicy/v1/lyrics/$TRACK_ID", server.takeRequest().requestUrl!!.encodedPath)
+    }
+
+    @Test fun `a 400 for an id the proxy doesn't take is a miss without the skip window`() = runTest {
+        val spicy = source()
+        serve("Bad track id", code = 400)
+        assertNull(spicy.resolve(query()))
+        serve(syllable)
+        assertNotNull("Spicy still answers the next song", spicy.resolve(query()))
+        assertEquals(2, calls)
+    }
+
+    /** iTunes Search and lrc.red's search, each on its own server, with the ids Spicy is then asked by. */
+    private class Searches(client: OkHttpClient, clock: Clock) {
+        val itunes = MockWebServer().apply { start() }
+        val lrcRed = MockWebServer().apply { start() }
+        val appleIds = AppleMusicIdResolver(client, "test", itunes.url("/").toString(), Dns.SYSTEM, clock)
+        val isrcs = IsrcResolver(client, "test", IsrcLyricsHostBreaker(clock), lrcRed.url("/api/v1").toString(), lyricsDns = Dns.SYSTEM)
+
+        fun itunesFinds(id: Long?) = itunes.enqueue(
+            MockResponse().setBody(
+                if (id == null) """{"results":[]}"""
+                else """{"results":[{"trackId":$id,"trackName":"Song","artistName":"Artist","trackTimeMillis":200000}]}""",
+            ),
+        )
+
+        fun lrcRedFinds(isrc: String) = lrcRed.enqueue(
+            MockResponse().setBody(
+                """{"results":[{"isrc":"$isrc","track_name":"Song","artist_name":"Artist","duration":200,"timing_type":"word"}]}""",
+            ),
+        )
+
+        fun shutdown() {
+            itunes.shutdown()
+            lrcRed.shutdown()
+        }
+    }
+
+    private fun spicyWith(s: Searches) = SpicyLyricsSource(
+        client, "test", baseUrl = server.url("/spicy").toString(), clock = clock,
+        isrcResolver = s.isrcs, appleMusicIds = s.appleIds, lyricsDns = Dns.SYSTEM,
+    )
+
+    @Test fun `a first lookup without ids takes the Apple Music id Apple's source just found, and searches nothing`() = runTest {
+        val s = Searches(client, clock)
+        try {
+            s.itunesFinds(42)
+            // Apple's source runs first in the walk and searches iTunes for the song.
+            assertEquals("42", s.appleIds.find(query(spotifyTrackId = null)))
+            serve(syllable)
+            assertNotNull(spicyWith(s).resolve(query(spotifyTrackId = null)))
+            assertEquals("/spicy/v1/lyrics/42", server.takeRequest().requestUrl!!.encodedPath)
+            assertEquals("no second iTunes search", 1, s.itunes.requestCount)
+            assertEquals("lrc.red never delays LRCLIB (#671)", 0, s.lrcRed.requestCount)
+        } finally {
+            s.shutdown()
+        }
+    }
+
+    @Test fun `a first lookup with no id found yet asks nobody`() = runTest {
+        val s = Searches(client, clock)
+        try {
+            serve(syllable)
+            assertNull(spicyWith(s).resolve(query(spotifyTrackId = null)))
+            assertEquals(0, calls)
+        } finally {
+            s.shutdown()
+        }
+    }
+
+    @Test fun `an upgrade pass searches iTunes for the Apple Music id`() = runTest {
+        val s = Searches(client, clock)
+        try {
+            s.itunesFinds(42)
+            serve(syllable)
+            assertNotNull(spicyWith(s).resolve(query(spotifyTrackId = null, searchForIds = true)))
+            assertEquals("/spicy/v1/lyrics/42", server.takeRequest().requestUrl!!.encodedPath)
+            assertEquals("lrc.red isn't asked when iTunes found the song", 0, s.lrcRed.requestCount)
+        } finally {
+            s.shutdown()
+        }
+    }
+
+    @Test fun `an upgrade pass asks lrc red for an ISRC only when iTunes has no match`() = runTest {
+        val s = Searches(client, clock)
+        try {
+            s.itunesFinds(null)
+            s.lrcRedFinds("USAAA0000001")
+            serve(syllable)
+            assertNotNull(spicyWith(s).resolve(query(spotifyTrackId = null, searchForIds = true)))
+            assertEquals("/spicy/v1/lyrics/USAAA0000001", server.takeRequest().requestUrl!!.encodedPath)
+            assertEquals(1, s.itunes.requestCount)
+            assertEquals(1, s.lrcRed.requestCount)
+        } finally {
+            s.shutdown()
+        }
+    }
+
+    @Test fun `an iTunes 429 in an upgrade pass is thrown, so the pass stops instead of moving past the song`() = runTest {
+        val s = Searches(client, clock)
+        try {
+            s.itunes.enqueue(MockResponse().setResponseCode(429))
+            val thrown = runCatching { spicyWith(s).resolve(query(spotifyTrackId = null, searchForIds = true)) }.exceptionOrNull()
+            assertEquals(429, (thrown as AppleTtmlLyricsSource.HttpStatusException).code)
+            assertEquals("Spicy itself wasn't asked", 0, server.requestCount)
+        } finally {
+            s.shutdown()
+        }
     }
 
     @Test fun `a time-out is a miss that pauses the source`() = runTest {
@@ -210,17 +336,25 @@ class SpicyLyricsSourceTest {
         assertPausesFor { serve("<!DOCTYPE html><html><title>Just a moment...</title></html>") }
     }
 
-    /** [fail] makes the next request fail: a miss, nothing asked until the window has passed. */
-    private suspend fun assertPausesFor(fail: () -> Unit) {
+    /** [fail] makes the next request fail: nothing is asked until the window has passed. */
+    private suspend fun assertPausesFor(rateLimited: Boolean = false, fail: () -> Unit) {
         val spicy = source()
         fail()
-        assertNull(spicy.resolve(query()))
+        if (rateLimited) {
+            // A 429 is thrown, so an upgrade pass reports RATE_LIMITED instead of reading it as "no word sync".
+            assertThrows(AppleTtmlLyricsSource.HttpStatusException::class.java) { runBlocking { spicy.resolve(query()) } }
+        } else {
+            assertNull(spicy.resolve(query()))
+        }
         assertEquals(1, calls)
 
         timeOut = false
         serve(syllable)
         now += SpicyLyricsSource.SKIP_WINDOW_MS - 1
-        assertNull("still inside the window", spicy.resolve(query()))
+        // The request isn't sent and the source says so: a walk reads it as a miss, an upgrade pass as PAUSED.
+        assertThrows("still inside the window", SpicyLyricsSource.SkippedException::class.java) {
+            runBlocking { spicy.resolve(query()) }
+        }
         assertEquals(1, calls)
 
         now += 1
@@ -228,7 +362,7 @@ class SpicyLyricsSourceTest {
         assertEquals(2, calls)
     }
 
-    @Test fun `no Spotify id, no request`() = runTest {
+    @Test fun `no Spotify id, no ISRC and no search to make, so no request`() = runTest {
         serve(syllable)
         assertNull(source().resolve(query(spotifyTrackId = null)))
         assertEquals(0, calls)
