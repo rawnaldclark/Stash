@@ -1,6 +1,7 @@
 package com.stash.core.data.sync.workers
 
 import android.content.Context
+import androidx.work.ForegroundUpdater
 import androidx.work.WorkerParameters
 import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.data.blocklist.BlocklistGuard
@@ -38,7 +39,16 @@ import org.junit.Test
 class DiscoveryDownloadWorkerTest {
 
     private val appContext: Context = mockk(relaxed = true)
-    private val workerParams: WorkerParameters = mockk(relaxed = true)
+    /**
+     * The drain's progress notification really calls setForeground, which awaits the
+     * parameters' foreground updater: a relaxed mock's future never completes and every test
+     * hung. This one answers at once, as WorkManager's does once the notification is posted.
+     */
+    private val workerParams: WorkerParameters = mockk(relaxed = true) {
+        every { foregroundUpdater } returns ForegroundUpdater { _, _, _ ->
+            androidx.work.impl.utils.futures.SettableFuture.create<Void>().apply { set(null) }
+        }
+    }
     private val downloadQueueDao: DownloadQueueDao = mockk(relaxed = true)
     private val trackDao: TrackDao = mockk(relaxed = true)
     private val trackDownloader: TrackDownloader = mockk()

@@ -58,6 +58,9 @@ import java.time.Instant
  * - a full phone stops the batch after the first failure, the rest PENDING with no retry used;
  * - a rate limit stops it starting songs and schedules the next try;
  * - a row a live job holds is left to it, while a claim nobody holds is taken back and downloaded.
+ *
+ * And the single retry (Failed downloads' Retry) on the same taxonomy: a network blip waits and
+ * retries instead of failing at once, without using one of the row's automatic retries.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
@@ -227,6 +230,72 @@ class TrackDownloadWorkerResumeTest {
         coVerify(exactly = 1) { trackDownloader.downloadTrack(any(), any()) }
     }
 
+    // ── The single retry ────────────────────────────────────────────────
+
+    @Test fun `single retry - a network failure waits and retries, using none of the row's retries`() = runBlocking {
+        val song = queueFailedSong(retries = 2)
+        check(db.downloadQueueDao().atomicallyClaimForRetry(song) == 1)
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns TrackDownloadOutcome.Failed("Connection reset by peer")
+
+        val result = worker(input = workDataOf(TrackDownloadWorker.KEY_QUEUE_ID to song)).doWork()
+
+        assertEquals(ListenableWorker.Result.retry(), result)
+        val row = db.downloadQueueDao().getById(song)!!
+        assertEquals(DownloadStatus.PENDING, row.status)
+        assertEquals(2, row.retryCount)
+        assertEquals(DownloadFailureType.NETWORK, row.failureType)
+    }
+
+    @Test fun `single retry - out of attempts, the failure shows`() = runBlocking {
+        val song = queueFailedSong()
+        check(db.downloadQueueDao().atomicallyClaimForRetry(song) == 1)
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns TrackDownloadOutcome.Failed("Connection reset by peer")
+
+        val result = worker(input = workDataOf(TrackDownloadWorker.KEY_QUEUE_ID to song), attempt = TrackDownloadWorker.MAX_ATTEMPTS - 1).doWork()
+
+        assertEquals(ListenableWorker.Result.success(), result)
+        val row = db.downloadQueueDao().getById(song)!!
+        assertEquals(DownloadStatus.FAILED, row.status)
+        assertEquals(DownloadFailureType.NETWORK, row.failureType)
+    }
+
+    @Test fun `single retry - a source failure fails at once`() = runBlocking {
+        val song = queueFailedSong()
+        check(db.downloadQueueDao().atomicallyClaimForRetry(song) == 1)
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns TrackDownloadOutcome.Failed("ERROR: [youtube] abc: Video unavailable")
+
+        val result = worker(input = workDataOf(TrackDownloadWorker.KEY_QUEUE_ID to song)).doWork()
+
+        assertEquals(ListenableWorker.Result.success(), result)
+        val row = db.downloadQueueDao().getById(song)!!
+        assertEquals(DownloadStatus.FAILED, row.status)
+        assertEquals(DownloadFailureType.PROVIDER_UNAVAILABLE, row.failureType)
+    }
+
+    @Test fun `single retry - a full phone holds the song and says so`() = runBlocking {
+        val song = queueFailedSong(retries = 1)
+        check(db.downloadQueueDao().atomicallyClaimForRetry(song) == 1)
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns TrackDownloadOutcome.Failed("No space left on device")
+
+        val result = worker(input = workDataOf(TrackDownloadWorker.KEY_QUEUE_ID to song)).doWork()
+
+        assertEquals(ListenableWorker.Result.success(), result)
+        val row = db.downloadQueueDao().getById(song)!!
+        assertEquals(DownloadStatus.PENDING, row.status)
+        assertEquals(1, row.retryCount)
+        verify(exactly = 1) { queueState.setStorageFull(true) }
+        verify(exactly = 1) { notifications.showStorageFull() }
+    }
+
+    /** A song whose download failed on a network error, for Retry. */
+    private suspend fun queueFailedSong(retries: Int = 0): Long {
+        val id = queueSyncSong(100 + retries)
+        db.downloadQueueDao().claimForDownload(id)
+        db.downloadQueueDao().failIfInProgress(id, "timeout", DownloadFailureType.NETWORK, completedAt = 1L)
+        repeat(retries) { db.downloadQueueDao().incrementRetryCount(id) }
+        return id
+    }
+
     /** A song in a switched-on playlist, queued by a sync: the rows the resume run takes. */
     private suspend fun queueSyncSong(n: Int): Long {
         val trackId = db.trackDao().insert(
@@ -247,9 +316,12 @@ class TrackDownloadWorkerResumeTest {
         )
     }
 
-    private fun worker(attempt: Int = 0): TrackDownloadWorker =
+    private fun worker(
+        attempt: Int = 0,
+        input: androidx.work.Data = workDataOf(TrackDownloadWorker.KEY_RESUME to true),
+    ): TrackDownloadWorker =
         TestListenableWorkerBuilder<TrackDownloadWorker>(context)
-            .setInputData(workDataOf(TrackDownloadWorker.KEY_RESUME to true))
+            .setInputData(input)
             .setRunAttemptCount(attempt)
             .setWorkerFactory(object : WorkerFactory() {
                 override fun createWorker(
