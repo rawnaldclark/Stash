@@ -34,9 +34,12 @@ class DownloadCancellationController @Inject constructor(
      * how many were cancelled.
      *
      * It stops this attempt, nothing more (owner, 2026-11-09): the songs are simply not
-     * downloaded, so a playlist shows it isn't fully downloaded, and its Download, the next
-     * sync or a kept playlist's pass queue them again. Before, the songs were kept out like
-     * a song cancelled on its own, and a playlist said "Downloaded" with most of it missing.
+     * downloaded, so a playlist shows it isn't fully downloaded ("Download N more") and its
+     * Download queues them again. So does the next sync, in Download mode or for a kept
+     * playlist, but not a sync already running: that is what the user stopped. A followed
+     * mix in Stream-only mode waits for its button or its next update. Before, the songs
+     * were kept out like a song cancelled on its own, and a playlist said "Downloaded" with
+     * most of it missing.
      */
     suspend fun cancelAll(): Int {
         val cancelled = downloadQueueDao.activeIds().count { cancelRow(it, keptOut = false) }

@@ -759,6 +759,7 @@ class DatabaseBackupManager @Inject constructor(
                 rearmCanonicalRecompute(runNow = false)
                 rearmDuplicateCleanup(runNow = false)
                 rearmMixPinCleanup(runNow = false)
+                rearmLoneCancelBackfill()
                 rearmMixRecipeRetune()
             }
 
@@ -826,6 +827,21 @@ class DatabaseBackupManager @Inject constructor(
      * a merge, which restarts nothing. It only touches mix pins from before Favorite existed.
      * Best-effort, like [rearmCanonicalRecompute].
      */
+    /**
+     * A swapped-in backup made before the kept-out mark brings back cancels that look alike, and the
+     * one-time [LoneCancelBackfill] that marks the lone ones has its done flag in SharedPreferences,
+     * which a restore leaves alone. Re-armed here, it runs at the restart; its first run's cutoff
+     * stays, so a Clear queue this build made is still never marked. A merge copies no download
+     * queue, so only a swap re-arms it. Best-effort, like [rearmCanonicalRecompute].
+     */
+    private fun rearmLoneCancelBackfill() {
+        try {
+            LoneCancelBackfill.forContext(context, database.downloadQueueDao()).rearm()
+        } catch (e: Exception) {
+            android.util.Log.w("BackupManager", "Couldn't re-arm the lone-cancel backfill", e)
+        }
+    }
+
     private suspend fun rearmMixPinCleanup(runNow: Boolean) {
         try {
             val cleanup = MixPinCleanup.forContext(context, database.playlistDao())

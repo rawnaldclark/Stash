@@ -160,6 +160,25 @@ class MusicRepositoryQueuePlaylistTest {
         assertEquals(listOf("SKIPPED"), statusesOf(kept))
     }
 
+    @Test fun `a sync's kept-playlist pass leaves what Clear queue stopped during that sync, the next sync queues it`() = runTest {
+        val pid = playlist("Kept", keepOffline = true)
+        val songs = (0..1).map { member(pid, it, track("Song $it")) }
+        val repo = repo()
+        val dao = db.downloadQueueDao()
+        val running = db.syncHistoryDao().insert(SyncHistoryEntity(startedAt = java.time.Instant.now().minusSeconds(60)))
+        assertEquals(2, repo.queueDownloadsForPlaylist(pid))
+        // Clear queue while that sync runs: on mobile data, say.
+        val controller = DownloadCancellationController(context, dao, DownloadJobRegistry(), mockk(relaxed = true))
+        assertEquals(2, controller.cancelAll())
+
+        assertEquals(0, repo.queueKeptPlaylists(runningSync = running))
+        songs.forEach { song -> assertEquals(listOf("SKIPPED"), statusesOf(song)) }
+
+        val next = db.syncHistoryDao().insert(SyncHistoryEntity(startedAt = java.time.Instant.now().plusSeconds(1)))
+        assertEquals(2, repo.queueKeptPlaylists(runningSync = next))
+        songs.forEach { song -> assertEquals(listOf("PENDING"), statusesOf(song)) }
+    }
+
     /** Every queue row [trackId] has, by status. */
     private fun statusesOf(trackId: Long): List<String> =
         db.openHelper.readableDatabase

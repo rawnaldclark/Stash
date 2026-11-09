@@ -58,20 +58,30 @@ data class PlaylistDetailUiState(
  * The page's Download button (#474). [downloaded] of [total] counts the whole playlist, never the
  * search-filtered list, less the songs that won't download unless the user acts (failed, cancelled
  * on its own, match dismissed). [followed]: a read-only followed mix, whose button sits in its
- * follow block.
+ * follow block. [nothingQueued]: none of the playlist's songs is waiting or running
+ * ([DownloadQueueDao.observeHasQueuedSongs]).
  */
 data class DownloadButtonState(
     val on: Boolean,
     val downloaded: Int,
     val total: Int,
     val followed: Boolean = false,
+    val nothingQueued: Boolean = false,
 ) {
     /** On, and every song is on the phone. */
     val complete: Boolean get() = on && downloaded == total
 
+    /**
+     * On, songs missing, and none of them on its way: Clear queue stopped them, say. "Downloading"
+     * would claim work that isn't happening, so the button offers the missing songs instead, and a
+     * tap queues them with Download staying on (turning it off is a button of its own then).
+     */
+    val stalled: Boolean get() = on && !complete && nothingQueued
+
     val label: String get() = when {
         !on -> "Download"
         complete -> "Downloaded"
+        stalled -> "Download ${total - downloaded} more"
         else -> "Downloading $downloaded of $total"
     }
 }
@@ -199,15 +209,15 @@ class PlaylistDetailViewModel @Inject constructor(
      * would flash in the wrong place. A song that won't download unless the user acts (failed,
      * cancelled on its own, match dismissed; [DownloadQueueDao.observeGivenUpTrackIds]) is left out
      * of the count, so the button never sits at "Downloading 11 of 12" forever. A song Clear queue
-     * cancelled still counts: it isn't on the phone, and turning Download on queues it again.
+     * cancelled still counts: it isn't on the phone. With none of the songs queued the button says
+     * "Download N more", and a tap queues them ([DownloadButtonState.stalled]).
      */
     val downloadButton: StateFlow<DownloadButtonState?> = combine(
-        _playlist,
-        streamingPreference.enabled,
-        sharedMixRepository.observe(playlistId),
+        combine(_playlist, streamingPreference.enabled, sharedMixRepository.observe(playlistId), ::Triple),
         playlistTracks,
         downloadQueueDao.observeGivenUpTrackIds(playlistId),
-    ) { playlist, streamOnly, shared, tracks, givenUpIds ->
+        downloadQueueDao.observeHasQueuedSongs(playlistId),
+    ) { (playlist, streamOnly, shared), tracks, givenUpIds, queued ->
         val followed = shared?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER &&
             shared.status == com.stash.core.data.db.entity.SharedMixEntity.STATUS_ACTIVE
         val on = when {
@@ -224,6 +234,7 @@ class PlaylistDetailViewModel @Inject constructor(
                 downloaded = tracks.count { t -> t.isDownloaded },
                 total = tracks.count { t -> t.isDownloaded || t.id !in givenUp },
                 followed = followed,
+                nothingQueued = !queued,
             )
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -231,10 +242,23 @@ class PlaylistDetailViewModel @Inject constructor(
     /**
      * A tap on the Download button. Off → on queues what's missing; on → off cancels the songs
      * still waiting and keeps the downloaded ones (owner's rule). A short message says which.
+     * Stalled ("Download N more": on, nothing queued) queues the missing songs and stays on. Off
+     * there would have been the only way to get them back (off, then on), and in Download mode off
+     * also switches the playlist's sync off. A followed mix's Download queues them the same way;
+     * on a playlist, a synced one stays synced and is kept on the phone too, so they download now.
      */
     fun toggleDownload() {
         val button = downloadButton.value ?: return
-        val on = !button.on
+        setDownload(on = !button.on || button.stalled, button)
+    }
+
+    /** "Turn off", the stalled button's own way out: on → off, as a tap does while songs download. */
+    fun turnDownloadOff() {
+        val button = downloadButton.value?.takeIf { it.on } ?: return
+        setDownload(on = false, button)
+    }
+
+    private fun setDownload(on: Boolean, button: DownloadButtonState) {
         viewModelScope.launch {
             val changed = followAction("change download for") {
                 if (button.followed) sharedMixRepository.setDownload(playlistId, on)

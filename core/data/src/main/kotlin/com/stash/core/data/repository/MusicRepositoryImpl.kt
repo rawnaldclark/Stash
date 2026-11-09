@@ -865,14 +865,14 @@ class MusicRepositoryImpl @Inject constructor(
         return queued
     }
 
-    override suspend fun queueKeptPlaylists(manualSync: Boolean): Int {
+    override suspend fun queueKeptPlaylists(manualSync: Boolean, runningSync: Long?): Int {
         // After every sync, in either mode: what stopped being wanted since the
         // last one (a song taken out of a kept playlist, say) goes now, not at
         // the next app start, which can be days away.
         dropLeftoverDownloads()
         // Every playlist's rows first, then one drain: a drain per playlist
         // would restart it each time and cancel the song in progress.
-        val queued = playlistDao.getKeepOfflinePlaylistIds().sumOf { insertKeptPlaylist(it) }
+        val queued = playlistDao.getKeepOfflinePlaylistIds().sumOf { insertKeptPlaylist(it, runningSync) }
         // Nothing new still restarts a drain for songs already waiting, whose
         // run was cancelled or cut short. "Sync now" downloads on any network,
         // like that sync's own download step (SyncScheduler.triggerManualSync).
@@ -1009,11 +1009,14 @@ class MusicRepositoryImpl @Inject constructor(
     /**
      * Queue rows only, no drain: see [queueKeptPlaylists]. Returns rows queued.
      * [stillWanted] is asked again right before inserting: a kept playlist's
-     * switch can go off while this checks each song (#474).
+     * switch can go off while this checks each song (#474). [runningSync]: the
+     * sync this pass belongs to, whose own Clear queue it must not undo; null
+     * for the user's Download, which queues every missing song at once.
      */
     private suspend fun insertDownloadsForPlaylist(
         playlistId: Long,
         stillWanted: suspend () -> Boolean = { true },
+        runningSync: Long? = null,
     ): Int {
         // Stream-only mode never runs the sync's download step, so songs an
         // earlier Download-mode sync queued would wait forever (and count as
@@ -1026,7 +1029,8 @@ class MusicRepositoryImpl @Inject constructor(
         // makes this safe to call after every sync (#474) without re-trying the
         // same unmatchable songs, or piling duplicate rows into Failed downloads.
         // A song Clear queue cancelled is queued again: Clear queue stops an
-        // attempt, it doesn't keep the song out (DownloadQueueDao.KEPT_OUT_MARK).
+        // attempt, it doesn't keep the song out (DownloadQueueDao.KEPT_OUT_MARK);
+        // though not by the sync it was cancelled during (runningSync).
         val candidates = tracks.filter { !it.isDownloaded && !it.matchDismissed && !it.soundCloudPreview }
         if (candidates.isEmpty()) return moved
 
@@ -1044,7 +1048,7 @@ class MusicRepositoryImpl @Inject constructor(
             emptyMap()
         }
         val entries = candidates.mapNotNull { entity ->
-            if (downloadQueueDao.hasRowToLeaveAlone(entity.id)) return@mapNotNull null
+            if (downloadQueueDao.hasRowToLeaveAlone(entity.id, runningSync)) return@mapNotNull null
             // Already on the phone as another row (a hand download, a copy synced from the other
             // service): never downloaded a second time (a second file, a second row in Downloads).
             // The copy is linked here, where the song sits, as the sync links its own (DiffWorker),
@@ -1068,12 +1072,9 @@ class MusicRepositoryImpl @Inject constructor(
             playlistDao.updateTrackCount(playlistId, trackDao.countByPlaylist(playlistId, includeStreamable = true))
             android.util.Log.i("MusicRepository", "playlist $playlistId: ${copyLinks.size} song(s) already on the phone, linked instead of downloaded")
         }
-        if (entries.isNotEmpty()) {
-            // The cancelled row of a song queued again goes, so History doesn't list it as cancelled.
-            downloadQueueDao.dropStoppedCancels(entries.map { it.trackId })
-            downloadQueueDao.insertAll(entries)
-        }
-        return moved + entries.size
+        // Checked again, its stopped cancel dropped and its row filed in one transaction (queueSongs).
+        val queued = if (entries.isEmpty()) 0 else downloadQueueDao.queueSongs(entries, runningSync)
+        return moved + queued
     }
 
     /**
@@ -1098,9 +1099,9 @@ class MusicRepositoryImpl @Inject constructor(
      * while this checks each song wins (nothing is queued); one that lands
      * later waits for the lock, then deletes what this queued.
      */
-    private suspend fun insertKeptPlaylist(playlistId: Long): Int = KEEP_OFFLINE_LOCK.withLock {
+    private suspend fun insertKeptPlaylist(playlistId: Long, runningSync: Long? = null): Int = KEEP_OFFLINE_LOCK.withLock {
         val kept: suspend () -> Boolean = { playlistDao.getById(playlistId)?.keepOffline == true }
-        if (kept()) insertDownloadsForPlaylist(playlistId, stillWanted = kept) else 0
+        if (kept()) insertDownloadsForPlaylist(playlistId, stillWanted = kept, runningSync = runningSync) else 0
     }
 
     /** A kept playlist's missing songs, queued and started like a tap. */

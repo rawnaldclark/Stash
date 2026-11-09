@@ -101,7 +101,7 @@ class LibraryReconciliationRequeueTest {
         val earlier = db.syncHistoryDao().insert(SyncHistoryEntity())
         val clearedRow = dao.insert(DownloadQueueEntity(trackId = cleared, syncId = earlier))
         val keptOutRow = dao.insert(DownloadQueueEntity(trackId = keptOut, syncId = earlier))
-        dao.markCancelledIfActive(clearedRow, completedAt = 700)
+        dao.markCancelledIfActive(clearedRow, completedAt = 700, keptOut = false)
         dao.markCancelledIfActive(keptOutRow, completedAt = 700, keptOut = true)
         val run = db.syncHistoryDao().insert(SyncHistoryEntity())
 
@@ -114,6 +114,23 @@ class LibraryReconciliationRequeueTest {
         assertEquals(run, requeued.syncId)
         assertEquals(DownloadStatus.SKIPPED, dao.getByTrackId(keptOut)!!.status)
         assertEquals(keptOutRow, dao.getByTrackId(keptOut)!!.id)
+    }
+
+    @Test fun `a song Clear queue cancelled during the sync waits for the next sync's requeue`() = runTest {
+        val song = missingSong(title = "Cleared during the sync")
+        val dao = db.downloadQueueDao()
+        val running = db.syncHistoryDao().insert(SyncHistoryEntity(startedAt = java.time.Instant.ofEpochMilli(1_000)))
+        val row = dao.insert(DownloadQueueEntity(trackId = song, syncId = running))
+        dao.markCancelledIfActive(row, completedAt = 1_500, keptOut = false)
+
+        // The sync the user stopped doesn't start the song again.
+        assertEquals(0, reconciler().reconcile(syncId = running).unqueuedRequeued)
+        assertEquals(DownloadStatus.SKIPPED, dao.getById(row)!!.status)
+
+        val next = db.syncHistoryDao().insert(SyncHistoryEntity(startedAt = java.time.Instant.ofEpochMilli(2_000)))
+        assertEquals(1, reconciler().reconcile(syncId = next).unqueuedRequeued)
+        assertNull(dao.getById(row))
+        assertEquals(next, dao.getByTrackId(song)!!.syncId)
     }
 
     /**

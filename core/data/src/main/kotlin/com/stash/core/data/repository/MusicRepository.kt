@@ -331,9 +331,11 @@ interface MusicRepository {
      * missing, then start ONE background download for all of it. Returns the
      * number of songs queued. [manualSync]: the user tapped "Sync now", so
      * these download on any network, like that sync's own downloads. First drops
-     * the waiting downloads nobody asks for any more (#532).
+     * the waiting downloads nobody asks for any more (#532). [runningSync]: the
+     * sync this pass ends; a song cancelled since it started (Clear queue during
+     * the sync) is left out until the next one.
      */
-    suspend fun queueKeptPlaylists(manualSync: Boolean = false): Int
+    suspend fun queueKeptPlaylists(manualSync: Boolean = false, runningSync: Long? = null): Int
 
     /**
      * Starts the download run for songs the user asked for that are waiting in

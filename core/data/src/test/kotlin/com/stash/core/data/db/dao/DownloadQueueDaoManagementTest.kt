@@ -145,8 +145,8 @@ class DownloadQueueDaoManagementTest {
             error = "old", failureType = DownloadFailureType.NETWORK,
         )
 
-        assertEquals(1, dao.markCancelledIfActive(1, completedAt = 700))
-        assertEquals(0, dao.markCancelledIfActive(1, completedAt = 900))
+        assertEquals(1, dao.markCancelledIfActive(1, completedAt = 700, keptOut = false))
+        assertEquals(0, dao.markCancelledIfActive(1, completedAt = 900, keptOut = false))
         val row = dao.getById(1)!!
         assertEquals(DownloadStatus.SKIPPED, row.status)
         assertEquals(Instant.ofEpochMilli(700), row.completedAt)
@@ -157,7 +157,7 @@ class DownloadQueueDaoManagementTest {
     @Test fun cancel_then_late_terminal_writes_are_noops() = runTest {
         seedTrack(1, "Track", "Artist", "Album", null)
         seedQueue(1, 1, DownloadStatus.IN_PROGRESS, createdAt = 100)
-        assertEquals(1, dao.markCancelledIfActive(1, completedAt = 700))
+        assertEquals(1, dao.markCancelledIfActive(1, completedAt = 700, keptOut = false))
 
         assertEquals(0, dao.completeIfInProgress(1, completedAt = 800))
         assertEquals(0, dao.failIfInProgress(1, "late", DownloadFailureType.NETWORK, 800))
@@ -170,7 +170,7 @@ class DownloadQueueDaoManagementTest {
         seedQueue(1, 1, DownloadStatus.IN_PROGRESS, createdAt = 100)
         assertEquals(1, dao.completeIfInProgress(1, completedAt = 800))
 
-        assertEquals(0, dao.markCancelledIfActive(1, completedAt = 900))
+        assertEquals(0, dao.markCancelledIfActive(1, completedAt = 900, keptOut = false))
         assertEquals(DownloadStatus.COMPLETED, dao.getStatusById(1))
         assertEquals(Instant.ofEpochMilli(800), dao.getById(1)?.completedAt)
     }
@@ -220,7 +220,7 @@ class DownloadQueueDaoManagementTest {
         seedPlaylistMembership(trackId = 1)
         seedQueue(1, 1, DownloadStatus.PENDING, createdAt = 100)
 
-        assertEquals(1, dao.markCancelledIfActive(1, completedAt = 700))
+        assertEquals(1, dao.markCancelledIfActive(1, completedAt = 700, keptOut = false))
 
         assertEquals(listOf(1L), dao.getUnqueuedTrackIds(listOf("SPOTIFY")))
         assertEquals(1, dao.getOrphanedTrackCounts().single().cnt)
@@ -233,7 +233,7 @@ class DownloadQueueDaoManagementTest {
         seedQueue(2, 2, DownloadStatus.WAITING_FOR_LOSSLESS, createdAt = 100, error = "wait:aac")
 
         assertEquals(1, dao.markCancelledIfActive(1, completedAt = 700, keptOut = true))
-        assertEquals(1, dao.markCancelledIfActive(2, completedAt = 700))
+        assertEquals(1, dao.markCancelledIfActive(2, completedAt = 700, keptOut = false))
 
         assertEquals(KEPT_OUT_MARK, dao.getById(1)!!.errorMessage)
         // Clear queue's cancel keeps nothing, not even the wait reason it had.
@@ -248,7 +248,7 @@ class DownloadQueueDaoManagementTest {
         seedQueue(1, 1, DownloadStatus.PENDING, createdAt = 100)
         seedQueue(2, 2, DownloadStatus.PENDING, createdAt = 100)
         dao.markCancelledIfActive(1, completedAt = 700, keptOut = true)
-        dao.markCancelledIfActive(2, completedAt = 700)
+        dao.markCancelledIfActive(2, completedAt = 700, keptOut = false)
 
         assertEquals(true, dao.hasRowToLeaveAlone(1))
         assertEquals(false, dao.hasRowToLeaveAlone(2))
@@ -267,6 +267,89 @@ class DownloadQueueDaoManagementTest {
         assertEquals(DownloadStatus.SKIPPED, dao.getStatusById(2))
         assertEquals(DownloadStatus.FAILED, dao.getStatusById(3))
         assertEquals(DownloadStatus.SKIPPED, dao.getStatusById(4))
+    }
+
+    @Test fun `a song Clear queue cancelled during a sync waits for the next sync`() = runTest {
+        seedTrack(1, "Cleared during the sync", "Artist", "Album", null)
+        seedTrack(2, "Cleared before it", "Artist", "Album", null)
+        seedPlaylistMembership(trackId = 1)
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = 1000, trackId = 2))
+        val running = db.syncHistoryDao().insert(SyncHistoryEntity(startedAt = Instant.ofEpochMilli(1_000)))
+        seedQueue(1, 1, DownloadStatus.SKIPPED, createdAt = 100, completedAt = 1_500)
+        seedQueue(2, 2, DownloadStatus.SKIPPED, createdAt = 100, completedAt = 700)
+
+        // That sync's own passes leave the song it was told to stop alone.
+        assertEquals(listOf(2L), dao.getUnqueuedTrackIds(listOf("SPOTIFY"), runningSync = running))
+        assertEquals(true, dao.hasRowToLeaveAlone(1, runningSync = running))
+        assertEquals(false, dao.hasRowToLeaveAlone(2, runningSync = running))
+        // The user's own Download takes it at once, and the next sync takes it too.
+        assertEquals(false, dao.hasRowToLeaveAlone(1))
+        val next = db.syncHistoryDao().insert(SyncHistoryEntity(startedAt = Instant.ofEpochMilli(2_000)))
+        assertEquals(listOf(1L, 2L), dao.getUnqueuedTrackIds(listOf("SPOTIFY"), runningSync = next).sorted())
+    }
+
+    @Test fun `queueSongs checks each song again, so a Retry that landed first keeps its song's one row`() = runTest {
+        seedTrack(1, "Retried", "Artist", "Album", null)
+        seedTrack(2, "Cleared", "Artist", "Album", null)
+        seedQueue(1, 1, DownloadStatus.SKIPPED, createdAt = 100, completedAt = 700)
+        seedQueue(2, 2, DownloadStatus.SKIPPED, createdAt = 100, completedAt = 700)
+        // The pass found both needing a row; then the user tapped Retry on song 1 in History.
+        assertEquals(1, dao.atomicallyClaimForRetry(1))
+
+        val queued = dao.queueSongs(listOf(DownloadQueueEntity(trackId = 1), DownloadQueueEntity(trackId = 2)), runningSync = null)
+
+        assertEquals(1, queued)
+        assertEquals(1, rowCount(trackId = 1))
+        assertEquals(DownloadStatus.PENDING, dao.getStatusById(1))
+        assertNull("song 2's cancel goes", dao.getById(2))
+        assertEquals(DownloadStatus.PENDING, dao.getByTrackId(2)!!.status)
+    }
+
+    @Test fun `a tap's row Clear queue stopped keeps the user's ask when the song is queued again`() = runTest {
+        seedTrack(1, "Tapped", "Artist", "Album", null)
+        seedTrack(2, "The playlist's", "Artist", "Album", null)
+        seedQueue(1, 1, DownloadStatus.SKIPPED, createdAt = 100, completedAt = 700, userRequested = true)
+        seedQueue(2, 2, DownloadStatus.SKIPPED, createdAt = 100, completedAt = 700)
+
+        assertEquals(2, dao.queueSongs(listOf(DownloadQueueEntity(trackId = 1), DownloadQueueEntity(trackId = 2)), runningSync = null))
+
+        assertEquals(true, dao.getByTrackId(1)!!.userRequested)
+        assertEquals(false, dao.getByTrackId(2)!!.userRequested)
+    }
+
+    @Test fun `only a playlist's queueing counts a song waiting for lossless as queued`() = runTest {
+        seedTrack(1, "Waiting", "Artist", "Album", null)
+        seedQueue(1, 1, DownloadStatus.WAITING_FOR_LOSSLESS, createdAt = 100, error = "wait:aac")
+
+        assertEquals(0, dao.queueSongs(listOf(DownloadQueueEntity(trackId = 1)), runningSync = null))
+        // The sync's requeue never counted it (getUnqueuedTrackIds), and still doesn't.
+        assertEquals(1, dao.queueSongs(listOf(DownloadQueueEntity(trackId = 1)), runningSync = null, leaveWaiting = false))
+    }
+
+    @Test fun `the lossless sweep's requeue moves only a row still waiting`() = runTest {
+        seedTrack(1, "Still waiting", "Artist", "Album", null)
+        seedTrack(2, "Cancelled meanwhile", "Artist", "Album", null)
+        seedQueue(1, 1, DownloadStatus.WAITING_FOR_LOSSLESS, createdAt = 100, error = "wait:aac")
+        seedQueue(2, 2, DownloadStatus.SKIPPED, createdAt = 100, completedAt = 700, error = KEPT_OUT_MARK)
+
+        assertEquals(1, dao.requeueIfStillWaiting(1))
+        assertEquals(DownloadStatus.PENDING, dao.getStatusById(1))
+        assertNull(dao.getById(1)!!.errorMessage)
+        assertEquals(0, dao.requeueIfStillWaiting(2))
+        assertEquals(DownloadStatus.SKIPPED, dao.getStatusById(2))
+        assertEquals(KEPT_OUT_MARK, dao.getById(2)!!.errorMessage)
+    }
+
+    @Test fun `a playlist has songs queued only while one of them waits or runs`() = runTest {
+        seedTrack(1, "Cleared", "Artist", "Album", null)
+        seedTrack(2, "Later", "Artist", "Album", null)
+        seedPlaylistMembership(trackId = 1)
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = 1000, trackId = 2))
+        seedQueue(1, 1, DownloadStatus.SKIPPED, createdAt = 100, completedAt = 700)
+        assertEquals(false, dao.observeHasQueuedSongs(1000).first())
+
+        seedQueue(2, 2, DownloadStatus.WAITING_FOR_LOSSLESS, createdAt = 100)
+        assertEquals(true, dao.observeHasQueuedSongs(1000).first())
     }
 
     @Test fun `retry claim un-cancels a skipped row`() = runTest {
@@ -330,6 +413,12 @@ class DownloadQueueDaoManagementTest {
 
     /** A sync-enabled, active, non-mix parent — the shape every "is this
      *  track wanted?" predicate in the DAO checks for. */
+    private fun rowCount(trackId: Long): Int =
+        db.query("SELECT COUNT(*) FROM download_queue WHERE track_id = ?", arrayOf<Any?>(trackId)).use {
+            it.moveToFirst()
+            it.getInt(0)
+        }
+
     private suspend fun seedPlaylistMembership(trackId: Long) {
         val playlistDao = db.playlistDao()
         playlistDao.insert(

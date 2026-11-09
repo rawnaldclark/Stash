@@ -241,7 +241,8 @@ private fun QueueContent(
                 label = "Clear queue",
                 onClick = onClearQueue,
                 confirm = "Every waiting download is cancelled and the ones running now stop. " +
-                    "Cancelled songs come back the next time you download them.",
+                    "Songs from your playlists download again with the next sync, or when you " +
+                    "tap Download on the playlist.",
             )
         }
         if (state.downloading.isNotEmpty()) {

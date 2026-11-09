@@ -206,10 +206,13 @@ class LosslessRetryWorker @AssistedInject constructor(
         spotifyUri = track.spotifyUri,
     ).forLibrarySource(track.source, track.musicVideoType, hasVideoId = !track.youtubeId.isNullOrBlank())
 
-    /** Back to PENDING, and its download starts now. */
+    /**
+     * Back to PENDING, and its download starts now; unless the row stopped waiting during this
+     * sweep. The sweep works from a snapshot taken before its lookups, and a cancel that landed
+     * meanwhile (the X, which keeps the song out, or Clear queue) wins: the song isn't downloaded.
+     */
     private suspend fun requeue(queueId: Long) {
-        downloadQueueDao.updateStatus(id = queueId, status = DownloadStatus.PENDING)
-        singleTrackDownloadEnqueuer.enqueue(queueId)
+        if (downloadQueueDao.requeueIfStillWaiting(queueId) == 1) singleTrackDownloadEnqueuer.enqueue(queueId)
     }
 
     companion object {

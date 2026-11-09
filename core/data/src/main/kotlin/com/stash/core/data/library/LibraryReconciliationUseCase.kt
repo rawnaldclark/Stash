@@ -138,7 +138,9 @@ class LibraryReconciliationUseCase @Inject constructor(
         // used to file had no sync id, so only the background drain took them, and
         // since #474 it downloaded them unasked at every app start, Stream-only
         // included (#532). They also hid their songs from the next sync's requeue.
-        val unqueued = if (syncId != null) downloadQueueDao.getUnqueuedTrackIds(connectedSources) else emptyList()
+        // A song cancelled during this sync (Clear queue while it runs) waits for the next one:
+        // this sync is what the user stopped.
+        val unqueued = if (syncId != null) downloadQueueDao.getUnqueuedTrackIds(connectedSources, runningSync = syncId) else emptyList()
         // A song already on the phone as another row is never downloaded a second time
         // (SameSongRule.isLibraryCopy, the check a tap, a Download switch and the sync ask): the
         // sync links that copy instead and leaves the song unqueued, and this requeue would
@@ -147,22 +149,22 @@ class LibraryReconciliationUseCase @Inject constructor(
         val copies = if (unqueued.isEmpty()) emptyMap() else trackDao.libraryCopiesOf(trackDao.getByIds(unqueued))
         if (copies.isNotEmpty()) linkCopies(copies)
         val unqueuedTrackIds = unqueued.filterNot { it in copies }
-        if (unqueuedTrackIds.isNotEmpty()) {
-            val newEntries = unqueuedTrackIds.map { trackId ->
-                com.stash.core.data.db.entity.DownloadQueueEntity(trackId = trackId, syncId = syncId)
-            }
-            // A song Clear queue cancelled comes back here (it only stopped that attempt): its
-            // cancelled row goes, so History doesn't list it as cancelled while it downloads.
-            downloadQueueDao.dropStoppedCancels(unqueuedTrackIds)
-            downloadQueueDao.insertAll(newEntries)
-        }
+        // A song Clear queue cancelled before this sync comes back here (it only stopped that
+        // attempt). queueSongs checks each song again, drops its cancelled row (History doesn't
+        // list it as cancelled while it downloads) and keeps a tap's ask, in one transaction. A
+        // waiting-for-lossless row doesn't hold a song back here, as it never has.
+        val requeued = if (unqueuedTrackIds.isEmpty()) 0 else downloadQueueDao.queueSongs(
+            unqueuedTrackIds.map { com.stash.core.data.db.entity.DownloadQueueEntity(trackId = it, syncId = syncId) },
+            runningSync = syncId,
+            leaveWaiting = false,
+        )
         onProgress(5, TOTAL_STEPS)
 
         return ReconciliationResult(
             orphansSwept = sweptOrphans,
             staleResumed = resetInProgress,
             filesMissing = filesMissing,
-            unqueuedRequeued = unqueuedTrackIds.size,
+            unqueuedRequeued = requeued,
             filesAdopted = adopted,
         )
     }

@@ -108,7 +108,7 @@ class TrackDownloadWorkerStopRestoreTest {
     @Test fun `single track - a replacement the user cancels mid-download keeps its file`() = runBlocking {
         val (trackId, queueId) = trackHandedBackForReplacement()
         coEvery { trackDownloader.downloadTrack(any(), any()) } coAnswers {
-            db.downloadQueueDao().markCancelledIfActive(queueId, System.currentTimeMillis())
+            db.downloadQueueDao().markCancelledIfActive(queueId, System.currentTimeMillis(), keptOut = true)
             throw CancellationException("cancelled")
         }
 
@@ -136,7 +136,7 @@ class TrackDownloadWorkerStopRestoreTest {
     @Test fun `chain - a replacement the user cancels mid-download keeps its file`() = runBlocking {
         val (trackId, queueId) = trackHandedBackForReplacement()
         coEvery { trackDownloader.downloadTrack(any(), any()) } coAnswers {
-            db.downloadQueueDao().markCancelledIfActive(queueId, System.currentTimeMillis())
+            db.downloadQueueDao().markCancelledIfActive(queueId, System.currentTimeMillis(), keptOut = true)
             throw CancellationException("cancelled")
         }
 

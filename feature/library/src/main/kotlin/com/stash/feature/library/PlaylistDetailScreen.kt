@@ -305,6 +305,7 @@ fun PlaylistDetailScreen(
                         DownloadButton(
                             state = button,
                             onClick = { viewModel.toggleDownload() },
+                            onTurnOff = { viewModel.turnDownloadOff() },
                             modifier = Modifier.padding(start = HeaderGutter, end = HeaderGutter, bottom = 8.dp),
                         )
                     }
@@ -327,6 +328,7 @@ fun PlaylistDetailScreen(
                                 DownloadButton(
                                     state = button,
                                     onClick = { viewModel.toggleDownload() },
+                                    onTurnOff = { viewModel.turnDownloadOff() },
                                     modifier = Modifier.padding(top = 8.dp),
                                 )
                             }
@@ -1222,14 +1224,23 @@ private fun IconLabel(icon: ImageVector, text: String) {
  * with a ring that fills as songs land; "Downloaded", in the primary color (Spotify's green), once
  * every song is on the phone. Shaped like the header's Shuffle button, but in the plain text color
  * until it's done, so it stays quieter than Play All. It wraps its label and resizes smoothly.
+ * "Download 12 more" when it is on with songs missing and none on its way (Clear queue stopped
+ * them): its tap queues them, so "Turn off" sits beside it ([onTurnOff]).
  */
 @Composable
-private fun DownloadButton(state: DownloadButtonState, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun DownloadButton(
+    state: DownloadButtonState,
+    onClick: () -> Unit,
+    onTurnOff: () -> Unit,
+    modifier: Modifier = Modifier,
+) = Row(modifier, verticalAlignment = Alignment.CenterVertically) {
     val color = if (state.complete) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
     OutlinedButton(
         onClick = onClick,
         // TalkBack: "Downloading 3 of 12, On, Button", as the switch it replaced said On/Off.
-        modifier = modifier
+        // It gives way first on a narrow screen (its label ellipsizes), so "Turn off" always fits.
+        modifier = Modifier
+            .weight(1f, fill = false)
             .animateContentSize()
             .semantics { stateDescription = if (state.on) "On" else "Off" },
         shape = RoundedCornerShape(12.dp),
@@ -1239,7 +1250,8 @@ private fun DownloadButton(state: DownloadButtonState, onClick: () -> Unit, modi
         // One 20dp slot for the icon or the ring, so the label never shifts between states.
         Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
             when {
-                !state.on -> Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(20.dp))
+                // Stalled: nothing is downloading, so no ring; the tap downloads, as when off.
+                !state.on || state.stalled -> Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(20.dp))
                 state.complete -> Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(20.dp))
                 else -> CircularProgressIndicator(
                     progress = { state.downloaded.toFloat() / state.total },
@@ -1252,5 +1264,9 @@ private fun DownloadButton(state: DownloadButtonState, onClick: () -> Unit, modi
         }
         Spacer(Modifier.width(8.dp))
         Text(state.label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    if (state.stalled) {
+        Spacer(Modifier.width(8.dp))
+        TextButton(onClick = onTurnOff) { Text("Turn off", style = MaterialTheme.typography.labelLarge) }
     }
 }

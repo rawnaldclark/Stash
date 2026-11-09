@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.ColumnInfo
 import androidx.room.Transaction
+import com.stash.core.data.db.chunkedForBind
 import com.stash.core.data.db.chunkedForBindWrite
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.model.DownloadFailureType
@@ -181,13 +182,29 @@ private const val BLOCKED_TRACK = """
  * ([KEPT_OUT]) until the user asks for it again (its Retry, a tap on the song).
  *
  * Clear queue writes no mark. It stops what was queued and nothing more: a song it cancelled is
- * simply not downloaded, so a playlist's Download, the next sync and a kept playlist's pass after
- * it queue the song again. A cancel from before the mark reads as Clear queue's.
+ * simply not downloaded, so a playlist's Download queues it again, and so does the next sync (its
+ * requeue in Download mode, a kept playlist's pass after it), though not the sync already running
+ * ([CANCELLED_DURING_SYNC]). A followed mix in Stream-only mode has no such pass: its Download
+ * button ("Download N more") or the mix's next update queues the song. A cancel from before the
+ * mark existed gets it once if it was a lone cancel, not one row of a Clear queue
+ * ([com.stash.core.data.db.LoneCancelBackfill]).
  */
 const val KEPT_OUT_MARK = "cancel:kept_out"
 
 /** A song the user cancelled on its own ([KEPT_OUT_MARK]). `dq` is its queue row. */
 private const val KEPT_OUT = "(dq.status = 'SKIPPED' AND dq.error_message = '" + KEPT_OUT_MARK + "')"
+
+/**
+ * A song cancelled while the sync `:runningSync` runs (after it started): that sync's own passes
+ * (its requeue, the kept playlists' pass at its end) leave the song alone. Without it a Clear queue
+ * tapped during a sync was undone seconds later by that same sync. The next sync queues the song
+ * again. A null `:runningSync` (the user's own Download, a followed mix) matches nothing, so those
+ * queue the song at once. `dq` is its queue row.
+ */
+private const val CANCELLED_DURING_SYNC = """
+    (dq.status = 'SKIPPED'
+     AND dq.completed_at >= (SELECT sh.started_at FROM sync_history sh WHERE sh.id = :runningSync))
+"""
 
 /**
  * Data-access object for [DownloadQueueEntity].
@@ -284,17 +301,20 @@ interface DownloadQueueDao {
      * screen own it), or cancelled by the user on its own ([KEPT_OUT_MARK]). The
      * rows [getUnqueuedTrackIds] already counts as queued, plus WAITING_FOR_LOSSLESS.
      * A song Clear queue cancelled is not among them: it is queued again, and
-     * [dropStoppedCancels] takes its cancelled row out of History. Checks EVERY row:
+     * [dropStoppedCancels] takes its cancelled row out of History; unless it was
+     * cancelled during [runningSync], the sync this pass belongs to
+     * ([CANCELLED_DURING_SYNC]; null for the user's own Download). Checks EVERY row:
      * [getByTrackId]'s LIMIT 1 answers with the oldest, so one old FAILED row
      * let a re-queue add a fresh row on every call (#474's per-sync sweep).
      */
     @Query("""
         SELECT EXISTS(
             SELECT 1 FROM download_queue dq WHERE dq.track_id = :trackId
-              AND (dq.status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS', 'FAILED') OR """ + KEPT_OUT + """)
+              AND (dq.status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS', 'FAILED')
+                   OR """ + KEPT_OUT + """ OR """ + CANCELLED_DURING_SYNC + """)
         )
     """)
-    suspend fun hasRowToLeaveAlone(trackId: Long): Boolean
+    suspend fun hasRowToLeaveAlone(trackId: Long, runningSync: Long? = null): Boolean
 
     /**
      * The cancelled rows of [trackIds] that only stopped an attempt (Clear queue, or a cancel from
@@ -312,6 +332,59 @@ interface DownloadQueueDao {
     /** [dropStoppedCancelsRaw], chunked: a whole playlist or a sync's requeue can pass thousands (#337). */
     suspend fun dropStoppedCancels(trackIds: List<Long>) =
         trackIds.chunkedForBindWrite { dropStoppedCancelsRaw(it) }
+
+    /**
+     * Of [trackIds], the songs a re-queue leaves alone, read at once: [hasRowToLeaveAlone]'s rule,
+     * where a WAITING_FOR_LOSSLESS row counts only with [leaveWaiting] (the sync's requeue,
+     * [getUnqueuedTrackIds], has never counted one).
+     */
+    @Query("""
+        SELECT DISTINCT dq.track_id FROM download_queue dq
+         WHERE dq.track_id IN (:trackIds)
+           AND (dq.status IN ('PENDING', 'IN_PROGRESS', 'FAILED')
+                OR (:leaveWaiting AND dq.status = 'WAITING_FOR_LOSSLESS')
+                OR """ + KEPT_OUT + """ OR """ + CANCELLED_DURING_SYNC + """)
+    """)
+    suspend fun songsToLeaveAloneRaw(trackIds: List<Long>, runningSync: Long?, leaveWaiting: Boolean): List<Long>
+
+    /** The songs of [trackIds] whose stopped cancel ([dropStoppedCancelsRaw]'s rows) was the user's own ask. */
+    @Query("""
+        SELECT DISTINCT track_id FROM download_queue
+         WHERE track_id IN (:trackIds)
+           AND status = 'SKIPPED'
+           AND user_requested = 1
+           AND COALESCE(error_message, '') != '""" + KEPT_OUT_MARK + """'
+    """)
+    suspend fun stoppedAsksRaw(trackIds: List<Long>): List<Long>
+
+    /**
+     * Files [entries] (one new row per song), as a playlist's Download and a sync's requeue do, in
+     * one transaction. Returns how many went in.
+     *
+     * - Each song is checked again here ([songsToLeaveAloneRaw]): a Retry in History or a tap can
+     *   give it a live row after the caller looked, and two live rows let two runners take it.
+     * - The stopped cancels of the songs that go are dropped ([dropStoppedCancels]), so History
+     *   doesn't list them as cancelled while they download.
+     * - A song the user had asked for by hand (a tap's row that Clear queue stopped) keeps that ask
+     *   on its new row (`user_requested`): turning a playlist off still spares it
+     *   ([cancelWaitingForPlaylist]), and the orphan sweep still keeps its file.
+     */
+    @Transaction
+    suspend fun queueSongs(
+        entries: List<DownloadQueueEntity>,
+        runningSync: Long?,
+        leaveWaiting: Boolean = true,
+    ): Int {
+        val leave = entries.map { it.trackId }
+            .chunkedForBind { songsToLeaveAloneRaw(it, runningSync, leaveWaiting) }.toSet()
+        val going = entries.filter { it.trackId !in leave }
+        if (going.isEmpty()) return 0
+        val ids = going.map { it.trackId }
+        val asked = ids.chunkedForBind { stoppedAsksRaw(it) }.toSet()
+        dropStoppedCancels(ids)
+        insertAll(going.map { if (it.trackId in asked) it.copy(userRequested = true) else it })
+        return going.size
+    }
 
     /**
      * Stream-only mode (#474): the sync's download step never runs there, so a
@@ -516,6 +589,20 @@ interface DownloadQueueDao {
         rejectedVideoId: String? = null,
     )
 
+    /**
+     * A row waiting for lossless goes back to PENDING so its download can start (LosslessRetryWorker),
+     * as [updateStatus] did, but only while it still waits: the sweep decides from a snapshot taken
+     * before its lookups, and a cancel (the X, Clear queue) landing meanwhile must win, mark and all.
+     * Returns 1 when it moved, 0 when the row had moved on.
+     */
+    @Query("""
+        UPDATE download_queue
+           SET status = 'PENDING', error_message = NULL, completed_at = NULL,
+               failure_type = 'NONE', rejected_video_id = NULL
+         WHERE id = :id AND status = 'WAITING_FOR_LOSSLESS'
+    """)
+    suspend fun requeueIfStillWaiting(id: Long): Int
+
     /** Atomically claims a pending row for a worker. */
     @Query("""
         UPDATE download_queue
@@ -538,7 +625,30 @@ interface DownloadQueueDao {
          WHERE id = :id
            AND status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS')
     """)
-    suspend fun markCancelledIfActive(id: Long, completedAt: Long, keptOut: Boolean = false): Int
+    suspend fun markCancelledIfActive(id: Long, completedAt: Long, keptOut: Boolean): Int
+
+    /**
+     * [com.stash.core.data.db.LoneCancelBackfill]'s one update: a cancel from before [KEPT_OUT_MARK]
+     * existed gets the mark when it was a song cancelled on its own. Only unmarked cancels finished
+     * before [before] (the pass's first run, so nothing this build cancelled) are looked at. One
+     * from before [clearQueueSince] is always the X, the only cancel there was; a later one is the X
+     * unless another cancel finished within [burstWindowMs] of it, which makes it one row of a
+     * Clear queue. Idempotent: it reads only `status` and `completed_at`, which it never changes.
+     */
+    @Query("""
+        UPDATE download_queue
+           SET error_message = '""" + KEPT_OUT_MARK + """'
+         WHERE status = 'SKIPPED'
+           AND error_message IS NULL
+           AND COALESCE(completed_at, 0) < :before
+           AND (COALESCE(completed_at, 0) < :clearQueueSince
+                OR NOT EXISTS (
+                    SELECT 1 FROM download_queue o
+                     WHERE o.status = 'SKIPPED'
+                       AND o.id != download_queue.id
+                       AND ABS(o.completed_at - download_queue.completed_at) <= :burstWindowMs))
+    """)
+    suspend fun markLoneCancelsKeptOut(before: Long, clearQueueSince: Long, burstWindowMs: Long): Int
 
     /** Completes only the worker claim that is still in progress. */
     @Query("""
@@ -1035,8 +1145,9 @@ interface DownloadQueueDao {
      * of its "N of M" instead of sitting at "Downloading 11 of 12" forever.
      *
      * A song Clear queue cancelled is not given up: it is simply not downloaded yet. The button
-     * counts it as missing, and the playlist's Download, the next sync's pass for a kept playlist,
-     * or the sync's own requeue queue it again.
+     * counts it as missing and, with nothing of the playlist queued ([observeHasQueuedSongs]), says
+     * "Download N more": a tap queues it again. So does the next sync, for a kept playlist or in
+     * Download mode (see [KEPT_OUT_MARK]).
      *
      * Every FAILED row counts, not only an exhausted one (retry_count >= 3): [resetExhaustedRetries]
      * gives those another chance at each app start and sync, and a drain only starts for a PENDING
@@ -1064,6 +1175,22 @@ interface DownloadQueueDao {
         """
     )
     fun observeGivenUpTrackIds(playlistId: Long): Flow<List<Long>>
+
+    /**
+     * Whether any of [playlistId]'s songs has a download waiting or running (PENDING, IN_PROGRESS,
+     * WAITING_FOR_LOSSLESS; a Pause leaves them PENDING). The page's Download button says
+     * "Downloading" while one does; with none and songs still missing it says "Download N more".
+     */
+    @Query("""
+        SELECT EXISTS(
+            SELECT 1 FROM playlist_tracks pt
+            INNER JOIN download_queue dq ON dq.track_id = pt.track_id
+            WHERE pt.playlist_id = :playlistId
+              AND pt.removed_at IS NULL
+              AND dq.status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS')
+        )
+    """)
+    fun observeHasQueuedSongs(playlistId: Long): Flow<Boolean>
 
     // ── Cleanup ─────────────────────────────────────────────────────────
 
@@ -1178,6 +1305,9 @@ interface DownloadQueueDao {
      * - Had all their retries exhausted and queue entries cleaned up
      * - Were added by sync but never got queue entries (edge case)
      * - Had their queue entries deleted
+     *
+     * [runningSync]: the sync this requeue runs in. A song cancelled since it started stays out
+     * until the next sync ([CANCELLED_DURING_SYNC]).
      */
     @Query("""
         SELECT t.id FROM tracks t
@@ -1220,12 +1350,14 @@ interface DownloadQueueDao {
               -- and hands it a fresh PENDING row, so the download the user
               -- cancelled restarts. Clear queue's cancel is not here: it only
               -- stopped that attempt, so the next sync queues the song again
-              -- (the caller drops the cancelled row, dropStoppedCancels).
-              -- Mirrored in getOrphanedTrackCounts.
-              WHERE dq.status IN ('PENDING', 'IN_PROGRESS', 'FAILED') OR """ + KEPT_OUT + """
+              -- (the caller drops the cancelled row, dropStoppedCancels), but
+              -- not the sync running when it was cancelled (runningSync).
+              -- Mirrored in getOrphanedTrackCounts, less runningSync.
+              WHERE dq.status IN ('PENDING', 'IN_PROGRESS', 'FAILED')
+                 OR """ + KEPT_OUT + """ OR """ + CANCELLED_DURING_SYNC + """
           )
     """)
-    suspend fun getUnqueuedTrackIds(sources: List<String>): List<Long>
+    suspend fun getUnqueuedTrackIds(sources: List<String>, runningSync: Long? = null): List<Long>
 
     /**
      * Self-healing sweep: delete PENDING/FAILED/WAITING_FOR_LOSSLESS queue
