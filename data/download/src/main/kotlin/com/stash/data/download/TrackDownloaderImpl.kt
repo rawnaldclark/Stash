@@ -72,10 +72,10 @@ class TrackDownloaderImpl @Inject constructor(
             // meanwhile, or it would vanish from the Library while it waits.
             is TrackDownloadResult.Deferred -> {
                 // The row keeps why it waits, for the Downloads screen, Now Playing and the sweep.
-                val queueEntry = downloadQueueDao.getByTrackId(track.id)
-                queueEntry?.let {
-                    downloadQueueDao.deferIfInProgress(it.id, result.reason.code)
-                }
+                // The claimed row, found by its status: a song can have two rows (a sync's and
+                // a tap's), and the oldest one getByTrackId answered with left the claimed one
+                // IN_PROGRESS.
+                downloadQueueDao.deferInProgressForTrack(track.id, result.reason.code)
                 fileReplacement.restoreKeptFile(track.id, track.filePath)
                 TrackDownloadOutcome.Deferred
             }

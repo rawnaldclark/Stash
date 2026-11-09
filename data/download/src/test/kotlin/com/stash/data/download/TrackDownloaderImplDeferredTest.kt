@@ -1,10 +1,8 @@
 package com.stash.data.download
 
 import com.stash.core.data.db.dao.DownloadQueueDao
-import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.files.LocalFileOps
 import com.stash.core.data.sync.TrackDownloadOutcome
-import com.stash.core.model.DownloadStatus
 import com.stash.core.model.Track
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -80,21 +78,18 @@ class TrackDownloaderImplDeferredTest {
     )
 
     @Test
-    fun `Deferred result writes WAITING_FOR_LOSSLESS to download_queue`() = runTest {
+    fun `Deferred result defers the claimed row of the song`() = runTest {
         coEvery { downloadManager.downloadTrack(any(), any()) } returns TrackDownloadResult.Deferred()
-        val queueEntry = DownloadQueueEntity(
-            id = 42L,
-            trackId = 7L,
-            status = DownloadStatus.IN_PROGRESS,
-        )
-        coEvery { downloadQueueDao.getByTrackId(7L) } returns queueEntry
 
         val outcome = newSubject().downloadTrack(stubTrack(id = 7L))
 
-        // The downloader defers through the atomic deferIfInProgress (UPDATE ...
-        // WHERE status = IN_PROGRESS), not a blind updateStatus, so a cancel that
-        // raced the resolve cannot be overwritten back into the waiting state.
-        coVerify { downloadQueueDao.deferIfInProgress(42L, "wait:lossless") }
+        // The claimed row is found by its status (UPDATE ... WHERE track_id AND status =
+        // IN_PROGRESS), not by getByTrackId: with two rows for the song (a sync's and a tap's)
+        // that answered with the oldest, and the claimed one stayed IN_PROGRESS. Atomic, so a
+        // cancel that raced the resolve cannot be overwritten back into the waiting state.
+        coVerify { downloadQueueDao.deferInProgressForTrack(7L, "wait:lossless") }
+        coVerify(exactly = 0) { downloadQueueDao.getByTrackId(any()) }
+        coVerify(exactly = 0) { downloadQueueDao.deferIfInProgress(any(), any()) }
         assertTrue(
             "expected TrackDownloadOutcome.Deferred, got $outcome",
             outcome is TrackDownloadOutcome.Deferred,
@@ -102,17 +97,17 @@ class TrackDownloaderImplDeferredTest {
     }
 
     @Test
-    fun `Deferred result with no queue entry skips DAO write but still returns Deferred`() = runTest {
+    fun `Deferred result with no claimed row still returns Deferred`() = runTest {
         // Edge case: queue entry already cleaned up. The translator must not
-        // crash on a null lookup; it must still return Deferred so the worker
-        // chain doesn't surface a Failed outcome.
+        // crash; it must still return Deferred so the worker chain doesn't
+        // surface a Failed outcome.
         coEvery { downloadManager.downloadTrack(any(), any()) } returns TrackDownloadResult.Deferred()
-        coEvery { downloadQueueDao.getByTrackId(any()) } returns null
+        coEvery { downloadQueueDao.deferInProgressForTrack(any(), any()) } returns 0
 
         val outcome = newSubject().downloadTrack(stubTrack(id = 7L))
 
         assertTrue(
-            "expected TrackDownloadOutcome.Deferred even with null queue row, got $outcome",
+            "expected TrackDownloadOutcome.Deferred even with no claimed row, got $outcome",
             outcome is TrackDownloadOutcome.Deferred,
         )
     }

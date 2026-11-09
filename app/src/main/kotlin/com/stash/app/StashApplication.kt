@@ -124,6 +124,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var downloadQueueDao: DownloadQueueDao
 
+    /** Which download rows a job in this process holds: a cold start leaves their claims alone. */
+    @Inject
+    lateinit var downloadJobs: com.stash.core.data.sync.DownloadJobRegistry
+
     @Inject
     lateinit var trackDao: TrackDao
 
@@ -452,16 +456,14 @@ class StashApplication : Application(), Configuration.Provider {
             runCatching { musicRepository.runMigrations() }
                 .onFailure { Log.w("StashStartup", "runMigrations failed", it) }
         }
-        // Reset stale IN_PROGRESS download_queue rows left over from an
-        // interrupted worker run / process death. The worker bulk-marks rows
-        // IN_PROGRESS and relies on the NEXT run's resetStaleInProgress() to
-        // flip leftovers back — but that next run may never come (e.g. in
-        // streaming mode the drain is skipped), so they linger forever showing
-        // "downloading". At a fresh process start no worker is running, so any
-        // IN_PROGRESS row is by definition stale and safe to reset.
+        // Hand back IN_PROGRESS download_queue rows left over from an
+        // interrupted worker run / process death, or they linger forever showing
+        // "downloading". Only claims no live job holds: WorkManager can restart a
+        // worker in this new process before this coroutine runs, and resetting the
+        // row that worker just claimed let another runner download the song twice.
         applicationScope.launch {
             runCatching {
-                val reset = downloadQueueDao.resetStaleInProgress()
+                val reset = downloadJobs.releaseDeadClaims(downloadQueueDao)
                 if (reset > 0) Log.i("StashStartup", "reset $reset stale IN_PROGRESS download rows -> PENDING")
             }.onFailure { Log.w("StashStartup", "stale IN_PROGRESS reset failed", it) }
             // Then pick waiting downloads back up (#474), Stash Mixes on or off: a

@@ -35,7 +35,5 @@ class DownloadCancellationController @Inject constructor(
      * against claims, so a download starting now can't be caught between its claim and
      * its registration (DownloadJobRegistry.claimAndRegister).
      */
-    suspend fun releaseDeadClaims(): Int = jobs.withClaimsHeld {
-        downloadQueueDao.inProgressIds().filterNot(jobs::isLive).sumOf { downloadQueueDao.releaseClaim(it) }
-    }
+    suspend fun releaseDeadClaims(): Int = jobs.releaseDeadClaims(downloadQueueDao)
 }
