@@ -66,8 +66,7 @@ sealed class TrackDownloadResult {
 
     /**
      * v0.9.17+: lossless registry returned null and the user opted out
-     * of yt-dlp fallback — or the relay paced this download (streams come
-     * first; it waits for FLAC whatever the fallback setting), or Tidal was busy for its AAC.
+     * of yt-dlp fallback, or Tidal was busy for its AAC.
      * The track stays in the queue under DownloadStatus.WAITING_FOR_LOSSLESS, its row keeping
      * [reason], until LosslessRetryWorker re-queues it.
      */
@@ -207,7 +206,7 @@ class DownloadManager @Inject constructor(
          * Max lossless resolve→download→probe attempts per track. Each
          * duration-backstop rejection cools a source down and re-resolves;
          * the cap bounds that retry to the small set of lossless sources
-         * (kennyy, squid, + headroom) so it can't spin.
+         * (qbdlx, Tidal, + headroom) so it can't spin.
          */
         internal const val MAX_LOSSLESS_FAILOVER_ATTEMPTS = 3
 
@@ -368,19 +367,10 @@ class DownloadManager @Inject constructor(
         // DiffWorker) silently bypassed lossless and downloaded as
         // 128kbps m4a. Lifting the guard means "Find in Lossless" semantics
         // apply to the initial sync path too — see 2026-05-12.
-        val purpose = LosslessDownloadPurpose()
-        val losslessResult = withContext(purpose) { tryLosslessDownload(track) }
+        // A fresh purpose: an ordinary download is never paced like a FLAC upgrade sweep
+        // (only a sweep's purpose asks Tidal to pace), even when one runs inside a sweep.
+        val losslessResult = withContext(LosslessDownloadPurpose()) { tryLosslessDownload(track) }
         if (losslessResult != null) return losslessResult
-        // A lossless source paced this download (it is ahead of its pace and streams come
-        // first). FLAC is coming for this track, just later — so wait for it even when the YouTube
-        // fallback is on; a lossy copy taken now would stay lossy. The one exemption is a Stash
-        // Mix track, so a rotating mix doesn't empty out while it waits. That overrides no
-        // setting: it still has to pass the fallback gate below, so it only picks "lossy now"
-        // over "FLAC later". The mix lookup runs only once pacing has happened.
-        if (purpose.pacedRetryAfterSec != null && !isStashMixTrack(track.id)) {
-            Log.i(TAG, "deferring '${track.artist} - ${track.title}': lossless source paced downloads for ${purpose.pacedRetryAfterSec}s")
-            return TrackDownloadResult.Deferred(DownloadWaitReason.LOSSLESS)
-        }
         // strict-FLAC: no lossless AND the lossy fallback is off, so defer instead of
         // pulling a lossy file from JioSaavn or YouTube. Applies to EVERY track, in every
         // build (#521; debug builds used to force the lossy chain here).
@@ -406,7 +396,7 @@ class DownloadManager @Inject constructor(
         // The fallback is on: Tidal's 320 kbps AAC first (JioSaavn misses many of these
         // tracks), then JioSaavn, then YouTube. AAC stays outside the lossless registry: it
         // must never satisfy a strict-lossless request. Only a definite "no AAC" (or a spent
-        // day) goes on to them: Tidal busy waits and tries again, as a paced FLAC does.
+        // day) goes on to them: Tidal busy waits and tries again.
         when (val aac = tidalAacStep(track)) {
             is AacStep.Saved -> return aac.result
             is AacStep.Wait -> if (aac.reason != TidalAac.Reason.SPENT && !isStashMixTrack(track.id)) {
@@ -432,7 +422,7 @@ class DownloadManager @Inject constructor(
             is AacStep.Saved -> return aac.result
             is AacStep.Wait -> {
                 // A spent day follows the fallback; busy, paced or failed waits whatever it is
-                // (but a Stash Mix song, as with a paced FLAC, takes the lossy copy now).
+                // (but a Stash Mix song takes the lossy copy now, so a rotating mix doesn't empty out).
                 val goLossy = fallbackOn && (aac.reason == TidalAac.Reason.SPENT || isStashMixTrack(track.id))
                 if (!goLossy) return deferFor(track, aac.reason)
             }
@@ -633,7 +623,7 @@ class DownloadManager @Inject constructor(
 
     /**
      * Attempts to fetch [track] from a registered [LosslessSource]
-     * (squid.wtf-proxied Qobuz, etc.) ahead of the YouTube path.
+     * (the listener's own Qobuz account, then Tidal) ahead of the YouTube path.
      *
      * Returns a successful [TrackDownloadResult.Success] when a source
      * matched + the file fetched + commit succeeded — or null in every
@@ -653,9 +643,8 @@ class DownloadManager @Inject constructor(
      */
     /**
      * True when [trackId] appears in any active Stash Mix playlist. Used
-     * only for the relay-pacing exemption in [executeDownload]. Returns
-     * false on any DB error: a failed lookup just means a paced track
-     * waits for FLAC like any other.
+     * for the Tidal-wait exemptions in [executeDownload]. Returns false on
+     * any DB error: a failed lookup just means the track waits like any other.
      */
     private suspend fun isStashMixTrack(trackId: Long): Boolean =
         runCatching { playlistDao.isTrackInStashMix(trackId) }
