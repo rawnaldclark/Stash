@@ -6,4 +6,9 @@ data class DiscoverHeroState(
     val subtitle: String,
     val artUrl: String?,
     val playlistId: Long,
+    /**
+     * Offline mode: Daily Discover is all streamed recommendations, so the card shows the
+     * "Go Online" hint in place of a track count it can't play.
+     */
+    val offline: Boolean = false,
 )

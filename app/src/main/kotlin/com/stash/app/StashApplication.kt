@@ -1022,34 +1022,24 @@ class StashApplication : Application(), Configuration.Provider {
      *   re-tuned and — like Deep Cuts — now seeds via the tag engine
      *   (RecipeTagResolver → TagPoolBuilder), falling back to the user's top genres
      *   for builtins with no explicit tags. Daily Discover stays ARTIST_SIMILAR.
+     * - v3: Daily Discover 100% recommendations (discoveryRatio 0.85 → 1.0): its 5
+     *   download places, which barely ever changed, go to 5 more finds.
      *
      * @return true when a retune ran this launch, so the cold start rebuilds the mixes now.
      */
     private suspend fun maybeRetuneStashMixes(): Boolean {
-        val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
-        val stored = prefs.getInt("stash_mix_recipe_tuning_version", 0)
+        val prefs = getSharedPreferences(StashMixDefaults.TUNING_PREFS_NAME, MODE_PRIVATE)
+        // A replace-restore removes this key (StashMixDefaults.rearmRetune), so a backup's old recipe values are retuned too.
+        val stored = prefs.getInt(StashMixDefaults.TUNING_VERSION_KEY, 0)
         if (stored >= STASH_MIX_RECIPE_TUNING_VERSION) return false
 
-        var totalUpdated = 0
-        for (recipe in StashMixDefaults.ALL.filter { it.isBuiltin }) {
-            val updated = stashMixRecipeDao.retuneBuiltin(
-                name = recipe.name,
-                discoveryRatio = recipe.discoveryRatio,
-                freshnessWindowDays = recipe.freshnessWindowDays,
-                targetLength = recipe.targetLength,
-                affinityBias = recipe.affinityBias,
-                seedStrategy = recipe.seedStrategy,
-                moodKeysCsv = recipe.moodKeysCsv,
-                tagSampleDepth = recipe.tagSampleDepth,
-            )
-            totalUpdated += updated
-        }
+        val totalUpdated = StashMixDefaults.retuneBuiltins(stashMixRecipeDao)
         Log.i(
             "StashMigration",
             "Retuned $totalUpdated builtin mix recipe(s) to v$STASH_MIX_RECIPE_TUNING_VERSION",
         )
         prefs.edit()
-            .putInt("stash_mix_recipe_tuning_version", STASH_MIX_RECIPE_TUNING_VERSION)
+            .putInt(StashMixDefaults.TUNING_VERSION_KEY, STASH_MIX_RECIPE_TUNING_VERSION)
             .apply()
         return true
     }
@@ -1343,8 +1333,10 @@ class StashApplication : Application(), Configuration.Provider {
          *    move from library-substrate to recommendation-substrate
          *    (85% discovery, 15% library). Deep Cuts switches seed
          *    strategy from NONE to TRACK_SIMILAR.
+         *  - v2 = v0.9.40 tag engine: Deep Cuts re-pointed to TAG_GRAPH.
+         *  - v3: Daily Discover 100% recommendations.
          */
-        private const val STASH_MIX_RECIPE_TUNING_VERSION = 2
+        private const val STASH_MIX_RECIPE_TUNING_VERSION = 3
 
         /**
          * Bump when [maybeCleanupDiscoveryLibraryHits] should run again.

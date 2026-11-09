@@ -579,7 +579,11 @@ fun HomeScreen(
                                         DiscoverHeroCard(
                                             label = "Updated daily",
                                             title = hero.title,
-                                            subtitle = hero.subtitle,
+                                            subtitle = if (hero.offline) {
+                                                stringResource(R.string.home_daily_discover_offline)
+                                            } else {
+                                                hero.subtitle
+                                            },
                                             artUrl = hero.artUrl,
                                             onPlay = viewModel::playHero,
                                             onOpen = { onNavigateToPlaylist(hero.playlistId) },

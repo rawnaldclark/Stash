@@ -128,9 +128,8 @@ class MixGenerator @Inject constructor(
         excludeIds: Set<Long> = emptySet(),
         taste: MixTaste? = null,
     ): List<TrackEntity> {
-        // Library slots = targetLength * (1 - discoveryRatio); see Step 7.
-        val librarySlots = (recipe.targetLength * (1f - recipe.discoveryRatio)).toInt()
-            .coerceAtLeast(0)
+        // Library slots: what the recommendations leave of targetLength (MixSlots); see Step 7.
+        val librarySlots = MixSlots.of(recipe).library
         // No library slots and no shortfall backfill (Step 8 is gated on a
         // ratio below 0.5): the result is empty whatever the library holds, so
         // skip scoring the whole library ("Recommended by Last.fm" at 1.0, and
@@ -222,8 +221,9 @@ class MixGenerator @Inject constructor(
             track to score
         }
 
-        // Step 7: library slots = targetLength * (1 - discoveryRatio), but
-        // if we ran out of library candidates we fill up to targetLength.
+        // Step 7: library slots = what the recommendations leave of targetLength
+        // (MixSlots), but if we ran out of library candidates we fill up to
+        // targetLength.
         // Avoid back-to-back same-artist within the first stretch.
         val ordered = scored.sortedByDescending { it.second }.map { it.first }
 

@@ -753,6 +753,7 @@ class DatabaseBackupManager @Inject constructor(
                 rearmCanonicalRecompute(runNow = false)
                 rearmDuplicateCleanup(runNow = false)
                 rearmMixPinCleanup(runNow = false)
+                rearmMixRecipeRetune()
             }
 
             // 5. Read the restored Tree URI from DataStore — only meaningful
@@ -832,6 +833,24 @@ class DatabaseBackupManager @Inject constructor(
             throw e
         } catch (e: Exception) {
             android.util.Log.w("BackupManager", "Couldn't re-arm the mix pin cleanup", e)
+        }
+    }
+
+    /**
+     * A replace-restore swaps in the backup's built-in mix recipes, and one made before the current
+     * tuning brings back its old values (before v3, a Daily Discover with 5 download places). The
+     * tuning flag lives in SharedPreferences, which a restore leaves alone, so it is re-armed here:
+     * the restart retunes the built-ins and rebuilds the mixes
+     * ([com.stash.core.data.mix.StashMixDefaults.rearmRetune]). A merge copies no recipes, so it has
+     * nothing to re-arm. Best-effort, like [rearmCanonicalRecompute].
+     */
+    private fun rearmMixRecipeRetune() {
+        try {
+            com.stash.core.data.mix.StashMixDefaults.rearmRetune(
+                context.getSharedPreferences(com.stash.core.data.mix.StashMixDefaults.TUNING_PREFS_NAME, Context.MODE_PRIVATE),
+            )
+        } catch (e: Exception) {
+            android.util.Log.w("BackupManager", "Couldn't re-arm the built-in mix retune", e)
         }
     }
 

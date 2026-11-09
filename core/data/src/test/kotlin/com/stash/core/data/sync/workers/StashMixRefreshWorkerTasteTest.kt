@@ -65,7 +65,8 @@ class StashMixRefreshWorkerTasteTest {
     private val downloadNetworkPreference: DownloadNetworkPreference = mockk(relaxed = true)
     private val tagPoolBuilder = TagPoolBuilder(lastFmApiClient)
 
-    private val recipe = StashMixRecipeEntity(id = 1L, name = "Daily Discover", discoveryRatio = 0.85f, targetLength = 40, seedStrategy = "ARTIST_SIMILAR", isBuiltin = true)
+    /** The shipped Daily Discover (StashMixDefaults): all recommendations, 40 places. */
+    private val recipe = StashMixRecipeEntity(id = 1L, name = "Daily Discover", discoveryRatio = 1.0f, targetLength = 40, seedStrategy = "ARTIST_SIMILAR", isBuiltin = true)
 
     private fun newWorker(taste: MixTaste?): StashMixRefreshWorker {
         val params: WorkerParameters = mockk(relaxed = true) { coEvery { inputData } returns workDataOf(StashMixRefreshWorker.KEY_RECIPE_ID to 1L) }
@@ -191,8 +192,8 @@ class StashMixRefreshWorkerTasteTest {
         coEvery { recipeDao.getActive() } returns listOf(recipe)
         coEvery { mixGenerator.generate(any(), any(), any()) } returns emptyList()
         coEvery { playlistDao.findBySourceId(any()) } returns null
-        // 35 finds, the newest of them kept out (always in the window's guaranteed head): 34 places to fill
-        val ids = (100L until 135L).toList()
+        // 41 finds, the newest of them kept out (always in the window's guaranteed head): 40 places to fill
+        val ids = (100L until 141L).toList()
         coEvery { playlistDao.getStreamableOrDoneTrackIdsForRecipe(1L) } returns ids
         coEvery { trackDao.getByIds(any()) } answers { firstArg<List<Long>>().map { id -> track(id, if (id == 100L) "Never Again" else "Fine $id") } }
         val linked = slot<List<Long>>()
@@ -200,7 +201,7 @@ class StashMixRefreshWorkerTasteTest {
 
         newWorker(taste(emptyList(), avoid = setOf(SongKey.songKey("Never Again", "Artist Y")))).doWork()
 
-        assertEquals(34, linked.captured.size)
+        assertEquals(40, linked.captured.size)
         assertEquals(false, 100L in linked.captured)
     }
 
