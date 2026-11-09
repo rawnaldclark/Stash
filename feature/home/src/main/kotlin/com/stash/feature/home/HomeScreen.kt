@@ -67,9 +67,9 @@ import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -122,6 +122,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.stash.feature.home.shelves.HomeShelvesViewModel
 import com.stash.core.data.mix.MixBuildState
@@ -294,11 +295,12 @@ fun HomeScreen(
                 // at draw time, so the crossfade redraws the wordmark without recomposing the feed.
                 val wordmark = painterResource(id = R.drawable.wordmark_stash)
                 val chrome = LocalAlbumChrome.current
+                val wordmarkDesc = stringResource(R.string.home_cd_wordmark)
                 Spacer(
                     modifier = Modifier
                         .height(37.dp)
                         .aspectRatio(wordmark.intrinsicSize.width / wordmark.intrinsicSize.height)
-                        .semantics { contentDescription = "Stash" }
+                        .semantics { contentDescription = wordmarkDesc }
                         .drawBehind {
                             with(wordmark) { draw(size, colorFilter = ColorFilter.tint(chrome.wordmark)) }
                         },
@@ -325,7 +327,7 @@ fun HomeScreen(
                         painter = androidx.compose.ui.res.painterResource(
                             id = com.stash.core.ui.R.drawable.ic_brand_discord,
                         ),
-                        contentDescription = "Join the Stash Discord",
+                        contentDescription = stringResource(R.string.home_cd_discord),
                         tint = androidx.compose.ui.graphics.Color(0xFF5865F2),
                         modifier = Modifier.size(20.dp),
                     )
@@ -339,7 +341,7 @@ fun HomeScreen(
                     ) {
                         androidx.compose.material3.Icon(
                             imageVector = Icons.Filled.Build,
-                            contentDescription = "Report an issue or help translate",
+                            contentDescription = stringResource(R.string.home_cd_help_menu),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp),
                         )
@@ -352,12 +354,12 @@ fun HomeScreen(
                             text = {
                                 Column {
                                     Text(
-                                        text = "Report an issue",
+                                        text = stringResource(R.string.home_report_issue),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
                                     Text(
-                                        text = "Grab diagnostics, then open GitHub",
+                                        text = stringResource(R.string.home_report_issue_desc),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -383,12 +385,12 @@ fun HomeScreen(
                             text = {
                                 Column {
                                     Text(
-                                        text = "Help us translate",
+                                        text = stringResource(R.string.home_help_translate),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
                                     Text(
-                                        text = "After getting access, contribute on Weblate",
+                                        text = stringResource(R.string.home_help_translate_desc),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -409,14 +411,14 @@ fun HomeScreen(
                         DropdownMenuItem(
                             text = {
                                 Text(
-                                    text = "Request translator access",
+                                    text = stringResource(R.string.home_request_translator_access),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
                             },
                             leadingIcon = {
                                 Icon(
-                                    imageVector = Icons.Filled.OpenInNew,
+                                    imageVector = Icons.AutoMirrored.Filled.OpenInNew,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -528,8 +530,8 @@ fun HomeScreen(
                     val mixPages = uiState.yourMixes
                     when {
                         uiState.isLoading -> DiscoverHeroCard(
-                            label = "Updated daily",
-                            title = "Discover",
+                            label = stringResource(R.string.home_updated_daily),
+                            title = stringResource(R.string.home_discover_title),
                             subtitle = "",
                             artUrl = null,
                             onPlay = {},
@@ -558,7 +560,7 @@ fun HomeScreen(
                                         DailyDiscoverBuildingCard()
                                     } else if (page < heroPages && hero != null) {
                                         DiscoverHeroCard(
-                                            label = "Updated daily",
+                                            label = stringResource(R.string.home_updated_daily),
                                             title = hero.title,
                                             subtitle = hero.subtitle,
                                             artUrl = hero.artUrl,
@@ -570,12 +572,16 @@ fun HomeScreen(
                                     } else {
                                         val m = mixPages[page - heroPages]
                                         DiscoverHeroCard(
-                                            label = "Your mix",
+                                            label = stringResource(R.string.home_your_mix),
                                             title = m.title,
                                             subtitle = when (m.buildState) {
-                                                MixBuildState.BUILDING -> "building…"
-                                                MixBuildState.EMPTY -> "empty — edit to fill"
-                                                else -> pluralize(m.trackCount, "track")
+                                                MixBuildState.BUILDING -> stringResource(R.string.home_mix_building)
+                                                MixBuildState.EMPTY -> stringResource(R.string.home_mix_empty)
+                                                else -> pluralStringResource(
+                                                    R.plurals.home_tracks_count,
+                                                    m.trackCount,
+                                                    m.trackCount,
+                                                )
                                             },
                                             artUrl = m.artUrl,
                                             onPlay = { viewModel.playMix(m.id) },
@@ -615,7 +621,7 @@ fun HomeScreen(
                 HomeSection.YOUR_PLAYLISTS ->
                     if (uiState.yourPlaylists.isNotEmpty() || uiState.likedCard != null) {
                         item(key = "section_your_playlists") {
-                            CardRail(title = "Your playlists") {
+                            CardRail(title = stringResource(R.string.home_section_your_playlists)) {
                                 uiState.likedCard?.let { liked ->
                                     item(key = "liked_card") {
                                         LikedHomeCard(
@@ -640,7 +646,7 @@ fun HomeScreen(
                 HomeSection.NEW_RELEASES -> if (uiState.newReleases.isNotEmpty()) {
                     item(key = "section_new_releases") {
                         DiscoveryAlbumRow(
-                            title = "New Releases",
+                            title = stringResource(R.string.home_section_new_releases),
                             albums = uiState.newReleases,
                             onOpen = onNavigateToAlbum,
                             topSpacing = if (chipsLead) 2.dp else 16.dp,
@@ -650,7 +656,7 @@ fun HomeScreen(
                 HomeSection.QOBUZ_PLAYLISTS -> if (uiState.playlists.isNotEmpty()) {
                     item(key = "section_qobuz_playlists") {
                         DiscoveryPlaylistRow(
-                            title = "Qobuz Playlists",
+                            title = stringResource(R.string.home_section_qobuz_playlists),
                             playlists = uiState.playlists,
                             onOpen = onNavigateToAlbum,
                             onSeeAll = { onSeeAllPlaylists(uiState.selectedGenre) },
@@ -663,7 +669,7 @@ fun HomeScreen(
                         // The same cover rail as New Releases (owner, 2026-10-22): the ranked
                         // list showed no covers.
                         DiscoveryAlbumRow(
-                            title = "Top Albums",
+                            title = stringResource(R.string.home_section_top_albums),
                             albums = uiState.topAlbums,
                             onOpen = onNavigateToAlbum,
                             topSpacing = if (chipsLead) 2.dp else 16.dp,
@@ -673,8 +679,8 @@ fun HomeScreen(
                 HomeSection.MADE_FOR_YOU -> if (uiState.madeForYou.isNotEmpty()) {
                     item(key = "section_made_for_you") {
                         CardRail(
-                            title = "Made for you",
-                            actionText = "See all",
+                            title = stringResource(R.string.home_section_made_for_you),
+                            actionText = stringResource(R.string.home_see_all),
                             onActionClick = { onSeeAllMixes(MixRail.MADE_FOR_YOU) },
                         ) {
                             items(uiState.madeForYou.railCut(HOME_RAIL_LIMIT), key = { it.id }) { m ->
@@ -691,8 +697,8 @@ fun HomeScreen(
                 HomeSection.RADIOS -> if (uiState.radios.isNotEmpty()) {
                     item(key = "section_radios") {
                         CardRail(
-                            title = "Radios",
-                            actionText = "See all",
+                            title = stringResource(R.string.home_section_radios),
+                            actionText = stringResource(R.string.home_see_all),
                             onActionClick = { onSeeAllMixes(MixRail.RADIOS) },
                         ) {
                             items(uiState.radios.railCut(HOME_RAIL_LIMIT), key = { it.id }) { m ->
@@ -709,8 +715,8 @@ fun HomeScreen(
                 HomeSection.MOOD_DECADES -> if (uiState.moodDecades.isNotEmpty()) {
                     item(key = "section_mood_decades") {
                         CardRail(
-                            title = "Mood & decades",
-                            actionText = "See all",
+                            title = stringResource(R.string.home_section_mood_decades),
+                            actionText = stringResource(R.string.home_see_all),
                             onActionClick = { onSeeAllMixes(MixRail.MOOD_DECADES) },
                         ) {
                             items(uiState.moodDecades.railCut(HOME_RAIL_LIMIT), key = { it.id }) { m ->
@@ -820,7 +826,7 @@ fun HomeScreen(
                     val favorite = mix.pinnedToHomeAt != null
                     MixActionRow(
                         icon = if (favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                        label = if (favorite) "Remove from favorites" else "Favorite",
+                        label = stringResource(if (favorite) R.string.home_action_remove_favorite else R.string.home_action_favorite),
                         onClick = {
                             viewModel.setFavorite(id, !favorite)
                             actionSheetMixId = null
@@ -830,7 +836,7 @@ fun HomeScreen(
                 if (isStashMix) {
                     MixActionRow(
                         icon = Icons.Default.Refresh,
-                        label = "Refresh this mix",
+                        label = stringResource(R.string.home_action_refresh_mix),
                         onClick = {
                             viewModel.refreshMix(id)
                             actionSheetMixId = null
@@ -840,7 +846,7 @@ fun HomeScreen(
                 if (isCustom) {
                     MixActionRow(
                         icon = Icons.Default.Edit,
-                        label = "Edit mix",
+                        label = stringResource(R.string.home_action_edit_mix),
                         onClick = {
                             viewModel.editRecipeId(id) { recipeId -> onNavigateToMixBuilder(recipeId) }
                             actionSheetMixId = null
@@ -848,7 +854,7 @@ fun HomeScreen(
                     )
                     MixActionRow(
                         icon = Icons.Default.Delete,
-                        label = "Delete mix",
+                        label = stringResource(R.string.home_action_delete_mix),
                         tint = MaterialTheme.colorScheme.error,
                         onClick = {
                             viewModel.deleteCustomMix(id)
@@ -858,7 +864,7 @@ fun HomeScreen(
                 }
                 MixActionRow(
                     icon = Icons.Filled.RemoveCircleOutline,
-                    label = "Hide from Home",
+                    label = stringResource(R.string.home_action_hide_from_home),
                     onClick = {
                         viewModel.hideFromHome(id)
                         actionSheetMixId = null
@@ -866,7 +872,7 @@ fun HomeScreen(
                 )
                 MixActionRow(
                     icon = Icons.Default.PlayArrow,
-                    label = "Open",
+                    label = stringResource(R.string.home_action_open),
                     onClick = {
                         openMix(id)
                         actionSheetMixId = null
@@ -874,7 +880,7 @@ fun HomeScreen(
                 )
                 MixActionRow(
                     icon = Icons.Default.Share,
-                    label = "Share mix",
+                    label = stringResource(R.string.home_action_share_mix),
                     onClick = {
                         onShareMix(id)
                         actionSheetMixId = null
@@ -914,7 +920,7 @@ fun HomeScreen(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 MixActionRow(
                     icon = Icons.AutoMirrored.Filled.ArrowForward,
-                    label = "Open",
+                    label = stringResource(R.string.home_action_open),
                     onClick = {
                         pinnedSheetPlaylistId = null
                         onNavigateToPlaylist(id)
@@ -922,7 +928,7 @@ fun HomeScreen(
                 )
                 MixActionRow(
                     icon = Icons.Default.PlayArrow,
-                    label = "Play All",
+                    label = stringResource(R.string.home_action_play_all),
                     onClick = {
                         pinnedSheetPlaylistId = null
                         viewModel.playMix(id)
@@ -930,7 +936,7 @@ fun HomeScreen(
                 )
                 MixActionRow(
                     icon = Icons.Filled.RemoveCircleOutline,
-                    label = "Remove from Home",
+                    label = stringResource(R.string.home_action_remove_from_home),
                     onClick = {
                         pinnedSheetPlaylistId = null
                         viewModel.setPinnedToHome(id, pinned = false)
@@ -969,7 +975,7 @@ fun HomeScreen(
 
                 MixActionRow(
                     icon = Icons.Default.Refresh,
-                    label = "Refresh",
+                    label = stringResource(R.string.home_action_refresh),
                     onClick = {
                         viewModel.refreshMix(hero.playlistId)
                         heroActionSheet = false
@@ -977,7 +983,7 @@ fun HomeScreen(
                 )
                 MixActionRow(
                     icon = Icons.Default.VisibilityOff,
-                    label = "Minimize for now",
+                    label = stringResource(R.string.home_action_minimize),
                     onClick = {
                         viewModel.setHeroMinimized(true)
                         heroActionSheet = false
@@ -1053,18 +1059,18 @@ private fun LosslessConnectBanner(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Try lossless audio",
+                    text = stringResource(R.string.home_lossless_banner_title),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Studio-quality FLAC downloads via Qobuz. Tap to set up.",
+                    text = stringResource(R.string.home_lossless_banner_subtitle),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Text(
-                text = "Set up →",
+                text = stringResource(R.string.home_lossless_banner_action),
                 style = MaterialTheme.typography.labelSmall,
                 color = accent,
             )
@@ -1077,7 +1083,7 @@ private fun LosslessConnectBanner(
             ) {
                 Icon(
                     imageVector = Icons.Default.Close,
-                    contentDescription = "Dismiss lossless banner",
+                    contentDescription = stringResource(R.string.home_cd_dismiss_lossless_banner),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp),
                 )
@@ -1130,19 +1136,18 @@ private fun LosslessOfflineBanner(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "No lossless right now",
+                    text = stringResource(R.string.home_lossless_offline_title),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Stash is falling back to lossy audio. " +
-                        "Connect your own Qobuz account for FLAC.",
+                    text = stringResource(R.string.home_lossless_offline_subtitle),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Text(
-                text = "Connect →",
+                text = stringResource(R.string.home_lossless_offline_action),
                 style = MaterialTheme.typography.labelSmall,
                 color = accent,
             )
@@ -1155,7 +1160,7 @@ private fun LosslessOfflineBanner(
             ) {
                 Icon(
                     imageVector = Icons.Default.Close,
-                    contentDescription = "Dismiss lossless-offline banner",
+                    contentDescription = stringResource(R.string.home_cd_dismiss_lossless_offline_banner),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp),
                 )
@@ -1236,9 +1241,15 @@ private fun SupporterTicker(
     // contributor calls) so the wire carries variety, not just gratitude.
     // Separator: a dimmed interpunct — no color pop, so the
     // strip stays quiet inside the app's palette.
-    val line = remember(supporters, ink, dim) {
+    val announcements = listOf(
+        stringResource(R.string.home_ticker_announcement_1),
+        stringResource(R.string.home_ticker_announcement_2),
+        stringResource(R.string.home_ticker_announcement_3),
+    )
+    val line = remember(supporters, ink, dim, announcements) {
         val segments = buildTickerSegments(
-            supporters.map { TickerSegment.Shoutout(it.name, it.amount, it.message) },
+            shoutouts = supporters.map { TickerSegment.Shoutout(it.name, it.amount, it.message) },
+            announcements = announcements,
         )
         buildAnnotatedString {
             segments.forEach { seg ->
@@ -1389,7 +1400,11 @@ internal fun DiscoveryPlaylistRow(
     Column {
         Spacer(Modifier.height(topSpacing))
         // "Search" (owner, 2026-10-22): the browse it opens leads with a catalog-wide search field.
-        SectionHeader(title = title, actionText = "Search", onActionClick = onSeeAll)
+        SectionHeader(
+            title = title,
+            actionText = stringResource(R.string.home_action_search),
+            onActionClick = onSeeAll,
+        )
         LazyRow(
             contentPadding = PaddingValues(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1399,7 +1414,11 @@ internal fun DiscoveryPlaylistRow(
                     title = playlist.title,
                     // Curator is always the regional Qobuz account ("Qobuz France")
                     // — redundant on every card, so show the track count instead.
-                    artist = pluralize(playlist.trackCount, "track"),
+                    artist = pluralStringResource(
+                        R.plurals.home_tracks_count,
+                        playlist.trackCount,
+                        playlist.trackCount,
+                    ),
                     thumbnailUrl = playlist.thumbnailUrl,
                     year = null,
                     isLossless = true,

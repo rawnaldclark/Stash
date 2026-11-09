@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
@@ -125,7 +126,7 @@ fun MixRailCard(
                 ) {
                     androidx.compose.material3.Icon(
                         imageVector = androidx.compose.material.icons.Icons.Filled.Favorite,
-                        contentDescription = "Favorite",
+                        contentDescription = stringResource(R.string.home_cd_favorite),
                         tint = androidx.compose.ui.graphics.Color.White,
                         modifier = Modifier.size(13.dp),
                     )
@@ -140,8 +141,8 @@ fun MixRailCard(
             overflow = TextOverflow.Ellipsis,
         )
         val statusLine = when (buildState) {
-            MixBuildState.BUILDING -> "Building…"
-            MixBuildState.EMPTY -> "No tracks yet"
+            MixBuildState.BUILDING -> stringResource(R.string.home_mix_building)
+            MixBuildState.EMPTY -> stringResource(R.string.home_mix_no_tracks_yet)
             MixBuildState.READY -> null
         }
         if (statusLine != null) {

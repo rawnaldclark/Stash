@@ -29,6 +29,7 @@ import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.backfill.MetadataBackfillState
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.PlaylistSummary
+import com.stash.feature.home.R
 import com.stash.feature.home.banner.MetadataBackfillBannerState
 import com.stash.feature.home.banner.metadataBackfillBannerStateFor
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -93,7 +94,7 @@ class HomeViewModel @Inject constructor(
     private val losslessSourceHealth: com.stash.core.media.streaming.LosslessSourceHealth,
     private val losslessAvailability: com.stash.data.download.lossless.LosslessAvailability,
     private val shownSongs: HomeShownSongs,
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     /**
@@ -299,7 +300,13 @@ class HomeViewModel @Inject constructor(
             ?.let { playlist ->
                 DiscoverHeroState(
                     title = playlist.name,
-                    subtitle = "${playlist.trackCount} tracks", // the card's eyebrow says "Updated daily"
+                    subtitle = runCatching {
+                        context.resources.getQuantityString(
+                            R.plurals.home_tracks_count,
+                            playlist.trackCount,
+                            playlist.trackCount,
+                        )
+                    }.getOrNull() ?: "${playlist.trackCount} tracks", // the card's eyebrow says "Updated daily"
                     artUrl = playlist.artUrl,
                     playlistId = playlist.id,
                 )
@@ -652,11 +659,17 @@ class HomeViewModel @Inject constructor(
                 // Data-integrity bug: playlist.type == STASH_MIX but no recipe
                 // back-links it. Menu shouldn't have appeared. Log + soft-fail.
                 Log.w(TAG, "refreshMix: no recipe back-links playlistId=$playlistId")
-                _userMessages.tryEmit("Couldn't refresh — this mix isn't linked to a recipe")
+                val msg = runCatching {
+                    context.getString(R.string.home_msg_cant_refresh_no_recipe)
+                }.getOrNull() ?: "Couldn't refresh — this mix isn't linked to a recipe"
+                _userMessages.tryEmit(msg)
                 return@launch
             }
 
-            _userMessages.tryEmit("Refreshing ${recipe.name}…")
+            val refreshingMsg = runCatching {
+                context.getString(R.string.home_msg_refreshing, recipe.name)
+            }.getOrNull() ?: "Refreshing ${recipe.name}…"
+            _userMessages.tryEmit(refreshingMsg)
 
             // Build the request ourselves so we can capture its id for exact-
             // match WorkInfo filtering below. enqueueUniqueWork uses the same
@@ -694,11 +707,17 @@ class HomeViewModel @Inject constructor(
                     val ours = infos.firstOrNull { it.id == request.id } ?: return@firstOrNull false
                     when (ours.state) {
                         WorkInfo.State.SUCCEEDED -> {
-                            _userMessages.tryEmit("Refreshed ${recipe.name}")
+                            val msg = runCatching {
+                                context.getString(R.string.home_msg_refreshed, recipe.name)
+                            }.getOrNull() ?: "Refreshed ${recipe.name}"
+                            _userMessages.tryEmit(msg)
                             true
                         }
                         WorkInfo.State.FAILED, WorkInfo.State.CANCELLED -> {
-                            _userMessages.tryEmit("Refresh failed — try again later")
+                            val msg = runCatching {
+                                context.getString(R.string.home_msg_refresh_failed)
+                            }.getOrNull() ?: "Refresh failed — try again later"
+                            _userMessages.tryEmit(msg)
                             true
                         }
                         else -> false
@@ -721,7 +740,10 @@ class HomeViewModel @Inject constructor(
             val recipe = recipeDao.findByPlaylistId(playlist.id) // capture BEFORE cascade nulls the FK
             musicRepository.deletePlaylistWithCascade(playlist.id, alsoBlacklist = false)
             recipe?.let { recipeDao.deleteCustom(it.id) }
-            _userMessages.tryEmit("Deleted “${playlist.name}”")
+            val msg = runCatching {
+                context.getString(R.string.home_msg_deleted, playlist.name)
+            }.getOrNull() ?: "Deleted “${playlist.name}”"
+            _userMessages.tryEmit(msg)
         }
     }
 

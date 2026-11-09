@@ -21,9 +21,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.stash.core.common.extensions.pluralize
 import com.stash.core.ui.components.HomeRailCardSize
 import com.stash.core.ui.components.HomeRailCoverShape
 import com.stash.core.ui.components.motion.pressScale
@@ -63,9 +64,9 @@ fun LikedHomeCard(
             )
         }
         Spacer(Modifier.height(8.dp))
-        Text(text = "Liked Songs", style = MaterialTheme.typography.labelLarge)
+        Text(text = stringResource(R.string.home_liked_songs), style = MaterialTheme.typography.labelLarge)
         Text(
-            text = pluralize(trackCount, "song"),
+            text = pluralStringResource(R.plurals.home_songs_count, trackCount, trackCount),
             style = MaterialTheme.typography.labelSmall,
             color = StashTheme.extendedColors.textTertiary,
         )

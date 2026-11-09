@@ -8,4 +8,103 @@
     <string name="home_because_you_like_song">Because you like %1$s</string>
     <!-- TalkBack for a song card. %1$s is its title, %2$s its artist. -->
     <string name="home_song_card">%1$s by %2$s</string>
+
+    <!-- App Bar & Help Menu -->
+    <string name="home_cd_wordmark" translatable="false">Stash</string>
+    <string name="home_cd_discord">Join the Stash Discord</string>
+    <string name="home_cd_help_menu">Report an issue or help translate</string>
+    <string name="home_report_issue">Report an issue</string>
+    <string name="home_report_issue_desc">Grab diagnostics, then open GitHub</string>
+    <string name="home_help_translate">Help us translate</string>
+    <string name="home_help_translate_desc">After getting access, contribute on Weblate</string>
+    <string name="home_request_translator_access">Request translator access</string>
+
+    <!-- Lossless Banners -->
+    <string name="home_lossless_banner_title">Try lossless audio</string>
+    <string name="home_lossless_banner_subtitle">Studio-quality FLAC downloads via Qobuz. Tap to set up.</string>
+    <string name="home_lossless_banner_action">Set up →</string>
+    <string name="home_cd_dismiss_lossless_banner">Dismiss lossless banner</string>
+    <string name="home_lossless_offline_title">No lossless right now</string>
+    <string name="home_lossless_offline_subtitle">Stash is falling back to lossy audio. Connect your own Qobuz account for FLAC.</string>
+    <string name="home_lossless_offline_action">Connect →</string>
+    <string name="home_cd_dismiss_lossless_offline_banner">Dismiss lossless-offline banner</string>
+
+    <!-- Section Headers & Hero -->
+    <string name="home_updated_daily">Updated daily</string>
+    <string name="home_discover_title">Discover</string>
+    <string name="home_your_mix">Your mix</string>
+    <string name="home_mix_building">building…</string>
+    <string name="home_mix_empty">empty — edit to fill</string>
+    <string name="home_section_your_playlists">Your playlists</string>
+    <string name="home_section_new_releases">New Releases</string>
+    <string name="home_section_qobuz_playlists">Qobuz Playlists</string>
+    <string name="home_qobuz_playlists_genre">Qobuz Playlists · %s</string>
+    <string name="home_section_top_albums">Top Albums</string>
+    <string name="home_section_made_for_you">Made for you</string>
+    <string name="home_section_radios">Radios</string>
+    <string name="home_section_mood_decades">Mood &amp; decades</string>
+    <string name="home_section_your_mixes">Your mixes</string>
+    <string name="home_see_all">See all</string>
+    <string name="home_action_search">Search</string>
+
+    <!-- Mix & Playlist Action Sheet -->
+    <string name="home_action_favorite">Favorite</string>
+    <string name="home_action_remove_favorite">Remove from favorites</string>
+    <string name="home_action_refresh_mix">Refresh this mix</string>
+    <string name="home_action_edit_mix">Edit mix</string>
+    <string name="home_action_delete_mix">Delete mix</string>
+    <string name="home_action_hide_from_home">Hide from Home</string>
+    <string name="home_action_open">Open</string>
+    <string name="home_action_share_mix">Share mix</string>
+    <string name="home_action_play_all">Play All</string>
+    <string name="home_action_remove_from_home">Remove from Home</string>
+    <string name="home_action_refresh">Refresh</string>
+    <string name="home_action_minimize">Minimize for now</string>
+
+    <!-- Ticker Announcements -->
+    <string name="home_ticker_announcement_1">Stash is a community powered open-source project dedicated to the love and growth of music. Thank you to our supporters.</string>
+    <string name="home_ticker_announcement_2">Devs wanted — join the Discord to help build the future of music.</string>
+    <string name="home_ticker_announcement_3">Open source, open to PRs — contributors welcome on GitHub.</string>
+
+    <!-- Components -->
+    <string name="home_hero_building_title">Building your Daily Discover…</string>
+    <string name="home_hero_building_body">Fresh finds from what you listen to.</string>
+    <string name="home_liked_songs">Liked Songs</string>
+    <string name="home_personalize_title">Personalize your Home</string>
+    <string name="home_personalize_body">Connect a service and run a sync so Stash can tailor daily discovery to your taste.</string>
+    <string name="home_personalize_btn">Get started</string>
+    <string name="home_cd_favorite">Favorite</string>
+    <string name="home_mix_no_tracks_yet">No tracks yet</string>
+    <string name="home_backfill_running_title">Re-tagging library</string>
+    <string name="home_backfill_running_subtitle">Adding album art and metadata to existing files</string>
+    <string name="home_backfill_finished_title">Library re-tagged</string>
+    <plurals name="home_backfill_saf_skipped">
+        <item quantity="one">%d track on external storage will be tagged on next download</item>
+        <item quantity="other">%d tracks on external storage will be tagged on next download</item>
+    </plurals>
+    <string name="home_streaming_dialog_title">Online</string>
+    <string name="home_streaming_dialog_body">Sync will keep your playlists up to date without saving music to this phone, and everything streams. Switch to Offline any time: it plays only your downloads, and Sync saves your switched-on playlists and mixes.</string>
+    <string name="home_streaming_dialog_confirm">Got it</string>
+    <string name="home_cd_vinyl_logo">Stash logo</string>
+    <string name="home_back">Back</string>
+    <string name="home_search_qobuz_playlists_placeholder">Search all Qobuz playlists…</string>
+    <string name="home_cd_clear_search">Clear search</string>
+    <string name="home_no_playlists_match">No playlists match “%s”</string>
+
+    <!-- Plurals -->
+    <plurals name="home_tracks_count">
+        <item quantity="one">%d track</item>
+        <item quantity="other">%d tracks</item>
+    </plurals>
+    <plurals name="home_songs_count">
+        <item quantity="one">%d song</item>
+        <item quantity="other">%d songs</item>
+    </plurals>
+
+    <!-- ViewModel Messages -->
+    <string name="home_msg_cant_refresh_no_recipe">Couldn\'t refresh — this mix isn\'t linked to a recipe</string>
+    <string name="home_msg_refreshing">Refreshing %s…</string>
+    <string name="home_msg_refreshed">Refreshed %s</string>
+    <string name="home_msg_refresh_failed">Refresh failed — try again later</string>
+    <string name="home_msg_deleted">Deleted “%s”</string>
 </resources>

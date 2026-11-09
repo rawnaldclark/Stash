@@ -15,7 +15,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.stash.feature.home.R
 import kotlinx.coroutines.delay
 
 /**
@@ -77,7 +80,7 @@ fun MetadataBackfillBanner(
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(
-                            text = "Re-tagging library",
+                            text = stringResource(R.string.home_backfill_running_title),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
@@ -88,7 +91,7 @@ fun MetadataBackfillBanner(
                         )
                     }
                     Text(
-                        text = "Adding album art and metadata to existing files",
+                        text = stringResource(R.string.home_backfill_running_subtitle),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -106,13 +109,17 @@ fun MetadataBackfillBanner(
                 }
                 is MetadataBackfillBannerState.Finished -> {
                     Text(
-                        text = "Library re-tagged",
+                        text = stringResource(R.string.home_backfill_finished_title),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     if (state.safSkipped > 0) {
                         Text(
-                            text = "${state.safSkipped} tracks on external storage will be tagged on next download",
+                            text = pluralStringResource(
+                                R.plurals.home_backfill_saf_skipped,
+                                state.safSkipped,
+                                state.safSkipped,
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
