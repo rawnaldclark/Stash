@@ -52,4 +52,24 @@ class PlaybackSpeedTextTest {
         assertEquals(4, speedPresetColumns(rowWidthPx = 312, widestChipPx = 72, gapPx = 8))
         assertEquals(2, speedPresetColumns(rowWidthPx = 312, widestChipPx = 73, gapPx = 8))
     }
+
+    @Test fun `the speed action names a non-standard tuning`() {
+        assertEquals("Playback speed", speedActionLabel(1f, 440f))
+        assertEquals("Playback speed · A432", speedActionLabel(1f, 432f))
+        assertEquals("Playback speed · A431.5", speedActionLabel(1f, 431.5f))
+        assertEquals("Playback speed · 1.25x", speedActionLabel(1.25f, 440f))
+        assertEquals("Playback speed · 1.25x · A444", speedActionLabel(1.25f, 444f))
+    }
+
+    @Test fun `the speed action is on for a speed or a tuning`() {
+        assertEquals(false, speedActionActive(1f, 440f))
+        assertEquals(true, speedActionActive(1f, 432f))
+        assertEquals(true, speedActionActive(0.75f, 440f))
+    }
+
+    @Test fun `the sheet's tuning heading`() {
+        assertEquals("Tuning · Standard", tuningHeading(440f))
+        assertEquals("Tuning · A = 432 Hz", tuningHeading(432f))
+        assertEquals("Tuning · A = 431.5 Hz", tuningHeading(431.5f))
+    }
 }

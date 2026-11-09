@@ -24,7 +24,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The languages CodeQL detected before Tuning added C++ (core/media/src/main/cpp). Left to
+      # detect, it would add c-cpp, which autobuild (a Gradle build of the Kotlin) never compiles,
+      # and the analysis would fail for want of C++ it saw built.
       - uses: github/codeql-action/init@v3
+        with:
+          languages: java-kotlin, javascript-typescript, python, actions
+
+      # Tuning's pitch engine is native code (core/media/src/main/cpp). The same NDK and CMake
+      # versions as core/media/build.gradle.kts pins: change them together.
+      - name: Install NDK and CMake
+        run: echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" "cmake;3.22.1" > /dev/null
 
       - uses: github/codeql-action/autobuild@v3
 

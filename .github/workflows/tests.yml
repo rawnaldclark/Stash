@@ -51,6 +51,11 @@ jobs:
 
       # `--continue` for the same reason as the unit-tests job: a compile error
       # in one module otherwise hides every other module's.
+      # Tuning's pitch engine is native code (core/media/src/main/cpp). The same NDK and CMake
+      # versions as core/media/build.gradle.kts pins: change them together.
+      - name: Install NDK and CMake
+        run: echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" "cmake;3.22.1" > /dev/null
+
       - name: Compile every module's unit tests
         run: ./gradlew compileDebugUnitTestKotlin --continue --no-daemon
 
@@ -153,6 +158,11 @@ jobs:
       - name: Fix gradlew permission
         run: chmod +x gradlew
 
+      # Tuning's pitch engine is native code (core/media/src/main/cpp). The same NDK and CMake
+      # versions as core/media/build.gradle.kts pins: change them together.
+      - name: Install NDK and CMake
+        run: echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" "cmake;3.22.1" > /dev/null
+
       - name: Run all unit tests
         run: ./gradlew testDebugUnitTest --continue --no-daemon
 
@@ -188,6 +198,11 @@ jobs:
 
       - name: Fix gradlew permission
         run: chmod +x gradlew
+
+      # Tuning's pitch engine is native code (core/media/src/main/cpp). The same NDK and CMake
+      # versions as core/media/build.gradle.kts pins: change them together.
+      - name: Install NDK and CMake
+        run: echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" "cmake;3.22.1" > /dev/null
 
       - name: Assemble debug APK
         env:

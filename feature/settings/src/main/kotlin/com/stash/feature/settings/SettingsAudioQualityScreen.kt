@@ -32,7 +32,7 @@ private enum class QualitySheet { WIFI, CELLULAR, DOWNLOAD_MODE, FLAC_TIER, YOUT
  *  - Streaming: the Lossless switch, Lossless sources, per-network FLAC tier,
  *    Data saver, Prefer Tidal AAC.
  *  - Downloads: the format, and only the switches that format uses.
- *  - Output: Hi-Res output and the Equalizer.
+ *  - Output: Hi-Res output, Tuning and the Equalizer.
  *
  * Every control calls the same [SettingsViewModel] method as before.
  */
@@ -218,6 +218,7 @@ fun SettingsAudioQualityScreen(
         SettingsGroupCard(
             rows = listOf(
                 { HiResOutputRow() },
+                { TuningRow() },
                 {
                     SettingsNavRow(
                         title = stringResource(R.string.settings_equalizer_title),
