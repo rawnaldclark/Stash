@@ -52,6 +52,26 @@ class FullArtStateTest {
     }
 
     @Test
+    fun `a new song with no pages yet doesn't crash, and its front fades in once they come`() {
+        val state = FullArtState()
+        state.show(listOf(page("front:a"), page("back:a")))
+        state.open(now = 1_000L, position = 0L, start = 0)
+        state.tick(1_016L, 0L, playing = true, failed = emptySet(), still = false)
+
+        // Ending a Listen Together session: the song changes while its pages are still empty.
+        // This threw ArithmeticException (divide by zero) in pageFor.
+        state.show(emptyList())
+        state.newSong(2_000L)
+        state.tick(2_016L, 0L, playing = true, failed = emptySet(), still = false)
+        assertEquals("front:a", state.shown.last().page.key)
+
+        state.show(listOf(page("front:b"), page("back:b")))
+        state.tick(2_032L, 16L, playing = true, failed = emptySet(), still = false)
+        assertEquals("front:b", state.shown.last().page.key)
+        assertEquals(300L, state.shown.last().fadeMs)
+    }
+
+    @Test
     fun `a page turned by hand keeps the slow crossfade`() {
         val state = FullArtState()
         state.show(listOf(page("front:a"), page("back:a")))
