@@ -1,23 +1,22 @@
 package com.stash.feature.settings.components
 
+import android.content.Context
 import android.content.res.Resources
+import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.model.UserInfo
-import com.stash.feature.settings.R
-import io.mockk.every
-import io.mockk.mockk
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class AccountStatusTest {
 
-    private val res = mockk<Resources> {
-        every { getString(R.string.settings_connected_as, any()) } answers { "Connected as ${(args[1] as Array<*>)[0]}" }
-        every { getString(R.string.settings_account_session_expired) } returns "Session expired. Reconnect to keep syncing."
-        every { getString(R.string.settings_account_session_expired_for, any()) } answers { "Session expired for ${(args[1] as Array<*>)[0]}. Reconnect to keep syncing." }
-        every { getString(R.string.settings_account_connecting) } returns "Connecting..."
-        every { getString(R.string.settings_account_not_connected) } returns "Not connected"
-    }
+    /** The module's own strings: what the app shows, not a copy of it. */
+    private val res: Resources = ApplicationProvider.getApplicationContext<Context>().resources
 
     private val connected = AuthState.Connected(UserInfo(id = "u1", displayName = "Ronald"))
 

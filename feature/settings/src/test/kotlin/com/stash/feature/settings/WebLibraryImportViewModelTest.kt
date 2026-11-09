@@ -1,6 +1,8 @@
 package com.stash.feature.settings
 
+import android.content.Context
 import android.content.res.Resources
+import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.weblibrary.ImportSelection
 import com.stash.core.data.weblibrary.ImportedLike
@@ -9,11 +11,14 @@ import com.stash.core.data.weblibrary.WebLibraryContent
 import com.stash.core.data.weblibrary.WebLibraryFile
 import com.stash.core.data.weblibrary.WebLibraryImportResult
 import com.stash.core.data.weblink.handoff.WireSong
-import io.mockk.every
-import io.mockk.mockk
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /** The import picker's words and choice (link-sync spec §2.3). */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class WebLibraryImportViewModelTest {
     private val content = WebLibraryContent(
         likes = List(1_204) { ImportedLike(WireSong("S$it", "A"), 1) },
@@ -24,37 +29,8 @@ class WebLibraryImportViewModelTest {
         history = emptyList(),
     )
 
-    private val res: Resources = mockk {
-        every { getString(R.string.web_library_import_intro_this_file_has) } returns "This file has"
-        every { getString(R.string.web_library_import_intro_body, any(), any(), any(), any()) } answers {
-            val a = args[1] as Array<*>
-            "${a[0]} ${a[1]}, ${a[2]} and ${a[3]}."
-        }
-        every { getString(R.string.web_library_import_result_added, any()) } answers {
-            "Added ${(args[1] as Array<*>)[0]}."
-        }
-        every { getString(R.string.web_library_import_result_nothing_new) } returns "Nothing new: you already had all of it."
-        every { getQuantityString(R.plurals.web_library_export_likes, any(), any()) } answers {
-            val count = (args[2] as Array<*>)[0]
-            val fmt = if (count is Number) "%,d".format(count) else count.toString()
-            if (args[1] == 1) "1 like" else "$fmt likes"
-        }
-        every { getQuantityString(R.plurals.web_library_export_plays, any(), any()) } answers {
-            val count = (args[2] as Array<*>)[0]
-            val fmt = if (count is Number) "%,d".format(count) else count.toString()
-            if (args[1] == 1) "1 play" else "$fmt plays"
-        }
-        every { getQuantityString(R.plurals.web_library_export_playlists, any(), any()) } answers {
-            val count = (args[2] as Array<*>)[0]
-            val fmt = if (count is Number) "%,d".format(count) else count.toString()
-            if (args[1] == 1) "1 playlist" else "$fmt playlists"
-        }
-        every { getQuantityString(R.plurals.web_library_import_playlists_updated, any(), any()) } answers {
-            val count = (args[2] as Array<*>)[0]
-            val fmt = if (count is Number) "%,d".format(count) else count.toString()
-            if (args[1] == 1) "new songs in 1 playlist you had" else "new songs in $fmt playlists you had"
-        }
-    }
+    /** The module's own strings: what the app shows, not a copy of it. */
+    private val res: Resources = ApplicationProvider.getApplicationContext<Context>().resources
 
     @Test fun `the picker starts with everything the file holds, and a part with nothing in it can't be taken`() {
         val pick = WebLibraryImportViewModel.pickOf(content)

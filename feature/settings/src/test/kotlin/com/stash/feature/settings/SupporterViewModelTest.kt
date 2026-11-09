@@ -2,13 +2,14 @@ package com.stash.feature.settings
 
 import android.content.Context
 import android.content.res.Resources
+import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.supporter.ClaimResult
 import com.stash.core.data.supporter.SupporterRepository
+import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.quota.LosslessAllowance
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.quota.LosslessQuotaRefresher
-import com.stash.data.download.lossless.LosslessAvailability
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -24,8 +25,13 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class SupporterViewModelTest {
 
     private val reset = 1_792_281_600L
@@ -44,19 +50,9 @@ class SupporterViewModelTest {
         every { stashTidalRelayInUse } returns MutableStateFlow(true)
     }
 
-    private val res: Resources = mockk {
-        every { getString(R.string.settings_supporter_msg_code_sent) } returns "A new code is on its way."
-        every { getString(R.string.settings_supporter_msg_bad_email) } returns "That doesn't look like an email address. Check it and try again."
-        every { getString(R.string.settings_supporter_msg_bad_code) } returns "That code didn't work. Check it, or send a new one."
-        every { getString(R.string.settings_supporter_msg_rate_limited_min) } returns "Too many tries. Wait a minute."
-        every { getString(R.string.settings_supporter_msg_rate_limited_mins, any()) } answers { "Too many tries. Wait ${(args[1] as Array<*>)[0]} minutes." }
-        every { getString(R.string.settings_supporter_msg_not_configured) } returns "Unlocking isn't available right now. Please try again later."
-        every { getString(R.string.settings_supporter_msg_unreachable) } returns "Couldn't reach Stash. Check your connection and try again."
-        every { getString(R.string.settings_supporter_msg_unlocked_pending) } returns "Code accepted. Unlimited Tidal shows here once Stash confirms it."
-    }
-    private val context: Context = mockk {
-        every { resources } returns res
-    }
+    /** The module's own strings: what the app shows, not a copy of it. */
+    private val res: Resources = ApplicationProvider.getApplicationContext<Context>().resources
+    private val context: Context = ApplicationProvider.getApplicationContext()
 
     @Before fun setUp() = Dispatchers.setMain(UnconfinedTestDispatcher())
     @After fun tearDown() = Dispatchers.resetMain()

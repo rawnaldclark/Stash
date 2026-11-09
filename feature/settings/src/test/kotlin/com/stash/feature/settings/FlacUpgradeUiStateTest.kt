@@ -1,40 +1,30 @@
 package com.stash.feature.settings
 
+import android.content.Context
 import android.content.res.Resources
+import androidx.test.core.app.ApplicationProvider
 import androidx.work.Data
 import androidx.work.WorkInfo
 import androidx.work.workDataOf
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.lossless.FlacSweepResult
 import com.stash.core.data.sync.workers.FlacUpgradeWorker
-import io.mockk.every
-import io.mockk.mockk
 import java.util.UUID
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * Library Health's "FLAC upgrades" card reads the batch worker's own state, so it tells
  * the truth after the screen was left, and a stopped run never reads as finished.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class FlacUpgradeUiStateTest {
 
-    private val res: Resources = mockk {
-        every { getString(R.string.settings_flac_upgrade_checking) } returns "Checking for upgrades…"
-        every { getString(R.string.settings_flac_upgrade_waiting) } returns "Waiting to run. It starts by itself when it can, on Wi-Fi if sync is set to Wi-Fi only."
-        every { getString(R.string.settings_flac_upgrade_stopped) } returns "Stopped before it finished."
-        every { getString(R.string.settings_flac_upgrade_streaming_mode) } returns "Stash is set to Online, so there are no downloads to upgrade."
-        every { getString(R.string.settings_flac_upgrade_lossless_disabled) } returns "Set Download quality to Lossless in Audio & Quality first."
-        every { getString(R.string.settings_flac_upgrade_nothing) } returns "Nothing to upgrade. Every downloaded track is FLAC already or was checked in the last two weeks."
-        every { getString(R.string.settings_flac_upgrade_done_none) } returns "Done: no new FLAC versions found."
-        every { getString(R.string.settings_flac_upgrade_done_upgraded, any()) } answers { "Done: ${(args[1] as Array<*>)[0]} upgraded to FLAC." }
-        every { getString(R.string.settings_flac_upgrade_detail_no_match, any()) } answers { "No lossless version yet for ${(args[1] as Array<*>)[0]}. They're checked again in two weeks." }
-        every { getString(R.string.settings_flac_upgrade_detail_failed, any()) } answers { "Couldn't check ${(args[1] as Array<*>)[0]} this time. They're tried again next run." }
-        every { getQuantityString(R.plurals.settings_flac_upgrade_tracks, any(), any()) } answers {
-            val count = (args[2] as Array<*>)[0]
-            val fmt = if (count is Number) "%,d".format(count) else count.toString()
-            if (args[1] == 1) "1 track" else "$fmt tracks"
-        }
-    }
+    /** The module's own strings: what the app shows, not a copy of it. */
+    private val res: Resources = ApplicationProvider.getApplicationContext<Context>().resources
 
     private fun state(infos: List<WorkInfo>, tap: FlacSweepResult?) = flacUpgradeUiState(infos, tap, res)
 

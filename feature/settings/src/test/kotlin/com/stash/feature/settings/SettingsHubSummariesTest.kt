@@ -1,10 +1,8 @@
 package com.stash.feature.settings
 
+import android.content.Context
 import android.content.res.Resources
-import com.stash.feature.settings.R
-import io.mockk.every
-import io.mockk.mockk
-
+import androidx.test.core.app.ApplicationProvider
 import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.model.UserInfo
 import com.stash.core.model.QualityTier
@@ -12,34 +10,23 @@ import com.stash.core.model.ThemeMode
 import com.stash.data.download.lossless.LosslessQualityTier
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * Tests for [settingsHubSummaries] — the pure derivation of the Settings-hub
  * row subtitles from current app state. Kept pure (no BuildConfig / Context)
  * precisely so it can be unit-tested here.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class SettingsHubSummariesTest {
 
     private fun connected(name: String = "user") =
         AuthState.Connected(UserInfo(id = name, displayName = name))
-    private val res = mockk<Resources> {
-        every { getString(R.string.settings_mode_online) } returns "Online"
-        every { getString(R.string.settings_mode_offline) } returns "Offline"
-        every { getString(R.string.settings_summary_cellular_on) } returns "Cellular on"
-        every { getString(R.string.settings_summary_cellular_off) } returns "Cellular off"
-        every { getString(R.string.settings_summary_lossless, any()) } answers { "Lossless · ${(args[1] as Array<*>)[0]}" }
-        every { getString(R.string.settings_summary_opus, any()) } answers { "Opus · ${(args[1] as Array<*>)[0]}" }
-        every { getString(R.string.settings_account_not_connected) } returns "Not connected"
-        every { getString(R.string.settings_summary_connected_count, any()) } answers { "${(args[1] as Array<*>)[0]} connected" }
-        every { getString(R.string.settings_theme_light) } returns "Light"
-        every { getString(R.string.settings_theme_dark) } returns "Dark"
-        every { getString(R.string.settings_theme_follow_system) } returns "Follow system"
-        every { getString(R.string.settings_summary_pure_black) } returns "Pure black"
-        every { getQuantityString(R.plurals.settings_summary_tracks_count, any(), any()) } answers {
-            val count = args[1] as Int
-            if (count == 1) "1 track" else "$count tracks"
-        }
-    }
+    /** The module's own strings: what the app shows, not a copy of it. */
+    private val res: Resources = ApplicationProvider.getApplicationContext<Context>().resources
 
     private fun summaries(
         state: SettingsUiState,
