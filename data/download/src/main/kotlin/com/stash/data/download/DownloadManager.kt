@@ -371,14 +371,14 @@ class DownloadManager @Inject constructor(
         val purpose = LosslessDownloadPurpose()
         val losslessResult = withContext(purpose) { tryLosslessDownload(track) }
         if (losslessResult != null) return losslessResult
-        // The relay paced this download: the pool is ahead of the day's pace and streams come
-        // first. FLAC is coming for this track, just later — so wait for it even when the YouTube
+        // A lossless source paced this download (it is ahead of its pace and streams come
+        // first). FLAC is coming for this track, just later — so wait for it even when the YouTube
         // fallback is on; a lossy copy taken now would stay lossy. The one exemption is a Stash
         // Mix track, so a rotating mix doesn't empty out while it waits. That overrides no
         // setting: it still has to pass the fallback gate below, so it only picks "lossy now"
         // over "FLAC later". The mix lookup runs only once pacing has happened.
         if (purpose.pacedRetryAfterSec != null && !isStashMixTrack(track.id)) {
-            Log.i(TAG, "deferring '${track.artist} - ${track.title}': relay paced downloads for ${purpose.pacedRetryAfterSec}s")
+            Log.i(TAG, "deferring '${track.artist} - ${track.title}': lossless source paced downloads for ${purpose.pacedRetryAfterSec}s")
             return TrackDownloadResult.Deferred(DownloadWaitReason.LOSSLESS)
         }
         // strict-FLAC: no lossless AND the lossy fallback is off, so defer instead of

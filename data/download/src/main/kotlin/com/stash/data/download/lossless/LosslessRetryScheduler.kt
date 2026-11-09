@@ -9,7 +9,6 @@ import androidx.work.workDataOf
 import com.stash.data.download.lossless.qobuz.QobuzSource
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.tidal.TidalAacResolver
-import com.stash.data.download.lossless.relay.LosslessRelayClient
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -38,9 +37,6 @@ import kotlinx.coroutines.flow.onEach
  *     recovered, or user pasted a different value than the rejected one).
  *  3. [AggregatorRateLimiter.circuitResetEvents] emits any source id
  *     (kennyy outage cleared, or user manually reset the breaker).
- *  4. [LosslessRelayClient.pacedEvents]: the relay asked a download to wait
- *     (streams first). Enqueued with that wait as its initial delay; the
- *     worker then retries on WorkManager's backoff while the pool stays paced.
  *  5. [LosslessQuota]: the day's lossless allowance ran out. Downloads with
  *     the lossy fallback off wait for FLAC, so a sweep is booked for just after
  *     the reset, under its own unique name ([RESET_WORK_NAME]) so an earlier
@@ -69,7 +65,6 @@ class LosslessRetryScheduler @Inject constructor(
     losslessPrefs: LosslessSourcePreferences,
     qobuzSource: QobuzSource,
     rateLimiter: AggregatorRateLimiter,
-    private val relayClient: LosslessRelayClient,
     private val quota: LosslessQuota,
     private val tidalAacResolver: TidalAacResolver,
 ) {
@@ -143,12 +138,6 @@ class LosslessRetryScheduler @Inject constructor(
         // self-reset detected via the wasCircuitBroken latch).
         rateLimiterRef.circuitResetEvents
             .onEach { enqueue() }
-            .launchIn(scope)
-
-        // 4. The relay paced a download. KEEP: while a sweep is already waiting or
-        // running, it covers this track too.
-        relayClient.pacedEvents
-            .onEach { waitSec -> enqueue(initialDelaySec = waitSec) }
             .launchIn(scope)
 
         // 5. The day's lossless allowance ran out: one sweep just after the reset. KEEP on its

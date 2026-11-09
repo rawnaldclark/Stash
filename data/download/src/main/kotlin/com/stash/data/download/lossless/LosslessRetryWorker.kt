@@ -37,10 +37,10 @@ import dagger.assisted.AssistedInject
  * in Download mode while a playlist the sync downloads still holds it, in
  * Stream-only mode only when the user asked for it. The others keep waiting.
  *
- * Runs as a download ([LosslessDownloadPurpose]): when the relay paces
+ * Runs as a download ([LosslessDownloadPurpose]): when a lossless source paces
  * downloads, the sweep stops at that row — every row after it would be paced
  * too — and asks WorkManager to retry later (its backoff grows each time), so
- * a waiting library drains as the day's pool allows.
+ * a waiting library drains as the source allows.
  *
  * The sweep booked for the daily allowance's reset ([KEY_AT_RESET]) resolves nothing: a lookup
  * here and the download's own would count two lossless answers per song against the new day.
@@ -191,7 +191,7 @@ class LosslessRetryWorker @AssistedInject constructor(
                 requeue(entry.id)
                 resolvedCount++
             } else if (purpose.pacedRetryAfterSec != null) {
-                // The pool is ahead of today's pace: every later row would be paced too.
+                // The source paced this lookup: every later row would be paced too.
                 cursor.set(entry.id - 1)
                 return Result.retry()
             }
