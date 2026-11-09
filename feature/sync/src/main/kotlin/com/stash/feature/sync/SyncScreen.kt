@@ -832,7 +832,7 @@ private fun SyncingContent(
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (spotify) BrandDotLabel(StashTheme.extendedColors.spotifyGreen, stringResource(R.string.sync_source_spotify))
-                if (youTube) BrandDotLabel(StashTheme.extendedColors.youtubeRed, stringResource(R.string.sync_source_youtube_music))
+                if (youTube) BrandDotLabel(StashTheme.extendedColors.youtubeRed, stringResource(R.string.sync_source_youtube))
             }
         }
         Spacer(Modifier.height(10.dp))

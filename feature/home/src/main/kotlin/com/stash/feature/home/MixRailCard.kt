@@ -141,7 +141,7 @@ fun MixRailCard(
             overflow = TextOverflow.Ellipsis,
         )
         val statusLine = when (buildState) {
-            MixBuildState.BUILDING -> stringResource(R.string.home_mix_building)
+            MixBuildState.BUILDING -> stringResource(R.string.home_mix_card_building)
             MixBuildState.EMPTY -> stringResource(R.string.home_mix_no_tracks_yet)
             MixBuildState.READY -> null
         }

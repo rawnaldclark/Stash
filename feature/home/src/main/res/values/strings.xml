@@ -75,6 +75,7 @@
     <string name="home_personalize_btn">Get started</string>
     <string name="home_cd_favorite">Favorite</string>
     <string name="home_mix_no_tracks_yet">No tracks yet</string>
+    <string name="home_mix_card_building">Building…</string>
     <string name="home_backfill_running_title">Re-tagging library</string>
     <string name="home_backfill_running_subtitle">Adding album art and metadata to existing files</string>
     <string name="home_backfill_finished_title">Library re-tagged</string>
@@ -88,7 +89,7 @@
     <string name="home_back">Back</string>
     <string name="home_search_qobuz_playlists_placeholder">Search all Qobuz playlists…</string>
     <string name="home_cd_clear_search">Clear search</string>
-    <string name="home_no_playlists_match">No playlists match “%s”</string>
+    <string name="home_no_playlists_match">No playlists match \"%s\"</string>
 
     <!-- Plurals -->
     <plurals name="home_tracks_count">

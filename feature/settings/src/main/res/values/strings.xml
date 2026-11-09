@@ -1323,7 +1323,7 @@
     <!-- Settings > Accounts: Connection Status -->
     <string name="settings_account_session_expired">Session expired. Reconnect to keep syncing.</string>
     <string name="settings_account_session_expired_for">Session expired for %1$s. Reconnect to keep syncing.</string>
-    <string name="settings_account_connecting">Connecting…</string>
+    <string name="settings_account_connecting">Connecting...</string>
 
     <!-- Settings Hub Subtitles -->
     <string name="settings_summary_cellular_on">Cellular on</string>
@@ -1354,8 +1354,21 @@
     <string name="web_library_import_result_added">Added %1$s.</string>
     <string name="web_library_import_result_nothing_new">Nothing new: you already had all of it.</string>
     <plurals name="web_library_import_playlists_updated">
-        <item quantity="one">new songs in 1 playlist you had</item>
+        <item quantity="one">new songs in %,d playlist you had</item>
         <item quantity="other">new songs in %,d playlists you had</item>
+    </plurals>
+    <!-- The import picker's and result's counts, with thousands separators: "This file has 1,204 likes, 5,000 plays and 14 playlists." -->
+    <plurals name="web_library_import_likes">
+        <item quantity="one">%,d like</item>
+        <item quantity="other">%,d likes</item>
+    </plurals>
+    <plurals name="web_library_import_plays">
+        <item quantity="one">%,d play</item>
+        <item quantity="other">%,d plays</item>
+    </plurals>
+    <plurals name="web_library_import_playlists">
+        <item quantity="one">%,d playlist</item>
+        <item quantity="other">%,d playlists</item>
     </plurals>
     <string name="web_library_inbox_add_failed">Couldn\'t add it. Try again.</string>
 

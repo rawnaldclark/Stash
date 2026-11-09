@@ -67,7 +67,7 @@ internal fun TrackCountCard(
     val otherDot = MaterialTheme.colorScheme.onSurfaceVariant
     val sources = buildList {
         if (spotifyConnected) add(Triple(StashTheme.extendedColors.spotifyGreen, stringResource(R.string.sync_source_spotify), status.spotifyTracks))
-        if (youTubeConnected) add(Triple(StashTheme.extendedColors.youtubeRed, stringResource(R.string.sync_source_youtube_music), status.youTubeTracks))
+        if (youTubeConnected) add(Triple(StashTheme.extendedColors.youtubeRed, stringResource(R.string.sync_source_youtube), status.youTubeTracks))
         if (soundCloudConnected) add(Triple(SoundCloudOrange, stringResource(R.string.sync_source_soundcloud), status.soundCloudTracks))
         if (status.otherTracks > 0) add(Triple(otherDot, other, status.otherTracks))
     }

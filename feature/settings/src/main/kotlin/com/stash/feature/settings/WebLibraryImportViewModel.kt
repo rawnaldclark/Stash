@@ -89,22 +89,20 @@ class WebLibraryImportViewModel @Inject constructor(
         /** "This file has 1,204 likes, 5,000 plays and 14 playlists." */
         fun introOf(c: WebLibraryContent, res: android.content.res.Resources, what: String = res.getString(R.string.web_library_import_intro_this_file_has)): String {
             val parts = buildList {
-                add(res.getQuantityString(R.plurals.web_library_export_likes, c.likes.size, c.likes.size))
-                add(res.getQuantityString(R.plurals.web_library_export_plays, c.history.size, c.history.size))
-                add(res.getQuantityString(R.plurals.web_library_export_playlists, c.playlists.size, c.playlists.size))
+                add(res.getQuantityString(R.plurals.web_library_import_likes, c.likes.size, c.likes.size))
+                add(res.getQuantityString(R.plurals.web_library_import_plays, c.history.size, c.history.size))
+                add(res.getQuantityString(R.plurals.web_library_import_playlists, c.playlists.size, c.playlists.size))
             }
             return res.getString(R.string.web_library_import_intro_body, what, parts[0], parts[1], parts[2])
         }
 
-        fun introOf(c: WebLibraryContent, what: String, res: android.content.res.Resources): String = introOf(c, res, what)
-
         /** "Added 40 likes, 3 playlists and 120 plays." (what was new; what was already here is not counted again) */
         fun resultText(r: WebLibraryImportResult, res: android.content.res.Resources): String {
             val added = buildList {
-                if (r.likesAdded > 0) add(res.getQuantityString(R.plurals.web_library_export_likes, r.likesAdded, r.likesAdded))
-                if (r.playlistsAdded > 0) add(res.getQuantityString(R.plurals.web_library_export_playlists, r.playlistsAdded, r.playlistsAdded))
+                if (r.likesAdded > 0) add(res.getQuantityString(R.plurals.web_library_import_likes, r.likesAdded, r.likesAdded))
+                if (r.playlistsAdded > 0) add(res.getQuantityString(R.plurals.web_library_import_playlists, r.playlistsAdded, r.playlistsAdded))
                 if (r.playlistsUpdated > 0) add(res.getQuantityString(R.plurals.web_library_import_playlists_updated, r.playlistsUpdated, r.playlistsUpdated))
-                if (r.playsAdded > 0) add(res.getQuantityString(R.plurals.web_library_export_plays, r.playsAdded, r.playsAdded))
+                if (r.playsAdded > 0) add(res.getQuantityString(R.plurals.web_library_import_plays, r.playsAdded, r.playsAdded))
             }
             if (added.isEmpty()) return res.getString(R.string.web_library_import_result_nothing_new)
             val list = if (added.size == 1) added[0] else added.dropLast(1).joinToString(", ") + " and " + added.last()

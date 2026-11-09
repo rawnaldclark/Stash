@@ -341,6 +341,7 @@
     <string name="sync_source_spotify" translatable="false">Spotify</string>
     <string name="sync_source_soundcloud" translatable="false">SoundCloud</string>
     <string name="sync_source_youtube_music" translatable="false">YouTube Music</string>
+    <string name="sync_source_youtube" translatable="false">YouTube</string>
     <string name="sync_source_lastfm" translatable="false">Last.fm</string>
     <string name="sync_state_expanded">Expanded</string>
     <string name="sync_state_collapsed">Collapsed</string>
@@ -393,7 +394,7 @@
         <item quantity="one">%d flagged track</item>
         <item quantity="other">%d flagged tracks</item>
     </plurals>
-    <string name="sync_failed_matches_searching">Searching %s…</string>
+    <string name="sync_failed_matches_searching">Searching %s...</string>
     <string name="sync_failed_matches_resync">Resync</string>
     <string name="sync_failed_matches_approve_all">Approve All (%d)</string>
     <string name="sync_failed_matches_dismiss_all">Dismiss All</string>
@@ -461,9 +462,9 @@
 
     <!-- Schedule & Day of Week -->
     <string name="sync_schedule_not_scheduled">Not scheduled — pick at least one day</string>
-    <string name="sync_schedule_prefix">Sync </string>
-    <string name="sync_schedule_at_time"> at </string>
-    <string name="sync_schedule_on_network"> on </string>
+    <string name="sync_schedule_prefix">"Sync "</string>
+    <string name="sync_schedule_at_time">" at "</string>
+    <string name="sync_schedule_on_network">" on "</string>
     <string name="sync_schedule_wifi_only">Wi-Fi only</string>
     <string name="sync_schedule_any_network">any network</string>
     <string name="sync_schedule_tap_hint">Tap any chip to change</string>
@@ -523,10 +524,10 @@
     <string name="sync_undo_error">Couldn\'t undo that sync. Nothing was changed.</string>
     <string name="sync_undo_result">Undone — %1$s back to how they were before that sync.%2$s</string>
     <plurals name="sync_undo_playlists_count">
-        <item quantity="one">1 playlist is</item>
+        <item quantity="one">%d playlist is</item>
         <item quantity="other">%d playlists are</item>
     </plurals>
-    <string name="sync_undo_paused_suffix"> Auto-sync is paused until you tap Sync.</string>
+    <string name="sync_undo_paused_suffix">" Auto-sync is paused until you tap Sync."</string>
     <!-- Failed downloads: each reason's group heading, and the short reason under a song. -->
     <string name="failure_auth_group">Sign-in expired</string>
     <string name="failure_auth_short">Sign-in expired</string>
