@@ -52,7 +52,7 @@ class LosslessSourcePreferencesTest {
         }
         prefs.purgeRetiredSourceKeys()
         val left = mutableListOf<Any?>()
-        prefs.writeRawForTest { left += listOf(it[endpoint], it[cookie], it[cookieSetAt]) }
+        prefs.writeRawForTest { left.addAll(listOf(it[endpoint], it[cookie], it[cookieSetAt])) }
         assertThat(left).containsExactly(null, null, null)
     }
 }
