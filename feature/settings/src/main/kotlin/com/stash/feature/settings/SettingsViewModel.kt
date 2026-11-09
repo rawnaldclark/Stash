@@ -487,18 +487,18 @@ class SettingsViewModel @Inject constructor(
     private val _localState = MutableStateFlow(LocalState())
 
     /**
-     * True when NO lossless path is configured (no connected account, no custom
-     * endpoint, no relay) — drives the Settings "connect your account" line.
-     * Derived from [LosslessAvailability] rather than the credential store: the
-     * store now knows only about the user's own connected account, and a custom
-     * endpoint or a relay is a working lossless path without one.
+     * True when NO lossless path is configured (no connected Qobuz account, no Tidal
+     * server of the user's own, no Tidal relay in the signed config) — drives the
+     * Settings "no lossless source" line. Derived from [LosslessAvailability] rather
+     * than the credential store: the store knows only about the user's own connected
+     * account, and Tidal is a working lossless path without one.
      *
      * MUST stay declared above the [init] block: Kotlin initializes properties
      * top-to-bottom, and anything in `init` that touches this field before its
      * declaration reads null → NPE opening Settings.
      */
     val qbdlxExpired: StateFlow<Boolean> =
-        losslessAvailability.qbdlxEnabled.map { !it }
+        losslessAvailability.anySourceConfigured.map { !it }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /**

@@ -62,7 +62,7 @@ class LosslessUpgraderImpl @Inject constructor(
 
     override suspend fun upgradeToLossless(track: Track, sweep: Boolean): UpgradeResult = runCatching {
         // A cloud song is the user's own file (Dropbox / OneDrive): never looked up on the
-        // lossless relays or replaced. The sweep's SQL and the Library's Non-FLAC list already
+        // lossless sources or replaced. The sweep's SQL and the Library's Non-FLAC list already
         // leave it out; this holds for any other caller.
         if (track.soundCloudId != null || track.source == com.stash.core.model.MusicSource.SOUNDCLOUD) return@runCatching UpgradeResult.NoMatch
         if (track.source == com.stash.core.model.MusicSource.CLOUD) return@runCatching UpgradeResult.NoMatch
@@ -106,13 +106,16 @@ class LosslessUpgraderImpl @Inject constructor(
      * source answers null for a miss, a rate-limit block and a network failure alike. So
      * it is a miss only when no source matched (a match whose fetch or save failed sets
      * [LosslessDownloadPurpose.matchFound]) and a lookup could really search just now:
-     * a source is healthy ([LosslessSourceRegistry.canSearchNow]) and there is a file-URL
-     * path that isn't cooled (a cooled relay costs zero catalog calls and answers null).
+     * a source is healthy ([LosslessSourceRegistry.canSearchNow]) and the user's own Qobuz
+     * account, when one is connected, is not cooling after a rejection (a cooling login
+     * costs zero catalog calls and answers null). With no Qobuz account the Tidal rung did
+     * the looking, and it flags a lookup it could not really make itself ([searchIncomplete]).
      * Anything else is an [UpgradeResult.Error], left unstamped for the next sweep.
      * A tap carries no purpose and keeps the conservative NoMatch mapping.
      */
     private suspend fun isRealMiss(purpose: LosslessDownloadPurpose): Boolean =
-        !purpose.matchFound && !purpose.searchIncomplete && registry.canSearchNow() && availability.fileUrlAvailableNow()
+        !purpose.matchFound && !purpose.searchIncomplete && registry.canSearchNow() &&
+            (!availability.qbdlxEnabledNow() || availability.fileUrlAvailableNow())
 
     /**
      * Mirrors the canonical post-Success block from

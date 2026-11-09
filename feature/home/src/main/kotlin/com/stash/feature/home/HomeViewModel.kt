@@ -426,8 +426,8 @@ class HomeViewModel @Inject constructor(
      * so connecting an account or the source recovering retires it on its own.
      *
      * Keyed on [LosslessAvailability.anyUserOwned], deliberately not
-     * `anyConfigured`: a configured-but-dead PUBLIC relay is precisely the
-     * outage this banner exists for, and its call to action — connect your own
+     * `anySourceConfigured`: Stash's Tidal relay configured but failing is precisely
+     * the outage this banner exists for, and its call to action — connect your own
      * account — is exactly what that user still needs to do.
      */
     private val losslessOfflineFlow = combine(

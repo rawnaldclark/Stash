@@ -1099,11 +1099,11 @@ private fun LosslessConnectBanner(
  *
  * The two surfaces agree on the states that matter, but they are NOT the same
  * predicate, deliberately: Home keys on `LosslessAvailability.anyUserOwned`
- * (BYO login || custom endpoint) so a dead PUBLIC relay cannot hide the
+ * (a connected Qobuz account) so a failing Stash Tidal relay cannot hide the
  * "connect your own account" offer — that outage is what the banner is for.
- * Settings keys on `qbdlxExpired` (!qbdlxEnabled: BYO login || custom
- * endpoint || a config relay), which counts relays. So they diverge on exactly one case:
- * a user with nothing but a public config relay still gets this banner, and
+ * Settings keys on `qbdlxExpired` (!anySourceConfigured: a Qobuz account || a
+ * Tidal server), which counts Stash's Tidal relay. So they diverge on exactly one
+ * case: a user with nothing but Stash's Tidal relay still gets this banner, and
  * should — Home asks "is there anything of yours to connect?", Settings asks
  * "is what you configured still a path?".
  */
