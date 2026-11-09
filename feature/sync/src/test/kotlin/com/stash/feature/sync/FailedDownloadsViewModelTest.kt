@@ -115,4 +115,12 @@ class FailedDownloadsViewModelTest {
         assertEquals(2, state.groups[1].rows.size)
         assertEquals(3, state.totalCount)
     }
+
+    @Test fun `every displayable failure type maps to valid string resource ids`() {
+        FailureReasonDisplayOrder.forEach { type ->
+            val display = type.display()
+            org.junit.Assert.assertNotEquals(0, display.groupTitleRes)
+            org.junit.Assert.assertNotEquals(0, display.shortLabelRes)
+        }
+    }
 }

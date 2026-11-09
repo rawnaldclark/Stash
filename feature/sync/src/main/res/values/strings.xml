@@ -118,6 +118,41 @@
         <item quantity="one">%d track needs attention</item>
         <item quantity="other">%d tracks need attention</item>
     </plurals>
+    <string name="sync_failed_downloads_empty_title">All caught up!</string>
+    <string name="sync_failed_downloads_empty_subtitle">No failed downloads.</string>
+    <plurals name="sync_failed_downloads_count_subtitle">
+        <item quantity="one">%d track couldn\'t download.</item>
+        <item quantity="other">%d tracks couldn\'t download.</item>
+    </plurals>
+    <string name="sync_failed_downloads_retry_all">Retry all</string>
+    <plurals name="sync_failed_downloads_retry_tracks">
+        <item quantity="one">Retry %d track</item>
+        <item quantity="other">Retry %d tracks</item>
+    </plurals>
+    <plurals name="sync_failed_downloads_more_count">
+        <item quantity="one">+ %1$d more (showing first %2$d)</item>
+        <item quantity="other">+ %1$d more (showing first %2$d)</item>
+    </plurals>
+    <string name="sync_failed_downloads_title_artist">%1$s — %2$s</string>
+    <string name="sync_failed_downloads_playlist_reason">%1$s · %2$s</string>
+    <string name="sync_failed_downloads_cd_retry">Retry</string>
+    <string name="sync_failed_downloads_cd_block">Block</string>
+    <string name="sync_cd_expand">Expand</string>
+    <string name="sync_cd_collapse">Collapse</string>
+
+    <!-- Failure Reason Display -->
+    <string name="sync_failure_reason_auth_expired_title">Sign-in expired</string>
+    <string name="sync_failure_reason_auth_expired_short">Sign-in expired</string>
+    <string name="sync_failure_reason_storage_error_title">Storage unreachable</string>
+    <string name="sync_failure_reason_storage_error_short">Storage error</string>
+    <string name="sync_failure_reason_network_title">Network errors</string>
+    <string name="sync_failure_reason_network_short">Network error</string>
+    <string name="sync_failure_reason_provider_unavailable_title">Source unavailable</string>
+    <string name="sync_failure_reason_provider_unavailable_short">Source unavailable</string>
+    <string name="sync_failure_reason_ffmpeg_error_title">Encoding errors</string>
+    <string name="sync_failure_reason_ffmpeg_error_short">Encoding error</string>
+    <string name="sync_failure_reason_unknown_title">Other errors</string>
+    <string name="sync_failure_reason_unknown_short">Unknown error</string>
 
     <!-- Sync Terminal -->
     <string name="sync_log_title">SYNC LOG</string>

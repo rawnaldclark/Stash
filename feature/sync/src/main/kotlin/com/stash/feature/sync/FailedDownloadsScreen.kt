@@ -30,6 +30,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -89,14 +91,14 @@ fun FailedDownloadsScreen(
                     )
                     Spacer(Modifier.height(16.dp))
                     Text(
-                        text = "All caught up!",
+                        text = stringResource(R.string.sync_failed_downloads_empty_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onBackground,
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "No failed downloads.",
+                        text = stringResource(R.string.sync_failed_downloads_empty_subtitle),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -154,7 +156,7 @@ private fun BackChip(onBack: () -> Unit) {
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
+                contentDescription = stringResource(R.string.sync_back),
                 tint = MaterialTheme.colorScheme.onSurface,
             )
         }
@@ -187,14 +189,14 @@ private fun Header(
                 .padding(horizontal = 20.dp),
         ) {
             Text(
-                text = "Failed Downloads",
+                text = stringResource(R.string.sync_failed_downloads_title),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "$totalCount track${if (totalCount != 1) "s" else ""} couldn't download.",
+                text = pluralStringResource(R.plurals.sync_failed_downloads_count_subtitle, totalCount, totalCount),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -206,7 +208,7 @@ private fun Header(
             ) {
                 Icon(Icons.Default.Refresh, null, Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Retry all")
+                Text(stringResource(R.string.sync_failed_downloads_retry_all))
             }
             Spacer(Modifier.height(16.dp))
         }
