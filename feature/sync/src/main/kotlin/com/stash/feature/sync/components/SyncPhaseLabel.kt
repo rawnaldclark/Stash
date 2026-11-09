@@ -1,6 +1,14 @@
 package com.stash.feature.sync.components
 
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
 import com.stash.core.data.sync.SyncPhase
+import com.stash.feature.sync.R
+
+/** [phaseLabel], with the phases whose words live in strings.xml. */
+@Composable
+internal fun syncPhaseText(phase: SyncPhase): String =
+    if (phase is SyncPhase.ContinuingShortly) stringResource(R.string.sync_continuing_shortly) else phaseLabel(phase)
 
 /** Human-readable label for the current sync phase. */
 internal fun phaseLabel(phase: SyncPhase): String = when (phase) {

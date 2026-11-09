@@ -6,6 +6,8 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.auth.TokenManager
+import com.stash.core.data.sync.DownloadJobRegistry
+import com.stash.core.data.sync.connectedDownloadSources
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -50,6 +52,8 @@ class LibraryReconciliationUseCase @Inject constructor(
     private val trackDao: TrackDao,
     private val tokenManager: TokenManager,
     private val playlistDao: PlaylistDao,
+    /** Which rows a job in this process is downloading right now: their claims stay. */
+    private val downloadJobs: DownloadJobRegistry,
 ) {
     companion object {
         const val TOTAL_STEPS = 5
@@ -82,12 +86,7 @@ class LibraryReconciliationUseCase @Inject constructor(
     ): ReconciliationResult {
         onProgress(0, TOTAL_STEPS)
 
-        val connectedSources = buildList {
-            if (tokenManager.isAuthenticated(com.stash.core.auth.model.AuthService.SPOTIFY)) add("SPOTIFY")
-            if (tokenManager.isAuthenticated(com.stash.core.auth.model.AuthService.YOUTUBE_MUSIC)) add("YOUTUBE")
-                if (tokenManager.hasSoundCloudConnection()) add("SOUNDCLOUD")
-            add("BOTH")
-        }
+        val connectedSources = connectedDownloadSources(tokenManager)
 
         // Leftovers too (#532): Verify reports them as stale entries cleaned up, and
         // a sync clears one before its requeue below, so the song it was hiding
@@ -99,8 +98,10 @@ class LibraryReconciliationUseCase @Inject constructor(
         downloadQueueDao.resetExhaustedRetries()
         onProgress(2, TOTAL_STEPS)
 
-        // The sync's own leftovers only: a download run outside the sync may be mid-song.
-        val resetInProgress = downloadQueueDao.resetStaleSyncInProgress()
+        // Claims no live job holds (a killed process, a stopped worker), any runner's. A song a
+        // live job is downloading keeps its claim: the resume run or the drain outside the sync
+        // may be mid-song, and resetting it let this sync download the same song twice.
+        val resetInProgress = downloadJobs.releaseDeadClaims(downloadQueueDao)
         onProgress(3, TOTAL_STEPS)
 
         // Disk-truth check: every track the DB believes is downloaded gets

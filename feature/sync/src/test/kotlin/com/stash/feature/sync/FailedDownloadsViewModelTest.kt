@@ -6,6 +6,7 @@ import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.FailedDownloadRow
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.sync.DownloadQueueResumer
 import com.stash.core.data.sync.SingleTrackDownloadEnqueuer
 import com.stash.core.model.DownloadFailureType
 import io.mockk.coEvery
@@ -32,11 +33,12 @@ class FailedDownloadsViewModelTest {
     private val trackDao: TrackDao = mockk(relaxed = true)
     private val enqueuer: SingleTrackDownloadEnqueuer = mockk(relaxed = true)
     private val guard: BlocklistGuard = mockk(relaxed = true)
+    private val resumer: DownloadQueueResumer = mockk(relaxed = true)
     private val vm by lazy {
         // dao.getFailedDownloads() is collected eagerly by the VM constructor's StateFlow.
         // Stub it before constructing the VM in each test so the stateIn pipeline has a source.
         coEvery { dao.getFailedDownloads() } returns flowOf(emptyList())
-        FailedDownloadsViewModel(dao, trackDao, enqueuer, guard)
+        FailedDownloadsViewModel(dao, trackDao, enqueuer, guard, resumer)
     }
 
     @Before fun setUp() {
@@ -54,6 +56,8 @@ class FailedDownloadsViewModelTest {
         coEvery { dao.atomicallyClaimForRetry(42) } returns 1
         vm.retry(42)
         coVerify(exactly = 1) { enqueuer.enqueue(42) }
+        // The tap ends a Pause: a paused retry would wait for Resume without saying so.
+        coVerify(exactly = 1) { resumer.clearHold() }
     }
 
     @Test fun `retry does not enqueue when row is no longer FAILED`() = runTest {
@@ -62,19 +66,18 @@ class FailedDownloadsViewModelTest {
         coVerify(exactly = 0) { enqueuer.enqueue(any()) }
     }
 
-    @Test fun `retryGroup enqueues every claimed id`() = runTest {
+    @Test fun `retryGroup hands every claimed id to one resume`() = runTest {
         coEvery { dao.atomicallyClaimGroupForRetry(DownloadFailureType.AUTH_EXPIRED) } returns listOf(1L, 2L, 3L)
         vm.retryGroup(DownloadFailureType.AUTH_EXPIRED)
-        coVerify(exactly = 1) { enqueuer.enqueue(1) }
-        coVerify(exactly = 1) { enqueuer.enqueue(2) }
-        coVerify(exactly = 1) { enqueuer.enqueue(3) }
+        coVerify(exactly = 1) { resumer.retryClaimed(listOf(1L, 2L, 3L)) }
+        coVerify(exactly = 0) { enqueuer.enqueue(any()) }
     }
 
-    @Test fun `retryAll enqueues every non-match claimed id`() = runTest {
+    @Test fun `retryAll hands every non-match claimed id to one resume`() = runTest {
         coEvery { dao.atomicallyClaimAllForRetry() } returns listOf(7L, 8L)
         vm.retryAll()
-        coVerify(exactly = 1) { enqueuer.enqueue(7) }
-        coVerify(exactly = 1) { enqueuer.enqueue(8) }
+        coVerify(exactly = 1) { resumer.retryClaimed(listOf(7L, 8L)) }
+        coVerify(exactly = 0) { enqueuer.enqueue(any()) }
     }
 
     @Test fun `block resolves track then calls guard with FAILED_DOWNLOADS source`() = runTest {
@@ -104,7 +107,7 @@ class FailedDownloadsViewModelTest {
         // initializer, so we have to win the race against the lazy `vm` builder
         // (which stubs with an empty list as the default).
         coEvery { dao.getFailedDownloads() } returns flowOf(listOf(row1, row2, row3))
-        val localVm = FailedDownloadsViewModel(dao, trackDao, enqueuer, guard)
+        val localVm = FailedDownloadsViewModel(dao, trackDao, enqueuer, guard, resumer)
 
         // Subscribe to the StateFlow until we see a non-loading state.
         val state = localVm.uiState.first { !it.isLoading }

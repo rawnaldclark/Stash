@@ -7,6 +7,7 @@ import com.stash.core.data.blocklist.BlocklistGuard
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.FailedDownloadRow
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.sync.DownloadQueueResumer
 import com.stash.core.data.sync.SingleTrackDownloadEnqueuer
 import com.stash.core.model.DownloadFailureType
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -56,6 +57,8 @@ data class FailedDownloadsUiState(
  * - [retry]: single-row retry — claims one row, enqueues if the claim hit.
  * - [retryGroup]: retry every currently-FAILED row in one failure category.
  * - [retryAll]: retry every currently-FAILED row (non-match failures only).
+ *   Both hand the claimed rows to [DownloadQueueResumer.retryClaimed]: one run
+ *   for all of them, under the queue's rules, instead of a job per song.
  * - [block]: resolve the track and route it through [BlocklistGuard.block]
  *   tagged as [BlockSource.FAILED_DOWNLOADS].
  */
@@ -65,6 +68,7 @@ class FailedDownloadsViewModel @Inject constructor(
     private val trackDao: TrackDao,
     private val downloadEnqueuer: SingleTrackDownloadEnqueuer,
     private val blocklistGuard: BlocklistGuard,
+    private val resumer: DownloadQueueResumer,
 ) : ViewModel() {
 
     val uiState: StateFlow<FailedDownloadsUiState> =
@@ -94,7 +98,11 @@ class FailedDownloadsViewModel @Inject constructor(
     fun retry(queueId: Long) = viewModelScope.launch {
         val claimed = downloadQueueDao.atomicallyClaimForRetry(queueId)
         // SQL UPDATE matches at most one row by PK; claim returns 1 (won) or 0 (lost race / already advanced).
-        if (claimed == 1) downloadEnqueuer.enqueue(queueId)
+        if (claimed == 1) {
+            // A tap ends a Pause, or the retry would wait for Resume without saying so.
+            resumer.clearHold()
+            downloadEnqueuer.enqueue(queueId)
+        }
     }
 
     /**
@@ -103,10 +111,7 @@ class FailedDownloadsViewModel @Inject constructor(
      * actually transitioned FAILED → PENDING — those are the ones we enqueue.
      */
     fun retryGroup(type: DownloadFailureType) = viewModelScope.launch {
-        downloadQueueDao.atomicallyClaimGroupForRetry(type)
-            // Sequential enqueue is intentional: WorkManager handles concurrency post-enqueue,
-            // and the DataStore read inside enqueue() is cached after the first call.
-            .forEach { downloadEnqueuer.enqueue(it) }
+        resumer.retryClaimed(downloadQueueDao.atomicallyClaimGroupForRetry(type))
     }
 
     /**
@@ -115,8 +120,7 @@ class FailedDownloadsViewModel @Inject constructor(
      * helper handles).
      */
     fun retryAll() = viewModelScope.launch {
-        downloadQueueDao.atomicallyClaimAllForRetry()
-            .forEach { downloadEnqueuer.enqueue(it) }
+        resumer.retryClaimed(downloadQueueDao.atomicallyClaimAllForRetry())
     }
 
     /**

@@ -54,6 +54,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
@@ -121,6 +122,14 @@ class StashApplication : Application(), Configuration.Provider {
 
     @Inject
     lateinit var downloadQueueDao: DownloadQueueDao
+
+    /** Which download rows a job in this process holds: a cold start leaves their claims alone. */
+    @Inject
+    lateinit var downloadJobs: com.stash.core.data.sync.DownloadJobRegistry
+
+    /** Downloads continue on their own: at a cold start and when the app comes back. */
+    @Inject
+    lateinit var downloadQueueResumer: com.stash.core.data.sync.DownloadQueueResumer
 
     @Inject
     lateinit var trackDao: TrackDao
@@ -370,6 +379,17 @@ class StashApplication : Application(), Configuration.Provider {
                     webRemote.onForeground()
                     // ...and an open Recap story carries its song on.
                     recapAudio.onAppForeground()
+                    // ...and songs left queued carry on downloading (at most once a minute; not while
+                    // paused or out of space): some phones drop scheduled jobs when the app is swiped away.
+                    applicationScope.launch {
+                        try {
+                            downloadQueueResumer.onForeground()
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Log.w("StashStartup", "resuming downloads on foreground failed", e)
+                        }
+                    }
                 }
 
                 override fun onStop(owner: LifecycleOwner) {
@@ -419,23 +439,45 @@ class StashApplication : Application(), Configuration.Provider {
             runCatching { musicRepository.runMigrations() }
                 .onFailure { Log.w("StashStartup", "runMigrations failed", it) }
         }
-        // Reset stale IN_PROGRESS download_queue rows left over from an
-        // interrupted worker run / process death. The worker bulk-marks rows
-        // IN_PROGRESS and relies on the NEXT run's resetStaleInProgress() to
-        // flip leftovers back — but that next run may never come (e.g. in
-        // streaming mode the drain is skipped), so they linger forever showing
-        // "downloading". At a fresh process start no worker is running, so any
-        // IN_PROGRESS row is by definition stale and safe to reset.
+        // Hand back IN_PROGRESS download_queue rows left over from an
+        // interrupted worker run / process death, or they linger forever showing
+        // "downloading". Only claims no live job holds: WorkManager can restart a
+        // worker in this new process before this coroutine runs, and resetting the
+        // row that worker just claimed let another runner download the song twice.
         applicationScope.launch {
             runCatching {
-                val reset = downloadQueueDao.resetStaleInProgress()
+                val reset = downloadJobs.releaseDeadClaims(downloadQueueDao)
                 if (reset > 0) Log.i("StashStartup", "reset $reset stale IN_PROGRESS download rows -> PENDING")
             }.onFailure { Log.w("StashStartup", "stale IN_PROGRESS reset failed", it) }
             // Then pick waiting downloads back up (#474), Stash Mixes on or off: a
             // run cancelled or cut short leaves them otherwise until the next tap.
-            // Only when something waits, and under the background constraints.
-            runCatching { musicRepository.resumeWaitingDownloads() }
-                .onFailure { Log.w("StashStartup", "resuming waiting downloads failed", it) }
+            // Only when something waits, and under the background constraints: the
+            // songs a sync queued (the resume run) and the ones the user asked for
+            // (the drain). Not while the user has paused downloads.
+            try {
+                downloadQueueResumer.resume(com.stash.core.data.sync.ResumeTrigger.AUTO)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("StashStartup", "resuming waiting downloads failed", e)
+            }
+        }
+        // Switching Download mode from Online to Offline: the songs a sync queued (listed under
+        // "Downloads when you switch to Offline") start now, not at the next app start.
+        applicationScope.launch {
+            streamingPreference.enabled
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { online ->
+                    if (online) return@collect
+                    try {
+                        downloadQueueResumer.resume(com.stash.core.data.sync.ResumeTrigger.AUTO)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w("StashStartup", "resuming downloads after switching to Offline failed", e)
+                    }
+                }
         }
         // An extra Spotify account's sign-in is kept outside the database, under its row id: a full
         // restore (which restarts the app into here) can bring a database without that row, and a
@@ -1022,34 +1064,24 @@ class StashApplication : Application(), Configuration.Provider {
      *   re-tuned and — like Deep Cuts — now seeds via the tag engine
      *   (RecipeTagResolver → TagPoolBuilder), falling back to the user's top genres
      *   for builtins with no explicit tags. Daily Discover stays ARTIST_SIMILAR.
+     * - v3: Daily Discover 100% recommendations (discoveryRatio 0.85 → 1.0): its 5
+     *   download places, which barely ever changed, go to 5 more finds.
      *
      * @return true when a retune ran this launch, so the cold start rebuilds the mixes now.
      */
     private suspend fun maybeRetuneStashMixes(): Boolean {
-        val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
-        val stored = prefs.getInt("stash_mix_recipe_tuning_version", 0)
+        val prefs = getSharedPreferences(StashMixDefaults.TUNING_PREFS_NAME, MODE_PRIVATE)
+        // A replace-restore removes this key (StashMixDefaults.rearmRetune), so a backup's old recipe values are retuned too.
+        val stored = prefs.getInt(StashMixDefaults.TUNING_VERSION_KEY, 0)
         if (stored >= STASH_MIX_RECIPE_TUNING_VERSION) return false
 
-        var totalUpdated = 0
-        for (recipe in StashMixDefaults.ALL.filter { it.isBuiltin }) {
-            val updated = stashMixRecipeDao.retuneBuiltin(
-                name = recipe.name,
-                discoveryRatio = recipe.discoveryRatio,
-                freshnessWindowDays = recipe.freshnessWindowDays,
-                targetLength = recipe.targetLength,
-                affinityBias = recipe.affinityBias,
-                seedStrategy = recipe.seedStrategy,
-                moodKeysCsv = recipe.moodKeysCsv,
-                tagSampleDepth = recipe.tagSampleDepth,
-            )
-            totalUpdated += updated
-        }
+        val totalUpdated = StashMixDefaults.retuneBuiltins(stashMixRecipeDao)
         Log.i(
             "StashMigration",
             "Retuned $totalUpdated builtin mix recipe(s) to v$STASH_MIX_RECIPE_TUNING_VERSION",
         )
         prefs.edit()
-            .putInt("stash_mix_recipe_tuning_version", STASH_MIX_RECIPE_TUNING_VERSION)
+            .putInt(StashMixDefaults.TUNING_VERSION_KEY, STASH_MIX_RECIPE_TUNING_VERSION)
             .apply()
         return true
     }
@@ -1343,8 +1375,10 @@ class StashApplication : Application(), Configuration.Provider {
          *    move from library-substrate to recommendation-substrate
          *    (85% discovery, 15% library). Deep Cuts switches seed
          *    strategy from NONE to TRACK_SIMILAR.
+         *  - v2 = v0.9.40 tag engine: Deep Cuts re-pointed to TAG_GRAPH.
+         *  - v3: Daily Discover 100% recommendations.
          */
-        private const val STASH_MIX_RECIPE_TUNING_VERSION = 2
+        private const val STASH_MIX_RECIPE_TUNING_VERSION = 3
 
         /**
          * Bump when [maybeCleanupDiscoveryLibraryHits] should run again.

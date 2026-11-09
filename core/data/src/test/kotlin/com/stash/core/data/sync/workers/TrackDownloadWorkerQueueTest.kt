@@ -139,7 +139,7 @@ class TrackDownloadWorkerQueueTest {
             assertEquals(DownloadStatus.PENDING, db.downloadQueueDao().getStatusById(waiting))
             assertTrue(jobs.isLive(running))
 
-            val controller = DownloadCancellationController(context, db.downloadQueueDao(), jobs)
+            val controller = DownloadCancellationController(context, db.downloadQueueDao(), jobs, mockk(relaxed = true))
             assertEquals(2, controller.cancelAll())
 
             // The slots free up (the waiting song could claim now) and the cancelled download finishes late.
@@ -205,6 +205,9 @@ class TrackDownloadWorkerQueueTest {
                     flacUpgradeSweeper = mockk(relaxed = true),
                     downloadJobs = jobs,
                     fileReplacement = TrackFileReplacement(db.trackDao(), LocalFileOps(appContext)),
+                    queueState = mockk(relaxed = true),
+                    resumer = mockk(relaxed = true),
+                    singleTrackDownloadEnqueuer = mockk(relaxed = true),
                     downloadSlots = slots,
                 )
             })

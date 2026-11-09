@@ -84,6 +84,11 @@ class SyncStateManager @Inject constructor() {
         _phase.value = SyncPhase.WaitingForNetwork
     }
 
+    /** Transition to [SyncPhase.ContinuingShortly]: the system stopped the download step and reruns it. */
+    fun onContinuingShortly() {
+        _phase.value = SyncPhase.ContinuingShortly
+    }
+
     /** Transition to [SyncPhase.Authenticating]. */
     fun onAuthenticating() {
         _phase.value = SyncPhase.Authenticating

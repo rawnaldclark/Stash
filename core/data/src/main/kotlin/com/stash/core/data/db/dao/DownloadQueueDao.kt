@@ -38,6 +38,8 @@ data class DownloadManagementRow(
     val failureType: DownloadFailureType,
     val createdAt: Long,
     val completedAt: Long?,
+    /** The sync that queued it, or null: a download the user asked for. Online mode never downloads a sync's rows. */
+    val syncId: Long? = null,
 )
 
 /**
@@ -122,6 +124,47 @@ private const val FROM_A_CONNECTED_SOURCE = """
      )))
 """
 
+/**
+ * The rows a sync's download step takes, past the status, source and blocklist checks
+ * ([DownloadQueueDao.getAllPendingBySources], [DownloadQueueDao.getRetryableBySources]), and
+ * the resume run with them ([DownloadQueueDao.hasResumableSyncDownload]). One text, so the
+ * three can't drift apart. `dq` is the queue row, `t` its track.
+ */
+private const val TAKEN_BY_A_SYNC_DOWNLOAD = """
+          -- A track the user asked for by hand (Library & Storage ->
+          -- "Re-download missing") carries no sync run and need not sit in a
+          -- synced playlist: the ask IS the authorisation. Every other row
+          -- still needs both, so the automatic requeue can never widen.
+          (
+            dq.user_requested = 1
+            OR (
+              dq.sync_id IS NOT NULL
+              AND EXISTS (
+              SELECT 1 FROM playlist_tracks pt
+              INNER JOIN playlists p ON p.id = pt.playlist_id
+              WHERE pt.track_id = t.id
+                AND pt.removed_at IS NULL
+                AND p.sync_enabled = 1
+                -- Must also be ACTIVE (visible in the Sync UI). A playlist
+                -- can be sync_enabled=1 yet is_active=0 — e.g. a YouTube
+                -- daily mix force-enabled by the one-shot migration, then
+                -- rotated out of the feed. Hidden from the UI (so the user
+                -- can't toggle it off) but it kept downloading (observed:
+                -- Replay Mix queued 90 tracks). Mirrors the is_active=1
+                -- guard in PlaylistDao.getSyncEnabledPlaylists.
+                AND p.is_active = 1
+                -- A mix counts only when its switch is on, exactly like a
+                -- playlist: the arm above already requires sync_enabled = 1, and
+                -- discovered mixes start switched off (#368 — auto-enabled mixes
+                -- once pulled thousands of tracks nobody asked for, refreshed on
+                -- every rotation). Stash Mixes are local recipes with no switch
+                -- and never download.
+                AND p.type != 'STASH_MIX'
+              )
+            )
+          )
+"""
+
 /** The track is blocked ("Delete and block forever"): no download takes it. */
 private const val BLOCKED_TRACK = """
     EXISTS (
@@ -176,7 +219,8 @@ interface DownloadQueueDao {
                t.title, t.artist, t.album, t.album_art_url AS albumArtUrl,
                dq.status, dq.retry_count AS retryCount,
                dq.error_message AS errorMessage, dq.failure_type AS failureType,
-               dq.created_at AS createdAt, dq.completed_at AS completedAt
+               dq.created_at AS createdAt, dq.completed_at AS completedAt,
+               dq.sync_id AS syncId
           FROM download_queue dq
           INNER JOIN tracks t ON t.id = dq.track_id
          WHERE dq.status = 'IN_PROGRESS'
@@ -202,7 +246,8 @@ interface DownloadQueueDao {
                t.title, t.artist, t.album, t.album_art_url AS albumArtUrl,
                dq.status, dq.retry_count AS retryCount,
                dq.error_message AS errorMessage, dq.failure_type AS failureType,
-               dq.created_at AS createdAt, dq.completed_at AS completedAt
+               dq.created_at AS createdAt, dq.completed_at AS completedAt,
+               dq.sync_id AS syncId
           FROM download_queue dq
           INNER JOIN tracks t ON t.id = dq.track_id
          WHERE dq.status IN ('COMPLETED', 'FAILED', 'SKIPPED')
@@ -318,38 +363,7 @@ interface DownloadQueueDao {
         WHERE dq.status = 'PENDING'
           AND """ + FROM_A_CONNECTED_SOURCE + """
           AND bl.canonical_key IS NULL
-          -- A track the user asked for by hand (Library & Storage ->
-          -- "Re-download missing") carries no sync run and need not sit in a
-          -- synced playlist: the ask IS the authorisation. Every other row
-          -- still needs both, so the automatic requeue can never widen.
-          AND (
-            dq.user_requested = 1
-            OR (
-              dq.sync_id IS NOT NULL
-              AND EXISTS (
-              SELECT 1 FROM playlist_tracks pt
-              INNER JOIN playlists p ON p.id = pt.playlist_id
-              WHERE pt.track_id = t.id
-                AND pt.removed_at IS NULL
-                AND p.sync_enabled = 1
-                -- Must also be ACTIVE (visible in the Sync UI). A playlist
-                -- can be sync_enabled=1 yet is_active=0 — e.g. a YouTube
-                -- daily mix force-enabled by the one-shot migration, then
-                -- rotated out of the feed. Hidden from the UI (so the user
-                -- can't toggle it off) but it kept downloading (observed:
-                -- Replay Mix queued 90 tracks). Mirrors the is_active=1
-                -- guard in PlaylistDao.getSyncEnabledPlaylists.
-                AND p.is_active = 1
-                -- A mix counts only when its switch is on, exactly like a
-                -- playlist: the arm above already requires sync_enabled = 1, and
-                -- discovered mixes start switched off (#368 — auto-enabled mixes
-                -- once pulled thousands of tracks nobody asked for, refreshed on
-                -- every rotation). Stash Mixes are local recipes with no switch
-                -- and never download.
-                AND p.type != 'STASH_MIX'
-              )
-            )
-          )
+          AND """ + TAKEN_BY_A_SYNC_DOWNLOAD + """
         ORDER BY (CASE WHEN dq.youtube_url IS NULL THEN 0 ELSE 1 END) ASC, dq.created_at ASC
     """)
     suspend fun getAllPendingBySources(sources: List<String>): List<DownloadQueueEntity>
@@ -372,41 +386,34 @@ interface DownloadQueueDao {
         WHERE dq.status = 'FAILED' AND dq.retry_count < 3
           AND """ + FROM_A_CONNECTED_SOURCE + """
           AND bl.canonical_key IS NULL
-          -- A track the user asked for by hand (Library & Storage ->
-          -- "Re-download missing") carries no sync run and need not sit in a
-          -- synced playlist: the ask IS the authorisation. Every other row
-          -- still needs both, so the automatic requeue can never widen.
-          AND (
-            dq.user_requested = 1
-            OR (
-              dq.sync_id IS NOT NULL
-              AND EXISTS (
-              SELECT 1 FROM playlist_tracks pt
-              INNER JOIN playlists p ON p.id = pt.playlist_id
-              WHERE pt.track_id = t.id
-                AND pt.removed_at IS NULL
-                AND p.sync_enabled = 1
-                -- Must also be ACTIVE (visible in the Sync UI). A playlist
-                -- can be sync_enabled=1 yet is_active=0 — e.g. a YouTube
-                -- daily mix force-enabled by the one-shot migration, then
-                -- rotated out of the feed. Hidden from the UI (so the user
-                -- can't toggle it off) but it kept downloading (observed:
-                -- Replay Mix queued 90 tracks). Mirrors the is_active=1
-                -- guard in PlaylistDao.getSyncEnabledPlaylists.
-                AND p.is_active = 1
-                -- A mix counts only when its switch is on, exactly like a
-                -- playlist: the arm above already requires sync_enabled = 1, and
-                -- discovered mixes start switched off (#368 — auto-enabled mixes
-                -- once pulled thousands of tracks nobody asked for, refreshed on
-                -- every rotation). Stash Mixes are local recipes with no switch
-                -- and never download.
-                AND p.type != 'STASH_MIX'
-              )
-            )
-          )
+          AND """ + TAKEN_BY_A_SYNC_DOWNLOAD + """
         ORDER BY (CASE WHEN dq.youtube_url IS NULL THEN 0 ELSE 1 END) ASC, dq.created_at ASC
     """)
     suspend fun getRetryableBySources(sources: List<String>): List<DownloadQueueEntity>
+
+    /**
+     * Whether a sync's download step has a song waiting for it: a row
+     * [getAllPendingBySources] returns. The resume run (DownloadQueueResumer) asks this
+     * before it starts, so a start with nothing to download never posts a notification.
+     * PENDING only, like [hasPendingDiscoveryDownload] (#474): failed rows
+     * ([getRetryableBySources]) ride along when a run has real work, but never start one,
+     * or every app start re-ran the whole Failed list. Same joins and checks.
+     */
+    @Query("""
+        SELECT EXISTS(
+            SELECT 1 FROM download_queue dq
+            INNER JOIN tracks t ON t.id = dq.track_id
+            LEFT JOIN track_blocklist bl
+                ON bl.canonical_key = (t.canonical_artist || '|' || t.canonical_title)
+                OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
+                OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
+            WHERE dq.status = 'PENDING'
+              AND """ + FROM_A_CONNECTED_SOURCE + """
+              AND bl.canonical_key IS NULL
+              AND """ + TAKEN_BY_A_SYNC_DOWNLOAD + """
+        )
+    """)
+    suspend fun hasResumableSyncDownload(sources: List<String>): Boolean
 
     /**
      * Discovery rows queued for download — `sync_id IS NULL` partitions
@@ -535,6 +542,19 @@ interface DownloadQueueDao {
     """)
     suspend fun deferIfInProgress(id: Long, reason: String?): Int
 
+    /**
+     * [deferIfInProgress] for the row a worker claimed for [trackId], found by its status.
+     * A song can have two rows (a sync's and a tap's); looking it up with [getByTrackId]
+     * answered with the oldest, and the claimed one stayed IN_PROGRESS.
+     */
+    @Query("""
+        UPDATE download_queue
+           SET status = 'WAITING_FOR_LOSSLESS', error_message = :reason,
+               failure_type = 'NONE', completed_at = NULL
+         WHERE track_id = :trackId AND status = 'IN_PROGRESS'
+    """)
+    suspend fun deferInProgressForTrack(trackId: Long, reason: String?): Int
+
     /** Lightweight status lookup used to resolve cancellation races. */
     @Query("SELECT status FROM download_queue WHERE id = :id LIMIT 1")
     suspend fun getStatusById(id: Long): DownloadStatus?
@@ -645,6 +665,10 @@ interface DownloadQueueDao {
     /** Internal helper for [atomicallyClaimAllForRetry]. */
     @Query("SELECT id FROM download_queue WHERE status = 'FAILED' AND failure_type NOT IN ('NONE', 'NO_MATCH')")
     suspend fun selectAllNonMatchFailedIds(): List<Long>
+
+    /** How many rows "Retry all failed" would retry ([atomicallyClaimAllForRetry]), live. */
+    @Query("SELECT COUNT(*) FROM download_queue WHERE status = 'FAILED' AND failure_type NOT IN ('NONE', 'NO_MATCH')")
+    fun observeRetryableFailedCount(): Flow<Int>
 
     /**
      * Internal helper: bulk flip a known set of FAILED rows back to PENDING, for
@@ -777,7 +801,7 @@ interface DownloadQueueDao {
      * `getFailedDownloads()` query (that query gates on `status='FAILED'`).
      *
      * Callers should escalate to [markFailed] once retry_count reaches the
-     * `TRANSIENT_RETRY_LIMIT` defined at the worker layer, so persistently-
+     * `DownloadFailureClassifier.TRANSIENT_RETRY_LIMIT`, so persistently-
      * stuck rows eventually surface to the user.
      */
     @Query("""
@@ -787,13 +811,45 @@ interface DownloadQueueDao {
                failure_type = :lastFailureType,
                retry_count = retry_count + 1,
                completed_at = NULL
-         WHERE id = :queueId
+         WHERE id = :queueId AND status = 'IN_PROGRESS'
     """)
     suspend fun revertToPendingAfterInterruption(
         queueId: Long,
         lastErrorMessage: String?,
         lastFailureType: DownloadFailureType,
     )
+
+    /**
+     * [revertToPendingAfterInterruption] without using a retry, for a phone that is out of
+     * space: the song isn't the problem, and burning a retry per song turned every queued song
+     * FAILED. Guarded on IN_PROGRESS so a row the user cancelled meanwhile stays cancelled.
+     */
+    @Query("""
+        UPDATE download_queue
+           SET status = 'PENDING',
+               error_message = :lastErrorMessage,
+               failure_type = :lastFailureType,
+               completed_at = NULL
+         WHERE id = :queueId AND status = 'IN_PROGRESS'
+    """)
+    suspend fun revertToPendingKeepingRetries(
+        queueId: Long,
+        lastErrorMessage: String?,
+        lastFailureType: DownloadFailureType,
+    ): Int
+
+    /**
+     * Gives back the retry a failure used, for songs that went back to the queue when a whole
+     * batch failed the same transient way (no connection that works, an extractor broken for
+     * everyone): the songs weren't the problem, and burning a retry for each turned the whole
+     * queue FAILED within hours. Only rows still waiting.
+     */
+    @Query("""
+        UPDATE download_queue
+           SET retry_count = CASE WHEN retry_count > 0 THEN retry_count - 1 ELSE 0 END
+         WHERE id IN (:ids) AND status = 'PENDING'
+    """)
+    suspend fun refundRetries(ids: List<Long>): Int
 
     /**
      * Stamp a YouTube URL onto a pending queue row that doesn't have one
@@ -987,28 +1043,6 @@ interface DownloadQueueDao {
     /** Reset retry count for all failed entries so they can be retried after a bug fix. */
     @Query("UPDATE download_queue SET retry_count = 0, status = 'FAILED' WHERE status = 'FAILED' AND retry_count >= 3")
     suspend fun resetExhaustedRetries()
-
-    /**
-     * Reset stale IN_PROGRESS entries back to PENDING. Called at the start
-     * of each TrackDownloadWorker run. Since the worker is a unique WorkManager
-     * chain (only one instance runs at a time), any IN_PROGRESS entries at
-     * the start of doWork() are guaranteed to be leftovers from a previous
-     * interrupted run, not active downloads.
-     *
-     * @return Number of entries reset.
-     */
-    @Query("UPDATE download_queue SET status = 'PENDING' WHERE status = 'IN_PROGRESS'")
-    suspend fun resetStaleInProgress(): Int
-
-    /**
-     * [resetStaleInProgress] for the sync's own rows only. A sync's reconcile runs
-     * while the download run outside the sync (a kept playlist's, a tap's, #474)
-     * may be mid-song; resetting that row would let the sync claim the same song
-     * and download it at the same time. Cold start, with nothing running, keeps
-     * the global reset.
-     */
-    @Query("UPDATE download_queue SET status = 'PENDING' WHERE status = 'IN_PROGRESS' AND sync_id IS NOT NULL")
-    suspend fun resetStaleSyncInProgress(): Int
 
     /**
      * Hands one claimed row back (IN_PROGRESS → PENDING) when its worker is stopped
