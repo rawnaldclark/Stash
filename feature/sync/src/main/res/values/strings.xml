@@ -400,4 +400,72 @@
     <string name="failed_matches_find_use">Use this version</string>
     <!-- Dismiss dialog: artist, title -->
     <string name="failed_matches_dismiss_body">\'%1$s — %2$s\' won\'t be downloaded during future syncs. To pick the right version instead, tap the song and find it yourself.</string>
+
+    <!-- Failed Matches Screen -->
+    <string name="sync_failed_matches_empty_subtitle">No unmatched songs.</string>
+    <string name="sync_failed_matches_title_review">Songs to Review</string>
+    <string name="sync_failed_matches_title_flagged">Flagged Songs</string>
+    <string name="sync_failed_matches_title_unmatched">Unmatched Songs</string>
+    <string name="sync_failed_matches_sub_review">These songs couldn\'t be matched during sync, or you flagged them as wrong.</string>
+    <string name="sync_failed_matches_sub_flagged">Songs you flagged from Now Playing. Pick a replacement below.</string>
+    <string name="sync_failed_matches_sub_unmatched">These songs couldn\'t be found on YouTube during sync.</string>
+    <string name="sync_failed_matches_count_both">%1$d unmatched · %2$d flagged · %3$d total</string>
+    <plurals name="sync_failed_matches_count_flagged">
+        <item quantity="one">%d flagged track</item>
+        <item quantity="other">%d flagged tracks</item>
+    </plurals>
+    <string name="sync_failed_matches_searching">Searching %s…</string>
+    <string name="sync_failed_matches_resync">Resync</string>
+    <string name="sync_failed_matches_approve_all">Approve All (%d)</string>
+    <string name="sync_failed_matches_dismiss_all">Dismiss All</string>
+    <string name="sync_failed_matches_no_match_found">No match found</string>
+    <string name="sync_failed_matches_cd_preview_match">Preview match</string>
+    <string name="sync_failed_matches_cd_approve_match">Approve match</string>
+    <string name="sync_failed_matches_cd_dismiss">Dismiss</string>
+    <string name="sync_dismiss_dialog_title">Stop retrying this song?</string>
+    <string name="sync_confirm">Confirm</string>
+
+    <!-- Flagged Songs Section -->
+    <string name="sync_flagged_section_title">You flagged these as wrong</string>
+    <string name="sync_flagged_section_subtitle">Tap resync above to find replacements, then approve to swap.</string>
+    <string name="sync_flagged_swapping">Swapping…</string>
+    <string name="sync_flagged_replacement_format">→ %1$s — %2$s</string>
+    <string name="sync_flagged_no_replacement">No replacement found</string>
+    <string name="sync_flagged_tap_resync_hint">Tap Resync to find replacements</string>
+    <string name="sync_flagged_cd_preview_replacement">Preview replacement</string>
+    <string name="sync_flagged_cd_swap">Swap to this match</string>
+    <string name="sync_flagged_cd_unflag">Unflag (keep current match)</string>
+
+    <!-- Approved Downloads Banner -->
+    <plurals name="sync_approved_downloads_title">
+        <item quantity="one">Downloading %d approved song</item>
+        <item quantity="other">Downloading %d approved songs</item>
+    </plurals>
+    <string name="sync_approved_downloads_detail_base">%1$d of %2$d done</string>
+    <plurals name="sync_approved_downloads_detail_failed">
+        <item quantity="one">%1$d of %2$d done · %3$d didn\'t download</item>
+        <item quantity="other">%1$d of %2$d done · %3$d didn\'t download</item>
+    </plurals>
+    <plurals name="sync_approved_downloads_finished">
+        <item quantity="one">Downloaded %d approved song.</item>
+        <item quantity="other">Downloaded %d approved songs.</item>
+    </plurals>
+    <string name="sync_approved_downloads_keep_downloading_note">%1$s. They keep downloading if you leave.</string>
+
+    <!-- Failed Matches Messages -->
+    <string name="sync_failed_matches_msg_no_new_matches">No new matches found.</string>
+    <plurals name="sync_failed_matches_msg_found_replacements">
+        <item quantity="one">Found %d replacement.</item>
+        <item quantity="other">Found %d replacements.</item>
+    </plurals>
+    <string name="sync_failed_matches_msg_invalid_video">Can\'t approve — this match isn\'t a valid YouTube video.</string>
+    <string name="sync_failed_matches_msg_blocked">Can\'t approve — this track is on your blocklist.</string>
+    <string name="sync_failed_matches_msg_already_linked">Can\'t approve — \'%1$s\' is already linked to %2$s — %3$s. Try Dismiss instead.</string>
+    <string name="sync_failed_matches_msg_approve_error">Couldn\'t approve this match. Please try again.</string>
+    <string name="sync_failed_matches_msg_download_error">Couldn\'t download \'%s\'. It\'s back in the list to try again.</string>
+    <string name="sync_flagged_msg_choose_different">Choose a different replacement for this track.</string>
+    <string name="sync_flagged_msg_already_linked">Can\'t swap — \'%1$s\' is already linked to %2$s.</string>
+    <string name="sync_flagged_msg_blocked">Can\'t swap — this song is on your blocklist.</string>
+    <string name="sync_failed_matches_msg_focus_not_found">Couldn\'t find that song in Failed matches</string>
+    <string name="sync_failed_matches_msg_preview_failed">Couldn\'t load that preview. Try again, or approve to hear the full track.</string>
 </resources>
