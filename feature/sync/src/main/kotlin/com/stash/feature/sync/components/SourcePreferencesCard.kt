@@ -24,9 +24,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.stash.core.ui.theme.StashTheme
+import com.stash.feature.sync.R
 
 /**
  * Source dashboard card. Used by both Spotify and YouTube.
@@ -86,7 +88,7 @@ fun SourcePreferencesCard(
                     )
                     Spacer(Modifier.width(8.dp))
                     StatusPill(
-                        text = if (connected) "Connected" else "Disconnected",
+                        text = stringResource(if (connected) R.string.sync_source_connected else R.string.sync_source_disconnected),
                         brandColor = if (connected) ec.success else Color(0xFFEF4444),
                     )
                 }
@@ -113,14 +115,14 @@ fun SourcePreferencesCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "Manage playlists",
+                        text = stringResource(R.string.sync_source_manage_playlists),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Medium,
                     )
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = "Manage $name playlists",
+                        contentDescription = stringResource(R.string.sync_source_cd_manage_playlists, name),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }

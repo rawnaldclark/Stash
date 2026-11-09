@@ -1,5 +1,6 @@
 package com.stash.feature.sync
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.auth.TokenManager
@@ -20,6 +21,7 @@ import com.stash.core.data.sync.unreadPlaylistsIn
 import com.stash.core.model.SyncDisplayStatus
 import com.stash.data.download.files.LibrarySizeHolder
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -314,6 +316,7 @@ class SyncViewModel @Inject constructor(
     private val downloadManager: com.stash.data.download.DownloadManager,
     /** The other Spotify accounts: a card and a page each, and their own albums and mixes switches. */
     private val spotifyAccountDao: com.stash.core.data.db.dao.SpotifyAccountDao,
+    @param:ApplicationContext private val context: Context? = null,
 ) : ViewModel() {
 
     /** The Sync tab's Downloads row: how many run, wait and failed, and how far the running ones are. */
@@ -470,7 +473,8 @@ class SyncViewModel @Inject constructor(
     }
 
     private suspend fun undoLastSync(): String {
-        val point = syncUndoDao.latestPointNow() ?: return "Nothing to undo."
+        val point = syncUndoDao.latestPointNow()
+            ?: return context?.getString(R.string.sync_undo_nothing) ?: "Nothing to undo."
         val changed = try {
             val changed = syncUndoDao.countChangedPlaylists(point.syncId, point.createdAtEpochMs)
             syncScheduler.cancelPendingSync()
@@ -480,7 +484,7 @@ class SyncViewModel @Inject constructor(
             throw e
         } catch (e: Exception) {
             android.util.Log.w("SyncViewModel", "Undo of sync ${point.syncId} failed", e)
-            return "Couldn't undo that sync. Nothing was changed."
+            return context?.getString(R.string.sync_undo_error) ?: "Couldn't undo that sync. Nothing was changed."
         }
         // After the restore, and never failing it: the library is already back.
         try {
@@ -490,13 +494,18 @@ class SyncViewModel @Inject constructor(
         } catch (e: Exception) {
             android.util.Log.w("SyncViewModel", "Couldn't pause Auto-sync after the undo", e)
         }
-        val playlists = if (changed == 1) "1 playlist is" else "$changed playlists are"
+        val playlists = if (context != null) {
+            context.resources.getQuantityString(R.plurals.sync_undo_playlists_count, changed, changed)
+        } else {
+            if (changed == 1) "1 playlist is" else "$changed playlists are"
+        }
         val paused = if (_uiState.value.syncPreferences.autoSyncEnabled) {
-            " Auto-sync is paused until you tap Sync."
+            context?.getString(R.string.sync_undo_paused_suffix) ?: " Auto-sync is paused until you tap Sync."
         } else {
             ""
         }
-        return "Undone — $playlists back to how they were before that sync.$paused"
+        return context?.getString(R.string.sync_undo_result, playlists, paused)
+            ?: "Undone — $playlists back to how they were before that sync.$paused"
     }
 
     /** Clear the one-shot undo message once the UI has shown it. */

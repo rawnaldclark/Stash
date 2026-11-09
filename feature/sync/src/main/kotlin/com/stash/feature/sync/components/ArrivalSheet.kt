@@ -80,9 +80,9 @@ internal fun ArrivalSheet(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    if (spotifyConnected) BrandDotLabel(StashTheme.extendedColors.spotifyGreen, "Spotify")
-                    if (youTubeConnected) BrandDotLabel(StashTheme.extendedColors.youtubeRed, "YouTube Music")
-                    if (soundCloudConnected) BrandDotLabel(androidx.compose.ui.graphics.Color(0xFFFF5500), "SoundCloud")
+                    if (spotifyConnected) BrandDotLabel(StashTheme.extendedColors.spotifyGreen, stringResource(R.string.sync_source_spotify))
+                    if (youTubeConnected) BrandDotLabel(StashTheme.extendedColors.youtubeRed, stringResource(R.string.sync_source_youtube_music))
+                    if (soundCloudConnected) BrandDotLabel(androidx.compose.ui.graphics.Color(0xFFFF5500), stringResource(R.string.sync_source_soundcloud))
                 }
                 Text(
                     text = stringResource(R.string.sync_arrival_title),

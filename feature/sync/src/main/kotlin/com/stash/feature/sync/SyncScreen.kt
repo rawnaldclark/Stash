@@ -48,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -824,7 +825,7 @@ private fun SyncingContent(
         Spacer(Modifier.height(20.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = phaseLabel(phase),
+                text = phaseLabel(phase, LocalContext.current),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f),
@@ -832,8 +833,8 @@ private fun SyncingContent(
                 overflow = TextOverflow.Ellipsis,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (spotify) BrandDotLabel(StashTheme.extendedColors.spotifyGreen, "Spotify")
-                if (youTube) BrandDotLabel(StashTheme.extendedColors.youtubeRed, "YouTube")
+                if (spotify) BrandDotLabel(StashTheme.extendedColors.spotifyGreen, stringResource(R.string.sync_source_spotify))
+                if (youTube) BrandDotLabel(StashTheme.extendedColors.youtubeRed, stringResource(R.string.sync_source_youtube_music))
             }
         }
         Spacer(Modifier.height(10.dp))
@@ -898,7 +899,7 @@ private fun AccountCards(
     val green = StashTheme.extendedColors.spotifyGreen
     val cards = buildList {
         if (uiState.spotifyConnected) {
-            add(AccountCardSpec("spotify", "Spotify", green, rows.ofSpotifyAccount(null), false) { onManageSource(SyncSource.SPOTIFY) })
+            add(AccountCardSpec("spotify", stringResource(R.string.sync_source_spotify), green, rows.ofSpotifyAccount(null), false) { onManageSource(SyncSource.SPOTIFY) })
             uiState.spotifyOtherAccounts.forEach { other ->
                 add(
                     AccountCardSpec(
@@ -912,10 +913,10 @@ private fun AccountCards(
             }
         }
         if (uiState.youTubeConnected) {
-            add(AccountCardSpec("youtube", "YouTube Music", StashTheme.extendedColors.youtubeRed, rows.filter { it.source == SyncSource.YOUTUBE }, false) { onManageSource(SyncSource.YOUTUBE) })
+            add(AccountCardSpec("youtube", stringResource(R.string.sync_source_youtube_music), StashTheme.extendedColors.youtubeRed, rows.filter { it.source == SyncSource.YOUTUBE }, false) { onManageSource(SyncSource.YOUTUBE) })
         }
         if (uiState.soundCloudConnected) {
-            add(AccountCardSpec("soundcloud", "SoundCloud", Color(0xFFFF5500), rows.filter { it.source == SyncSource.SOUNDCLOUD }, true) { onManageSource(SyncSource.SOUNDCLOUD) })
+            add(AccountCardSpec("soundcloud", stringResource(R.string.sync_source_soundcloud), Color(0xFFFF5500), rows.filter { it.source == SyncSource.SOUNDCLOUD }, true) { onManageSource(SyncSource.SOUNDCLOUD) })
         }
     }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {

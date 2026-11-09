@@ -1,5 +1,6 @@
 package com.stash.feature.sync.components
 
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -22,8 +23,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.stash.core.data.sync.SyncPhase
+import com.stash.feature.sync.R
 
 /**
  * Multi-phase sync progress widget shown inside [SyncHeroCard] while a sync
@@ -74,8 +78,9 @@ fun SyncActionProgress(
                 )
             }
             Spacer(Modifier.width(8.dp))
+            val context = LocalContext.current
             Text(
-                text = phaseLabel(phase),
+                text = phaseLabel(phase, context),
                 style = MaterialTheme.typography.labelLarge,
             )
         }
@@ -98,7 +103,10 @@ fun SyncActionProgress(
             Spacer(Modifier.width(8.dp))
             Text(
                 // A sync still waiting for a network has nothing to stop: it's a queued tap.
-                text = if (phase is SyncPhase.WaitingForNetwork) "Cancel" else "Stop sync",
+                text = stringResource(
+                    if (phase is SyncPhase.WaitingForNetwork) R.string.sync_cancel
+                    else R.string.sync_action_stop_sync
+                ),
                 style = MaterialTheme.typography.labelLarge,
             )
         }
@@ -116,10 +124,12 @@ fun SyncActionProgress(
 }
 
 /** Human-readable label for the current sync phase. */
-internal fun phaseLabel(phase: SyncPhase): String = when (phase) {
+internal fun phaseLabel(phase: SyncPhase, context: Context? = null): String = when (phase) {
     // "Sync now" tapped offline: it starts by itself when a connection returns.
-    is SyncPhase.WaitingForNetwork -> "Waiting for network..."
-    is SyncPhase.Authenticating -> "Authenticating..."
+    is SyncPhase.WaitingForNetwork ->
+        context?.getString(R.string.sync_phase_waiting_network) ?: "Waiting for network..."
+    is SyncPhase.Authenticating ->
+        context?.getString(R.string.sync_phase_authenticating) ?: "Authenticating..."
     is SyncPhase.FetchingPlaylists -> {
         // No fixed total is known during fetch (Spotify's folder-walked
         // playlist count and YouTube's aren't known until the fetch itself
@@ -128,28 +138,54 @@ internal fun phaseLabel(phase: SyncPhase): String = when (phase) {
         // long fetch instead of a static "Fetching playlists..." that
         // looked frozen for 40+ minutes on large libraries.
         if (phase.playlistsFetched > 0) {
-            "Fetched ${phase.playlistsFetched} playlist${if (phase.playlistsFetched != 1) "s" else ""}..."
+            context?.resources?.getQuantityString(
+                R.plurals.sync_phase_fetching_playlists,
+                phase.playlistsFetched,
+                phase.playlistsFetched,
+            ) ?: "Fetched ${phase.playlistsFetched} playlist${if (phase.playlistsFetched != 1) "s" else ""}..."
         } else {
-            "Fetching playlists..."
+            context?.getString(R.string.sync_phase_fetching_playlists_init) ?: "Fetching playlists..."
         }
     }
     is SyncPhase.Diffing -> {
         if (phase.totalPlaylists > 0) {
-            "Comparing changes (${phase.playlistsDiffed}/${phase.totalPlaylists})..."
+            context?.getString(
+                R.string.sync_phase_comparing_changes_count,
+                phase.playlistsDiffed,
+                phase.totalPlaylists,
+            ) ?: "Comparing changes (${phase.playlistsDiffed}/${phase.totalPlaylists})..."
         } else {
-            "Comparing changes..."
+            context?.getString(R.string.sync_phase_comparing_changes) ?: "Comparing changes..."
         }
     }
-    
-    is SyncPhase.VerifyingLibrary -> "Checking your library (${phase.step}/${phase.total})..."
+
+    is SyncPhase.VerifyingLibrary ->
+        context?.getString(
+            R.string.sync_phase_verifying_library,
+            phase.step,
+            phase.total,
+        ) ?: "Checking your library (${phase.step}/${phase.total})..."
     is SyncPhase.Downloading ->
         if (phase.deferred > 0) {
-            "Downloading ${phase.downloaded}/${phase.total} · ${phase.deferred} waiting..."
+            context?.getString(
+                R.string.sync_phase_downloading_deferred,
+                phase.downloaded,
+                phase.total,
+                phase.deferred,
+            ) ?: "Downloading ${phase.downloaded}/${phase.total} · ${phase.deferred} waiting..."
         } else {
-            "Downloading ${phase.downloaded}/${phase.total}..."
+            context?.getString(
+                R.string.sync_phase_downloading_progress,
+                phase.downloaded,
+                phase.total,
+            ) ?: "Downloading ${phase.downloaded}/${phase.total}..."
         }
-    is SyncPhase.Finalizing -> "Finalizing..."
-    is SyncPhase.Completed -> "Complete"
-    is SyncPhase.Error -> "Error"
-    else -> "Syncing..."
+    is SyncPhase.Finalizing ->
+        context?.getString(R.string.sync_phase_finalizing) ?: "Finalizing..."
+    is SyncPhase.Completed ->
+        context?.getString(R.string.sync_phase_complete) ?: "Complete"
+    is SyncPhase.Error ->
+        context?.getString(R.string.sync_phase_error) ?: "Error"
+    else ->
+        context?.getString(R.string.sync_phase_syncing) ?: "Syncing..."
 }

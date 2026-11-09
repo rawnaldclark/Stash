@@ -468,4 +468,85 @@
     <string name="sync_flagged_msg_blocked">Can\'t swap — this song is on your blocklist.</string>
     <string name="sync_failed_matches_msg_focus_not_found">Couldn\'t find that song in Failed matches</string>
     <string name="sync_failed_matches_msg_preview_failed">Couldn\'t load that preview. Try again, or approve to hear the full track.</string>
+
+    <!-- Auth Expired Banner -->
+    <string name="sync_auth_expired_both_headline">Sign-ins expired</string>
+    <string name="sync_auth_expired_both_body">Both Spotify and YouTube need fresh sign-ins to resume sync.</string>
+    <string name="sync_auth_expired_both_btn">Re-authenticate</string>
+    <string name="sync_auth_expired_spotify_headline">Spotify session expired</string>
+    <string name="sync_auth_expired_spotify_body">Re-authenticate to include your Spotify library in sync.</string>
+    <string name="sync_auth_expired_spotify_btn">Re-authenticate Spotify</string>
+    <string name="sync_auth_expired_youtube_headline">YouTube session expired</string>
+    <string name="sync_auth_expired_youtube_body">Re-authenticate to include your YouTube library in sync.</string>
+    <string name="sync_auth_expired_youtube_btn">Re-authenticate YouTube</string>
+
+    <!-- Schedule & Day of Week -->
+    <string name="sync_schedule_not_scheduled">Not scheduled — pick at least one day</string>
+    <string name="sync_schedule_prefix">Sync </string>
+    <string name="sync_schedule_at_time"> at </string>
+    <string name="sync_schedule_on_network"> on </string>
+    <string name="sync_schedule_wifi_only">Wi-Fi only</string>
+    <string name="sync_schedule_any_network">any network</string>
+    <string name="sync_schedule_tap_hint">Tap any chip to change</string>
+    <string name="sync_schedule_repeat_on">REPEAT ON</string>
+    <string name="sync_schedule_preset_daily">Daily</string>
+    <string name="sync_schedule_preset_weekdays">Weekdays</string>
+    <string name="sync_schedule_preset_weekends">Weekends</string>
+    <string name="sync_schedule_daily">daily</string>
+    <string name="sync_schedule_weekdays">weekdays</string>
+    <string name="sync_schedule_weekends">weekends</string>
+    <string name="sync_schedule_none">none</string>
+
+    <!-- Sync Time Bottom Sheet -->
+    <string name="sync_time_title">Sync time</string>
+    <string name="sync_time_set">Set</string>
+
+    <!-- Source Preferences Card -->
+    <string name="sync_source_connected">Connected</string>
+    <string name="sync_source_disconnected">Disconnected</string>
+    <string name="sync_source_manage_playlists">Manage playlists</string>
+    <string name="sync_source_cd_manage_playlists">Manage %s playlists</string>
+
+    <!-- Sync Hero Card -->
+    <string name="sync_hero_last_sync">LAST SYNC</string>
+    <string name="sync_hero_never_synced">Never synced</string>
+    <string name="sync_hero_no_new_songs">%s · no new songs</string>
+    <plurals name="sync_hero_new_songs">
+        <item quantity="one">%1$s · %2$d new song</item>
+        <item quantity="other">%1$s · %2$d new songs</item>
+    </plurals>
+    <string name="sync_hero_download">DOWNLOAD</string>
+    <string name="sync_hero_download_off">Off — switched-on playlists stream instead</string>
+    <string name="sync_hero_download_on">On — switched-on playlists and mixes save to this phone</string>
+    <string name="sync_hero_btn_stream">Update Streaming Index</string>
+    <string name="sync_hero_btn_download">Download Tracks to Device</string>
+
+    <!-- Sync Action Progress & Phases -->
+    <string name="sync_action_stop_sync">Stop sync</string>
+    <string name="sync_phase_waiting_network">Waiting for network…</string>
+    <string name="sync_phase_authenticating">Authenticating…</string>
+    <plurals name="sync_phase_fetching_playlists">
+        <item quantity="one">Fetched %d playlist…</item>
+        <item quantity="other">Fetched %d playlists…</item>
+    </plurals>
+    <string name="sync_phase_fetching_playlists_init">Fetching playlists…</string>
+    <string name="sync_phase_comparing_changes_count">Comparing changes (%1$d/%2$d)…</string>
+    <string name="sync_phase_comparing_changes">Comparing changes…</string>
+    <string name="sync_phase_verifying_library">Checking your library (%1$d/%2$d)…</string>
+    <string name="sync_phase_downloading_deferred">Downloading %1$d/%2$d · %3$d waiting…</string>
+    <string name="sync_phase_downloading_progress">Downloading %1$d/%2$d…</string>
+    <string name="sync_phase_finalizing">Finalizing…</string>
+    <string name="sync_phase_complete">Complete</string>
+    <string name="sync_phase_error">Error</string>
+    <string name="sync_phase_syncing">Syncing…</string>
+
+    <!-- Sync Undo Messages -->
+    <string name="sync_undo_nothing">Nothing to undo.</string>
+    <string name="sync_undo_error">Couldn\'t undo that sync. Nothing was changed.</string>
+    <string name="sync_undo_result">Undone — %1$s back to how they were before that sync.%2$s</string>
+    <plurals name="sync_undo_playlists_count">
+        <item quantity="one">1 playlist is</item>
+        <item quantity="other">%d playlists are</item>
+    </plurals>
+    <string name="sync_undo_paused_suffix"> Auto-sync is paused until you tap Sync.</string>
 </resources>
