@@ -79,6 +79,28 @@ with the new key. Uninstalling wipes app data, so do this first:
    **Settings → Library & Storage → Library Health → Missing downloads**
    offers to fetch them all back once the accounts are connected.
 
+## Release builds (R8)
+
+Release builds are shrunk by R8: it removes the code and resources nothing uses and optimizes the rest, but
+renames nothing. Its rules live in `app/proguard-rules.pro`, plus a module's own `consumer-rules.pro` for that
+module's lookups by name.
+
+- **Try a rule change on a phone:** `./gradlew :app:assembleDebug -Pstash.minifyDebug=true` builds the everyday
+  debug app shrunk with the release rules (same app id, key and data). It is not debuggable, so `adb shell run-as`
+  doesn't work while it is installed.
+- **Read a release crash trace:** most methods in a release build carry no line table, so frames print as
+  instruction offsets, and inlined code is listed under the method it was folded into. Each GitHub release has that
+  build's `mapping-<tag>.txt.gz`; pick the tag from the crash file's `App version` line. With the Android SDK
+  Command-line Tools installed (SDK Manager › SDK Tools), unzip it and run:
+
+  ```bash
+  gh release download v0.9.125 -p 'mapping-*.txt.gz' && gunzip mapping-v0.9.125.txt.gz
+  retrace mapping-v0.9.125.txt crash.txt
+  ```
+
+  `retrace` is in `<sdk>/cmdline-tools/latest/bin/`. It prints the trace with source lines and the inlined frames
+  restored.
+
 ## How the codebase is organized
 
 Stash is a multi-module Gradle project. Modules keep responsibilities isolated so a change in one place doesn't ripple everywhere. From the top:

@@ -255,6 +255,10 @@ android {
                 // debug app (same id, key and data) shrunk and optimized with the release rules, to
                 // try a keep-rule change on a phone with real data. Not debuggable, because R8 skips
                 // its optimizations for a debuggable build, and those are where a missing rule shows.
+                // Close to release, not identical: `adb shell run-as` stops working while it is
+                // installed (so do rig backups before), and only :app's BuildConfig.DEBUG turns false;
+                // the library modules keep DEBUG = true. The last check before a tag is still the
+                // release APK itself, signed with the debug key and installed fresh.
                 isDebuggable = false
                 isMinifyEnabled = true
                 isShrinkResources = true

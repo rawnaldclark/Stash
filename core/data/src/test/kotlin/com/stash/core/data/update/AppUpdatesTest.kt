@@ -33,6 +33,20 @@ class AppUpdatesTest {
     }
 
     @Test
+    fun `the R8 mapping beside the apk is never taken for the update`() {
+        // release.yml attaches mapping-<tag>.txt.gz to each release; whichever order GitHub lists them in, the APK wins.
+        val mapping = """{"name":"mapping-v0.9.122.txt.gz","size":13135857,
+            "browser_download_url":"https://github.com/rawnaldclark/Stash/releases/download/v0.9.122/mapping-v0.9.122.txt.gz"}"""
+        for (assets in listOf("$mapping,$APK", "$APK,$mapping")) {
+            val u = AppUpdates.parseRelease(release(assets = assets))!!
+            assertEquals("https://github.com/rawnaldclark/Stash/releases/download/v0.9.122/Stash.apk", u.apkUrl)
+            assertEquals(171_411_798L, u.sizeBytes)
+        }
+        // A release whose APK upload failed is no update, not the mapping.
+        assertNull(AppUpdates.parseRelease(release(assets = mapping)))
+    }
+
+    @Test
     fun `later asks again a day on, and a newer release at once`() {
         val day = AppUpdates.ASK_AGAIN_MS
         assertTrue(AppUpdates.shouldPrompt("v2", laterTag = null, laterAt = 0, now = 10))

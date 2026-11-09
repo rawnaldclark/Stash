@@ -1,9 +1,13 @@
 # Stash R8 rules: the release build, and the debug build made with -Pstash.minifyDebug=true (app/build.gradle.kts).
 #
-# R8 removes code and resources nothing uses and optimizes the rest. It never renames anything (-dontobfuscate):
-#   - WorkManager stores each worker's class name in its database, and Hilt's worker map, the navigation routes
-#     and the bottom bar look classes up by name. Renamed classes would orphan queued work after an update.
+# R8 removes code and resources nothing uses and optimizes the rest. It renames nothing (-dontobfuscate):
+#   - The navigation code compares a route's class name with the route strings built from @SerialName
+#     (StashScaffold, StashNavigationBar), and Glance stores its widget receivers' class names. Renamed classes
+#     would break both. (WorkManager's stored worker names would survive: its own rules keep them.)
 #   - Stash is open source, so renaming would hide nothing.
+# Names staying is not the whole story: R8 still merges classes, so an object can be created as another class
+# (an inlined or merged frame names the class it moved into; retrace turns those back). Exceptions are kept
+# out of merging below, because their type is what a crash file and the diagnostics print.
 #
 # Every library brings its own rules inside its AAR or JAR, and R8 reads them: AndroidX (Room, WorkManager,
 # DataStore, Glance, startup), Hilt, media3, kotlinx.serialization, OkHttp, Coil, Tink and play-services. So do the
@@ -14,10 +18,18 @@
 -dontobfuscate
 
 # Line numbers for stack traces; R8 drops them otherwise. Even unrenamed, a release trace needs that release's
-# mapping.txt to read exactly: R8 records positions that the mapping turns back into source lines, and it inlines
-# and merges code, so a frame can name the class a method was moved into. release.yml keeps the mapping as the
-# r8-mapping-<tag> workflow artifact for 90 days.
+# mapping.txt to read exactly: most methods carry no line table (minSdk 26 lets R8 print instruction offsets that
+# the mapping turns back into source lines), and R8 inlines and merges code, so a frame can name the class a
+# method was moved into. release.yml attaches the mapping to each GitHub release as mapping-<tag>.txt.gz, and
+# CONTRIBUTING.md (Release builds) shows the retrace command.
 -keepattributes SourceFile,LineNumberTable
+
+# Exceptions keep their own class. Otherwise R8 merges unrelated exceptions into one class: PoTokenException,
+# DashManifestException and LinkStoreUnavailable were all created as androidx.camera.core.ImageCaptureException,
+# and kotlin.NoWhenBranchMatchedException as coil3.network.HttpException. Crash files, logcat and the
+# diagnostics' "(X)" lines print the type, and retrace can't put it back. -keepnames still lets R8 remove the
+# exceptions nothing throws.
+-keepnames class * extends java.lang.Throwable
 
 # Apache Commons Compress, which youtubedl-android uses to unzip its Python and ffmpeg bundles (on a fresh install
 # and after a library update): ExtraFieldUtils creates each zip extra-field class with Class.newInstance(). Nothing

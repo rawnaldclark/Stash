@@ -287,6 +287,10 @@ jobs:
       # A 6 GB Gradle heap, as release.yml uses: building from cold on the runner with gradle.properties' 4 GB, R8
       # ran for over 20 minutes without finishing. The runner has 16 GB.
       - name: Assemble release APK
+        env:
+          # A feature flag, not a secret. It is a BuildConfig constant, so with it off R8 would drop the Drive code
+          # and shrink a different program than release.yml does.
+          GOOGLE_DRIVE_ENABLED: 'true'
         run: ./gradlew :app:assembleRelease --no-daemon "-Dorg.gradle.jvmargs=-Xmx6g -XX:+UseParallelGC -Dfile.encoding=UTF-8"
 
       - name: Report APK size

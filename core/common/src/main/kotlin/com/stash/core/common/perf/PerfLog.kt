@@ -7,8 +7,10 @@ import android.util.Log
  * via `adb shell setprop log.tag.Perf DEBUG`. Use this for latency
  * instrumentation so release builds don't pay the formatting cost.
  *
- * Using [Log.isLoggable] avoids per-module `BuildConfig.DEBUG` wiring;
- * R8's log-stripping rules still drop these calls in release builds.
+ * Using [Log.isLoggable] avoids per-module `BuildConfig.DEBUG` wiring.
+ * Release builds keep these calls (no R8 rule strips logging: device
+ * logcat is how problems are diagnosed), so the isLoggable check is what
+ * keeps them cheap.
  *
  * Prefer the lazy-lambda overload ([d]) at call sites that interpolate
  * values — the string is only built when the tag is enabled.

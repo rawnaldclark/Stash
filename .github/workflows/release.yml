@@ -153,8 +153,20 @@ jobs:
           ls -la "$RUNNER_TEMP/$NEW_NAME"
 
       # R8 shrinks the release build. Names stay readable (-dontobfuscate), but a crash trace's line numbers and
-      # inlined frames need this release's mapping.txt to read back as source lines (app/proguard-rules.pro). Kept
-      # as a workflow artifact rather than a release asset, so the release still carries one file.
+      # inlined frames need this release's mapping.txt to read back as source lines (app/proguard-rules.pro;
+      # CONTRIBUTING.md › Release builds has the retrace command). Attached to the release below as
+      # mapping-<tag>.txt.gz, so it lasts as long as the release: workflow artifacts expire after 90 days, and old
+      # installs keep sending traces long after that. It ends in .gz, not .apk, so the in-app updater (first .apk
+      # asset), Obtainium and releases/latest/download/Stash.apk still see one APK.
+      - name: Compress the R8 mapping file
+        id: mapping
+        run: |
+          MAPPING="$RUNNER_TEMP/mapping-${{ github.ref_name }}.txt.gz"
+          gzip -9 -c app/build/outputs/mapping/release/mapping.txt > "$MAPPING"
+          echo "path=$MAPPING" >> "$GITHUB_OUTPUT"
+          ls -la "$MAPPING"
+
+      # The same file, uncompressed, as a workflow artifact for the next 90 days: handy from the run's page.
       - name: Keep the R8 mapping file
         uses: actions/upload-artifact@v6
         with:
@@ -195,7 +207,9 @@ jobs:
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') || contains(github.ref_name, '-alpha') }}
-          files: ${{ steps.rename_apk.outputs.release_apk }}
+          files: |
+            ${{ steps.rename_apk.outputs.release_apk }}
+            ${{ steps.mapping.outputs.path }}
           body: |
             ${{ steps.tag_body.outputs.body }}
 
