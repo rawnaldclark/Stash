@@ -56,8 +56,9 @@ data class PlaylistDetailUiState(
 
 /**
  * The page's Download button (#474). [downloaded] of [total] counts the whole playlist, never the
- * search-filtered list, less the songs that won't download unless the user acts (failed, cancelled,
- * match dismissed). [followed]: a read-only followed mix, whose button sits in its follow block.
+ * search-filtered list, less the songs that won't download unless the user acts (failed, cancelled
+ * on its own, match dismissed). [followed]: a read-only followed mix, whose button sits in its
+ * follow block.
  */
 data class DownloadButtonState(
     val on: Boolean,
@@ -196,8 +197,9 @@ class PlaylistDetailViewModel @Inject constructor(
      * through the Sync tab. The button follows the playlist row (see init), so a tap needs no local
      * copy. Reads the raw follow row, not [follow]: that one can land a frame later, and the button
      * would flash in the wrong place. A song that won't download unless the user acts (failed,
-     * cancelled, match dismissed; [DownloadQueueDao.observeGivenUpTrackIds]) is left out of the
-     * count, so the button never sits at "Downloading 11 of 12" forever.
+     * cancelled on its own, match dismissed; [DownloadQueueDao.observeGivenUpTrackIds]) is left out
+     * of the count, so the button never sits at "Downloading 11 of 12" forever. A song Clear queue
+     * cancelled still counts: it isn't on the phone, and turning Download on queues it again.
      */
     val downloadButton: StateFlow<DownloadButtonState?> = combine(
         _playlist,

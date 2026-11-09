@@ -176,6 +176,20 @@ private const val BLOCKED_TRACK = """
 """
 
 /**
+ * What a cancelled (SKIPPED) row keeps in `error_message`, which it has no other use for, when
+ * the user cancelled that one song on its own (Downloads, the song's Cancel): the song stays out
+ * ([KEPT_OUT]) until the user asks for it again (its Retry, a tap on the song).
+ *
+ * Clear queue writes no mark. It stops what was queued and nothing more: a song it cancelled is
+ * simply not downloaded, so a playlist's Download, the next sync and a kept playlist's pass after
+ * it queue the song again. A cancel from before the mark reads as Clear queue's.
+ */
+const val KEPT_OUT_MARK = "cancel:kept_out"
+
+/** A song the user cancelled on its own ([KEPT_OUT_MARK]). `dq` is its queue row. */
+private const val KEPT_OUT = "(dq.status = 'SKIPPED' AND dq.error_message = '" + KEPT_OUT_MARK + "')"
+
+/**
  * Data-access object for [DownloadQueueEntity].
  *
  * Manages the download work queue with insert, status updates,
@@ -267,18 +281,37 @@ interface DownloadQueueDao {
     /**
      * Whether [trackId] has a row a bulk "download this playlist" must leave
      * alone: waiting or running, failed (its retries and the Failed downloads
-     * screen own it), or cancelled by the user. The rows [getUnqueuedTrackIds]
-     * already counts as queued, plus WAITING_FOR_LOSSLESS. Checks EVERY row:
+     * screen own it), or cancelled by the user on its own ([KEPT_OUT_MARK]). The
+     * rows [getUnqueuedTrackIds] already counts as queued, plus WAITING_FOR_LOSSLESS.
+     * A song Clear queue cancelled is not among them: it is queued again, and
+     * [dropStoppedCancels] takes its cancelled row out of History. Checks EVERY row:
      * [getByTrackId]'s LIMIT 1 answers with the oldest, so one old FAILED row
      * let a re-queue add a fresh row on every call (#474's per-sync sweep).
      */
     @Query("""
         SELECT EXISTS(
-            SELECT 1 FROM download_queue WHERE track_id = :trackId
-              AND status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS', 'FAILED', 'SKIPPED')
+            SELECT 1 FROM download_queue dq WHERE dq.track_id = :trackId
+              AND (dq.status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS', 'FAILED') OR """ + KEPT_OUT + """)
         )
     """)
     suspend fun hasRowToLeaveAlone(trackId: Long): Boolean
+
+    /**
+     * The cancelled rows of [trackIds] that only stopped an attempt (Clear queue, or a cancel from
+     * before [KEPT_OUT_MARK]), dropped when those songs are queued again. Left in place, History
+     * kept listing a song as cancelled, with its Retry, while it was queued or done.
+     */
+    @Query("""
+        DELETE FROM download_queue
+         WHERE track_id IN (:trackIds)
+           AND status = 'SKIPPED'
+           AND COALESCE(error_message, '') != '""" + KEPT_OUT_MARK + """'
+    """)
+    suspend fun dropStoppedCancelsRaw(trackIds: List<Long>): Int
+
+    /** [dropStoppedCancelsRaw], chunked: a whole playlist or a sync's requeue can pass thousands (#337). */
+    suspend fun dropStoppedCancels(trackIds: List<Long>) =
+        trackIds.chunkedForBindWrite { dropStoppedCancelsRaw(it) }
 
     /**
      * Stream-only mode (#474): the sync's download step never runs there, so a
@@ -492,15 +525,20 @@ interface DownloadQueueDao {
     """)
     suspend fun claimForDownload(id: Long): Int
 
-    /** Cancels an active row without allowing a terminal state to be overwritten. */
+    /**
+     * Cancels an active row without allowing a terminal state to be overwritten. [keptOut]: the
+     * user cancelled this one song on its own, and it stays out ([KEPT_OUT_MARK]); false is Clear
+     * queue's cancel, which only stops this attempt.
+     */
     @Query("""
         UPDATE download_queue
-           SET status = 'SKIPPED', error_message = NULL,
+           SET status = 'SKIPPED',
+               error_message = CASE WHEN :keptOut THEN '""" + KEPT_OUT_MARK + """' ELSE NULL END,
                failure_type = 'NONE', completed_at = :completedAt
          WHERE id = :id
            AND status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS')
     """)
-    suspend fun markCancelledIfActive(id: Long, completedAt: Long): Int
+    suspend fun markCancelledIfActive(id: Long, completedAt: Long, keptOut: Boolean = false): Int
 
     /** Completes only the worker claim that is still in progress. */
     @Query("""
@@ -634,9 +672,10 @@ interface DownloadQueueDao {
      * the number of rows affected so the caller can detect lost races
      * (e.g. another worker already claimed the row).
      *
-     * SKIPPED is accepted too: a user-cancelled row is otherwise a dead end
-     * (nothing re-enqueues it — see [getUnqueuedTrackIds]), so "Retry" on a
-     * cancelled download in the Downloads screen is the only way back.
+     * SKIPPED is accepted too: a song cancelled on its own is otherwise a dead
+     * end (nothing re-enqueues it — see [KEPT_OUT_MARK]), so "Retry" on a
+     * cancelled download in the Downloads screen is the way back. The retry
+     * clears the mark (error_message).
      *
      * A Retry is a tap (#532): the row counts as asked for from here on
      * ([ASKED_FOR]), so a run that waits or gets cut short is still taken later,
@@ -926,8 +965,9 @@ interface DownloadQueueDao {
      * ([atomicallyClaimForRetry]). A song another playlist still keeps on the
      * phone, or a followed mix still downloads, keeps its row.
      *
-     * DELETE, not SKIPPED: a SKIPPED row counts as handled
-     * ([hasRowToLeaveAlone]), so it would stop a later On from queueing the song.
+     * DELETE, not SKIPPED: the songs were never cancelled one by one, and a song
+     * cancelled on its own counts as handled ([hasRowToLeaveAlone]), so it would
+     * stop a later On from queueing the song.
      *
      * "Still wanted" here is [WANTED_BY_A_PLAYLIST], written out for the playlists
      * other than this one.
@@ -989,10 +1029,14 @@ interface DownloadQueueDao {
 
     /**
      * [playlistId]'s songs that won't download unless the user acts (#474's Download button): a
-     * failed download (what Failed downloads and Failed matches list), one the user cancelled
-     * (SKIPPED), or a dismissed match. The playlist's queueing leaves all of these alone
-     * ([hasRowToLeaveAlone]; a dismissed match is never queued), so the button leaves them out of
-     * its "N of M" instead of sitting at "Downloading 11 of 12" forever.
+     * failed download (what Failed downloads and Failed matches list), one the user cancelled on
+     * its own ([KEPT_OUT_MARK]), or a dismissed match. The playlist's queueing leaves all of these
+     * alone ([hasRowToLeaveAlone]; a dismissed match is never queued), so the button leaves them out
+     * of its "N of M" instead of sitting at "Downloading 11 of 12" forever.
+     *
+     * A song Clear queue cancelled is not given up: it is simply not downloaded yet. The button
+     * counts it as missing, and the playlist's Download, the next sync's pass for a kept playlist,
+     * or the sync's own requeue queue it again.
      *
      * Every FAILED row counts, not only an exhausted one (retry_count >= 3): [resetExhaustedRetries]
      * gives those another chance at each app start and sync, and a drain only starts for a PENDING
@@ -1014,7 +1058,7 @@ interface DownloadQueueDao {
               t.match_dismissed = 1
               OR EXISTS (
                   SELECT 1 FROM download_queue dq
-                  WHERE dq.track_id = t.id AND dq.status IN ('FAILED', 'SKIPPED')
+                  WHERE dq.track_id = t.id AND (dq.status = 'FAILED' OR """ + KEPT_OUT + """)
               )
           )
         """
@@ -1029,9 +1073,9 @@ interface DownloadQueueDao {
      * SKIPPED here, cancelling is a one-way ratchet on table size — nothing
      * else ever removes those rows.
      *
-     * ponytail: a SKIPPED row doubles as the tombstone that keeps
-     * [getUnqueuedTrackIds] from re-enqueueing a cancelled track, so purging
-     * it makes the track eligible again on the next reconciliation. That is
+     * ponytail: a song cancelled on its own ([KEPT_OUT_MARK]) keeps its SKIPPED
+     * row as the tombstone that keeps [getUnqueuedTrackIds] from re-enqueueing
+     * it, so purging it makes the track eligible again on the next reconciliation. That is
      * acceptable at history-sweep cadence (the user cancelled a while ago,
      * the track is still in a sync-enabled playlist, so re-offering it is
      * the sane default). If cancellation must be permanent, move the
@@ -1114,11 +1158,12 @@ interface DownloadQueueDao {
           )
           AND t.id NOT IN (
               SELECT dq.track_id FROM download_queue dq
-              -- SKIPPED = the user cancelled this download on purpose. It is
-              -- an active statement of intent, not a hole to backfill, so it
-              -- suppresses the count exactly like a PENDING row would.
+              -- A song cancelled on its own (KEPT_OUT_MARK): the user stopped
+              -- it on purpose. It is an active statement of intent, not a hole
+              -- to backfill, so it suppresses the count exactly like a PENDING
+              -- row would. Clear queue's cancel only stopped that attempt.
               -- Must stay in lockstep with getUnqueuedTrackIds.
-              WHERE dq.status IN ('PENDING', 'IN_PROGRESS', 'FAILED', 'SKIPPED')
+              WHERE dq.status IN ('PENDING', 'IN_PROGRESS', 'FAILED') OR """ + KEPT_OUT + """
           )
         GROUP BY t.source
     """)
@@ -1169,12 +1214,15 @@ interface DownloadQueueDao {
           )
           AND t.id NOT IN (
               SELECT dq.track_id FROM download_queue dq
-              -- SKIPPED must be here or per-item cancellation is cosmetic:
-              -- the row goes SKIPPED, the very next reconciliation sees the
-              -- track as "undownloaded with no active queue entry" and hands
-              -- it a fresh PENDING row, so the download the user just
-              -- cancelled restarts. Mirrored in getOrphanedTrackCounts.
-              WHERE dq.status IN ('PENDING', 'IN_PROGRESS', 'FAILED', 'SKIPPED')
+              -- A song cancelled on its own (KEPT_OUT_MARK) must be here or
+              -- per-item cancellation is cosmetic: the next reconciliation
+              -- sees the track as "undownloaded with no active queue entry"
+              -- and hands it a fresh PENDING row, so the download the user
+              -- cancelled restarts. Clear queue's cancel is not here: it only
+              -- stopped that attempt, so the next sync queues the song again
+              -- (the caller drops the cancelled row, dropStoppedCancels).
+              -- Mirrored in getOrphanedTrackCounts.
+              WHERE dq.status IN ('PENDING', 'IN_PROGRESS', 'FAILED') OR """ + KEPT_OUT + """
           )
     """)
     suspend fun getUnqueuedTrackIds(sources: List<String>): List<Long>
@@ -1199,11 +1247,12 @@ interface DownloadQueueDao {
      * waiting for a lossless source instead of actively pending.
      *
      * SKIPPED joins them for the same reason: a cancelled row is kept
-     * around only as the tombstone that stops [getUnqueuedTrackIds]
-     * re-enqueueing the track. Once the track has no sync-enabled parent
-     * there is nothing left to suppress, so the tombstone is just garbage.
-     * (Only orphans are swept — a cancelled row whose track is still in a
-     * sync-enabled playlist survives here and keeps doing its job.)
+     * around as history, and a song cancelled on its own as the tombstone
+     * that stops [getUnqueuedTrackIds] re-enqueueing the track. Once the
+     * track has no sync-enabled parent there is nothing left to suppress,
+     * so the tombstone is just garbage. (Only orphans are swept — a
+     * cancelled row whose track is still in a sync-enabled playlist
+     * survives here and keeps doing its job.)
      *
      * @return Number of rows deleted.
      */

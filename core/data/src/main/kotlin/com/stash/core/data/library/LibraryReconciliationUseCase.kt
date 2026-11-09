@@ -151,6 +151,9 @@ class LibraryReconciliationUseCase @Inject constructor(
             val newEntries = unqueuedTrackIds.map { trackId ->
                 com.stash.core.data.db.entity.DownloadQueueEntity(trackId = trackId, syncId = syncId)
             }
+            // A song Clear queue cancelled comes back here (it only stopped that attempt): its
+            // cancelled row goes, so History doesn't list it as cancelled while it downloads.
+            downloadQueueDao.dropStoppedCancels(unqueuedTrackIds)
             downloadQueueDao.insertAll(newEntries)
         }
         onProgress(5, TOTAL_STEPS)

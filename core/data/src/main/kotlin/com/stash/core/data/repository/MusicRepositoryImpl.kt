@@ -1022,9 +1022,11 @@ class MusicRepositoryImpl @Inject constructor(
         val tracks = trackDao.getByPlaylist(playlistId, includeStreamable = true)
             .first()
         // A match the user dismissed stays dismissed, and a track with a row
-        // already queued, failed or cancelled keeps that one row. That makes
-        // this safe to call after every sync (#474) without re-trying the same
-        // unmatchable songs, or piling duplicate rows into Failed downloads.
+        // already queued, failed or cancelled on its own keeps that one row. That
+        // makes this safe to call after every sync (#474) without re-trying the
+        // same unmatchable songs, or piling duplicate rows into Failed downloads.
+        // A song Clear queue cancelled is queued again: Clear queue stops an
+        // attempt, it doesn't keep the song out (DownloadQueueDao.KEPT_OUT_MARK).
         val candidates = tracks.filter { !it.isDownloaded && !it.matchDismissed && !it.soundCloudPreview }
         if (candidates.isEmpty()) return moved
 
@@ -1066,7 +1068,11 @@ class MusicRepositoryImpl @Inject constructor(
             playlistDao.updateTrackCount(playlistId, trackDao.countByPlaylist(playlistId, includeStreamable = true))
             android.util.Log.i("MusicRepository", "playlist $playlistId: ${copyLinks.size} song(s) already on the phone, linked instead of downloaded")
         }
-        if (entries.isNotEmpty()) downloadQueueDao.insertAll(entries)
+        if (entries.isNotEmpty()) {
+            // The cancelled row of a song queued again goes, so History doesn't list it as cancelled.
+            downloadQueueDao.dropStoppedCancels(entries.map { it.trackId })
+            downloadQueueDao.insertAll(entries)
+        }
         return moved + entries.size
     }
 

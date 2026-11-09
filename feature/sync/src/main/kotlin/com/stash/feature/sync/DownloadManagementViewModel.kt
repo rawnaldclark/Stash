@@ -215,7 +215,10 @@ class DownloadManagementViewModel @Inject constructor(
         message.value = if (cancelled) "Download cancelled" else "Download could not be cancelled"
     }
 
-    /** Cancels every waiting and running download. */
+    /**
+     * Cancels every waiting and running download. Only this attempt: the songs aren't kept out,
+     * so a playlist's Download or the next sync queues them again ([DownloadCancellationController.cancelAll]).
+     */
     fun clearQueue() = viewModelScope.launch {
         val cancelled = cancellationController.cancelAll()
         message.value = if (cancelled == 0) "Nothing to cancel" else "Cancelled $cancelled ${if (cancelled == 1) "download" else "downloads"}"
@@ -284,8 +287,9 @@ private fun DownloadManagementRow.toItem(progress: DownloadProgress?): DownloadM
         },
         createdAt = createdAt,
         completedAt = completedAt,
-        // A waiting row's error_message is its reason code, not an error.
-        errorMessage = errorMessage.takeIf { waitReason == null },
+        // A waiting row's error_message is its reason code, and a cancelled row's its mark
+        // (DownloadQueueDao.KEPT_OUT_MARK): neither is an error.
+        errorMessage = errorMessage.takeIf { waitReason == null && status != QueueStatus.SKIPPED },
         waitReason = waitReason,
         fromSync = syncId != null,
         action = when {
@@ -295,8 +299,8 @@ private fun DownloadManagementRow.toItem(progress: DownloadProgress?): DownloadM
             status == QueueStatus.PENDING ||
                 status == QueueStatus.IN_PROGRESS ||
                 status == QueueStatus.WAITING_FOR_LOSSLESS -> DownloadManagementAction.CANCEL
-            // Un-cancel. Without this a cancelled row is a dead end: nothing
-            // re-enqueues it (getUnqueuedTrackIds skips SKIPPED on purpose),
+            // Un-cancel. Without this a song cancelled on its own is a dead end:
+            // nothing re-enqueues it (DownloadQueueDao.KEPT_OUT_MARK, on purpose),
             // so a mis-tap on Cancel was unrecoverable from this screen.
             status == QueueStatus.SKIPPED -> DownloadManagementAction.RETRY
             status == QueueStatus.FAILED && failureType != DownloadFailureType.NO_MATCH -> DownloadManagementAction.RETRY

@@ -16,12 +16,14 @@ class DownloadCancellationController @Inject constructor(
     private val queueState: DownloadQueueState,
 ) {
     /**
-     * Cancels one download. Cancelling the last one left also ends a Pause: with nothing queued,
-     * "Paused" over an empty queue explained nothing, and the next sync's songs waited for a
-     * Resume the user had no reason to tap.
+     * Cancels one download, on purpose: the song stays out of the downloads nobody asks for again
+     * (a sync's requeue, a kept playlist's pass, a playlist's Download) until its Retry or a tap
+     * ([com.stash.core.data.db.dao.KEPT_OUT_MARK]). Cancelling the last one left also ends a Pause:
+     * with nothing queued, "Paused" over an empty queue explained nothing, and the next sync's
+     * songs waited for a Resume the user had no reason to tap.
      */
     suspend fun cancel(queueId: Long): Boolean {
-        if (!cancelRow(queueId)) return false
+        if (!cancelRow(queueId, keptOut = true)) return false
         if (downloadQueueDao.activeIds().isEmpty()) queueState.setPaused(false)
         return true
     }
@@ -30,15 +32,20 @@ class DownloadCancellationController @Inject constructor(
      * Clear queue: every waiting and running download is cancelled, and the running
      * ones stop (owner, 2026-10-29), and a Pause ends with them (see [cancel]). Returns
      * how many were cancelled.
+     *
+     * It stops this attempt, nothing more (owner, 2026-11-09): the songs are simply not
+     * downloaded, so a playlist shows it isn't fully downloaded, and its Download, the next
+     * sync or a kept playlist's pass queue them again. Before, the songs were kept out like
+     * a song cancelled on its own, and a playlist said "Downloaded" with most of it missing.
      */
     suspend fun cancelAll(): Int {
-        val cancelled = downloadQueueDao.activeIds().count { cancelRow(it) }
+        val cancelled = downloadQueueDao.activeIds().count { cancelRow(it, keptOut = false) }
         queueState.setPaused(false)
         return cancelled
     }
 
-    private suspend fun cancelRow(queueId: Long): Boolean {
-        val changed = downloadQueueDao.markCancelledIfActive(queueId, System.currentTimeMillis())
+    private suspend fun cancelRow(queueId: Long, keptOut: Boolean): Boolean {
+        val changed = downloadQueueDao.markCancelledIfActive(queueId, System.currentTimeMillis(), keptOut)
         if (changed == 0) return false
         jobs.cancel(queueId)
         WorkManager.getInstance(context)

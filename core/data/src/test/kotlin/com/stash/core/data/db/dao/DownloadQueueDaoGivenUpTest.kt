@@ -42,14 +42,15 @@ class DownloadQueueDaoGivenUpTest {
 
     @After fun tearDown() { db.close() }
 
-    @Test fun `failed, cancelled and dismissed songs are given up, waiting ones are not`() = runTest {
+    @Test fun `failed, cancelled-on-its-own and dismissed songs are given up, waiting and cleared ones are not`() = runTest {
         val mix = playlist("Mix", "custom_mix")
         val other = playlist("Other", "custom_other")
 
         val unmatched = song("Unmatched", mix)
         val exhausted = song("Exhausted", mix)
         val failedOnce = song("Failed once", mix)
-        val cancelled = song("Cancelled", mix)
+        val cancelled = song("Cancelled on its own", mix)
+        val cleared = song("Cancelled by Clear queue", mix)
         val dismissed = song("Dismissed", mix, matchDismissed = true)
         val pending = song("Pending", mix)
         val waiting = song("Waiting for lossless", mix)
@@ -64,7 +65,11 @@ class DownloadQueueDaoGivenUpTest {
         // Retries left counts too: resetExhaustedRetries hands exhausted rows back at every app
         // start, and no drain starts for a FAILED row, so "will retry" can mean never.
         row(failedOnce, DownloadStatus.FAILED, DownloadFailureType.UNKNOWN, retries = 1)
-        row(cancelled, DownloadStatus.SKIPPED)
+        row(cancelled, DownloadStatus.SKIPPED, error = KEPT_OUT_MARK)
+        // Clear queue only stopped the attempt: the song is simply not on the phone, and the
+        // playlist's Download queues it again. Counted as given up, a playlist with most of its
+        // songs cleared said "Downloaded".
+        row(cleared, DownloadStatus.SKIPPED)
         row(pending, DownloadStatus.PENDING) // e.g. waiting for Wi-Fi: it will come
         row(waiting, DownloadStatus.WAITING_FOR_LOSSLESS)
         row(running, DownloadStatus.IN_PROGRESS)
@@ -72,7 +77,7 @@ class DownloadQueueDaoGivenUpTest {
         row(removedHere, DownloadStatus.FAILED, DownloadFailureType.UNKNOWN)
         row(onlyElsewhere, DownloadStatus.FAILED, DownloadFailureType.UNKNOWN)
 
-        // Not given up: pending, waiting, running, not queued yet, downloaded, or not in this mix.
+        // Not given up: pending, waiting, running, cleared, not queued yet, downloaded, or not in this mix.
         assertThat(dao.observeGivenUpTrackIds(mix).first())
             .containsExactly(unmatched, exhausted, failedOnce, cancelled, dismissed)
     }
@@ -111,7 +116,13 @@ class DownloadQueueDaoGivenUpTest {
         status: DownloadStatus,
         failureType: DownloadFailureType = DownloadFailureType.NONE,
         retries: Int = 0,
+        error: String? = null,
     ) {
-        dao.insert(DownloadQueueEntity(trackId = trackId, syncId = null, status = status, failureType = failureType, retryCount = retries))
+        dao.insert(
+            DownloadQueueEntity(
+                trackId = trackId, syncId = null, status = status, failureType = failureType,
+                retryCount = retries, errorMessage = error,
+            ),
+        )
     }
 }

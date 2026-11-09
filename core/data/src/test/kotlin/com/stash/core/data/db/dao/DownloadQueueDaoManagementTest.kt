@@ -195,12 +195,13 @@ class DownloadQueueDaoManagementTest {
 
     // ── Cancellation durability ─────────────────────────────────────────
     //
-    // Cancelling a download is only real if nothing puts it back. The
+    // Cancelling one song on its own is only real if nothing puts it back. The
     // reconciliation pass re-queues any undownloaded track that has no
-    // active queue row, so a SKIPPED row must read as "active intent" there
+    // active queue row, so that cancel must read as "active intent" there
     // — otherwise Cancel just restarts the download on the next sync.
+    // Clear queue only stops the attempt: the next sync queues the songs again.
 
-    @Test fun `cancelled row is not re-enqueued by reconciliation`() = runTest {
+    @Test fun `a song cancelled on its own is not re-enqueued by reconciliation`() = runTest {
         seedTrack(1, "Cancelled", "Artist", "Album", null)
         seedPlaylistMembership(trackId = 1)
         seedQueue(1, 1, DownloadStatus.PENDING, createdAt = 100)
@@ -208,10 +209,64 @@ class DownloadQueueDaoManagementTest {
         // Still PENDING: already queued, so not an "unqueued" track either.
         assertEquals(emptyList<Long>(), dao.getUnqueuedTrackIds(listOf("SPOTIFY")))
 
-        assertEquals(1, dao.markCancelledIfActive(1, completedAt = 700))
+        assertEquals(1, dao.markCancelledIfActive(1, completedAt = 700, keptOut = true))
 
         assertEquals(emptyList<Long>(), dao.getUnqueuedTrackIds(listOf("SPOTIFY")))
         assertEquals(0, dao.getOrphanedTrackCounts().size)
+    }
+
+    @Test fun `a song Clear queue cancelled is re-enqueued by the next reconciliation`() = runTest {
+        seedTrack(1, "Cleared", "Artist", "Album", null)
+        seedPlaylistMembership(trackId = 1)
+        seedQueue(1, 1, DownloadStatus.PENDING, createdAt = 100)
+
+        assertEquals(1, dao.markCancelledIfActive(1, completedAt = 700))
+
+        assertEquals(listOf(1L), dao.getUnqueuedTrackIds(listOf("SPOTIFY")))
+        assertEquals(1, dao.getOrphanedTrackCounts().single().cnt)
+    }
+
+    @Test fun `only a cancel on its own leaves the mark`() = runTest {
+        seedTrack(1, "On its own", "Artist", "Album", null)
+        seedTrack(2, "Cleared", "Artist", "Album", null)
+        seedQueue(1, 1, DownloadStatus.WAITING_FOR_LOSSLESS, createdAt = 100, error = "wait:aac")
+        seedQueue(2, 2, DownloadStatus.WAITING_FOR_LOSSLESS, createdAt = 100, error = "wait:aac")
+
+        assertEquals(1, dao.markCancelledIfActive(1, completedAt = 700, keptOut = true))
+        assertEquals(1, dao.markCancelledIfActive(2, completedAt = 700))
+
+        assertEquals(KEPT_OUT_MARK, dao.getById(1)!!.errorMessage)
+        // Clear queue's cancel keeps nothing, not even the wait reason it had.
+        assertNull(dao.getById(2)!!.errorMessage)
+        assertEquals(DownloadStatus.SKIPPED, dao.getStatusById(1))
+        assertEquals(DownloadStatus.SKIPPED, dao.getStatusById(2))
+    }
+
+    @Test fun `a playlist's Download leaves a song cancelled on its own alone, not one Clear queue cancelled`() = runTest {
+        seedTrack(1, "On its own", "Artist", "Album", null)
+        seedTrack(2, "Cleared", "Artist", "Album", null)
+        seedQueue(1, 1, DownloadStatus.PENDING, createdAt = 100)
+        seedQueue(2, 2, DownloadStatus.PENDING, createdAt = 100)
+        dao.markCancelledIfActive(1, completedAt = 700, keptOut = true)
+        dao.markCancelledIfActive(2, completedAt = 700)
+
+        assertEquals(true, dao.hasRowToLeaveAlone(1))
+        assertEquals(false, dao.hasRowToLeaveAlone(2))
+    }
+
+    @Test fun `queueing a song again drops only the cancel that stopped an attempt`() = runTest {
+        (1L..4L).forEach { seedTrack(it, "Track $it", "Artist", "Album", null) }
+        seedQueue(1, 1, DownloadStatus.SKIPPED, createdAt = 100, completedAt = 700) // Clear queue
+        seedQueue(2, 2, DownloadStatus.SKIPPED, createdAt = 100, completedAt = 700, error = KEPT_OUT_MARK)
+        seedQueue(3, 3, DownloadStatus.FAILED, createdAt = 100, completedAt = 700, error = "boom")
+        seedQueue(4, 4, DownloadStatus.SKIPPED, createdAt = 100, completedAt = 700) // not queued again
+
+        dao.dropStoppedCancels(listOf(1L, 2L, 3L))
+
+        assertNull(dao.getById(1))
+        assertEquals(DownloadStatus.SKIPPED, dao.getStatusById(2))
+        assertEquals(DownloadStatus.FAILED, dao.getStatusById(3))
+        assertEquals(DownloadStatus.SKIPPED, dao.getStatusById(4))
     }
 
     @Test fun `retry claim un-cancels a skipped row`() = runTest {
@@ -222,6 +277,15 @@ class DownloadQueueDaoManagementTest {
         assertEquals(DownloadStatus.PENDING, dao.getStatusById(1))
         // And the un-cancelled row is claimable by a worker again.
         assertEquals(1, dao.claimForDownload(1))
+    }
+
+    @Test fun `retry claim takes the mark off a song cancelled on its own`() = runTest {
+        seedTrack(1, "Cancelled", "Artist", "Album", null)
+        seedQueue(1, 1, DownloadStatus.SKIPPED, createdAt = 100, completedAt = 700, error = KEPT_OUT_MARK)
+
+        assertEquals(1, dao.atomicallyClaimForRetry(1))
+        assertEquals(DownloadStatus.PENDING, dao.getStatusById(1))
+        assertNull(dao.getById(1)!!.errorMessage)
     }
 
     @Test fun `history sweep purges cancelled rows alongside completed ones`() = runTest {
@@ -258,8 +322,8 @@ class DownloadQueueDaoManagementTest {
 
         assertEquals(1, dao.deleteOrphanedQueueEntries())
 
-        // Track 1 still lives in a sync-enabled playlist, so its tombstone
-        // stays and keeps suppressing re-enqueue.
+        // Track 1 still lives in a sync-enabled playlist, so its row stays
+        // (a song cancelled on its own keeps suppressing re-enqueue with it).
         assertEquals(DownloadStatus.SKIPPED, dao.getStatusById(1))
         assertNull(dao.getById(2))
     }

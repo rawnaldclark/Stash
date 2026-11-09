@@ -90,6 +90,33 @@ class LibraryReconciliationRequeueTest {
     }
 
     /**
+     * Clear queue stops an attempt; the next sync is a new one (owner, 2026-11-09). A song the user
+     * cancelled on its own stays out. The sync's row replaces the cleared one, so History doesn't
+     * list the song as cancelled while it downloads.
+     */
+    @Test fun `a sync requeues a song Clear queue cancelled, never one cancelled on its own`() = runTest {
+        val cleared = missingSong(title = "Cleared")
+        val keptOut = missingSong(title = "Cancelled on its own")
+        val dao = db.downloadQueueDao()
+        val earlier = db.syncHistoryDao().insert(SyncHistoryEntity())
+        val clearedRow = dao.insert(DownloadQueueEntity(trackId = cleared, syncId = earlier))
+        val keptOutRow = dao.insert(DownloadQueueEntity(trackId = keptOut, syncId = earlier))
+        dao.markCancelledIfActive(clearedRow, completedAt = 700)
+        dao.markCancelledIfActive(keptOutRow, completedAt = 700, keptOut = true)
+        val run = db.syncHistoryDao().insert(SyncHistoryEntity())
+
+        val result = reconciler().reconcile(syncId = run)
+
+        assertEquals(1, result.unqueuedRequeued)
+        assertNull("the cleared row is replaced", dao.getById(clearedRow))
+        val requeued = dao.getByTrackId(cleared)!!
+        assertEquals(DownloadStatus.PENDING, requeued.status)
+        assertEquals(run, requeued.syncId)
+        assertEquals(DownloadStatus.SKIPPED, dao.getByTrackId(keptOut)!!.status)
+        assertEquals(keptOutRow, dao.getByTrackId(keptOut)!!.id)
+    }
+
+    /**
      * The sync leaves a song unqueued when its audio is already on the phone as another row, and
      * links that copy instead (DiffWorker, a Download switch). The requeue used to file it again in
      * the same pass, and the second download happened anyway.

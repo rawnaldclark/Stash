@@ -15,6 +15,7 @@ import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.dao.DownloadQueueDao
+import com.stash.core.data.db.dao.KEPT_OUT_MARK
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.PlaylistEntity
@@ -27,6 +28,8 @@ import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.share.ShareApiClient
 import com.stash.core.data.share.SharedMixRepository
+import com.stash.core.data.sync.DownloadCancellationController
+import com.stash.core.data.sync.DownloadJobRegistry
 import com.stash.core.data.sync.SingleTrackDownloadEnqueuer
 import com.stash.core.data.sync.SyncPreferences
 import com.stash.core.data.sync.SyncPreferencesManager
@@ -60,8 +63,9 @@ import org.robolectric.annotation.Config
 /**
  * [MusicRepositoryImpl.queueDownloadsForPlaylist] now runs after every sync for a
  * kept playlist (#474), so it has to be a true no-op the second time: a song that
- * already failed, was cancelled, or had its match dismissed keeps its one row
- * instead of getting a fresh one per call. Real DB, real rows.
+ * already failed, was cancelled on its own, or had its match dismissed keeps its one
+ * row instead of getting a fresh one per call. A song Clear queue cancelled is queued
+ * again, once. Real DB, real rows.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
@@ -118,7 +122,9 @@ class MusicRepositoryQueuePlaylistTest {
         member(pid, 3, track("Dismissed").copy(matchDismissed = true))
         member(pid, 4, track("Downloaded").copy(isDownloaded = true, filePath = "/x.flac"))
         db.downloadQueueDao().insert(DownloadQueueEntity(trackId = failed, status = DownloadStatus.FAILED, retryCount = 3))
-        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = cancelled, status = DownloadStatus.SKIPPED))
+        db.downloadQueueDao().insert(
+            DownloadQueueEntity(trackId = cancelled, status = DownloadStatus.SKIPPED, errorMessage = KEPT_OUT_MARK),
+        )
 
         val repo = repo()
         assertEquals(1, repo.queueDownloadsForPlaylist(pid))
@@ -127,6 +133,38 @@ class MusicRepositoryQueuePlaylistTest {
         val pending = db.downloadQueueDao().pendingDiscoveryDownloads().filter { it.status == DownloadStatus.PENDING }
         assertEquals(listOf(fresh), pending.map { it.trackId })
     }
+
+    /**
+     * Clear queue stops an attempt and nothing more (owner, 2026-11-09). Before, its songs were
+     * kept out like a song cancelled on its own: a 56-song playlist with 6 on the phone said
+     * "Downloaded", and turning its Download off and on never queued the other 50.
+     */
+    @Test fun `the playlist's Download queues the songs Clear queue cancelled again, once`() = runTest {
+        val pid = playlist("Kept", keepOffline = true)
+        val songs = (0..2).map { member(pid, it, track("Song $it")) }
+        val kept = member(pid, 3, track("Cancelled on its own"))
+        val repo = repo()
+        assertEquals(4, repo.queueDownloadsForPlaylist(pid))
+        val dao = db.downloadQueueDao()
+        val controller = DownloadCancellationController(context, dao, DownloadJobRegistry(), mockk(relaxed = true))
+        controller.cancel(dao.getByTrackId(kept)!!.id)
+        assertEquals(3, controller.cancelAll())
+
+        assertEquals(3, repo.queueDownloadsForPlaylist(pid))
+        assertEquals(0, repo.queueDownloadsForPlaylist(pid))
+
+        val pending = dao.pendingDiscoveryDownloads().filter { it.status == DownloadStatus.PENDING }
+        assertEquals(songs.toSet(), pending.map { it.trackId }.toSet())
+        // One row each: the cancelled one is gone, so History doesn't list a queued song as cancelled.
+        songs.forEach { song -> assertEquals(listOf("PENDING"), statusesOf(song)) }
+        assertEquals(listOf("SKIPPED"), statusesOf(kept))
+    }
+
+    /** Every queue row [trackId] has, by status. */
+    private fun statusesOf(trackId: Long): List<String> =
+        db.openHelper.readableDatabase
+            .query("SELECT status FROM download_queue WHERE track_id = ?", arrayOf<Any>(trackId))
+            .use { c -> buildList { while (c.moveToNext()) add(c.getString(0)) } }
 
     @Test fun `a sync queues every kept playlist, then starts one drain that follows Wi-Fi only`() = runTest {
         member(playlist("Kept 1", keepOffline = true), 0, track("A"))
