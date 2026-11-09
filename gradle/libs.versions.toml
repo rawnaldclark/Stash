@@ -19,7 +19,6 @@ room = "2.7.1"
 datastore = "1.1.4"
 okhttp = "4.12.0"
 kotlinxSerialization = "1.7.3"
-appauth = "0.11.1"
 tink = "1.12.0"
 youtubedlAndroid = "0.17.2"
 workManager = "2.10.1"
@@ -123,7 +122,6 @@ work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version
 work-testing = { group = "androidx.work", name = "work-testing", version.ref = "workManager" }
 
 # Auth & Security
-appauth = { group = "net.openid", name = "appauth", version.ref = "appauth" }
 play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
 tink-android = { group = "com.google.crypto.tink", name = "tink-android", version.ref = "tink" }
 
