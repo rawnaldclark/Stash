@@ -80,7 +80,8 @@ fun AccountConnectionCard(
     leading: (@Composable () -> Unit)? = null,
     accountName: String? = null,
 ) {
-    val status = accountStatus(authState, expired)
+    val resources = androidx.compose.ui.platform.LocalContext.current.resources
+    val status = accountStatus(authState, expired, resources)
     AccountCard(
         serviceName = serviceName,
         icon = icon,

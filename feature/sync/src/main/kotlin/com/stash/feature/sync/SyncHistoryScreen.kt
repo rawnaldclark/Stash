@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -125,7 +126,7 @@ fun SyncHistoryScreen(
                 item(key = "mixes_label") { SyncSectionLabel(stringResource(R.string.sync_history_mixes_section)) }
                 if (spotifyCounts) {
                     item(key = "spotify_mode") {
-                        MixModeCard(name = "Spotify") {
+                        MixModeCard(name = stringResource(R.string.sync_source_spotify)) {
                             SyncModeChipRow(
                                 mode = uiState.spotifySyncMode,
                                 onChange = viewModel::onSpotifySyncModeChanged,
@@ -137,7 +138,7 @@ fun SyncHistoryScreen(
                 }
                 if (youTubeCounts) {
                     item(key = "youtube_mode") {
-                        MixModeCard(name = "YouTube Music") {
+                        MixModeCard(name = stringResource(R.string.sync_source_youtube_music)) {
                             SyncModeChipRow(
                                 mode = uiState.youtubeSyncMode,
                                 onChange = viewModel::onYoutubeSyncModeChanged,
@@ -154,7 +155,7 @@ fun SyncHistoryScreen(
                 item(key = "lastfm") {
                     val hasTracks = (lastFmState.trackCount ?: 0) > 0
                     SourcePreferencesCard(
-                        name = "Last.fm",
+                        name = stringResource(R.string.sync_source_lastfm),
                         brandColor = StashTheme.extendedColors.lastfmRed,
                         connected = true,
                         stats = {
@@ -185,8 +186,9 @@ fun SyncHistoryScreen(
                     // rows read in hours or days, where a minute's lag doesn't show.
                     val now = rememberMinuteClock(uiState.recentSyncs.firstOrNull()?.syncedAt())
                     val justNow = stringResource(R.string.sync_time_just_now)
+                    val resources = LocalContext.current.resources
                     RecentSyncsCard(
-                        uiState.recentSyncs.map { it.toRecentSyncRow(syncedAgoText(it.syncedAt(), now, justNow)) },
+                        uiState.recentSyncs.map { it.toRecentSyncRow(syncedAgoText(it.syncedAt(), now, justNow), resources) },
                     )
                 }
             }

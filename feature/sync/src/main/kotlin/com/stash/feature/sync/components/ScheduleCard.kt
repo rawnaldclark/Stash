@@ -23,10 +23,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.stash.core.data.sync.DayOfWeekSet
 import com.stash.core.ui.components.GlassCard
+import com.stash.feature.sync.R
 
 @Composable
 fun ScheduleCard(
@@ -54,7 +56,7 @@ fun ScheduleCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Auto-sync", style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(R.string.sync_auto_sync), style = MaterialTheme.typography.bodyLarge)
                 com.stash.core.ui.components.StashSwitch(
                     checked = autoSyncEnabled,
                     onCheckedChange = { onToggleAutoSync() },
@@ -65,28 +67,35 @@ fun ScheduleCard(
             Column(modifier = Modifier.alpha(if (autoSyncEnabled) 1f else 0.5f)) {
                 if (emptyDays) {
                     Text(
-                        text = "Not scheduled — pick at least one day",
+                        text = stringResource(R.string.sync_schedule_not_scheduled),
                         style = MaterialTheme.typography.bodyMedium,
                         color = errorColor,
                         modifier = Modifier.clickable { daysExpanded = true },
                     )
                 } else {
+                    val presetText = when {
+                        syncDays.isDaily -> stringResource(R.string.sync_schedule_daily)
+                        syncDays.isWeekdays -> stringResource(R.string.sync_schedule_weekdays)
+                        syncDays.isWeekends -> stringResource(R.string.sync_schedule_weekends)
+                        syncDays.isEmpty -> stringResource(R.string.sync_schedule_none)
+                        else -> syncDays.compactLabel()
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Sync ", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.sync_schedule_prefix), style = MaterialTheme.typography.bodyMedium)
                         ScheduleChip(
-                            text = syncDays.presetLabel(),
+                            text = presetText,
                             active = daysExpanded,
                             onClick = { daysExpanded = !daysExpanded },
                         )
-                        Text(" at ", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.sync_schedule_at_time), style = MaterialTheme.typography.bodyMedium)
                         ScheduleChip(
                             text = formatTime(syncHour, syncMinute),
                             active = false,
                             onClick = { showTimeSheet = true },
                         )
-                        Text(" on ", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.sync_schedule_on_network), style = MaterialTheme.typography.bodyMedium)
                         ScheduleChip(
-                            text = if (wifiOnly) "Wi-Fi only" else "any network",
+                            text = stringResource(if (wifiOnly) R.string.sync_schedule_wifi_only else R.string.sync_schedule_any_network),
                             active = false,
                             onClick = { onToggleWifiOnly() },
                             muted = true,
@@ -104,7 +113,7 @@ fun ScheduleCard(
 
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Tap any chip to change",
+                    text = stringResource(R.string.sync_schedule_tap_hint),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

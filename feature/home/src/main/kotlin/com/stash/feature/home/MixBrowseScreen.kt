@@ -21,10 +21,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.ui.components.bottomChromePadding
+import com.stash.feature.home.R
 
 /**
  * "See all" browse of one Home mix rail — a full-screen 2-column grid of the
@@ -50,10 +52,10 @@ fun MixBrowseScreen(
         MixRail.YOUR_MIXES -> uiState.yourMixes
     }
     val title = when (rail) {
-        MixRail.MADE_FOR_YOU -> "Made for you"
-        MixRail.RADIOS -> "Radios"
-        MixRail.MOOD_DECADES -> "Mood & decades"
-        MixRail.YOUR_MIXES -> "Your mixes"
+        MixRail.MADE_FOR_YOU -> stringResource(R.string.home_section_made_for_you)
+        MixRail.RADIOS -> stringResource(R.string.home_section_radios)
+        MixRail.MOOD_DECADES -> stringResource(R.string.home_section_mood_decades)
+        MixRail.YOUR_MIXES -> stringResource(R.string.home_section_your_mixes)
     }
 
     Scaffold(
@@ -62,7 +64,10 @@ fun MixBrowseScreen(
                 title = { Text(title) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.home_back),
+                        )
                     }
                 },
             )

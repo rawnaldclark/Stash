@@ -32,16 +32,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.ui.components.AlbumSquareCard
 import com.stash.core.ui.components.VerticalScrollbar
+import com.stash.core.ui.components.bottomChromePadding
 import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.PlaylistSummary
-import com.stash.core.common.extensions.pluralize
-import com.stash.core.ui.components.bottomChromePadding
+import com.stash.feature.home.R
 
 /**
  * "See all" browse of the Qobuz editorial playlist catalog — a paginated
@@ -73,8 +75,8 @@ fun PlaylistBrowseScreen(
         if (shouldLoadMore) viewModel.loadMore()
     }
 
-    val title = if (viewModel.genreLabel == "All") "Qobuz Playlists"
-    else "Qobuz Playlists · ${viewModel.genreLabel}"
+    val title = if (viewModel.genreLabel == "All") stringResource(R.string.home_section_qobuz_playlists)
+    else stringResource(R.string.home_qobuz_playlists_genre, viewModel.genreLabel)
 
     Scaffold(
         topBar = {
@@ -82,7 +84,10 @@ fun PlaylistBrowseScreen(
                 title = { Text(title) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.home_back),
+                        )
                     }
                 },
             )
@@ -96,7 +101,7 @@ fun PlaylistBrowseScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp),
-                placeholder = { Text("Search all Qobuz playlists…") },
+                placeholder = { Text(stringResource(R.string.home_search_qobuz_playlists_placeholder)) },
                 singleLine = true,
                 leadingIcon = {
                     Icon(
@@ -108,7 +113,10 @@ fun PlaylistBrowseScreen(
                 trailingIcon = if (state.query.isNotEmpty()) {
                     {
                         IconButton(onClick = { viewModel.onQueryChange("") }) {
-                            Icon(Icons.Filled.Clear, contentDescription = "Clear search")
+                            Icon(
+                                Icons.Filled.Clear,
+                                contentDescription = stringResource(R.string.home_cd_clear_search),
+                            )
                         }
                     }
                 } else null,
@@ -127,7 +135,11 @@ fun PlaylistBrowseScreen(
                         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                             AlbumSquareCard(
                                 title = playlist.title,
-                                artist = pluralize(playlist.trackCount, "track"),   // curator is always "Qobuz" — show count instead
+                                artist = pluralStringResource(
+                                    R.plurals.home_tracks_count,
+                                    playlist.trackCount,
+                                    playlist.trackCount,
+                                ),   // curator is always "Qobuz" — show count instead
                                 thumbnailUrl = playlist.thumbnailUrl,
                                 year = null,
                                 isLossless = true,
@@ -139,7 +151,7 @@ fun PlaylistBrowseScreen(
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                                 Text(
-                                    text = "No playlists match \"${state.query.trim()}\"",
+                                    text = stringResource(R.string.home_no_playlists_match, state.query.trim()),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

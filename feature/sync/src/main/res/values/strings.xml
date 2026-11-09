@@ -16,6 +16,62 @@
     <string name="sync_downloads_subtitle">View current downloads, queue, and history</string>
     <string name="sync_downloads_cd">Open downloads</string>
 
+    <!-- Download Management Screen -->
+    <string name="sync_downloads_tab_queue">Queue (%d)</string>
+    <string name="sync_downloads_tab_history">History (%d)</string>
+    <string name="sync_downloads_empty_queue_title">No downloads in progress</string>
+    <string name="sync_downloads_empty_queue_subtitle">New downloads will appear here.</string>
+    <string name="sync_downloads_clear_queue">Clear queue</string>
+    <string name="sync_downloads_clear_queue_confirm">Every waiting download is cancelled and the ones running now stop. Cancelled songs come back the next time you download them.</string>
+    <string name="sync_downloads_section_downloading">Downloading</string>
+    <string name="sync_downloads_section_up_next">Up next</string>
+    <string name="sync_downloads_section_recent">Recent</string>
+    <string name="sync_downloads_empty_history_title">No download history yet</string>
+    <string name="sync_downloads_empty_history_subtitle">Completed and failed downloads will appear here.</string>
+    <string name="sync_downloads_clear_history">Clear history</string>
+    <string name="sync_downloads_clear_confirm_title">%s?</string>
+    <string name="sync_downloads_keep">Keep</string>
+    <string name="sync_downloads_queue_position">#%1$d · %2$s</string>
+    <string name="sync_downloads_cd_cancel">Cancel %s</string>
+    <string name="sync_downloads_cd_retry">Retry %s</string>
+
+    <!-- Download Management waiting reasons & section headers -->
+    <string name="sync_downloads_waiting_generic">Waiting</string>
+    <string name="sync_downloads_waiting_aac">Not available as AAC yet</string>
+    <string name="sync_downloads_waiting_reset">Waiting for the daily reset</string>
+    <string name="sync_downloads_waiting_tidal">Waiting for Tidal</string>
+    <string name="sync_downloads_waiting_fallback">Waiting for Lossy fallback</string>
+    <string name="sync_downloads_waiting_lossless">Waiting for lossless</string>
+
+    <string name="sync_downloads_waiting_aac_item">Not available as AAC yet</string>
+    <string name="sync_downloads_waiting_reset_item">Waiting for the daily reset</string>
+    <string name="sync_downloads_waiting_tidal_item">Tidal is busy. Trying again shortly.</string>
+    <string name="sync_downloads_waiting_fallback_item">Waiting for Lossy fallback to be on</string>
+    <string name="sync_downloads_waiting_lossless_item">Waiting for a lossless source</string>
+
+    <!-- Download Management phase labels -->
+    <string name="sync_downloads_phase_cancelled">Cancelled</string>
+    <string name="sync_downloads_phase_matching">Finding a match</string>
+    <string name="sync_downloads_phase_downloading">Downloading</string>
+    <string name="sync_downloads_phase_processing">Processing</string>
+    <string name="sync_downloads_phase_tagging">Adding metadata</string>
+    <string name="sync_downloads_phase_in_progress">In progress</string>
+    <string name="sync_downloads_phase_queued">Queued</string>
+    <string name="sync_downloads_phase_downloaded">Downloaded</string>
+    <string name="sync_downloads_phase_needs_review">Needs review</string>
+    <string name="sync_downloads_phase_failed">Failed</string>
+
+    <!-- Download Management feedback messages -->
+    <string name="sync_downloads_msg_cancelled">Download cancelled</string>
+    <string name="sync_downloads_msg_cancel_failed">Download could not be cancelled</string>
+    <string name="sync_downloads_msg_nothing_to_cancel">Nothing to cancel</string>
+    <plurals name="sync_downloads_msg_cancelled_count">
+        <item quantity="one">Cancelled %d download</item>
+        <item quantity="other">Cancelled %d downloads</item>
+    </plurals>
+    <string name="sync_downloads_msg_history_cleared">History cleared</string>
+    <string name="sync_downloads_msg_queued">Download queued</string>
+
     <!-- Source Dashboard Stats & Empty Hints -->
     <string name="sync_source_stat_mixes">MIXES</string>
     <string name="sync_source_stat_playlists">PLAYLISTS</string>
@@ -56,6 +112,26 @@
         <item quantity="one">%d track needs attention</item>
         <item quantity="other">%d tracks need attention</item>
     </plurals>
+    <string name="sync_failed_downloads_empty_title">All caught up!</string>
+    <string name="sync_failed_downloads_empty_subtitle">No failed downloads.</string>
+    <plurals name="sync_failed_downloads_count_subtitle">
+        <item quantity="one">%d track couldn\'t download.</item>
+        <item quantity="other">%d tracks couldn\'t download.</item>
+    </plurals>
+    <plurals name="sync_failed_downloads_retry_tracks">
+        <item quantity="one">Retry %d track</item>
+        <item quantity="other">Retry %d tracks</item>
+    </plurals>
+    <plurals name="sync_failed_downloads_more_count">
+        <item quantity="one">+ %1$d more (showing first %2$d)</item>
+        <item quantity="other">+ %1$d more (showing first %2$d)</item>
+    </plurals>
+    <string name="sync_failed_downloads_title_artist">%1$s — %2$s</string>
+    <string name="sync_failed_downloads_playlist_reason">%1$s · %2$s</string>
+    <string name="sync_failed_downloads_cd_retry">Retry</string>
+    <string name="sync_failed_downloads_cd_block">Block</string>
+    <string name="sync_cd_expand">Expand</string>
+    <string name="sync_cd_collapse">Collapse</string>
 
     <!-- Sync Terminal -->
     <string name="sync_log_title">SYNC LOG</string>
@@ -219,6 +295,19 @@
         <item quantity="one">%1$s and %2$d more</item>
         <item quantity="other">%1$s and %2$d more</item>
     </plurals>
+    <string name="sync_history_mode_online">Online</string>
+    <string name="sync_history_mode_offline">Offline</string>
+    <string name="sync_history_surfaced">surfaced</string>
+    <string name="sync_history_downloaded">downloaded</string>
+    <string name="sync_history_cancelled">Cancelled</string>
+    <string name="sync_history_failed">Sync failed</string>
+    <plurals name="sync_history_failed_tracks">
+        <item quantity="one">%d failed</item>
+        <item quantity="other">%d failed</item>
+    </plurals>
+    <string name="sync_history_error">Error: %s</string>
+    <string name="sync_history_diagnostics">Diagnostics</string>
+    <string name="sync_history_no_details">No further details recorded</string>
 
     <!-- Sync tab overhaul: an account's playlists -->
     <string name="sync_manage_all_in_library">All in your library</string>
@@ -249,6 +338,28 @@
     <string name="sync_in_library">In your library</string>
     <string name="sync_in_library_on">In your library</string>
     <string name="sync_in_library_off">Not in your library</string>
+    <string name="sync_source_spotify" translatable="false">Spotify</string>
+    <string name="sync_source_soundcloud" translatable="false">SoundCloud</string>
+    <string name="sync_source_youtube_music" translatable="false">YouTube Music</string>
+    <string name="sync_source_youtube" translatable="false">YouTube</string>
+    <string name="sync_source_lastfm" translatable="false">Last.fm</string>
+    <string name="sync_state_expanded">Expanded</string>
+    <string name="sync_state_collapsed">Collapsed</string>
+    <string name="sync_discover_mixes_title">Discover mixes automatically</string>
+    <string name="sync_discover_mixes_on">Daily Mixes and similar are added as they appear</string>
+    <string name="sync_discover_mixes_off">Off — no new mixes are added, and syncs run shorter</string>
+    <string name="sync_home_visibility_hidden">Hidden from Home</string>
+    <string name="sync_home_visibility_pinned">Pinned on Home</string>
+    <string name="sync_home_visibility_default">On Home when it updates</string>
+    <string name="sync_lastfm_recommendations_header">Recommendations</string>
+    <string name="sync_lastfm_recommended_title">Recommended by Last.fm</string>
+    <string name="sync_lastfm_connect_to_enable">Connect Last.fm in Settings → Accounts to enable</string>
+    <plurals name="sync_lastfm_synced_tracks">
+        <item quantity="one">On · %d track synced</item>
+        <item quantity="other">On · %d tracks synced</item>
+    </plurals>
+    <string name="sync_lastfm_explainer">Builds a rotating playlist of tracks Last.fm recommends, seeded from what you play and scrobble most. Each refresh swaps in fresh picks; tracks are matched against YouTube Music / Spotify and downloaded like any other sync, respecting your network settings.</string>
+    <string name="sync_lastfm_find_it_hint">Find it as “Recommended by Last.fm” under Library → Mixes.</string>
 
     <!-- Failed Matches: find it yourself (#19) -->
     <string name="failed_matches_find_hint">Tap a song to find it yourself.</string>
@@ -269,6 +380,154 @@
     <string name="failed_matches_find_use">Use this version</string>
     <!-- Dismiss dialog: artist, title -->
     <string name="failed_matches_dismiss_body">\'%1$s — %2$s\' won\'t be downloaded during future syncs. To pick the right version instead, tap the song and find it yourself.</string>
+
+    <!-- Failed Matches Screen -->
+    <string name="sync_failed_matches_empty_subtitle">No unmatched songs.</string>
+    <string name="sync_failed_matches_title_review">Songs to Review</string>
+    <string name="sync_failed_matches_title_flagged">Flagged Songs</string>
+    <string name="sync_failed_matches_title_unmatched">Unmatched Songs</string>
+    <string name="sync_failed_matches_sub_review">These songs couldn\'t be matched during sync, or you flagged them as wrong.</string>
+    <string name="sync_failed_matches_sub_flagged">Songs you flagged from Now Playing. Pick a replacement below.</string>
+    <string name="sync_failed_matches_sub_unmatched">These songs couldn\'t be found on YouTube during sync.</string>
+    <string name="sync_failed_matches_count_both">%1$d unmatched · %2$d flagged · %3$d total</string>
+    <plurals name="sync_failed_matches_count_flagged">
+        <item quantity="one">%d flagged track</item>
+        <item quantity="other">%d flagged tracks</item>
+    </plurals>
+    <string name="sync_failed_matches_searching">Searching %s...</string>
+    <string name="sync_failed_matches_resync">Resync</string>
+    <string name="sync_failed_matches_approve_all">Approve All (%d)</string>
+    <string name="sync_failed_matches_dismiss_all">Dismiss All</string>
+    <string name="sync_failed_matches_no_match_found">No match found</string>
+    <string name="sync_failed_matches_cd_preview_match">Preview match</string>
+    <string name="sync_failed_matches_cd_approve_match">Approve match</string>
+    <string name="sync_failed_matches_cd_dismiss">Dismiss</string>
+    <string name="sync_dismiss_dialog_title">Stop retrying this song?</string>
+    <string name="sync_confirm">Confirm</string>
+
+    <!-- Flagged Songs Section -->
+    <string name="sync_flagged_section_title">You flagged these as wrong</string>
+    <string name="sync_flagged_section_subtitle">Tap resync above to find replacements, then approve to swap.</string>
+    <string name="sync_flagged_swapping">Swapping…</string>
+    <string name="sync_flagged_replacement_format">→ %1$s — %2$s</string>
+    <string name="sync_flagged_no_replacement">No replacement found</string>
+    <string name="sync_flagged_tap_resync_hint">Tap Resync to find replacements</string>
+    <string name="sync_flagged_cd_preview_replacement">Preview replacement</string>
+    <string name="sync_flagged_cd_swap">Swap to this match</string>
+    <string name="sync_flagged_cd_unflag">Unflag (keep current match)</string>
+
+    <!-- Approved Downloads Banner -->
+    <plurals name="sync_approved_downloads_title">
+        <item quantity="one">Downloading %d approved song</item>
+        <item quantity="other">Downloading %d approved songs</item>
+    </plurals>
+    <string name="sync_approved_downloads_detail_base">%1$d of %2$d done</string>
+    <plurals name="sync_approved_downloads_detail_failed">
+        <item quantity="one">%1$d of %2$d done · %3$d didn\'t download</item>
+        <item quantity="other">%1$d of %2$d done · %3$d didn\'t download</item>
+    </plurals>
+    <plurals name="sync_approved_downloads_finished">
+        <item quantity="one">Downloaded %d approved song.</item>
+        <item quantity="other">Downloaded %d approved songs.</item>
+    </plurals>
+    <string name="sync_approved_downloads_keep_downloading_note">%1$s. They keep downloading if you leave.</string>
+
+    <!-- Failed Matches Messages -->
+    <string name="sync_failed_matches_msg_no_new_matches">No new matches found.</string>
+    <plurals name="sync_failed_matches_msg_found_replacements">
+        <item quantity="one">Found %d replacement.</item>
+        <item quantity="other">Found %d replacements.</item>
+    </plurals>
+    <string name="sync_failed_matches_msg_invalid_video">Can\'t approve — this match isn\'t a valid YouTube video.</string>
+    <string name="sync_failed_matches_msg_blocked">Can\'t approve — this track is on your blocklist.</string>
+    <string name="sync_failed_matches_msg_already_linked">Can\'t approve — \'%1$s\' is already linked to %2$s — %3$s. Try Dismiss instead.</string>
+    <string name="sync_failed_matches_msg_approve_error">Couldn\'t approve this match. Please try again.</string>
+    <string name="sync_failed_matches_msg_download_error">Couldn\'t download \'%s\'. It\'s back in the list to try again.</string>
+    <string name="sync_flagged_msg_choose_different">Choose a different replacement for this track.</string>
+    <string name="sync_flagged_msg_already_linked">Can\'t swap — \'%1$s\' is already linked to %2$s.</string>
+    <string name="sync_flagged_msg_blocked">Can\'t swap — this song is on your blocklist.</string>
+    <string name="sync_failed_matches_msg_focus_not_found">Couldn\'t find that song in Failed matches</string>
+    <string name="sync_failed_matches_msg_preview_failed">Couldn\'t load that preview. Try again, or approve to hear the full track.</string>
+
+    <!-- Auth Expired Banner -->
+    <string name="sync_auth_expired_both_headline">Sign-ins expired</string>
+    <string name="sync_auth_expired_both_body">Both Spotify and YouTube need fresh sign-ins to resume sync.</string>
+    <string name="sync_auth_expired_both_btn">Re-authenticate</string>
+    <string name="sync_auth_expired_spotify_headline">Spotify session expired</string>
+    <string name="sync_auth_expired_spotify_body">Re-authenticate to include your Spotify library in sync.</string>
+    <string name="sync_auth_expired_spotify_btn">Re-authenticate Spotify</string>
+    <string name="sync_auth_expired_youtube_headline">YouTube session expired</string>
+    <string name="sync_auth_expired_youtube_body">Re-authenticate to include your YouTube library in sync.</string>
+    <string name="sync_auth_expired_youtube_btn">Re-authenticate YouTube</string>
+
+    <!-- Schedule & Day of Week -->
+    <string name="sync_schedule_not_scheduled">Not scheduled — pick at least one day</string>
+    <string name="sync_schedule_prefix">"Sync "</string>
+    <string name="sync_schedule_at_time">" at "</string>
+    <string name="sync_schedule_on_network">" on "</string>
+    <string name="sync_schedule_wifi_only">Wi-Fi only</string>
+    <string name="sync_schedule_any_network">any network</string>
+    <string name="sync_schedule_tap_hint">Tap any chip to change</string>
+    <string name="sync_schedule_repeat_on">REPEAT ON</string>
+    <string name="sync_schedule_preset_daily">Daily</string>
+    <string name="sync_schedule_preset_weekdays">Weekdays</string>
+    <string name="sync_schedule_preset_weekends">Weekends</string>
+    <string name="sync_schedule_daily">daily</string>
+    <string name="sync_schedule_weekdays">weekdays</string>
+    <string name="sync_schedule_weekends">weekends</string>
+    <string name="sync_schedule_none">none</string>
+
+    <!-- Sync Time Bottom Sheet -->
+    <string name="sync_time_title">Sync time</string>
+    <string name="sync_time_set">Set</string>
+
+    <!-- Source Preferences Card -->
+    <string name="sync_source_connected">Connected</string>
+    <string name="sync_source_disconnected">Disconnected</string>
+    <string name="sync_source_manage_playlists">Manage playlists</string>
+    <string name="sync_source_cd_manage_playlists">Manage %s playlists</string>
+
+    <!-- Sync Hero Card -->
+    <string name="sync_hero_last_sync">LAST SYNC</string>
+    <string name="sync_hero_never_synced">Never synced</string>
+    <string name="sync_hero_no_new_songs">%s · no new songs</string>
+    <plurals name="sync_hero_new_songs">
+        <item quantity="one">%1$s · %2$d new song</item>
+        <item quantity="other">%1$s · %2$d new songs</item>
+    </plurals>
+    <string name="sync_hero_download">DOWNLOAD</string>
+    <string name="sync_hero_download_off">Off — switched-on playlists stream instead</string>
+    <string name="sync_hero_download_on">On — switched-on playlists and mixes save to this phone</string>
+    <string name="sync_hero_btn_stream">Update Streaming Index</string>
+    <string name="sync_hero_btn_download">Download Tracks to Device</string>
+
+    <!-- Sync Action Progress & Phases -->
+    <string name="sync_phase_waiting_network">Waiting for network…</string>
+    <string name="sync_phase_authenticating">Authenticating…</string>
+    <plurals name="sync_phase_fetching_playlists">
+        <item quantity="one">Fetched %d playlist…</item>
+        <item quantity="other">Fetched %d playlists…</item>
+    </plurals>
+    <string name="sync_phase_fetching_playlists_init">Fetching playlists…</string>
+    <string name="sync_phase_comparing_changes_count">Comparing changes (%1$d/%2$d)…</string>
+    <string name="sync_phase_comparing_changes">Comparing changes…</string>
+    <string name="sync_phase_verifying_library">Checking your library (%1$d/%2$d)…</string>
+    <string name="sync_phase_downloading_deferred">Downloading %1$d/%2$d · %3$d waiting…</string>
+    <string name="sync_phase_downloading_progress">Downloading %1$d/%2$d…</string>
+    <string name="sync_phase_finalizing">Finalizing…</string>
+    <string name="sync_phase_complete">Complete</string>
+    <string name="sync_phase_error">Error</string>
+    <string name="sync_phase_syncing">Syncing…</string>
+
+    <!-- Sync Undo Messages -->
+    <string name="sync_undo_nothing">Nothing to undo.</string>
+    <string name="sync_undo_error">Couldn\'t undo that sync. Nothing was changed.</string>
+    <string name="sync_undo_result">Undone — %1$s back to how they were before that sync.%2$s</string>
+    <plurals name="sync_undo_playlists_count">
+        <item quantity="one">%d playlist is</item>
+        <item quantity="other">%d playlists are</item>
+    </plurals>
+    <string name="sync_undo_paused_suffix">" Auto-sync is paused until you tap Sync."</string>
     <!-- Failed downloads: each reason's group heading, and the short reason under a song. -->
     <string name="failure_auth_group">Sign-in expired</string>
     <string name="failure_auth_short">Sign-in expired</string>

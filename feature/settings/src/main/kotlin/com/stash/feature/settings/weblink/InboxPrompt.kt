@@ -55,6 +55,7 @@ sealed interface InboxStep {
  */
 @HiltViewModel
 class InboxViewModel @Inject constructor(
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     private val inbox: WebLinkInbox,
     config: WebLinkConfig,
 ) : ViewModel() {
@@ -114,13 +115,13 @@ class InboxViewModel @Inject constructor(
         viewModelScope.launch {
             val text = try {
                 when (val r = inbox.add(send.sendId, selection)) {
-                    is AddOutcome.Added -> WebLibraryImportViewModel.resultText(r.result)
+                    is AddOutcome.Added -> WebLibraryImportViewModel.resultText(r.result, context.resources)
                     is AddOutcome.Failed -> r.message
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                "Couldn't add it. Try again."
+                context.getString(R.string.web_library_inbox_add_failed)
             }
             _step.value = InboxStep.Added(text)
         }
@@ -204,7 +205,11 @@ fun InboxStepDialogs(step: InboxStep?, viewModel: InboxViewModel) {
     when (val st = step) {
         is InboxStep.Choosing -> LibraryPickerSheet(
             title = stringResource(R.string.settings_inbox_what_to_add),
-            intro = WebLibraryImportViewModel.introOf(st.content, stringResource(R.string.settings_inbox_who_sent, st.send.name)),
+            intro = WebLibraryImportViewModel.introOf(
+                st.content,
+                androidx.compose.ui.platform.LocalContext.current.resources,
+                stringResource(R.string.settings_inbox_who_sent, st.send.name),
+            ),
             pick = st.pick,
             onPick = viewModel::updatePick,
             actions = listOf(PickerAction(stringResource(R.string.settings_inbox_add_to_library), viewModel::addChosen, primary = true)),

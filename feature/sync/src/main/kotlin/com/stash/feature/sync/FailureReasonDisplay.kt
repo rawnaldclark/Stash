@@ -2,9 +2,9 @@ package com.stash.feature.sync
 
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Help
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.SdCardAlert
@@ -80,7 +80,7 @@ fun DownloadFailureType.display(): FailureReasonDisplay = when (this) {
         shortLabel = R.string.failure_ffmpeg_short,
     )
     DownloadFailureType.UNKNOWN -> FailureReasonDisplay(
-        icon = Icons.Default.Help,
+        icon = Icons.AutoMirrored.Filled.Help,
         tint = Color(0xFFAAAAAA),
         groupTitle = R.string.failure_unknown_group,
         shortLabel = R.string.failure_unknown_short,
