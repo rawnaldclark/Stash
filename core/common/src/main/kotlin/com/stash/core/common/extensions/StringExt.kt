@@ -13,11 +13,3 @@ fun String.toCanonical(): String {
     result = result.replace(Regex("\\s+"), " ").trim()
     return result
 }
-
-fun String.toSlug(): String {
-    var result = this.toCanonical()
-    result = result.replace(Regex("[^a-z0-9\\s-]"), "")
-    result = result.replace(Regex("\\s+"), "-")
-    result = result.trim('-')
-    return result.take(80)
-}

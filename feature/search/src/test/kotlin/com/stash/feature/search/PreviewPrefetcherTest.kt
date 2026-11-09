@@ -1,6 +1,5 @@
 package com.stash.feature.search
 
-import com.stash.core.common.power.FakeBatterySaver
 import com.stash.data.download.preview.PreviewUrlExtractor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi

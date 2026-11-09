@@ -89,6 +89,7 @@ class PreviewPlayer @Inject constructor(
     private val eqController: EqController,
     private val loudnessController: LoudnessController,
     private val hiResOutputController: HiResOutputController,
+    private val tuningController: com.stash.core.media.tuning.TuningController,
 ) {
 
     // ------------------------------------------------------------------
@@ -214,7 +215,8 @@ class PreviewPlayer @Inject constructor(
             // the paused song or publish its own signal path (see OutputSession.mainPlayback).
             .setRenderersFactory(
                 StashRenderersFactory(
-                    context, eqController, loudnessController, hiResOutputController, mainPlayback = false,
+                    context, eqController, loudnessController, hiResOutputController, tuningController,
+                    mainPlayback = false,
                 ),
             )
             .setLoadControl(PreviewLoadControlFactory.create())

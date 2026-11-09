@@ -101,17 +101,13 @@ class LosslessSourceRegistry @Inject constructor(
     /** The sources [resolve] asks, in order. */
     private suspend fun chain(): List<LosslessSource> =
         // Test toggles (outage drills): filter the chain to a single source so a
-        // forced download exercises that source even when the Qobuz proxies are
-        // healthy. A miss falls through to a normal null return (no quota to
-        // protect).
+        // forced download exercises that source even when Tidal would answer. A miss
+        // falls through to a normal null return (no quota to protect).
         if (streamingPreference.isForceQbdlxOnly()) {
             orderedSources().filter { it.id == QBDLX_SOURCE_ID }
         } else {
-            // Normal chain skips parked (host-down) sources. qbdlx self-gates on
-            // LosslessAvailability. The force toggle above bypasses the filter so
-            // a manual test can still reach a source on demand, and
-            // orderedSources()/Settings still list them.
-            withOwnTidalFirst(orderedSources().filterNot { it.id in PARKED_SOURCE_IDS }).let { normal ->
+            // qbdlx self-gates on LosslessAvailability.
+            withOwnTidalFirst(orderedSources()).let { normal ->
                 // "Test: skip Qobuz (Tidal first)" — debug builds only (the accessor is
                 // gated). Leaves out the Qobuz source so a download goes to Tidal.
                 if (streamingPreference.isSkipQobuz()) {
@@ -127,9 +123,8 @@ class LosslessSourceRegistry @Inject constructor(
     /**
      * [ordered] with the Tidal source moved to just ahead of the Qobuz one when the Tidal
      * server is the user's own, none of their own Qobuz is set up and the download tier is
-     * above CD ([LosslessAvailability.ownTidalFirstNow]). Otherwise the Qobuz source's file
-     * URL comes from Stash's shared relay before the user's own server is ever asked. Stash's
-     * relay stays the fallback, right after it; nothing else moves.
+     * above CD ([LosslessAvailability.ownTidalFirstNow]). The Qobuz source, which needs the
+     * user's own account, is off then anyway; nothing else moves.
      */
     private suspend fun withOwnTidalFirst(ordered: List<LosslessSource>): List<LosslessSource> {
         val qobuzAt = ordered.indexOfFirst { it.id == QBDLX_SOURCE_ID }
@@ -190,17 +185,5 @@ class LosslessSourceRegistry @Inject constructor(
 
         /** [com.stash.data.download.lossless.tidal.TidalLosslessSource.SOURCE_ID]. */
         private const val TIDAL_SOURCE_ID = "tidal_bitchord"
-
-        /**
-         * Lossless sources parked out of the NORMAL resolve chain because their
-         * upstreams are down for us (2026-07-01): qobuz.squid.wtf needs a
-         * captcha we can't solve headless, and kennyy.com.br is health-down.
-         * Their code + Hilt bindings stay
-         * intact — re-enabling a source is just removing its id here (and
-         * uncommenting the matching line in
-         * [com.stash.core.media.streaming.StreamSourceRegistry] for streaming).
-         * Force-X test toggles and the Settings source list still reach them.
-         */
-        val PARKED_SOURCE_IDS = setOf("squid_qobuz", "kennyy_qobuz")
     }
 }

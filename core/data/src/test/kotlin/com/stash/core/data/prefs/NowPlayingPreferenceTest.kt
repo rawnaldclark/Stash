@@ -114,6 +114,26 @@ class NowPlayingPreferenceTest {
         assertFalse(preference.togglePin(NowPlayingAction.FLAG_WRONG_MATCH))
     }
 
+    // The DataStore is one per process (see tearDown), so these start from whatever is stored.
+    @Test fun `toggleFullArt turns full art over and back`() = runTest {
+        val before = preference.fullArt.first()
+        preference.toggleFullArt()
+        org.junit.Assert.assertEquals(!before, preference.fullArt.first())
+        preference.toggleFullArt()
+        org.junit.Assert.assertEquals(before, preference.fullArt.first())
+    }
+
+    @Test fun `two quick Full art taps are two flips`() = runTest {
+        // Each toggle reads and writes in one transaction: neither works from a value the other is
+        // about to change, so the two land as off-then-on (they used to both write the same answer).
+        val before = preference.fullArt.first()
+        kotlinx.coroutines.coroutineScope {
+            launch(kotlinx.coroutines.Dispatchers.IO) { preference.toggleFullArt() }
+            launch(kotlinx.coroutines.Dispatchers.IO) { preference.toggleFullArt() }
+        }
+        org.junit.Assert.assertEquals(before, preference.fullArt.first())
+    }
+
     @Test fun ambientAnimation_persistsFalseAndTrue() = runTest {
         preference.setAmbientAnimationEnabled(false)
         assertFalse(preference.ambientAnimationEnabled.first())

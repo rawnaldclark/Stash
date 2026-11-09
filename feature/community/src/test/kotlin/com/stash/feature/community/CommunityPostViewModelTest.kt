@@ -307,4 +307,63 @@ class CommunityPostViewModelTest {
         assertThat(s.voteNote).isEqualTo(VoteNote.TRY_AGAIN)
         assertThat(s.message).isNull()
     }
+
+    // -- Heard from the listening history -------------------------------------------------------------------------
+
+    @Test fun `a post whose song was played since it went up opens heard, with no tap and no extra read`() = runTest(dispatcher) {
+        val waiting = songPost.copy(heard = false)
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(waiting)
+        coEvery { repo.heardFromHistory(waiting) } returns true
+        val vm = vm(); advanceUntilIdle()
+        val s = vm.state.value as UiState.Loaded
+        assertThat(s.post.heard).isTrue()
+        assertThat(s.post.votePill().listenFirst).isFalse()
+        coVerify(exactly = 1) { repo.open(any()) }
+    }
+
+    @Test fun `the owner's case - the arrow finds the listen and votes, with no note`() = runTest(dispatcher) {
+        // Opened before the listen had counted; tapped after it had.
+        val waiting = songPost.copy(heard = false)
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(waiting)
+        coEvery { repo.heardFromHistory(waiting) } returnsMany listOf(false, true)
+        coEvery { repo.vote("AAAAAAAA", 1) } returns CommunityResult.Ok(VoteCounts(up = 2, down = 0, myVote = 1))
+        val vm = vm(); advanceUntilIdle()
+        assertThat((vm.state.value as UiState.Loaded).post.heard).isFalse()
+        vm.vote(1); advanceUntilIdle()
+        coVerify(exactly = 1) { repo.vote("AAAAAAAA", 1) }
+        val s = vm.state.value as UiState.Loaded
+        assertThat(s.voteNote).isNull()
+        assertThat(s.post).isEqualTo(songPost.copy(up = 2, myVote = 1))
+    }
+
+    @Test fun `a tap while the page's own check runs waits for it rather than asking again`() = runTest(dispatcher) {
+        val waiting = songPost.copy(heard = false)
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(waiting)
+        coEvery { repo.heardFromHistory(waiting) } coAnswers { delay(1_000); true }
+        coEvery { repo.vote("AAAAAAAA", 1) } returns CommunityResult.Ok(VoteCounts(up = 2, down = 0, myVote = 1))
+        val vm = vm(); runCurrent()
+        vm.vote(1); advanceUntilIdle()
+        coVerify(exactly = 1) { repo.heardFromHistory(any()) }
+        coVerify(exactly = 1) { repo.vote("AAAAAAAA", 1) }
+        assertThat((vm.state.value as UiState.Loaded).voteNote).isNull()
+    }
+
+    @Test fun `a song played only before the post went up still gets the note`() = runTest(dispatcher) {
+        // The history has no listen since the post's time (CommunityListenHistoryTest): the check says no.
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(songPost.copy(heard = false))
+        coEvery { repo.heardFromHistory(any()) } returns false
+        val vm = vm(); advanceUntilIdle()
+        vm.vote(1); advanceUntilIdle()
+        assertThat((vm.state.value as UiState.Loaded).voteNote).isEqualTo(VoteNote.LISTEN_FIRST)
+        coVerify(exactly = 0) { repo.vote(any(), any()) }
+        coVerify(exactly = 2) { repo.heardFromHistory(any()) } // the page opening, then the tap
+    }
+
+    @Test fun `your own post or one heard already is never checked`() = runTest(dispatcher) {
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(songPost.copy(heard = false, mine = true))
+        vm().also { advanceUntilIdle() }.vote(1); advanceUntilIdle()
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(songPost)
+        vm(); advanceUntilIdle()
+        coVerify(exactly = 0) { repo.heardFromHistory(any()) }
+    }
 }

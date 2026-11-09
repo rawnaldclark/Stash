@@ -72,7 +72,6 @@ import androidx.navigation.compose.rememberNavController
 import com.stash.app.RequestNotificationPermissionOnce
 import com.stash.data.download.lossless.quota.LosslessQuotaNotice
 import com.stash.data.download.lossless.quota.LosslessQuotaText
-import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import com.stash.feature.nowplaying.MiniPlayer
@@ -237,8 +236,6 @@ fun StashScaffold(
     }
 
     // Process notification deep-link extras handed in from MainActivity.
-    // Only one target right now (the captcha verifier); easy to extend
-    // when more deep-link surfaces show up.
     // The update sheet, over every screen (in-app updates): shown inside the album colours below.
     val updateViewModel: com.stash.feature.settings.update.UpdateViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 
@@ -249,26 +246,12 @@ fun StashScaffold(
                 PlayerSheetDeepLink.handle(pendingDeepLink, playerSheet)
                 onDeepLinkConsumed()
             }
-            CaptchaExpiredNotifier.DEEP_LINK_TARGET -> {
-                // Push Settings onto the back stack BEFORE the captcha screen.
-                // SquidWtfCaptchaRoute reaches into the SettingsViewModel via
-                // `navController.getBackStackEntry(SettingsRoute)` to share the
-                // ViewModel's cookie-write callback — that throws
-                // IllegalArgumentException ("No destination with route
-                // SettingsRoute in BackStack") if Settings isn't already on the
-                // stack. Cold-start from a notification has no stack history,
-                // so we synthesize the parent here. When the user closes the
-                // captcha screen they land on Settings — natural UX.
-                navController.navigate(SettingsRoute) {
-                    launchSingleTop = true
-                }
-                navController.navigate(SquidWtfCaptchaRoute) {
-                    launchSingleTop = true
-                }
-                onDeepLinkConsumed()
-            }
             com.stash.app.MainActivity.DEEP_LINK_OPEN_UPDATE -> {
                 updateViewModel.ask()
+                onDeepLinkConsumed()
+            }
+            com.stash.app.MainActivity.DEEP_LINK_OPEN_DOWNLOADS -> {
+                navController.navigate(DownloadManagementRoute) { launchSingleTop = true }
                 onDeepLinkConsumed()
             }
             null -> Unit

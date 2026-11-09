@@ -1,8 +1,10 @@
 package com.stash.feature.home.shelves
 
 import android.util.Log
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.home.BecauseRow
 import com.stash.core.data.home.BecauseYouLike
 import com.stash.core.data.home.BecauseYouLikeRepository
@@ -12,17 +14,28 @@ import com.stash.core.data.prefs.HomeSection
 import com.stash.core.data.prefs.HomeSectionsPreference
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.media.PlayerRepository
+import com.stash.core.media.actions.TrackActionsDelegate
 import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaybackSource
+import com.stash.core.model.Playlist
 import com.stash.core.model.Track
+import com.stash.core.model.TrackItem
+import com.stash.data.ytmusic.model.AlbumDetail
+import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.data.ytmusic.model.TrackSummary
+import com.stash.feature.home.R
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
@@ -52,6 +65,10 @@ data class HomeShelvesState(
  * read, and for "Because you like" two counts, until a rebuild is due); a shelf no longer wanted stops loading at
  * once. Each shelf loads on its own, so none waits on another. With no network the saved shelf is shown and no
  * build is tried, so a failed attempt (and the wait after it) only comes from a real network.
+ *
+ * A long press on a card opens its sheet: a "Because you like" song's goes through [TrackActionsDelegate], as a Search
+ * result's does (Play next, Add to queue, Start radio, Save to playlist, Download); a "New from your artists" album's
+ * loads the album ([AlbumCache], as its page does) and plays, shuffles or queues its songs, or finds its artist.
  */
 @HiltViewModel
 class HomeShelvesViewModel @Inject constructor(
@@ -62,6 +79,8 @@ class HomeShelvesViewModel @Inject constructor(
     streamingPreference: StreamingPreference,
     homeSectionsPreference: HomeSectionsPreference,
     private val connectivity: ConnectivityMonitor,
+    private val delegate: TrackActionsDelegate,
+    private val albumCache: AlbumCache,
 ) : ViewModel() {
 
     private val newFromArtists = Shelf(HomeSection.NEW_FROM_ARTISTS, newFromArtistsRepository::cached, newFromArtistsRepository::shelf)
@@ -91,7 +110,19 @@ class HomeShelvesViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeShelvesState())
 
+    /** A song sheet's toasts (the delegate's own words: "Added to queue", "Download failed: ..."). */
+    val songMessages: Flow<String> = delegate.userMessages
+
+    private val _albumMessages = MutableSharedFlow<Int>(extraBufferCapacity = 4)
+
+    /** An album sheet's toasts, as string resources ("Added album to queue", "Couldn't load this album"). */
+    val albumMessages: SharedFlow<Int> = _albumMessages.asSharedFlow()
+
+    /** Your playlists, for a song sheet's Save to playlist. */
+    val playlists: Flow<List<Playlist>> = delegate.userPlaylists
+
     init {
+        delegate.bindToScope(viewModelScope)
         viewModelScope.launch {
             var before = emptySet<HomeSection>()
             wanted.collect { now ->
@@ -119,23 +150,131 @@ class HomeShelvesViewModel @Inject constructor(
      * [label] is the row as Now Playing names it ("Because you like ‹song›").
      */
     fun playRow(row: BecauseRow, index: Int, label: String) {
-        val tracks = row.songs.map { s ->
-            Track(
-                id = s.videoId.hashCode().toLong(),
-                title = s.title,
-                artist = s.artist,
-                album = s.album.orEmpty(),
-                durationMs = (s.durationSeconds * 1000.0).toLong(),
-                albumArtUrl = s.thumbnailUrl,
-                youtubeId = s.videoId,
-                source = MusicSource.YOUTUBE,
-                isStreamable = true,
-            )
-        }
+        val tracks = row.songs.map { it.toStreamTrack() }
         if (tracks.isEmpty()) return
         viewModelScope.launch {
             playerRepository.setQueue(tracks, index.coerceIn(0, tracks.lastIndex), PlaybackSource.Listening(label))
         }
+    }
+
+    // -- A "Because you like" song's sheet --------------------------------------
+
+    fun playNext(song: TrackSummary) = delegate.playNext(song.toTrackItem())
+
+    fun addToQueue(song: TrackSummary) = delegate.addToQueue(song.toTrackItem())
+
+    fun startRadio(song: TrackSummary) = delegate.startRadio(song.toTrackItem())
+
+    fun download(song: TrackSummary) = delegate.downloadTrack(song.toTrackItem())
+
+    fun saveToPlaylist(song: TrackSummary, playlistId: Long) = delegate.addToPlaylist(song.toTrackItem(), playlistId)
+
+    fun createPlaylistAndAdd(song: TrackSummary, name: String) = delegate.createPlaylistAndAdd(song.toTrackItem(), name)
+
+    // -- A "New from your artists" album's sheet --------------------------------
+
+    /** The sheet is open: start loading the album, so the action picked next doesn't wait for it. */
+    fun warmAlbum(album: AlbumSummary) {
+        if (album.source != AlbumSource.YOUTUBE) return
+        viewModelScope.launch {
+            try {
+                albumCache.get(album.id, album.source)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                // Quiet: the action picked loads it again, and says so if it still fails.
+            }
+        }
+    }
+
+    /** Plays [album] from its first song, or shuffled with [shuffle], as its page's Play does: the album is the queue. */
+    fun playAlbum(album: AlbumSummary, shuffle: Boolean = false) {
+        viewModelScope.launch {
+            val (detail, tracks) = loadAlbum(album) ?: return@launch
+            playerRepository.setQueue(
+                if (shuffle) tracks.shuffled() else tracks,
+                0,
+                PlaybackSource.Album(detail.title, detail.artist),
+            )
+        }
+    }
+
+    /** Puts [album]'s songs right after the current song, in album order (each Play next goes after the last). */
+    fun playAlbumNext(album: AlbumSummary) {
+        viewModelScope.launch {
+            val (_, tracks) = loadAlbum(album) ?: return@launch
+            var added = false
+            for (track in tracks) {
+                try {
+                    if (playerRepository.addNext(track)) added = true
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    Log.w(TAG, "play next ${track.youtubeId} failed: ${e.message}")
+                }
+            }
+            confirmAlbumAdd(added, R.string.home_album_playing_next)
+        }
+    }
+
+    /** Adds [album]'s songs to the end of the queue in one go, as its page's Add to queue does. */
+    fun addAlbumToQueue(album: AlbumSummary) {
+        viewModelScope.launch {
+            val (_, tracks) = loadAlbum(album) ?: return@launch
+            val added = try {
+                playerRepository.addToQueue(tracks)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.w(TAG, "add album ${album.id} to queue failed: ${e.message}")
+                false
+            }
+            confirmAlbumAdd(added, R.string.home_album_added_to_queue)
+        }
+    }
+
+    /**
+     * Finds [album]'s artist (its page links the artist's channel) and hands it to [open] as (id, name). An album whose
+     * page links no artist says so instead.
+     */
+    fun openArtist(album: AlbumSummary, open: (id: String, name: String) -> Unit) {
+        viewModelScope.launch {
+            val (detail, _) = loadAlbum(album) ?: return@launch
+            val id = detail.artistId
+            if (id.isNullOrBlank()) {
+                _albumMessages.tryEmit(R.string.home_album_no_artist)
+            } else {
+                open(id, detail.artist.ifBlank { album.artist })
+            }
+        }
+    }
+
+    /** In a Listen Together session the session confirms an add; otherwise say what happened. */
+    private fun confirmAlbumAdd(added: Boolean, @StringRes done: Int) {
+        if (added && delegate.inListenTogether) return
+        _albumMessages.tryEmit(if (added) done else R.string.home_album_add_failed)
+    }
+
+    /**
+     * [album]'s page and its songs as queue tracks, or null (said with a toast) when it didn't load or has no songs.
+     * Only YouTube Music albums, which New from your artists' are: a Qobuz album's songs have no video id to stream.
+     */
+    private suspend fun loadAlbum(album: AlbumSummary): Pair<AlbumDetail, List<Track>>? {
+        val detail = try {
+            if (album.source == AlbumSource.YOUTUBE) albumCache.get(album.id, album.source) else null
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.w(TAG, "album ${album.id} didn't load: ${e.message}")
+            null
+        }
+        val tracks = detail?.let(::albumTracks).orEmpty()
+        if (detail == null || tracks.isEmpty()) {
+            _albumMessages.tryEmit(R.string.home_album_load_failed)
+            return null
+        }
+        return detail to tracks
+    }
+
+    override fun onCleared() {
+        delegate.onOwnerCleared()
+        super.onCleared()
     }
 
     /** One shelf: its saved list painted at once, then the repository's current one; one load at a time. */
@@ -174,3 +313,48 @@ class HomeShelvesViewModel @Inject constructor(
         const val TAG = "HomeShelves"
     }
 }
+
+/** A shelf song as the queue streams it: by its video id, with an id made from it. */
+internal fun TrackSummary.toStreamTrack(): Track = Track(
+    id = videoId.hashCode().toLong(),
+    title = title,
+    artist = artist,
+    album = album.orEmpty(),
+    durationMs = (durationSeconds * 1000.0).toLong(),
+    albumArtUrl = thumbnailUrl,
+    youtubeId = videoId,
+    source = MusicSource.YOUTUBE,
+    isStreamable = true,
+)
+
+/** A shelf song as [TrackActionsDelegate] takes it (the same adapter as Search's, feature/search SearchViewModel.kt). */
+internal fun TrackSummary.toTrackItem(): TrackItem = TrackItem(
+    videoId = videoId,
+    title = title,
+    artist = artist,
+    durationSeconds = durationSeconds,
+    thumbnailUrl = thumbnailUrl,
+    album = album,
+    musicVideoType = musicVideoType,
+    explicit = explicit,
+)
+
+/**
+ * A YouTube Music album's songs as queue tracks, as its page builds them (AlbumDiscoveryViewModel): each streamed by
+ * its video id and named for the album, with the album's artist when the row names none and the album's cover when
+ * it has none. A row with no video id can't be streamed and is left out.
+ */
+internal fun albumTracks(detail: AlbumDetail): List<Track> =
+    detail.tracks.filter { it.videoId.isNotBlank() }.map { t ->
+        Track(
+            id = t.videoId.hashCode().toLong(),
+            title = t.title,
+            artist = t.artist.ifBlank { detail.artist },
+            album = detail.title,
+            durationMs = (t.durationSeconds * 1000.0).toLong(),
+            albumArtUrl = t.thumbnailUrl ?: detail.thumbnailUrl,
+            youtubeId = t.videoId,
+            source = MusicSource.YOUTUBE,
+            isStreamable = true,
+        )
+    }

@@ -13,7 +13,7 @@ enum class DownloadWaitReason(val code: String) {
     /** Tidal has no AAC of it yet (Download quality AAC 320, lossy fallback off). */
     AAC("wait:aac"),
 
-    /** The day's Tidal & Qobuz allowance is spent: it goes out after the reset. */
+    /** The day's Tidal allowance is spent: it goes out after the reset. */
     RESET("wait:reset"),
 
     /** Tidal was busy (or this device paced it): tried again shortly, whatever the fallback. */

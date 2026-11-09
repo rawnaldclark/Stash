@@ -2,7 +2,6 @@ package com.stash.data.download.lossless.quota
 
 import android.util.Log
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
-import com.stash.data.download.lossless.relay.LosslessRelayClient
 import com.stash.data.download.lossless.relay.RelaySigner
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -21,14 +20,13 @@ import okhttp3.Request
 
 /**
  * The cold-start read of the daily lossless allowance: once per process, and only when what
- * [LosslessQuota] has stored is from a previous UTC day (or nothing is stored), ask one relay's
- * quota endpoint — the Qobuz relay's `GET /v1/quota` first, else the Tidal relay's `GET /quota`
- * — so the Settings line and the spent state are right before the first song plays. Every
- * relay answer after that keeps the value current through its headers.
+ * [LosslessQuota] has stored is from a previous UTC day (or nothing is stored), ask the Tidal
+ * relay's `GET /quota`, so the Settings line and the spent state are right before the first song
+ * plays. Every relay answer after that keeps the value current through its headers.
  *
- * Only the owner's relays from the signed config are asked (a user's own endpoint does not keep
- * the shared count), signed `"<install>:quota:<ts>"` by [RelaySigner]. No key or no relay in the
- * config → no request at all.
+ * Only the owner's Tidal relay from the signed config is asked (a user's own server does not
+ * keep the shared count), signed `"<install>:quota:<ts>"` by [RelaySigner]. No key or no Tidal
+ * relay in the config → no request at all.
  */
 @Singleton
 class LosslessQuotaRefresher @Inject constructor(
@@ -37,7 +35,7 @@ class LosslessQuotaRefresher @Inject constructor(
     private val signer: RelaySigner,
     private val quota: LosslessQuota,
 ) {
-    /** Test seam; short timeouts like the relay clients — this is a nicety, never a wait. */
+    /** Test seam; short timeouts like the relay client — this is a nicety, never a wait. */
     internal var httpClient: OkHttpClient = sharedClient.newBuilder()
         .connectTimeout(TIMEOUT_S, TimeUnit.SECONDS)
         .readTimeout(TIMEOUT_S, TimeUnit.SECONDS)
@@ -56,15 +54,15 @@ class LosslessQuotaRefresher @Inject constructor(
     /**
      * True when a quota endpoint answered and the allowance was recorded. Never throws.
      *
-     * Besides a stale day, a stored supporter token the relays have not confirmed (a claim whose
-     * refresh failed offline) asks too: a spent day skips every lossless rung, so no relay
-     * answer would otherwise lift the limit.
+     * Besides a stale day, a stored supporter token the relay has not confirmed (a claim whose
+     * refresh failed offline) asks too: a spent day skips the Tidal rung, so no relay answer
+     * would otherwise lift the limit.
      */
     internal suspend fun refreshIfStale(): Boolean = refresh(force = false)
 
     /**
      * Asks a quota endpoint now, whatever is stored: after a supporter claim or its removal, so
-     * the Settings line and the spent state follow the relays' answer for the new token.
+     * the Settings line and the spent state follow the relay's answer for the new token.
      */
     suspend fun refreshNow(): Boolean = refresh(force = true)
 
@@ -74,15 +72,10 @@ class LosslessQuotaRefresher @Inject constructor(
         if (!force && !quota.needsColdRefresh() && !unconfirmedSupporter) return@withContext false
         // The signed config loads from its cache in parallel at startup: give it a moment.
         withTimeoutOrNull(configWaitMs) {
-            combine(config.relayKey, config.relays, config.tidalRelay) { key, relays, tidal ->
-                key != null && (relays.isNotEmpty() || tidal != null)
-            }.first { it }
+            combine(config.relayKey, config.tidalRelay) { key, tidal -> key != null && tidal != null }.first { it }
         } ?: return@withContext false
-        val targets = buildList {
-            config.relays.value.firstOrNull()?.let { add("${it.base}/v1/quota" to null) }
-            config.tidalRelay.value?.let { add("${it.base}/quota" to it.token) }
-        }
-        targets.any { (url, token) -> fetch(url, token) }
+        val tidal = config.tidalRelay.value ?: return@withContext false
+        fetch("${tidal.base}/quota", tidal.token)
     }
 
     private suspend fun fetch(url: String, token: String?): Boolean {
@@ -90,11 +83,11 @@ class LosslessQuotaRefresher @Inject constructor(
         var mayRetrySkew = true
         while (true) {
             val b = Request.Builder().url(parsed).get()
-                .header("X-Stash-Version", LosslessRelayClient.PROTOCOL_VERSION)
+                .header("X-Stash-Version", RelaySigner.PROTOCOL_VERSION)
                 .header("Accept", "application/json")
                 .apply { if (token != null) header("X-Access-Token", token) }
             if (!signer.sign(b, "quota", nowMs())) return false
-            // Both targets are the owner's: a supporter token makes the answer `supporter:true`.
+            // The owner's relay: a supporter token makes the answer `supporter:true`.
             signer.entitle(b)
             try {
                 httpClient.newCall(b.build()).execute().use { r ->

@@ -9,7 +9,7 @@ import com.stash.core.data.supporter.SupporterRepository
 import com.stash.data.download.lossless.quota.LosslessAllowance
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.quota.LosslessQuotaRefresher
-import com.stash.data.download.lossless.relay.LosslessConfigFetcher
+import com.stash.data.download.lossless.LosslessAvailability
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -25,10 +25,10 @@ import kotlinx.coroutines.launch
 
 /** Settings → Audio & Quality's supporter row, under the "Lossless today" line. */
 sealed interface SupporterRow {
-    /** No owner relay configured: there is no allowance to lift. */
+    /** Stash's Tidal relay is not this listener's (none configured, or their own server): no allowance to lift. */
     data object Hidden : SupporterRow
 
-    /** "Unlimited lossless for supporters", opening the claim sheet. [hasToken]: one is stored but not honoured. */
+    /** "Unlimited Tidal for supporters", opening the claim sheet. [hasToken]: one is stored but not honoured. */
     data class Offer(val hasToken: Boolean) : SupporterRow
 
     /** The relays report unlimited. [hasToken]: this device holds the code (it can be removed). */
@@ -62,12 +62,12 @@ class SupporterViewModel @Inject constructor(
     private val supporter: SupporterRepository,
     private val refresher: LosslessQuotaRefresher,
     private val quota: LosslessQuota,
-    config: LosslessConfigFetcher,
+    availability: LosslessAvailability,
 ) : ViewModel() {
 
     private val res: Resources get() = context.resources
 
-    val row: StateFlow<SupporterRow> = supporterRows(quota, config, supporter)
+    val row: StateFlow<SupporterRow> = supporterRows(quota, availability, supporter)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SupporterRow.Hidden)
 
     private val _claim = MutableStateFlow(SupporterClaimUi())
@@ -96,43 +96,49 @@ class SupporterViewModel @Inject constructor(
         }
     }
 
-    /** Empties the code field and returns to the email step without closing. */
-    fun startOver() {
-        _claim.value = SupporterClaimUi()
-    }
+    /** Back to the email step (a different address, or a code that can no longer be used). */
+    fun startOver() = _claim.update { SupporterClaimUi() }
 
-    /** Forgets any stored code on this device; the relays then count this device as free again. */
+    /** The sheet was closed: the next open starts fresh. */
+    fun reset() = _claim.update { if (it.busy) it else SupporterClaimUi() }
+
+    /** Removes the code from this device; the relays then count it as free. */
     fun removeCode() {
         viewModelScope.launch {
             supporter.clear()
             refresher.refreshNow()
-            _claim.value = SupporterClaimUi()
         }
+        _claim.update { SupporterClaimUi() }
     }
 
-    fun reset() {
-        _claim.value = SupporterClaimUi()
-    }
-
-    private fun launchStep(block: suspend () -> SupporterClaimUi) {
+    /** Runs [step] once at a time with the sheet busy, and shows what it returns. */
+    private fun launchStep(step: suspend () -> SupporterClaimUi) {
+        if (_claim.value.busy) return
+        _claim.update { it.copy(busy = true, message = null) }
         viewModelScope.launch {
-            _claim.update { it.copy(busy = true, message = null) }
-            val next = block()
-            _claim.value = next.copy(busy = false)
+            _claim.value = step().copy(busy = false)
         }
     }
 }
 
-/** Combines quota, configured relays, and token presence into a single row state. */
+/**
+ * The supporter state as it changes: the Tidal relay's last allowance, whether this listener uses Stash's Tidal relay at
+ * all (in the config, and no Tidal server of their own: [LosslessAvailability.stashTidalRelayInUse]), and
+ * whether a code is stored. Shared by the Lossless sources row and Settings' Support card, so both always agree.
+ */
 internal fun supporterRows(
     quota: LosslessQuota,
-    config: LosslessConfigFetcher,
+    availability: LosslessAvailability,
     supporter: SupporterRepository,
-): Flow<SupporterRow> = combine(quota.state, config.relays, config.tidalRelay, supporter.token) { allowance, relays, tidal, token ->
-    val relayConfigured = relays.isNotEmpty() || tidal != null
+): Flow<SupporterRow> = combine(
+    quota.state,
+    availability.stashTidalRelayInUse,
+    supporter.token,
+) { allowance, relayConfigured, token ->
     supporterRow(allowance, relayConfigured, token != null)
 }
 
+/** The supporter row for what the relay last said ([allowance]: limit null = unlimited). */
 internal fun supporterRow(allowance: LosslessAllowance?, relayConfigured: Boolean, hasToken: Boolean): SupporterRow = when {
     !relayConfigured -> SupporterRow.Hidden
     allowance?.unlimited == true -> SupporterRow.Supporter(hasToken)

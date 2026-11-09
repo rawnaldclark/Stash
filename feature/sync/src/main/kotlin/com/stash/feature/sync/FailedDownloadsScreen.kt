@@ -208,7 +208,7 @@ private fun Header(
             ) {
                 Icon(Icons.Default.Refresh, null, Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.sync_failed_downloads_retry_all))
+                Text(stringResource(R.string.downloads_retry_all_failed, totalCount))
             }
             Spacer(Modifier.height(16.dp))
         }

@@ -2,7 +2,6 @@ package com.stash.data.download.lossless.quota
 
 import com.google.common.truth.Truth.assertThat
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
-import com.stash.data.download.lossless.relay.RelayEntry
 import com.stash.data.download.lossless.relay.RelaySigner
 import com.stash.data.download.lossless.relay.appVersionProvider
 import com.stash.data.download.lossless.relay.supporter
@@ -26,11 +25,9 @@ class LosslessQuotaRefresherTest {
 
     private val server = MockWebServer()
     private var now = 1_792_238_400_000L
-    private val relays = MutableStateFlow<List<RelayEntry>>(emptyList())
     private val tidal = MutableStateFlow<TidalRelay?>(null)
     private val key = MutableStateFlow<String?>("k-secret")
     private val config: LosslessConfigFetcher = mockk {
-        every { this@mockk.relays } returns this@LosslessQuotaRefresherTest.relays
         every { tidalRelay } returns tidal
         every { relayKey } returns key
         coEvery { installId() } returns INSTALL_ID
@@ -51,15 +48,17 @@ class LosslessQuotaRefresherTest {
 
     private fun base() = server.url("/").toString().trimEnd('/')
 
-    @Test fun `a stale value asks the Qobuz relay's quota endpoint, signed over quota`() = runBlocking {
-        relays.value = listOf(RelayEntry(base()))
+    @Test fun `a stale value asks the Tidal relay's quota endpoint, signed over quota`() = runBlocking {
+        tidal.value = TidalRelay(base(), null)
         server.enqueue(MockResponse().setBody("""{"used":412,"limit":500,"resetsAt":$RESET,"supporter":false}"""))
 
         assertThat(refresher.refreshIfStale()).isTrue()
         assertThat(quota.current()).isEqualTo(LosslessAllowance(412, 500, RESET))
 
         val req = server.takeRequest(2, TimeUnit.SECONDS)!!
-        assertThat(req.path).isEqualTo("/v1/quota")
+        assertThat(req.path).isEqualTo("/quota")
+        assertThat(req.getHeader("X-Stash-Version")).isEqualTo(RelaySigner.PROTOCOL_VERSION)
+        assertThat(req.getHeader("X-Access-Token")).isNull()
         assertThat(req.getHeader("X-Stash-Install")).isEqualTo(INSTALL_ID)
         assertThat(req.getHeader("X-Stash-Ts")).isEqualTo("1792238400")
         val mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec("k-secret".toByteArray(), "HmacSHA256")) }
@@ -68,21 +67,21 @@ class LosslessQuotaRefresherTest {
     }
 
     @Test fun `a value from today makes no request`() = runBlocking {
-        relays.value = listOf(RelayEntry(base()))
+        tidal.value = TidalRelay(base(), null)
         quota.onHeaders("3/500", "$RESET")
         assertThat(refresher.refreshIfStale()).isFalse()
         assertThat(server.requestCount).isEqualTo(0)
     }
 
-    @Test fun `no relay configured, or no key, makes no request at all`() = runBlocking {
+    @Test fun `no Tidal relay configured, or no key, makes no request at all`() = runBlocking {
         assertThat(refresher.refreshIfStale()).isFalse()
         key.value = null
-        relays.value = listOf(RelayEntry(base()))
+        tidal.value = TidalRelay(base(), null)
         assertThat(refresher.refreshIfStale()).isFalse()
         assertThat(server.requestCount).isEqualTo(0)
     }
 
-    @Test fun `only the Tidal relay configured asks its quota endpoint with the access token`() = runBlocking {
+    @Test fun `the Tidal relay's quota endpoint gets its access token`() = runBlocking {
         tidal.value = TidalRelay(base(), "tok")
         server.enqueue(MockResponse().setBody("""{"used":0,"limit":"unlimited","resetsAt":$RESET,"supporter":true}"""))
         assertThat(refresher.refreshIfStale()).isTrue()
@@ -92,19 +91,17 @@ class LosslessQuotaRefresherTest {
         assertThat(quota.current()?.unlimited).isTrue()
     }
 
-    @Test fun `a failing Qobuz relay falls to the Tidal one`() = runBlocking {
-        relays.value = listOf(RelayEntry(base()))
+    @Test fun `a failing quota endpoint records nothing and asks once`() = runBlocking {
         tidal.value = TidalRelay(base(), null)
-        server.enqueue(MockResponse().setResponseCode(404))
-        server.enqueue(MockResponse().setBody("""{"used":7,"limit":500,"resetsAt":$RESET}"""))
-        assertThat(refresher.refreshIfStale()).isTrue()
-        assertThat(server.takeRequest().path).isEqualTo("/v1/quota")
+        server.enqueue(MockResponse().setResponseCode(503))
+        assertThat(refresher.refreshIfStale()).isFalse()
         assertThat(server.takeRequest().path).isEqualTo("/quota")
-        assertThat(quota.current()?.used).isEqualTo(7)
+        assertThat(server.requestCount).isEqualTo(1)
+        assertThat(quota.current()).isNull()
     }
 
     @Test fun `a 401 with the relay's time re-signs once`() = runBlocking {
-        relays.value = listOf(RelayEntry(base()))
+        tidal.value = TidalRelay(base(), null)
         server.enqueue(MockResponse().setResponseCode(401).setHeader("X-Stash-Server-Time", "1792239000"))
         server.enqueue(MockResponse().setBody("""{"used":1,"limit":500,"resetsAt":$RESET}"""))
         assertThat(refresher.refreshIfStale()).isTrue()
@@ -113,7 +110,7 @@ class LosslessQuotaRefresherTest {
     }
 
     @Test fun `refreshNow asks even with today's value, carrying the supporter token`() = runBlocking {
-        relays.value = listOf(RelayEntry(base()))
+        tidal.value = TidalRelay(base(), null)
         quota.onHeaders("500/500", "$RESET")
         supporterToken = "tok.sig"
         server.enqueue(MockResponse().setBody("""{"used":500,"limit":null,"resetsAt":$RESET,"supporter":true}"""))
@@ -125,7 +122,7 @@ class LosslessQuotaRefresherTest {
     }
 
     @Test fun `a removed token's refreshNow brings the free limit back, without the header`() = runBlocking {
-        relays.value = listOf(RelayEntry(base()))
+        tidal.value = TidalRelay(base(), null)
         quota.onHeaders("620/unlimited", "$RESET")
         server.enqueue(MockResponse().setBody("""{"used":620,"limit":500,"resetsAt":$RESET,"supporter":false}"""))
 
@@ -134,8 +131,8 @@ class LosslessQuotaRefresherTest {
         assertThat(quota.isSpent()).isTrue()
     }
 
-    @Test fun `a cold start with a token the relays have not confirmed today asks once`() = runBlocking {
-        relays.value = listOf(RelayEntry(base()))
+    @Test fun `a cold start with a token the relay has not confirmed today asks once`() = runBlocking {
+        tidal.value = TidalRelay(base(), null)
         quota.onHeaders("500/500", "$RESET") // spent before the claim; the claim's refresh failed
         supporterToken = "tok.sig"
         server.enqueue(MockResponse().setBody("""{"used":500,"limit":null,"resetsAt":$RESET,"supporter":true}"""))

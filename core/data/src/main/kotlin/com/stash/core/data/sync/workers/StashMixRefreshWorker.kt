@@ -31,6 +31,7 @@ import com.stash.core.data.lastfm.LastFmTopTrack
 import com.stash.core.data.mix.MixGenerator
 import com.stash.core.data.mix.MixSeedGenerator
 import com.stash.core.data.mix.MixSeedStrategy
+import com.stash.core.data.mix.MixSlots
 import com.stash.core.data.mix.LastFmRecommendationSource
 import com.stash.core.data.mix.RecipeTagResolver
 import com.stash.core.data.mix.StashMixDefaults
@@ -150,16 +151,17 @@ class StashMixRefreshWorker @AssistedInject constructor(
          * Floor for the filtered discovery pool. Below this, the TAG_GRAPH
          * fallback fires.
          *
-         * Why 20 and not the recipe's discoveryCap (e.g. 34 for an 85%-discovery
-         * recipe with targetLength 40)? Downstream attrition: not every queued
-         * candidate becomes a viable survivor. StashDiscoveryWorker.handle()
-         * applies an additional blocklist check; some candidates fail at the
-         * download stage (yt-dlp can't match, no audio available, etc.); and
-         * some get canonical-deduped against tracks added to the library AFTER
-         * the seed-gen filter ran. Twenty pre-filter survivors typically yields
-         * ~10-15 actually-downloaded DONE rows — enough to fill a 6-slot mix
-         * slot AND leave a queue buffer for tomorrow's refresh. The fallback
-         * is a viability gate, not a precise capacity match.
+         * Why 20 and not the recipe's discoveryCap (40 for Daily Discover, which
+         * is all recommendations)? The cap isn't filled from one refresh's
+         * candidates: materializeMix rotates over the recipe's whole DONE
+         * backlog (up to [SURVIVOR_POOL_LIMIT]), which every daily refresh adds
+         * to. And not every queued candidate becomes a viable survivor:
+         * StashDiscoveryWorker.handle() applies an additional blocklist check;
+         * some candidates don't resolve (no match, no audio available, etc.);
+         * and some get canonical-deduped against tracks added to the library
+         * AFTER the seed-gen filter ran. Twenty pre-filter survivors typically
+         * yields ~10-15 resolved DONE rows a refresh, which keeps the backlog
+         * growing. The fallback is a viability gate, not a precise capacity match.
          */
         private const val MIN_DISCOVERY_POOL_AFTER_FILTER = 20
 
@@ -691,20 +693,19 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // accept suspend lambdas, so the blocklist check is a manual
         // loop that calls the suspend guard sequentially.
         // v0.9.19 follow-up: cap discovery survivors at the recipe's stated
-        // slot count (targetLength * discoveryRatio). DAO query orders by
-        // completed_at DESC so newest-DONE survivors win when we have to cut.
-        // Library shortfall-fill in MixGenerator is intentionally untouched —
-        // total playlist size for Daily Discover settles at up-to-50 (library)
-        // + up-to-20 (discovery) = <=70, replacing the previous unbounded growth.
+        // slot count (MixSlots: targetLength * discoveryRatio, rounded; the
+        // library slice gets the rest, so the two add up to targetLength). DAO
+        // query orders by completed_at DESC so newest-DONE survivors win when
+        // we have to cut. Daily Discover is all recommendations: 40 places
+        // here, an empty library slice, and no library backfill when the
+        // backlog is short (MixGenerator Step 8 only fills recipes under 50%).
         //
         // v0.9.20: filter via excludeIds; over-fetch so post-filter still
         // fills the cap. Worst case: every excluded id was a survivor — we
         // still come back with `discoveryCap` distinct ids. Bounded — the
         // DAO's ORDER BY completed_at DESC + LIMIT means we just slide the
         // window further down the survivor list.
-        val discoveryCap = (recipe.targetLength * recipe.discoveryRatio)
-            .roundToInt()
-            .coerceAtLeast(0)
+        val discoveryCap = MixSlots.of(recipe).discovery
         // Generous over-fetch: in pathological pool-overlap cases (e.g. Deep
         // Cuts' TRACK_SIMILAR pool ~95% overlapping First Listen's TAG_GRAPH
         // pool because a user's top-tracks naturally share tags with the
@@ -722,8 +723,15 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // newest-first.
         // #287: consider the recipe's whole DONE backlog (bounded) instead of
         // a thin newest-first window — rotation needs breadth to rotate over.
+        // distinct() before the cut: one song can have several DONE queue rows
+        // for the recipe (seen on a phone: 60 repeats in the first 500), and a
+        // repeat let the rotation pick it twice. The second insert was dropped
+        // (same playlist + track), leaving a gap in the positions and a count
+        // one higher than the rows (39 rows, "40 tracks"). distinct() keeps the
+        // first, newest occurrence, so the order stays newest-first.
         val rawCandidateIds = playlistDao
             .getStreamableOrDoneTrackIdsForRecipe(recipe.id)
+            .distinct()
             .take(SURVIVOR_POOL_LIMIT)
         val notInLibrary = rawCandidateIds.filter { it !in librarySet }
         // Your record's taste: a find it keeps out (hidden on Spotify, always skipped) leaves before the window is cut, so the mix
@@ -790,11 +798,13 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // same openers, same art, same count — users read Refresh as a no-op.
         // Library-led mixes keep their library-first order.
         val discoveryFirst = recipe.discoveryRatio >= 0.5f
+        // distinct(): a song is one row in the playlist (a repeat insert is
+        // dropped), so the list written, compared and counted holds it once.
         val finalOrderedIds = if (discoveryFirst) {
             discoveryTrackIds + tracks.map { it.id }
         } else {
             tracks.map { it.id } + discoveryTrackIds
-        }
+        }.distinct()
         val totalCount = finalOrderedIds.size
 
         // v0.9.42: idempotency short-circuit. If the playlist already exists

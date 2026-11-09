@@ -1,5 +1,6 @@
 package com.stash.core.data.sync
 
+import com.stash.core.data.db.dao.DownloadQueueDao
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -55,4 +56,16 @@ class DownloadJobRegistry @Inject constructor() {
      * row's IN_PROGRESS state and [isLive] still holds when it writes.
      */
     suspend fun <T> withClaimsHeld(block: suspend () -> T): T = claimLock.withLock { block() }
+
+    /**
+     * Rows marked downloading with no job in this process behind them (the process died
+     * mid-download, a worker stopped before it handed its claim back) go back to waiting.
+     * A row a live job holds is left alone, whichever runner holds it: resetting it let a
+     * second runner claim the same song and download it twice. Held against claims, so a
+     * download starting now can't be caught between its claim and its registration.
+     * Returns how many rows went back.
+     */
+    suspend fun releaseDeadClaims(dao: DownloadQueueDao): Int = withClaimsHeld {
+        dao.inProgressIds().filterNot(::isLive).sumOf { dao.releaseClaim(it) }
+    }
 }

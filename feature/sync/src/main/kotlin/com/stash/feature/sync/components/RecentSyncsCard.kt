@@ -1,6 +1,5 @@
 package com.stash.feature.sync.components
 
-import android.text.format.DateUtils
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -235,11 +234,3 @@ fun formatSyncBytes(bytes: Long): String? = when {
     bytes < 1024L * 1024 * 1024 -> "${bytes / (1024 * 1024)} MB"
     else -> String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024))
 }
-
-/** Formats a Unix-millisecond timestamp into a relative time string (e.g. "3 minutes ago"). */
-fun formatRelativeTime(timestampMs: Long): String =
-    DateUtils.getRelativeTimeSpanString(
-        timestampMs,
-        System.currentTimeMillis(),
-        DateUtils.MINUTE_IN_MILLIS,
-    ).toString()

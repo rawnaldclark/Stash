@@ -48,7 +48,6 @@ import com.stash.data.download.files.LocalImportCoordinator
 import com.stash.feature.record.imports.RecordIntake
 import com.stash.feature.record.imports.RecordShareRouter
 import com.stash.data.download.lossless.quota.LosslessQuota
-import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import dagger.hilt.android.AndroidEntryPoint
 import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.data.social.serviceName
@@ -80,6 +79,8 @@ class MainActivity : AppCompatActivity() {
 
         /** [pendingDeepLink] for the update notification: open the update sheet. */
         const val DEEP_LINK_OPEN_UPDATE = "open_update"
+        /** [pendingDeepLink] for a download notification: open the Downloads screen. */
+        const val DEEP_LINK_OPEN_DOWNLOADS = "open_downloads"
         /** [pendingDeepLink] prefix for a shared Spotify / YouTube link (text shared to Stash); the link follows. */
         const val DEEP_LINK_MUSIC_LINK_PREFIX = "music_link:"
 
@@ -365,9 +366,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Reads [CaptchaExpiredNotifier.INTENT_EXTRA_NAV_TARGET] from the
-     * launch intent and stashes it for Compose to consume on the next
-     * frame. No-op when the extra is absent (the normal launcher case).
+     * Reads a deep-link target (the media notification, a shared link, the
+     * update notification) from the launch intent and stashes it for Compose
+     * to consume on the next frame. No-op for the normal launcher case.
      */
     private fun handleDeepLinkIntent(intent: Intent?) {
         if (intent == null) return
@@ -416,22 +417,13 @@ class MainActivity : AppCompatActivity() {
         if (intent.getBooleanExtra(UpdateCheckWorker.EXTRA_OPEN_UPDATE, false)) {
             pendingDeepLink.value = DEEP_LINK_OPEN_UPDATE
             intent.removeExtra(UpdateCheckWorker.EXTRA_OPEN_UPDATE)
-            return
         }
 
-        val target = intent.getStringExtra(CaptchaExpiredNotifier.INTENT_EXTRA_NAV_TARGET)
-            ?: return
-        // Only the one target Stash's own notification sends. This activity is
-        // exported, so any app can set the extra: passed through as-is, a
-        // "weblink:"/"listen:"/"shared_track:" value skipped every check the VIEW
-        // path above applies (the feature switch, the link prefix, the length
-        // cap, the room-code shape) on its way to the confirm screens.
-        if (target == CaptchaExpiredNotifier.DEEP_LINK_TARGET) pendingDeepLink.value = target
-        // Clear the extra so a config change doesn't re-trigger the
-        // navigate. setIntent() above already replaces the activity's
-        // intent reference; this just guards against the same Intent
-        // instance being processed twice.
-        intent.removeExtra(CaptchaExpiredNotifier.INTENT_EXTRA_NAV_TARGET)
+        // A download notification (progress, out of space, slowed down, the sync summary): Downloads.
+        if (intent.getBooleanExtra(com.stash.core.data.sync.SyncNotificationManager.EXTRA_OPEN_DOWNLOADS, false)) {
+            pendingDeepLink.value = DEEP_LINK_OPEN_DOWNLOADS
+            intent.removeExtra(com.stash.core.data.sync.SyncNotificationManager.EXTRA_OPEN_DOWNLOADS)
+        }
     }
 
     /**

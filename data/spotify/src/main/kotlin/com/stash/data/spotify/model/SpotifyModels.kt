@@ -12,24 +12,10 @@ import kotlinx.serialization.Serializable
  */
 
 @Serializable
-data class SpotifyUser(
-    val id: String,
-    val display_name: String? = null,
-    val images: List<SpotifyImage>? = null,
-)
-
-@Serializable
 data class SpotifyImage(
     val url: String,
     val height: Int? = null,
     val width: Int? = null,
-)
-
-@Serializable
-data class SpotifyPlaylistsResponse(
-    val items: List<SpotifyPlaylistItem> = emptyList(),
-    val total: Int = 0,
-    val offset: Int = 0,
 )
 
 @Serializable
@@ -61,12 +47,6 @@ data class SpotifyOwner(
 @Serializable
 data class SpotifyTracksRef(
     val total: Int? = null,
-)
-
-@Serializable
-data class SpotifyTracksResponse(
-    val items: List<SpotifyTrackItem> = emptyList(),
-    val total: Int = 0,
 )
 
 @Serializable

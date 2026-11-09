@@ -9,7 +9,7 @@ import javax.inject.Singleton
  *
  * The sweep checks a waiting row before re-queuing it, so it doesn't start a download that
  * would only wait again. That check is a relay answer, and a found answer costs a unit of the
- * day's Tidal & Qobuz allowance; the download then asking again cost a second unit for one
+ * day's Tidal allowance; the download then asking again cost a second unit for one
  * song. The sweep [put]s what it found here and the download [take]s it instead of asking:
  * one answer, one unit. Kept [TTL_MS] (the download starts at once, and a signed URL outlives
  * that), taken once, and only by the same [Kind] of lookup.

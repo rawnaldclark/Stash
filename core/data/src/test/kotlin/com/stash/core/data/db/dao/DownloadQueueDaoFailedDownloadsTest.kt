@@ -164,14 +164,14 @@ class DownloadQueueDaoFailedDownloadsTest {
 
     // ---- revertToPendingAfterInterruption -------------------------
 
-    @Test fun revertToPendingAfterInterruption_flips_FAILED_to_PENDING_and_increments_retry() = runTest {
-        // Setup: a row that was previously FAILED with retry_count=2.
+    @Test fun revertToPendingAfterInterruption_flips_IN_PROGRESS_to_PENDING_and_increments_retry() = runTest {
+        // Setup: a claimed row (a run is downloading it) that has used two retries.
         seedTrack(id = 1, title = "Interrupted", artist = "X")
         dao.insert(
             DownloadQueueEntity(
                 id = 1,
                 trackId = 1,
-                status = DownloadStatus.FAILED,
+                status = DownloadStatus.IN_PROGRESS,
                 syncId = null,
                 searchQuery = "q",
                 failureType = DownloadFailureType.NETWORK,
@@ -197,6 +197,21 @@ class DownloadQueueDaoFailedDownloadsTest {
         assertEquals(3, row.retryCount)
         // completed_at cleared (no longer terminal).
         assertNull(row.completedAt)
+    }
+
+    @Test fun revertToPendingAfterInterruption_never_revives_a_row_that_is_not_downloading() = runTest {
+        // A cancel (SKIPPED) or a finished row that raced the failure stays as it is.
+        seedTrack(id = 1, title = "Cancelled", artist = "X")
+        seedTrack(id = 2, title = "Failed", artist = "Y")
+        dao.insert(DownloadQueueEntity(id = 1, trackId = 1, status = DownloadStatus.SKIPPED, syncId = null, searchQuery = "q"))
+        dao.insert(DownloadQueueEntity(id = 2, trackId = 2, status = DownloadStatus.FAILED, syncId = null, searchQuery = "q", retryCount = 1))
+
+        dao.revertToPendingAfterInterruption(1, "socket timeout", DownloadFailureType.NETWORK)
+        dao.revertToPendingAfterInterruption(2, "socket timeout", DownloadFailureType.NETWORK)
+
+        assertEquals(DownloadStatus.SKIPPED, dao.getById(1)!!.status)
+        assertEquals(DownloadStatus.FAILED, dao.getById(2)!!.status)
+        assertEquals(1, dao.getById(2)!!.retryCount)
     }
 
     // ---- atomicallyClaimAllForRetry -------------------------------

@@ -56,6 +56,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
@@ -88,6 +89,7 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var eqController: EqController
     @Inject lateinit var loudnessController: LoudnessController
     @Inject lateinit var hiResOutputController: com.stash.core.media.output.HiResOutputController
+    @Inject lateinit var tuningController: com.stash.core.media.tuning.TuningController
     @Inject lateinit var trackDao: TrackDao
     @Inject lateinit var streamingPreference: com.stash.core.data.prefs.StreamingPreference
 
@@ -897,6 +899,15 @@ class StashPlaybackService : MediaLibraryService() {
         serviceScope.launch {
             hiResOutputController.bitPerfectEngaged.collect { setCrossfadeHeldForBitPerfect(it) }
         }
+        // Tuning on or off: rebuild the idle players' outputs now, while silent, not on resume
+        // or at the start of the next crossfade (see CrossfadeEngine.rebuildIdleOutputs).
+        serviceScope.launch {
+            tuningController.effectiveHz
+                .map { com.stash.core.model.TuningMath.isRetuned(it) }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { crossfadeEngine?.rebuildIdleOutputs() }
+        }
 
         // The service is up — tell the repository so it (re)connects its
         // controller. This is the half the reverted design was missing: it
@@ -1497,7 +1508,7 @@ class StashPlaybackService : MediaLibraryService() {
             )
             .build()
         val renderersFactory = StashRenderersFactory(
-            this, eqController, loudnessController, hiResOutputController, mainPlayback = true,
+            this, eqController, loudnessController, hiResOutputController, tuningController, mainPlayback = true,
         )
         val player = ExoPlayer.Builder(this)
             .setRenderersFactory(renderersFactory)

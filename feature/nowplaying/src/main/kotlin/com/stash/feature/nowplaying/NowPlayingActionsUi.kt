@@ -95,6 +95,10 @@ internal data class ActionVisualState(
     val lyricsOpen: Boolean = false,
     val together: ListenTogetherState = ListenTogetherState.Idle,
     val speed: Float = 1f,
+    /** Tuning's reference (A4, Hz) as playback hears it; 440 is standard. */
+    val tuningHz: Float = 440f,
+    /** Tuning on the speed action ("A432", localized), or null at 440. */
+    val tuningMark: String? = null,
     val isDownloaded: Boolean = false,
     /** The speaker being connected to, while connecting. */
     val castConnectingTo: String? = null,
@@ -155,11 +159,11 @@ internal fun actionVisual(action: NowPlayingAction, s: ActionVisualState, pinned
     NowPlayingAction.SHARE -> ActionVisual(Icons.Default.Share, "Share song")
     NowPlayingAction.POST_TO_COMMUNITY -> ActionVisual(Icons.Default.Public, "Post to Community")
     NowPlayingAction.VIEW_ALBUM -> ActionVisual(Icons.Default.Album, "View Album")
-    // Shows the speed when it isn't 1x.
+    // Shows the speed when it isn't 1x, and Tuning when it isn't 440 (both live in its sheet).
     NowPlayingAction.PLAYBACK_SPEED -> ActionVisual(
         Icons.Default.Speed,
-        if (s.speed == 1f) "Playback speed" else "Playback speed · ${formatSpeed(s.speed)}",
-        active = s.speed != 1f,
+        speedActionLabel(s.speed, s.tuningMark),
+        active = speedActionActive(s.speed, s.tuningHz),
     )
     // Opens the sheet with the streaming switches from Settings; the switches show their state.
     NowPlayingAction.STREAM_QUALITY -> ActionVisual(Icons.Default.HighQuality, "Streaming quality")

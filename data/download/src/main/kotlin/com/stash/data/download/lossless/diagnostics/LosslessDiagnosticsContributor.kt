@@ -8,9 +8,7 @@ import com.stash.core.data.prefs.StreamingPreference
 import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.RoutingRow
-
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
-import com.stash.data.download.lossless.relay.LosslessRelayClient
 import com.stash.data.download.prefs.StreamingQualityPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
@@ -25,24 +23,24 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.OkHttpClient
 import okhttp3.Request
 
 /**
  * The diagnostics bundle's "Lossless" section — every fact a "FLAC never works
  * for me" report needs, so nobody has to be asked what the Settings › Audio &
- * Quality rows say or whether the relay is even reachable from their network:
+ * Quality rows say or whether the Tidal relay is even reachable from their network:
  *
  *  - the mode and the quality settings (Download / Stream only, Lossless + tier,
  *    Data saver, stream on cellular)
  *  - the routing rows exactly as Settings renders them ([LosslessAvailability]),
  *    minus the account email
- *  - the applied relay config (how many relays, `updated_at`) and, per relay,
- *    whether it is cooled right now
- *  - the last relay answers this process got ([LosslessRelayClient.recentOutcomes])
+ *  - the applied signed config (`updated_at`, whether it carries a Tidal relay)
  *  - the network the phone is on (transport, metered, validated, VPN)
- *  - a live reachability probe of the config host, each relay and the Qobuz CDN —
- *    which is what separates "my network blocks Stash's hosts" from "Qobuz
- *    refused this track", the two causes a VPN report can hide.
+ *  - a live reachability probe of the config host, Stash's Tidal relay and the
+ *    Qobuz CDN (the user's own account streams from it) — which is what separates
+ *    "my network blocks Stash's hosts" from "this track has no lossless version",
+ *    the two causes a VPN report can hide.
  *
  * Hosts only — never a full base or endpoint URL, which can carry a private
  * literal. Every block is fault-isolated so one failing read costs one line.
@@ -52,7 +50,7 @@ class LosslessDiagnosticsContributor @Inject constructor(
     @ApplicationContext private val context: Context,
     private val availability: LosslessAvailability,
     private val config: LosslessConfigFetcher,
-    private val relayClient: LosslessRelayClient,
+    private val httpClient: OkHttpClient,
     private val losslessPrefs: LosslessSourcePreferences,
     private val streamingQuality: StreamingQualityPreferences,
     private val streamingPreference: StreamingPreference,
@@ -69,8 +67,7 @@ class LosslessDiagnosticsContributor @Inject constructor(
     override suspend fun section(): String = buildString {
         appendLine(block("settings") { settingsBlock() })
         appendLine(block("routing") { routingBlock() })
-        appendLine(block("relays") { relaysBlock() })
-        appendLine(block("recent relay answers") { recentAnswersBlock() })
+        appendLine(block("config") { configBlock() })
         appendLine(block("network") { networkBlock() })
         append(block("reachability") { reachabilityBlock() })
     }
@@ -103,26 +100,13 @@ class LosslessDiagnosticsContributor @Inject constructor(
     private fun safeDetail(row: RoutingRow): String =
         if (row.id == "qobuz") row.state.name.lowercase().replace('_', ' ') else row.detail
 
-    private suspend fun relaysBlock(): String {
-        val relays = config.relays.value
+    private fun configBlock(): String {
         val updatedAt = config.updatedAt.value
-        val custom = losslessPrefs.customLosslessEndpointNow()
+        val tidal = config.tidalRelay.value
         return buildString {
-            appendLine(
-                "Relay config:       ${relays.size} relay(s)" +
-                    if (updatedAt > 0) ", updated_at=${iso(updatedAt * 1000)}" else ", none loaded",
-            )
-            relays.forEach { r ->
-                appendLine("  ${host(r.base)}: " + if (relayClient.isCooled(r.base)) "cooled (recent failure)" else "ok")
-            }
-            append("Custom endpoint:    " + if (custom == null) "not set" else if (relayClient.isCooled(custom)) "set, cooled" else "set, ok")
+            appendLine("Lossless config:    " + if (updatedAt > 0) "updated_at=${iso(updatedAt * 1000)}" else "none loaded")
+            append("Tidal relay:        " + if (tidal == null) "not in the config" else "configured (${host(tidal.base)})")
         }
-    }
-
-    private fun recentAnswersBlock(): String {
-        val lines = relayClient.recentOutcomes()
-        return if (lines.isEmpty()) "Recent relay answers: none this session"
-        else "Recent relay answers (oldest first):\n" + lines.joinToString("\n") { "  $it" }
     }
 
     private fun networkBlock(): String {
@@ -143,8 +127,8 @@ class LosslessDiagnosticsContributor @Inject constructor(
         if (activeCapabilities() == null) return "Reachability:       offline — probes skipped"
         val targets = buildList {
             if (config.enabled) add("config host" to config.configUrl)
-            config.relays.value.forEach { add("relay ${host(it.base)}" to "${it.base}/v1/status") }
-            losslessPrefs.customLosslessEndpointNow()?.let { add("custom endpoint" to "$it/v1/status") }
+            // The base is never printed: it can carry the relay's access token as a path prefix.
+            config.tidalRelay.value?.let { add("Tidal relay ${host(it.base)}" to "${it.base}/health") }
             add("Qobuz CDN" to QOBUZ_CDN)
         }
         if (targets.isEmpty()) return "Reachability:       nothing configured to probe"
@@ -165,7 +149,7 @@ class LosslessDiagnosticsContributor @Inject constructor(
      */
     private suspend fun probeUrl(url: String): String = withContext(Dispatchers.IO) {
         val parsed = url.toHttpUrlOrNull() ?: return@withContext "invalid url"
-        val client = relayClient.httpClient.newBuilder()
+        val client = httpClient.newBuilder()
             .connectTimeout(PROBE_TIMEOUT_S, TimeUnit.SECONDS)
             .readTimeout(PROBE_TIMEOUT_S, TimeUnit.SECONDS)
             .callTimeout(PROBE_TIMEOUT_S, TimeUnit.SECONDS)

@@ -5,7 +5,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.db.dao.DownloadManagementRow
 import com.stash.core.data.db.dao.DownloadQueueDao
+import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.sync.DownloadCancellationController
+import com.stash.core.data.sync.DownloadQueueResumer
+import com.stash.core.data.sync.QueueRunState
+import com.stash.core.data.sync.ResumeTrigger
 import com.stash.core.data.sync.SingleTrackDownloadEnqueuer
 import com.stash.core.model.DownloadFailureType
 import com.stash.core.model.DownloadStatus as QueueStatus
@@ -17,7 +21,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -26,6 +32,18 @@ import javax.inject.Inject
 enum class DownloadManagementTab { QUEUE, HISTORY }
 
 enum class DownloadManagementAction { CANCEL, RETRY, NONE }
+
+/** The button beside the Downloads screen's status line. */
+enum class QueueButton {
+    /** Downloads run, or are about to: stop them until Resume. */
+    PAUSE,
+
+    /** A run waits for Wi-Fi or a retry: start it now, on any network. */
+    DOWNLOAD_NOW,
+
+    /** Paused, out of space, or songs queued with nothing set to run them. */
+    RESUME,
+}
 
 data class DownloadManagementItem(
     val queueId: Long,
@@ -44,6 +62,8 @@ data class DownloadManagementItem(
     /** Why a waiting row waits (kept on the row), or null: not waiting, or from before reasons were kept. */
     val waitReason: DownloadWaitReason? = null,
     @param:androidx.annotation.StringRes val phaseLabelRes: Int = 0,
+    /** Queued by a sync: in Online mode it downloads only once the user switches to Offline. */
+    val fromSync: Boolean = false,
 )
 
 data class DownloadManagementUiState(
@@ -52,11 +72,28 @@ data class DownloadManagementUiState(
     val active: List<DownloadManagementItem> = emptyList(),
     val history: List<DownloadManagementItem> = emptyList(),
     val message: String? = null,
+    /** What the queue is doing ([DownloadQueueResumer.runState]). */
+    val runState: QueueRunState = QueueRunState.Idle,
+    /** Download mode is Online: a sync's songs wait for Offline. */
+    val onlineMode: Boolean = false,
+    /** Failed songs Retry all failed retries (History tab). */
+    val retryableFailedCount: Int = 0,
 ) {
     val downloading: List<DownloadManagementItem>
         get() = active.filter { it.status == QueueStatus.IN_PROGRESS }
     val queued: List<DownloadManagementItem>
-        get() = active.filter { it.status == QueueStatus.PENDING }
+        get() = active.filter { it.status == QueueStatus.PENDING && !(onlineMode && it.fromSync) }
+
+    /**
+     * Online mode: the songs a sync queued. Nothing downloads them until the user switches to
+     * Offline, so they get their own section instead of sitting in "Up next" as if they were next.
+     */
+    val offlineOnly: List<DownloadManagementItem>
+        get() = if (onlineMode) active.filter { it.status == QueueStatus.PENDING && it.fromSync } else emptyList()
+
+    /** The button beside the status line, or none. */
+    val queueButton: QueueButton?
+        get() = queueButtonFor(runState, downloading.size + queued.size)
     val waiting: List<DownloadManagementItem>
         get() = active.filter { it.status == QueueStatus.WAITING_FOR_LOSSLESS }
 
@@ -87,12 +124,43 @@ data class DownloadManagementUiState(
     }
 }
 
+/**
+ * The button for [state] with [activeCount] songs downloading or queued:
+ *
+ * | State | Button |
+ * |---|---|
+ * | Running, or about to | Pause |
+ * | Waiting for Wi-Fi, or for a retry | Download now (any network) |
+ * | Waiting for a connection | none: nothing would help |
+ * | Paused, with songs queued | Resume downloads |
+ * | Out of space | Resume downloads |
+ * | Songs queued, nothing set to run them | Resume downloads |
+ */
+internal fun queueButtonFor(state: QueueRunState, activeCount: Int): QueueButton? = when (state) {
+    // Paused over an empty queue: Resume would start nothing.
+    QueueRunState.Paused -> QueueButton.RESUME.takeIf { activeCount > 0 }
+    QueueRunState.StorageFull -> QueueButton.RESUME
+    QueueRunState.Running, QueueRunState.Scheduled -> QueueButton.PAUSE.takeIf { activeCount > 0 }
+    QueueRunState.WaitingForWifi, is QueueRunState.RetryAt -> QueueButton.DOWNLOAD_NOW.takeIf { activeCount > 0 }
+    QueueRunState.WaitingForConnection -> null
+    QueueRunState.Idle -> QueueButton.RESUME.takeIf { activeCount > 0 }
+}
+
+/** What the screen shows beside the rows: the queue's state, the mode and the retry count. */
+private data class QueueContext(
+    val runState: QueueRunState,
+    val onlineMode: Boolean,
+    val retryableFailedCount: Int,
+)
+
 @HiltViewModel
 class DownloadManagementViewModel @Inject constructor(
     private val downloadQueueDao: DownloadQueueDao,
     private val downloadManager: DownloadManager,
     private val downloadEnqueuer: SingleTrackDownloadEnqueuer,
     private val cancellationController: DownloadCancellationController,
+    private val resumer: DownloadQueueResumer,
+    streamingPreference: StreamingPreference,
     @param:dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context? = null,
 ) : ViewModel() {
     private val selectedTab = MutableStateFlow(DownloadManagementTab.QUEUE)
@@ -106,19 +174,29 @@ class DownloadManagementViewModel @Inject constructor(
     private val historyItems = downloadQueueDao.observeDownloadHistory(100)
         .map { rows -> rows.map { it.toItem(null) } }
 
+    // The status line reads WorkManager and the connection: a failure there never blanks the list.
+    private val queueContext = combine(
+        resumer.runState().catch { emit(QueueRunState.Idle) },
+        streamingPreference.enabled.catch { emit(false) }.distinctUntilChanged(),
+        downloadQueueDao.observeRetryableFailedCount().catch { emit(0) },
+    ) { runState, online, retryable -> QueueContext(runState, online, retryable) }
+
     val uiState: StateFlow<DownloadManagementUiState> = combine(
         downloadQueueDao.observeActiveDownloadRows(),
         historyItems,
-        selectedTab,
+        combine(selectedTab, message) { tab, msg -> tab to msg },
         progressByTrackId,
-        message,
-    ) { active, history, tab, progress, currentMessage ->
+        queueContext,
+    ) { active, history, (tab, currentMessage), progress, context ->
         DownloadManagementUiState(
             isLoading = false,
             selectedTab = tab,
             active = active.map { it.toItem(progress[it.trackId]) },
             history = history,
             message = currentMessage,
+            runState = context.runState,
+            onlineMode = context.onlineMode,
+            retryableFailedCount = context.retryableFailedCount,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -169,8 +247,25 @@ class DownloadManagementViewModel @Inject constructor(
         message.value = context?.getString(R.string.sync_downloads_msg_history_cleared) ?: "History cleared"
     }
 
+    /** Pause: downloads stop and stay stopped until Resume (the songs stay queued). */
+    fun pause() = viewModelScope.launch {
+        resumer.pause()
+    }
+
+    /** Resume downloads / Download now: the queue runs now, on any network, out of a pause. */
+    fun resumeDownloads() = viewModelScope.launch {
+        resumer.resume(ResumeTrigger.USER)
+    }
+
+    /** Retry all failed: every failed song back to the queue, run once rather than a job per song. */
+    fun retryAllFailed() = viewModelScope.launch {
+        resumer.retryClaimed(downloadQueueDao.atomicallyClaimAllForRetry())
+    }
+
     fun retry(queueId: Long) = viewModelScope.launch {
         if (downloadQueueDao.atomicallyClaimForRetry(queueId) == 1) {
+            // A tap ends a Pause, or the retry would wait for Resume without saying so.
+            resumer.clearHold()
             downloadEnqueuer.enqueue(queueId)
             message.value = context?.getString(R.string.sync_downloads_msg_queued) ?: "Download queued"
         }
@@ -227,6 +322,7 @@ private fun DownloadManagementRow.toItem(progress: DownloadProgress?): DownloadM
         // A waiting row's error_message is its reason code, not an error.
         errorMessage = errorMessage.takeIf { waitReason == null },
         waitReason = waitReason,
+        fromSync = syncId != null,
         action = when {
             // WAITING_FOR_LOSSLESS is an active queue row the user can be
             // parked on indefinitely (no lossless source has it yet) — it

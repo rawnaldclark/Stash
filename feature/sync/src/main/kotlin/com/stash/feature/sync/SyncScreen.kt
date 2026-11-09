@@ -48,7 +48,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -92,7 +91,6 @@ import com.stash.feature.sync.components.SpotifyMark
 import com.stash.feature.sync.components.SyncAmbientBackdrop
 import com.stash.feature.sync.components.SyncLinkRow
 import com.stash.feature.sync.components.YouTubeMusicMark
-import com.stash.feature.sync.components.phaseLabel
 
 /**
  * The Sync tab. Four faces, one at a time:
@@ -825,7 +823,7 @@ private fun SyncingContent(
         Spacer(Modifier.height(20.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = phaseLabel(phase, LocalContext.current),
+                text = com.stash.feature.sync.components.syncPhaseText(phase),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f),

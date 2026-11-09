@@ -5,7 +5,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.SdCardAlert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.ui.graphics.Color
@@ -15,10 +17,8 @@ import com.stash.core.model.DownloadFailureType
 data class FailureReasonDisplay(
     val icon: ImageVector,
     val tint: Color,
-    @param:StringRes val groupTitleRes: Int,
-    @param:StringRes val shortLabelRes: Int,
-    val groupTitle: String = "",
-    val shortLabel: String = "",
+    @StringRes val groupTitle: Int,
+    @StringRes val shortLabel: Int,
 )
 
 /**
@@ -27,8 +27,10 @@ data class FailureReasonDisplay(
  */
 val FailureReasonDisplayOrder: List<DownloadFailureType> = listOf(
     DownloadFailureType.AUTH_EXPIRED,
+    DownloadFailureType.STORAGE_FULL,
     DownloadFailureType.STORAGE_ERROR,
     DownloadFailureType.NETWORK,
+    DownloadFailureType.RATE_LIMITED,
     DownloadFailureType.PROVIDER_UNAVAILABLE,
     DownloadFailureType.FFMPEG_ERROR,
     DownloadFailureType.UNKNOWN,
@@ -38,50 +40,50 @@ fun DownloadFailureType.display(): FailureReasonDisplay = when (this) {
     DownloadFailureType.AUTH_EXPIRED -> FailureReasonDisplay(
         icon = Icons.Default.Key,
         tint = Color(0xFFFFAA00),
-        groupTitleRes = R.string.sync_failure_reason_auth_expired_title,
-        shortLabelRes = R.string.sync_failure_reason_auth_expired_short,
-        groupTitle = "Sign-in expired",
-        shortLabel = "Sign-in expired",
+        groupTitle = R.string.failure_auth_group,
+        shortLabel = R.string.failure_auth_short,
+    )
+    DownloadFailureType.STORAGE_FULL -> FailureReasonDisplay(
+        icon = Icons.Default.SdCardAlert,
+        tint = Color(0xFFFF8A50),
+        groupTitle = R.string.failure_storage_full_group,
+        shortLabel = R.string.failure_storage_full_short,
     )
     DownloadFailureType.STORAGE_ERROR -> FailureReasonDisplay(
         icon = Icons.Default.Folder,
         tint = Color(0xFF888888),
-        groupTitleRes = R.string.sync_failure_reason_storage_error_title,
-        shortLabelRes = R.string.sync_failure_reason_storage_error_short,
-        groupTitle = "Storage unreachable",
-        shortLabel = "Storage error",
+        groupTitle = R.string.failure_storage_group,
+        shortLabel = R.string.failure_storage_short,
     )
     DownloadFailureType.NETWORK -> FailureReasonDisplay(
         icon = Icons.Default.WifiOff,
         tint = Color(0xFF508CFF),
-        groupTitleRes = R.string.sync_failure_reason_network_title,
-        shortLabelRes = R.string.sync_failure_reason_network_short,
-        groupTitle = "Network errors",
-        shortLabel = "Network error",
+        groupTitle = R.string.failure_network_group,
+        shortLabel = R.string.failure_network_short,
+    )
+    DownloadFailureType.RATE_LIMITED -> FailureReasonDisplay(
+        icon = Icons.Default.HourglassEmpty,
+        tint = Color(0xFF4DB6AC),
+        groupTitle = R.string.failure_rate_limited_group,
+        shortLabel = R.string.failure_rate_limited_short,
     )
     DownloadFailureType.PROVIDER_UNAVAILABLE -> FailureReasonDisplay(
         icon = Icons.Default.CloudOff,
         tint = Color(0xFFAA66CC),
-        groupTitleRes = R.string.sync_failure_reason_provider_unavailable_title,
-        shortLabelRes = R.string.sync_failure_reason_provider_unavailable_short,
-        groupTitle = "Source unavailable",
-        shortLabel = "Source unavailable",
+        groupTitle = R.string.failure_provider_group,
+        shortLabel = R.string.failure_provider_short,
     )
     DownloadFailureType.FFMPEG_ERROR -> FailureReasonDisplay(
         icon = Icons.Default.Settings,
         tint = Color(0xFFFF5A5A),
-        groupTitleRes = R.string.sync_failure_reason_ffmpeg_error_title,
-        shortLabelRes = R.string.sync_failure_reason_ffmpeg_error_short,
-        groupTitle = "Encoding errors",
-        shortLabel = "Encoding error",
+        groupTitle = R.string.failure_ffmpeg_group,
+        shortLabel = R.string.failure_ffmpeg_short,
     )
     DownloadFailureType.UNKNOWN -> FailureReasonDisplay(
         icon = Icons.AutoMirrored.Filled.Help,
         tint = Color(0xFFAAAAAA),
-        groupTitleRes = R.string.sync_failure_reason_unknown_title,
-        shortLabelRes = R.string.sync_failure_reason_unknown_short,
-        groupTitle = "Other errors",
-        shortLabel = "Unknown error",
+        groupTitle = R.string.failure_unknown_group,
+        shortLabel = R.string.failure_unknown_short,
     )
     DownloadFailureType.NONE,
     DownloadFailureType.NO_MATCH -> error("Not surfaced in FailedDownloadsScreen")

@@ -24,8 +24,71 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Named, not detected: exactly the languages master's runs detected before Tuning added C++.
+      # Detection would now add c-cpp here too, traced through this job's Gradle build, which
+      # compiles the vendored Signalsmith headers four times over. Stash's own C++ gets its own
+      # job below instead, without a build and without third_party.
       - uses: github/codeql-action/init@v3
+        with:
+          languages: java-kotlin, javascript-typescript, python, actions
+
+      # Tuning's pitch engine is native code (core/media/src/main/cpp). The same NDK and CMake
+      # versions as core/media/build.gradle.kts pins: change them together.
+      - name: Install NDK and CMake
+        run: echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" "cmake;3.22.1" > /dev/null
 
       - uses: github/codeql-action/autobuild@v3
 
       - uses: github/codeql-action/analyze@v3
+
+  # Stash's own C++: Tuning's JNI layer, its engine core and the core's host test. The vendored
+  # Signalsmith headers (core/media/src/main/cpp/third_party) are upstream's code and left out.
+  # Analysed from source (build-mode none), so no NDK or build is needed. paths-ignore can't leave
+  # headers out of C++ (they're compiled into the files that include them), so their results are
+  # dropped from the SARIF before it is uploaded.
+  analyze-cpp:
+    name: Analyze C++
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: c-cpp
+          build-mode: none
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:c-cpp
+          upload: failure-only
+          output: sarif-results
+
+      - name: Leave out the vendored code's results
+        run: |
+          python3 - <<'EOF'
+          import glob, json
+          VENDORED = 'core/media/src/main/cpp/third_party/'
+          def vendored(result):
+              locations = result.get('locations') or [{}]
+              uri = locations[0].get('physicalLocation', {}).get('artifactLocation', {}).get('uri', '')
+              return uri.startswith(VENDORED)
+          for path in glob.glob('sarif-results/*.sarif'):
+              with open(path) as f:
+                  sarif = json.load(f)
+              for run in sarif['runs']:
+                  results = run.get('results', [])
+                  run['results'] = [r for r in results if not vendored(r)]
+                  print(f"{path}: kept {len(run['results'])} of {len(results)} results")
+              with open(path, 'w') as f:
+                  json.dump(sarif, f)
+          EOF
+
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: sarif-results
+          category: /language:c-cpp

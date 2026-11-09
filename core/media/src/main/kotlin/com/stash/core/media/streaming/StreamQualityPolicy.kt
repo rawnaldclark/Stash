@@ -20,7 +20,7 @@ import javax.inject.Singleton
  *  - Lossless on: no FLAC. The lossless relays and cloud copies leave the chain
  *    ([StreamSourceRegistry]) and the song streams from JioSaavn at 160 kbps or YouTube's best
  *    ([LossyQuality.DATA_SAVER]), about a sixth of CD FLAC. Not Tidal's AAC 320: every Tidal
- *    answer, AAC included, counts toward the daily Tidal & Qobuz allowance (`BitchordClient.lookup`),
+ *    answer, AAC included, counts toward the daily Tidal allowance (`BitchordClient.lookup`),
  *    so routing every phone on mobile data to it would spend the allowance it is meant to save.
  *    A user who opted into "Prefer Tidal AAC while streaming" still gets that rung first.
  *  - Lossless off: the lowest each lossy source has ([LossyQuality.LOWEST]), as Save Data always did.

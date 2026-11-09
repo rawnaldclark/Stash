@@ -78,7 +78,12 @@ internal class Converters {
     @TypeConverter
     fun downloadFailureTypeToString(value: DownloadFailureType?): String? = value?.name
 
+    /**
+     * Lenient: a name this build doesn't know (a type a newer build added, read after a
+     * downgrade) reads as UNKNOWN instead of throwing on the first queue read, which took the
+     * Downloads screen and every download worker down with it.
+     */
     @TypeConverter
     fun stringToDownloadFailureType(value: String?): DownloadFailureType? =
-        value?.let { DownloadFailureType.valueOf(it) }
+        value?.let { name -> DownloadFailureType.entries.firstOrNull { it.name == name } ?: DownloadFailureType.UNKNOWN }
 }

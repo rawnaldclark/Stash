@@ -123,7 +123,7 @@ fun FailedDownloadsGroupCard(
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(display.groupTitleRes),
+                    text = stringResource(display.groupTitle),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -255,7 +255,7 @@ private fun FailedDownloadRowItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            val shortReason = stringResource(display.shortLabelRes)
+            val shortReason = stringResource(display.shortLabel)
             val playlist = row.playlistName
             val subtitle = if (!playlist.isNullOrBlank()) {
                 stringResource(R.string.sync_failed_downloads_playlist_reason, playlist, shortReason)

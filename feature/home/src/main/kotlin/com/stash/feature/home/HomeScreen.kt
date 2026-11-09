@@ -125,6 +125,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.stash.feature.home.shelves.HomeShelvesViewModel
+import com.stash.feature.home.shelves.ShelfAlbumSheet
+import com.stash.feature.home.shelves.ShelfSongSheet
+import com.stash.data.ytmusic.model.TrackSummary
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import com.stash.core.data.mix.MixBuildState
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Playlist
@@ -172,6 +177,8 @@ fun HomeScreen(
     onNavigateToPlaylist: (Long) -> Unit = {},
     onNavigateToLibrary: () -> Unit = {},
     onNavigateToAlbum: (AlbumSummary) -> Unit = {},
+    /** An artist's page, by its YouTube Music channel id and name: a New from your artists album's View Artist. */
+    onNavigateToArtist: (id: String, name: String) -> Unit = { _, _ -> },
     onSeeAllPlaylists: (String) -> Unit = {},
     onNavigateToMixBuilder: (Long?) -> Unit = {},
     // Task 7 wires the actual mix-browse destination; today a no-op from the host.
@@ -195,6 +202,9 @@ fun HomeScreen(
     var heroActionSheet by remember { mutableStateOf(false) }
     // Long-pressed "Your playlists" card → Open / Play All / Remove from Home.
     var pinnedSheetPlaylistId by remember { mutableStateOf<Long?>(null) }
+    // Long-pressed "Because you like" song → the app's song sheet; "New from your artists" album → its album sheet.
+    var shelfSongSheet by remember { mutableStateOf<TrackSummary?>(null) }
+    var shelfAlbumSheet by remember { mutableStateOf<AlbumSummary?>(null) }
     // Opening a mix = open its materialized playlist + freshen it if stale.
     // A HomeMix's id IS its playlist id, so this reuses the existing playlist nav.
     val openMix: (Long) -> Unit = { id ->
@@ -239,6 +249,15 @@ fun HomeScreen(
     LaunchedEffect(Unit) {
         viewModel.userMessages.collect { msg ->
             android.widget.Toast.makeText(toastContext, msg, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+    // The shelf sheets' answers: "Added to queue", "Added album to queue", "Couldn't load this album"...
+    LaunchedEffect(shelvesViewModel) {
+        merge(
+            shelvesViewModel.songMessages,
+            shelvesViewModel.albumMessages.map { toastContext.getString(it) },
+        ).collect { msg ->
+            android.widget.Toast.makeText(toastContext, msg, android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -562,7 +581,11 @@ fun HomeScreen(
                                         DiscoverHeroCard(
                                             label = stringResource(R.string.home_updated_daily),
                                             title = hero.title,
-                                            subtitle = hero.subtitle,
+                                            subtitle = if (hero.offline) {
+                                                stringResource(R.string.home_daily_discover_offline)
+                                            } else {
+                                                hero.subtitle
+                                            },
                                             artUrl = hero.artUrl,
                                             onPlay = viewModel::playHero,
                                             onOpen = { onNavigateToPlaylist(hero.playlistId) },
@@ -742,6 +765,10 @@ fun HomeScreen(
                             albums = shelves.newFromArtists,
                             onOpen = onNavigateToAlbum,
                             lossless = false,
+                            onMore = { album ->
+                                shelfAlbumSheet = album
+                                shelvesViewModel.warmAlbum(album)
+                            },
                         )
                     }
                 }
@@ -751,6 +778,7 @@ fun HomeScreen(
                         com.stash.feature.home.shelves.BecauseYouLikeRows(
                             rows = shelves.becauseYouLike,
                             onPlay = shelvesViewModel::playRow,
+                            onMore = { song -> shelfSongSheet = song },
                         )
                     }
                 }
@@ -758,6 +786,19 @@ fun HomeScreen(
         }
 
     }
+
+    // ── Shelf sheets (long-press a Because you like or New from your artists card) ──
+    ShelfSongSheet(song = shelfSongSheet, viewModel = shelvesViewModel, onDismiss = { shelfSongSheet = null })
+    ShelfAlbumSheet(
+        album = shelfAlbumSheet,
+        onPlay = { shelvesViewModel.playAlbum(it) },
+        onShuffle = { shelvesViewModel.playAlbum(it, shuffle = true) },
+        onPlayNext = shelvesViewModel::playAlbumNext,
+        onAddToQueue = shelvesViewModel::addAlbumToQueue,
+        onOpenAlbum = onNavigateToAlbum,
+        onGoToArtist = { album -> shelvesViewModel.openArtist(album) { id, name -> onNavigateToArtist(id, name) } },
+        onDismiss = { shelfAlbumSheet = null },
+    )
 
     // ── Streaming privacy disclosure (first-use only) ────────────────────
     if (showStreamingDisclosure) {
@@ -1033,8 +1074,7 @@ private fun MixActionRow(
  * "Try lossless audio" Home banner. Shows when the user has
  * lossless turned off (explicit save, since v0.9.8 fresh installs
  * default to ON) and hasn't dismissed. Tapping routes to Settings,
- * where the existing Audio Quality card hosts the toggle + captcha
- * setup flow.
+ * where the Audio Quality card hosts the toggle.
  */
 @Composable
 private fun LosslessConnectBanner(
@@ -1105,11 +1145,11 @@ private fun LosslessConnectBanner(
  *
  * The two surfaces agree on the states that matter, but they are NOT the same
  * predicate, deliberately: Home keys on `LosslessAvailability.anyUserOwned`
- * (BYO login || custom endpoint) so a dead PUBLIC relay cannot hide the
+ * (a connected Qobuz account) so a failing Stash Tidal relay cannot hide the
  * "connect your own account" offer — that outage is what the banner is for.
- * Settings keys on `qbdlxExpired` (!qbdlxEnabled: BYO login || custom
- * endpoint || a config relay), which counts relays. So they diverge on exactly one case:
- * a user with nothing but a public config relay still gets this banner, and
+ * Settings keys on `qbdlxExpired` (!anySourceConfigured: a Qobuz account || a
+ * Tidal server), which counts Stash's Tidal relay. So they diverge on exactly one
+ * case: a user with nothing but Stash's Tidal relay still gets this banner, and
  * should — Home asks "is there anything of yours to connect?", Settings asks
  * "is what you configured still a path?".
  */
@@ -1349,8 +1389,9 @@ private fun SupporterTicker(
 
 /**
  * Horizontal carousel of albums (New Releases, Top Albums, New from your artists). Tap opens the
- * album page. Its covers are [HomeRailCardSize], the same as the mix rails around it (internal for
- * HomeAlbumRowsSizeTest, which checks that).
+ * album page; with [onMore], a long press opens the album's sheet (New from your artists). Its covers
+ * are [HomeRailCardSize], the same as the mix rails around it (internal for HomeAlbumRowsSizeTest,
+ * which checks that).
  */
 @Composable
 internal fun DiscoveryAlbumRow(
@@ -1360,6 +1401,8 @@ internal fun DiscoveryAlbumRow(
     topSpacing: androidx.compose.ui.unit.Dp = 16.dp,
     /** Qobuz's catalog rows are lossless; YouTube Music's releases ("New from your artists") are not marked. */
     lossless: Boolean = true,
+    /** A card's long press; null (Qobuz's rows) leaves a tap only. */
+    onMore: ((AlbumSummary) -> Unit)? = null,
 ) {
     Column {
         Spacer(Modifier.height(topSpacing))
@@ -1376,6 +1419,8 @@ internal fun DiscoveryAlbumRow(
                     year = album.year,
                     isLossless = lossless,
                     size = HomeRailCardSize,
+                    onLongClickLabel = onMore?.let { stringResource(R.string.home_card_more, album.title) },
+                    onLongClick = onMore?.let { more -> { more(album) } },
                     onClick = { onOpen(album) },
                 )
             }

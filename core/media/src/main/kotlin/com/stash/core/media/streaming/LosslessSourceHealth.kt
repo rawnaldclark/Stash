@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.update
  * path dies (as the shipped token pool did at scale in 2026-08 — community
  * reports of days without FLAC), every user who owns NO lossless source of
  * their own silently loses lossless: the chain falls through to YouTube and
- * the fix — connecting an account or a relay endpoint — is buried in
+ * the fix — connecting an account — is buried in
  * Settings › Audio. This signal lets Home offer that fix at the moment it
  * matters. Whether the user already owns a source is
  * `LosslessAvailability.anyUserOwned`, combined with this in HomeViewModel.

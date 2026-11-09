@@ -35,11 +35,15 @@ class CommunityTracks @Inject constructor(
  * 120-a-minute budget), taking up to [SONGS_PER_POST] songs from each playlist or mix and a song
  * post's song. Playback starts with the first post that has songs; the rest are added behind it.
  * Shuffle shuffles the posts and the songs within each.
+ *
+ * 30 s of a post's songs played from here lets you vote on that post, as from its own Play
+ * ([CommunityListenTracker.beginChart]).
  */
 class CommunityChartPlayer @Inject constructor(
     private val repository: CommunityRepository,
     private val tracks: CommunityTracks,
     private val player: PlayerRepository,
+    private val listenTracker: CommunityListenTracker,
 ) {
     /** Returns false when nothing could be played (offline, every post gone). [onStarted] fires once playback begins. */
     suspend fun play(chart: List<CommunityPost>, shuffle: Boolean, onStarted: () -> Unit): Boolean {
@@ -50,14 +54,22 @@ class CommunityChartPlayer @Inject constructor(
             val songs = tracks.of(post, SONGS_PER_POST).let { if (shuffle) it.shuffled() else it }
             if (songs.isEmpty()) continue
             if (!started) {
-                player.setQueue(songs, 0)
+                listenTracker.beginChart()
+                countFor(post, songs)
+                player.setQueue(songs, 0, CommunityListenTracker.CHART_SOURCE)
                 started = true
                 onStarted()
             } else {
+                countFor(post, songs)
                 player.addToQueue(songs)
             }
         }
         return started
+    }
+
+    /** [post]'s [songs] count toward a listen of it, unless it's yours or heard already (as its own Play has it). */
+    private fun countFor(post: CommunityPost, songs: List<Track>) {
+        if (!post.mine && !post.heard) listenTracker.chartPost(post.id, songs.map { it.id })
     }
 
     companion object {

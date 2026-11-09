@@ -2,6 +2,8 @@ package com.stash.data.download.lossless.diagnostics
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.data.download.lossless.LosslessAvailability
@@ -9,10 +11,8 @@ import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.RoutingRow
 import com.stash.data.download.lossless.RoutingState
-
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
-import com.stash.data.download.lossless.relay.LosslessRelayClient
-import com.stash.data.download.lossless.relay.RelayEntry
+import com.stash.data.download.lossless.relay.TidalRelay
 import com.stash.data.download.prefs.StreamingQualityPreferences
 import io.mockk.coEvery
 import io.mockk.every
@@ -20,6 +20,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import okhttp3.OkHttpClient
 import org.junit.Test
 
 /**
@@ -30,24 +31,20 @@ class LosslessDiagnosticsContributorTest {
 
     private val rows = listOf(
         RoutingRow("qobuz", "Your Qobuz account", "alice@example.com", RoutingState.CONNECTED),
-        RoutingRow("relay", "Stash lossless", "configured", RoutingState.CONFIGURED),
+        RoutingRow("tidal", "Tidal", "configured", RoutingState.CONFIGURED),
     )
+    private val tidalRelay = MutableStateFlow<TidalRelay?>(TidalRelay("https://tidal.example.workers.dev", "tok"))
     private val availability: LosslessAvailability = mockk { every { routingRows } returns flowOf(rows) }
     private val config: LosslessConfigFetcher = mockk {
-        every { relays } returns MutableStateFlow(listOf(RelayEntry("https://relay.example.workers.dev")))
+        every { tidalRelay } returns this@LosslessDiagnosticsContributorTest.tidalRelay
         every { updatedAt } returns MutableStateFlow(1_758_000_000L)
         every { enabled } returns false
-    }
-    private val relayClient: LosslessRelayClient = mockk {
-        every { isCooled(any()) } returns false
-        every { recentOutcomes() } returns listOf("17:54:01Z relay.example.workers.dev 503 busy 212ms")
     }
     private val losslessPrefs: LosslessSourcePreferences = mockk {
         coEvery { enabledNow() } returns true
         coEvery { qualityTierNow() } returns LosslessQualityTier.HI_RES
         coEvery { downloadModeNow() } returns com.stash.core.model.DownloadMode.LOSSLESS
         coEvery { youtubeFallbackEnabledNow() } returns false
-        coEvery { customLosslessEndpointNow() } returns null
     }
     private val streamingQuality: StreamingQualityPreferences = mockk { coEvery { saveDataNow() } returns false }
     private val streamingPreference: StreamingPreference = mockk {
@@ -60,7 +57,7 @@ class LosslessDiagnosticsContributorTest {
     }
 
     private fun contributor() = LosslessDiagnosticsContributor(
-        context, availability, config, relayClient, losslessPrefs, streamingQuality, streamingPreference,
+        context, availability, config, OkHttpClient(), losslessPrefs, streamingQuality, streamingPreference,
     ).also { it.nowMs = { 1_758_000_000_000L } }
 
     @Test fun `reports the mode and the quality settings in plain words`() = runTest {
@@ -76,31 +73,51 @@ class LosslessDiagnosticsContributorTest {
         val s = contributor().section()
         assertThat(s).contains("Your Qobuz account: connected")
         assertThat(s).doesNotContain("alice@example.com")
-        assertThat(s).contains("Stash lossless: configured")
+        assertThat(s).contains("Tidal: configured")
     }
 
     /** Settings' order is the order a song asks them; the bundle must not tell a different story. */
-    @Test fun `routing keeps Settings' order - an own Tidal server ahead of Stash lossless`() = runTest {
+    @Test fun `routing keeps Settings' order`() = runTest {
         every { availability.routingRows } returns flowOf(
             listOf(
                 RoutingRow("qobuz", "Your Qobuz account", "not connected", RoutingState.NOT_CONFIGURED),
                 RoutingRow("tidal", "Custom Tidal server", "first above CD", RoutingState.CONFIGURED),
-                RoutingRow("relay", "Stash lossless", "configured", RoutingState.CONFIGURED),
             ),
         )
         val s = contributor().section()
         assertThat(s).contains("Custom Tidal server: first above CD")
-        assertThat(s.indexOf("Custom Tidal server")).isLessThan(s.indexOf("Stash lossless"))
+        assertThat(s.indexOf("Your Qobuz account")).isLessThan(s.indexOf("Custom Tidal server"))
     }
 
-    @Test fun `relays are listed by host with their cooldown and the config timestamp`() = runTest {
-        every { relayClient.isCooled("https://relay.example.workers.dev") } returns true
+    @Test fun `the config block names the timestamp and the Tidal relay by host - no Qobuz relay blocks`() = runTest {
         val s = contributor().section()
-        assertThat(s).contains("Relay config:       1 relay(s), updated_at=2025-09-16T05:20:00Z")
-        assertThat(s).contains("  relay.example.workers.dev: cooled (recent failure)")
-        assertThat(s).doesNotContain("https://relay.example.workers.dev") // host only
-        assertThat(s).contains("Custom endpoint:    not set")
-        assertThat(s).contains("  17:54:01Z relay.example.workers.dev 503 busy 212ms")
+        assertThat(s).contains("Lossless config:    updated_at=2025-09-16T05:20:00Z")
+        assertThat(s).contains("Tidal relay:        configured (tidal.example.workers.dev)")
+        assertThat(s).doesNotContain("https://tidal.example.workers.dev") // host only
+        assertThat(s).doesNotContain("Relay config")
+        assertThat(s).doesNotContain("Custom endpoint")
+        assertThat(s).doesNotContain("Recent relay answers")
+    }
+
+    @Test fun `no Tidal relay in the config says so`() = runTest {
+        tidalRelay.value = null
+        assertThat(contributor().section()).contains("Tidal relay:        not in the config")
+    }
+
+    @Test fun `online, the probes are the Tidal relay's health and the Qobuz CDN`() = runTest {
+        val network: Network = mockk()
+        val caps: NetworkCapabilities = mockk {
+            every { hasTransport(any()) } answers { firstArg<Int>() == NetworkCapabilities.TRANSPORT_WIFI }
+            every { hasCapability(any()) } returns true
+        }
+        every { connectivity.activeNetwork } returns network
+        every { connectivity.getNetworkCapabilities(network) } returns caps
+        val probed = mutableListOf<String>()
+        val c = contributor().also { it.probe = { url -> synchronized(probed) { probed += url }; "HTTP 200 in 1 ms" } }
+        val s = c.section()
+        assertThat(probed).containsExactly("https://tidal.example.workers.dev/health", "https://streaming-qobuz-std.akamaized.net/")
+        assertThat(s).contains("Tidal relay tidal.example.workers.dev: HTTP 200 in 1 ms")
+        assertThat(s).doesNotContain("/v1/status")
     }
 
     @Test fun `offline means no probes and says so`() = runTest {
@@ -116,6 +133,6 @@ class LosslessDiagnosticsContributorTest {
         coEvery { losslessPrefs.enabledNow() } throws IllegalStateException("datastore closed")
         val s = contributor().section()
         assertThat(s).contains("[settings unavailable: datastore closed]")
-        assertThat(s).contains("Stash lossless: configured")
+        assertThat(s).contains("Tidal: configured")
     }
 }

@@ -316,6 +316,8 @@ class SyncViewModel @Inject constructor(
     private val downloadManager: com.stash.data.download.DownloadManager,
     /** The other Spotify accounts: a card and a page each, and their own albums and mixes switches. */
     private val spotifyAccountDao: com.stash.core.data.db.dao.SpotifyAccountDao,
+    /** What the download queue is doing, for the Downloads row; "Sync now" ends a Pause. */
+    private val downloadQueueResumer: com.stash.core.data.sync.DownloadQueueResumer,
     @param:ApplicationContext private val context: Context? = null,
 ) : ViewModel() {
 
@@ -326,7 +328,12 @@ class SyncViewModel @Inject constructor(
         val failed: Int = 0,
         /** Mean progress of the songs downloading now, 0..1; null while none runs. */
         val progress: Float? = null,
+        /** Why downloads hold back, said after the counts ("14 waiting · Paused"); null when nothing does. */
+        val hold: DownloadsHold? = null,
     )
+
+    /** What holds the queue back, as the Downloads row says it. */
+    enum class DownloadsHold { PAUSED, STORAGE_FULL, WAITING_FOR_WIFI, WAITING_FOR_CONNECTION }
 
     private val progressByTrackId = MutableStateFlow<Map<Long, Float>>(emptyMap())
 
@@ -334,14 +341,18 @@ class SyncViewModel @Inject constructor(
         downloadQueueDao.observeActiveDownloadRows(),
         downloadQueueDao.getFailedDownloads(),
         progressByTrackId,
-    ) { active, failed, progress ->
+        // WorkManager and the connection: a failure there never blanks the counts.
+        downloadQueueResumer.runState().catch { emit(com.stash.core.data.sync.QueueRunState.Idle) },
+    ) { active, failed, progress, runState ->
         val running = active.filter { it.status == com.stash.core.model.DownloadStatus.IN_PROGRESS }
+        val waiting = active.size - running.size
         DownloadsSummary(
             downloading = running.size,
-            waiting = active.size - running.size,
+            waiting = waiting,
             failed = failed.size,
             progress = running.takeIf { it.isNotEmpty() }
                 ?.map { progress[it.trackId] ?: 0f }?.average()?.toFloat(),
+            hold = downloadsHoldFor(runState, waiting),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DownloadsSummary())
 
@@ -622,6 +633,14 @@ class SyncViewModel @Inject constructor(
         if (_uiState.value.syncPreferences.autoSyncPausedAfterUndo) {
             syncPreferencesManager.setAutoSyncPausedAfterUndo(false)
         }
+        // ...and a download Pause (or an out-of-space hold), or its download step would download nothing.
+        try {
+            downloadQueueResumer.clearHold()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("SyncViewModel", "clearing the download pause failed", e)
+        }
         syncScheduler.triggerManualSync(wifiOnly)
     }
 
@@ -726,7 +745,18 @@ class SyncViewModel @Inject constructor(
      * the top of the tab stops saying "Syncing...".
      */
     fun onStopSync() {
-        viewModelScope.launch { syncScheduler.cancelSync() }
+        viewModelScope.launch {
+            syncScheduler.cancelSync()
+            // Stopped stays stopped, like the notification's Pause: downloads don't start again
+            // on their own (the app coming back, a cold start) until Resume, Sync now or a tap.
+            try {
+                downloadQueueResumer.pause()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("SyncViewModel", "pausing downloads after Stop failed", e)
+            }
+        }
     }
 
     /**
@@ -1290,3 +1320,17 @@ class SyncViewModel @Inject constructor(
         displayStatus = toDisplayStatus(),
     )
 }
+
+/**
+ * What the Downloads row says after its counts: out of space and Paused always (they hold everything,
+ * and Resume is on the Downloads screen); waiting for Wi-Fi or a connection only when songs wait.
+ */
+internal fun downloadsHoldFor(state: com.stash.core.data.sync.QueueRunState, waiting: Int): SyncViewModel.DownloadsHold? =
+    when (state) {
+        com.stash.core.data.sync.QueueRunState.StorageFull -> SyncViewModel.DownloadsHold.STORAGE_FULL
+        com.stash.core.data.sync.QueueRunState.Paused -> SyncViewModel.DownloadsHold.PAUSED
+        com.stash.core.data.sync.QueueRunState.WaitingForWifi -> SyncViewModel.DownloadsHold.WAITING_FOR_WIFI.takeIf { waiting > 0 }
+        com.stash.core.data.sync.QueueRunState.WaitingForConnection ->
+            SyncViewModel.DownloadsHold.WAITING_FOR_CONNECTION.takeIf { waiting > 0 }
+        else -> null
+    }

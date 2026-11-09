@@ -54,9 +54,6 @@ const val ALBUM_CROSSFADE_MS = 800
 /** The crossfade with animations off (prefers-reduced-motion: 200 ms on the web). */
 const val ALBUM_CROSSFADE_REDUCED_MS = 200
 
-/** The tab's selected/unselected colour change (the web's --dur-short on `.tab-i`). */
-const val TAB_COLOUR_MS = 180
-
 /**
  * The album colours the app wears, each already crossfading. Read the properties at draw or
  * composition time of the element that uses them; the holder itself never changes identity.

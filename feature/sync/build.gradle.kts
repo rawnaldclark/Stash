@@ -26,9 +26,6 @@ dependencies {
     // FailedMatchesViewModel classifies PreviewPlayer's asynchronous
     // PlaybackException events before its one-shot yt-dlp retry.
     implementation(libs.media3.exoplayer)
-    // For the "Fix wrong-version downloads" trigger (enqueues
-    // YtLibraryBackfillWorker via WorkManager).
-    implementation(libs.work.runtime.ktx)
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")

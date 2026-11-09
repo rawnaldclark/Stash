@@ -11,6 +11,30 @@ plugins {
 android {
     namespace = "com.stash.core.media"
 
+    // Tuning's pitch engine (src/main/cpp): the repo's first in-tree native code. The NDK and
+    // CMake versions are pinned here and installed by the same numbers in .github/workflows.
+    ndkVersion = "27.0.12077973"
+
+    defaultConfig {
+        // Every ABI the app ships: release keeps the two ARM ones (app/build.gradle.kts),
+        // debug is universal so x86/x86_64 emulators can run it.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64") }
+        externalNativeBuild {
+            cmake {
+                // Static C++ runtime: the app already packages youtubedl-android's
+                // libc++_shared.so, and a second copy from the NDK would clash with it.
+                arguments += listOf("-DANDROID_STL=c++_static")
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
     buildFeatures {
         compose = true
     }
@@ -89,4 +113,9 @@ dependencies {
     // Media3's own fakes (a real ExoPlayer on a fake clock): ResolveFirstMediaSourcePlayerTest.
     testImplementation("androidx.media3:media3-test-utils:${libs.versions.media3.get()}")
     testImplementation("androidx.media3:media3-test-utils-robolectric:${libs.versions.media3.get()}")
+
+    // Instrumented: the real pitch engine on a phone (SignalsmithPitchStageTest).
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation(libs.truth)
 }

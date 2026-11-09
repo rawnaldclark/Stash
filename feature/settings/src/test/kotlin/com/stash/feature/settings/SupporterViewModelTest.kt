@@ -8,9 +8,7 @@ import com.stash.core.data.supporter.SupporterRepository
 import com.stash.data.download.lossless.quota.LosslessAllowance
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.quota.LosslessQuotaRefresher
-import com.stash.data.download.lossless.relay.LosslessConfigFetcher
-import com.stash.data.download.lossless.relay.RelayEntry
-import com.stash.data.download.lossless.relay.TidalRelay
+import com.stash.data.download.lossless.LosslessAvailability
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -42,9 +40,8 @@ class SupporterViewModelTest {
         every { this@mockk.token } returns this@SupporterViewModelTest.token
     }
     private val refresher: LosslessQuotaRefresher = mockk()
-    private val config: LosslessConfigFetcher = mockk {
-        every { relays } returns MutableStateFlow(listOf(RelayEntry("https://relay.example")))
-        every { tidalRelay } returns MutableStateFlow<TidalRelay?>(null)
+    private val availability: LosslessAvailability = mockk {
+        every { stashTidalRelayInUse } returns MutableStateFlow(true)
     }
 
     private val res: Resources = mockk {
@@ -55,7 +52,7 @@ class SupporterViewModelTest {
         every { getString(R.string.settings_supporter_msg_rate_limited_mins, any()) } answers { "Too many tries. Wait ${(args[1] as Array<*>)[0]} minutes." }
         every { getString(R.string.settings_supporter_msg_not_configured) } returns "Unlocking isn't available right now. Please try again later."
         every { getString(R.string.settings_supporter_msg_unreachable) } returns "Couldn't reach Stash. Check your connection and try again."
-        every { getString(R.string.settings_supporter_msg_unlocked_pending) } returns "Code accepted. Unlimited Tidal & Qobuz shows here once Stash confirms it."
+        every { getString(R.string.settings_supporter_msg_unlocked_pending) } returns "Code accepted. Unlimited Tidal shows here once Stash confirms it."
     }
     private val context: Context = mockk {
         every { resources } returns res
@@ -64,7 +61,7 @@ class SupporterViewModelTest {
     @Before fun setUp() = Dispatchers.setMain(UnconfinedTestDispatcher())
     @After fun tearDown() = Dispatchers.resetMain()
 
-    private fun vm() = SupporterViewModel(context, supporter, refresher, quota, config)
+    private fun vm() = SupporterViewModel(context, supporter, refresher, quota, availability)
 
     @Test fun `the row follows the relays' limit, not the token`() {
         assertThat(supporterRow(null, relayConfigured = false, hasToken = false)).isEqualTo(SupporterRow.Hidden)

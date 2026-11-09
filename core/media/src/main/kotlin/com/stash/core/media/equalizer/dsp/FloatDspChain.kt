@@ -2,6 +2,7 @@ package com.stash.core.media.equalizer.dsp
 
 import com.stash.core.media.equalizer.EqState
 import com.stash.core.media.equalizer.LoudnessState
+import com.stash.core.model.TuningMath
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -23,21 +24,27 @@ data class DspActivation(
     val eq: Boolean,
     val bass: Boolean,
     val loudness: Boolean,
+    /** Tuning's pitch stage is in the path (a reference other than 440 Hz). */
+    val tuning: Boolean = false,
 ) {
-    /** The limiter guards upstream gain; it rides along with any active stage. */
-    val limiter: Boolean get() = preamp || eq || bass || loudness
+    /**
+     * The limiter guards upstream gain; it rides along with any active stage. With Tuning that
+     * includes the small peak overshoot a phase vocoder can add.
+     */
+    val limiter: Boolean get() = preamp || eq || bass || loudness || tuning
 
     /** True when any stage would alter a single sample. */
     val any: Boolean get() = limiter
 }
 
-fun dspActivation(eq: EqState, loudness: LoudnessState) = DspActivation(
+fun dspActivation(eq: EqState, loudness: LoudnessState, tuning: Boolean = false) = DspActivation(
     preamp = eq.enabled && eq.preampDb != 0f,
     eq = eq.enabled && eq.gainsDb.any { it != 0f },
     bass = eq.enabled && eq.bassBoostDb != 0f,
     // Normalization is "on" by default, but a track it hasn't measured (or one
     // already at the target) gets 0 dB — no reason to touch a single sample.
     loudness = loudness.enabled && loudness.currentTrackGainDb != 0f,
+    tuning = tuning,
 )
 
 /**
@@ -55,11 +62,15 @@ fun dspActivation(eq: EqState, loudness: LoudnessState) = DspActivation(
  * circle that its rounding noise is audible), and when every stage is inactive
  * [process] is never called — the samples go to the output untouched.
  *
- * Every stage is zero-latency, so frames stay 1:1 with the decoder's and
- * nothing has to be drained at end of stream (the old lookahead limiter
- * silently dropped the last 2 ms of every track and prefixed 2 ms of silence).
+ * Every stage but Tuning is zero-latency (the old lookahead limiter silently
+ * dropped the last 2 ms of every track and prefixed 2 ms of silence). Tuning's
+ * pitch stage ([PitchStage]) keeps frames 1:1 but delays them by
+ * [latencyFrames]; the output stage compensates the position for that and
+ * drains the tail at end of stream. It is in the path only while
+ * [tuningEngaged], decided at stream boundaries ([engageTuning]): at 440 Hz it
+ * isn't there at all, so the samples pass untouched and it costs nothing.
  *
- * Order: preamp → 5-band EQ → bass shelf → loudness gain → limiter.
+ * Order: Tuning → preamp → 5-band EQ → bass shelf → loudness gain → limiter.
  *
  * State is sampled once per [process] call through the suppliers (a volatile
  * StateFlow read), so a pref change lands within one chunk (~46 ms).
@@ -68,9 +79,32 @@ fun dspActivation(eq: EqState, loudness: LoudnessState) = DspActivation(
 class FloatDspChain(
     private val eqState: () -> EqState,
     private val loudnessState: () -> LoudnessState,
+    /** Tuning's reference (A4, Hz); 440 keeps the pitch stage out. */
+    private val tuningHz: () -> Float = { TuningMath.STANDARD_HZ },
+    /** Builds the pitch stage for a stream; [PitchStageFactory.NONE] where there is no engine. */
+    private val pitchStages: PitchStageFactory = PitchStageFactory.NONE,
 ) {
     private var sampleRate = 0
     private var channels = 0
+
+    private var tuner: PitchStage? = null
+    private var tunerHz = TuningMath.STANDARD_HZ
+
+    /** The engine couldn't be built for this stream: Tuning stays out of it. */
+    private var tunerMissing = false
+
+    /** Whether Tuning's pitch stage is in this stream's path. Changes only through [engageTuning]. */
+    var tuningEngaged = false
+        private set
+
+    /** The pitch stage's delay while it is in the path, else 0. */
+    val latencyFrames: Int get() = if (tuningEngaged) tuner?.latencyFrames ?: 0 else 0
+
+    /**
+     * The reference this stream is retuned to right now, or null when it isn't (no stage, or a
+     * stage still in the path at 440 until its rebuild). What the signal path says.
+     */
+    val retunedToHz: Float? get() = tunerHz.takeIf { tuningEngaged && TuningMath.isRetuned(it) }
 
     private val preamp = GainRamp()
     private val loudness = GainRamp()
@@ -87,6 +121,12 @@ class FloatDspChain(
 
     fun configure(sampleRate: Int, channels: Int) {
         require(sampleRate > 0 && channels > 0) { "bad format $sampleRate Hz × $channels" }
+        if (sampleRate != this.sampleRate || channels != this.channels) {
+            // A stage is built for one format: drop it, and let engageTuning build the next.
+            releaseTuner()
+            tuningEngaged = false
+            tunerMissing = false
+        }
         this.sampleRate = sampleRate
         this.channels = channels
         eqBank = BiquadBank(BAND_FREQS.size, channels)
@@ -107,6 +147,7 @@ class FloatDspChain(
         eqBank.reset()
         bassBank.reset()
         limiter.reset()
+        if (tuningEngaged) tuner?.reset()
         val eq = eqState()
         val ld = loudnessState()
         preamp.snapTo(preampTarget(eq))
@@ -116,8 +157,51 @@ class FloatDspChain(
     /** True when [process] would change the signal right now (cheap; per write). */
     fun isActive(): Boolean {
         if (!isConfigured) return false
+        if (tuningEngaged) return true
         val act = dspActivation(eqState(), loudnessState())
         return act.any || preamp.isActive || loudness.isActive || limiter.isEngaged
+    }
+
+    /**
+     * Whether Tuning wants the pitch stage in the path right now: a reference other than 440 Hz,
+     * and an engine for this stream. The output stage compares it with [tuningEngaged] on each
+     * write; a difference mid-stream means a rebuild (the delay can't change without a jump).
+     */
+    fun tuningWanted(): Boolean = isConfigured && !tunerMissing && TuningMath.isRetuned(tuningHz())
+
+    /**
+     * Puts the pitch stage in the path ([on]) or takes it out, empty either way. Only at a stream
+     * boundary (before the first frame, or after a flush): the stage's delay moves the audio.
+     */
+    fun engageTuning(on: Boolean) {
+        if (!on) {
+            tuningEngaged = false
+            releaseTuner()
+            return
+        }
+        if (!isConfigured) return
+        val stage = tuner ?: runCatching { pitchStages.create(sampleRate, channels) }.getOrNull()
+        if (stage == null) {
+            tunerMissing = true
+            tuningEngaged = false
+            return
+        }
+        tuner = stage
+        stage.reset()
+        tunerHz = TuningMath.sanitize(tuningHz())
+        stage.setFactor(TuningMath.factor(tunerHz))
+        tuningEngaged = true
+    }
+
+    /** Frees the pitch stage (the output was released). */
+    fun release() {
+        tuningEngaged = false
+        releaseTuner()
+    }
+
+    private fun releaseTuner() {
+        tuner?.release()
+        tuner = null
     }
 
     /** Processes [frames] interleaved frames of [samples] in place. */
@@ -125,7 +209,19 @@ class FloatDspChain(
         if (!isConfigured || frames <= 0) return
         val eq = eqState()
         val ld = loudnessState()
-        val act = dspActivation(eq, ld)
+        val act = dspActivation(eq, ld, tuning = tuningEngaged)
+
+        // Tuning first, so the limiter at the end catches what it adds.
+        val stage = tuner
+        if (tuningEngaged && stage != null) {
+            // 440 while still engaged (Tuning was just switched off): factor 1 until the rebuild.
+            val hz = TuningMath.sanitize(tuningHz())
+            if (hz != tunerHz) {
+                stage.setFactor(TuningMath.factor(hz))
+                tunerHz = hz
+            }
+            stage.process(samples, frames)
+        }
 
         preamp.setTarget(preampTarget(eq))
         if (preamp.isActive) preamp.apply(samples, frames, channels)

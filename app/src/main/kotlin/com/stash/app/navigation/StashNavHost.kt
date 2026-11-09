@@ -184,6 +184,15 @@ private fun StashNavGraph(
                         ),
                     )
                 },
+                // A New from your artists album's View Artist: the album loads first, so only while Home is still on
+                // top (a callback from before a rotation holds a destroyed entry, whose navigate() throws)
+                onNavigateToArtist = { id, name ->
+                    if (navController.currentBackStackEntry === homeEntry &&
+                        homeEntry.lifecycle.currentState.isAtLeast(Lifecycle.State.CREATED)
+                    ) {
+                        navController.navigate(SearchArtistRoute(id, name))
+                    }
+                },
                 onSeeAllPlaylists = { genre ->
                     navController.navigate(PlaylistBrowseRoute(genre))
                 },
@@ -534,25 +543,6 @@ private fun StashNavGraph(
                 onNavigateToDiagnosticsPreview = { navController.navigate(DiagnosticsPreviewRoute) },
                 viewModel = viewModel,
             )
-        }
-
-        composable<SquidWtfCaptchaRoute> { backStackEntry ->
-            AboveChrome {
-                // Reach the Settings ViewModel from the parent route so the
-                // captured cookie value writes to the same DataStore the
-                // interceptor reads from. We grab the *Settings* nav entry
-                // (not this one) so the ViewModel survives this route's
-                // dispose and the value lands in prefs immediately.
-                val settingsEntry = remember(backStackEntry) {
-                    navController.getBackStackEntry(SettingsRoute)
-                }
-                val viewModel: com.stash.feature.settings.SettingsViewModel =
-                    androidx.hilt.navigation.compose.hiltViewModel(settingsEntry)
-                com.stash.feature.settings.components.SquidWtfCaptchaScreen(
-                    onCookieCaptured = viewModel::onSquidWtfCaptchaCookieChanged,
-                    onClose = { navController.popBackStack() },
-                )
-            }
         }
 
         composable<EqualizerRoute> {

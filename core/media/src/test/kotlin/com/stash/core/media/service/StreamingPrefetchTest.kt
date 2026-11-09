@@ -34,7 +34,7 @@ import org.junit.Test
  * .exoplayer.ExoPlayer].
  *
  * Each test wires fresh mocks of [StreamingPreference], [TrackDao],
- * [KennyyStreamResolver], [StreamUrlCache] and a [TestScope] coroutine
+ * the stream resolver, [StreamUrlCache] and a [TestScope] coroutine
  * scope so the prefetch coroutine completes deterministically under
  * `advanceUntilIdle()`.
  */

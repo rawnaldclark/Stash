@@ -134,14 +134,3 @@ data class LikedCardState(val trackCount: Int)
  * presence in the UI state signals "show the banner."
  */
 data object LosslessPromptState
-
-/**
- * Sort options for the Home Playlists grid. Deliberately duplicated from
- * the Library module's `SortOrder` to avoid a cross-module dependency for
- * three enum values. If a third surface ever needs the same options, lift
- * to a shared module rather than crossing the feature:library boundary.
- *
- * ponytail: retained — HomeViewModel/HomeScreen still reference it; they're
- * rewritten in the later Home-redesign tasks, which will remove this.
- */
-enum class PlaylistSortOrder { RECENT, ALPHABETICAL, MOST_PLAYED }
