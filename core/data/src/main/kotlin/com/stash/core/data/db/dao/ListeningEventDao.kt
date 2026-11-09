@@ -5,9 +5,19 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import com.stash.core.data.db.SQLITE_BIND_LIMIT
 import com.stash.core.data.db.chunkedForBind
 import com.stash.core.data.db.entity.ListeningEventEntity
 import kotlinx.coroutines.flow.Flow
+
+/**
+ * Whether this phone has a listen of any of `:trackIds` that started at or after `:sinceMs` ([ListeningEventDao.anyListenSince]).
+ * Read off `index_listening_events_track_id`, then each of those songs' listens checked for its start and device: never the
+ * whole history (ListeningEventDaoListenSinceTest pins the plan).
+ */
+internal const val ANY_LISTEN_SINCE_SQL =
+    "SELECT EXISTS(SELECT 1 FROM listening_events " +
+        "WHERE track_id IN (:trackIds) AND started_at >= :sinceMs AND origin_device IS NULL)"
 
 /**
  * DAO for the [ListeningEventEntity] table. Kept small: the features that
@@ -341,4 +351,18 @@ interface ListeningEventDao {
      */
     @Query("SELECT DISTINCT track_id FROM listening_events WHERE track_id IN (:trackIds)")
     suspend fun heardAmong(trackIds: List<Long>): List<Long>
+
+    /** One bind-safe chunk of [anyListenSince]. */
+    @Query(ANY_LISTEN_SINCE_SQL)
+    suspend fun anyListenSinceRaw(trackIds: List<Long>, sinceMs: Long): Boolean
+
+    /**
+     * Whether this phone played any of [trackIds] at or after [sinceMs] long enough to count: Community's "heard" from
+     * the listening history (CommunityListenHistory), one of a post's songs played anywhere in Stash since the post went
+     * up. Any row is a counted listen: ListeningRecorder writes one only once the play counts (half the song, 30 s to
+     * 4 min of playing time). This phone's plays only (`origin_device IS NULL`): one mirrored from the web is another
+     * device's, under another Community key. Chunked under the bind limit; stops at the first chunk that has one.
+     */
+    suspend fun anyListenSince(trackIds: List<Long>, sinceMs: Long): Boolean =
+        trackIds.distinct().chunked(SQLITE_BIND_LIMIT).any { anyListenSinceRaw(it, sinceMs) }
 }

@@ -32,7 +32,8 @@ import kotlinx.coroutines.withContext
 private const val TAG = "CommunityHeard"
 
 /**
- * This phone's "heard" marks (contract 2026-11-03): the Community posts it has played for 30 s, which it may vote on.
+ * This phone's "heard" marks (contract 2026-11-03): the Community posts it has played for 30 s, which it may vote on,
+ * or whose songs its listening history has played since the post went up (CommunityRepository.heardFromHistory).
  * A mark is kept here first, at once, and that is what wakes the vote pill. Then it's sent to the Worker
  * (`PUT /v1/community/posts/{id}/heard`) under the key the vote uses, once per post.
  *
