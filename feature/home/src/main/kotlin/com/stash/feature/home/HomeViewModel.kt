@@ -536,15 +536,18 @@ class HomeViewModel @Inject constructor(
     fun onSelectGenre(label: String) { genreFilter.value = label }
 
     val uiState: StateFlow<HomeUiState> = combine(
-        // Paired so uiState stays within the 5-flow typed combine overload.
-        combine(homePlaylistFlow, likedCardFlow) { home, liked -> home to liked },
+        // Grouped so uiState stays within the 5-flow typed combine overload.
+        combine(homePlaylistFlow, likedCardFlow, streamingPreference.enabled) { home, liked, online ->
+            Triple(home, liked, online)
+        },
         losslessBannersFlow,
         tipJarRepository.state,
         metadataBackfillBannerFlow,
         discoveryFlow,
-    ) { (home, likedCard), (losslessPrompt, showLosslessOffline), tipJar, metadataBackfillBanner, discovery ->
+    ) { (home, likedCard, online), (losslessPrompt, showLosslessOffline), tipJar, metadataBackfillBanner, discovery ->
         HomeUiState(
-            hero = home.hero,
+            // Offline mode plays only downloads, and Daily Discover is all streamed finds: the card says so.
+            hero = home.hero?.let { if (online) it else it.copy(offline = true) },
             heroBuilding = home.heroBuilding,
             isLoading = false,
             losslessPrompt = losslessPrompt,
