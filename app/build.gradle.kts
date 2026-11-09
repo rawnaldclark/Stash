@@ -250,7 +250,17 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { compose = true; buildConfig = true }
-    androidResources { generateLocaleConfig = true }
+    androidResources {
+        generateLocaleConfig = true
+        // Only the languages the app itself is translated into (the values-* folders across the
+        // modules), plus English. Libraries (appcompat, Cast, mediarouter, play-services, ...) ship
+        // strings in ~80 locales; without this they fill half of resources.arsc. A language code
+        // keeps every region of it (de keeps de-rDE). The default (unqualified) strings always stay.
+        // tl is the older code for Filipino that AndroidX libraries still use (ours is fil).
+        localeFilters += listOf(
+            "en", "ar", "de", "es", "fa", "fil", "tl", "fr", "hi", "ko", "mr", "pl", "pt", "ru", "zh",
+        )
+    }
     packaging {
         jniLibs {
             // Must extract native libs to disk so ffmpeg/ffprobe executables and
