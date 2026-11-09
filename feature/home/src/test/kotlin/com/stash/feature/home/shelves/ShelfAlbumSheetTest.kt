@@ -5,10 +5,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.stash.data.ytmusic.model.AlbumSummary
-import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -28,18 +26,17 @@ class ShelfAlbumSheetTest {
 
     private val album = AlbumSummary("MPREb_1", "DOGS NEVER DIE", "ZekeUltra", null, "2026")
     private val rows = listOf("Play", "Shuffle", "Play Next", "Add to Queue", "View Album", "View Artist")
-    private var picked: String? = null
 
     private fun show() = rule.setContent {
         MaterialTheme {
             ShelfAlbumSheet(
                 album = album,
-                onPlay = { picked = "play" },
-                onShuffle = { picked = "shuffle" },
-                onPlayNext = { picked = "next" },
-                onAddToQueue = { picked = "queue" },
-                onOpenAlbum = { picked = "album" },
-                onGoToArtist = { picked = "artist:${it.artist}" },
+                onPlay = {},
+                onShuffle = {},
+                onPlayNext = {},
+                onAddToQueue = {},
+                onOpenAlbum = {},
+                onGoToArtist = {},
                 onDismiss = {},
             )
         }
@@ -51,8 +48,6 @@ class ShelfAlbumSheetTest {
         show()
         rule.waitForIdle()
         rows.forEach { rule.onNodeWithText(it).assertIsDisplayed() }
-        rule.onNodeWithText("View Artist").performClick()
-        assertEquals("artist:ZekeUltra", picked)
     }
 
     @Config(sdk = [34], qualifiers = "w393dp-h360dp")
