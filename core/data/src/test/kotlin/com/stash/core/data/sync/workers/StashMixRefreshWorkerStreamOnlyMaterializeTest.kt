@@ -13,6 +13,7 @@ import com.stash.core.data.db.dao.TrackSkipEventDao
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.StashMixRecipeEntity
+import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.lastfm.LastFmSessionPreference
@@ -30,6 +31,7 @@ import io.mockk.slot
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -72,7 +74,7 @@ class StashMixRefreshWorkerStreamOnlyMaterializeTest {
     private val downloadNetworkPreference: DownloadNetworkPreference = mockk(relaxed = true)
     private val tagPoolBuilder = TagPoolBuilder(lastFmApiClient)
 
-    private fun newWorker(recipeId: Long): StashMixRefreshWorker {
+    private fun newWorker(recipeId: Long, generator: MixGenerator = mixGenerator): StashMixRefreshWorker {
         val params: WorkerParameters = mockk(relaxed = true) {
             coEvery { inputData } returns workDataOf(
                 StashMixRefreshWorker.KEY_RECIPE_ID to recipeId,
@@ -81,7 +83,7 @@ class StashMixRefreshWorkerStreamOnlyMaterializeTest {
         return StashMixRefreshWorker(
             appContext, params,
             recipeDao, playlistDao, discoveryQueueDao, listeningEventDao,
-            trackDao, mixGenerator, seedGenerator, lastFmApiClient,
+            trackDao, generator, seedGenerator, lastFmApiClient,
             lastFmCredentials, sessionPreference, blocklistGuard,
             trackSkipEventDao, tagPoolBuilder, trackMatcher, downloadNetworkPreference,
         )
@@ -292,10 +294,76 @@ class StashMixRefreshWorkerStreamOnlyMaterializeTest {
         coVerify(atLeast = 1) { downloadNetworkPreference.current() }
     }
 
+    // ── Daily Discover at 100% recommendations ────────────────────────────
+    // The shipped recipe's ratio (StashMixDefaults) through the REAL generator:
+    // it reads no downloads, and all 40 places come from the recipe's
+    // recommendation backlog. A short backlog makes a shorter mix, never one
+    // topped up with the user's own songs.
+
+    private val libraryIds = (1L..10L).toList()
+
+    private fun realGenerator(): MixGenerator {
+        coEvery { trackDao.getAllDownloaded() } returns libraryIds.map {
+            TrackEntity(
+                id = it, title = "Mine $it", artist = "Me",
+                canonicalTitle = "mine $it", canonicalArtist = "me", isDownloaded = true,
+            )
+        }
+        return MixGenerator(
+            trackDao, mockk(relaxed = true), listeningEventDao, discoveryQueueDao,
+            blocklistGuard, trackSkipEventDao,
+        )
+    }
+
+    /** Refreshes Daily Discover with [finds] as its recommendation backlog; returns what was linked. */
+    private suspend fun linkedFrom(finds: List<Long>): List<Long> {
+        val recipe = recipe(id = 1L, name = "Daily Discover", playlistId = 100L)
+        coEvery { recipeDao.getById(1L) } returns recipe
+        coEvery { recipeDao.getActive() } returns listOf(recipe)
+        coEvery { playlistDao.getById(100L) } returns PlaylistEntity(
+            id = 100L, name = "Daily Discover", source = MusicSource.BOTH,
+            sourceId = "stash_mix_1", type = PlaylistType.STASH_MIX,
+            trackCount = 39, syncEnabled = true, isActive = true,
+        )
+        coEvery { playlistDao.getStreamableOrDoneTrackIdsForRecipe(1L) } returns finds
+        coEvery { playlistDao.getOrderedTrackIdsForPlaylist(100L) } returns emptyList()
+        val ordered = slot<List<Long>>()
+        coEvery {
+            playlistDao.replaceMixMembership(any(), capture(ordered), any(), any())
+        } returns Unit
+
+        newWorker(recipeId = 1L, generator = realGenerator()).doWork()
+
+        return ordered.captured
+    }
+
+    @Test fun `all recommendations - 60 finds fill all 40 places, none of them a download`() = runTest {
+        val finds = (1000L until 1060L).toList()
+
+        val linked = linkedFrom(finds)
+
+        assertEquals(40, linked.size)
+        assertEquals(40, linked.toSet().size)
+        assertTrue("every place is a find", linked.all { it in finds })
+        assertTrue("no download is linked", linked.none { it in libraryIds })
+        coVerify(exactly = 0) { trackDao.getAllDownloaded() }
+    }
+
+    @Test fun `all recommendations - 12 finds make a 12-song mix, no downloads top it up`() = runTest {
+        val finds = (1000L until 1012L).toList()
+
+        val linked = linkedFrom(finds)
+
+        assertEquals(12, linked.size)
+        assertEquals(finds.toSet(), linked.toSet())
+        coVerify(exactly = 0) { trackDao.getAllDownloaded() }
+    }
+
+    /** The shipped Daily Discover: all recommendations, 40 places (StashMixDefaults). */
     private fun recipe(id: Long, name: String, playlistId: Long?) = StashMixRecipeEntity(
         id = id,
         name = name,
-        discoveryRatio = 0.85f,
+        discoveryRatio = 1.0f,
         targetLength = 40,
         playlistId = playlistId,
         isBuiltin = true,

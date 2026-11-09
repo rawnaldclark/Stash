@@ -87,6 +87,31 @@ class HomeViewModelTest {
         assertThat(state.heroBuilding).isFalse()
     }
 
+    /** Offline mode plays only downloads, and Daily Discover is all streamed finds: no "30 tracks" promise. */
+    @Test
+    fun `in Offline mode the hero shows the switch-to-Online hint`() = runTest {
+        val daily = dailyDiscover(id = 7L, trackCount = 30)
+        val vm = buildVm(playlists = listOf(daily), builtinIds = listOf(7L), streamingEnabled = false)
+
+        val hero = vm.uiState.first { !it.isLoading }.hero
+
+        assertThat(hero).isNotNull()
+        assertThat(hero!!.offline).isTrue()
+        // Still Daily Discover, still opens it: only the line under the title changes.
+        assertThat(hero.playlistId).isEqualTo(7L)
+    }
+
+    @Test
+    fun `in Online mode the hero shows its track count`() = runTest {
+        val daily = dailyDiscover(id = 7L, trackCount = 30)
+        val vm = buildVm(playlists = listOf(daily), builtinIds = listOf(7L), streamingEnabled = true)
+
+        val hero = vm.uiState.first { !it.isLoading }.hero!!
+
+        assertThat(hero.offline).isFalse()
+        assertThat(hero.subtitle).isEqualTo("30 tracks")
+    }
+
     @Test
     fun `daily discover's songs are published for home's other shelves while its hero shows`() = runTest {
         val daily = dailyDiscover(id = 7L, trackCount = 2)
