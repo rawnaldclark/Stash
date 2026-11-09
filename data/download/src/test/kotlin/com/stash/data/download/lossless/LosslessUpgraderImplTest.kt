@@ -26,7 +26,8 @@ class LosslessUpgraderImplTest {
         coEvery { canSearchNow() } returns true
     }
     private val availability: LosslessAvailability = mockk {
-        coEvery { fileUrlAvailableNow() } returns true
+        coEvery { qbdlxEnabledNow() } returns false // no Qobuz account: Tidal did the looking
+        coEvery { fileUrlAvailableNow() } returns false
     }
     private val subject = LosslessUpgraderImpl(
         context,
@@ -88,9 +89,35 @@ class LosslessUpgraderImplTest {
         assertEquals(UpgradeResult.Error, subject.upgradeToLossless(stubTrack(), sweep = true))
     }
 
-    @Test fun `a sweep miss while every relay is cooled and no login is live is Error`() = runTest {
+    @Test fun `a sweep miss while the user's own Qobuz login is cooling is Error`() = runTest {
         coEvery { downloadManager.tryLosslessDownload(any(), forced = true) } returns null
+        coEvery { availability.qbdlxEnabledNow() } returns true
         coEvery { availability.fileUrlAvailableNow() } returns false
+
+        assertEquals(UpgradeResult.Error, subject.upgradeToLossless(stubTrack(), sweep = true))
+    }
+
+    @Test fun `a sweep miss with a live Qobuz login is a real NoMatch`() = runTest {
+        coEvery { downloadManager.tryLosslessDownload(any(), forced = true) } returns null
+        coEvery { availability.qbdlxEnabledNow() } returns true
+        coEvery { availability.fileUrlAvailableNow() } returns true
+
+        assertEquals(UpgradeResult.NoMatch, subject.upgradeToLossless(stubTrack(), sweep = true))
+    }
+
+    /** Before the pool went, a Tidal-only listener's misses needed a live relay; now Tidal's own word is enough. */
+    @Test fun `a sweep miss with no Qobuz account is a real NoMatch when Tidal could search`() = runTest {
+        coEvery { downloadManager.tryLosslessDownload(any(), forced = true) } returns null
+
+        assertEquals(UpgradeResult.NoMatch, subject.upgradeToLossless(stubTrack(), sweep = true))
+    }
+
+    @Test fun `a sweep miss Tidal could not really search is Error`() = runTest {
+        coEvery { downloadManager.tryLosslessDownload(any(), forced = true) } coAnswers {
+            kotlinx.coroutines.currentCoroutineContext()[com.stash.data.download.lossless.relay.LosslessDownloadPurpose]
+                ?.searchIncomplete = true
+            null
+        }
 
         assertEquals(UpgradeResult.Error, subject.upgradeToLossless(stubTrack(), sweep = true))
     }

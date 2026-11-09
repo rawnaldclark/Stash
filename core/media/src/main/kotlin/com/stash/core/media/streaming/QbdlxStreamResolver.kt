@@ -11,28 +11,26 @@ import javax.inject.Singleton
 /**
  * Stream-URL resolver backed by the DIRECT Qobuz API via [QbdlxQobuzSource]
  * (`qbdlx` — tokenless catalog under the web app_id; file URL via the user's
- * account, a custom endpoint, or the configured relays).
- * Counterpart to [QobuzStreamResolver]: same shape, same `etsp` expiry
- * parsing, different upstream operator.
+ * own connected Qobuz account).
  *
  * Delegates entirely to [QbdlxQobuzSource.resolveImmediate] — search/match
  * live in the source; this only maps [TrackEntity] →
  * [TrackQuery], requests the policy tier, and parses the CDN URL's `etsp`.
  *
  * No [com.stash.data.download.lossless.LosslessSourceHealthGate] gate here
- * (unlike [QobuzStreamResolver]): the proxy sources mark themselves degraded
- * when the proxy returns a preview-sample/lossy URL, but qbdlx hits the real
+ * (unlike the retired proxy resolvers): proxy sources marked themselves degraded
+ * when the proxy returned a preview-sample/lossy URL, but qbdlx hits the real
  * Qobuz API and classifies dead-token / region-lock in the client
  * (`QbdlxResolveResult`), never feeding the health gate — so an `isDegraded`
  * check would be a branch that can never fire.
  * ponytail: gate omitted because qbdlx never records degradation; nothing to gate on.
  *
  * Returns null when:
- *  - qbdlx is not currently enabled for streaming (no connected account,
- *    custom endpoint or relay — see [QbdlxQobuzSource.isEnabledForStreaming]).
+ *  - qbdlx is not currently enabled for streaming (no connected account —
+ *    see [QbdlxQobuzSource.isEnabledForStreaming]).
  *  - qbdlx has no confident match for the track.
  *  - The returned URL has no `etsp` parameter (un-refreshable URLs aren't
- *    safe to cache — see [KennyyStreamResolver] KDoc).
+ *    safe to cache).
  */
 @Singleton
 class QbdlxStreamResolver @Inject constructor(

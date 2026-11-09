@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.core.common.ArtUrlUpgrader
 import com.stash.core.data.home.BecauseRow
+import com.stash.data.ytmusic.model.TrackSummary
 import com.stash.core.ui.components.AlbumSquareCard
 import com.stash.core.ui.components.HomeRailCardSize
 import com.stash.core.ui.theme.StashTheme
@@ -43,12 +44,14 @@ private val SeedArtShape = RoundedCornerShape(6.dp)
 /**
  * Home's "Because you like ‹song›" rows: each headed by the seed song's cover, a small "Because you like" and the
  * song's title (YouTube Music's own layout for these rows), then its related songs as cards. A tap plays the row
- * from that song ([onPlay] with the row, the song's index and the row's name for Now Playing).
+ * from that song ([onPlay] with the row, the song's index and the row's name for Now Playing); a long press opens
+ * the song's sheet ([onMore], as Home's mix cards open theirs).
  */
 @Composable
 internal fun BecauseYouLikeRows(
     rows: List<BecauseRow>,
     onPlay: (row: BecauseRow, index: Int, label: String) -> Unit,
+    onMore: ((TrackSummary) -> Unit)? = null,
 ) {
     Column {
         rows.forEach { row ->
@@ -104,6 +107,8 @@ internal fun BecauseYouLikeRows(
                         year = null,
                         isLossless = false,
                         size = HomeRailCardSize,
+                        onLongClickLabel = onMore?.let { stringResource(R.string.home_card_more, song.title) },
+                        onLongClick = onMore?.let { more -> { more(song) } },
                         onClick = { onPlay(row, index, label) },
                         modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = description },
                     )

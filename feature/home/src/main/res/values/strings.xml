@@ -8,4 +8,20 @@
     <string name="home_because_you_like_song">Because you like %1$s</string>
     <!-- TalkBack for a song card. %1$s is its title, %2$s its artist. -->
     <string name="home_song_card">%1$s by %2$s</string>
+    <!-- TalkBack for a long press on a Because you like or New from your artists card. %1$s is the song's or album's title. -->
+    <string name="home_card_more">More for %1$s</string>
+    <!-- The sheet a New from your artists album opens on a long press. Worded and cased as the app's other menus:
+         the song sheet beside it (core:ui TrackOptionsSheet: "Play Next", "Add to Queue", "View Album"). -->
+    <string name="home_album_play">Play</string>
+    <string name="home_album_shuffle">Shuffle</string>
+    <string name="home_album_play_next">Play Next</string>
+    <string name="home_album_add_to_queue">Add to Queue</string>
+    <string name="home_album_view_album">View Album</string>
+    <string name="home_album_view_artist">View Artist</string>
+    <!-- Toasts after the album sheet's actions: the song sheet's ("Playing next") and the album page's words -->
+    <string name="home_album_playing_next">Playing next</string>
+    <string name="home_album_added_to_queue">Added album to queue</string>
+    <string name="home_album_add_failed">Couldn\'t add album to queue</string>
+    <string name="home_album_load_failed">Couldn\'t load this album</string>
+    <string name="home_album_no_artist">Couldn\'t find this album\'s artist</string>
 </resources>

@@ -43,7 +43,7 @@ sealed interface TidalAac {
         /** An error, an open circuit breaker, or an answer that wasn't AAC. */
         FAILED,
 
-        /** The day's Tidal & Qobuz allowance is spent: nothing until the reset. */
+        /** The day's Tidal allowance is spent: nothing until the reset. */
         SPENT,
     }
 }

@@ -1,7 +1,9 @@
 // core/ui/src/main/kotlin/com/stash/core/ui/components/AlbumSquareCard.kt
 package com.stash.core.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,8 +51,13 @@ val AlbumCardSize = 140.dp
  *   (Premium Crisp quality signal). Defaults to false so existing callers are unaffected.
  * @param size The cover's side and the card's width: [AlbumCardSize] by default, [HomeRailCardSize]
  *   on Home's rows (the callers are listed above). Only the size changes: corners, badge and text stay.
+ * @param onLongClickLabel What a long press does, for TalkBack ("More for ‹title›"). Only read with [onLongClick].
+ * @param onLongClick Optional long press, as Home's mix cards have (`MixRailCard`'s
+ *   `onLongPress`): Home's Because you like and New from your artists cards open their action sheet with it.
+ *   Null (the default) keeps a plain tap, so a card without one behaves as before.
  * @param onClick Invoked on tap — typically opens the album detail screen.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AlbumSquareCard(
     title: String,
@@ -60,6 +67,8 @@ fun AlbumSquareCard(
     modifier: Modifier = Modifier,
     isLossless: Boolean = false,
     size: Dp = AlbumCardSize,
+    onLongClickLabel: String? = null,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -67,7 +76,20 @@ fun AlbumSquareCard(
         modifier = modifier
             .width(size)
             .pressScale(interactionSource)
-            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
+            .then(
+                if (onLongClick != null) {
+                    Modifier.combinedClickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClickLabel = null,
+                        onLongClickLabel = onLongClickLabel,
+                        onLongClick = onLongClick,
+                        onClick = onClick,
+                    )
+                } else {
+                    Modifier.clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+                },
+            ),
     ) {
         Box {
             AsyncImage(

@@ -11,9 +11,7 @@ import com.stash.core.data.sync.SingleTrackDownloadEnqueuer
 import com.stash.core.model.DownloadStatus
 import androidx.work.workDataOf
 import com.stash.data.download.lossless.quota.LosslessQuota
-import com.stash.data.download.lossless.relay.LosslessDownloadPurpose
 import io.mockk.every
-import kotlinx.coroutines.currentCoroutineContext
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -349,29 +347,6 @@ class LosslessRetryWorkerTest {
         newWorker().doWork()
 
         coVerify(exactly = 1) { enqueuer.enqueue(100L) }
-    }
-
-    @Test
-    fun `the sweep is a download, and stops at the first paced row and retries later`() = runTest {
-        coEvery { downloadQueueDao.waitingForLosslessTracks(any()) } returns listOf(
-            entry(id = 100L, trackId = 1L),
-            entry(id = 101L, trackId = 2L),
-        )
-        coEvery { trackDao.getById(any()) } answers { stubTrackEntity(firstArg()) }
-        var labelled = false
-        coEvery { registry.resolve(any()) } coAnswers {
-            val purpose = currentCoroutineContext()[LosslessDownloadPurpose]
-            labelled = purpose != null
-            purpose?.pacedRetryAfterSec = 3600
-            null
-        }
-
-        val result = newWorker().doWork()
-
-        assertEquals(androidx.work.ListenableWorker.Result.retry(), result)
-        assertEquals(true, labelled)
-        coVerify(exactly = 1) { registry.resolve(any()) } // row 101 never tried
-        coVerify(exactly = 0) { enqueuer.enqueue(any()) }
     }
 
     @Test

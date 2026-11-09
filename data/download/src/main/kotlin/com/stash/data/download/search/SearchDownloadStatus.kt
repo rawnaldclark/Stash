@@ -44,7 +44,7 @@ sealed interface SearchDownloadStatus {
     data object WaitingForAac : SearchDownloadStatus
 
     /**
-     * The day's Tidal & Qobuz allowance is spent and the lossy fallback is off: the download
+     * The day's Tidal allowance is spent and the lossy fallback is off: the download
      * waits (the same queue status) and goes out after the reset.
      */
     data object WaitingForAllowance : SearchDownloadStatus

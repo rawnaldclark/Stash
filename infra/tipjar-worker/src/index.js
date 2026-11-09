@@ -7,7 +7,7 @@
  *   GET   → Serves the current supporter list as JSON to the Stash
  *           Android app. Cached for 60s at the edge.
  *   GET /lossless.json and /lossless.json.sig → the signed lossless relay
- *           config, byte-for-byte from KV (see infra/lossless-relay).
+ *           config, byte-for-byte from KV (see infra/lossless-config).
  *   POST /claim/email/start and /claim/email/verify → the supporter claim:
  *           a Ko-fi donor proves their email and gets a signed supporter
  *           token (src/claim.js, src/entitlement.js). Every other POST path
@@ -198,7 +198,7 @@ async function serveSupporters(env) {
 /**
  * The Stash lossless relay config (Plan B contract §3): the signed `lossless.json`
  * and its base64 ECDSA signature, written to KV by
- * infra/lossless-relay/scripts/publish-config.mjs. Served byte-for-byte — the device
+ * infra/lossless-config/scripts/publish-config.mjs. Served byte-for-byte — the device
  * verifies the signature over the exact bytes, so nothing here may re-encode them.
  * 404 until the first publish; a device then keeps whatever it has cached.
  */

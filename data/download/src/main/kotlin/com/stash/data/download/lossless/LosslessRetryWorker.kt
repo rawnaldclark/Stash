@@ -17,8 +17,6 @@ import kotlinx.coroutines.CancellationException
 import com.stash.data.download.lossless.forLibrarySource
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.tidal.TidalAacResolver
-import com.stash.data.download.lossless.relay.LosslessDownloadPurpose
-import kotlinx.coroutines.withContext
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 
@@ -36,11 +34,6 @@ import dagger.assisted.AssistedInject
  * sweep takes a sync's row only while the song should still download (#532):
  * in Download mode while a playlist the sync downloads still holds it, in
  * Stream-only mode only when the user asked for it. The others keep waiting.
- *
- * Runs as a download ([LosslessDownloadPurpose]): when the relay paces
- * downloads, the sweep stops at that row — every row after it would be paced
- * too — and asks WorkManager to retry later (its backoff grows each time), so
- * a waiting library drains as the day's pool allows.
  *
  * The sweep booked for the daily allowance's reset ([KEY_AT_RESET]) resolves nothing: a lookup
  * here and the download's own would count two lossless answers per song against the new day.
@@ -118,7 +111,6 @@ class LosslessRetryWorker @AssistedInject constructor(
         var resolvedCount = 0
         var lookups = 0
         var stoppedAt: Long? = null
-        val purpose = LosslessDownloadPurpose()
         for (entry in ordered) {
             val track = trackDao.getById(entry.trackId) ?: continue
             // The user picked this song's audio in Failed Matches (#531). Its
@@ -183,17 +175,13 @@ class LosslessRetryWorker @AssistedInject constructor(
             // errors and return null, but defense in depth is cheap. A stop
             // is not a failure: it propagates.
             val match = runCatching {
-                withContext(purpose) { registry.resolve(query) }
+                registry.resolve(query)
             }.onFailure { if (it is CancellationException) throw it }.getOrNull()
             if (match != null) {
                 // The download takes this match instead of asking again: one answer, one unit.
                 handoff.put(track.id, match, ResolvedSourceHandoff.Kind.LOSSLESS)
                 requeue(entry.id)
                 resolvedCount++
-            } else if (purpose.pacedRetryAfterSec != null) {
-                // The pool is ahead of today's pace: every later row would be paced too.
-                cursor.set(entry.id - 1)
-                return Result.retry()
             }
         }
         // A pass that stopped early starts with the row it stopped at (ids are its order); one

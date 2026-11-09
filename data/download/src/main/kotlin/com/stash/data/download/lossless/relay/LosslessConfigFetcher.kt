@@ -36,10 +36,6 @@ import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-/** One relay base from the signed config; lower [priority] is tried first. */
-@Serializable
-data class RelayEntry(val base: String, val priority: Int = 1)
-
 /**
  * A Tidal (BitChord) server: an https base and its optional token. [userOwned] = the user's own
  * server from Settings rather than the owner-hosted one from the signed config; only the
@@ -47,14 +43,18 @@ data class RelayEntry(val base: String, val priority: Int = 1)
  */
 data class TidalRelay(val base: String, val token: String?, val userOwned: Boolean = false)
 
+/**
+ * The signed runtime config. A config from before 2026-11 may still carry `relays` (the retired
+ * shared Qobuz relays): the field is no longer read, and [LosslessConfigFetcher]'s JSON ignores
+ * unknown keys, so such a config still parses and applies its Tidal fields.
+ */
 @Serializable
 data class LosslessConfig(
     val v: Int = 1,
-    val relays: List<RelayEntry> = emptyList(),
     @SerialName("updated_at") val updatedAt: Long = 0,
     /**
-     * Relay access key (spec §5.4). When present, [LosslessRelayClient] signs every
-     * mint with it. Delivered here — inside the signed, cached, every-cold-start
+     * Relay access key (spec §5.4). When present, [RelaySigner] signs every Tidal relay
+     * request with it. Delivered here — inside the signed, cached, every-cold-start
      * config — rather than baked into the APK, so it rotates by publishing a new
      * config and is dead on every device within one cold start. Null → unsigned.
      */
@@ -76,12 +76,12 @@ private val Context.losslessRelayConfigDataStore: DataStore<Preferences> by pref
 )
 
 /**
- * The runtime relay list. The APK ships NO relay hostname: this fetches
- * `<configUrl>` + `<configUrl>.sig` (ECDSA P-256 over the exact JSON bytes),
- * verifies against the baked-in public key, caches the JSON, and exposes
- * [relays] sorted by priority. Invalid signature / network failure → the cached
- * copy stays; a config older than the cached one (by `updated_at`) is rejected;
- * no cache → no relays. Both BuildConfig values empty → disabled.
+ * The signed runtime config: Stash's Tidal relay and the key that signs requests to it. The APK
+ * ships NO relay hostname: this fetches `<configUrl>` + `<configUrl>.sig` (ECDSA P-256 over the
+ * exact JSON bytes), verifies against the baked-in public key, caches the JSON, and exposes
+ * [tidalRelay] and [relayKey]. Invalid signature / network failure → the cached copy stays; a
+ * config older than the cached one (by `updated_at`) is rejected; no cache → no relay. Both
+ * BuildConfig values empty → disabled.
  */
 @Singleton
 class LosslessConfigFetcher @Inject constructor(
@@ -101,9 +101,6 @@ class LosslessConfigFetcher @Inject constructor(
     internal var network: ConfigNetworkSignal = AndroidConfigNetworkSignal(context)
     private val json = Json { ignoreUnknownKeys = true }
     private val jsonKey = stringPreferencesKey("config_json")
-
-    private val _relays = MutableStateFlow<List<RelayEntry>>(emptyList())
-    val relays: StateFlow<List<RelayEntry>> = _relays.asStateFlow()
 
     private val _relayKey = MutableStateFlow<String?>(null)
     /** The current relay access key from the applied config; null when unsigned. */
@@ -131,7 +128,7 @@ class LosslessConfigFetcher @Inject constructor(
 
     /**
      * A random id created once per install and persisted beside the config cache.
-     * Sent with every signed mint so the relay can rate-limit per install. It is a
+     * Sent with every signed request so the relay can rate-limit per install. It is a
      * cooperative bucket, not an identity: random, no PII, never leaves the relay
      * request. Created inside a single `edit` so two first-callers can't race two
      * different ids into existence.
@@ -144,7 +141,7 @@ class LosslessConfigFetcher @Inject constructor(
     val enabled: Boolean get() = configUrl.isNotBlank() && publicKeyB64.isNotBlank()
 
     /**
-     * Populate [relays] from the cached JSON, if any. Cheap; call before the first resolve.
+     * Populate [tidalRelay] and [relayKey] from the cached JSON, if any. Cheap; call before the first resolve.
      * The cache is not re-verified: it is only ever written from bytes that passed [verify],
      * into app-private storage (`allowBackup=false`).
      */
@@ -167,7 +164,7 @@ class LosslessConfigFetcher @Inject constructor(
         val fresh = parse(text) ?: return@withContext false
         // Rollback floor: a valid signature does not stop whoever serves the URL replaying an old file.
         // A FAILED cache read (missing, unreadable, unparseable) yields floor 0 on
-        // purpose — fail open: a corrupt cache must not pin the device to stale relays.
+        // purpose — fail open: a corrupt cache must not pin the device to a stale config.
         val cachedUpdatedAt = readCache()?.let { parse(it)?.updatedAt } ?: 0L
         if (fresh.updatedAt < cachedUpdatedAt) {
             Log.w(TAG, "lossless config older than the cached copy (${fresh.updatedAt} < $cachedUpdatedAt) — rejected")
@@ -175,13 +172,12 @@ class LosslessConfigFetcher @Inject constructor(
         }
         apply(fresh)
         ioCatching("cache write") { context.losslessRelayConfigDataStore.edit { it[jsonKey] = text } }
-        Log.i(TAG, "lossless config applied: ${fresh.relays.size} relay(s)")
+        Log.i(TAG, "lossless config applied (Tidal relay: ${if (fresh.tidalRelayUrl != null) "yes" else "no"})")
         _refreshedAt.value = System.currentTimeMillis()
         true
     }
 
     private fun apply(cfg: LosslessConfig) {
-        _relays.value = cfg.relays
         _relayKey.value = cfg.relayKey
         _tidalRelay.value = cfg.tidalRelayUrl?.let { TidalRelay(it, cfg.tidalRelayToken?.takeIf { t -> t.isNotBlank() }) }
         _updatedAt.value = cfg.updatedAt
@@ -236,15 +232,10 @@ class LosslessConfigFetcher @Inject constructor(
     private suspend fun readCache(): String? =
         ioCatching("cache read") { context.losslessRelayConfigDataStore.data.first()[jsonKey] }
 
-    /** The config with its relays already normalised and sorted; null when the JSON is unusable. */
+    /** The config with its Tidal relay URL already normalised; null when the JSON is unusable. */
     private fun parse(text: String): LosslessConfig? = runCatching {
         val cfg = json.decodeFromString<LosslessConfig>(text)
-        cfg.copy(
-            relays = cfg.relays
-                .mapNotNull { e -> LosslessSourcePreferences.normaliseEndpoint(e.base)?.let { RelayEntry(it, e.priority) } }
-                .sortedBy { it.priority },
-            tidalRelayUrl = LosslessSourcePreferences.normaliseEndpoint(cfg.tidalRelayUrl),
-        )
+        cfg.copy(tidalRelayUrl = LosslessSourcePreferences.normaliseEndpoint(cfg.tidalRelayUrl))
     }.getOrNull()
 
     private fun getBytes(url: String): ByteArray {
@@ -278,7 +269,6 @@ class LosslessConfigFetcher @Inject constructor(
     }
 
     internal suspend fun clearForTest() {
-        _relays.value = emptyList()
         _relayKey.value = null
         _tidalRelay.value = null
         context.losslessRelayConfigDataStore.edit { it.clear() }

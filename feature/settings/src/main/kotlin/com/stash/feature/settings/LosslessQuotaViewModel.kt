@@ -6,7 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.stash.data.download.lossless.quota.LosslessAllowance
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.quota.LosslessQuotaText
-import com.stash.data.download.lossless.relay.LosslessConfigFetcher
+import com.stash.data.download.lossless.LosslessAvailability
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 
 /**
- * Settings → Audio & Quality's "Tidal & Qobuz today" line: the daily allowance (FLAC and AAC) the relays
+ * Settings → Audio & Quality's "Tidal today" line: the daily allowance (FLAC and AAC) the relays
  * last reported ([LosslessQuota]). Re-read every minute so the line turns over at the reset
  * while the screen is open.
  */
@@ -26,7 +26,7 @@ import kotlinx.coroutines.flow.stateIn
 class LosslessQuotaViewModel @Inject constructor(
     @ApplicationContext context: Context,
     private val quota: LosslessQuota,
-    config: LosslessConfigFetcher,
+    availability: LosslessAvailability,
 ) : ViewModel() {
 
     private val minuteTicks = flow {
@@ -39,10 +39,10 @@ class LosslessQuotaViewModel @Inject constructor(
     /** The line, or null when it should not show. */
     val line: StateFlow<String?> = combine(
         quota.state,
-        combine(config.relays, config.tidalRelay) { relays, tidal -> relays.isNotEmpty() || tidal != null },
+        availability.stashTidalRelayInUse,
         minuteTicks,
     ) { allowance, relayConfigured, _ ->
-        // On the relays' clock, like the rungs: the line turns over when their day does.
+        // On the relay's clock, like the rung: the line turns over when its day does.
         losslessTodayLine(allowance, relayConfigured, quota.nowMs()) { LosslessQuotaText.resetTime(context, it) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -52,9 +52,9 @@ class LosslessQuotaViewModel @Inject constructor(
 }
 
 /**
- * "Tidal & Qobuz today: 412 / 500 · resets 8:00 PM" for [allowance] as of [nowMs] (a day that has
- * reset reads 0 used), or "… Unlimited (supporter)". Null — the line is hidden — when no relay
- * is configured or nothing is known yet. [time] formats the reset in local time.
+ * "Tidal today: 212 / 300 · resets 8:00 PM" for [allowance] as of [nowMs] (a day that has
+ * reset reads 0 used), or "… Unlimited (supporter)". Null — the line is hidden — when Stash's
+ * Tidal relay is not this listener's (none configured, or their own server) or nothing is known yet. [time] formats the reset in local time.
  */
 internal fun losslessTodayLine(
     allowance: LosslessAllowance?,

@@ -124,6 +124,14 @@ class NowPlayingPreference @Inject constructor(@ApplicationContext private val c
         context.nowPlayingDataStore.edit { it[fullArtKey] = on }
     }
 
+    /**
+     * Turns [fullArt] over in one DataStore edit, which reads and writes together: two quick taps are
+     * two flips (each used to read the same not-yet-updated value and write the same answer).
+     */
+    suspend fun toggleFullArt() {
+        context.nowPlayingDataStore.edit { it[fullArtKey] = !(it[fullArtKey] ?: true) }
+    }
+
     private val titleAlignKey = stringPreferencesKey("title_align")
 
     /** Unset or unknown reads as [NpTitleAlign.DEFAULT]. */

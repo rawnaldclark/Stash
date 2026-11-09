@@ -147,6 +147,12 @@ private const val STILL_MAX_STEP_MS = 2 * STILL_TICK_MS
 private const val NEW_SONG_SETTLE_MS = 1_000L
 private const val NEW_SONG_START_MS = 3_000L
 
+/**
+ * The page full art opens on not in hand this long after opening (a slow back or inside page), the
+ * art opens on the front instead: the square art just drew it, so it's in memory.
+ */
+internal const val FIRST_PAGE_GRACE_MS = 400L
+
 /** One page full art can show: the front first, then the back and the pages inside. */
 @Immutable
 internal class FullArtPage(
@@ -194,9 +200,16 @@ internal class FullArtState {
     /** Moves only while a page fades in: the blend redraws then, and is still otherwise. */
     internal var fadeMs by mutableLongStateOf(0L)
 
-    /** The first page is in hand: the art grows out only then, so the square never leaves a gap. */
+    /**
+     * The page on screen is in hand: the art grows out only then, so the square never leaves a gap.
+     * Cleared when full art closes ([close]), so a reopen waits for its own page; a page that fails
+     * or is slow at opening gives way to the front ([tick]), so it is always reached.
+     */
     var ready by mutableStateOf(false)
         private set
+
+    /** When it last opened (frame time): the page it opened on has [FIRST_PAGE_GRACE_MS] from here. */
+    private var openedMs = 0L
 
     /** Time spent playing (it stands still while paused): the pan's clock. */
     internal var playMs = 0L
@@ -230,18 +243,39 @@ internal class FullArtState {
 
     /** Opened on [start] (the page the square art was showing); the pages go on from there. */
     fun open(now: Long, position: Long, start: Int) {
+        if (pages.isEmpty()) return
         songMs = position
         lastFrameMs = now
+        openedMs = now
         segment = schedule.segmentAt(position)
         val first = start.coerceIn(0, pages.size - 1)
-        offset = (first - schedule.pageAt(segment)).mod(pages.size)
-        shown.clear()
-        pending = null
-        ready = false
-        shown.add(Shown(pages[first], now - PAGE_FADE_MS, playMs, direction()))
+        // Fresh, it's unready already ([close]). Turned back on before it had shrunk away, it stays
+        // ready only if this page is in hand: never the square hidden over a page not drawn.
+        if (pages[first].key !in loaded) ready = false
+        showFirst(first, now)
         // A loop resting between still ticks would see the page (and grow the art out) up to
         // STILL_TICK_MS later: reopened while paused, the pages are usually in hand already.
         wake()
+    }
+
+    /** [index] on screen at once, nothing under it, the pages going on from it. */
+    private fun showFirst(index: Int, now: Long) {
+        offset = (index - schedule.pageAt(segment.coerceAtLeast(0))).mod(pages.size)
+        shown.clear()
+        pending = null
+        shown.add(Shown(pages[index], now - PAGE_FADE_MS, playMs, direction()))
+    }
+
+    /**
+     * Full art gone: shrunk back into the square, or Now Playing off the top of the sheet. The next
+     * open starts unready, so it waits for its own first page instead of growing over an empty one.
+     */
+    fun close() {
+        ready = false
+        shown.clear()
+        pending = null
+        // The next open tells the square art its page again, whatever page this one ended on.
+        reported = -1
     }
 
     /** A new song: its front, faded to over the page the last one ended on. */
@@ -335,6 +369,16 @@ internal class FullArtState {
                 while (shown.size > MAX_SHOWN) shown.removeAt(0)
             }
         }
+        // Not out yet, the page it opened on failed, or isn't in hand FIRST_PAGE_GRACE_MS after
+        // opening: it opens on the front instead (or the first page after it that hasn't failed),
+        // so the art always comes out. Every page failed, the square art stays.
+        val opening = shown.lastOrNull()
+        if (!ready && opening != null && opening.page.key !in loaded &&
+            (opening.page.key in failed || now - openedMs >= FIRST_PAGE_GRACE_MS)
+        ) {
+            val standIn = pages.indexOfFirst { it.key !in failed }
+            if (standIn >= 0 && pages[standIn].key != opening.page.key) showFirst(standIn, now)
+        }
         val top = shown.lastOrNull()
         if (!ready && top != null && top.page.key in loaded) {
             ready = true
@@ -375,6 +419,18 @@ internal class FullArtState {
 
 @Composable
 internal fun rememberFullArtState(): FullArtState = remember { FullArtState() }
+
+/**
+ * Where full art's grow heads: 1 out of the square, 0 back into it, null held where it is. Out only
+ * once the page on screen is in hand ([FullArtState.ready]), so the square never leaves a gap; back
+ * in (turned off, or Now Playing leaving the top of the sheet) at any time.
+ */
+internal fun fullArtGrowTo(target: Boolean, visible: Boolean, ready: Boolean): Float? = when {
+    !visible -> 0f
+    target && !ready -> null
+    target -> 1f
+    else -> 0f
+}
 
 /**
  * Now Playing's colours while full art is out: the dark theme's, whatever the app's, since the
@@ -450,13 +506,13 @@ internal fun FullArtLayer(
     val loopsStill = rememberNpLoopsStill()
     val target = active && visible && pages.isNotEmpty()
     LaunchedEffect(target, visible, reducedMotion, state.ready) {
-        when {
-            // Leaving the top of the sheet (or for lyrics): the square takes the art back at once.
-            !visible -> state.grow.snapTo(0f)
-            // Out only once its first page is in hand.
-            target && !state.ready -> Unit
-            reducedMotion -> state.grow.snapTo(if (target) 1f else 0f)
-            else -> state.grow.animateTo(if (target) 1f else 0f, tween(GROW_MS, easing = FastOutSlowInEasing))
+        // Held (null) until its first page is in hand.
+        val to = fullArtGrowTo(target, visible, state.ready) ?: return@LaunchedEffect
+        // Leaving the top of the sheet (or for lyrics): the square takes the art back at once.
+        if (!visible || reducedMotion) {
+            state.grow.snapTo(to)
+        } else {
+            state.grow.animateTo(to, tween(GROW_MS, easing = FastOutSlowInEasing))
         }
     }
     val artAlpha = remember { Animatable(if (artShown) 1f else 0f) }
@@ -465,6 +521,9 @@ internal fun FullArtLayer(
         if (reducedMotion) artAlpha.snapTo(to) else artAlpha.animateTo(to, tween(if (artShown) ART_IN_MS else ART_OUT_MS))
     }
     if (!target && state.grow.value == 0f) return
+    // Leaving (shrunk back into the square, or Now Playing off the top of the sheet): the next open
+    // starts unready, so it never grows over a page not yet in hand.
+    DisposableEffect(state) { onDispose { state.close() } }
 
     val schedule = remember(durationMs, pages.size, cycle) { fullArtSchedule(durationMs, pages.size, cycle) }
     val loaded = remember { mutableStateMapOf<String, LoadedPage>() }
@@ -479,6 +538,9 @@ internal fun FullArtLayer(
     val currentPosition by rememberUpdatedState(positionMs)
     val currentPlaying by rememberUpdatedState(isPlaying)
     val currentStart by rememberUpdatedState(startPage)
+    // The open waits a frame: by then the song (and its pages) may have changed.
+    val currentPages by rememberUpdatedState(pages)
+    val currentSchedule by rememberUpdatedState(schedule)
     // Nothing to pan with Full art pan off, or with lyrics up over the (invisible) art.
     val pans = panDpPerS > 0f && artShown
     val currentPans by rememberUpdatedState(pans)
@@ -487,8 +549,8 @@ internal fun FullArtLayer(
     LaunchedEffect(target) {
         if (target) {
             val now = withFrameMillis { it }
-            state.pages = pages
-            state.schedule = schedule
+            state.pages = currentPages
+            state.schedule = currentSchedule
             state.open(now, currentPosition(), currentStart)
         }
     }

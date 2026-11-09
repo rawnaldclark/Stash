@@ -82,7 +82,6 @@
     <string name="settings_connecting">Подключение...</string>
     <string name="settings_connect">Привязать</string>
     <string name="settings_advanced">Расширенные</string>
-    <string name="settings_squid_captcha_placeholder">напр. 1777687404951</string>
     <!-- Settings > Audio & Quality > Lossless tiers -->
     <string name="settings_lossless_tier_max">Максимальное (24-бит/192 кГц)</string>
     <string name="settings_lossless_tier_max_hint">~140 МБ / 4 мин.</string>

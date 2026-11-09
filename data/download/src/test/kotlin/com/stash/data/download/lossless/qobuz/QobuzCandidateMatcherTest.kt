@@ -4,16 +4,17 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.model.MusicSource
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.forLibrarySource
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
  * Characterization tests for [QobuzCandidateMatcher] — the scorer extracted
- * (behavior-preserving) out of [QobuzSource]. These pin the EXACT scoring the
- * old `QobuzSource.confidence` produced so the qbdlx source can reuse it.
+ * (behavior-preserving) out of the retired squid.wtf `QobuzSource`. These
+ * pin the EXACT scoring the old `QobuzSource.confidence` produced so the
+ * qbdlx source can reuse it.
  *
- * The helper primitives (`normalize`/`jaccard`/`artistSimilarity`) keep their
- * own coverage in [QobuzSourceTest] via the delegating shims, so they aren't
- * re-tested here.
+ * The helper primitives (`normalize`/`jaccard`/`artistSimilarity`) are
+ * tested directly at the end.
  */
 class QobuzCandidateMatcherTest {
 
@@ -418,5 +419,91 @@ class QobuzCandidateMatcherTest {
     @Test fun `a rework is another version`() {
         assertThat(score("Jamming", "Jamming", candVersion = "FISHER Rework")).isLessThan(QobuzCandidateMatcher.MIN_CONFIDENCE)
         assertThat(score("Parola - Rework", "Parola", candVersion = "Rework")).isEqualTo(1.0f)
+    }
+
+    // ── The matching primitives (moved here from the retired QobuzSourceTest) ──
+
+    @Test fun `normalize lowercases strips parens feat punctuation`() {
+        assertEquals(
+            "karma police",
+            QobuzCandidateMatcher.normalize("Karma Police (Remastered) feat. someone"),
+        )
+        assertEquals("song name", QobuzCandidateMatcher.normalize("Song Name [Live Version]"))
+        assertEquals("dont stop me now", QobuzCandidateMatcher.normalize("Don't Stop Me Now!"))
+    }
+
+    @Test fun `jaccard 1 for identical 0 for disjoint`() {
+        assertEquals(1.0f, QobuzCandidateMatcher.jaccard("a b c", "a b c"), 0.001f)
+        assertEquals(0.0f, QobuzCandidateMatcher.jaccard("a b c", "x y z"), 0.001f)
+        // {a,b} ∩ {a,c} = {a} (size 1), union {a,b,c} (size 3) → 1/3
+        assertEquals(1f / 3f, QobuzCandidateMatcher.jaccard("a b", "a c"), 0.001f)
+        // Half overlap on equal-size sets: {a,b,c,d} ∩ {a,b,e,f} = {a,b}
+        // (size 2), union (size 6) → 1/3 (not 0.5 — Jaccard is more
+        // strict than overlap coefficient).
+        assertEquals(1f / 3f, QobuzCandidateMatcher.jaccard("a b c d", "a b e f"), 0.001f)
+    }
+
+    @Test fun `artistSimilarity rewards subset matches with distinctive overlap`() {
+        // Spotify expansion vs Qobuz canonical — the case that was
+        // silently dropping every Diana Ross track in production.
+        val sim = QobuzCandidateMatcher.artistSimilarity(
+            "diana ross and the supremes",
+            "the supremes",
+        )
+        // Subset coverage: {the,supremes} ⊂ {diana,ross,and,the,supremes}
+        // → 2/2 = 1.0 (smaller set fully contained, "supremes" is distinctive)
+        assertEquals(1.0f, sim, 0.001f)
+    }
+
+    @Test fun `artistSimilarity rewards single-canonical-artist subset (lead-artist case)`() {
+        // Spotify expansion to featuring list; Qobuz indexes lead only.
+        val sim = QobuzCandidateMatcher.artistSimilarity(
+            "ghostemane shakewell pouya erick the architect",
+            "ghostemane",
+        )
+        // {ghostemane} ⊂ larger set, "ghostemane" length > 3 → 1.0
+        assertEquals(1.0f, sim, 0.001f)
+    }
+
+    @Test fun `artistSimilarity rejects subset with no distinctive overlap`() {
+        // Both share only short tokens (length <= 3) — should NOT
+        // flip to subset-coverage. Falls back to jaccard.
+        val sim = QobuzCandidateMatcher.artistSimilarity("the air", "the dog")
+        // Intersection {the}, union {the,air,dog} → jaccard 1/3.
+        // Subset coverage would be 1/2 but is gated off (no distinctive overlap).
+        assertEquals(1f / 3f, sim, 0.001f)
+    }
+
+    @Test fun `artistSimilarity returns 1 for identical strings`() {
+        assertEquals(1.0f, QobuzCandidateMatcher.artistSimilarity("radiohead", "radiohead"), 0.001f)
+    }
+
+    @Test
+    fun `artistSimilarity matches yen-dollar against expanded form`() {
+        val score = QobuzCandidateMatcher.artistSimilarity(
+            QobuzCandidateMatcher.normalize("¥$, Kanye West, Ty Dolla \$ign"),
+            QobuzCandidateMatcher.normalize("¥$"),
+        )
+        // Subset coverage should hit since "¥$" is fully contained and
+        // distinctive (non-alphanumeric).
+        assertThat(score).isAtLeast(0.5f)
+    }
+
+    @Test
+    fun `normalize preserves currency symbols`() {
+        assertThat(QobuzCandidateMatcher.normalize("¥$")).isEqualTo("¥$")
+        assertThat(QobuzCandidateMatcher.normalize("\$NOT")).isEqualTo("\$not")
+        assertThat(QobuzCandidateMatcher.normalize("+44")).isEqualTo("+44")
+    }
+
+    @Test
+    fun `artistSimilarity still rejects generic short tokens`() {
+        // "U2" vs "Air": both length-2 letter-only tokens, should NOT
+        // hit the distinctive-overlap shortcut and should score low.
+        val score = QobuzCandidateMatcher.artistSimilarity(
+            QobuzCandidateMatcher.normalize("U2"),
+            QobuzCandidateMatcher.normalize("Air"),
+        )
+        assertThat(score).isLessThan(0.5f)
     }
 }

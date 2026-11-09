@@ -36,8 +36,7 @@ dependencies {
     implementation(project(":data:ytmusic"))
     implementation(libs.coil.compose)
     implementation(libs.compose.material.icons.extended)
-    // For the "Fix wrong-version downloads" backfill trigger in Settings,
-    // which enqueues YtLibraryBackfillWorker via WorkManager.
+    // WorkManager: FLAC upgrades, Library health and the About screen observe and enqueue work.
     implementation(libs.work.runtime.ktx)
     // For LoudnessFirstRunStore — shares the app-wide DataStore<Preferences>
     // with LoudnessStore / LoudnessProgressStore in :core:data and :core:media.

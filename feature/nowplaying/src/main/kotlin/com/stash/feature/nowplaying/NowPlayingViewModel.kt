@@ -207,9 +207,17 @@ class NowPlayingViewModel @Inject constructor(
     val titleButton: StateFlow<com.stash.core.data.prefs.TitleButton> = nowPlayingPreference.titleButton
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.stash.core.data.prefs.TitleButton.SLEEP_TIMER)
 
+    /**
+     * The top row's Full art toggle. Before the preference has answered ([fullArt] null) Now Playing
+     * shows the standard layout, so the button offers "on": a tap then turns it on. After, it turns
+     * the stored layout over in one write ([NowPlayingPreference.toggleFullArt]), so two quick taps
+     * are two flips rather than two writes of the same value.
+     */
     fun onToggleFullArt() {
-        val on = fullArt.value != true
-        viewModelScope.launch { nowPlayingPreference.setFullArt(on) }
+        val shown = fullArt.value
+        viewModelScope.launch {
+            if (shown == null) nowPlayingPreference.setFullArt(true) else nowPlayingPreference.toggleFullArt()
+        }
     }
 
     /** Settings > Appearance > Ambient style. */

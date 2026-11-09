@@ -76,16 +76,17 @@ import { LINKS } from '../../data/site';
       <details data-if="signed-in">
         <summary>Where does lossless come from?<Icon name="chevron-down" class="chevron" /></summary>
         <div class="answer" id="faq-lossless">
-          <p>There's no Qobuz account or token inside the app. FLAC can come from:</p>
+          <p>There's no Qobuz or Tidal account or token inside the app. FLAC can come from:</p>
           <ul>
             <li>
-              <strong>Your own Qobuz account</strong>, connected in Settings › Audio &amp; Quality. Your email
-              and password are sent once to Qobuz to mint a token; Stash keeps the token, not the password.
+              <strong>Your own Qobuz account</strong>, connected in Settings › Audio &amp; Quality › Lossless
+              sources. Your email and password are sent once to Qobuz to mint a token; Stash keeps the token, not
+              the password.
             </li>
-            <li><strong>Your own relay endpoint</strong>, if you run one, set under Advanced on the same screen.</li>
             <li>
-              <strong>Stash's relay</strong>, in official release builds only, when nothing of your own is connected
-              or working. The <a href="/privacy#lossless-and-fallback-audio">privacy page</a> says what it's sent.
+              <strong>The project's Tidal relay</strong>, in official release builds only, when your own account
+              isn't connected or can't serve the song. Or your own Tidal server, set under Advanced on the same
+              screen. The <a href="/privacy#lossless-and-fallback-audio">privacy page</a> says what the relay is sent.
             </li>
           </ul>
           <p>

@@ -13,23 +13,23 @@ import okhttp3.Request
 import okhttp3.Response
 
 /**
- * Signs requests to the owner's relays (spec §5.4), shared by the Qobuz relay client and the
- * Tidal relay client so both carry the same install identity and the same learned clock offset.
+ * Signs requests to the owner's Tidal relay (spec §5.4): its streams, the allowance endpoint and
+ * its quota reads all carry the same install identity and the same learned clock offset.
  *
  * `X-Stash-Auth` = hex HMAC-SHA256 with the signed config's `relay_key` over
  * `"<install_id>:<payload>:<unix_ts>"`, with `X-Stash-Install` and `X-Stash-Ts` alongside. The
- * payload names what is asked (`<track_id>:<format_id>` for a Qobuz mint, `td:<id>` for a Tidal
- * stream, `quota` for the allowance endpoints). The install id sits INSIDE the MAC so a captured
+ * payload names what is asked (`td:<id>` for a Tidal stream, `quota` for the allowance
+ * endpoint). The install id sits INSIDE the MAC so a captured
  * header cannot be replayed under another install's allowance; the timestamp lets the relay
  * reject anything outside its ±5 min window.
  *
  * No key → no headers. A user-run server built to the public contract needs none.
  *
  * Callers pass their own clock (each client has a test seam for it); the offset is the one
- * piece of state, so a skew learned from either relay fixes both.
+ * piece of state, so a skew learned by one caller fixes the others.
  *
- * [entitle] adds the Ko-fi supporter token ([SupporterRepository]) the same way: owner relays
- * only, decided by the caller, since a Qobuz mint may also go to a user's own endpoint.
+ * [entitle] adds the Ko-fi supporter token ([SupporterRepository]) the same way: the owner's
+ * relay only, decided by the caller, since a Tidal request may also go to a user's own server.
  */
 @Singleton
 class RelaySigner @Inject constructor(
@@ -85,9 +85,6 @@ class RelaySigner @Inject constructor(
     /** True when a supporter token is stored, i.e. [entitle] would add it. */
     suspend fun entitled(): Boolean = supporter.tokenNow() != null
 
-    /** True when [base] is one of the signed config's Qobuz relays (not a user's own endpoint). */
-    fun isOwnerRelay(base: String): Boolean = config.relays.value.any { it.base == base }
-
     /**
      * On a 401 carrying `X-Stash-Server-Time` (epoch seconds, sent for signature / timestamp
      * failures), record the device's offset from it. False when the header is absent or junk:
@@ -103,6 +100,9 @@ class RelaySigner @Inject constructor(
     companion object {
         private const val TAG = "RelaySigner"
         const val ENTITLEMENT_HEADER = "X-Stash-Entitlement"
+
+        /** Wire-protocol version sent as `X-Stash-Version` on the owner relay's quota reads. */
+        const val PROTOCOL_VERSION = "1"
 
         /** A relay refusing this build: its `MIN_APP_BUILD` is above it (`app_too_old`). */
         const val APP_TOO_OLD = 426
