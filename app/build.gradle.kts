@@ -76,6 +76,17 @@ val lastFmExtraApiKeys: String =
 val lastFmProxyUrl: String =
     localProperties.getProperty("lastfm.proxyUrl") ?: System.getenv("LASTFM_PROXY_URL").orEmpty()
 
+// ── The app's own locales (androidResources.localeFilters below) ──────────────
+//
+// Read from the values-<lang>[-r<REGION>] folders of every module, so a translation added later is
+// never filtered out by accident: values-de-rDE gives "de" and "de-rDE".
+val appOwnLocales: List<String> = rootProject.subprojects
+    .flatMap { (it.projectDir.resolve("src/main/res").listFiles() ?: emptyArray()).toList() }
+    .mapNotNull { Regex("values-([a-z]{2,3})(-r[A-Z]{2})?").matchEntire(it.name) }
+    .flatMap { m -> listOf(m.groupValues[1], m.groupValues[1] + m.groupValues[2]) }
+    .distinct()
+    .sorted()
+
 // ── Cloud storage libraries (spec 2026-10-19-cloud-storage-design.md) ─────
 //
 // Public-client ids (PKCE, no secret) from `local.properties` or env vars (CI):
@@ -252,13 +263,18 @@ android {
     buildFeatures { compose = true; buildConfig = true }
     androidResources {
         generateLocaleConfig = true
-        // Only the languages the app itself is translated into (the values-* folders across the
-        // modules), plus English. Libraries (appcompat, Cast, mediarouter, play-services, ...) ship
-        // strings in ~80 locales; without this they fill half of resources.arsc. A language code
-        // keeps every region of it (de keeps de-rDE). The default (unqualified) strings always stay.
-        // tl is the older code for Filipino that AndroidX libraries still use (ours is fil).
+        // Library strings only in the app's own languages. Libraries (appcompat, Cast, mediarouter,
+        // play-services, ...) ship ~80 locales; unfiltered they fill half of resources.arsc.
+        // aapt2 matches these exactly ("de" does NOT keep "de-rDE"), so appOwnLocales names both
+        // the plain code and the region of every values-* folder in our modules: drop one and the
+        // app loses that translation and the language picker loses the language. The default
+        // (unqualified) strings always stay.
+        localeFilters += appOwnLocales
+        // The libraries' other regions of those languages that v0.9.123 shipped, and tl, the
+        // older code for Filipino that AndroidX still uses (ours is fil-rPH).
         localeFilters += listOf(
-            "en", "ar", "de", "es", "fa", "fil", "tl", "fr", "hi", "ko", "mr", "pl", "pt", "ru", "zh",
+            "en", "en-rAU", "en-rCA", "en-rGB", "en-rIN",
+            "es-rUS", "fr-rCA", "pt-rPT", "tl", "zh-rHK", "zh-rTW",
         )
     }
     packaging {
