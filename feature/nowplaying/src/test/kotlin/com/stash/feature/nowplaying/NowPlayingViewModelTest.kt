@@ -1109,9 +1109,10 @@ class NowPlayingViewModelQueueUndoTest {
 }
 
 /**
- * The Full art toggle turns the stored layout over in one write. It used to write the opposite of
- * the screen's copy: two quick taps wrote the same value, and a tap before the copy loaded wrote
- * "on" over whatever was stored.
+ * The Full art toggle. Before the preference has answered, Now Playing shows the standard layout,
+ * so the button offers "on" and a tap turns it on (flipping the stored default would turn it off).
+ * After, it turns the stored layout over in one write: two quick taps used to read the same copy
+ * and write the same value.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class NowPlayingViewModelFullArtToggleTest {
@@ -1121,9 +1122,16 @@ class NowPlayingViewModelFullArtToggleTest {
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
     @After fun tearDown() { Dispatchers.resetMain() }
 
-    private val preference: NowPlayingPreference = mockk(relaxed = true)
+    /** What DataStore holds for full_art: null is unset, which reads as on. */
+    private var stored: Boolean? = null
 
-    private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
+    private fun preference(answered: kotlinx.coroutines.flow.Flow<Boolean>): NowPlayingPreference = mockk(relaxed = true) {
+        every { fullArt } returns answered
+        coEvery { setFullArt(any()) } answers { stored = firstArg() }
+        coEvery { toggleFullArt() } answers { stored = !(stored ?: true) }
+    }
+
+    private fun newViewModel(preference: NowPlayingPreference): NowPlayingViewModel = NowPlayingViewModel(
         playerRepository = mockk(relaxed = true) {
             every { playerState } returns MutableStateFlow(PlayerState())
             every { currentPosition } returns MutableStateFlow(0L)
@@ -1143,15 +1151,31 @@ class NowPlayingViewModelFullArtToggleTest {
         ytMusicApiClient = mockk(relaxed = true),
     )
 
-    @Test fun `two quick taps before the preference has answered are two flips of what is stored`() = runTest(dispatcher) {
-        val vm = newViewModel()
+    @Test fun `a tap before the preference has answered turns full art on, as the button offers`() = runTest(dispatcher) {
+        // The screen is collecting, but DataStore hasn't answered: it shows the standard layout.
+        val preference = preference(MutableSharedFlow())
+        val vm = newViewModel(preference)
+        backgroundScope.launch { vm.fullArt.collect {} }
+        assertEquals(null, vm.fullArt.value)
+
+        vm.onToggleFullArt()
         advanceUntilIdle()
-        assertEquals("nothing collected: the screen's copy is still unknown", null, vm.fullArt.value)
+
+        assertEquals("on, not the stored default flipped off", true, stored)
+        coVerify(exactly = 0) { preference.toggleFullArt() }
+    }
+
+    @Test fun `two quick taps once the preference has answered are two flips of what is stored`() = runTest(dispatcher) {
+        val preference = preference(MutableStateFlow(true))
+        val vm = newViewModel(preference)
+        backgroundScope.launch { vm.fullArt.collect {} }
+        assertEquals(true, vm.fullArt.value)
 
         vm.onToggleFullArt()
         vm.onToggleFullArt()
         advanceUntilIdle()
 
         coVerify(exactly = 2) { preference.toggleFullArt() }
+        assertEquals("off, then on again", true, stored)
     }
 }
