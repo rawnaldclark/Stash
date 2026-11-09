@@ -207,9 +207,9 @@ class NowPlayingViewModel @Inject constructor(
     val titleButton: StateFlow<com.stash.core.data.prefs.TitleButton> = nowPlayingPreference.titleButton
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.stash.core.data.prefs.TitleButton.SLEEP_TIMER)
 
+    /** Turns the stored layout over in one write ([NowPlayingPreference.toggleFullArt]), not from [fullArt]'s copy. */
     fun onToggleFullArt() {
-        val on = fullArt.value != true
-        viewModelScope.launch { nowPlayingPreference.setFullArt(on) }
+        viewModelScope.launch { nowPlayingPreference.toggleFullArt() }
     }
 
     /** Settings > Appearance > Ambient style. */
