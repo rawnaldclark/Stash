@@ -671,10 +671,6 @@ class SettingsViewModel @Inject constructor(
     fun consumeDeepLinkFocus(): com.stash.core.data.navigation.SettingsFocus? =
         settingsDeepLinkController.consume()
 
-    // Phase 8: `blockedCount` + `onRunYtLibraryBackfill` relocated to
-    // SyncViewModel — the Blocked Songs + Fix-wrong-version rows moved
-    // out of Settings into the Sync tab's Library section.
-
     /**
      * The main UI state, combining reactive auth states from [TokenManager],
      * the persisted quality tier, and local UI state.
