@@ -249,3 +249,49 @@ jobs:
         with:
           name: stash-debug-apk
           path: ${{ steps.find_apk.outputs.apk_path }}
+
+  # The release build runs R8 (app/proguard-rules.pro), and only the release build does: a new library whose
+  # classes R8 can't resolve, or a rule that no longer parses, fails `assembleRelease` alone. Without this job that
+  # failure would first show when a release tag is pushed. Built the way release.yml builds it, minus the signing
+  # key (the APK comes out unsigned) and with empty BuildConfig secrets, like a contributor's checkout.
+  build-release-apk:
+    if: >-
+      github.event_name != 'push' ||
+      (github.ref == 'refs/heads/master' && !contains(github.event.head_commit.message, '[skip test]')) ||
+      (github.ref != 'refs/heads/master' && contains(github.event.head_commit.message, '[do test]'))
+    name: Build release APK (R8)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Fix gradlew permission
+        run: chmod +x gradlew
+
+      # Tuning's pitch engine is native code (core/media/src/main/cpp). The same NDK and CMake
+      # versions as core/media/build.gradle.kts pins: change them together.
+      - name: Install NDK and CMake
+        run: echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" "cmake;3.22.1" > /dev/null
+
+      - name: Assemble release APK
+        run: ./gradlew :app:assembleRelease --no-daemon
+
+      - name: Report APK size
+        run: |
+          APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n1)
+          if [ -z "$APK" ]; then
+            echo "::error::No release APK produced by assembleRelease"
+            exit 1
+          fi
+          echo "Built: $APK ($(du -h "$APK" | cut -f1))" | tee -a "$GITHUB_STEP_SUMMARY"

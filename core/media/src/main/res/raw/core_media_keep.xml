@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Resource shrinking (release builds): resources the code reaches only by name, which the shrinker can't see.
+    ic_shuffle is Android Auto's Shuffle tile artwork, passed as android.resource://<package>/drawable/ic_shuffle
+    (StashPlaybackService).
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_shuffle" />

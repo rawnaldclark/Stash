@@ -1,67 +1,42 @@
-# Stash ProGuard Rules
+# Stash R8 rules: the release build, and the debug build made with -Pstash.minifyDebug=true (app/build.gradle.kts).
+#
+# R8 removes code and resources nothing uses and optimizes the rest. It never renames anything (-dontobfuscate):
+#   - WorkManager stores each worker's class name in its database, and Hilt's worker map, the navigation routes
+#     and the bottom bar look classes up by name. Renamed classes would orphan queued work after an update.
+#   - Stash is open source, so renaming would hide nothing.
+#
+# Every library brings its own rules inside its AAR or JAR, and R8 reads them: AndroidX (Room, WorkManager,
+# DataStore, Glance, startup), Hilt, media3, kotlinx.serialization, OkHttp, Coil, Tink and play-services. So do the
+# defaults in proguard-android-optimize.txt (JNI method names, enum values()/valueOf(), @JavascriptInterface
+# methods, Parcelable CREATORs). The rules below cover only what none of those do. The modules' own name lookups
+# sit in their consumer-rules.pro, next to the code: core/media (Tuning's JNI) and core/data (the tip jar URL).
 
-# ── Attributes ──────────────────────────────────────────────────────────────
--keepattributes *Annotation*, InnerClasses, Signature, Exceptions, EnclosingMethod
+-dontobfuscate
 
-# ── kotlinx.serialization ──────────────────────────────────────────────────
--dontnote kotlinx.serialization.AnnotationsKt
--keep,includedescriptorclasses class com.stash.**$$serializer { *; }
--keepclassmembers class com.stash.** { *** Companion; }
--keepclasseswithmembers class com.stash.** { kotlinx.serialization.KSerializer serializer(...); }
--keepattributes RuntimeVisibleAnnotations, AnnotationDefault
+# Line numbers for stack traces; R8 drops them otherwise. Even unrenamed, a release trace needs that release's
+# mapping.txt to read exactly: R8 records positions that the mapping turns back into source lines, and it inlines
+# and merges code, so a frame can name the class a method was moved into. release.yml keeps the mapping as the
+# r8-mapping-<tag> workflow artifact for 90 days.
+-keepattributes SourceFile,LineNumberTable
 
-# ── Hilt / Dagger ───────────────────────────────────────────────────────────
--keep class dagger.hilt.** { *; }
--keep class javax.inject.** { *; }
--keep class * extends dagger.hilt.android.lifecycle.HiltViewModel
--keepclasseswithmembers class * {
-    @dagger.hilt.InstallIn <methods>;
-}
+# Apache Commons Compress, which youtubedl-android uses to unzip its Python and ffmpeg bundles (on a fresh install
+# and after a library update): ExtraFieldUtils creates each zip extra-field class with Class.newInstance(). Nothing
+# else creates them, so R8 drops their constructors and every unzip fails with "AsiExtraField is not a concrete
+# class", leaving the app without yt-dlp and ffmpeg.
+-keep class * implements org.apache.commons.compress.archivers.zip.ZipExtraField { <init>(); }
 
-# ── Room ────────────────────────────────────────────────────────────────────
--keep class * extends androidx.room.RoomDatabase
--keep @androidx.room.Entity class *
--keep @androidx.room.Dao class *
--keepclassmembers class * {
-    @androidx.room.* <fields>;
-    @androidx.room.* <methods>;
-}
+# androidx.core: an accessibility action that takes arguments (scroll to position, set text, ...) creates its
+# argument holder with getDeclaredConstructor().newInstance(). Nothing else creates those holders, so R8 drops their
+# constructors and the action runs without its arguments. Only library Views use these; Stash's Compose screens
+# don't. Small (seven classes), and it keeps TalkBack working wherever they do.
+-keep class * extends androidx.core.view.accessibility.AccessibilityViewCommand$CommandArguments { <init>(); }
 
-# ── Chaquopy (Python runtime embedded by youtubedl-android) ─────────────────
-# Chaquopy uses reflection to bridge Java ↔ Python. R8 obfuscation breaks
-# its class-lookup code with "class X is not a concrete class" errors.
-# The rules below keep every class, method, and field in the Chaquopy
-# packages so reflection continues to work at runtime.
--keep class com.chaquo.python.** { *; }
--keep interface com.chaquo.python.** { *; }
--keep enum com.chaquo.python.** { *; }
--keepclassmembers class com.chaquo.python.** { *; }
--dontwarn com.chaquo.python.**
+# Cast: CastContext creates the class named in the manifest's OPTIONS_PROVIDER_CLASS_NAME meta-data
+# (StashCastOptionsProvider) by reflection. play-services-cast-framework's own rule keeps its methods but not its
+# constructor, and nothing else creates one, so R8 would remove the constructor and Cast would fail to start.
+-keep class * implements com.google.android.gms.cast.framework.OptionsProvider { public <init>(); }
 
-# ── youtubedl-android (yausername bindings on top of Chaquopy) ──────────────
--keep class com.yausername.** { *; }
--keep interface com.yausername.** { *; }
--keepclassmembers class com.yausername.** { *; }
--dontwarn com.yausername.**
-
-# ── Google Tink (AES-256-GCM used for credential encryption) ────────────────
-# Tink registers primitives via reflection at runtime.
--keep class com.google.crypto.tink.** { *; }
--keep interface com.google.crypto.tink.** { *; }
--dontwarn com.google.crypto.tink.**
--keep class com.google.protobuf.** { *; }
--dontwarn com.google.protobuf.**
-
-# ── Media3 / ExoPlayer ──────────────────────────────────────────────────────
--keep class androidx.media3.** { *; }
--dontwarn androidx.media3.**
-
-# ── Coil / OkHttp / Okio ────────────────────────────────────────────────────
--dontwarn coil3.**
--dontwarn okhttp3.**
--dontwarn okio.**
-
-# ── Kotlin reflection ───────────────────────────────────────────────────────
--keep class kotlin.Metadata { *; }
--keep class kotlin.reflect.** { *; }
--dontwarn kotlin.reflect.**
+# youtubedl-android: YoutubeDL.getInfo() has Jackson fill these classes from yt-dlp's JSON by reflection. Stash
+# doesn't call getInfo() today, so R8 would drop them; keeping them (four small classes) means a future caller
+# doesn't get empty objects in release only. The rest of the library runs yt-dlp and ffmpeg as processes.
+-keep class com.yausername.youtubedl_android.mapper.** { *; }

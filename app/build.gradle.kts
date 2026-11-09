@@ -44,6 +44,10 @@ val hasReleaseSigning = releaseStoreFilePath != null &&
     releaseKeyAlias != null &&
     releaseKeyPassword != null
 
+// `-Pstash.minifyDebug=true` builds the debug app the way release is built (R8 + resource
+// shrinking). Off by default; see the debug build type below.
+val minifyDebug: Boolean = providers.gradleProperty("stash.minifyDebug").orNull.toBoolean()
+
 // ── Last.fm API credentials ────────────────────────────────────────────────
 //
 // Read from `local.properties` (gitignored) or env vars (CI). Users who want
@@ -224,22 +228,14 @@ android {
             // (first .apk asset) and releases/latest/download/Stash.apk keep working. Debug stays
             // universal so x86_64 emulators can run it.
             ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
-            // R8 minification is DISABLED because youtubedl-android embeds
-            // Chaquopy (Python runtime) + Apache Commons Compress + native
-            // binaries that use extensive reflection. R8 obfuscation renames
-            // classes those libraries look up by string name, causing
-            // "class X is not a concrete class" crashes on startup.
-            //
-            // This is the standard approach for apps in this space: NewPipe,
-            // Seal, YTDLnis, InnerTune all ship with minification off. The
-            // APK is ~5-10MB larger without minification (negligible next to
-            // the ~145MB Python/yt-dlp bundle it already carries), and the
-            // code-obfuscation benefit is moot for an open-source GPL-3.0
-            // project anyway.
-            //
-            // Resource shrinking is also off because it requires minification.
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // R8 shrinks the release build: it drops the code and resources nothing uses (most of
+            // material-icons-extended, unused library code) and optimizes the rest, but renames
+            // nothing (-dontobfuscate). app/proguard-rules.pro says why each keep rule is there; a
+            // module's own lookups by name sit in its consumer-rules.pro. youtubedl-android needs
+            // little: it runs Python and ffmpeg as child processes, not over JNI. CI builds this on
+            // every PR (tests.yml), so a shrinking break fails there, not when a release is tagged.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Only wire the release signing config if credentials were found.
             // Otherwise release builds fall back to the debug key for local testing.
@@ -254,6 +250,16 @@ android {
             applicationIdSuffix = ".debug"
             isDebuggable = true
             signingConfig = signingConfigs.getByName("debug")
+            if (minifyDebug) {
+                // The R8 check build (-Pstash.minifyDebug=true, never the default): the everyday
+                // debug app (same id, key and data) shrunk and optimized with the release rules, to
+                // try a keep-rule change on a phone with real data. Not debuggable, because R8 skips
+                // its optimizations for a debuggable build, and those are where a missing rule shows.
+                isDebuggable = false
+                isMinifyEnabled = true
+                isShrinkResources = true
+                proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            }
         }
     }
     compileOptions {

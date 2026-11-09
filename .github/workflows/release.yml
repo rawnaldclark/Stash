@@ -150,6 +150,17 @@ jobs:
           echo "release_name=$NEW_NAME" >> "$GITHUB_OUTPUT"
           ls -la "$RUNNER_TEMP/$NEW_NAME"
 
+      # R8 shrinks the release build. Names stay readable (-dontobfuscate), but a crash trace's line numbers and
+      # inlined frames need this release's mapping.txt to read back as source lines (app/proguard-rules.pro). Kept
+      # as a workflow artifact rather than a release asset, so the release still carries one file.
+      - name: Keep the R8 mapping file
+        uses: actions/upload-artifact@v6
+        with:
+          name: r8-mapping-${{ github.ref_name }}
+          path: app/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Extract tag annotation as release body
         id: tag_body
         run: |
