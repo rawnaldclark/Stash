@@ -155,6 +155,6 @@ class DownloadFailureClassifier @Inject constructor() {
         )
 
         /** "SAF" as a word ("Could not create SAF file"): a bare "saf" also matched "unsafe". */
-        private val SAF_WORD = Regex("\bsaf\b")
+        private val SAF_WORD = Regex("""\bsaf\b""")
     }
 }

@@ -118,9 +118,7 @@ class DownloadQueueResumer @Inject constructor(
      */
     suspend fun resume(trigger: ResumeTrigger, initialDelay: Duration = Duration.ZERO) {
         if (trigger == ResumeTrigger.USER) {
-            queueState.setPaused(false)
-            queueState.setStorageFull(false)
-            syncNotificationManager.cancelDownloadsPaused()
+            clearHold()
         } else if (queueState.isPaused() || queueState.storageFull.value) {
             return
         }
@@ -130,6 +128,16 @@ class DownloadQueueResumer @Inject constructor(
             enqueueResumeRun(trigger, initialDelay)
         }
         if (initialDelay == Duration.ZERO) musicRepository.resumeWaitingDownloads(tap = trigger == ResumeTrigger.USER)
+    }
+
+    /**
+     * Ends a Pause and an out-of-space hold without starting anything: "Sync now", whose own
+     * download step takes the songs.
+     */
+    suspend fun clearHold() {
+        queueState.setPaused(false)
+        queueState.setStorageFull(false)
+        syncNotificationManager.cancelDownloadsPaused()
     }
 
     /**
