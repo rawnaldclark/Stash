@@ -29,22 +29,16 @@ internal fun parseCustomSpeed(text: String): Float? = text.toFloatOrNull()?.take
 
 /**
  * The Playback speed action's words: "Playback speed", then whatever isn't standard, "1.25x" and
- * Tuning as "A432" ("Playback speed · 1.25x · A432"). Tuning lives in the same sheet.
+ * Tuning's [tuningMark] ("A432", from the module's strings; null at 440): "Playback speed · 1.25x
+ * · A432". Tuning lives in the same sheet.
  */
-internal fun speedActionLabel(speed: Float, tuningHz: Float): String {
-    val parts = listOfNotNull(
-        formatSpeed(speed).takeIf { speed != 1f },
-        "A${TuningMath.number(tuningHz)}".takeIf { TuningMath.isRetuned(tuningHz) },
-    )
+internal fun speedActionLabel(speed: Float, tuningMark: String?): String {
+    val parts = listOfNotNull(formatSpeed(speed).takeIf { speed != 1f }, tuningMark)
     return if (parts.isEmpty()) "Playback speed" else "Playback speed · " + parts.joinToString(" · ")
 }
 
 /** Whether the Playback speed action shows as on: a speed other than 1x, or Tuning away from 440. */
 internal fun speedActionActive(speed: Float, tuningHz: Float): Boolean = speed != 1f || TuningMath.isRetuned(tuningHz)
-
-/** "Tuning · Standard" or "Tuning · A = 432 Hz": the speed sheet's Tuning heading. */
-internal fun tuningHeading(tuningHz: Float): String =
-    if (TuningMath.isRetuned(tuningHz)) "Tuning · A = ${TuningMath.number(tuningHz)} Hz" else "Tuning · Standard"
 
 /**
  * Columns for the preset chips: four when the widest chip fits a quarter of the row, else two, so

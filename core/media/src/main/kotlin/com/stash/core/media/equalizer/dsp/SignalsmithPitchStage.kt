@@ -42,6 +42,19 @@ class SignalsmithPitchStage private constructor(
         if (h != 0L) SignalsmithNative.destroy(h)
     }
 
+    /**
+     * The safety net for a stage nobody released (every path pairs create with release; this only
+     * covers a leak, 1 to 3 MB of native memory at hi-res rates): frees it when the stage is
+     * collected. A finalizer, since java.lang.ref.Cleaner needs API 33 and Stash supports 26. Safe
+     * on the finalizer thread: an unreachable stage has no other caller.
+     */
+    protected fun finalize() {
+        if (handle != 0L) {
+            Log.w(TAG, "a tuning stage was never released: freeing it")
+            release()
+        }
+    }
+
     companion object {
         private const val TAG = "Tuning"
 

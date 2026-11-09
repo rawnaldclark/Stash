@@ -186,10 +186,14 @@ class HiResOutputController @Inject constructor(
         output.map { it?.mixer == MixerPath.BIT_PERFECT }
             .stateIn(scope, SharingStarted.Eagerly, false)
 
-    /** The listener-facing explanation of [output], ready for the signal-path sheet. */
+    /**
+     * The listener-facing explanation of [output], ready for the signal-path sheet. Tuning as the
+     * stream really does it ([OutputPathState.tuningHz]), not as chosen: a stream whose stage
+     * couldn't be built, or a paused one still waiting for its rebuild, isn't called retuned.
+     */
     val signalPath: StateFlow<SignalVerdict?> =
-        combine(source, output, dspActive, tuning.effectiveHz) { s, o, d, hz ->
-            SignalPathExplainer.explain(s, o, d, tuningHz = hz.takeIf { TuningMath.isRetuned(it) })
+        combine(source, output, dspActive) { s, o, d ->
+            SignalPathExplainer.explain(s, o, d, tuningHz = o?.tuningHz)
         }.stateIn(scope, SharingStarted.Eagerly, null)
 
     /** Listen Together holds bit-perfect off for its session; see [setBitPerfectHeld]. */
@@ -223,6 +227,14 @@ class HiResOutputController @Inject constructor(
         scope.launch {
             tuning.effectiveHz.map { TuningMath.isRetuned(it) }.distinctUntilChanged().drop(1)
                 .collect { onTuningChanged() }
+        }
+        // A stream whose pitch stage couldn't be built plays untuned: plan again without tuning
+        // (back to bit-perfect where that was given up for it).
+        scope.launch {
+            tuning.stageFailures.drop(1).collect {
+                Log.w(TAG, "tuning stage unavailable for a stream: replanning without it")
+                recheckLiveOutputs()
+            }
         }
         audioManager.registerAudioDeviceCallback(
             object : AudioDeviceCallback() {
@@ -262,7 +274,10 @@ class HiResOutputController @Inject constructor(
         if (attributes.usage != AudioAttributes.USAGE_MEDIA) return shared(MixerDecision.Reason.NOT_MEDIA_USAGE)
         if (device == null || !device.isUsb()) return shared(MixerDecision.Reason.NOT_USB)
         return refusals.screen(
-            MixerApi34.plan(audioManager, device, m, sampleRate, channelCount, session.speed, bitPerfectHeld, tuning.isRetuned()),
+            MixerApi34.plan(
+                audioManager, device, m, sampleRate, channelCount, session.speed, bitPerfectHeld,
+                tuning.isRetunedFor(sampleRate, channelCount),
+            ),
         )
     }
 
@@ -412,6 +427,9 @@ class HiResOutputController @Inject constructor(
             current.needsRebuildFor(fresh) -> output.requestReplan()
         }
     }
+
+    /** [output] started or stopped being retuned, or moved to another reference (playback thread). */
+    internal fun onTuningApplied(output: StashAudioOutput) = publishIfActive(output)
 
     /** Republishes [output]'s path when it is the audible stream. */
     private fun publishIfActive(output: StashAudioOutput) {

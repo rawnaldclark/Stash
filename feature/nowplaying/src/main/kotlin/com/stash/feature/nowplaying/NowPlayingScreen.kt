@@ -638,7 +638,8 @@ fun NowPlayingScreen(
     // The ⋮ row's words: where the music plays (or how a browser session stands), else "Play on".
     val castLabel = com.stash.feature.nowplaying.cast.playOnLine(playOn)
         ?: androidx.compose.ui.res.stringResource(R.string.play_on_title)
-    val visualState = remember(radioLabel != null, radioTuning, radioPlaying, reading, togetherState, playbackSpeed, tuningHz, isDownloaded, castConnectingTo, castingTo, castLabel) {
+    val tuningMark = tuningMark(tuningHz)
+    val visualState = remember(radioLabel != null, radioTuning, radioPlaying, reading, togetherState, playbackSpeed, tuningHz, tuningMark, isDownloaded, castConnectingTo, castingTo, castLabel) {
         ActionVisualState(
             radioActive = radioLabel != null,
             radioTuning = radioTuning,
@@ -646,6 +647,7 @@ fun NowPlayingScreen(
             together = togetherState,
             speed = playbackSpeed,
             tuningHz = tuningHz,
+            tuningMark = tuningMark,
             isDownloaded = isDownloaded,
             castConnectingTo = castConnectingTo,
             castingTo = castingTo,
@@ -2479,15 +2481,17 @@ private fun SpeedSheet(
  */
 @Composable
 private fun TuningChips(tuningHz: Float, onSelect: (Float) -> Unit, onCustom: () -> Unit) {
+    val locale = tuningLocale()
+    val customWord = androidx.compose.ui.res.stringResource(R.string.np_tuning_custom)
     val custom = tuningHz !in com.stash.core.model.TuningMath.QUICK_PRESETS
-    val labels = com.stash.core.model.TuningMath.QUICK_PRESETS.map { com.stash.core.model.TuningMath.number(it) } +
-        (if (custom) com.stash.core.model.TuningMath.number(tuningHz) else "Custom")
+    val labels = com.stash.core.model.TuningMath.QUICK_PRESETS.map { com.stash.core.model.TuningMath.number(it, locale) } +
+        (if (custom) com.stash.core.model.TuningMath.number(tuningHz, locale) else customWord)
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val labelStyle = MaterialTheme.typography.labelMedium
         val measurer = androidx.compose.ui.text.rememberTextMeasurer()
         val density = androidx.compose.ui.platform.LocalDensity.current
         val widestLabelPx = remember(labelStyle, density, labels) {
-            (labels + "Custom").maxOf { measurer.measure(it, labelStyle, maxLines = 1).size.width }
+            (labels + customWord).maxOf { measurer.measure(it, labelStyle, maxLines = 1).size.width }
         }
         val columns = with(density) {
             speedPresetColumns(
@@ -2532,8 +2536,9 @@ private fun TuningChips(tuningHz: Float, onSelect: (Float) -> Unit, onCustom: ()
 }
 
 /**
- * Exact Tuning entry, from the speed sheet's Custom chip: the same field rules as Settings' (one
- * decimal at most, the range's ends said before Set, anything that isn't a number refused).
+ * Exact Tuning entry, from the speed sheet's Custom chip: the same field rules and words as
+ * Settings' (any script's digits, one decimal at most, the range's ends said before Set, anything
+ * that isn't a number refused).
  */
 @Composable
 private fun CustomTuningDialog(
@@ -2542,41 +2547,37 @@ private fun CustomTuningDialog(
     onDismiss: () -> Unit,
 ) {
     val math = com.stash.core.model.TuningMath
-    var text by remember { mutableStateOf(if (math.isRetuned(initial)) math.number(initial) else "") }
+    val locale = tuningLocale()
+    var text by androidx.compose.runtime.saveable.rememberSaveable {
+        mutableStateOf(if (math.isRetuned(initial)) math.number(initial, locale) else "")
+    }
     val entry = math.parse(text)
     val value = (entry as? com.stash.core.model.TuningMath.Entry.Value)?.hz
-    val supporting = when (entry) {
-        com.stash.core.model.TuningMath.Entry.Empty -> "Any value from 392 to 494 Hz"
-        com.stash.core.model.TuningMath.Entry.Invalid -> "Type a number, like 432 or 431.5"
-        is com.stash.core.model.TuningMath.Entry.Value -> when {
-            entry.clamped && entry.hz == math.MIN_HZ -> "Sets ${math.number(entry.hz)} Hz, the lowest"
-            entry.clamped -> "Sets ${math.number(entry.hz)} Hz, the highest"
-            !math.isRetuned(entry.hz) -> "Standard pitch, as recorded"
-            math.isLower(entry.hz) -> "${math.centsMagnitude(entry.hz)} cents lower"
-            else -> "${math.centsMagnitude(entry.hz)} cents higher"
-        }
-    }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Custom tuning") },
+        title = { Text(androidx.compose.ui.res.stringResource(R.string.np_tuning_custom_title)) },
         text = {
             androidx.compose.material3.OutlinedTextField(
                 value = text,
                 onValueChange = { new -> math.hzInput(new)?.let { text = it } },
-                label = { Text("A4 (392 – 494)") },
-                suffix = { Text("Hz") },
+                label = { Text(androidx.compose.ui.res.stringResource(R.string.np_tuning_exact_label)) },
+                suffix = { Text(androidx.compose.ui.res.stringResource(R.string.np_tuning_hz_suffix)) },
                 singleLine = true,
                 isError = entry is com.stash.core.model.TuningMath.Entry.Invalid,
-                supportingText = { Text(supporting) },
+                supportingText = { Text(tuningEntryLine(entry)) },
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                     keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
                 ),
             )
         },
         confirmButton = {
-            TextButton(onClick = { value?.let(onConfirm) }, enabled = value != null) { Text("Set") }
+            TextButton(onClick = { value?.let(onConfirm) }, enabled = value != null) {
+                Text(androidx.compose.ui.res.stringResource(R.string.np_tuning_set))
+            }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(androidx.compose.ui.res.stringResource(R.string.np_tuning_cancel)) }
+        },
     )
 }
 

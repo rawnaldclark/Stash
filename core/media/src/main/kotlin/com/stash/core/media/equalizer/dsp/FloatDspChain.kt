@@ -88,7 +88,7 @@ class FloatDspChain(
     private var channels = 0
 
     private var tuner: PitchStage? = null
-    private var tunerFactor = 1f
+    private var tunerHz = TuningMath.STANDARD_HZ
 
     /** The engine couldn't be built for this stream: Tuning stays out of it. */
     private var tunerMissing = false
@@ -99,6 +99,12 @@ class FloatDspChain(
 
     /** The pitch stage's delay while it is in the path, else 0. */
     val latencyFrames: Int get() = if (tuningEngaged) tuner?.latencyFrames ?: 0 else 0
+
+    /**
+     * The reference this stream is retuned to right now, or null when it isn't (no stage, or a
+     * stage still in the path at 440 until its rebuild). What the signal path says.
+     */
+    val retunedToHz: Float? get() = tunerHz.takeIf { tuningEngaged && TuningMath.isRetuned(it) }
 
     private val preamp = GainRamp()
     private val loudness = GainRamp()
@@ -182,8 +188,8 @@ class FloatDspChain(
         }
         tuner = stage
         stage.reset()
-        tunerFactor = TuningMath.factor(tuningHz())
-        stage.setFactor(tunerFactor)
+        tunerHz = TuningMath.sanitize(tuningHz())
+        stage.setFactor(TuningMath.factor(tunerHz))
         tuningEngaged = true
     }
 
@@ -209,10 +215,10 @@ class FloatDspChain(
         val stage = tuner
         if (tuningEngaged && stage != null) {
             // 440 while still engaged (Tuning was just switched off): factor 1 until the rebuild.
-            val f = TuningMath.factor(tuningHz())
-            if (f != tunerFactor) {
-                stage.setFactor(f)
-                tunerFactor = f
+            val hz = TuningMath.sanitize(tuningHz())
+            if (hz != tunerHz) {
+                stage.setFactor(TuningMath.factor(hz))
+                tunerHz = hz
             }
             stage.process(samples, frames)
         }

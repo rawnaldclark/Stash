@@ -24,9 +24,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The languages CodeQL detected before Tuning added C++ (core/media/src/main/cpp). Left to
-      # detect, it would add c-cpp, which autobuild (a Gradle build of the Kotlin) never compiles,
-      # and the analysis would fail for want of C++ it saw built.
+      # Named, not detected: exactly the languages master's runs detected before Tuning added C++.
+      # Detection would now add c-cpp here too, traced through this job's Gradle build, which
+      # compiles the vendored Signalsmith headers four times over. Stash's own C++ gets its own
+      # job below instead, without a build and without third_party.
       - uses: github/codeql-action/init@v3
         with:
           languages: java-kotlin, javascript-typescript, python, actions
@@ -39,3 +40,29 @@ jobs:
       - uses: github/codeql-action/autobuild@v3
 
       - uses: github/codeql-action/analyze@v3
+
+  # Stash's own C++: Tuning's JNI layer, its engine core and the core's host test. The vendored
+  # Signalsmith headers (core/media/src/main/cpp/third_party) are upstream's code and left out.
+  # Analysed from source (build-mode none), so no NDK or build is needed.
+  analyze-cpp:
+    name: Analyze C++
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: c-cpp
+          build-mode: none
+          config: |
+            paths-ignore:
+              - core/media/src/main/cpp/third_party
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:c-cpp

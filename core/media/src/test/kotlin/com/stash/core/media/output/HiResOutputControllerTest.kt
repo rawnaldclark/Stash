@@ -13,7 +13,9 @@ import com.stash.core.media.equalizer.EqController
 import com.stash.core.media.equalizer.EqState
 import com.stash.core.media.equalizer.LoudnessController
 import com.stash.core.media.equalizer.LoudnessState
+import com.stash.core.media.equalizer.dsp.FixedDelayFakeStage
 import com.stash.core.media.equalizer.dsp.FloatDspChain
+import com.stash.core.media.equalizer.dsp.PitchStageFactory
 import com.stash.core.media.output.HiResOutputController.Companion.RELEASE_GRACE_MS
 import io.mockk.every
 import io.mockk.mockk
@@ -61,9 +63,11 @@ class HiResOutputControllerTest {
             referenceHz.value = hz
         }
     }
+    private var stageBuilds = true
     private val engine = object : TuningEngine {
         override val available = true
-        override fun newStage(sampleRate: Int, channels: Int): PitchStage? = null
+        override fun newStage(sampleRate: Int, channels: Int): PitchStage? =
+            if (stageBuilds) FixedDelayFakeStage(channels, 8) else null
     }
     private lateinit var tuning: TuningController
     private lateinit var controller: HiResOutputController
@@ -93,24 +97,45 @@ class HiResOutputControllerTest {
         channelCount = 2,
         streamSampleRate = 48_000,
         plan = plan,
-        dsp = FloatDspChain({ EqState() }, { LoudnessState() }),
+        dsp = FloatDspChain({ EqState() }, { LoudnessState() }, tuning::outputHz, PitchStageFactory(tuning::newStage)),
         controller = controller,
         session = OutputSession(mainPlayback),
         platformAttributes = mockk(relaxed = true),
         bufferTier = 1,
     )
 
-    @Test fun `the signal path says when the music is retuned`() = runTest(dispatcher) {
+    private fun stashStage() = controller.signalPath.value!!.stages.first { it.title == "Stash" }.detail
+
+    @Test fun `the signal path says when the music is retuned - by the stream, not the setting`() = runTest(dispatcher) {
         runCurrent()
         val song = stream(mainPlayback = true, plan = sharedPlan())
         song.play()
         runCurrent()
-        assertThat(controller.signalPath.value!!.stages.first { it.title == "Stash" }.detail).startsWith("Untouched")
+        assertThat(stashStage()).startsWith("Untouched")
 
         tuningPreference.referenceHz.value = 432f
         runCurrent()
-        assertThat(controller.signalPath.value!!.stages.first { it.title == "Stash" }.detail)
-            .startsWith("Retuned to A = 432 Hz")
+        // Chosen, but this stream plays on untuned until its rebuild: it isn't called retuned.
+        assertThat(stashStage()).startsWith("Untouched")
+
+        val rebuilt = stream(mainPlayback = true, plan = sharedPlan()) // what ExoPlayer builds next
+        rebuilt.play()
+        runCurrent()
+        assertThat(stashStage()).startsWith("Retuned to A = 432 Hz")
+    }
+
+    @Test fun `a stream whose stage can't be built is planned and shown untuned`() = runTest(dispatcher) {
+        runCurrent()
+        tuningPreference.referenceHz.value = 432f
+        runCurrent()
+        stageBuilds = false
+        val song = stream(mainPlayback = true, plan = sharedPlan())
+        song.play()
+        runCurrent()
+        assertThat(stashStage()).startsWith("Untouched")
+        assertThat(tuning.stageFailures.value).isEqualTo(1)
+        // The next plan for this format leaves tuning out, so bit-perfect is on offer again.
+        assertThat(tuning.isRetunedFor(48_000, 2)).isFalse()
     }
 
     @Test fun `a preview is planned on the shared mixer whatever the mode`() = runTest(dispatcher) {

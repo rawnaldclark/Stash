@@ -583,17 +583,18 @@
     <string name="settings_tuning_cents_lower">%1$s cents lower</string>
     <string name="settings_tuning_cents_higher">%1$s cents higher</string>
     <string name="settings_tuning_cents_standard">Standard pitch, as recorded</string>
-    <string name="settings_tuning_preset_standard">440 · Standard</string>
-    <string name="settings_tuning_preset_528">444 · C = 528</string>
-    <string name="settings_tuning_preset_baroque">415 · Baroque</string>
+    <string name="settings_tuning_preset_standard">%1$s · Standard</string>
+    <string name="settings_tuning_preset_528">%1$s · C = %2$s</string>
+    <string name="settings_tuning_preset_baroque">%1$s · Baroque</string>
     <string name="settings_tuning_slider">Tuning reference</string>
     <string name="settings_tuning_exact_label">Exact Hz</string>
-    <string name="settings_tuning_exact_range">Any value from 392 to 494 Hz</string>
+    <string name="settings_tuning_exact_range">Any value from %1$s to %2$s Hz</string>
     <string name="settings_tuning_exact_lowest">Sets %1$s Hz, the lowest</string>
     <string name="settings_tuning_exact_highest">Sets %1$s Hz, the highest</string>
-    <string name="settings_tuning_exact_invalid">Type a number, like 432 or 431.5</string>
+    <string name="settings_tuning_exact_invalid">Type a number, like %1$s or %2$s</string>
     <string name="settings_tuning_set">Set</string>
-    <string name="settings_tuning_reset">Back to 440</string>
+    <string name="settings_tuning_reset">Back to %1$s</string>
+    <string name="settings_tuning_hz_suffix">Hz</string>
     <string name="settings_tuning_footer">Applies to everything you play, streamed or downloaded. Speed and lyrics don\'t change. Not used while casting. Bit-perfect turns off while tuning is on.</string>
 
     <!-- Settings > Audio & Quality > SupporterSection -->

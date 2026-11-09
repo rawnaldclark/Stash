@@ -23,12 +23,6 @@ class TuningSettingsViewModel @Inject constructor(
     /** False when this phone has no tuning engine: the row shows as unavailable. */
     val available: Boolean = tuning.available
 
+    /** Stores [hz] (sanitized): from a preset, the slider's release, or the exact field's Set. */
     fun setReferenceHz(hz: Float) = tuning.setReferenceHz(TuningMath.sanitize(hz))
-
-    /**
-     * The exact-Hz field's Set: stores what [text] asks for, clamped to 392 to 494 Hz. Returns the
-     * stored value, or null (and stores nothing) when [text] isn't a number.
-     */
-    fun setExact(text: String): Float? =
-        (TuningMath.parse(text) as? TuningMath.Entry.Value)?.hz?.also { setReferenceHz(it) }
 }

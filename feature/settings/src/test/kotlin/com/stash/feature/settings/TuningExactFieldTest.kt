@@ -33,10 +33,10 @@ class TuningExactFieldTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
     private val submitted = mutableListOf<Float>()
 
-    private fun show(initial: String = "") {
+    private fun show(initial: String = "", current: Float? = null) {
         rule.setContent {
             var text by remember { mutableStateOf(initial) }
-            TuningExactField(text = text, onTextChange = { text = it }, onSubmit = { submitted += it })
+            TuningExactField(text = text, onTextChange = { text = it }, onSubmit = { submitted += it }, current = current)
         }
     }
 
@@ -75,9 +75,25 @@ class TuningExactFieldTest {
         show()
         set.assertIsNotEnabled()
         field.performTextInput(".")
-        rule.onNodeWithText(context.getString(R.string.settings_tuning_exact_invalid)).assertExists()
+        rule.onNodeWithText(context.getString(R.string.settings_tuning_exact_invalid, "432", "431.5")).assertExists()
         set.assertIsNotEnabled()
         assertThat(submitted).isEmpty()
+    }
+
+    @Test fun `the value already set says the range, not its cents again`() {
+        // The sheet says "Standard pitch, as recorded" (or "31.8 cents lower") above the field.
+        show("440", current = 440f)
+        rule.onNodeWithText(context.getString(R.string.settings_tuning_exact_range, "392", "494")).assertExists()
+        rule.onNodeWithText(context.getString(R.string.settings_tuning_cents_standard)).assertDoesNotExist()
+        field.performTextReplacement("432")
+        rule.onNodeWithText(context.getString(R.string.settings_tuning_cents_lower, "31.8")).assertExists()
+    }
+
+    @Test fun `Persian digits type and set`() {
+        show()
+        field.performTextInput("\u06F4\u06F3\u06F2\u066B\u06F5") // 432.5 as a Persian keyboard types it
+        set.assertIsEnabled().performClick()
+        assertThat(submitted).containsExactly(432.5f)
     }
 
     @Test fun `letters never reach the field`() {

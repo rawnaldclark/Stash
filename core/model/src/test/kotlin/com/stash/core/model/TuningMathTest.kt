@@ -2,14 +2,19 @@ package com.stash.core.model
 
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.model.TuningMath.Entry
+import java.util.Locale
 import org.junit.Test
 
 class TuningMathTest {
 
+    private val us = Locale.US
+    private val german = Locale.GERMANY
+    private val persian = Locale("fa", "IR")
+
     @Test fun `432 Hz is 31_77 cents lower, a factor of 432 over 440`() {
         assertThat(TuningMath.cents(432f)).isWithin(0.005).of(-31.77)
         assertThat(TuningMath.factor(432f).toDouble()).isWithin(1e-7).of(432.0 / 440.0)
-        assertThat(TuningMath.centsMagnitude(432f)).isEqualTo("31.8")
+        assertThat(TuningMath.centsMagnitude(432f, us)).isEqualTo("31.8")
         assertThat(TuningMath.isLower(432f)).isTrue()
     }
 
@@ -48,20 +53,30 @@ class TuningMathTest {
         assertThat(TuningMath.sanitize(Float.NEGATIVE_INFINITY)).isEqualTo(440f)
     }
 
-    @Test fun `round trips through the label and the parser`() {
-        for (hz in listOf(392f, 415f, 431.5f, 432f, 440f, 442f, 444f, 466.2f, 494f)) {
-            val back = TuningMath.parse(TuningMath.number(hz)) as Entry.Value
-            assertThat(back.hz).isEqualTo(hz)
-            assertThat(back.clamped).isFalse()
-            assertThat(TuningMath.factor(back.hz)).isEqualTo(TuningMath.factor(hz))
+    @Test fun `round trips through the label and the parser in every locale`() {
+        for (locale in listOf(us, german, persian, Locale("ar", "SA"))) {
+            for (hz in listOf(392f, 415f, 431.5f, 432f, 440f, 442f, 444f, 466.2f, 494f)) {
+                val back = TuningMath.parse(TuningMath.number(hz, locale)) as Entry.Value
+                assertThat(back.hz).isEqualTo(hz)
+                assertThat(back.clamped).isFalse()
+                assertThat(TuningMath.factor(back.hz)).isEqualTo(TuningMath.factor(hz))
+            }
         }
     }
 
     @Test fun `the number shows a decimal only when it isn't whole`() {
-        assertThat(TuningMath.number(432f)).isEqualTo("432")
-        assertThat(TuningMath.number(431.5f)).isEqualTo("431.5")
-        assertThat(TuningMath.number(440f)).isEqualTo("440")
-        assertThat(TuningMath.number(466.2f)).isEqualTo("466.2")
+        assertThat(TuningMath.number(432f, us)).isEqualTo("432")
+        assertThat(TuningMath.number(431.5f, us)).isEqualTo("431.5")
+        assertThat(TuningMath.number(440f, us)).isEqualTo("440")
+        assertThat(TuningMath.number(466.2f, us)).isEqualTo("466.2")
+        assertThat(TuningMath.plain(392.0, us)).isEqualTo("392")
+    }
+
+    @Test fun `numbers read in the locale's digits and decimal mark`() {
+        assertThat(TuningMath.number(431.5f, german)).isEqualTo("431,5")
+        assertThat(TuningMath.centsMagnitude(432f, german)).isEqualTo("31,8")
+        assertThat(TuningMath.number(431.5f, persian)).isEqualTo("\u06F4\u06F3\u06F1\u066B\u06F5") // ۴۳۱٫۵
+        assertThat(TuningMath.number(432f, persian)).isEqualTo("\u06F4\u06F3\u06F2")
     }
 
     @Test fun `the field takes up to three digits and one decimal place`() {
@@ -70,12 +85,23 @@ class TuningMathTest {
         assertThat(TuningMath.hzInput("432")).isEqualTo("432")
         assertThat(TuningMath.hzInput("432.")).isEqualTo("432.")
         assertThat(TuningMath.hzInput("431.5")).isEqualTo("431.5")
-        assertThat(TuningMath.hzInput("431,5")).isEqualTo("431.5")
+        assertThat(TuningMath.hzInput("431,5")).isEqualTo("431,5") // kept as typed; parse reads it
         assertThat(TuningMath.hzInput("431.55")).isNull()
         assertThat(TuningMath.hzInput("4321")).isNull()
         assertThat(TuningMath.hzInput("43a")).isNull()
         assertThat(TuningMath.hzInput("-432")).isNull()
         assertThat(TuningMath.hzInput("4.3.2")).isNull()
+    }
+
+    @Test fun `Persian and Arabic digits and decimal marks type and parse`() {
+        val persian432 = "\u06F4\u06F3\u06F2" // ۴۳۲
+        val arabic4315 = "\u0664\u0663\u0661\u066B\u0665" // ٤٣١٫٥
+        assertThat(TuningMath.hzInput(persian432)).isEqualTo(persian432)
+        assertThat(TuningMath.hzInput(arabic4315)).isEqualTo(arabic4315)
+        assertThat(TuningMath.hzInput("\u06F4\u06F3\u06F2\u06F1")).isNull() // four digits
+        assertThat(TuningMath.parse(persian432)).isEqualTo(Entry.Value(432f, clamped = false))
+        assertThat(TuningMath.parse(arabic4315)).isEqualTo(Entry.Value(431.5f, clamped = false))
+        assertThat(TuningMath.parse("\u06F4\u06F3\u06F1,\u06F5")).isEqualTo(Entry.Value(431.5f, clamped = false))
     }
 
     @Test fun `parse clamps out-of-range numbers and says so`() {

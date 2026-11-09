@@ -9,7 +9,9 @@ import com.stash.core.media.equalizer.LoudnessState
 import com.stash.core.media.equalizer.dsp.FixedDelayFakeStage
 import com.stash.core.media.equalizer.dsp.FloatDspChain
 import com.stash.core.media.equalizer.dsp.PitchStageFactory
+import io.mockk.clearMocks
 import io.mockk.mockk
+import io.mockk.verify
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -234,6 +236,7 @@ class StashAudioOutputTuningTest {
     @Test fun `tuning switched on mid-stream rebuilds the stream rather than jump`() {
         hz = 440f
         val out = output(FakeTrack())
+        out.play()
         writeAll(out, ramp(64))
         hz = 432f
         val e = assertThrows(AudioOutput.WriteException::class.java) { out.write(ramp(64), 1, 0L) }
@@ -242,10 +245,74 @@ class StashAudioOutputTuningTest {
 
     @Test fun `tuning switched off mid-stream rebuilds the stream too`() {
         val out = output(FakeTrack())
+        out.play()
         writeAll(out, ramp(64))
         hz = 440f
         val e = assertThrows(AudioOutput.WriteException::class.java) { out.write(ramp(64), 1, 0L) }
         assertThat(e.isRecoverable).isTrue()
+    }
+
+    @Test fun `two toggles while re-buffering - nothing until play, then one rebuild`() {
+        // The stream a first toggle's rebuild made pre-fills while the player buffers (not playing):
+        // a second recoverable error then would be fatal (ExoPlayer: until READY), so none is thrown.
+        val out = output(FakeTrack())
+        writeAll(out, ramp(64))
+        hz = 440f
+        repeat(3) { writeAll(out, ramp(64)) }
+        hz = 444f // and on again, as quickly
+        repeat(3) { writeAll(out, ramp(64)) }
+        hz = 440f
+        writeAll(out, ramp(64))
+
+        out.play() // READY: the change still standing rebuilds the stream, once
+        assertThrows(AudioOutput.WriteException::class.java) { out.write(ramp(64), 1, 0L) }
+        assertThat(stages).hasSize(1)
+    }
+
+    @Test fun `a toggle undone before play rebuilds nothing`() {
+        val out = output(FakeTrack())
+        writeAll(out, ramp(64))
+        hz = 440f
+        writeAll(out, ramp(64))
+        hz = 432f // back where the stream is
+        writeAll(out, ramp(64))
+        out.play()
+        repeat(3) { writeAll(out, ramp(64)) } // no WriteException
+    }
+
+    @Test fun `the stream says what it is really retuned to`() {
+        val out = output(FakeTrack())
+        assertThat(out.pathState().tuningHz).isEqualTo(432f)
+        writeAll(out, ramp(64))
+        clearMocks(controller, answers = false)
+        hz = 444f
+        writeAll(out, ramp(64))
+        verify(exactly = 1) { controller.onTuningApplied(out) }
+        assertThat(out.pathState().tuningHz).isEqualTo(444f)
+        writeAll(out, ramp(64))
+        verify(exactly = 1) { controller.onTuningApplied(out) } // only on a change
+
+        hz = 440f // still engaged until its rebuild: no longer retuned all the same (factor 1)
+        writeAll(out, ramp(64))
+        assertThat(out.pathState().tuningHz).isNull()
+    }
+
+    @Test fun `a stream without a stage isn't called retuned`() {
+        val track = FakeTrack()
+        val out = StashAudioOutput(
+            inner = track, inFormat = SampleFormat.FLOAT, outFormat = SampleFormat.FLOAT, channelCount = CH,
+            streamSampleRate = RATE, plan = sharedPlan(),
+            dsp = FloatDspChain({ EqState() }, { LoudnessState() }, { hz }, PitchStageFactory { _, _ -> null }),
+            controller = controller, session = OutputSession(mainPlayback = true),
+            platformAttributes = mockk(relaxed = true), bufferTier = 1,
+        )
+        writeAll(out, ramp(64))
+        assertThat(out.pathState().tuningHz).isNull()
+    }
+
+    @Test fun `bit-perfect is never called retuned`() {
+        val out = output(FakeTrack(), bitPerfectPlan())
+        assertThat(out.pathState().tuningHz).isNull()
     }
 
     @Test fun `moving between non-standard references just changes the pitch`() {
@@ -280,6 +347,24 @@ class StashAudioOutputTuningTest {
         val out = output(FakeTrack())
         writeAll(out, ramp(64))
         out.release()
+        assertThat(stages.single().released).isTrue()
+    }
+
+    @Test fun `release frees the engine even when the track's release throws`() {
+        val track = object : AudioOutput by FakeTrack() {
+            override fun release() = throw IllegalStateException("track gone")
+        }
+        val out = StashAudioOutput(
+            inner = track, inFormat = SampleFormat.FLOAT, outFormat = SampleFormat.FLOAT, channelCount = CH,
+            streamSampleRate = RATE, plan = sharedPlan(),
+            dsp = FloatDspChain(
+                { EqState() }, { LoudnessState() }, { hz },
+                PitchStageFactory { _, ch -> FixedDelayFakeStage(ch, LATENCY).also { stages += it } },
+            ),
+            controller = controller, session = OutputSession(mainPlayback = true),
+            platformAttributes = mockk(relaxed = true), bufferTier = 1,
+        )
+        assertThrows(IllegalStateException::class.java) { out.release() }
         assertThat(stages.single().released).isTrue()
     }
 }

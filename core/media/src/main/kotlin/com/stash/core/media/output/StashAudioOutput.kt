@@ -92,6 +92,9 @@ class StashAudioOutput(
 
     @Volatile private var replanRequested = false
 
+    /** The reference this stream is audibly retuned to (null: not retuned), as last published. */
+    @Volatile private var publishedTuningHz: Float? = null
+
     /** Between play() and pause() or release(); see [HiResOutputController.unregister]. */
     @Volatile internal var playing = false
         private set
@@ -102,8 +105,14 @@ class StashAudioOutput(
     init {
         dsp.configure(streamSampleRate, channelCount)
         dsp.engageTuning(tuningWantedHere())
-        controller.register(this)
-        Looper.myLooper()?.let { audioTrack?.addOnRoutingChangedListener(routingListener, Handler(it)) }
+        publishedTuningHz = if (bitPerfect) null else dsp.retunedToHz
+        try {
+            controller.register(this)
+            Looper.myLooper()?.let { audioTrack?.addOnRoutingChangedListener(routingListener, Handler(it)) }
+        } catch (t: Throwable) {
+            dsp.release() // nobody will release a stream that never finished being built
+            throw t
+        }
     }
 
     private val bitPerfect: Boolean get() = plan.bitPerfect
@@ -117,10 +126,16 @@ class StashAudioOutput(
 
     /**
      * Asks for this stream to be rebuilt with a fresh plan (route or mode
-     * changed under it). Honoured on the next write by failing it as
-     * "recoverable": ExoPlayer then recreates the audio output in place
+     * changed under it). Honoured on the next write while it plays by failing
+     * it as "recoverable": ExoPlayer then recreates the audio output in place
      * (a seek to the current position — the same path it uses when Android
      * kills an AudioTrack), and [StashAudioOutputProvider] plans the new one.
+     *
+     * Only while playing: ExoPlayer turns a second recoverable error into a
+     * fatal one until the player is READY again, and a paused or buffering
+     * player (one re-buffering after the last rebuild, or a seek) still writes
+     * to pre-fill its track. A fatal error would skip the song or switch it to
+     * streaming. play() comes only once READY, so the rebuild waits for it.
      */
     fun requestReplan() {
         replanRequested = true
@@ -146,13 +161,15 @@ class StashAudioOutput(
         lastPresentationTimeUs = presentationTimeUs
         // Tuning switched on or off under this stream. Before its first frame (or after a
         // flush) the stage just steps in or out; mid-stream its delay would skip or repeat a
-        // moment, so the stream is rebuilt at its position instead, like a route change.
+        // moment, so the stream is rebuilt at its position instead, like a route change: once it
+        // plays (see requestReplan). Until then it carries on as it is, and a change undone in the
+        // meantime (432, then back to 440, while re-buffering) rebuilds nothing.
         if (dsp.tuningEngaged != tuningWantedHere()) {
-            if (framesWritten == 0L) dsp.engageTuning(!dsp.tuningEngaged) else replanRequested = true
+            if (framesWritten == 0L) dsp.engageTuning(!dsp.tuningEngaged) else if (playing) replanRequested = true
         }
         // DefaultAudioSink only treats the error as recoverable once audio has
         // been written; before that it would be fatal, so wait one buffer.
-        if (replanRequested && framesWritten > 0) {
+        if (replanRequested && framesWritten > 0 && playing) {
             replanRequested = false
             throw AudioOutput.WriteException(AudioTrack.ERROR_DEAD_OBJECT, /* isRecoverable= */ true)
         }
@@ -172,7 +189,17 @@ class StashAudioOutput(
             )
         }
         framesWritten += (buffer.position() - before) / inFrameSize
+        publishTuning()
         return handled
+    }
+
+    /** Tells the controller when what this stream is retuned to changed (the signal path says it). */
+    private fun publishTuning() {
+        val hz = if (bitPerfect) null else dsp.retunedToHz
+        if (hz != publishedTuningHz) {
+            publishedTuningHz = hz
+            controller.onTuningApplied(this)
+        }
     }
 
     override fun play() {
@@ -276,12 +303,15 @@ class StashAudioOutput(
     }
 
     override fun release() {
-        playing = false
-        tail = null
-        audioTrack?.removeOnRoutingChangedListener(routingListener)
-        controller.unregister(this)
-        super.release()
-        dsp.release()
+        try {
+            playing = false
+            tail = null
+            audioTrack?.removeOnRoutingChangedListener(routingListener)
+            controller.unregister(this)
+            super.release()
+        } finally {
+            dsp.release() // the pitch stage's native memory, whatever happened above
+        }
     }
 
     private companion object {
@@ -308,6 +338,7 @@ class StashAudioOutput(
             mode = controller.mode,
             bitPerfectMiss = (decision as? MixerDecision.Configure)?.bitPerfectMiss,
             sharedReason = (decision as? MixerDecision.Shared)?.reason,
+            tuningHz = publishedTuningHz,
         )
     }
 }

@@ -46,6 +46,8 @@ data class OutputPathState(
     val mode: HiResOutputMode,
     val bitPerfectMiss: BitPerfectMiss? = null,
     val sharedReason: MixerDecision.Reason? = null,
+    /** The reference (A4, Hz) this stream is actually retuned to, or null when it isn't. */
+    val tuningHz: Float? = null,
 )
 
 /** What the source is, from the decoder's input format. */

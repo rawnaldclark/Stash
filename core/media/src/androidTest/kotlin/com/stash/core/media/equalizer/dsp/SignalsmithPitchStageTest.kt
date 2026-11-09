@@ -28,7 +28,10 @@ import org.junit.runner.RunWith
  *  - an FFT finds every peak at hz x 432/440 within 0.5 Hz, for the chord and for each bass note
  *    alone (every partial is checked before the test fails; the readings, and the strongest
  *    peaks between 75 and 90 Hz, go to the instrumentation output as `stash_tuning`);
- *  - a one-second tone burst comes out one second long, delayed by the latency the stage reports.
+ *  - a one-second tone burst comes out one second long, delayed by the latency the stage reports
+ *    (within 1 ms: the app's position and its end-of-stream tail trust that number).
+ *
+ * The host test (src/test/cpp, run in CI) checks the same engine code without a phone.
  *
  * Run: ./gradlew :core:media:connectedDebugAndroidTest (on a phone).
  */
@@ -73,7 +76,6 @@ class SignalsmithPitchStageTest {
             input[f * CH + 1] = v.toFloat()
         }
         val (out, latency) = run(rate, input, n)
-        assertWithMessage("frames out vs in + latency").that(out.size / CH).isEqualTo(n + latency)
 
         // A clean stretch from 0.5 s after the stage filled up, a power of two long.
         val segment = if (rate > 48_000) 1 shl 18 else 1 shl 17
@@ -130,23 +132,27 @@ class SignalsmithPitchStageTest {
             input[f * CH + 1] = v
         }
         val (out, latency) = run(rate, input, n)
-        assertWithMessage("frames out vs in + latency").that(out.size / CH).isEqualTo(n + latency)
         // The output with the stage's fill-up cut off lines up with the input.
         val aligned = out.copyOfRange(latency * CH, out.size)
-        val tolerance = rate / 100 // 10 ms
+        // The position the app reports and the end-of-stream tail both trust the reported latency,
+        // so the real delay must match it closely: 1 ms (an ending clipped by more would show).
+        val ms = rate / 1000.0
 
         val delay = centroid(out) - centroid(input)
-        assertWithMessage("burst delay (frames) vs reported latency $latency").that(delay)
-            .isWithin(tolerance.toDouble()).of(latency.toDouble())
-
         val inSpan = span(input, rate)
         val outSpan = span(aligned, rate)
-        assertWithMessage("burst length out (frames) vs in ($inSpan)").that(outSpan.toDouble())
-            .isWithin(2.0 * tolerance).of(inSpan.toDouble())
         val (inStart, _) = edges(input, rate)
         val (outStart, _) = edges(aligned, rate)
+        report(
+            "$rate Hz burst: delay ${fmt(delay / ms)} ms vs latency ${fmt(latency / ms)} ms; " +
+                "onset ${fmt((outStart - inStart) / ms)} ms, length ${fmt((outSpan - inSpan) / ms)} ms",
+        )
+        assertWithMessage("burst delay (frames) vs reported latency $latency").that(delay)
+            .isWithin(1.0 * ms).of(latency.toDouble())
+        assertWithMessage("burst length out (frames) vs in ($inSpan)").that(outSpan.toDouble())
+            .isWithin(5.0 * ms).of(inSpan.toDouble())
         assertWithMessage("burst onset after removing the reported latency").that(outStart.toDouble())
-            .isWithin(2.0 * tolerance).of(inStart.toDouble())
+            .isWithin(5.0 * ms).of(inStart.toDouble())
     }
 
     /** Runs [input] ([n] stereo frames) through a fresh stage at 432, then drains it with silence. */

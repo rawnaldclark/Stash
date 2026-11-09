@@ -1,10 +1,10 @@
-// Tuning: Signalsmith Stretch as a pitch stage for Stash's float output stage.
+// Tuning: Signalsmith Stretch as a pitch stage for Stash's float output stage, for the JVM.
 //
 // The Kotlin side (SignalsmithPitchStage) hands over interleaved float frames, in place, in
-// chunks of up to ~2048 frames. Every chunk goes in and the same number of frames comes out,
-// delayed by latency() frames: a pitch shift that keeps the tempo (no time stretch). Draining the
-// tail at the end of a stream is the caller's job: it feeds latency() frames of silence through
-// process(), which is the library's own recipe for ending a stream ("pass an additional
+// chunks of up to ~2048 frames; stash_tuning_core.h does the work (and says how the engine is set
+// up). Every chunk goes in and the same number of frames comes out, delayed by latency() frames.
+// Draining the tail at the end of a stream is the caller's job: it feeds latency() frames of
+// silence through process(), the library's own recipe for ending a stream ("pass an additional
 // inputLatency() of silence", then the output latency), done as one run of silence so the stage
 // needs no second code path.
 //
@@ -12,80 +12,21 @@
 // is up to 10x slower unoptimised.
 
 #include <jni.h>
+#include <android/log.h>
 
-#include <cstdint>
-#include <cstring>
-#include <new>
-#include <vector>
+#include <atomic>
 
-#include "signalsmith-stretch/signalsmith-stretch.h"
+#include "stash_tuning_core.h"
 
 namespace {
 
 // Bumped when the native contract changes; the Kotlin side only checks that it is positive.
 constexpr jint kNativeVersion = 1;
 
-// 200 ms blocks, a new one every third of a block, at every sample rate. Measured (a host build
-// of this exact code, and SignalsmithPitchStageTest on a phone): the library's presets (120 ms
-// blocks every 30 ms; 100 every 40 ms) have 7 to 9 Hz bins, too coarse to keep two bass notes a
-// fourth apart (55 and 82.41 Hz) from pulling on each other: at 432 each lands up to 0.4 Hz off,
-// and up to 2 Hz (over 60 cents) at the ends of the 392 to 494 Hz range. 200 ms gives 4.3 to
-// 4.7 Hz bins and keeps every partial within about 0.1 Hz across the range, at the cost of 80 ms
-// more latency. A third of a block (not the presets' quarter) keeps the bins it links for phase
-// coherence to about 15 Hz apart, so separate notes stay separate. Same CPU at 44.1/48 kHz, about
-// 1.5x above (the presets' cheaper one is gone: it was the least accurate). Also measured: attacks
-// soften by a few ms, and each partial gets a faint image 15 Hz above it (about -35 dB, near the
-// stock engine's own intermodulation in a chord). 280 ms blocks every 70 ms would remove the
-// image (-56 dB) at 280 ms of latency.
-constexpr double kBlockSeconds = 0.2;
-constexpr int kIntervalsPerBlock = 3;
+inline stash_tuning::Tuner *from(jlong handle) { return reinterpret_cast<stash_tuning::Tuner *>(handle); }
 
-// Fixed seed: the stretcher only draws random numbers when time-stretching past 2x, which this
-// stage never does, but a fixed seed keeps runs reproducible all the same.
-constexpr long kSeed = 0x5743;
-
-struct Tuner {
-    explicit Tuner(int channelCount) : stretch(kSeed), channels(channelCount) {}
-
-    signalsmith::stretch::SignalsmithStretch<float> stretch;
-    const int channels;
-    float factor = 1.0f;
-    std::vector<float> in;   // interleaved copy of the chunk (input and output must differ)
-    std::vector<float> out;  // interleaved output, copied back over the caller's array
-};
-
-// The stretcher reads and writes buffer[channel][index]; these view an interleaved buffer that way.
-struct InterleavedIn {
-    const float *data;
-    int channels;
-    struct Channel {
-        const float *p;
-        int stride;
-        float operator[](int i) const { return p[static_cast<size_t>(i) * stride]; }
-    };
-    Channel operator[](int c) const { return Channel{data + c, channels}; }
-};
-
-struct InterleavedOut {
-    float *data;
-    int channels;
-    struct Channel {
-        float *p;
-        int stride;
-        float &operator[](int i) const { return p[static_cast<size_t>(i) * stride]; }
-    };
-    Channel operator[](int c) const { return Channel{data + c, channels}; }
-};
-
-// -ffast-math lets the compiler assume no NaN or infinity, so std::isfinite can be folded away.
-// Test the exponent bits instead: a NaN fed to a phase vocoder would live on in its state.
-inline bool isFiniteBits(float v) {
-    uint32_t bits;
-    std::memcpy(&bits, &v, sizeof bits);
-    return (bits & 0x7f800000u) != 0x7f800000u;
-}
-
-inline Tuner *from(jlong handle) { return reinterpret_cast<Tuner *>(handle); }
+// Said once per process: a library that throws once is likely to again, and the log would flood.
+std::atomic<bool> loggedException{false};
 
 }  // namespace
 
@@ -98,85 +39,51 @@ Java_com_stash_core_media_equalizer_dsp_SignalsmithNative_version(JNIEnv *, jcla
 
 JNIEXPORT jlong JNICALL
 Java_com_stash_core_media_equalizer_dsp_SignalsmithNative_create(JNIEnv *, jclass, jint channels, jint sampleRate) {
-    if (channels <= 0 || channels > 32 || sampleRate <= 0) return 0;
-    Tuner *t = new (std::nothrow) Tuner(channels);
-    if (t == nullptr) return 0;
-    try {
-        // splitComputation off: it spreads the work over an extra interval of latency, which
-        // helps a real-time audio callback, not a playback thread that writes ahead into a 250
-        // to 750 ms AudioTrack buffer.
-        const int block = static_cast<int>(sampleRate * kBlockSeconds);
-        t->stretch.configure(channels, block, block / kIntervalsPerBlock, false);
-        t->stretch.setTransposeFactor(1.0f);
-        t->stretch.reset();
-    } catch (...) {
-        delete t;
-        return 0;
-    }
-    return reinterpret_cast<jlong>(t);
+    return reinterpret_cast<jlong>(stash_tuning::create(channels, sampleRate));
 }
 
 JNIEXPORT void JNICALL
 Java_com_stash_core_media_equalizer_dsp_SignalsmithNative_destroy(JNIEnv *, jclass, jlong handle) {
-    delete from(handle);
+    stash_tuning::destroy(from(handle));
 }
 
 JNIEXPORT jint JNICALL
 Java_com_stash_core_media_equalizer_dsp_SignalsmithNative_latency(JNIEnv *, jclass, jlong handle) {
-    Tuner *t = from(handle);
-    if (t == nullptr) return 0;
-    return t->stretch.inputLatency() + t->stretch.outputLatency();
+    auto *t = from(handle);
+    return t == nullptr ? 0 : stash_tuning::latency(t);
 }
 
 JNIEXPORT void JNICALL
 Java_com_stash_core_media_equalizer_dsp_SignalsmithNative_setFactor(JNIEnv *, jclass, jlong handle, jfloat factor) {
-    Tuner *t = from(handle);
-    if (t == nullptr || !(factor > 0.0f) || !isFiniteBits(factor)) return;
-    if (factor == t->factor) return;
-    t->factor = factor;
-    t->stretch.setTransposeFactor(factor);
+    auto *t = from(handle);
+    if (t != nullptr) stash_tuning::setFactor(t, factor);
 }
 
 JNIEXPORT void JNICALL
 Java_com_stash_core_media_equalizer_dsp_SignalsmithNative_reset(JNIEnv *, jclass, jlong handle) {
-    Tuner *t = from(handle);
+    auto *t = from(handle);
     if (t == nullptr) return;
-    t->stretch.reset();
+    try { stash_tuning::reset(t); } catch (...) {}
 }
 
 JNIEXPORT void JNICALL
 Java_com_stash_core_media_equalizer_dsp_SignalsmithNative_process(
     JNIEnv *env, jclass, jlong handle, jfloatArray samples, jint frames) {
-    Tuner *t = from(handle);
+    auto *t = from(handle);
     if (t == nullptr || samples == nullptr || frames <= 0) return;
-    const size_t n = static_cast<size_t>(frames) * static_cast<size_t>(t->channels);
-    if (static_cast<size_t>(env->GetArrayLength(samples)) < n) return;
-    try {
-        if (t->in.size() < n) t->in.resize(n);
-        if (t->out.size() < n) t->out.resize(n);
-    } catch (...) {
-        return;  // out of memory: leave the chunk as it was rather than crash the player
-    }
-    env->GetFloatArrayRegion(samples, 0, static_cast<jsize>(n), t->in.data());
+    const jsize n = frames * t->channels;
+    if (env->GetArrayLength(samples) < n) return;
+    // Out of memory: leave the chunk as it was rather than crash the player.
+    if (!stash_tuning::reserve(t, frames)) return;
+    env->GetFloatArrayRegion(samples, 0, n, t->in.data());
     if (env->ExceptionCheck()) return;
 
-    float *in = t->in.data();
-    for (size_t i = 0; i < n; ++i) {
-        if (!isFiniteBits(in[i])) in[i] = 0.0f;
+    if (stash_tuning::process(t, frames) == stash_tuning::Result::kResetException &&
+        !loggedException.exchange(true)) {
+        __android_log_print(ANDROID_LOG_WARN, "StashTuning",
+                            "pitch stage threw: restarted it, one chunk silenced (said once)");
     }
-
-    t->stretch.process(InterleavedIn{in, t->channels}, frames, InterleavedOut{t->out.data(), t->channels}, frames);
-
-    // A non-finite sample out means the state is poisoned: start clean rather than stay silent.
-    float *out = t->out.data();
-    for (size_t i = 0; i < n; ++i) {
-        if (!isFiniteBits(out[i])) {
-            t->stretch.reset();
-            std::memset(out, 0, n * sizeof(float));
-            break;
-        }
-    }
-    env->SetFloatArrayRegion(samples, 0, static_cast<jsize>(n), out);
+    env->SetFloatArrayRegion(samples, 0, n, t->out.data());
 }
 
 }  // extern "C"

@@ -1,5 +1,7 @@
 package com.stash.core.model
 
+import java.math.RoundingMode
+import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.ln
@@ -44,25 +46,55 @@ object TuningMath {
     /** The offset from standard in cents (hundredths of a semitone): 432 Hz is -31.77. */
     fun cents(hz: Float): Double = 1200.0 * ln(sanitize(hz).toDouble() / STANDARD_HZ) / ln(2.0)
 
-    /** "432" or "431.5": the number alone, one decimal only when it isn't whole. */
-    fun number(hz: Float): String {
-        val tenths = (sanitize(hz) * 10f).roundToInt()
-        return if (tenths % 10 == 0) "${tenths / 10}" else String.format(Locale.US, "%.1f", tenths / 10.0)
-    }
+    /**
+     * "432" or "431.5": the number alone, one decimal only when it isn't whole, in [locale]'s digits
+     * and decimal mark ("431,5" in German, "۴۳۱٫۵" in Persian). [parse] reads all of them back.
+     */
+    fun number(hz: Float, locale: Locale = Locale.getDefault()): String =
+        format(sanitize(hz).toDouble(), locale, minDecimals = 0)
 
-    /** "31.8", the size of [cents] to one decimal, for "31.8 cents lower". */
-    fun centsMagnitude(hz: Float): String = String.format(Locale.US, "%.1f", abs(cents(hz)))
+    /** [value] as [number] writes it, for the range and the examples in messages ("392", "431.5"). */
+    fun plain(value: Double, locale: Locale = Locale.getDefault()): String = format(value, locale, minDecimals = 0)
+
+    /** "31.8", the size of [cents] to one decimal, for "31.8 cents lower"; [locale] as for [number]. */
+    fun centsMagnitude(hz: Float, locale: Locale = Locale.getDefault()): String =
+        format(abs(cents(hz)), locale, minDecimals = 1)
+
+    private fun format(value: Double, locale: Locale, minDecimals: Int): String =
+        NumberFormat.getNumberInstance(locale).apply {
+            isGroupingUsed = false
+            minimumFractionDigits = minDecimals
+            maximumFractionDigits = 1
+            roundingMode = RoundingMode.HALF_UP
+        }.format(value)
 
     /** Whether [hz] is below standard (lower), for the words around [centsMagnitude]. */
     fun isLower(hz: Float): Boolean = sanitize(hz) < STANDARD_HZ
 
-    private val HzText = Regex("""\d{0,3}(\.\d?)?""")
+    private val HzText = Regex("""[0-9]{0,3}(\.[0-9]?)?""")
 
     /**
      * The exact-Hz field's text after a keystroke, or null to refuse it: up to three digits and one
-     * decimal place. A comma becomes a point, since a decimal keypad in a comma-decimal locale types one.
+     * decimal place. Kept as typed: any script's digits (Persian and Arabic keyboards type their
+     * own) and a point, a comma or the Arabic decimal mark (٫) all count; see [parse].
      */
-    fun hzInput(new: String): String? = new.replace(',', '.').takeIf { HzText.matches(it) }
+    fun hzInput(new: String): String? = new.takeIf { HzText.matches(normalize(it)) }
+
+    /** [text] with every digit as 0-9 and every decimal mark as a point, for matching and parsing. */
+    private fun normalize(text: String): String = buildString(text.length) {
+        for (c in text) {
+            val d = Character.digit(c, 10)
+            append(
+                when {
+                    d >= 0 -> '0' + d
+                    c == ',' || c == ARABIC_DECIMAL_SEPARATOR -> '.'
+                    else -> c
+                },
+            )
+        }
+    }
+
+    private const val ARABIC_DECIMAL_SEPARATOR = '\u066B'
 
     /** What the exact-Hz field's text asks for. */
     sealed interface Entry {
@@ -77,7 +109,7 @@ object TuningMath {
     }
 
     fun parse(text: String): Entry {
-        val t = text.trim().replace(',', '.')
+        val t = normalize(text.trim())
         if (t.isEmpty()) return Entry.Empty
         val v = t.toFloatOrNull()?.takeIf { it.isFinite() } ?: return Entry.Invalid
         return Entry.Value(sanitize(v), clamped = v < MIN_HZ || v > MAX_HZ)

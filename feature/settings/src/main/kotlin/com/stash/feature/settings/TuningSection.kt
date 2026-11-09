@@ -26,11 +26,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -47,6 +47,7 @@ import com.stash.core.ui.components.sheetBarsFollow
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.settings.components.SettingsRowPadH
 import com.stash.feature.settings.components.SettingsValueRow
+import java.util.Locale
 
 /**
  * Audio & Quality > Output > Tuning: the concert pitch everything Stash plays is retuned to, at the
@@ -54,6 +55,7 @@ import com.stash.feature.settings.components.SettingsValueRow
  * common references as chips, a slider over the whole range, and an exact number of hertz for any
  * value in between, with the offset in cents said in words as it changes.
  *
+ * Numbers read in the app's language (its digits and decimal mark); the exact field takes any.
  * On a phone without the tuning engine the row is shown, greyed, as not available.
  */
 @Composable
@@ -84,35 +86,48 @@ fun TuningRow(viewModel: TuningSettingsViewModel = hiltViewModel()) {
     }
 }
 
+/** The app's language, for numbers (per-app languages included). */
+@Composable
+internal fun appLocale(): Locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+
 /** "Standard" at 440, else "A = 432 Hz" (one decimal only when it isn't whole). */
 @Composable
 internal fun tuningValue(hz: Float): String =
-    if (TuningMath.isRetuned(hz)) stringResource(R.string.settings_tuning_value_hz, TuningMath.number(hz))
+    if (TuningMath.isRetuned(hz)) stringResource(R.string.settings_tuning_value_hz, TuningMath.number(hz, appLocale()))
     else stringResource(R.string.settings_tuning_value_standard)
 
 /** "31.8 cents lower", "15.7 cents higher", or standard said as such. */
 @Composable
-internal fun tuningCentsLine(hz: Float): String = when {
-    !TuningMath.isRetuned(hz) -> stringResource(R.string.settings_tuning_cents_standard)
-    TuningMath.isLower(hz) -> stringResource(R.string.settings_tuning_cents_lower, TuningMath.centsMagnitude(hz))
-    else -> stringResource(R.string.settings_tuning_cents_higher, TuningMath.centsMagnitude(hz))
+internal fun tuningCentsLine(hz: Float): String {
+    val locale = appLocale()
+    return when {
+        !TuningMath.isRetuned(hz) -> stringResource(R.string.settings_tuning_cents_standard)
+        TuningMath.isLower(hz) -> stringResource(R.string.settings_tuning_cents_lower, TuningMath.centsMagnitude(hz, locale))
+        else -> stringResource(R.string.settings_tuning_cents_higher, TuningMath.centsMagnitude(hz, locale))
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun TuningSheet(current: Float, onSet: (Float) -> Unit, onDismiss: () -> Unit) {
+    val locale = appLocale()
     // What the sheet shows: follows a slider drag live, stored when the drag ends (each crossing of
-    // 440 would otherwise rebuild the stream mid-drag).
-    var draft by remember { mutableFloatStateOf(current) }
-    var text by remember { mutableStateOf(TuningMath.number(current)) }
+    // 440 would otherwise rebuild the stream mid-drag). Saved, so a half-typed value survives a
+    // rotation; only a new stored value (from here or elsewhere) replaces it.
+    var draft by rememberSaveable { mutableFloatStateOf(current) }
+    var text by rememberSaveable { mutableStateOf(TuningMath.number(current, locale)) }
+    var shown by rememberSaveable { mutableFloatStateOf(current) }
     LaunchedEffect(current) {
-        draft = current
-        text = TuningMath.number(current)
+        if (current != shown) {
+            shown = current
+            draft = current
+            text = TuningMath.number(current, locale)
+        }
     }
     fun commit(hz: Float) {
         val v = TuningMath.sanitize(hz)
         draft = v
-        text = TuningMath.number(v)
+        text = TuningMath.number(v, locale)
         onSet(v)
     }
 
@@ -164,7 +179,7 @@ private fun TuningSheet(current: Float, onSet: (Float) -> Unit, onDismiss: () ->
                 value = draft,
                 onValueChange = { v ->
                     draft = TuningMath.sanitize(v)
-                    text = TuningMath.number(draft)
+                    text = TuningMath.number(draft, locale)
                 },
                 onValueChangeFinished = { commit(draft) },
                 valueRange = TuningMath.MIN_HZ..TuningMath.MAX_HZ,
@@ -178,13 +193,14 @@ private fun TuningSheet(current: Float, onSet: (Float) -> Unit, onDismiss: () ->
                 text = text,
                 onTextChange = { text = it },
                 onSubmit = ::commit,
+                current = draft,
             )
 
             TextButton(
                 onClick = { commit(TuningMath.STANDARD_HZ) },
                 enabled = TuningMath.isRetuned(draft),
                 modifier = Modifier.align(Alignment.End),
-            ) { Text(stringResource(R.string.settings_tuning_reset)) }
+            ) { Text(stringResource(R.string.settings_tuning_reset, TuningMath.number(TuningMath.STANDARD_HZ, locale))) }
 
             Text(
                 text = stringResource(R.string.settings_tuning_footer),
@@ -196,17 +212,23 @@ private fun TuningSheet(current: Float, onSet: (Float) -> Unit, onDismiss: () ->
 }
 
 @Composable
-private fun presetLabel(hz: Float): String = when (hz) {
-    440f -> stringResource(R.string.settings_tuning_preset_standard)
-    444f -> stringResource(R.string.settings_tuning_preset_528)
-    415f -> stringResource(R.string.settings_tuning_preset_baroque)
-    else -> TuningMath.number(hz)
+private fun presetLabel(hz: Float): String {
+    val locale = appLocale()
+    val n = TuningMath.number(hz, locale)
+    return when (hz) {
+        440f -> stringResource(R.string.settings_tuning_preset_standard, n)
+        444f -> stringResource(R.string.settings_tuning_preset_528, n, TuningMath.plain(528.0, locale))
+        415f -> stringResource(R.string.settings_tuning_preset_baroque, n)
+        else -> n
+    }
 }
 
 /**
- * The exact-Hz field and its Set button: digits with at most one decimal place, anything past the
- * range clamped to its end (and said so before Set), anything that isn't a number refused.
- * [onSubmit] gets the value to store. The caller owns [text], updated synchronously.
+ * The exact-Hz field and its Set button: digits (any script's) with at most one decimal place,
+ * anything past the range clamped to its end (and said so before Set), anything that isn't a
+ * number refused. [onSubmit] gets the value to store. The caller owns [text], updated
+ * synchronously. A typed value other than [current] previews its offset in cents; one equal to it
+ * leaves that to the line above the field (said once), and shows the range instead.
  */
 @Composable
 internal fun TuningExactField(
@@ -214,16 +236,28 @@ internal fun TuningExactField(
     onTextChange: (String) -> Unit,
     onSubmit: (Float) -> Unit,
     modifier: Modifier = Modifier,
+    current: Float? = null,
 ) {
+    val locale = appLocale()
     val entry = TuningMath.parse(text)
     val value = (entry as? TuningMath.Entry.Value)?.hz
+    val range = stringResource(
+        R.string.settings_tuning_exact_range,
+        TuningMath.plain(TuningMath.MIN_HZ.toDouble(), locale),
+        TuningMath.plain(TuningMath.MAX_HZ.toDouble(), locale),
+    )
     val supporting = when (entry) {
-        TuningMath.Entry.Empty -> stringResource(R.string.settings_tuning_exact_range)
-        TuningMath.Entry.Invalid -> stringResource(R.string.settings_tuning_exact_invalid)
+        TuningMath.Entry.Empty -> range
+        TuningMath.Entry.Invalid -> stringResource(
+            R.string.settings_tuning_exact_invalid,
+            TuningMath.plain(432.0, locale),
+            TuningMath.plain(431.5, locale),
+        )
         is TuningMath.Entry.Value -> when {
             entry.clamped && entry.hz == TuningMath.MIN_HZ ->
-                stringResource(R.string.settings_tuning_exact_lowest, TuningMath.number(entry.hz))
-            entry.clamped -> stringResource(R.string.settings_tuning_exact_highest, TuningMath.number(entry.hz))
+                stringResource(R.string.settings_tuning_exact_lowest, TuningMath.number(entry.hz, locale))
+            entry.clamped -> stringResource(R.string.settings_tuning_exact_highest, TuningMath.number(entry.hz, locale))
+            entry.hz == current -> range
             else -> tuningCentsLine(entry.hz)
         }
     }
@@ -232,7 +266,7 @@ internal fun TuningExactField(
             value = text,
             onValueChange = { new -> TuningMath.hzInput(new)?.let(onTextChange) },
             label = { Text(stringResource(R.string.settings_tuning_exact_label)) },
-            suffix = { Text("Hz") },
+            suffix = { Text(stringResource(R.string.settings_tuning_hz_suffix)) },
             singleLine = true,
             isError = entry is TuningMath.Entry.Invalid,
             supportingText = { Text(supporting) },

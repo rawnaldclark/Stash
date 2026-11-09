@@ -3,7 +3,6 @@ package com.stash.core.media.equalizer.dsp
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.media.equalizer.EqState
 import com.stash.core.media.equalizer.LoudnessState
-import com.stash.core.model.TuningMath
 import org.junit.Test
 
 /** Tuning's place in the chain: first, gated on the reference, with its delay owned by the caller. */
@@ -14,18 +13,25 @@ class FloatDspChainTuningTest {
     private fun chain(factory: PitchStageFactory = PitchStageFactory { _, ch -> FixedDelayFakeStage(ch, 4).also { stages += it } }) =
         FloatDspChain({ EqState() }, { LoudnessState(enabled = true, currentTrackGainDb = 0f) }, { hz }, factory)
 
-    @Test fun `the limiter rides with tuning, and 440 touches nothing`() {
-        val flat = EqState()
-        val unmeasured = LoudnessState(enabled = true, currentTrackGainDb = 0f)
-        val standard = dspActivation(flat, unmeasured, tuning = TuningMath.isRetuned(440f))
-        assertThat(standard.tuning).isFalse()
-        assertThat(standard.limiter).isFalse()
-        assertThat(standard.any).isFalse()
+    @Test fun `the limiter runs on retuned audio, and 440 touches nothing`() {
+        // A phase vocoder can overshoot: with Tuning in, the limiter at the end of the chain holds
+        // even a hot signal (no EQ, no normalization) under full scale.
+        hz = 432f
+        val tuned = chain()
+        tuned.configure(44_100, 2)
+        tuned.engageTuning(tuned.tuningWanted())
+        val hot = FloatArray(2_048 * 2) { 1.2f }
+        tuned.process(hot, 2_048)
+        assertThat(hot.drop(4 * 2).all { it in 0.5f..SoftLimiter.CEILING }).isTrue() // past the stage's fill-up
 
-        val tuned = dspActivation(flat, unmeasured, tuning = TuningMath.isRetuned(432f))
-        assertThat(tuned.tuning).isTrue()
-        assertThat(tuned.limiter).isTrue()
-        assertThat(tuned.any).isTrue()
+        hz = 440f
+        val standard = chain()
+        standard.configure(44_100, 2)
+        standard.engageTuning(standard.tuningWanted())
+        val same = FloatArray(2_048 * 2) { 1.2f }
+        standard.process(same, 2_048)
+        assertThat(same.all { it == 1.2f }).isTrue()
+        assertThat(dspActivation(EqState(), LoudnessState(enabled = true, currentTrackGainDb = 0f)).any).isFalse()
     }
 
     @Test fun `at 440 tuning is neither wanted nor built`() {

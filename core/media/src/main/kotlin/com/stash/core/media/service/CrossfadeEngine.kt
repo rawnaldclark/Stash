@@ -232,6 +232,24 @@ class CrossfadeEngine(
         spare.seekTo(0)
     }
 
+    /**
+     * Tuning came on or went off. A player's audio output only notices on a write while it plays,
+     * then rebuilds itself (a short re-buffer): for a paused master that is the moment it resumes,
+     * for the primed spare the moment its fade starts. Re-seeking the idle players to where they
+     * are rebuilds their outputs now, while they are silent. Not mid-fade: both players are playing
+     * then, and rebuild as they play.
+     */
+    fun rebuildIdleOutputs() {
+        if (transitioning || !::playerA.isInitialized || !::playerB.isInitialized) return
+        for (p in listOf(playerA, playerB)) {
+            if (p.isPlaying || p.mediaItemCount == 0) continue
+            val state = p.playbackState
+            if (state != Player.STATE_READY && state != Player.STATE_BUFFERING) continue
+            android.util.Log.i("Crossfade", "tuning changed: re-seeking idle ${tag(p)} to rebuild its output")
+            p.seekTo(p.currentPosition)
+        }
+    }
+
     /** Whether the spare has buffered enough to start the fade. */
     fun isNextReady(): Boolean =
         ::playerB.isInitialized && playerB.playbackState == Player.STATE_READY

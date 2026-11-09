@@ -56,6 +56,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
@@ -897,6 +898,15 @@ class StashPlaybackService : MediaLibraryService() {
         serviceScope.launch { crossfadePreference.durationMs.collect { crossfadeDurationMs = it } }
         serviceScope.launch {
             hiResOutputController.bitPerfectEngaged.collect { setCrossfadeHeldForBitPerfect(it) }
+        }
+        // Tuning on or off: rebuild the idle players' outputs now, while silent, not on resume
+        // or at the start of the next crossfade (see CrossfadeEngine.rebuildIdleOutputs).
+        serviceScope.launch {
+            tuningController.effectiveHz
+                .map { com.stash.core.model.TuningMath.isRetuned(it) }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { crossfadeEngine?.rebuildIdleOutputs() }
         }
 
         // The service is up — tell the repository so it (re)connects its

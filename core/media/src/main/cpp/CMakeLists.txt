@@ -19,7 +19,19 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(stash_tuning CXX)
 
+# A re-vendored header that lost the patch would build fine and quietly put every retuned note
+# 0.4 to 3 Hz off: refuse to build it. (The host pitch test in src/test/cpp checks the result.)
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith-stretch/signalsmith-stretch.h STRETCH_HEADER)
+string(FIND "${STRETCH_HEADER}" "STASH PATCH" STASH_PATCH_AT)
+if(STASH_PATCH_AT EQUAL -1)
+    message(FATAL_ERROR "signalsmith-stretch.h is missing the STASH PATCH (see the top of this file)")
+endif()
+
 add_library(stash_tuning SHARED stash_tuning_jni.cpp)
+
+# __android_log_print, for the one warning the JNI layer can give.
+find_library(android_log log)
+target_link_libraries(stash_tuning PRIVATE ${android_log})
 
 target_include_directories(stash_tuning PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
