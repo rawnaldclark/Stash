@@ -12,6 +12,8 @@ import com.stash.core.data.prefs.StoragePreference
 import com.stash.core.data.prefs.StoragePreferencesManager
 import com.stash.core.data.prefs.ThemePreference
 import com.stash.core.data.prefs.ThemePreferencesManager
+import com.stash.core.data.prefs.TuningPreference
+import com.stash.core.data.prefs.TuningPreferencesManager
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.repository.MusicRepositoryImpl
 import com.stash.core.data.youtube.OkHttpPingSubmitter
@@ -49,6 +51,10 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindHiResOutputPreference(impl: HiResOutputPreferencesManager): HiResOutputPreference
+
+    @Binds
+    @Singleton
+    abstract fun bindTuningPreference(impl: TuningPreferencesManager): TuningPreference
 
     @Binds
     @Singleton
