@@ -2,6 +2,9 @@
 
 Separate Cloudflare Worker implementing the Tidal subset of BitChord's relay contract. It uses D1 for OAuth refresh tokens, one-time device grants, playback request caps, and short-lived DASH state. Audio bytes remain on Tidal's CDN; only the DASH fMP4 initialization segment passes through this Worker so its zero FLAC sample-rate field can be patched for Media3.
 
+This is the live `stash-tidal-relay` source. It lived in `infra/lossless-relay/tidal-worker/` until 2026-11; deploy
+from this folder now (`npm ci`, then `npx wrangler deploy`). Same Worker name, same D1 ids.
+
 ## Contract
 
 - `GET /health` → `{ "ok": true, "provider": "tidal" }`
@@ -23,7 +26,7 @@ Upstream failures, busy answers and `no_account` spend no daily quota. A D1 erro
 
 Run `npm run tidal:login` to add a live account or `npm run tidal:login -- --reserve` to add an account held out of rotation. Promote a reserve in D1 with `UPDATE tidal_accounts SET state='live' WHERE id='<account_id>';`; move a live account back with `state='reserve'`. Reauthorization restores that account to the selected state. An operator can inspect pool health without exposing tokens using `SELECT id,state,hour_n,day_n,last_used_at,cooling_until,dead_reason FROM tidal_accounts;`.
 
-## Daily lossless counter (shared with the Qobuz relay)
+## Daily lossless counter
 
 With `REQUIRE_INSTALL="1"`, app `/stream` requests require valid `X-Stash-Install/-Ts/-Auth`
 headers. `MIN_APP_BUILD` defaults to `"0"` (disabled); when enabled, app `/stream` requests
@@ -40,7 +43,8 @@ Design: `docs/superpowers/specs/2026-10-17-lossless-daily-counter-design.md`. Ev
 (default 300) lossless answers per UTC day, **Qobuz and Tidal together**: both relays count in one D1 database,
 `stash-quota` (binding `QUOTA_DB`, table `usage(day, subject, n)`, subject `i:<install id>`; schema and migrate command
 in `infra/lossless-quota/`, copied for the tests to `test/fixtures/quota_*.sql`: keep them equal). Code:
-`src/quota.js` (an identical copy of the Qobuz relay's) and `src/auth.js`.
+`src/quota.js` and `src/auth.js` (the retired Qobuz relay, `infra/lossless-relay`, had identical copies; its source
+was removed in 2026-11, so these are the only ones).
 
 - **Install headers.** The app sends `X-Stash-Install` (its random install id, `[A-Za-z0-9-]{8,64}`), `X-Stash-Ts`
   (epoch seconds) and `X-Stash-Auth` = `hex(HMAC-SHA256(RELAY_KEY, message))`, the key taken as its UTF-8 string,
@@ -94,10 +98,9 @@ in `infra/lossless-quota/`, copied for the tests to `test/fixtures/quota_*.sql`:
   Un-revoke: `DELETE FROM revoked_tokens WHERE tid = '<tid>'`. Apply migration 0002 before deploying this relay:
   without the table a supporter's counter read fails and that request is served with the counter off.
 - **Migrations dir:** the `QUOTA_DB` binding's `migrations_dir` in `wrangler.toml` points at
-  `../../lossless-quota/migrations`, which arrives with the Qobuz counter branch (`feat/lossless-quota-qobuz`). It
-  only matters to `wrangler d1 migrations` run with this config (`wrangler deploy` does not read it), and it keeps
-  such a command from applying this relay's own `migrations/` to `stash-quota`. Migrate `stash-quota` with
-  `--config infra/lossless-quota/wrangler.toml` as above; until that branch is merged, run it from a checkout of it.
+  `../lossless-quota/migrations` (`infra/lossless-quota/migrations`). It only matters to `wrangler d1 migrations` run
+  with this config (`wrangler deploy` does not read it), and it keeps such a command from applying this relay's own
+  `migrations/` to `stash-quota`. Migrate `stash-quota` with `--config infra/lossless-quota/wrangler.toml` as above.
 - **Safety:** no `QUOTA_DB` binding skips the counter (`QUOTA_DB not bound`, once per isolate); a D1 error on the
   counter skips it for that request. The network, global and fair-share limits are unchanged and still apply. A race
   can serve one or two past the limit. The hourly job prunes `usage` rows older than 7 days.
@@ -125,7 +128,7 @@ npx wrangler d1 migrations apply stash-tidal-relay --remote
 
 Set a long random `ACCESS_TOKEN`, an unrelated private `ADMIN_TOKEN`, `TIDAL_CLIENT_SECRET`, random private `IP_SALT`, and a random `DASH_SIGNING_KEY` (at least 32 characters) as Wrangler secrets. For the daily lossless counter also set `RELAY_KEY` (and `RELAY_KEY_PREV` during a rotation) to the Qobuz relay's values, and apply the shared `stash-quota` migration from the repo root (`npx wrangler d1 migrations apply stash-quota --remote --config infra/lossless-quota/wrangler.toml`). `DASH_SIGNING_KEY` signs `/dash` links; `ACCESS_TOKEN` ships in every install, so until the key is set the relay falls back to signing with it and anyone could forge those links. Setting it voids links signed earlier, including DASH answers in the response cache (they expire within an hour; `DELETE FROM tidal_response_cache WHERE response_json LIKE '%/dash/td/%'` clears them at once). The Tidal client ID and secret come from the selected [BitChord community implementation](https://github.com/R1Blmmakan/music_addon/blob/main/.env.example), not the TIDAL Developer Portal. Keep these values out of `wrangler.toml` and source control. Apply D1 migrations with `npm run db:migrate`, then deploy and note the `workers.dev` origin, or configure a custom HTTPS hostname and set `PUBLIC_HOST` to that exact origin.
 
-After deploying, set `TIDAL_RELAY_URL` and `TIDAL_ADMIN_TOKEN` in a local shell and run `npm run tidal:login` (append `-- --reserve` to hold an account in reserve). The script prints the verification URL and code, waits while the user approves in Tidal, then polls until authorization completes. It never reads or prints a password or OAuth token. Then verify `/health`, `/search`, and `/stream` with the app access token. Publish `tidal_relay_url` and `tidal_relay_token` using the signed-config publisher only after those checks pass.
+After deploying, set `TIDAL_RELAY_URL` and `TIDAL_ADMIN_TOKEN` in a local shell and run `npm run tidal:login` (append `-- --reserve` to hold an account in reserve). The script prints the verification URL and code, waits while the user approves in Tidal, then polls until authorization completes. It never reads or prints a password or OAuth token. Then verify `/health`, `/search`, and `/stream` with the app access token. Publish `tidal_relay_url` and `tidal_relay_token` using the signed-config publisher (`infra/lossless-config`) only after those checks pass.
 
 ## Web FLAC lane (`?web=1`)
 

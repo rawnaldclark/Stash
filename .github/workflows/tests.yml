@@ -54,7 +54,8 @@ jobs:
       - name: Compile every module's unit tests
         run: ./gradlew compileDebugUnitTestKotlin --continue --no-daemon
 
-  # The share Worker's tests (mixes, rooms, Community), then the sync Worker, tip jar, lossless relay and Last.fm proxy.
+  # The share Worker's tests (mixes, rooms, Community), then the sync Worker, tip jar, Tidal relay, lossless config
+  # publisher and Last.fm proxy.
   # They import only local files, so no npm install.
   worker-tests:
     name: Share worker tests
@@ -89,10 +90,15 @@ jobs:
         working-directory: infra/tipjar-worker
         run: node --no-warnings --test test/*.test.js
 
-      # The lossless relay (Qobuz mint, quotas, account rotation): the most abuse-sensitive Worker, so its suite
-      # must not only run by hand. node:sqlite stands in for D1; local imports only.
-      - name: Run the lossless relay's tests
-        working-directory: infra/lossless-relay
+      # The Tidal relay (seats, pacing, caps, the daily lossless counter, supporter tokens): the most
+      # abuse-sensitive Worker, so its suite must not only run by hand. node:sqlite stands in for D1; local imports only.
+      - name: Run the Tidal relay's tests
+        working-directory: infra/tidal-relay
+        run: node --no-warnings --test test/*.test.js
+
+      # The signed lossless.json publisher (Tidal relay url/token, relay_key, the relays kill switch). Local imports only.
+      - name: Run the lossless config publisher's tests
+        working-directory: infra/lossless-config
         run: node --no-warnings --test test/*.test.js
 
       # The Last.fm proxy (param allowlist, canonical cache key, per-network miss limit). Local imports only.

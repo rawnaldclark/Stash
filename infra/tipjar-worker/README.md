@@ -175,7 +175,7 @@ daily cron. The Cloudflare dashboard's KV editor works too.
 The same Worker also serves `GET /lossless.json` and `GET /lossless.json.sig` —
 the signed relay list the Stash app fetches at every cold start. They come
 byte-for-byte from the KV keys `lossless_config` / `lossless_config_sig`, which
-only `infra/lossless-relay/scripts/publish-config.mjs` writes. 404 until the
+only `infra/lossless-config/scripts/publish-config.mjs` writes. 404 until the
 first publish. Nothing about supporters changes.
 
 ## stashfm.app early access and the monthly goal
@@ -468,7 +468,7 @@ email hash above.
 | --- | --- | --- | --- |
 | `supporter:<time>:<id>` | tip jar webhook; the first rebuild moves each pre-2026-10 entry to `supporter:<time>:legacy-<n>` | One supporter: `{name, amountUsd, message, timestamp}`, also as metadata when it fits | Forever |
 | `supporters` | tip jar webhook and its daily cron, rebuilt from the `supporter:*` keys | The list the app reads (`GET /`): the newest 500, each with the `key` it came from | Until rebuilt |
-| `lossless_config`, `lossless_config_sig` | `infra/lossless-relay/scripts/publish-config.mjs` | The signed relay config, served byte for byte | Until replaced |
+| `lossless_config`, `lossless_config_sig` | `infra/lossless-config/scripts/publish-config.mjs` | The signed relay config, served byte for byte | Until replaced |
 | `kofitxn:<id>` | tip jar webhook | `listed` (the supporter's key is written) or `done`: how far this Ko-fi donation got | 60 days |
 
 **`ACCESS_KV`** (the tip jar and the website, `web/wrangler.jsonc`):

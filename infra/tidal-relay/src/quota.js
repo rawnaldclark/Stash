@@ -5,8 +5,8 @@
  * and Tidal together. Subject = "i:<verified install id>". Supporters (a valid X-Stash-Entitlement token,
  * entitlementOf) are unlimited up to a per-token daily ceiling (subject "t:<tid>"), unless their tid is revoked.
  *
- * KEEP IN SYNC: infra/lossless-relay/src/quota.js and infra/lossless-relay/tidal-worker/src/quota.js are
- * identical copies (each Worker deploys on its own). Pure apart from the D1 calls and WebCrypto; never throws.
+ * The Qobuz relay's identical copy (infra/lossless-relay) was removed in 2026-11; this is the only copy now, and
+ * Tidal is the only relay counting. Pure apart from the D1 calls and WebCrypto; never throws.
  */
 
 /** Usage rows kept (the cap only reads today's; the rest is for looking back). */

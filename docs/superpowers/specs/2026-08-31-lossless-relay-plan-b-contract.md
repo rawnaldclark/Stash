@@ -113,7 +113,7 @@ GET <LOSSLESS_CONFIG_URL>.sig      -> base64 ECDSA P-256 (SHA256withECDSA)
 The config host is the tipjar Worker: `LOSSLESS_CONFIG_URL =
 https://stash-tipjar.rawnaldclark.workers.dev/lossless.json`, the signature at
 `…/lossless.json.sig`, both served byte-for-byte from KV and written only by
-`infra/lossless-relay/scripts/publish-config.mjs`. Chosen over GitHub raw (the relay
+`infra/lossless-config/scripts/publish-config.mjs` (moved from `infra/lossless-relay/` 2026-11). Chosen over GitHub raw (the relay
 key would sit in public git history) and over the relay serving its own config (its
 hostname would then be in the APK).
 

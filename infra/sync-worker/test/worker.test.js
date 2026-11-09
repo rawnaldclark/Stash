@@ -171,7 +171,7 @@ test("wrangler.toml: sync.stashfm.app only, no workers.dev, SQLite objects, rate
     const ids = [...toml.matchAll(/namespace_id = "(\d+)"/g)].map((m) => m[1]);
     assert.deepEqual([...ids].sort(), ["2030", "2031", "2032", "2033"]);
     const share = readFileSync(new URL("../../share-worker/wrangler.toml", import.meta.url), "utf8");
-    const relay = readFileSync(new URL("../../lossless-relay/wrangler.toml", import.meta.url), "utf8");
+    const relay = readFileSync(new URL("../../tidal-relay/wrangler.toml", import.meta.url), "utf8");
     for (const id of ids) assert.ok(!share.includes(`"${id}"`) && !relay.includes(`"${id}"`), id);
 });
 

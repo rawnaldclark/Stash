@@ -1,0 +1,19 @@
+{
+  "name": "stash-lossless-config",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Signs and publishes lossless.json, the config the Stash app fetches at cold start (Tidal relay url/token, relay_key, relay list). Not a Worker.",
+  "scripts": {
+    "test": "node --no-warnings --test",
+    "verify": "node scripts/publish-config.mjs verify"
+  },
+  "devDependencies": {
+    "wrangler": "^4.147.0"
+  },
+  "overrides": {
+    "miniflare": {
+      "undici": "^7.30.1"
+    }
+  }
+}

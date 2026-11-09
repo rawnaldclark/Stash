@@ -4,7 +4,7 @@ import { generateKeyPairSync, sign, randomBytes } from "node:crypto";
  * Test-only supporter tokens in the tip jar's exact format:
  *   base64url-no-pad(UTF-8 JSON payload) + "." + base64url-no-pad(Ed25519 signature over the ASCII first segment).
  * `publicKey` is what the relays take as ENTITLEMENT_PUBLIC_KEY: standard base64 of the raw 32-byte key.
- * KEEP IN SYNC: infra/lossless-relay/test/entitlement-keys.js and infra/lossless-relay/tidal-worker/test/entitlement-keys.js.
+ * The token format must match the tip jar's (infra/tipjar-worker/src/entitlement.js).
  */
 export function keypair() {
     const { publicKey, privateKey } = generateKeyPairSync("ed25519");
