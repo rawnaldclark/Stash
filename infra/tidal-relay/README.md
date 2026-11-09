@@ -94,10 +94,9 @@ in `infra/lossless-quota/`, copied for the tests to `test/fixtures/quota_*.sql`:
   Un-revoke: `DELETE FROM revoked_tokens WHERE tid = '<tid>'`. Apply migration 0002 before deploying this relay:
   without the table a supporter's counter read fails and that request is served with the counter off.
 - **Migrations dir:** the `QUOTA_DB` binding's `migrations_dir` in `wrangler.toml` points at
-  `../../lossless-quota/migrations`, which arrives with the Qobuz counter branch (`feat/lossless-quota-qobuz`). It
-  only matters to `wrangler d1 migrations` run with this config (`wrangler deploy` does not read it), and it keeps
-  such a command from applying this relay's own `migrations/` to `stash-quota`. Migrate `stash-quota` with
-  `--config infra/lossless-quota/wrangler.toml` as above; until that branch is merged, run it from a checkout of it.
+  `../lossless-quota/migrations` (`infra/lossless-quota/migrations`). It only matters to `wrangler d1 migrations` run
+  with this config (`wrangler deploy` does not read it), and it keeps such a command from applying this relay's own
+  `migrations/` to `stash-quota`. Migrate `stash-quota` with `--config infra/lossless-quota/wrangler.toml` as above.
 - **Safety:** no `QUOTA_DB` binding skips the counter (`QUOTA_DB not bound`, once per isolate); a D1 error on the
   counter skips it for that request. The network, global and fair-share limits are unchanged and still apply. A race
   can serve one or two past the limit. The hourly job prunes `usage` rows older than 7 days.
