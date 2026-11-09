@@ -249,6 +249,27 @@
     <string name="sync_in_library">In your library</string>
     <string name="sync_in_library_on">In your library</string>
     <string name="sync_in_library_off">Not in your library</string>
+    <string name="sync_source_spotify" translatable="false">Spotify</string>
+    <string name="sync_source_soundcloud" translatable="false">SoundCloud</string>
+    <string name="sync_source_youtube_music" translatable="false">YouTube Music</string>
+    <string name="sync_source_lastfm" translatable="false">Last.fm</string>
+    <string name="sync_state_expanded">Expanded</string>
+    <string name="sync_state_collapsed">Collapsed</string>
+    <string name="sync_discover_mixes_title">Discover mixes automatically</string>
+    <string name="sync_discover_mixes_on">Daily Mixes and similar are added as they appear</string>
+    <string name="sync_discover_mixes_off">Off — no new mixes are added, and syncs run shorter</string>
+    <string name="sync_home_visibility_hidden">Hidden from Home</string>
+    <string name="sync_home_visibility_pinned">Pinned on Home</string>
+    <string name="sync_home_visibility_default">On Home when it updates</string>
+    <string name="sync_lastfm_recommendations_header">Recommendations</string>
+    <string name="sync_lastfm_recommended_title">Recommended by Last.fm</string>
+    <string name="sync_lastfm_connect_to_enable">Connect Last.fm in Settings → Accounts to enable</string>
+    <plurals name="sync_lastfm_synced_tracks">
+        <item quantity="one">On · %d track synced</item>
+        <item quantity="other">On · %d tracks synced</item>
+    </plurals>
+    <string name="sync_lastfm_explainer">Builds a rotating playlist of tracks Last.fm recommends, seeded from what you play and scrobble most. Each refresh swaps in fresh picks; tracks are matched against YouTube Music / Spotify and downloaded like any other sync, respecting your network settings.</string>
+    <string name="sync_lastfm_find_it_hint">Find it as “Recommended by Last.fm” under Library → Mixes.</string>
 
     <!-- Failed Matches: find it yourself (#19) -->
     <string name="failed_matches_find_hint">Tap a song to find it yourself.</string>
