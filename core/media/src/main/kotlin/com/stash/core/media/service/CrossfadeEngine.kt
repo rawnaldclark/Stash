@@ -235,9 +235,14 @@ class CrossfadeEngine(
     /**
      * Tuning came on or went off. A player's audio output only notices on a write while it plays,
      * then rebuilds itself (a short re-buffer): for a paused master that is the moment it resumes,
-     * for the primed spare the moment its fade starts. Re-seeking the idle players to where they
-     * are rebuilds their outputs now, while they are silent. Not mid-fade: both players are playing
-     * then, and rebuild as they play.
+     * for the primed spare the moment its fade starts. A seek resets the audio renderer, which
+     * flushes the sink and builds a new output (for the new tuning) as it pre-fills: done now, the
+     * idle players rebuild while silent. Not mid-fade: both players are playing then, and rebuild
+     * as they play.
+     *
+     * The seek lands 1 ms from where the player stands, not on it: ExoPlayer drops a seek to its
+     * current position (same millisecond, READY or BUFFERING) without resetting anything, and a
+     * paused player's position doesn't move. 1 ms back (forward from 0) is inaudible.
      */
     fun rebuildIdleOutputs() {
         if (transitioning || !::playerA.isInitialized || !::playerB.isInitialized) return
@@ -245,8 +250,9 @@ class CrossfadeEngine(
             if (p.isPlaying || p.mediaItemCount == 0) continue
             val state = p.playbackState
             if (state != Player.STATE_READY && state != Player.STATE_BUFFERING) continue
-            android.util.Log.i("Crossfade", "tuning changed: re-seeking idle ${tag(p)} to rebuild its output")
-            p.seekTo(p.currentPosition)
+            val at = p.currentPosition
+            android.util.Log.i("Crossfade", "tuning changed: re-seeking idle ${tag(p)} at $at ms to rebuild its output")
+            p.seekTo(rebuildSeekTarget(at))
         }
     }
 
@@ -471,3 +477,9 @@ class CrossfadeEngine(
         const val DUCK_VOLUME = 0.2f
     }
 }
+
+/**
+ * Where [CrossfadeEngine.rebuildIdleOutputs] seeks a player standing at [positionMs]: 1 ms back, or
+ * 1 ms forward from the start. Never the position itself, which ExoPlayer would skip as a no-op.
+ */
+internal fun rebuildSeekTarget(positionMs: Long): Long = if (positionMs >= 1L) positionMs - 1L else 1L

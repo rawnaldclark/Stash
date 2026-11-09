@@ -269,6 +269,26 @@ class StashAudioOutputTuningTest {
         assertThat(stages).hasSize(1)
     }
 
+    @Test fun `playing at 432, paused, toggled to 440, re-seeked - the next stream plays at 440, no rebuild on play`() {
+        // The order seen on the phone. The re-seek (CrossfadeEngine.rebuildIdleOutputs) has
+        // ExoPlayer flush and release this stream while paused, and build the next as it pre-fills.
+        val before = output(FakeTrack())
+        before.play()
+        writeAll(before, ramp(64))
+        before.pause()
+        hz = 440f
+        writeAll(before, ramp(64)) // paused: pre-fill only, never a rebuild
+        before.flush()
+        before.release()
+
+        val after = output(FakeTrack())
+        repeat(3) { writeAll(after, ramp(64)) } // pre-filled while still paused
+        assertThat(after.pathState().tuningHz).isNull() // built for 440
+        after.play()
+        repeat(3) { writeAll(after, ramp(64)) } // no WriteException: nothing left to rebuild
+        assertThat(stages.single().released).isTrue() // only the 432 stream had a stage
+    }
+
     @Test fun `a toggle undone before play rebuilds nothing`() {
         val out = output(FakeTrack())
         writeAll(out, ramp(64))
