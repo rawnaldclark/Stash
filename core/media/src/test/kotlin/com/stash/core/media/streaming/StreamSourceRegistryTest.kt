@@ -10,7 +10,7 @@ import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
-import com.stash.data.download.lossless.relay.RelayEntry
+import com.stash.data.download.lossless.relay.TidalRelay
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.coVerifyOrder
@@ -636,7 +636,7 @@ class StreamSourceRegistryTest {
     }
 
     /**
-     * With the day's lossless allowance spent qbdlx skips the relays on purpose: its nulls
+     * With the day's lossless allowance spent the Tidal relay is skipped on purpose: the nulls
      * must not add up to the Home "lossless looks down" banner. The same nulls on a normal day do.
      */
     @Test
@@ -816,7 +816,6 @@ class StreamSourceRegistryTest {
     ): StreamSourceRegistry {
         coEvery { streamingPreference.isForceYouTubeFallback() } returns false
         coEvery { losslessPrefs.tidalAacFallbackNow() } returns tidalAac
-        every { losslessPrefs.customLosslessEndpoint } returns MutableStateFlow<String?>(null)
         every { losslessPrefs.bitchordEndpoint } returns MutableStateFlow<String?>("https://tidal.mine.example")
         val availability = LosslessAvailability(
             credentialStore = mockk<QbdlxCredentialStore> {
@@ -824,11 +823,9 @@ class StreamSourceRegistryTest {
                 every { connectedEmailFlow } returns MutableStateFlow<String?>(null)
             },
             config = mockk<LosslessConfigFetcher> {
-                every { relays } returns MutableStateFlow(listOf(RelayEntry("https://relay.example")))
+                every { tidalRelay } returns MutableStateFlow<TidalRelay?>(TidalRelay("https://tidal.stash.example", null))
             },
             prefs = losslessPrefs,
-            relayClient = mockk(),
-            quota = mockk(),
         )
         return StreamSourceRegistry(
             kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,

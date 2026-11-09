@@ -7,7 +7,6 @@ import com.stash.data.download.lossless.quota.LosslessAllowance
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.quota.LosslessQuotaRefresher
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
-import com.stash.data.download.lossless.relay.RelayEntry
 import com.stash.data.download.lossless.relay.TidalRelay
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -41,8 +40,7 @@ class SupporterViewModelTest {
     }
     private val refresher: LosslessQuotaRefresher = mockk()
     private val config: LosslessConfigFetcher = mockk {
-        every { relays } returns MutableStateFlow(listOf(RelayEntry("https://relay.example")))
-        every { tidalRelay } returns MutableStateFlow<TidalRelay?>(null)
+        every { tidalRelay } returns MutableStateFlow<TidalRelay?>(TidalRelay("https://tidal.example", null))
     }
 
     @Before fun setUp() = Dispatchers.setMain(UnconfinedTestDispatcher())

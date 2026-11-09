@@ -7,7 +7,6 @@ import com.stash.core.data.tipjar.DonationGoalRepository
 import com.stash.data.download.lossless.quota.LosslessAllowance
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
-import com.stash.data.download.lossless.relay.RelayEntry
 import com.stash.data.download.lossless.relay.TidalRelay
 import com.stash.feature.settings.components.GoalLine
 import com.stash.feature.settings.components.SupportCardState
@@ -35,13 +34,12 @@ class SupportCardViewModelTest {
     private val allowance = MutableStateFlow<LosslessAllowance?>(null)
     private val token = MutableStateFlow<String?>(null)
     private val goal = MutableStateFlow<DonationGoal?>(null)
-    private val relays = MutableStateFlow(listOf(RelayEntry("https://relay.example")))
+    private val tidal = MutableStateFlow<TidalRelay?>(TidalRelay("https://tidal.example", null))
 
     private val quota: LosslessQuota = mockk { every { state } returns allowance }
     private val supporter: SupporterRepository = mockk { every { this@mockk.token } returns this@SupportCardViewModelTest.token }
     private val config: LosslessConfigFetcher = mockk {
-        every { this@mockk.relays } returns this@SupportCardViewModelTest.relays
-        every { tidalRelay } returns MutableStateFlow<TidalRelay?>(null)
+        every { tidalRelay } returns this@SupportCardViewModelTest.tidal
     }
     private val goals: DonationGoalRepository = mockk {
         every { this@mockk.goal } returns this@SupportCardViewModelTest.goal
@@ -65,7 +63,7 @@ class SupportCardViewModelTest {
         assertThat(vm.state.value).isEqualTo(SupportCardState(goal = null))
     }
 
-    @Test fun `the card follows the goal and the relays' word`() = runTest {
+    @Test fun `the card follows the goal and the relay's word`() = runTest {
         val vm = vm()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
         assertThat(vm.state.value).isEqualTo(SupportCardState(goal = null, supporter = false))
@@ -73,7 +71,7 @@ class SupportCardViewModelTest {
         goal.value = DonationGoal(16_800, 20_000, "2026-11")
         assertThat(vm.state.value.goal).isEqualTo(GoalLine("$168", "$200", 0.84f))
 
-        // The code is claimed: the relays say unlimited, and the card thanks them.
+        // The code is claimed: the relay says unlimited, and the card thanks them.
         token.value = "tok.en"
         allowance.value = LosslessAllowance(3, null, reset)
         assertThat(vm.state.value.supporter).isTrue()
@@ -81,7 +79,7 @@ class SupportCardViewModelTest {
     }
 
     @Test fun `without an owner relay nobody is thanked as a supporter`() = runTest {
-        relays.value = emptyList()
+        tidal.value = null
         val vm = vm()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
         assertThat(vm.state.value.supporter).isFalse()

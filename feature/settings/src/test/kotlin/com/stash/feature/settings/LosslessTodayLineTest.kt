@@ -12,12 +12,12 @@ class LosslessTodayLineTest {
 
     @Test fun `shows used of limit and the local reset time`() {
         assertThat(losslessTodayLine(LosslessAllowance(412, 500, reset), true, now, time))
-            .isEqualTo("Tidal & Qobuz today: 412 / 500 · resets 8:00 PM")
+            .isEqualTo("Tidal today: 412 / 500 · resets 8:00 PM")
     }
 
     @Test fun `a supporter reads unlimited`() {
         assertThat(losslessTodayLine(LosslessAllowance(9_000, null, reset), true, now, time))
-            .isEqualTo("Tidal & Qobuz today: Unlimited (supporter)")
+            .isEqualTo("Tidal today: Unlimited (supporter)")
     }
 
     @Test fun `hidden when nothing is known or no relay is configured`() {
@@ -27,6 +27,6 @@ class LosslessTodayLineTest {
 
     @Test fun `a day that has reset reads nothing used, resetting the next midnight`() {
         assertThat(losslessTodayLine(LosslessAllowance(500, 500, reset), true, reset * 1000, time))
-            .isEqualTo("Tidal & Qobuz today: 0 / 500 · resets next day")
+            .isEqualTo("Tidal today: 0 / 500 · resets next day")
     }
 }

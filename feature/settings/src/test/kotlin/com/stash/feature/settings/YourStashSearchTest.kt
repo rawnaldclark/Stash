@@ -20,7 +20,7 @@ class YourStashSearchTest {
         R.string.settings_your_stash_section_supporter to "Supporter",
         R.string.settings_your_stash_section_coming to "What's coming",
         R.string.settings_web_link_action_unlink_everything to "Unlink everything",
-        R.string.settings_supporter_offer to "Unlimited Tidal & Qobuz for supporters",
+        R.string.settings_supporter_offer to "Unlimited Tidal for supporters",
     )
     private val index = settingsSearchIndex { id -> english[id] ?: "zz$id" }
 

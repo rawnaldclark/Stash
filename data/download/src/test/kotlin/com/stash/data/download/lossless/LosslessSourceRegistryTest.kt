@@ -2,9 +2,8 @@ package com.stash.data.download.lossless
 
 import com.google.common.truth.Truth.assertThat
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
-import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
-import com.stash.data.download.lossless.relay.RelayEntry
+import com.stash.data.download.lossless.relay.TidalRelay
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.coVerifyOrder
@@ -32,14 +31,12 @@ class LosslessSourceRegistryTest {
 
     // What the user has of their own; nothing by default.
     private val ownQobuzLogin = MutableStateFlow(false)
-    private val customQobuzEndpoint = MutableStateFlow<String?>(null)
     private val ownTidalServer = MutableStateFlow<String?>(null)
 
     /** The download quality setting; Hi-Res unless a test picks another. */
     private var downloadTier = LosslessQualityTier.HI_RES
 
     init {
-        every { prefs.customLosslessEndpoint } returns customQobuzEndpoint
         every { prefs.bitchordEndpoint } returns ownTidalServer
         coEvery { prefs.qualityTierNow() } answers { downloadTier }
     }
@@ -51,11 +48,9 @@ class LosslessSourceRegistryTest {
             every { connectedEmailFlow } returns MutableStateFlow(null)
         },
         config = mockk<LosslessConfigFetcher> {
-            every { relays } returns MutableStateFlow(listOf(RelayEntry("https://relay.example")))
+            every { tidalRelay } returns MutableStateFlow<TidalRelay?>(TidalRelay("https://tidal.stash.example", null))
         },
         prefs = prefs,
-        relayClient = mockk(),
-        quota = LosslessQuota.inMemory { 0L },
     )
 
     private val query = TrackQuery(artist = "A", title = "B")
@@ -318,19 +313,6 @@ class LosslessSourceRegistryTest {
         val result = registry(linkedSetOf(tidal, qbdlx)).resolve(query)
 
         assertThat(result).isEqualTo(qbdlxResult)
-        coVerify(exactly = 0) { tidal.resolve(any()) }
-    }
-
-    @Test
-    fun `own Tidal server and a custom Qobuz endpoint - Qobuz keeps the lead`() = runTest {
-        defaultOrderAnyQuality()
-        ownTidalServer.value = "https://tidal.mine.example"
-        customQobuzEndpoint.value = "https://qobuz.mine.example"
-        val qbdlxResult = flacResult("qbdlx_qobuz")
-        val qbdlx = fakeSource("qbdlx_qobuz", qbdlxResult)
-        val tidal = fakeSource("tidal_bitchord", flacResult("tidal_bitchord"))
-
-        assertThat(registry(linkedSetOf(tidal, qbdlx)).resolve(query)).isEqualTo(qbdlxResult)
         coVerify(exactly = 0) { tidal.resolve(any()) }
     }
 
