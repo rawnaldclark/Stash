@@ -43,7 +43,9 @@ jobs:
 
   # Stash's own C++: Tuning's JNI layer, its engine core and the core's host test. The vendored
   # Signalsmith headers (core/media/src/main/cpp/third_party) are upstream's code and left out.
-  # Analysed from source (build-mode none), so no NDK or build is needed.
+  # Analysed from source (build-mode none), so no NDK or build is needed. paths-ignore can't leave
+  # headers out of C++ (they're compiled into the files that include them), so their results are
+  # dropped from the SARIF before it is uploaded.
   analyze-cpp:
     name: Analyze C++
     runs-on: ubuntu-latest
@@ -59,10 +61,34 @@ jobs:
         with:
           languages: c-cpp
           build-mode: none
-          config: |
-            paths-ignore:
-              - core/media/src/main/cpp/third_party
 
       - uses: github/codeql-action/analyze@v3
         with:
+          category: /language:c-cpp
+          upload: failure-only
+          output: sarif-results
+
+      - name: Leave out the vendored code's results
+        run: |
+          python3 - <<'EOF'
+          import glob, json
+          VENDORED = 'core/media/src/main/cpp/third_party/'
+          def vendored(result):
+              locations = result.get('locations') or [{}]
+              uri = locations[0].get('physicalLocation', {}).get('artifactLocation', {}).get('uri', '')
+              return uri.startswith(VENDORED)
+          for path in glob.glob('sarif-results/*.sarif'):
+              with open(path) as f:
+                  sarif = json.load(f)
+              for run in sarif['runs']:
+                  results = run.get('results', [])
+                  run['results'] = [r for r in results if not vendored(r)]
+                  print(f"{path}: kept {len(run['results'])} of {len(results)} results")
+              with open(path, 'w') as f:
+                  json.dump(sarif, f)
+          EOF
+
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: sarif-results
           category: /language:c-cpp
