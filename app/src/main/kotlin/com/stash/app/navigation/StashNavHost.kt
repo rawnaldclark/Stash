@@ -184,6 +184,15 @@ private fun StashNavGraph(
                         ),
                     )
                 },
+                // A New from your artists album's Go to artist: the album loads first, so only while Home is still on
+                // top (a callback from before a rotation holds a destroyed entry, whose navigate() throws)
+                onNavigateToArtist = { id, name ->
+                    if (navController.currentBackStackEntry === homeEntry &&
+                        homeEntry.lifecycle.currentState.isAtLeast(Lifecycle.State.CREATED)
+                    ) {
+                        navController.navigate(SearchArtistRoute(id, name))
+                    }
+                },
                 onSeeAllPlaylists = { genre ->
                     navController.navigate(PlaylistBrowseRoute(genre))
                 },

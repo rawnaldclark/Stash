@@ -8,4 +8,19 @@
     <string name="home_because_you_like_song">Because you like %1$s</string>
     <!-- TalkBack for a song card. %1$s is its title, %2$s its artist. -->
     <string name="home_song_card">%1$s by %2$s</string>
+    <!-- TalkBack for a long press on a Because you like or New from your artists card. %1$s is the song's or album's title. -->
+    <string name="home_card_more">More for %1$s</string>
+    <!-- The sheet a New from your artists album opens on a long press -->
+    <string name="home_album_play">Play</string>
+    <string name="home_album_shuffle">Shuffle</string>
+    <string name="home_album_play_next">Play next</string>
+    <string name="home_album_add_to_queue">Add to queue</string>
+    <string name="home_album_open">Open album</string>
+    <string name="home_album_go_to_artist">Go to artist</string>
+    <!-- Toasts after the album sheet's actions -->
+    <string name="home_album_playing_next">Album plays next</string>
+    <string name="home_album_added_to_queue">Added album to queue</string>
+    <string name="home_album_add_failed">Couldn\'t add album to queue</string>
+    <string name="home_album_load_failed">Couldn\'t load this album</string>
+    <string name="home_album_no_artist">Couldn\'t find this album\'s artist</string>
 </resources>
