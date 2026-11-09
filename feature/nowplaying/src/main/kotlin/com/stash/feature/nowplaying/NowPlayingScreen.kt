@@ -2257,10 +2257,6 @@ private fun SleepTimerSheet(
     onCancel: () -> Unit,
     onDismiss: () -> Unit,
     sheetState: androidx.compose.material3.SheetState,
-    /** Tuning's reference, or null to leave its row out (no engine on this phone). */
-    tuningHz: Float? = null,
-    onTuningSelect: (Float) -> Unit = {},
-    onTuningCustom: () -> Unit = {},
 ) {
     val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
     ModalBottomSheet(
@@ -2377,6 +2373,10 @@ private fun SpeedSheet(
     onCustom: () -> Unit,
     onDismiss: () -> Unit,
     sheetState: androidx.compose.material3.SheetState,
+    /** Tuning's reference, or null to leave its row out (no engine on this phone). */
+    tuningHz: Float? = null,
+    onTuningSelect: (Float) -> Unit = {},
+    onTuningCustom: () -> Unit = {},
 ) {
     val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
     ModalBottomSheet(
