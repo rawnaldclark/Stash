@@ -99,7 +99,13 @@ module's lookups by name.
   ```
 
   `retrace` is in `<sdk>/cmdline-tools/latest/bin/`. It prints the trace with source lines and the inlined frames
-  restored.
+  restored. Without the Command-line Tools, the same retrace ships inside the Android Gradle plugin jar a build has
+  already downloaded (use the `agp` version from `gradle/libs.versions.toml`):
+
+  ```bash
+  java -cp ~/.gradle/caches/modules-2/files-2.1/com.android.tools.build/builder/8.9.1/*/builder-8.9.1.jar \
+    com.android.tools.r8.retrace.Retrace mapping-v0.9.125.txt crash.txt
+  ```
 
 ## How the codebase is organized
 
