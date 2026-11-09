@@ -25,9 +25,20 @@ namespace {
 // Bumped when the native contract changes; the Kotlin side only checks that it is positive.
 constexpr jint kNativeVersion = 1;
 
-// Above this rate the cheaper preset (shorter block, longer interval) keeps the CPU cost of
-// 88.2 to 192 kHz streams in check; the quality difference at a third of a semitone is negligible.
-constexpr int kCheaperAboveHz = 48000;
+// 200 ms blocks, a new one every third of a block, at every sample rate. Measured (a host build
+// of this exact code, and SignalsmithPitchStageTest on a phone): the library's presets (120 ms
+// blocks every 30 ms; 100 every 40 ms) have 7 to 9 Hz bins, too coarse to keep two bass notes a
+// fourth apart (55 and 82.41 Hz) from pulling on each other: at 432 each lands up to 0.4 Hz off,
+// and up to 2 Hz (over 60 cents) at the ends of the 392 to 494 Hz range. 200 ms gives 4.3 to
+// 4.7 Hz bins and keeps every partial within about 0.1 Hz across the range, at the cost of 80 ms
+// more latency. A third of a block (not the presets' quarter) keeps the bins it links for phase
+// coherence to about 15 Hz apart, so separate notes stay separate. Same CPU at 44.1/48 kHz, about
+// 1.5x above (the presets' cheaper one is gone: it was the least accurate). Also measured: attacks
+// soften by a few ms, and each partial gets a faint image 15 Hz above it (about -35 dB, near the
+// stock engine's own intermodulation in a chord). 280 ms blocks every 70 ms would remove the
+// image (-56 dB) at 280 ms of latency.
+constexpr double kBlockSeconds = 0.2;
+constexpr int kIntervalsPerBlock = 3;
 
 // Fixed seed: the stretcher only draws random numbers when time-stretching past 2x, which this
 // stage never does, but a fixed seed keeps runs reproducible all the same.
@@ -91,14 +102,11 @@ Java_com_stash_core_media_equalizer_dsp_SignalsmithNative_create(JNIEnv *, jclas
     Tuner *t = new (std::nothrow) Tuner(channels);
     if (t == nullptr) return 0;
     try {
-        // splitComputation off for both presets: it spreads the work over an extra interval of
-        // latency, which helps a real-time audio callback, not a playback thread that writes
-        // ahead into a 250 to 750 ms AudioTrack buffer.
-        if (sampleRate > kCheaperAboveHz) {
-            t->stretch.presetCheaper(channels, static_cast<float>(sampleRate), false);
-        } else {
-            t->stretch.presetDefault(channels, static_cast<float>(sampleRate), false);
-        }
+        // splitComputation off: it spreads the work over an extra interval of latency, which
+        // helps a real-time audio callback, not a playback thread that writes ahead into a 250
+        // to 750 ms AudioTrack buffer.
+        const int block = static_cast<int>(sampleRate * kBlockSeconds);
+        t->stretch.configure(channels, block, block / kIntervalsPerBlock, false);
         t->stretch.setTransposeFactor(1.0f);
         t->stretch.reset();
     } catch (...) {

@@ -1,13 +1,20 @@
 # Tuning's pitch engine: Signalsmith Stretch behind a small JNI layer (stash_tuning_jni.cpp).
 #
-# Vendored, unmodified, MIT (notices in third_party/*/LICENSE.txt and in Settings > About):
+# Vendored, MIT (notices in third_party/*/LICENSE.txt and in Settings > About):
 #   third_party/signalsmith-stretch/signalsmith-stretch.h
-#       github.com/Signalsmith-Audio/signalsmith-stretch, tag 1.4.0 (a670068d9aeb64913331d5cc29337b19a457a7df)
+#       github.com/Signalsmith-Audio/signalsmith-stretch, tag 1.4.0 (a670068d9aeb64913331d5cc29337b19a457a7df),
+#       with one Stash patch (search "STASH PATCH"; master after 1.4.0 has the same code). The
+#       phase-vocoder step interpolated each output bin's previous input spectrum between two bins
+#       that had each been turned by their own centre frequency, which bends the phase step: every
+#       retuned partial came out 0.4 to 3 Hz off (82.41 Hz at 432 played 81.77, not 80.91; 18 cents
+#       sharp). The patch turns both neighbours to the fractional bin first. A lone sine now lands
+#       within 0.01 Hz (SignalsmithPitchStageTest checks partials from 55 Hz up on a phone).
 #   third_party/signalsmith-linear/{stft.h, fft.h}
 #       github.com/Signalsmith-Audio/linear, tag 0.6.4 (de55e6a50ffcf6f8f43f649692d94691c7025151),
 #       the version stretch 1.4.0 pins. Only the two headers the default (no Accelerate/IPP/PFFFT)
 #       build includes.
-# To update: copy the same files from the new tags and keep the linear tag the stretch tag pins.
+# To update: copy the same files from the new tags, keep the linear tag the stretch tag pins, and
+# carry the patch over unless upstream fixed the interpolation.
 
 cmake_minimum_required(VERSION 3.22.1)
 project(stash_tuning CXX)

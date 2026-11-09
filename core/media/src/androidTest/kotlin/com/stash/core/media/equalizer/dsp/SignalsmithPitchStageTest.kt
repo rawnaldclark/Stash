@@ -1,6 +1,9 @@
 package com.stash.core.media.equalizer.dsp
 
+import android.os.Bundle
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.google.common.truth.Expect
 import com.google.common.truth.Truth.assertThat
 import com.google.common.truth.Truth.assertWithMessage
 import kotlin.math.PI
@@ -8,7 +11,9 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.ln
 import kotlin.math.sin
+import kotlin.math.log10
 import kotlin.math.sqrt
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -16,10 +21,13 @@ import org.junit.runner.RunWith
  * Tuning's real engine (Signalsmith Stretch, through JNI) on a phone: retuning to A = 432 Hz moves
  * every partial by exactly 432/440 at the same speed, at 44.1 and 96 kHz.
  *
- * A synthesized chord (an A at 440 Hz with harmonics at 880 and 1320, and a low E at 82.41) goes
- * through the stage in the output stage's own chunks of 2048 frames, followed by the stage's
+ * A synthesized chord (an A at 440 Hz with harmonics at 880 and 1320, over a low A at 55 and a low
+ * E at 82.41: two bass notes a fourth apart, the hardest case for a phase vocoder's resolution)
+ * goes through the stage in the output stage's own chunks of 2048 frames, followed by the stage's
  * latency of silence (how the output stage drains it at end of stream). Then:
- *  - an FFT finds every peak at hz x 432/440 within 0.5 Hz;
+ *  - an FFT finds every peak at hz x 432/440 within 0.5 Hz, for the chord and for each bass note
+ *    alone (every partial is checked before the test fails; the readings, and the strongest
+ *    peaks between 75 and 90 Hz, go to the instrumentation output as `stash_tuning`);
  *  - a one-second tone burst comes out one second long, delayed by the latency the stage reports.
  *
  * Run: ./gradlew :core:media:connectedDebugAndroidTest (on a phone).
@@ -27,28 +35,40 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class SignalsmithPitchStageTest {
 
+    @get:Rule val expect: Expect = Expect.create()
+
     private val factor = 432f / 440f
-    private val partials = doubleArrayOf(82.41, 440.0, 880.0, 1320.0)
+    private val chord = doubleArrayOf(55.0, 82.41, 440.0, 880.0, 1320.0)
 
     @Test fun engineLoadsOnThisPhone() {
         assertWithMessage("libstash_tuning.so did not load").that(SignalsmithPitchStage.isAvailable).isTrue()
     }
 
-    @Test fun retunesEveryPartialTo432At44k() = checkPeaks(44_100)
+    @Test fun retunesEveryPartialTo432At44k() = checkPeaks(44_100, chord)
 
-    @Test fun retunesEveryPartialTo432At96k() = checkPeaks(96_000)
+    @Test fun retunesEveryPartialTo432At96k() = checkPeaks(96_000, chord)
+
+    @Test fun retunesLoneBassNotesTo432At44k() {
+        checkPeaks(44_100, doubleArrayOf(55.0))
+        checkPeaks(44_100, doubleArrayOf(82.41))
+    }
+
+    @Test fun retunesLoneBassNotesTo432At96k() {
+        checkPeaks(96_000, doubleArrayOf(55.0))
+        checkPeaks(96_000, doubleArrayOf(82.41))
+    }
 
     @Test fun keepsLengthAndReportsItsLatencyAt44k() = checkTiming(44_100)
 
     @Test fun keepsLengthAndReportsItsLatencyAt96k() = checkTiming(96_000)
 
-    private fun checkPeaks(rate: Int) {
+    private fun checkPeaks(rate: Int, partials: DoubleArray) {
         val seconds = 4.0
         val n = (rate * seconds).toInt()
         val input = FloatArray(n * CH)
         for (f in 0 until n) {
             var v = 0.0
-            for (p in partials) v += 0.2 * sin(2 * PI * p * f / rate)
+            for (p in partials) v += 0.15 * sin(2 * PI * p * f / rate)
             input[f * CH] = v.toFloat()
             input[f * CH + 1] = v.toFloat()
         }
@@ -61,11 +81,35 @@ class SignalsmithPitchStageTest {
         check(start + segment <= n + latency) { "test signal too short" }
         val spectrum = magnitudeSpectrum(out, start, segment, padTo = segment * 4)
         val binHz = rate.toDouble() / (segment * 4)
-        for (p in partials) {
-            val want = p * factor
-            val got = peakNear(spectrum, want, binHz, searchHz = 3.0)
-            assertWithMessage("$p Hz at $rate Hz should come out at ${"%.2f".format(java.util.Locale.ROOT, want)} Hz")
-                .that(got).isWithin(0.5).of(want)
+        val readings = partials.map { p -> p to peakNear(spectrum, p * factor, binHz, searchHz = 3.0) }
+        val line = "$rate Hz, latency $latency: " +
+            readings.joinToString("; ") { (p, got) -> "${fmt(p)} -> ${fmt(got)} (want ${fmt(p * factor)})" } +
+            " | peaks 75-90 Hz: " + localPeaks(spectrum, binHz, 75.0, 90.0)
+        report(line)
+        for ((p, got) in readings) {
+            expect.withMessage("$p Hz at $rate Hz should come out at ${fmt(p * factor)} Hz [$line]")
+                .that(got).isWithin(0.5).of(p * factor)
+        }
+    }
+
+    private fun fmt(v: Double) = "%.2f".format(java.util.Locale.ROOT, v)
+
+    /** Adds [line] to the instrumentation output (`am instrument -r` prints it as `stash_tuning`). */
+    private fun report(line: String) {
+        val status = Bundle().apply { putString("stash_tuning", line) }
+        // 2 is an in-progress status, as androidx.benchmark sends its results.
+        InstrumentationRegistry.getInstrumentation().sendStatus(2, status)
+    }
+
+    /** The local maxima between [lo] and [hi] Hz within 40 dB of the strongest, as "hz (dB)". */
+    private fun localPeaks(mag: DoubleArray, binHz: Double, lo: Double, hi: Double): String {
+        val a = (lo / binHz).toInt().coerceAtLeast(1)
+        val b = (hi / binHz).toInt().coerceAtMost(mag.size - 2)
+        var top = 1e-30
+        for (i in a..b) top = maxOf(top, mag[i])
+        val found = (a..b).filter { mag[it] >= mag[it - 1] && mag[it] >= mag[it + 1] && mag[it] > top * 0.01 }
+        return if (found.isEmpty()) "none" else found.joinToString(", ") {
+            "${fmt(it * binHz)} (${"%.0f".format(java.util.Locale.ROOT, 20 * log10(mag[it] / top))} dB)"
         }
     }
 

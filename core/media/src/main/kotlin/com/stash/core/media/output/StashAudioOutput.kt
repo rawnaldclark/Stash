@@ -39,12 +39,12 @@ import java.nio.ByteOrder
  * untouched and uncopied.
  *
  * Frame accounting is exact (see [ConvertingWriter]). Only Tuning adds latency
- * (its pitch stage delays the audio by ~100 ms, frames still 1:1), and only
+ * (its pitch stage delays the audio by 200 ms, frames still 1:1), and only
  * while it is in the path, so this stage owns the consequences:
  * - [getPositionUs] reports what is being heard, not what was written, so
  *   lyrics and Listen Together's drift measurement stay in time;
  * - [stop] (end of stream) feeds the stage that much silence so the last
- *   ~100 ms of the song reach the AudioTrack (DefaultAudioSink waits until
+ *   200 ms of the song reach the AudioTrack (DefaultAudioSink waits until
  *   the position reaches what it wrote: without the tail the queue's last
  *   song would never end);
  * - Tuning switched on or off mid-stream rebuilds the stream at its current
@@ -240,7 +240,7 @@ class StashAudioOutput(
     }
 
     /**
-     * End of stream: with Tuning in the path, the song's last ~100 ms are still inside its stage.
+     * End of stream: with Tuning in the path, the song's last 200 ms are still inside its stage.
      * Feed it as much silence as its delay, through the same writer, so they reach the AudioTrack
      * and the written and played frame counts meet; only then stop the AudioTrack (which plays out
      * what it holds). What the AudioTrack has no room for yet goes in from [getPositionUs], which

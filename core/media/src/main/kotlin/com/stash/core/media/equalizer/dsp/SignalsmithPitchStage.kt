@@ -4,9 +4,9 @@ import android.util.Log
 
 /**
  * [PitchStage] on Signalsmith Stretch (MIT; native code in `src/main/cpp`): a phase vocoder built
- * for music, which Qt Multimedia also ships for pitch compensation. About 120 ms of latency at
- * 44.1/48 kHz (its default preset) and 100 ms above 48 kHz (its cheaper preset, which keeps the
- * CPU cost of hi-res streams down).
+ * for music, which Qt Multimedia also ships for pitch compensation. 200 ms blocks at every rate,
+ * so 200 ms of latency: fine enough in frequency to keep bass notes in tune (the native side says
+ * why, and carries one fix to the library).
  *
  * [isAvailable] is false when the native library didn't load (an ABI the APK lacks, a broken
  * install): Tuning then shows as unavailable, and nothing crashes.

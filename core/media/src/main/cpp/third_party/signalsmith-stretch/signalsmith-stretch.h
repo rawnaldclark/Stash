@@ -696,6 +696,8 @@ private:
 		// Preliminary output prediction from phase-vocoder
 		if (step < size_t(channels)) {
 			int c = int(step);
+			// STASH PATCH: the turn between neighbouring bins over one interval (see below)
+			Sample binStepAngle = (bandToFreq(1) - bandToFreq(0))*stft.defaultInterval()*Sample(2*M_PI);
 			Band *bins = bandsForChannel(c);
 			auto *predictions = predictionsForChannel(c);
 			for (int b = 0; b < bands; ++b) {
@@ -710,7 +712,13 @@ private:
 				prediction.input = getFractional<&Band::input>(c, lowIndex, fracIndex);
 
 				auto &outputBin = bins[b];
-				Complex prevInput = getFractional<&Band::prevInput>(c, lowIndex, fracIndex);
+				// STASH PATCH (core/media/src/main/cpp/CMakeLists.txt says why): every .prevInput was
+				// turned by its own bin's centre frequency above, so turn both neighbours to the
+				// fractional bin's before interpolating, or the phase step (the output frequency) is off
+				// by up to a few Hz whenever the map lands between bins.
+				Complex prevLow = getBand<&Band::prevInput>(c, lowIndex)*std::polar(Sample(1), fracIndex*binStepAngle);
+				Complex prevHigh = getBand<&Band::prevInput>(c, lowIndex + 1)*std::polar(Sample(1), (fracIndex - 1)*binStepAngle);
+				Complex prevInput = prevLow + (prevHigh - prevLow)*fracIndex;
 				Complex freqTwist = _impl::mul<true>(prediction.input, prevInput);
 				Complex phase = _impl::mul(outputBin.output, freqTwist);
 				outputBin.output = phase/(std::max(prevEnergy, prediction.energy) + noiseFloor);
