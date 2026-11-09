@@ -91,6 +91,10 @@
     <string name="settings_license_label">License</string>
     <string name="settings_album_art_credit">Album art</string>
     <string name="settings_album_art_credit_detail">Back covers and inside pages come from the Cover Art Archive and Discogs. This app uses Discogs\' API but is not affiliated with, sponsored or endorsed by Discogs. \'Discogs\' is a trademark of Zink Media, LLC.</string>
+    <string name="settings_open_source_notices">Open-source notices</string>
+    <string name="settings_open_source_notices_detail">Tuning is built on Signalsmith Stretch and Signalsmith Linear (MIT License).</string>
+    <string name="settings_open_source_notices_body" translatable="false">Signalsmith Stretch\nCopyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd.\n\nSignalsmith Linear\nCopyright (c) 2025 Signalsmith Audio\n\nMIT License\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</string>
+    <string name="settings_open_source_notices_close">Close</string>
     <string name="settings_checking_updates_toast">Checking for updates…</string>
     <string name="settings_checking_updates">Checking…</string>
     <string name="settings_check_updates">Check for updates</string>
@@ -568,6 +572,30 @@
     <string name="settings_hires_bit_perfect_dialog_title">Turn your DAC down first</string>
     <string name="settings_hires_bit_perfect_dialog_body">In bit-perfect mode Android doesn\'t touch the volume: your DAC sets it. If your DAC has no volume control of its own, the phone\'s volume keys may stop working and music can play at full level.\n\nTurn the volume down before you press play. EQ, normalization and crossfade are bypassed while bit-perfect is active.</string>
     <string name="settings_hires_bit_perfect_confirm">Use bit-perfect</string>
+
+    <!-- Settings > Audio & Quality > Output > Tuning (TuningSection) -->
+    <string name="settings_tuning_title">Tuning</string>
+    <string name="settings_tuning_value_standard">Standard</string>
+    <string name="settings_tuning_value_hz">A = %1$s Hz</string>
+    <string name="settings_tuning_subtitle_lower">A little lower in pitch. Same speed.</string>
+    <string name="settings_tuning_subtitle_higher">A little higher in pitch. Same speed.</string>
+    <string name="settings_tuning_unavailable">Not available on this phone</string>
+    <string name="settings_tuning_cents_lower">%1$s cents lower</string>
+    <string name="settings_tuning_cents_higher">%1$s cents higher</string>
+    <string name="settings_tuning_cents_standard">Standard pitch, as recorded</string>
+    <string name="settings_tuning_preset_standard">%1$s · Standard</string>
+    <string name="settings_tuning_preset_528">%1$s · C = %2$s</string>
+    <string name="settings_tuning_preset_baroque">%1$s · Baroque</string>
+    <string name="settings_tuning_slider">Tuning reference</string>
+    <string name="settings_tuning_exact_label">Exact Hz</string>
+    <string name="settings_tuning_exact_range">Any value from %1$s to %2$s Hz</string>
+    <string name="settings_tuning_exact_lowest">Sets %1$s Hz, the lowest</string>
+    <string name="settings_tuning_exact_highest">Sets %1$s Hz, the highest</string>
+    <string name="settings_tuning_exact_invalid">Type a number, like %1$s or %2$s</string>
+    <string name="settings_tuning_set">Set</string>
+    <string name="settings_tuning_reset">Back to %1$s</string>
+    <string name="settings_tuning_hz_suffix">Hz</string>
+    <string name="settings_tuning_footer">Applies to everything you play, streamed or downloaded. Speed and lyrics don\'t change. Not used while casting. Bit-perfect turns off while tuning is on.</string>
 
     <!-- Settings > Audio & Quality > SupporterSection -->
     <string name="settings_supporter_active">Supporter · unlimited Tidal</string>

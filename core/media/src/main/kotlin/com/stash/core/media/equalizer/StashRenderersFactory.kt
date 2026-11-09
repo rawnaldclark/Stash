@@ -12,9 +12,11 @@ import androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink.AudioTrackBufferSizeProvider
 import com.stash.core.media.equalizer.dsp.FloatDspChain
+import com.stash.core.media.equalizer.dsp.PitchStageFactory
 import com.stash.core.media.output.HiResOutputController
 import com.stash.core.media.output.OutputSession
 import com.stash.core.media.output.StashAudioOutputProvider
+import com.stash.core.media.tuning.TuningController
 
 
 /**
@@ -51,9 +53,10 @@ private val samsungSafeSelector = MediaCodecSelector { mimeType, secure, tunneli
  * - **Float output on.** Decoders deliver float (Media3 asks MediaCodec for it
  *   once the sink takes float directly), 24-bit content keeps all 24 bits,
  *   and the AudioTrack is opened at the song's own sample rate.
- * - **The EQ, bass, loudness and limiter run in the output stage**, in float,
- *   only while one of them is actually doing something ([FloatDspChain]).
- *   Off, the samples pass through untouched.
+ * - **Tuning, the EQ, bass, loudness and limiter run in the output stage**, in
+ *   float, only while one of them is actually doing something ([FloatDspChain]).
+ *   Off, the samples pass through untouched. Every player built here gets
+ *   Tuning (the search and Recap previews included): it lives in this stage.
  * - **Speed goes to the AudioTrack** (`setEnableAudioOutputPlaybackParameters`):
  *   Media3's Sonic time-stretcher lives in the processor chain the float
  *   branch skips. AudioFlinger's time-stretch is the same algorithm, applied
@@ -73,6 +76,7 @@ class StashRenderersFactory(
     private val eqController: EqController,
     private val loudnessController: LoudnessController,
     private val hiResOutputController: HiResOutputController,
+    private val tuningController: TuningController,
     mainPlayback: Boolean,
 ) : DefaultRenderersFactory(context) {
 
@@ -95,13 +99,18 @@ class StashRenderersFactory(
             .setEnableAudioOutputPlaybackParameters(true)
             .setAudioOutputProvider(
                 StashAudioOutputProvider(audioTrackProvider, hiResOutputController, outputSession) {
-                    FloatDspChain({ eqController.state.value }) {
-                        // This player's own song gain (see OutputSession.trackGainDb).
-                        val shared = loudnessController.state.value
-                        val own = outputSession.trackGainDb
-                        if (own == null || own == shared.currentTrackGainDb) shared
-                        else shared.copy(currentTrackGainDb = own)
-                    }
+                    FloatDspChain(
+                        eqState = { eqController.state.value },
+                        loudnessState = {
+                            // This player's own song gain (see OutputSession.trackGainDb).
+                            val shared = loudnessController.state.value
+                            val own = outputSession.trackGainDb
+                            if (own == null || own == shared.currentTrackGainDb) shared
+                            else shared.copy(currentTrackGainDb = own)
+                        },
+                        tuningHz = tuningController::outputHz,
+                        pitchStages = PitchStageFactory(tuningController::newStage),
+                    )
                 },
             )
             .build()

@@ -90,6 +90,7 @@ class ExoRecapPreviewEngine @Inject constructor(
     private val eqController: EqController,
     private val loudnessController: LoudnessController,
     private val hiResOutputController: HiResOutputController,
+    private val tuningController: com.stash.core.media.tuning.TuningController,
     private val okHttpClient: okhttp3.OkHttpClient,
 ) : RecapPreviewEngine {
 
@@ -200,7 +201,8 @@ class ExoRecapPreviewEngine @Inject constructor(
             .setLooper(Looper.getMainLooper())
             .setRenderersFactory(
                 StashRenderersFactory(
-                    context, eqController, loudnessController, hiResOutputController, mainPlayback = false,
+                    context, eqController, loudnessController, hiResOutputController, tuningController,
+                    mainPlayback = false,
                 ),
             )
             .setLoadControl(storyLoadControl())

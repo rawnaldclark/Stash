@@ -297,6 +297,10 @@ fun NowPlayingScreen(
     val playbackSpeed by viewModel.playbackSpeed.collectAsStateWithLifecycle()
     var showSpeedSheet by remember { mutableStateOf(false) }
     var showCustomSpeedDialog by remember { mutableStateOf(false) }
+    // Tuning shares the speed sheet: both are "how this sounds right now".
+    val tuningViewModel: NowPlayingTuningViewModel = hiltViewModel()
+    val tuningHz by tuningViewModel.referenceHz.collectAsStateWithLifecycle()
+    var showCustomTuningDialog by remember { mutableStateOf(false) }
     val speedSheetState = rememberModalBottomSheetState()
     // The queue row (if any) whose Save-to-Playlist picker is open.
     var queueSaveTrack by remember { mutableStateOf<com.stash.core.model.Track?>(null) }
@@ -634,13 +638,16 @@ fun NowPlayingScreen(
     // The ⋮ row's words: where the music plays (or how a browser session stands), else "Play on".
     val castLabel = com.stash.feature.nowplaying.cast.playOnLine(playOn)
         ?: androidx.compose.ui.res.stringResource(R.string.play_on_title)
-    val visualState = remember(radioLabel != null, radioTuning, radioPlaying, reading, togetherState, playbackSpeed, isDownloaded, castConnectingTo, castingTo, castLabel) {
+    val tuningMark = tuningMark(tuningHz)
+    val visualState = remember(radioLabel != null, radioTuning, radioPlaying, reading, togetherState, playbackSpeed, tuningHz, tuningMark, isDownloaded, castConnectingTo, castingTo, castLabel) {
         ActionVisualState(
             radioActive = radioLabel != null,
             radioTuning = radioTuning,
             lyricsOpen = reading,
             together = togetherState,
             speed = playbackSpeed,
+            tuningHz = tuningHz,
+            tuningMark = tuningMark,
             isDownloaded = isDownloaded,
             castConnectingTo = castConnectingTo,
             castingTo = castingTo,
@@ -793,6 +800,17 @@ fun NowPlayingScreen(
             onCustom = { showSpeedSheet = false; showCustomSpeedDialog = true },
             onDismiss = { showSpeedSheet = false },
             sheetState = speedSheetState,
+            tuningHz = tuningHz.takeIf { tuningViewModel.available },
+            onTuningSelect = { tuningViewModel.set(it); showSpeedSheet = false },
+            onTuningCustom = { showSpeedSheet = false; showCustomTuningDialog = true },
+        )
+    }
+
+    if (showCustomTuningDialog) {
+        CustomTuningDialog(
+            initial = tuningHz,
+            onConfirm = { tuningViewModel.set(it); showCustomTuningDialog = false },
+            onDismiss = { showCustomTuningDialog = false },
         )
     }
 
@@ -2357,6 +2375,10 @@ private fun SpeedSheet(
     onCustom: () -> Unit,
     onDismiss: () -> Unit,
     sheetState: androidx.compose.material3.SheetState,
+    /** Tuning's reference, or null to leave its row out (no engine on this phone). */
+    tuningHz: Float? = null,
+    onTuningSelect: (Float) -> Unit = {},
+    onTuningCustom: () -> Unit = {},
 ) {
     val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
     ModalBottomSheet(
@@ -2438,8 +2460,125 @@ private fun SpeedSheet(
 
             Spacer(Modifier.height(4.dp))
             SheetOptionRow(icon = Icons.Default.Edit, label = "Custom", onClick = onCustom)
+
+            if (tuningHz != null) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = tuningHeading(tuningHz),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                TuningChips(tuningHz = tuningHz, onSelect = onTuningSelect, onCustom = onTuningCustom)
+            }
         }
     }
+}
+
+/**
+ * Tuning's chips in the speed sheet: 440 · 432 · 444 · Custom. A value off that list selects
+ * Custom and shows on it ("431.5"); Custom opens the exact-Hz entry. Four to a row when every
+ * label fits, else two, like the speed presets.
+ */
+@Composable
+private fun TuningChips(tuningHz: Float, onSelect: (Float) -> Unit, onCustom: () -> Unit) {
+    val locale = tuningLocale()
+    val customWord = androidx.compose.ui.res.stringResource(R.string.np_tuning_custom)
+    val custom = tuningHz !in com.stash.core.model.TuningMath.QUICK_PRESETS
+    val labels = com.stash.core.model.TuningMath.QUICK_PRESETS.map { com.stash.core.model.TuningMath.number(it, locale) } +
+        (if (custom) com.stash.core.model.TuningMath.number(tuningHz, locale) else customWord)
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val labelStyle = MaterialTheme.typography.labelMedium
+        val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val widestLabelPx = remember(labelStyle, density, labels) {
+            (labels + customWord).maxOf { measurer.measure(it, labelStyle, maxLines = 1).size.width }
+        }
+        val columns = with(density) {
+            speedPresetColumns(
+                rowWidthPx = constraints.maxWidth,
+                widestChipPx = widestLabelPx + SpeedChipLabelInset.roundToPx(),
+                gapPx = 8.dp.roundToPx(),
+            )
+        }
+        Column {
+            labels.indices.chunked(columns).forEach { row ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    row.forEach { i ->
+                        val isCustom = i == labels.lastIndex
+                        FilterChip(
+                            selected = if (isCustom) custom else tuningHz == com.stash.core.model.TuningMath.QUICK_PRESETS[i],
+                            onClick = { if (isCustom) onCustom() else onSelect(com.stash.core.model.TuningMath.QUICK_PRESETS[i]) },
+                            label = {
+                                Text(
+                                    text = labels[i],
+                                    style = labelStyle,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                )
+                            },
+                            colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            ),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+        }
+    }
+}
+
+/**
+ * Exact Tuning entry, from the speed sheet's Custom chip: the same field rules and words as
+ * Settings' (any script's digits, one decimal at most, the range's ends said before Set, anything
+ * that isn't a number refused).
+ */
+@Composable
+private fun CustomTuningDialog(
+    initial: Float,
+    onConfirm: (Float) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val math = com.stash.core.model.TuningMath
+    val locale = tuningLocale()
+    var text by androidx.compose.runtime.saveable.rememberSaveable {
+        mutableStateOf(if (math.isRetuned(initial)) math.number(initial, locale) else "")
+    }
+    val entry = math.parse(text)
+    val value = (entry as? com.stash.core.model.TuningMath.Entry.Value)?.hz
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(androidx.compose.ui.res.stringResource(R.string.np_tuning_custom_title)) },
+        text = {
+            androidx.compose.material3.OutlinedTextField(
+                value = text,
+                onValueChange = { new -> math.hzInput(new)?.let { text = it } },
+                label = { Text(androidx.compose.ui.res.stringResource(R.string.np_tuning_exact_label)) },
+                suffix = { Text(androidx.compose.ui.res.stringResource(R.string.np_tuning_hz_suffix)) },
+                singleLine = true,
+                isError = entry is com.stash.core.model.TuningMath.Entry.Invalid,
+                supportingText = { Text(tuningEntryLine(entry)) },
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
+                ),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { value?.let(onConfirm) }, enabled = value != null) {
+                Text(androidx.compose.ui.res.stringResource(R.string.np_tuning_set))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(androidx.compose.ui.res.stringResource(R.string.np_tuning_cancel)) }
+        },
+    )
 }
 
 /**

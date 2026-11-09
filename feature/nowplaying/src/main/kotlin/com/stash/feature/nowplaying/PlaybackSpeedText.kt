@@ -1,5 +1,6 @@
 package com.stash.feature.nowplaying
 
+import com.stash.core.model.TuningMath
 import java.util.Locale
 
 /** YT Music's presets: 0.25x–2x in quarter steps. */
@@ -25,6 +26,19 @@ internal fun customSpeedInput(new: String): String? =
 
 /** The speed [text] asks for, or null outside 0.1x–4x (what PlayerRepository accepts). */
 internal fun parseCustomSpeed(text: String): Float? = text.toFloatOrNull()?.takeIf { it in 0.1f..4f }
+
+/**
+ * The Playback speed action's words: "Playback speed", then whatever isn't standard, "1.25x" and
+ * Tuning's [tuningMark] ("A432", from the module's strings; null at 440): "Playback speed · 1.25x
+ * · A432". Tuning lives in the same sheet.
+ */
+internal fun speedActionLabel(speed: Float, tuningMark: String?): String {
+    val parts = listOfNotNull(formatSpeed(speed).takeIf { speed != 1f }, tuningMark)
+    return if (parts.isEmpty()) "Playback speed" else "Playback speed · " + parts.joinToString(" · ")
+}
+
+/** Whether the Playback speed action shows as on: a speed other than 1x, or Tuning away from 440. */
+internal fun speedActionActive(speed: Float, tuningHz: Float): Boolean = speed != 1f || TuningMath.isRetuned(tuningHz)
 
 /**
  * Columns for the preset chips: four when the widest chip fits a quarter of the row, else two, so

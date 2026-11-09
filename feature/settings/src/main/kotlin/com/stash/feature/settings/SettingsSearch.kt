@@ -96,6 +96,7 @@ internal fun settingsSearchIndex(s: (Int) -> String): List<SettingsSearchEntry> 
         SettingsSearchEntry(s(R.string.settings_lossy_fallback_title), SettingsPage.AUDIO, listOf("jiosaavn", "youtube")),
         SettingsSearchEntry(s(R.string.settings_youtube_quality_title), SettingsPage.AUDIO, listOf("opus", "bitrate")),
         SettingsSearchEntry(s(R.string.settings_hires_output_title), SettingsPage.AUDIO, listOf("usb", "dac", "dongle", "bit perfect", "bitperfect", "sample rate", "exclusive")),
+        SettingsSearchEntry(s(R.string.settings_tuning_title), SettingsPage.AUDIO, listOf("432", "440", "444", "528", "pitch", "concert pitch", "a4", "hz", "hertz", "frequency", "baroque", "retune")),
         SettingsSearchEntry(s(R.string.settings_equalizer_title), SettingsPage.EQUALIZER, listOf("eq", "bass boost", "treble", "preset", "loudness", "normalization", "volume", "preamp")),
         // Lossless sources
         SettingsSearchEntry(s(R.string.settings_lossless_sources_title), SettingsPage.LOSSLESS_SOURCES, listOf("routing", "allowance", "daily limit", "quota", "tidal", "qobuz")),
@@ -158,6 +159,7 @@ internal fun settingsSearchIndex(s: (Int) -> String): List<SettingsSearchEntry> 
         SettingsSearchEntry(s(R.string.settings_share_diagnostics_bundle), SettingsPage.ABOUT, listOf("logs", "bug", "report", "problem")),
         SettingsSearchEntry(s(R.string.settings_share_latest_crash), SettingsPage.ABOUT, listOf("crash", "bug")),
         SettingsSearchEntry(s(R.string.settings_license_label), SettingsPage.ABOUT, listOf("open source")),
+        SettingsSearchEntry(s(R.string.settings_open_source_notices), SettingsPage.ABOUT, listOf("licenses", "licences", "third party", "signalsmith", "mit")),
         SettingsSearchEntry(s(R.string.settings_about_star), SettingsPage.ABOUT, listOf("star", "github", "source code", "repository")),
     )
 }

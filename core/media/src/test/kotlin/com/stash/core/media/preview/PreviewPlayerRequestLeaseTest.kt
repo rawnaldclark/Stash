@@ -18,6 +18,7 @@ class PreviewPlayerRequestLeaseTest {
         eqController = mockk<EqController>(relaxed = true),
         loudnessController = mockk<LoudnessController>(relaxed = true),
         hiResOutputController = mockk<HiResOutputController>(relaxed = true),
+        tuningController = mockk<com.stash.core.media.tuning.TuningController>(relaxed = true),
     )
 
     @Test

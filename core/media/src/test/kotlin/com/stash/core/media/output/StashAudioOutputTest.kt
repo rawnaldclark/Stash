@@ -156,6 +156,7 @@ class StashAudioOutputTest {
     @Test fun `replan waits for written audio, then fails once as recoverable`() {
         val inner = FakeOutput()
         val out = output(inner, SampleFormat.FLOAT, sharedPlan())
+        out.play()
         out.requestReplan()
         // Nothing written yet: a failure now would be fatal, so it waits.
         assertThat(out.write(floats(0f, 0f), 1, 0L)).isTrue()
@@ -169,11 +170,23 @@ class StashAudioOutputTest {
         // before new audio would reach it as non-recoverable (fatal).
         val inner = FakeOutput()
         val out = output(inner, SampleFormat.FLOAT, sharedPlan())
+        out.play()
         out.write(floats(0f, 0f), 1, 0L)
         out.flush()
         out.requestReplan()
         assertThat(out.write(floats(0f, 0f), 1, 0L)).isTrue()
         assertThrows(AudioOutput.WriteException::class.java) { out.write(floats(0f, 0f), 1, 0L) }
+    }
+
+    @Test fun `replan waits for play - a paused or buffering player only pre-fills`() {
+        // ExoPlayer makes a second recoverable error fatal until READY, and play() comes after READY.
+        val out = output(FakeOutput(), SampleFormat.FLOAT, sharedPlan())
+        out.write(floats(0f, 0f), 1, 0L)
+        out.requestReplan()
+        repeat(3) { assertThat(out.write(floats(0f, 0f), 1, 0L)).isTrue() } // pre-filling: no rebuild
+        out.play()
+        assertThrows(AudioOutput.WriteException::class.java) { out.write(floats(0f, 0f), 1, 0L) }
+        assertThat(out.write(floats(0f, 0f), 1, 0L)).isTrue() // once
     }
 
     @Test fun `play activates the stream with the controller`() {
@@ -203,6 +216,7 @@ class StashAudioOutputTest {
 
     @Test fun `a speed past 2x rebuilds the track at the larger size`() {
         val out = output(FakeOutput(), SampleFormat.FLOAT, sharedPlan())
+        out.play()
         out.write(floats(0f, 0f), 1, 0L)
         out.setPlaybackParameters(PlaybackParameters(3f))
         val e = assertThrows(AudioOutput.WriteException::class.java) { out.write(floats(0f, 0f), 1, 0L) }
@@ -211,6 +225,7 @@ class StashAudioOutputTest {
 
     @Test fun `back from 3x to 1x the doubled track is rebuilt, so the EQ answers quickly again`() {
         val out = output(FakeOutput(), SampleFormat.FLOAT, sharedPlan(), speed = 3f)
+        out.play()
         out.write(floats(0f, 0f), 1, 0L)
         out.setPlaybackParameters(PlaybackParameters(4f)) // same tier: kept
         assertThat(out.write(floats(0f, 0f), 1, 0L)).isTrue()
