@@ -1,5 +1,6 @@
 package com.stash.core.data.community
 
+import android.util.Log
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.mapper.toDomain
@@ -17,6 +18,7 @@ import com.stash.core.model.share.SharedTrack
 import com.stash.core.model.share.toSharedTrackWithArt
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,6 +52,7 @@ class CommunityRepository @Inject constructor(
     private val sharePreference: SharePreference,
     private val homeSections: HomeSectionsPreference,
     private val heard: CommunityHeard,
+    private val history: CommunityListenHistory,
 ) {
     /** Home's last loaded list, shown at once on the next Home open while it reloads. */
     @Volatile var lastHome: List<CommunityPost>? = null
@@ -63,7 +66,10 @@ class CommunityRepository @Inject constructor(
     @Volatile var lastVoteAt: Long = 0L
         private set
 
-    /** The posts this phone has heard (played 30 s from the post), by id: its own marks, set before the server knows. */
+    /**
+     * The posts this phone has heard (played 30 s from the post, or one of its songs found in the listening history:
+     * [heardFromHistory]), by id: its own marks, set before the server knows.
+     */
     val heardIds: Flow<Set<String>> get() = heard.ids
 
     /**
@@ -108,6 +114,43 @@ class CommunityRepository @Inject constructor(
         val r = api.vote(id, value, key)
         if (r is CommunityResult.Rejected && r.code == LISTEN_FIRST && !heard.forget(id)) CommunityResult.Rejected(VOTE_NOT_NOW) else r
     }
+
+    /**
+     * Whether [post] counts as heard from this phone's listening history: a counted listen of one of its songs, played
+     * anywhere in Stash, that started after the post went up ([CommunityListenHistory]). The 30 s from the post's own
+     * Play is counted elsewhere (CommunityListenTracker); this finds the rest, such as the same song from the Library or a
+     * listen a restart cut off from its post. When found, the post's heard mark is saved ([CommunityHeard.mark]), so the
+     * pill wakes everywhere and the Worker gets the mark like any other.
+     *
+     * The songs: an opened post's own. A list carries none, so a song post is tried first by the title and artist the
+     * list shows (no request), then opened; a playlist or mix is opened (one read of the Worker's budget, only when asked
+     * here). Your own post is never checked. Never throws: a failure (offline, the database) is false.
+     */
+    suspend fun heardFromHistory(post: CommunityPost): Boolean = try {
+        val found = !post.mine && (
+            history.heardSince(songsOf(post), post.createdAt) ||
+                (post.track == null && post.tracks.isEmpty() && history.heardSince(openedSongs(post.id), post.createdAt))
+            )
+        if (found) heard.mark(post.id)
+        found
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "listening history not checked: ${e.javaClass.simpleName}")
+        false
+    }
+
+    /** [post]'s songs as it carries them; a list's song post as the title and artist its row shows. */
+    private fun songsOf(post: CommunityPost): List<SharedTrack> {
+        post.track?.let { return listOf(it) }
+        if (post.tracks.isNotEmpty()) return post.tracks
+        val artist = post.artist?.takeIf { it.isNotBlank() }
+        return if (post.kind == "song" && artist != null) listOf(SharedTrack(title = post.title, artist = artist)) else emptyList()
+    }
+
+    /** Post [id]'s songs, opened; none when it couldn't be opened. */
+    private suspend fun openedSongs(id: String): List<SharedTrack> =
+        (open(id) as? CommunityResult.Ok)?.value?.let { p -> p.track?.let(::listOf) ?: p.tracks }.orEmpty()
 
     /** A post that's already gone counts as taken down: it's what the person wanted (e.g. a retry after a lost 204). */
     suspend fun takeDown(id: String): CommunityResult<Unit> = whileOn {
@@ -168,6 +211,8 @@ class CommunityRepository @Inject constructor(
         if (homeSections.communityOn.first()) call() else CommunityResult.Rejected("off")
 
     companion object {
+        private const val TAG = "CommunityRepository"
+
         /** A vote's answer when the Worker wants a listen first (contract 2026-11-03, `HEARD_REQUIRED`). */
         const val LISTEN_FIRST = "listen_first"
 
