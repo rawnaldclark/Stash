@@ -157,7 +157,7 @@ object QobuzCandidateMatcher {
      * versions such as "(1991 Version)" took the version penalty: preferring the one tied cut within
      * 3 s / 2% of the video still fixed 2 songs and broke 2, one more wrong pick in v1.)
      *
-     * One helper for every pick site (squid/qbdlx Qobuz, the Tidal relay, kennyy), so they agree.
+     * One helper for every pick site (qbdlx Qobuz, the Tidal relay), so they agree.
      *
      * @param explicit a candidate's parental advisory from the catalog (Qobuz `parental_warning`,
      *   Tidal `explicit`), null when the catalog doesn't say. The default says nothing for every

@@ -22,11 +22,9 @@ data class QobuzSearchData(
     val tracks: QobuzTrackList? = null,
     val albums: QobuzAlbumList? = null,
     /**
-     * Set when the caller passed a Qobuz URL as the query — squid.wtf
-     * parses the URL, runs the matching get-* call, and tags the
-     * result with `albums` | `tracks` | `artists` so the UI knows
-     * which section to surface. Stash always passes free-text, so
-     * this is informational only.
+     * Set when the caller passed a Qobuz URL as the query (a tag of
+     * `albums` | `tracks` | `artists` saying which section to surface).
+     * Stash always passes free-text, so this is informational only.
      */
     val switchTo: String? = null,
 )
@@ -115,10 +113,9 @@ data class QobuzImage(
 // ── Download URL (`/api/download-music`) ────────────────────────────────
 
 /**
- * Result of `/api/download-music`. squid.wtf strips the upstream Qobuz
- * `mime_type` / `sampling_rate` / `bit_depth` / `restrictions` fields
- * and returns just the signed CDN URL — region/streamable issues
- * surface as HTTP 4xx on this call rather than an in-payload field.
+ * A signed CDN URL for a file (the shape the retired squid.wtf proxy's
+ * `/api/download-music` returned: just the URL, with region/streamable
+ * issues surfacing as HTTP 4xx rather than an in-payload field).
  *
  * The URL is short-lived (signed Akamai CDN); resolve-and-download
  * must be tightly coupled — don't cache.
@@ -129,9 +126,8 @@ data class QobuzDownloadData(
 )
 
 /**
- * Quality codes accepted by `/api/download-music?quality=…`. The values
- * are upstream Qobuz `format_id` integers (preserved verbatim by
- * squid.wtf). Not a Kotlin enum so the wire ints stay stable.
+ * Qobuz quality codes: the upstream `format_id` integers. Not a Kotlin
+ * enum so the wire ints stay stable.
  */
 object QobuzQuality {
     /** MP3 320 kbps — last-resort lossy fallback. */
@@ -144,9 +140,9 @@ object QobuzQuality {
     const val FLAC_HIRES_96: Int = 7
 
     /**
-     * Hi-res FLAC up to 24-bit / 192 kHz when available. squid.wtf's
-     * own default — Qobuz returns highest-available <= requested, so
-     * asking for 27 always gets you the best the source has.
+     * Hi-res FLAC up to 24-bit / 192 kHz when available. Qobuz returns
+     * highest-available <= requested, so asking for 27 always gets you
+     * the best the source has.
      */
     const val FLAC_HIRES_192: Int = 27
 }

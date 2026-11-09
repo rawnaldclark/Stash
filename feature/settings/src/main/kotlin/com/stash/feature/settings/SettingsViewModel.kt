@@ -385,7 +385,7 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * Test-only "Force YouTube fallback" toggle. When on,
-     * [StreamSourceRegistry] skips Kennyy/Squid and streams every track
+     * [StreamSourceRegistry] skips the lossless rungs and streams every track
      * via YouTube — surfaced as a switch in the Diagnostics card so the
      * lossless-down fallback path can be reproduced on demand.
      */
@@ -2012,7 +2012,7 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * Master switch for the lossless-source pipeline. When true, the
-     * download path tries the squid.wtf-proxied Qobuz registry before
+     * download path tries the lossless registry (own Qobuz, then Tidal) before
      * falling back to yt-dlp; when false (default), yt-dlp runs as it
      * always has and the lossless code is dead at runtime.
      */

@@ -4,8 +4,7 @@ package com.stash.core.media.streaming
  * The listener-facing name of the service a stream came from, keyed on
  * [StreamUrl.origin] (carried to Now Playing as `Track.streamOrigin`).
  *
- * Several resolvers reach the same catalog: qbdlx (relay), kennyy and squid
- * (parked) all serve Qobuz files, so they share one name. Tidal FLAC and
+ * qbdlx (the listener's own Qobuz account) serves Qobuz files. Tidal FLAC and
  * Tidal's AAC both resolve with [TidalStreamResolver.ORIGIN].
  *
  * Returns null for no origin (a downloaded or local file has none: the source

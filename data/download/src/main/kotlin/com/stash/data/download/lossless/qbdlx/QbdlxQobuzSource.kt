@@ -25,9 +25,10 @@ import kotlinx.coroutines.async
  * connected) and every resolve (its login is live), so without one this source
  * costs zero catalog HTTP and the chain goes on to Tidal.
  *
- * Keeps the retired squid.wtf source's resolve / resolveImmediate split: background [resolve] respects the rate limiter +
- * breaker; user-initiated [resolveImmediate] bypasses both but still reports
- * outcomes so the breaker state stays accurate.
+ * Keeps the retired squid.wtf source's resolve / resolveImmediate split:
+ * background [resolve] respects the rate limiter + breaker; user-initiated
+ * [resolveImmediate] bypasses both but still reports outcomes so the breaker
+ * state stays accurate.
  *
  * The [AggregatorRateLimiter] breaker tracks CATALOG health only: a search
  * success resets the counter before the file-URL call, and a dead credential arrives
