@@ -1027,8 +1027,7 @@ private fun MixActionRow(
  * "Try lossless audio" Home banner. Shows when the user has
  * lossless turned off (explicit save, since v0.9.8 fresh installs
  * default to ON) and hasn't dismissed. Tapping routes to Settings,
- * where the existing Audio Quality card hosts the toggle + captcha
- * setup flow.
+ * where the Audio Quality card hosts the toggle.
  */
 @Composable
 private fun LosslessConnectBanner(
@@ -1058,7 +1057,7 @@ private fun LosslessConnectBanner(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Studio-quality FLAC downloads via Qobuz. Tap to set up.",
+                    text = "Studio-quality FLAC from Tidal or your own Qobuz account. Tap to set up.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1135,7 +1134,7 @@ private fun LosslessOfflineBanner(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Stash is falling back to lossy audio. " +
+                    text = "No lossless source is answering, so Stash is falling back to lossy audio. " +
                         "Connect your own Qobuz account for FLAC.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

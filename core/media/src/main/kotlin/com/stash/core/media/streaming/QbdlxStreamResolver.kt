@@ -11,7 +11,7 @@ import javax.inject.Singleton
 /**
  * Stream-URL resolver backed by the DIRECT Qobuz API via [QbdlxQobuzSource]
  * (`qbdlx` — tokenless catalog under the web app_id; file URL via the user's
- * account, a custom endpoint, or the configured relays).
+ * own connected Qobuz account).
  * Counterpart to [QobuzStreamResolver]: same shape, same `etsp` expiry
  * parsing, different upstream operator.
  *
@@ -28,8 +28,8 @@ import javax.inject.Singleton
  * ponytail: gate omitted because qbdlx never records degradation; nothing to gate on.
  *
  * Returns null when:
- *  - qbdlx is not currently enabled for streaming (no connected account,
- *    custom endpoint or relay — see [QbdlxQobuzSource.isEnabledForStreaming]).
+ *  - qbdlx is not currently enabled for streaming (no connected account —
+ *    see [QbdlxQobuzSource.isEnabledForStreaming]).
  *  - qbdlx has no confident match for the track.
  *  - The returned URL has no `etsp` parameter (un-refreshable URLs aren't
  *    safe to cache — see [KennyyStreamResolver] KDoc).

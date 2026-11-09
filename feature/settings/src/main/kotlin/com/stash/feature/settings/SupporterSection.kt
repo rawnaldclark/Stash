@@ -49,8 +49,8 @@ import com.stash.feature.settings.R
 private const val KOFI_URL = com.stash.feature.settings.components.DonateLinks.KOFI
 
 /**
- * Under the "Lossless today" line: "Unlimited lossless for supporters" (opens the claim sheet)
- * or, once the relays report unlimited, "Supporter · unlimited lossless". Nothing when no owner
+ * Under the "Tidal today" line: "Unlimited Tidal for supporters" (opens the claim sheet)
+ * or, once the relay reports unlimited, "Supporter · unlimited Tidal". Nothing when no owner
  * relay is configured.
  */
 @Composable

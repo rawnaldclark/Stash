@@ -12,7 +12,7 @@
     <string name="np_quality_data_saver_subtitle">Lower quality streams on mobile data</string>
     <string name="np_quality_prefer_tidal_aac_title">Prefer Tidal AAC while streaming</string>
     <string name="np_quality_prefer_tidal_aac_subtitle">Smaller streams when Tidal has the song</string>
-    <string name="np_quality_allowance_note">FLAC and Tidal AAC both count toward today\'s Tidal &amp; Qobuz allowance. Lossless off saves it.</string>
+    <string name="np_quality_allowance_note">FLAC and AAC from Tidal count toward today\'s Tidal allowance; your own Qobuz account doesn\'t. Lossless off saves it.</string>
 
     <!-- Play on (Remote v2, spec 2026-11-03 §3, §6): the cast button's sheet lists this phone, the linked browsers and the
          Cast speakers. A browser is named as it was linked: "Chrome on Windows"; its app alone is "Chrome". -->

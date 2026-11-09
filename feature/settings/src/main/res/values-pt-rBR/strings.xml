@@ -272,13 +272,7 @@
     <string name="settings_lossy_fallback_switch_label">JioSaavn, depois YouTube, quando não há equivalente sem perdas</string>
     <string name="settings_lossy_fallback_switch_label_aac">JioSaavn, depois YouTube, quando o Tidal não tem AAC</string>
     <string name="settings_advanced">Avançado</string>
-    <string name="settings_custom_relay_desc">Configure o Stash para usar seu próprio servidor de retransmissão sem perdas. Ele tem prioridade sobre o do Stash.</string>
-    <string name="settings_custom_endpoint_label">Endpoint sem perdas personalizado</string>
     <string name="settings_url_placeholder">https://…</string>
-    <string name="settings_test">Teste</string>
-    <string name="settings_testing">Testando…</string>
-    <string name="settings_reachable">Acessível</string>
-    <string name="settings_not_reachable">Inacessível</string>
     <string name="settings_bitchord_desc">Opcional: use seu próprio servidor BitChord para Tidal em vez do Stash. Caso contrário, deixe em branco.</string>
     <string name="settings_bitchord_server_label">Servidor Tidal personalizado (opcional)</string>
     <string name="settings_access_token_label">Token de acesso (opcional)</string>

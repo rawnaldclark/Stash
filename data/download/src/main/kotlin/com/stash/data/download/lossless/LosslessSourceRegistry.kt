@@ -127,9 +127,8 @@ class LosslessSourceRegistry @Inject constructor(
     /**
      * [ordered] with the Tidal source moved to just ahead of the Qobuz one when the Tidal
      * server is the user's own, none of their own Qobuz is set up and the download tier is
-     * above CD ([LosslessAvailability.ownTidalFirstNow]). Otherwise the Qobuz source's file
-     * URL comes from Stash's shared relay before the user's own server is ever asked. Stash's
-     * relay stays the fallback, right after it; nothing else moves.
+     * above CD ([LosslessAvailability.ownTidalFirstNow]). The Qobuz source, which needs the
+     * user's own account, is off then anyway; nothing else moves.
      */
     private suspend fun withOwnTidalFirst(ordered: List<LosslessSource>): List<LosslessSource> {
         val qobuzAt = ordered.indexOfFirst { it.id == QBDLX_SOURCE_ID }

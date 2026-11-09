@@ -356,13 +356,7 @@
     <string name="settings_lossy_fallback_switch_label">매칭되는 무손실 음원이 없을 경우, JioSaavn, 그다음 YouTube 순서로 재생 가능 여부를 확인한 후 재생합니다</string>
     <string name="settings_lossy_fallback_switch_label_aac">Tidal에 ACC가 없을 경우, JioSaavn, 그다음 YouTube 순서로 재생 가능 여부를 확인한 후 재생합니다</string>
     <string name="settings_advanced">고급</string>
-    <string name="settings_custom_relay_desc">Stash를 자체 무손실 릴레이로 지정하세요. Stash보다 우선순위가 높습니다</string>
-    <string name="settings_custom_endpoint_label">사용자 정의 무손실 엔드포인트</string>
     <string name="settings_url_placeholder">https://…</string>
-    <string name="settings_test">테스트</string>
-    <string name="settings_testing">테스트하는 중…</string>
-    <string name="settings_reachable">연결 가능</string>
-    <string name="settings_not_reachable">연결할 수 없음</string>
     <string name="settings_bitchord_desc">선택 사항: Stash 대신 Tidal에 자체 BitChord 서버를 사용할 수 있습니다. 그렇지 않으면 비워 두세요</string>
     <string name="settings_bitchord_server_label">사용자 정의 Tidal 서버 (선택 사항)</string>
     <string name="settings_access_token_label">액세스 토큰 (선택 사항)</string>

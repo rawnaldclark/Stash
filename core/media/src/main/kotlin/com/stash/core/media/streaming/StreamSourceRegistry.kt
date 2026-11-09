@@ -31,24 +31,24 @@ import javax.inject.Singleton
  *   0. Opt-in only ("Prefer Tidal AAC while streaming", off by default):
  *      [TidalStreamResolver.resolveAacOnly], Tidal's 320 kbps AAC ahead of
  *      Qobuz to save data. Any miss goes straight on to 1.
- *   1. [QbdlxStreamResolver]   — `qbdlx`, the DIRECT Qobuz API (signed
- *      requests against the user's own connected account, or a relay standing
- *      in for one). Primary lossless source: plain Range-seekable FLAC, no proxy
- *      operator and no client-side decrypt, so it's the fastest path.
+ *   1. [QbdlxStreamResolver]   — `qbdlx`, the DIRECT Qobuz API, signed with the
+ *      user's own connected account; off without one. Plain Range-seekable FLAC,
+ *      no proxy operator and no client-side decrypt, so it's the fastest path.
  *      Foreground-only (allowYtDlp) since it spends that account's quota.
  *   1b. [TidalStreamResolver]  — Tidal lossless through a BitChord server: the
- *      user's own, or Stash's (progressive FLAC or a DASH MPD). Same gates as qbdlx;
- *      inert with no server. The user's own server, with none of their own Qobuz set
+ *      user's own, or Stash's from the signed config (progressive FLAC or a DASH
+ *      MPD). The lossless source for everyone without a Qobuz account. Same gates
+ *      as qbdlx; inert with no server. The user's own server, with none of their own Qobuz set
  *      up ([LosslessAvailability.ownTidalFirst]), goes ahead of 1 instead above CD
  *      quality (FLAC only), and is asked again for its AAC after 1, when "Tidal AAC
  *      when no FLAC" is on.
  *   Where Data saver applies ([StreamQualityPolicy.dataSaverApplies]: the switch on, a metered
  *   network) neither rung, nor a cloud copy, is asked: no FLAC on mobile data. Rung 0 stays when
  *   opted into; JioSaavn and YouTube serve at [StreamQualityPolicy.lossyQuality].
- *   While the day's Tidal & Qobuz allowance is spent ([LosslessQuota]) neither relay rung
- *   asks the owner's relays for anything: qbdlx skips them (a user's own account still
- *   serves), and Tidal asks for neither FLAC nor AAC, since AAC counts toward the same
- *   allowance (a user's own server still serves). Playback falls to JioSaavn and YouTube.
+ *   While the day's Tidal allowance is spent ([LosslessQuota]) the Tidal rung asks Stash's
+ *   relay for neither FLAC nor AAC, since AAC counts toward the same allowance (a user's own
+ *   server still serves, and so does a user's own Qobuz account). Playback falls to JioSaavn
+ *   and YouTube.
  *   PARKED (2026-07-01, hosts down for us — commented out of the chain in
  *   [resolve], kept for re-enablement): [KennyyStreamResolver] (`kennyy.com.br`),
  *   [QobuzStreamResolver] (`qobuz.squid.wtf`).
@@ -357,13 +357,12 @@ class StreamSourceRegistry internal constructor(
                 // server is configured.
                 val tidalRung = tidal?.takeIf { allowYtDlp && losslessRungs }
                 // The user's own server, with none of their own Qobuz set up, goes
-                // BEFORE qbdlx, whose file URL would otherwise come from Stash's shared
-                // relay before their server was ever asked; qbdlx stays the fallback
-                // right behind it. Above CD only: Tidal serves its best (usually 24-bit)
+                // BEFORE qbdlx (which is then off anyway: it needs the user's own
+                // account). Above CD only: Tidal serves its best (usually 24-bit)
                 // where qbdlx asks for this tier, so at CD (Save Data, mobile data by
                 // default) qbdlx keeps the lead. FLAC only there: Tidal's AAC for a
                 // CD-only song must not stand in for a FLAC Qobuz still has. Look-aheads
-                // ask it too: the stop further down spares Stash's shared pool, and in
+                // ask it too: the stop further down spares Stash's shared relay, and in
                 // the lead it would leave every next-up song unprefetched.
                 val ownTidalFirst = tidalRung != null && availability != null &&
                     qualityPolicy?.streamingTier()?.let { availability.ownTidalFirstNow(it) } == true
@@ -374,8 +373,8 @@ class StreamSourceRegistry internal constructor(
                 // plain Range-seekable FLAC, no proxy, no client-side decrypt —
                 // the fastest path. Foreground/next-up only (allowYtDlp = true),
                 // never the speculative background fill.
-                // qbdlx self-gates on LosslessAvailability (BYO / custom endpoint
-                // / relay); no build gate.
+                // qbdlx self-gates on LosslessAvailability (the user's own Qobuz
+                // account); no build gate.
                 if (allowYtDlp && losslessRungs && !skipQobuz) {
                     add("qbdlx" to qbdlx::resolve)
                 }

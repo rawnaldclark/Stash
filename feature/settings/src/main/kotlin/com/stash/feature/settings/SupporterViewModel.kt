@@ -26,7 +26,7 @@ sealed interface SupporterRow {
     /** No owner relay configured: there is no allowance to lift. */
     data object Hidden : SupporterRow
 
-    /** "Unlimited lossless for supporters", opening the claim sheet. [hasToken]: one is stored but not honoured. */
+    /** "Unlimited Tidal for supporters", opening the claim sheet. [hasToken]: one is stored but not honoured. */
     data class Offer(val hasToken: Boolean) : SupporterRow
 
     /** The relays report unlimited. [hasToken]: this device holds the code (it can be removed). */
@@ -117,7 +117,7 @@ class SupporterViewModel @Inject constructor(
 }
 
 /**
- * The supporter state as it changes: the relays' last allowance, whether this build has an owner relay at all, and
+ * The supporter state as it changes: the Tidal relay's last allowance, whether this build has the owner's relay at all, and
  * whether a code is stored. Shared by the Lossless sources row and Settings' Support card, so both always agree.
  */
 internal fun supporterRows(
@@ -132,7 +132,7 @@ internal fun supporterRows(
     supporterRow(allowance, relayConfigured, token != null)
 }
 
-/** The supporter row for what the relays last said ([allowance]: limit null = unlimited). */
+/** The supporter row for what the relay last said ([allowance]: limit null = unlimited). */
 internal fun supporterRow(allowance: LosslessAllowance?, relayConfigured: Boolean, hasToken: Boolean): SupporterRow = when {
     !relayConfigured -> SupporterRow.Hidden
     allowance?.unlimited == true -> SupporterRow.Supporter(hasToken)
@@ -165,7 +165,7 @@ private fun SupporterClaimUi.failed(text: String) = copy(message = text, message
  */
 internal fun SupporterClaimUi.unlocked(confirmed: Boolean): SupporterClaimUi =
     if (confirmed) copy(done = true, message = null)
-    else copy(message = "Code accepted. Unlimited Tidal & Qobuz shows here once Stash confirms it.", messageIsError = false)
+    else copy(message = "Code accepted. Unlimited Tidal shows here once Stash confirms it.", messageIsError = false)
 
 /** `429` is the tip jar's rate limiter (code requests and code tries alike). */
 private fun rateLimitedMessage(retryAfterSec: Long?): String {
