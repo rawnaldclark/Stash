@@ -79,7 +79,10 @@ abstract class LyricsModule {
          * just downloaded, and their failures count as misses. Spicy sits right
          * after Apple (owner's decision on #837); lrc.red and Binimum come LAST
          * on purpose (#671): they must never delay lyrics an existing source
-         * would return. When an earlier source answers without word timing,
+         * would return. (So Spicy, for a song without a Spotify id or ISRC,
+         * searches lrc.red and iTunes for an id only in the background upgrade
+         * passes; in a first lookup it takes the id Apple's source found.)
+         * When an earlier source answers without word timing,
          * the repository gives the on-demand sources one background follow-up
          * try instead.
          */
@@ -119,7 +122,8 @@ abstract class LyricsModule {
         fun provideAppleMusicIdResolver(
             okHttpClient: OkHttpClient,
             @ApplicationContext context: Context,
-        ): AppleMusicIdResolver = AppleMusicIdResolver(okHttpClient, versionName(context))
+            clock: Clock,
+        ): AppleMusicIdResolver = AppleMusicIdResolver(okHttpClient, versionName(context), clock = clock)
 
         /**
          * Spicy Lyrics through its contributor's proxy, which adds the Spicy key and caches by

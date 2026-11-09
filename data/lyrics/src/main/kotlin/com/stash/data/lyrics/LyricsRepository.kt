@@ -515,6 +515,8 @@ class LyricsRepository @Inject constructor(
             spotifyTrackId = SpotifyTrackId.parse(track.spotifyUri),
             interactive = interactive,
             onDemand = sources != TtmlUpgradeSources.APPLE,
+            // A background pass: the song has lyrics already, so a title/artist id search delays nothing.
+            searchForIds = true,
         )
         var found: LyricsResult? = null
         var cleanMisses = 0

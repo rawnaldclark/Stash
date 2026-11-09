@@ -24,17 +24,20 @@ import kotlin.math.roundToLong
  * Syllable -> word-synced TTML (built here, parsed like Apple's), Line -> synced LRC.
  * Static (plain text) is a miss: taking it would stop the walk before LRCLIB and KuGou, which
  * often have the song line-synced.
- * Looks the track up by [LyricsQuery.spotifyTrackId], else its [LyricsQuery.isrc], else an ISRC from
- * lrc.red's search, else an Apple Music id found through iTunes; with none it is a clean miss.
+ * Looks the track up by [LyricsQuery.spotifyTrackId], else its [LyricsQuery.isrc], else the Apple Music id
+ * iTunes Search finds, else an ISRC from lrc.red's search; with none it is a clean miss. The two searches
+ * cost a request, so a first lookup only takes the Apple Music id Apple's source (asked just before) already
+ * found, and searches nothing: lrc.red must never delay LRCLIB (#671). The word-synced upgrade passes, which
+ * run after a song has lyrics ([LyricsQuery.searchForIds]), do search.
  * Blank [apiKey] + default [baseUrl] -> off. Blank [apiKey] + custom [baseUrl] (a proxy that adds the key) -> no auth header.
  *
  * [onDemandOnly]: asked only for a track being played or just downloaded (in its place right after
  * Apple, see `LyricsModule`), and by the word-synced upgrades that ask the on-demand sources (Now
  * Playing's action, "Re-check library", the follow-up after a line-synced answer).
  *
- * Failures: 404 is a plain miss. A 429, 401/403, any other failed status, a transport failure or a
- * 200 that isn't JSON (a Cloudflare challenge page, say) opens a [SKIP_WINDOW_MS] window, so a host in
- * trouble isn't asked again on every song. A 429 and an open window THROW ([AppleTtmlLyricsSource.HttpStatusException] /
+ * Failures: 404 (or a 400 for an id the proxy doesn't take) is a plain miss. A 429, 401/403, any other
+ * failed status, a transport failure or a 200 that isn't JSON (a Cloudflare challenge page, say) opens a
+ * [SKIP_WINDOW_MS] window, so a host in trouble isn't asked again on every song. A 429 and an open window THROW ([AppleTtmlLyricsSource.HttpStatusException] /
  * [SkippedException]): a walk reads that as a miss (an on-demand source can't fail it), an upgrade pass
  * as RATE_LIMITED / PAUSED instead of moving past tracks Spicy never answered. Anything else is a miss.
  */
@@ -68,14 +71,15 @@ class SpicyLyricsSource(
         if (apiKey.isBlank() && baseUrl == DEFAULT_BASE_URL) return@withContext null
         if (skipWindowOpen()) throw SkippedException()
         // Spotify id first (it finds community syncs the other ids can't), then the track's own ISRC,
-        // then an ISRC from lrc.red's search, then an Apple Music id from iTunes. Only the last two cost
-        // a request, and whichever source asks first pays for it: IsrcResolver is shared with lrc.red and
-        // Binimum (which run after this), AppleMusicIdResolver with Apple's source (which runs before it).
-        val trackId = query.spotifyTrackId
-            ?: normalizeIsrc(query.isrc)
-            ?: isrcFromTitleArtist(query)
-            ?: appleMusicIds?.resolve(query)
+        // then an Apple Music id from iTunes, then an ISRC from lrc.red's search. The last two are
+        // shared: AppleMusicIdResolver with Apple's source (asked just before this one, so its id is
+        // usually remembered already), IsrcResolver with lrc.red and Binimum.
+        val (trackId, by) = query.spotifyTrackId?.let { it to "spotify id" }
+            ?: normalizeIsrc(query.isrc)?.let { it to "isrc" }
+            ?: appleMusicId(query)?.let { it to "apple music id" }
+            ?: isrcFromTitleArtist(query)?.let { it to "isrc from search" }
             ?: return@withContext null
+        Log.d(TAG, "spicy lookup for \"${query.title}\" by $by: $trackId")
 
         val json = try {
             fetch(trackId, query.interactive)
@@ -102,8 +106,21 @@ class SpicyLyricsSource(
         result
     }
 
-    /** The shared [IsrcResolver]: any failure, including its breaker being open, just means "no ISRC from here". */
+    /**
+     * The Apple Music id: searched on iTunes in an upgrade pass; in a first lookup only the one Apple's
+     * source found a moment ago (no request). A 429 from iTunes is thrown, so an upgrade pass stops.
+     */
+    private suspend fun appleMusicId(query: LyricsQuery): String? {
+        val resolver = appleMusicIds ?: return null
+        return if (query.searchForIds) resolver.resolve(query) else resolver.cached(query)
+    }
+
+    /**
+     * The shared [IsrcResolver], only in an upgrade pass: any failure, including its breaker being
+     * open, just means "no ISRC from here".
+     */
     private suspend fun isrcFromTitleArtist(query: LyricsQuery): String? {
+        if (!query.searchForIds) return null
         val resolver = isrcResolver ?: return null
         return try {
             normalizeIsrc(resolver.resolve(query))
@@ -129,7 +146,9 @@ class SpicyLyricsSource(
         val http = if (interactive) interactiveHttp else backgroundHttp
         return http.newCall(request).execute().use { r ->
             when {
-                r.code == 404 -> null
+                // 404: no lyrics for this id. 400: the proxy didn't take the id ("Bad track id"),
+                // which says nothing about the host, so it doesn't pause Spicy for every other song.
+                r.code == 404 || r.code == 400 -> null
                 r.code == 429 -> {
                     openSkipWindow("HTTP 429")
                     throw AppleTtmlLyricsSource.HttpStatusException(429, url.host)

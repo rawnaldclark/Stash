@@ -75,4 +75,24 @@ class AppleMusicIdResolverTest {
         assertNull(resolver.find(query()))
         assertEquals(2, searches.get())
     }
+
+    @Test fun `cached answers only what a search already found, without asking iTunes`() = runTest {
+        assertNull("not searched yet", resolver.cached(query()))
+        assertEquals(0, searches.get())
+        assertEquals("42", resolver.find(query()))
+        assertEquals("42", resolver.cached(query()))
+        assertEquals(1, searches.get())
+    }
+
+    @Test fun `an iTunes 429 is thrown from resolve too, so an upgrade pass stops`() = runTest {
+        status = 429
+        val thrown = runCatching { resolver.resolve(query()) }.exceptionOrNull()
+        assertEquals(429, (thrown as AppleTtmlLyricsSource.HttpStatusException).code)
+    }
+
+    @Test fun `a title that is only brackets matches nothing, rather than any song by the artist`() = runTest {
+        val intro = LyricsQuery(1L, "(Intro)", "Artist", null, null, 200_000L, null, interactive = true)
+        assertNull(resolver.find(intro))
+        assertEquals("not worth a request", 0, searches.get())
+    }
 }

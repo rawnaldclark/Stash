@@ -43,6 +43,13 @@ data class LyricsQuery(
 
     /** Spotify track id (22 chars), when known. Read by [SpicyLyricsSource], which falls back to [isrc], then to ids it looks up by title/artist. */
     val spotifyTrackId: String? = null,
+    /**
+     * True for the word-synced upgrade passes (`LyricsRepository.upgradeToTtml`), which run after a
+     * song already has lyrics, so nothing waits on them. Only there may [SpicyLyricsSource] spend a
+     * request looking a song up by title/artist (iTunes Search, lrc.red's search). In the first
+     * lookup it only uses an id it already has, so lrc.red never delays LRCLIB (#671).
+     */
+    val searchForIds: Boolean = false,
 )
 
 data class LyricsResult(

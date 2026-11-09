@@ -63,23 +63,41 @@ class AppleMusicIdResolver(
         return id
     }
 
-    /** [find] with a failed request read as "no id" (not remembered, so the next ask tries again). */
+    /**
+     * [find] with a failed request read as "no id" (not remembered, so the next ask tries again).
+     * Except a 429: that is thrown, so an upgrade pass stops (RATE_LIMITED) instead of moving past
+     * the song as if iTunes had no match for it.
+     */
     suspend fun resolve(query: LyricsQuery): String? = withContext(Dispatchers.IO) {
         try {
             find(query)
         } catch (e: CancellationException) {
             throw e
+        } catch (e: AppleTtmlLyricsSource.HttpStatusException) {
+            if (e.code == 429) throw e
+            Log.d(TAG, "iTunes search failed for \"${query.title}\": ${e.message}")
+            null
         } catch (e: Exception) {
             Log.d(TAG, "iTunes search failed for \"${query.title}\": ${e.message}")
             null
         }
     }
 
+    /**
+     * The id an earlier search already found for this song, without asking iTunes: null when it
+     * hasn't been searched, or the search found nothing. In a lookup, Apple's source has just
+     * searched the song, so Spicy gets its id here for free.
+     */
+    fun cached(query: LyricsQuery): String? = synchronized(cache) { cache[cacheKey(query)]?.id }
+
     private fun cacheKey(q: LyricsQuery): String = listOf(
         q.title.trim(), q.artist.trim(), q.albumArtist.orEmpty().trim(), ((q.durationMs ?: 0L) / 1000).toString(),
     ).joinToString("\u0000").lowercase(Locale.ROOT)
 
     private fun search(query: LyricsQuery): String? {
+        // A title that is all brackets ("(Intro)") normalises to nothing, and "" is in every title:
+        // any song by the artist would match. Not worth a request.
+        if (normalize(query.title).isEmpty()) return null
         val url = searchBaseUrl.toHttpUrl().newBuilder()
             .addPathSegment("search")
             .addQueryParameter("term", "${query.title} ${query.artist}")
