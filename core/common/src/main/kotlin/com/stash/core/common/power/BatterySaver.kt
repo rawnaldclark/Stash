@@ -39,11 +39,6 @@ suspend fun BatterySaver.awaitOff() {
     isOn.first { on -> !on }
 }
 
-/** A [BatterySaver] set by hand, for tests (and previews): flip [isOn]`.value` to switch it. */
-class FakeBatterySaver(on: Boolean = false) : BatterySaver {
-    override val isOn: MutableStateFlow<Boolean> = MutableStateFlow(on)
-}
-
 /**
  * The system's Battery Saver: [PowerManager.isPowerSaveMode], re-read on every
  * [PowerManager.ACTION_POWER_SAVE_MODE_CHANGED].
