@@ -34,7 +34,6 @@ import org.junit.Test
 class StreamSourceRegistryTest {
 
     private val kennyy: KennyyStreamResolver = mockk()
-    private val qobuz: QobuzStreamResolver = mockk()
     private val qbdlx: QbdlxStreamResolver = mockk()
     private val jiosaavn: JioSaavnStreamResolver = mockk {
         coEvery { resolve(any()) } returns null
@@ -53,7 +52,7 @@ class StreamSourceRegistryTest {
     private val log = PlaybackDiagnosticsLog()
 
     private fun registry(dispatcher: CoroutineDispatcher = Dispatchers.IO, soundCloud: SoundCloudStreamResolver? = null) = StreamSourceRegistry(
-        kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
+        kennyy, qbdlx, jiosaavn, youtube, streamingPreference,
         LosslessSourceHealth(), losslessPrefs, dispatcher, log, soundCloud = soundCloud,
     )
 
@@ -66,12 +65,12 @@ class StreamSourceRegistryTest {
     }
 
     private fun registryWithTidal(tidal: TidalStreamResolver) = StreamSourceRegistry(
-        kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
+        kennyy, qbdlx, jiosaavn, youtube, streamingPreference,
         LosslessSourceHealth(), losslessPrefs, Dispatchers.IO, log, tidal,
     )
 
     private fun registryPreferringAac(tidal: TidalStreamResolver, prefer: Boolean) = StreamSourceRegistry(
-        kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
+        kennyy, qbdlx, jiosaavn, youtube, streamingPreference,
         LosslessSourceHealth(), losslessPrefs, Dispatchers.IO, log, tidal, null,
         mockk<StreamQualityPolicy> {
             coEvery { preferTidalAac() } returns prefer
@@ -267,7 +266,6 @@ class StreamSourceRegistryTest {
     fun resolve_passes_allowYtDlp_to_youtube_resolver() = runTest {
         coEvery { streamingPreference.isForceYouTubeFallback() } returns false
         coEvery { kennyy.resolve(any()) } returns null
-        coEvery { qobuz.resolve(any()) } returns null
         coEvery { youtube.resolve(any(), any()) } returns null
         val track = stubTrack()
 
@@ -284,7 +282,6 @@ class StreamSourceRegistryTest {
     fun resolve_defaults_allowYtDlp_true() = runTest {
         coEvery { streamingPreference.isForceYouTubeFallback() } returns false
         coEvery { kennyy.resolve(any()) } returns null
-        coEvery { qobuz.resolve(any()) } returns null
         coEvery { qbdlx.resolve(any()) } returns null
         coEvery { youtube.resolve(any(), any()) } returns null
         val track = stubTrack()
@@ -296,7 +293,7 @@ class StreamSourceRegistryTest {
 
     /**
      * The active lossless source (qbdlx) misses → the registry falls through
-     * to youtube. The parked proxies (kennyy/squid) are never consulted.
+     * to youtube. The parked kennyy proxy is never consulted.
      */
     @Test
     fun resolve_falls_to_youtube_when_lossless_misses() = runTest {
@@ -309,10 +306,9 @@ class StreamSourceRegistryTest {
 
         coVerify { qbdlx.resolve(track) }
         coVerify { youtube.resolve(track, allowYtDlp = true) }
-        // kennyy/qobuz remain parked — a miss must not wait on sources that
+        // kennyy remains parked — a miss must not wait on a source that
         // cannot succeed (~4.8s of a 5.2s resolve, measured on device).
         coVerify(exactly = 0) { kennyy.resolve(any()) }
-        coVerify(exactly = 0) { qobuz.resolve(any()) }
     }
 
     /**
@@ -334,7 +330,6 @@ class StreamSourceRegistryTest {
         // The hedged fast lane may have started alongside qbdlx; the yt-dlp-capable rung must not.
         coVerify(exactly = 0) { youtube.resolve(any(), allowYtDlp = true) }
         coVerify(exactly = 0) { kennyy.resolve(any()) } // parked
-        coVerify(exactly = 0) { qobuz.resolve(any()) } // parked
     }
 
     /**
@@ -342,13 +337,12 @@ class StreamSourceRegistryTest {
      * background fill (allowYtDlp = false); only on foreground/next-up resolves.
      * Otherwise the fill stalls on its latency and starves the fast YouTube
      * fallback, leaving the timeline too sparse to skip through or auto-advance.
-     * The fast path (kennyy, squid, youtube) is what populates the timeline.
+     * The fast path (youtube) is what populates the timeline.
      */
     @Test
     fun resolve_background_fill_skips_qbdlx() = runTest {
         coEvery { streamingPreference.isForceYouTubeFallback() } returns false
         coEvery { kennyy.resolve(any()) } returns null
-        coEvery { qobuz.resolve(any()) } returns null
         // qbdlx intentionally unstubbed — it must not be consulted.
         coEvery { youtube.resolve(any(), any()) } returns null
         val track = stubTrack()
@@ -366,7 +360,7 @@ class StreamSourceRegistryTest {
     @Test
     fun resolve_forceYt_branch_skips_qbdlx() = runTest {
         coEvery { streamingPreference.isForceYouTubeFallback() } returns true
-        // kennyy/qobuz/qbdlx are skipped in the forceYt branch — intentionally unstubbed.
+        // the lossless rungs are skipped in the forceYt branch — intentionally unstubbed.
         coEvery { youtube.resolve(any(), any()) } returns null
         val track = stubTrack()
 
@@ -377,14 +371,14 @@ class StreamSourceRegistryTest {
     }
 
     /**
-     * The forceYt test toggle skips kennyy/qobuz entirely and routes through
+     * The forceYt test toggle skips the lossless rungs entirely and routes through
      * the YouTube resolver only. Verify that branch still forwards
      * `allowYtDlp` to [YouTubeStreamResolver.resolve].
      */
     @Test
     fun resolve_forceYt_branch_passes_allowYtDlp_to_youtube() = runTest {
         coEvery { streamingPreference.isForceYouTubeFallback() } returns true
-        // kennyy/qobuz are skipped in the forceYt branch — intentionally unstubbed.
+        // the lossless rungs are skipped in the forceYt branch — intentionally unstubbed.
         coEvery { youtube.resolve(any(), any()) } returns null
         val track = stubTrack()
 
@@ -648,7 +642,7 @@ class StreamSourceRegistryTest {
         val quota: LosslessQuota = mockk { every { isSpent() } answers { spent } }
         val health = LosslessSourceHealth()
         val registry = StreamSourceRegistry(
-            kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
+            kennyy, qbdlx, jiosaavn, youtube, streamingPreference,
             health, losslessPrefs, Dispatchers.IO, log, null, quota,
         )
         repeat(LosslessSourceHealth.LOSSLESS_DOWN_THRESHOLD) { registry.resolve(stubTrack().copy(id = it + 1L)) }
@@ -672,7 +666,7 @@ class StreamSourceRegistryTest {
         }
         val health = LosslessSourceHealth()
         val registry = StreamSourceRegistry(
-            kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
+            kennyy, qbdlx, jiosaavn, youtube, streamingPreference,
             health, losslessPrefs, Dispatchers.IO, log, tidal,
         )
         repeat(LosslessSourceHealth.LOSSLESS_DOWN_THRESHOLD * 2) { registry.resolve(stubTrack().copy(id = it + 1L)) }
@@ -690,7 +684,7 @@ class StreamSourceRegistryTest {
         val tidal: TidalStreamResolver = mockk { coEvery { needsRelay(any()) } returns true }
         val health = LosslessSourceHealth()
         val registry = StreamSourceRegistry(
-            kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
+            kennyy, qbdlx, jiosaavn, youtube, streamingPreference,
             health, losslessPrefs, Dispatchers.IO, log, tidal,
         )
         repeat(LosslessSourceHealth.LOSSLESS_DOWN_THRESHOLD) {
@@ -828,7 +822,7 @@ class StreamSourceRegistryTest {
             prefs = losslessPrefs,
         )
         return StreamSourceRegistry(
-            kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
+            kennyy, qbdlx, jiosaavn, youtube, streamingPreference,
             LosslessSourceHealth(), losslessPrefs, Dispatchers.IO, log, tidal,
             qualityPolicy = mockk<StreamQualityPolicy> {
                 coEvery { streamingTier() } returns tier

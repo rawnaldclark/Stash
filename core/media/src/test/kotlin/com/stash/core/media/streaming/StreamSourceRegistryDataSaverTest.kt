@@ -51,7 +51,7 @@ class StreamSourceRegistryDataSaverTest {
     }
 
     private fun registry(policy: StreamQualityPolicy) = StreamSourceRegistry(
-        mockk(), mockk(), qbdlx, jiosaavn, youtube, streamingPreference,
+        mockk(), qbdlx, jiosaavn, youtube, streamingPreference,
         LosslessSourceHealth(), losslessPrefs, Dispatchers.IO, PlaybackDiagnosticsLog(),
         tidal = tidal, qualityPolicy = policy, cloudCopies = cloudCopies,
     )

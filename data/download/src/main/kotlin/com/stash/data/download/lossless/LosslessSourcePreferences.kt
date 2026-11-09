@@ -53,8 +53,6 @@ class LosslessSourcePreferences @Inject constructor(
     private val enabledKey = booleanPreferencesKey("enabled")
     private val bitchordEndpointKey = stringPreferencesKey("bitchord_endpoint")
     private val bitchordAccessTokenKey = stringPreferencesKey("bitchord_access_token")
-    private val captchaCookieKey = stringPreferencesKey("squid_wtf_captcha_verified_at")
-    private val captchaCookieSetAtKey = longPreferencesKey("squid_wtf_captcha_set_at_ms")
     private val bannerDismissedKey = booleanPreferencesKey("home_banner_dismissed")
     private val losslessOfflineDismissedKey = booleanPreferencesKey("lossless_offline_dismissed")
     private val qualityTierKey = stringPreferencesKey("lossless_quality_tier")
@@ -62,13 +60,16 @@ class LosslessSourcePreferences @Inject constructor(
     private val tidalAacFallbackKey = booleanPreferencesKey("tidal_aac_fallback")
     private val downloadModeKey = stringPreferencesKey("download_mode")
     // Retained only so [purgeRetiredSourceKeys] can delete them from existing
-    // installs; the antra and arcod sources and the custom endpoint were removed.
+    // installs; the antra, arcod and squid.wtf sources and the custom endpoint were removed.
     private val antraSessionKey = stringPreferencesKey("antra_session_cookie")
     private val antraCfClearanceKey = stringPreferencesKey("antra_cf_clearance_cookie")
     private val antraUsernameKey = stringPreferencesKey("antra_username")
     private val arcodRescueDismissedKey = booleanPreferencesKey("arcod_rescue_dismissed")
     // The custom relay endpoint, retired with the shared Qobuz relay (2026-11).
     private val customLosslessEndpointKey = stringPreferencesKey("custom_lossless_endpoint")
+    // The squid.wtf captcha cookie and when it was set, retired with squid.wtf (2026-11).
+    private val squidCaptchaCookieKey = stringPreferencesKey("squid_wtf_captcha_verified_at")
+    private val squidCaptchaSetAtKey = longPreferencesKey("squid_wtf_captcha_set_at_ms")
 
     /**
      * Master switch for the lossless-source pipeline. When false, the
@@ -78,9 +79,7 @@ class LosslessSourcePreferences @Inject constructor(
      * Defaults to true (v0.9.8+): fresh installs land lossless-ready;
      * existing v0.9.7 users who explicitly toggled it off keep their
      * saved value (DataStore preserves explicit writes). Users who
-     * never opened the toggle pick up the new default — functionally
-     * identical to v0.9.7 behaviour because the captcha is unverified
-     * (silent yt-dlp/MP3 fallback via SquidWtfCaptchaInterceptor).
+     * never opened the toggle pick up the new default.
      *
      * The toggle lives on this preferences class (rather than its own
      * DataStore) so all lossless-related settings stay in one place
@@ -239,61 +238,11 @@ class LosslessSourcePreferences @Inject constructor(
     }
 
     /**
-     * Value of the `captcha_verified_at` cookie that qobuz.squid.wtf sets
-     * after a successful ALTCHA solve. The download-music endpoint reads
-     * this cookie (HttpOnly, ~30-min sliding window) to gate access; our
-     * OkHttp client attaches it to every squid.wtf request via
-     * [com.stash.data.download.lossless.squid.SquidWtfCaptchaInterceptor].
-     *
-     * Workflow until WebView automation lands:
-     *   1. User opens qobuz.squid.wtf in their phone's browser
-     *   2. Solves the captcha by clicking Download on any track
-     *   3. Copies the cookie value (e.g. via a "Cookie Editor" extension)
-     *   4. Pastes it into the Settings field that backs this preference
-     *
-     * Cookie expires after ~30 min server-side; user repastes when
-     * downloads start failing. WebView automation will replace this
-     * manual flow but the storage shape is the same.
-     *
-     * Stored as a plain string — it's not a security secret (HttpOnly
-     * means the BROWSER doesn't expose it to JS, but server treats it
-     * as a freely-pasteable token).
-     */
-    val captchaCookieValue: Flow<String?> = context.losslessDataStore.data.map { prefs ->
-        prefs[captchaCookieKey]?.takeIf { it.isNotBlank() }
-    }
-
-    /**
-     * Wall-clock epoch-millis when the current captcha cookie was set.
-     * Emits 0L when no cookie has ever been stored or the most recent
-     * value was cleared. Used by SquidCookieAutoRefresher to derive
-     * cookie age and schedule the next refresh ~25 min after set.
-     */
-    val captchaCookieSetAtMs: Flow<Long> = context.losslessDataStore.data.map { prefs ->
-        prefs[captchaCookieSetAtKey] ?: 0L
-    }
-
-    suspend fun captchaCookieValueNow(): String? = captchaCookieValue.first()
-
-    suspend fun setCaptchaCookieValue(value: String?) {
-        val now = System.currentTimeMillis()
-        context.losslessDataStore.edit { prefs ->
-            val trimmed = value?.trim()?.takeIf { it.isNotEmpty() }
-            if (trimmed == null) {
-                prefs.remove(captchaCookieKey)
-                prefs.remove(captchaCookieSetAtKey)
-            } else {
-                prefs[captchaCookieKey] = trimmed
-                prefs[captchaCookieSetAtKey] = now
-            }
-        }
-    }
-
-    /**
      * One-shot cleanup for removed sources: deletes the harvested antra.hoshi.cfd
      * session cookie, cf_clearance cookie and username, arcod's retired banner
-     * flag and the retired custom relay endpoint, so no stale login state or
-     * dead setting lingers on disk. Called once at startup (see StashApplication).
+     * flag, the retired custom relay endpoint and the squid.wtf captcha cookie
+     * with its timestamp, so no stale login state or dead setting lingers on
+     * disk. Called once at startup (see StashApplication).
      * No-op when the keys are absent.
      */
     suspend fun purgeRetiredSourceKeys() {
@@ -303,6 +252,8 @@ class LosslessSourcePreferences @Inject constructor(
             prefs.remove(antraUsernameKey)
             prefs.remove(arcodRescueDismissedKey)
             prefs.remove(customLosslessEndpointKey)
+            prefs.remove(squidCaptchaCookieKey)
+            prefs.remove(squidCaptchaSetAtKey)
         }
     }
 
@@ -433,7 +384,7 @@ class LosslessSourcePreferences @Inject constructor(
          *
          * Order:
          * 1. qbdlx_qobuz — Qobuz Hi-Res FLAC via a direct www.qobuz.com call
-         *    (MD5 request signing with the user's own credentials, or a relay).
+         *    (MD5 request signing with the user's own credentials).
          *    Ranked FIRST: it's
          *    the fastest lossless path — plain Range-seekable FLAC, no proxy
          *    operator and no client-side decryption.
@@ -444,23 +395,19 @@ class LosslessSourcePreferences @Inject constructor(
          *    endpoint is asked first. Nothing calls [setPriorityOrder] today; if a
          *    manual order is ever offered, that rule has to respect it, so streaming
          *    and Settings follow it too.
-         * 3. squid_qobuz — Qobuz Hi-Res FLAC via qobuz.squid.wtf.
-         * 4. kennyy_qobuz — Qobuz Hi-Res FLAC via qobuz.kennyy.com.br.
-         *    3–4 are currently PARKED (hosts down for us) — see
-         *    [LosslessSourceRegistry.PARKED_SOURCE_IDS]; the code + this ranking
-         *    stay so re-enabling is a one-line change when they recover.
+         * 3. kennyy_qobuz — Qobuz Hi-Res FLAC via qobuz.kennyy.com.br. PARKED
+         *    (host down for us) — see [LosslessSourceRegistry.PARKED_SOURCE_IDS].
          *
          * Every rung is user-owned OR build-carried: 1 self-gates off without a
-         * connected account, a custom endpoint or a relay from the signed config,
-         * 2 without a server, and 3 and 4 are parked. With nothing of the user's own
-         * connected, a build carrying a relay config still resolves through 1 with
-         * no user action (see [LosslessAvailability] and [com.stash.data.download.lossless.qbdlx.QbdlxFileUrlRouter]); a
-         * build without one reaches NO lossless source at all and falls back to lossy.
+         * connected Qobuz account, 2 without a server (the user's own, or the Tidal
+         * relay in the signed config), and 3 is parked. With nothing of the user's
+         * own connected, a build carrying the Tidal relay still resolves through 2
+         * with no user action; a build without one reaches NO lossless source at
+         * all and falls back to lossy.
          */
         val DEFAULT_PRIORITY: List<String> = listOf(
             "qbdlx_qobuz",
             "tidal_bitchord",
-            "squid_qobuz",
             "kennyy_qobuz",
         )
 

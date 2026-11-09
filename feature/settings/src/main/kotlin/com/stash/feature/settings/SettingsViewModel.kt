@@ -43,7 +43,6 @@ import com.stash.data.download.files.MoveLibraryCoordinator
 import com.stash.data.download.files.MoveLibraryState
 import com.stash.data.download.files.ReorganizeLibraryCoordinator
 import com.stash.data.download.files.ReorganizeLibraryState
-import com.stash.data.download.lossless.AggregatorRateLimiter
 import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourcePreferences
@@ -51,9 +50,7 @@ import com.stash.data.download.lossless.RoutingRow
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
 import com.stash.data.download.lossless.qbdlx.QobuzAccountConnector
 import com.stash.data.download.lossless.qbdlx.QobuzLoginResult
-import com.stash.data.download.lossless.qobuz.QobuzSource
 import com.stash.data.download.prefs.StreamingQualityPreferences
-import com.stash.feature.settings.components.squidCaptchaStatus
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.QualityTier
 import com.stash.core.model.ThemeMode
@@ -123,8 +120,6 @@ class SettingsViewModel @Inject constructor(
     private val youTubeScrobblerState: YouTubeScrobblerState,
     private val losslessPrefs: LosslessSourcePreferences,
     private val streamingQualityPrefs: StreamingQualityPreferences,
-    private val losslessRateLimiter: AggregatorRateLimiter,
-    private val qobuzSource: QobuzSource,
     private val qbdlxCredentialStore: QbdlxCredentialStore,
     private val losslessAvailability: LosslessAvailability,
     private val qobuzAccountConnector: QobuzAccountConnector,
@@ -631,9 +626,7 @@ class SettingsViewModel @Inject constructor(
         youTubeHistoryScrobbler.pendingCount(),
         losslessPrefs.enabled,
         losslessPrefs.downloadMode,
-        losslessPrefs.captchaCookieValue,
         losslessPrefs.qualityTier,
-        qobuzSource.lastKnownBadCookie,
         likePreferences.heartDefaultStash,
         likePreferences.heartDefaultSpotify,
         likePreferences.heartDefaultYtMusic,
@@ -679,9 +672,7 @@ class SettingsViewModel @Inject constructor(
         val ytPendingCount = v.next<Int>()
         val losslessEnabled = v.next<Boolean>()
         val downloadMode = v.next<com.stash.core.model.DownloadMode>()
-        val squidWtfCaptchaCookie = (v.next<String?>()).orEmpty()
         val losslessQualityTier = v.next<LosslessQualityTier>()
-        val lastKnownBadCookie = v.next<String?>()
         val heartDefaultStash = v.next<Boolean>()
         val heartDefaultSpotify = v.next<Boolean>()
         val heartDefaultYtMusic = v.next<Boolean>()
@@ -761,8 +752,6 @@ class SettingsViewModel @Inject constructor(
             ytPendingCount = ytPendingCount,
             losslessEnabled = losslessEnabled,
             downloadMode = downloadMode,
-            squidWtfCaptchaCookie = squidWtfCaptchaCookie,
-            squidCaptchaStatus = squidCaptchaStatus(squidWtfCaptchaCookie, lastKnownBadCookie),
             losslessQualityTier = losslessQualityTier,
             streamingWifiTier = streamingWifiTier,
             streamingCellularTier = streamingCellularTier,
@@ -2067,17 +2056,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Persists the user-pasted `captcha_verified_at` cookie value
-     * for qobuz.squid.wtf. Empty / blank input clears the stored value.
-     * Whitespace is trimmed inside [LosslessSourcePreferences.setCaptchaCookieValue].
-     */
-    fun onSquidWtfCaptchaCookieChanged(value: String) {
-        viewModelScope.launch {
-            losslessPrefs.setCaptchaCookieValue(value)
-        }
-    }
-
     // -- qbdlx (direct-Qobuz lossless, 5th source) ---------------------------
 
     /**
@@ -2147,18 +2125,6 @@ class SettingsViewModel @Inject constructor(
 
     fun onPreferCloudCopiesChanged(value: Boolean) =
         viewModelScope.launch { streamingQualityPrefs.setPreferCloudCopies(value) }
-
-    /**
-     * Clear the rate-limiter's circuit breaker for the squid.wtf
-     * source. Useful when the breaker tripped on a transient outage
-     * and the user knows the source is back up — skips the 30-min
-     * organic timeout. No-op if the breaker isn't currently tripped.
-     */
-    fun onResetLosslessRateLimiter() {
-        viewModelScope.launch {
-            losslessRateLimiter.reset(QobuzSource.SOURCE_ID)
-        }
-    }
 
     // -- Library & Likes (v0.9.13) ------------------------------------------
 

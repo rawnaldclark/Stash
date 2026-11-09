@@ -301,8 +301,8 @@ dependencies {
     implementation(libs.appcompat)
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.runtime.compose)
-    // ProcessLifecycleOwner — used by StashApplication to start/stop
-    // SquidCookieAutoRefresher on app foreground/background transitions.
+    // ProcessLifecycleOwner — used by StashApplication for its work on app
+    // foreground/background transitions.
     implementation(libs.lifecycle.process)
     implementation(libs.navigation.compose)
     implementation(libs.hilt.android)

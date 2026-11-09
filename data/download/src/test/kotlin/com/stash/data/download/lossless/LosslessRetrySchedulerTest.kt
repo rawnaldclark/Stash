@@ -5,7 +5,6 @@ import androidx.work.BackoffPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequest
 import androidx.work.WorkManager
-import com.stash.data.download.lossless.qobuz.QobuzSource
 import com.stash.data.download.lossless.quota.LosslessQuota
 import io.mockk.slot
 import java.util.concurrent.TimeUnit
@@ -16,7 +15,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -25,20 +23,15 @@ import org.junit.Test
 
 /**
  * v0.9.17 strict-FLAC: tests the reactive eager-bound scheduler that
- * enqueues [LosslessRetryWorker] on each of the three signals that
- * could plausibly turn a previously-null lossless resolution into a
- * non-null one:
- *
- *  1. The user's captcha cookie value changes (fresh squid attempt
- *     possible).
- *  2. [QobuzSource.lastKnownBadCookie] clears (squid self-recovered).
- *  3. [AggregatorRateLimiter.circuitResetEvents] emits any source id
- *     (kennyy outage cleared, or user manually reset the breaker).
+ * enqueues [LosslessRetryWorker] on each signal that could plausibly turn
+ * a previously-null lossless resolution into a non-null one: a breaker
+ * reset ([AggregatorRateLimiter.circuitResetEvents]), the daily allowance's
+ * reset, a Download quality change and Tidal coming free.
  *
  * The scheduler exposes [LosslessRetryScheduler.scope] and
  * [LosslessRetryScheduler.workManagerProvider] as test seams so the
  * test can pass `runTest`'s `backgroundScope` (for virtual-time control
- * over the cookie debounce window) and a MockK [WorkManager] (instead
+ * over the booked delays) and a MockK [WorkManager] (instead
  * of routing through `WorkManager.getInstance(context)`, which trips
  * `WorkManagerImpl`'s "not initialised" guard in JVM unit tests).
  *
@@ -55,17 +48,11 @@ class LosslessRetrySchedulerTest {
 
     private val context: Context = mockk(relaxed = true)
     private val workManager: WorkManager = mockk(relaxed = true)
-    private val cookieFlow = MutableStateFlow<String?>(null)
     private val downloadModeFlow = MutableStateFlow(com.stash.core.model.DownloadMode.LOSSLESS)
-    private val lastBadCookieFlow = MutableStateFlow<String?>(null)
     private val resetEvents = MutableSharedFlow<String>(extraBufferCapacity = 8)
 
     private val losslessPrefs: LosslessSourcePreferences = mockk {
-        every { captchaCookieValue } returns cookieFlow
         every { downloadMode } returns downloadModeFlow
-    }
-    private val qobuzSource: QobuzSource = mockk {
-        every { lastKnownBadCookie } returns lastBadCookieFlow
     }
     private val rateLimiter: AggregatorRateLimiter = mockk {
         every { circuitResetEvents } returns resetEvents
@@ -82,7 +69,6 @@ class LosslessRetrySchedulerTest {
         val subject = LosslessRetryScheduler(
             context = context,
             losslessPrefs = losslessPrefs,
-            qobuzSource = qobuzSource,
             rateLimiter = rateLimiter,
             quota = quota,
             tidalAacResolver = tidalAacResolver,
@@ -91,48 +77,6 @@ class LosslessRetrySchedulerTest {
         subject.workManagerProvider = { workManager }
         subject.start()
         return subject
-    }
-
-    @Test
-    fun `cookie change enqueues retry worker`() = runTest(UnconfinedTestDispatcher()) {
-        newSubject(backgroundScope)
-        // Unconfined dispatcher subscribes the collectors synchronously
-        // at launchIn, so the StateFlow's initial null is consumed by
-        // drop(1) before this line runs. The cookie-change emission is
-        // the first one drop(1) lets through.
-        cookieFlow.value = "fresh-cookie"
-        // debounce(1_000) on the cookie flow — advance virtual time past it.
-        advanceTimeBy(1_500)
-        advanceUntilIdle()
-
-        verify(exactly = 1) {
-            workManager.enqueueUniqueWork(
-                LosslessRetryWorker.UNIQUE_WORK_NAME,
-                ExistingWorkPolicy.KEEP,
-                any<OneTimeWorkRequest>(),
-            )
-        }
-    }
-
-    @Test
-    fun `lastBadCookie clear enqueues retry worker`() = runTest(UnconfinedTestDispatcher()) {
-        newSubject(backgroundScope)
-
-        // Transition: null -> "stale". drop(1) discarded the StateFlow's
-        // initial null at launchIn time (unconfined collectors subscribe
-        // synchronously); the first transition is what we observe — covers
-        // both the "cookie went bad" and "cookie cleared" semantics, since
-        // the scheduler treats any change as a retry candidate.
-        lastBadCookieFlow.value = "stale-cookie"
-        advanceUntilIdle()
-
-        verify(exactly = 1) {
-            workManager.enqueueUniqueWork(
-                LosslessRetryWorker.UNIQUE_WORK_NAME,
-                ExistingWorkPolicy.KEEP,
-                any<OneTimeWorkRequest>(),
-            )
-        }
     }
 
     @Test
@@ -180,7 +124,7 @@ class LosslessRetrySchedulerTest {
         // otherwise tryEmit-style fire-and-forget semantics drop it.
         // Unconfined dispatcher guarantees that subscription has happened
         // by the time newSubject() returns.
-        resetEvents.emit("kennyy_qobuz")
+        resetEvents.emit("qbdlx_qobuz")
         advanceUntilIdle()
 
         verify(exactly = 1) {

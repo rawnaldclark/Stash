@@ -6,7 +6,6 @@ import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.model.QualityTier
 import com.stash.core.model.ThemeMode
 import com.stash.data.download.lossless.LosslessQualityTier
-import com.stash.feature.settings.components.SquidCaptchaStatus
 
 /**
  * Immutable UI state for the Settings screen.
@@ -66,16 +65,14 @@ data class SettingsUiState(
     val ytHistoryHealth: YouTubeScrobblerHealth = YouTubeScrobblerHealth.DISABLED,
     val ytPendingCount: Int = 0,
     /**
-     * Master switch for the lossless-source download path
-     * (squid.wtf-proxied Qobuz). On by default as of v0.9.8 — every
-     * track is routed through the registry first and falls back to
-     * yt-dlp only when no source has a confident lossless match (or
-     * the captcha is unverified). Files end up 5–10× larger than Opus.
+     * Master switch for the lossless-source download path. On by default
+     * as of v0.9.8 — every track is routed through the registry first and
+     * falls back to yt-dlp only when no source has a confident lossless
+     * match. Files end up 5–10× larger than Opus.
      *
      * Existing v0.9.7 users who explicitly toggled this off keep their
      * saved `false`; v0.9.7 users who never opened the toggle pick up
-     * the new default (functionally identical to v0.9.7 behaviour
-     * because captcha-unverified silently falls back to yt-dlp/MP3).
+     * the new default.
      */
     val losslessEnabled: Boolean = true,
     /** Download quality: what every download saves (Lossless, AAC 320, Opus). */
@@ -107,30 +104,6 @@ data class SettingsUiState(
      * [com.stash.data.download.prefs.StreamingQualityPreferences.saveData].
      */
     val streamingSaveData: Boolean = false,
-    /**
-     * Manually-pasted `captcha_verified_at` cookie value from
-     * `qobuz.squid.wtf`. Bridges the captcha gate when the user
-     * prefers manual paste over the in-app WebView solver — they
-     * solve ALTCHA in their browser, copy the cookie value, and
-     * paste here. Empty string == not configured.
-     */
-    val squidWtfCaptchaCookie: String = "",
-    /**
-     * Tri-state describing the squid.wtf captcha cookie's liveness,
-     * derived from the cookie value plus `QobuzSource.lastKnownBadCookie`.
-     * Nothing renders this today: squid is parked and the routing rows
-     * come from `LosslessAvailability`. Kept for whenever squid is
-     * unparked, when it again decides the row's label ("active" /
-     * "expired" / "optional") and whether a solver link is offered.
-     *
-     * Why a tri-state instead of `cookie.isNotEmpty()`: the cookie has
-     * a ~30-min sliding-window expiry server-side. Once expired,
-     * QobuzSource records the offending value and `isEnabled()`
-     * returns false until the user re-pastes — but pre-fix the row
-     * still rendered as "active" with no action link, hiding the
-     * solver from the user. See `squidCaptchaStatus` mapping fn.
-     */
-    val squidCaptchaStatus: SquidCaptchaStatus = SquidCaptchaStatus.NotConfigured,
     val totalStorageBytes: Long = 0,
     val totalTracks: Int = 0,
     val showYouTubeCookieDialog: Boolean = false,

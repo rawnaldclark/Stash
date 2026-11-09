@@ -25,8 +25,7 @@ import kotlinx.coroutines.async
  * connected) and every resolve (its login is live), so without one this source
  * costs zero catalog HTTP and the chain goes on to Tidal.
  *
- * Keeps [com.stash.data.download.lossless.qobuz.QobuzSource]'s resolve /
- * resolveImmediate split: background [resolve] respects the rate limiter +
+ * Keeps the retired squid.wtf source's resolve / resolveImmediate split: background [resolve] respects the rate limiter +
  * breaker; user-initiated [resolveImmediate] bypasses both but still reports
  * outcomes so the breaker state stays accurate.
  *
@@ -165,8 +164,8 @@ class QbdlxQobuzSource @Inject constructor(
         )
 
     /**
-     * Wraps an API call with rate-limiter bookkeeping (mirrors
-     * [com.stash.data.download.lossless.qobuz.QobuzSource]'s `callLimited`).
+     * Wraps an API call with rate-limiter bookkeeping (as the retired squid.wtf
+     * source's `callLimited` did).
      * Returns null on rate-limit denial / api error (already reported) — and
      * also when the block itself returns null (the router having no path), which
      * is not a health failure. [QbdlxAuthException] is RETHROWN — only [search]

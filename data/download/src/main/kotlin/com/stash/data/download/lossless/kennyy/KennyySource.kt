@@ -14,7 +14,7 @@ import com.stash.data.download.lossless.searchTerms
 import com.stash.data.download.lossless.qobuz.QobuzApiException
 import com.stash.data.download.lossless.qobuz.QobuzCandidateMatcher
 import com.stash.data.download.lossless.qobuz.QobuzQuality
-import com.stash.data.download.lossless.qobuz.QobuzSource
+import com.stash.data.download.lossless.qobuz.QobuzCandidateMatcher
 import com.stash.data.download.lossless.qobuz.QobuzTrack
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -260,13 +260,13 @@ class KennyySource @Inject constructor(
             return 0.95f
         }
 
-        val titleSim = QobuzSource.jaccard(
-            QobuzSource.normalize(query.title),
-            QobuzSource.normalize(candidate.title),
+        val titleSim = QobuzCandidateMatcher.jaccard(
+            QobuzCandidateMatcher.normalize(query.title),
+            QobuzCandidateMatcher.normalize(candidate.title),
         )
-        val artistSim = QobuzSource.artistSimilarity(
-            QobuzSource.normalize(query.artist),
-            QobuzSource.normalize(candidate.performer?.name.orEmpty()),
+        val artistSim = QobuzCandidateMatcher.artistSimilarity(
+            QobuzCandidateMatcher.normalize(query.artist),
+            QobuzCandidateMatcher.normalize(candidate.performer?.name.orEmpty()),
         )
 
         val durationFactor: Float = run {

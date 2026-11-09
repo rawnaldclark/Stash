@@ -83,8 +83,6 @@ class SettingsViewModelTest {
         youTubeScrobblerState = mockk(relaxed = true),
         losslessPrefs = losslessPrefs,
         streamingQualityPrefs = mockk(relaxed = true),
-        losslessRateLimiter = mockk(relaxed = true),
-        qobuzSource = mockk(relaxed = true),
         qbdlxCredentialStore = qbdlxStore,
         losslessAvailability = mockk<LosslessAvailability> {
             every { anySourceConfigured } returns flowOf(losslessConfigured)

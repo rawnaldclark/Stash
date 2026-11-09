@@ -192,14 +192,8 @@ class LosslessSourceRegistry @Inject constructor(
 
         /**
          * Lossless sources parked out of the NORMAL resolve chain because their
-         * upstreams are down for us (2026-07-01): qobuz.squid.wtf needs a
-         * captcha we can't solve headless, and kennyy.com.br is health-down.
-         * Their code + Hilt bindings stay
-         * intact — re-enabling a source is just removing its id here (and
-         * uncommenting the matching line in
-         * [com.stash.core.media.streaming.StreamSourceRegistry] for streaming).
-         * Force-X test toggles and the Settings source list still reach them.
+         * upstreams are down for us (2026-07-01): kennyy.com.br is health-down.
          */
-        val PARKED_SOURCE_IDS = setOf("squid_qobuz", "kennyy_qobuz")
+        val PARKED_SOURCE_IDS = setOf("kennyy_qobuz")
     }
 }

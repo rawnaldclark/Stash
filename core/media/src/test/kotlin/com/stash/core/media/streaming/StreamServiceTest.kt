@@ -6,7 +6,7 @@ import org.junit.Test
 class StreamServiceTest {
 
     @Test fun `every Qobuz resolver is named Qobuz`() {
-        listOf("qbdlx", "kennyy", "squid").forEach {
+        listOf("qbdlx", "kennyy").forEach {
             assertThat(StreamService.displayName(it)).isEqualTo("Qobuz")
         }
     }

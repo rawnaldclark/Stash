@@ -12,16 +12,14 @@ import javax.inject.Singleton
  * Stream-URL resolver backed by the DIRECT Qobuz API via [QbdlxQobuzSource]
  * (`qbdlx` — tokenless catalog under the web app_id; file URL via the user's
  * own connected Qobuz account).
- * Counterpart to [QobuzStreamResolver]: same shape, same `etsp` expiry
- * parsing, different upstream operator.
  *
  * Delegates entirely to [QbdlxQobuzSource.resolveImmediate] — search/match
  * live in the source; this only maps [TrackEntity] →
  * [TrackQuery], requests the policy tier, and parses the CDN URL's `etsp`.
  *
  * No [com.stash.data.download.lossless.LosslessSourceHealthGate] gate here
- * (unlike [QobuzStreamResolver]): the proxy sources mark themselves degraded
- * when the proxy returns a preview-sample/lossy URL, but qbdlx hits the real
+ * (unlike the retired proxy resolvers): proxy sources marked themselves degraded
+ * when the proxy returned a preview-sample/lossy URL, but qbdlx hits the real
  * Qobuz API and classifies dead-token / region-lock in the client
  * (`QbdlxResolveResult`), never feeding the health gate — so an `isDegraded`
  * check would be a branch that can never fire.

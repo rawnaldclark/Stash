@@ -7,9 +7,8 @@ import kotlin.math.abs
 
 /**
  * Scores how well a Qobuz catalog candidate matches a [TrackQuery]. Extracted
- * verbatim from [QobuzSource] (behavior-preserving) so multiple Qobuz-backed
- * sources — the squid.wtf proxy source and the direct-API qbdlx source — share
- * one scorer instead of duplicating the matching primitives.
+ * verbatim from the retired squid.wtf `QobuzSource` (behavior-preserving); the
+ * direct-API qbdlx source scores with it.
  *
  * Operates on NEUTRAL candidate fields (title/artist/isrc/duration/streamable)
  * rather than any one source's wire type, so each source maps its own response

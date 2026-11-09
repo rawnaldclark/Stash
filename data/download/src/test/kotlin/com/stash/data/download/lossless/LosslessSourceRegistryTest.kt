@@ -122,24 +122,22 @@ class LosslessSourceRegistryTest {
     }
 
     @Test
-    fun `parked qobuz proxies are skipped and an active source serves the normal chain`() = runTest {
+    fun `a parked qobuz proxy is skipped and an active source serves the normal chain`() = runTest {
         coEvery { prefs.priorityOrderNow() } returns
             LosslessSourcePreferences.DEFAULT_PRIORITY
         coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
         coEvery { healthGate.isDegraded(any()) } returns false
 
         val lucidaResult = flacResult("lucida")
-        // squid + kennyy are parked (PARKED_SOURCE_IDS): the normal resolve
-        // chain must skip them entirely, never even calling resolve().
-        val squid = fakeSource("squid_qobuz", flacResult("squid_qobuz"))
+        // kennyy is parked (PARKED_SOURCE_IDS): the normal resolve
+        // chain must skip it entirely, never even calling resolve().
         val kennyy = fakeSource("kennyy_qobuz", flacResult("kennyy_qobuz"))
         val lucida = fakeSource("lucida", lucidaResult)
 
-        val registry = registry(linkedSetOf(squid, kennyy, lucida))
+        val registry = registry(linkedSetOf(kennyy, lucida))
         val result = registry.resolve(query)
 
         assertThat(result).isEqualTo(lucidaResult)
-        coVerify(exactly = 0) { squid.resolve(any()) } // parked
         coVerify(exactly = 0) { kennyy.resolve(any()) } // parked
         coVerify(exactly = 1) { lucida.resolve(any()) }
     }
@@ -164,13 +162,13 @@ class LosslessSourceRegistryTest {
 
         // Register sources out of order; an id missing from the list goes last.
         val lucida = fakeSource("lucida", flacResult("lucida"))
-        val squid = fakeSource("squid_qobuz", flacResult("squid_qobuz"))
-        val kennyy = fakeSource("kennyy_qobuz", flacResult("kennyy_qobuz"))
+        val qbdlx = fakeSource("qbdlx_qobuz", flacResult("qbdlx_qobuz"))
+        val tidal = fakeSource("tidal_bitchord", flacResult("tidal_bitchord"))
 
-        val registry = registry(linkedSetOf(lucida, kennyy, squid))
+        val registry = registry(linkedSetOf(lucida, tidal, qbdlx))
 
         assertThat(registry.orderedSources().map { it.id })
-            .containsExactly("squid_qobuz", "kennyy_qobuz", "lucida").inOrder()
+            .containsExactly("qbdlx_qobuz", "tidal_bitchord", "lucida").inOrder()
     }
 
     // -- canSearchNow: can an empty answer be trusted as "no lossless version"? --
@@ -205,7 +203,7 @@ class LosslessSourceRegistryTest {
             sourceInState("broken", circuitBroken = true),
             // Its last call failed (a network error answers null like a miss does).
             sourceInState("failing", recentFailures = 1),
-            sourceInState("squid_qobuz"), // parked: resolve never asks it
+            sourceInState("kennyy_qobuz"), // parked: resolve never asks it
         )
 
         assertThat(registry(sources).canSearchNow()).isFalse()

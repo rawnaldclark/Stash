@@ -57,8 +57,7 @@ import com.stash.feature.settings.components.SettingsScaffold
  * Settings > Audio & Quality > Lossless sources: where FLAC comes from, kept
  * off the main quality screen so it stays short. The routing rows, today's
  * free allowance, the supporter unlock, the listener's own Qobuz account,
- * and (collapsed) Advanced: a BitChord server, the captcha cookie, and
- * resetting lossless attempts.
+ * and (collapsed) Advanced: the listener's own BitChord (Tidal) server.
  */
 @Composable
 fun SettingsLosslessSourcesScreen(
@@ -324,33 +323,6 @@ fun SettingsLosslessSourcesScreen(
                                 },
                             ),
                         )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = stringResource(R.string.settings_squid_captcha_desc),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        OutlinedTextField(
-                            value = uiState.squidWtfCaptchaCookie,
-                            onValueChange = viewModel::onSquidWtfCaptchaCookieChanged,
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text(stringResource(R.string.settings_squid_captcha_label)) },
-                            singleLine = true,
-                            placeholder = { Text(stringResource(R.string.settings_squid_captcha_placeholder)) },
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        TextButton(
-                            onClick = viewModel::onResetLosslessRateLimiter,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.settings_reset_lossless_attempts),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
                     }
                 }
             }

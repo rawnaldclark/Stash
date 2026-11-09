@@ -278,10 +278,6 @@
     <string name="settings_access_token_label">Token de acceso (opcional)</string>
     <string name="settings_bitchord_token_saved">Hay un token guardado</string>
     <string name="settings_bitchord_token_hint">Solo si tu propio servidor establece ACCESS_TOKEN</string>
-    <string name="settings_squid_captcha_desc">Captcha de qobuz.squid.wtf: pega directamente el valor de la cookie captcha_verified_at.</string>
-    <string name="settings_squid_captcha_label">Valor de captcha_verified_at</string>
-    <string name="settings_squid_captcha_placeholder">p. ej. 1777687404951</string>
-    <string name="settings_reset_lossless_attempts">Restablecer intentos sin pérdida</string>
     <string name="settings_equalizer_title">Ecualizador</string>
     <!-- Settings > Audio & Quality > Lossless tiers -->
     <string name="settings_lossless_tier_max">Máx. (24 bits/192 kHz)</string>

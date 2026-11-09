@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Sliding-window health monitor for the Kennyy proxy. The
- * SquidCookieAutoRefresher consults [isHealthy] to decide whether
+ * The retired SquidCookieAutoRefresher consulted [isHealthy] to decide whether
  * to keep the Squid cookie warm in the background.
  *
  * "Failure" means a proxy-level distress signal (timeout, 5xx, 4xx).

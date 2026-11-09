@@ -366,10 +366,6 @@
     <string name="settings_access_token_label">Jeton d’accès (facultatif)</string>
     <string name="settings_bitchord_token_saved">Un jeton est enregistré</string>
     <string name="settings_bitchord_token_hint">Uniquement si votre serveur utilise ACCESS_TOKEN</string>
-    <string name="settings_squid_captcha_desc">Captcha qobuz.squid.wtf : collez directement la valeur du cookie captcha_verified_at.</string>
-    <string name="settings_squid_captcha_label">Valeur captcha_verified_at</string>
-    <string name="settings_squid_captcha_placeholder">p. ex. 1777687404951</string>
-    <string name="settings_reset_lossless_attempts">Réinitialiser les tentatives sans perte</string>
     <string name="settings_equalizer_title">Égaliseur</string>
     <!-- Settings > Audio & Quality > Lossless tiers -->
     <string name="settings_lossless_tier_max">Max (24 bits/192 kHz)</string>
