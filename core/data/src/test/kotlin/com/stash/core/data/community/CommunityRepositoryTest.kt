@@ -3,7 +3,9 @@ package com.stash.core.data.community
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.StashDatabase
+import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.TrackEntity
@@ -17,6 +19,7 @@ import com.stash.core.model.Track
 import com.stash.core.model.community.CommunityMe
 import com.stash.core.model.community.CommunityPost
 import com.stash.core.model.community.PostTarget
+import com.stash.core.model.share.SharedTrack
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -80,7 +83,8 @@ class CommunityRepositoryTest {
     private fun repository(keys: CommunityKeyStore, on: Boolean = true, marks: CommunityHeard = heard, http: OkHttpClient = OkHttpClient()): CommunityRepository {
         val api = CommunityApiClient(http).apply { baseUrls = listOf(server.url("/").toString().removeSuffix("/")) }
         val homeSections = mockk<HomeSectionsPreference> { every { communityOn } returns flowOf(on) }
-        return CommunityRepository(api, keys, shared, db.playlistDao(), db.trackDao(), prefs, homeSections, marks)
+        val history = CommunityListenHistory(db.trackDao(), db.listeningEventDao())
+        return CommunityRepository(api, keys, shared, db.playlistDao(), db.trackDao(), prefs, homeSections, marks, history)
     }
 
     /** This phone's real marks over [http], kept in a file of their own; [scope] runs their background sends. */
@@ -285,5 +289,65 @@ class CommunityRepositoryTest {
         assertThat(off.revision.value).isEqualTo(0)
         coVerify(exactly = 0) { keys.key() }
         coVerify(exactly = 0) { prefs.setDisplayName(any()) }
+    }
+
+    // -- Heard from the listening history ----------------------------------------------------------------------------
+
+    /** The song as this phone's library has it, and a listen of it that counted, started at [at]. */
+    private suspend fun listenedTo(title: String, artist: String, youtubeId: String? = null, at: Long) {
+        val id = db.trackDao().insert(TrackEntity(
+            title = title, artist = artist, youtubeId = youtubeId, source = MusicSource.YOUTUBE,
+            canonicalTitle = TrackCanonical.title(title), canonicalArtist = TrackCanonical.artist(artist),
+        ))
+        db.listeningEventDao().insert(ListeningEventEntity(trackId = id, startedAt = at, completedAt = at + 120_000))
+    }
+
+    private val posted = 1_762_000_000_000L
+    private val hour = 3_600_000L
+    private val gardenPost = CommunityPost(
+        id = "AAAAAAAA", kind = "song", title = "garden", name = "Sam", count = 1, artist = "Death Plus",
+        createdAt = posted, up = 1, down = 0, track = SharedTrack("garden", "Death Plus", youtubeId = "9Vz"),
+    )
+
+    @Test fun `the owner's case - a song played in full from the library hours after it was posted counts, and is marked`() = runBlocking<Unit> {
+        listenedTo("garden", "Death Plus", youtubeId = "9Vz", at = posted + 3 * hour)
+        assertThat(repo.heardFromHistory(gardenPost)).isTrue()
+        coVerify(exactly = 1) { heard.mark("AAAAAAAA") }
+        assertThat(server.requestCount).isEqualTo(0) // the opened post carries its song
+    }
+
+    @Test fun `a song played only before the post went up doesn't count, and nothing is marked`() = runBlocking<Unit> {
+        listenedTo("garden", "Death Plus", youtubeId = "9Vz", at = posted - hour)
+        assertThat(repo.heardFromHistory(gardenPost)).isFalse()
+        coVerify(exactly = 0) { heard.mark(any()) }
+    }
+
+    @Test fun `a list's song post is found by its title and artist without asking the Worker`() = runBlocking<Unit> {
+        listenedTo("Garden", "Death Plus", youtubeId = "anotherUpload", at = posted + hour)
+        assertThat(repo.heardFromHistory(gardenPost.copy(track = null))).isTrue()
+        assertThat(server.requestCount).isEqualTo(0)
+        coVerify(exactly = 1) { heard.mark("AAAAAAAA") }
+    }
+
+    @Test fun `a list's playlist post is opened once for its songs`() = runBlocking<Unit> {
+        listenedTo("T2", "B", youtubeId = "y2", at = posted + hour)
+        server.enqueue(MockResponse().setBody(
+            """{"post":{"id":"BBBBBBBB","kind":"playlist","title":"sad boy hours","name":"Maya","count":2,"covers":[],"createdAt":$posted,"up":0,"down":0,""" +
+                """"tracks":[{"t":"T1","a":"A","yt":"y1"},{"t":"T2","a":"B","yt":"y2"}]}}""",
+        ))
+        val summary = CommunityPost(id = "BBBBBBBB", kind = "playlist", title = "sad boy hours", name = "Maya", count = 2, createdAt = posted, up = 0, down = 0)
+        assertThat(repo.heardFromHistory(summary)).isTrue()
+        assertThat(server.requestCount).isEqualTo(1)
+        assertThat(server.takeRequest().path).isEqualTo("/v1/community/posts/BBBBBBBB")
+        coVerify(exactly = 1) { heard.mark("BBBBBBBB") }
+    }
+
+    @Test fun `your own post, or one that can't be opened, is not heard from history`() = runBlocking<Unit> {
+        listenedTo("garden", "Death Plus", youtubeId = "9Vz", at = posted + hour)
+        assertThat(repo.heardFromHistory(gardenPost.copy(mine = true))).isFalse()
+        server.enqueue(MockResponse().setResponseCode(503))
+        val summary = CommunityPost(id = "BBBBBBBB", kind = "playlist", title = "p", name = "Maya", count = 2, createdAt = posted, up = 0, down = 0)
+        assertThat(repo.heardFromHistory(summary)).isFalse()
+        coVerify(exactly = 0) { heard.mark(any()) }
     }
 }

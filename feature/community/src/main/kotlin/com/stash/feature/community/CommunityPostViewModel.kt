@@ -20,6 +20,8 @@ import com.stash.core.model.share.toTrack
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -75,6 +77,12 @@ class CommunityPostViewModel @Inject constructor(
     /** The posts heard on this phone ([CommunityRepository.heardIds]). */
     private var heardHere: Set<String> = emptySet()
 
+    /** The listening-history check running now, if any ([heardInHistory]): the page opening and a tap share it. */
+    private var historyCheck: Deferred<Boolean>? = null
+
+    /** A tap on a dimmed arrow is waiting for that check (main thread only). */
+    private var tapChecking = false
+
     init {
         // The 30 s running out while the page is open wakes the pill there and then.
         viewModelScope.launch {
@@ -94,8 +102,20 @@ class CommunityPostViewModel @Inject constructor(
                 is CommunityResult.Rejected -> if (r.code == "gone") UiState.Gone else UiState.Failed(communityMessage(r))
                 is CommunityResult.Failed -> UiState.Failed(communityMessage(r))
             }
+            // One of its songs played anywhere since it went up: the pill is awake when the page opens, before any tap.
+            (_state.value as? UiState.Loaded)?.post?.takeIf { !it.mine && !it.heard }?.let(::heardInHistory)
         }
     }
+
+    /**
+     * Whether one of [post]'s songs was played anywhere in Stash since it went up ([CommunityRepository.heardFromHistory]:
+     * found, it saves the post's heard mark). Found, the page's post is heard at once. The opened post carries its songs,
+     * so this sends nothing. One check at a time: a tap while the page's own check runs waits for it.
+     */
+    private fun heardInHistory(post: CommunityPost): Deferred<Boolean> =
+        historyCheck?.takeIf { it.isActive } ?: viewModelScope.async {
+            repository.heardFromHistory(post).also { found -> if (found) update { it.copy(post = it.post.copy(heard = true)) } }
+        }.also { historyCheck = it }
 
     /**
      * Plays the frozen songs, as a shared mix's Play does: each is kept as a hidden stream-only row first.
@@ -187,13 +207,24 @@ class CommunityPostViewModel @Inject constructor(
 
     /**
      * Not on your own post. One request is out at a time; a tap meanwhile is sent after it (as in CommunityViewModel).
-     * Not heard yet: no vote, only the note saying why (taking a vote back is always allowed).
+     * Not heard yet: no vote, only the note saying why (taking a vote back is always allowed), unless one of its songs
+     * turns out to be in this phone's listening history ([heardInHistory]): then it's heard, and the vote goes.
      */
     fun vote(tapped: Int) {
         val s = _state.value as? UiState.Loaded ?: return
         if (s.post.mine) return
         if (s.post.needsListen(tapped)) {
-            update { it.copy(voteNote = VoteNote.LISTEN_FIRST) }
+            if (tapChecking) return
+            tapChecking = true
+            viewModelScope.launch {
+                val heard = try { heardInHistory(s.post).await() } finally { tapChecking = false }
+                if (!heard) {
+                    update { it.copy(voteNote = VoteNote.LISTEN_FIRST) }
+                    return@launch
+                }
+                update { it.copy(post = it.post.copy(heard = true)) }
+                vote(tapped)
+            }
             return
         }
         val value = s.post.nextVote(tapped)
