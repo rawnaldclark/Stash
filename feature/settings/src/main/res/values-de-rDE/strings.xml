@@ -302,11 +302,7 @@
     <string name="settings_hires_bit_perfect_dialog_body">Im Bit-Perfect-Modus verändert Android die Lautstärke nicht: Dein DAC stellt sie ein. Wenn dein DAC keine eigene Lautstärkeregelung hat, funktionieren die Lautstärketasten des Telefons möglicherweise nicht mehr und Musik kann mit voller Lautstärke wiedergegeben werden.\n\nVerringere die Lautstärke, bevor du die Wiedergabe startest. EQ, Normalisierung und Crossfade werden umgangen, solange Bit-Perfect aktiv ist.</string>
     <string name="settings_hires_bit_perfect_confirm">Bit-Perfect nutzen</string>
     <!-- Settings > Audio & Quality > SupporterSection -->
-    <string name="settings_supporter_active">Supporter · unbegrenztes Tidal &amp; Qobuz</string>
     <string name="settings_supporter_remove_from_device">Von diesem Gerät entfernen</string>
-    <string name="settings_supporter_offer">Unbegrenzter Zugriff auf Tidal &amp; Qobuz für Supporter</string>
-    <string name="settings_supporter_sheet_title">Unbegrenzter Zugriff auf Tidal &amp; Qobuz</string>
-    <string name="settings_supporter_sheet_desc">Ein Betrag ab 5 $ auf Ko-fi schaltet unbegrenzten Zugriff auf Tidal und Qobuz sowie FLAC und AAC frei. Gib die E-Mail-Adresse ein, die du bei Ko-fi verwendet hast, und wir senden dir einen Code.</string>
     <string name="settings_supporter_kofi_email_label">Ko-fi-E-Mail</string>
     <string name="settings_supporter_email_code_button">Code per E-Mail anfordern</string>
     <string name="settings_supporter_code_sent_desc">Wenn %1$s auf unserer Ko-fi-Liste steht, ist ein Code unterwegs. Es kann eine Minute dauern.</string>

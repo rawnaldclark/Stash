@@ -390,11 +390,7 @@
     <string name="settings_hires_bit_perfect_dialog_body">En mode bit-perfect, Android ne modifie pas le volume : c’est votre DAC qui le règle. Si votre DAC ne dispose pas de son propre réglage du volume, les touches de volume du téléphone peuvent cesser de fonctionner et la musique risque d’être diffusée au volume maximal.\n\nBaissez le volume avant de lancer la lecture. L’égaliseur, la normalisation et le fondu enchaîné sont contournés lorsque le mode bit-perfect est actif.</string>
     <string name="settings_hires_bit_perfect_confirm">Utiliser le mode bit-perfect</string>
     <!-- Settings > Audio & Quality > SupporterSection -->
-    <string name="settings_supporter_active">Mécène · Tidal et Qobuz illimités</string>
     <string name="settings_supporter_remove_from_device">Retirer de cet appareil</string>
-    <string name="settings_supporter_offer">Tidal &amp; Qobuz illimités pour les soutiens</string>
-    <string name="settings_supporter_sheet_title">Tidal &amp; Qobuz illimités</string>
-    <string name="settings_supporter_sheet_desc">Un don de 5 $ ou plus sur Ko-fi donne accès sans limite à Tidal et Qobuz, ainsi qu’au FLAC et à l’AAC. Saisissez l’adresse e-mail utilisée sur Ko-fi pour recevoir un code.</string>
     <string name="settings_supporter_kofi_email_label">E-mail Ko-fi</string>
     <string name="settings_supporter_email_code_button">M’envoyer un code par e-mail</string>
     <string name="settings_supporter_code_sent_desc">Si %1$s figure dans notre liste Ko-fi, un code est en route. Cela peut prendre une minute.</string>
