@@ -80,6 +80,8 @@ class MainActivity : AppCompatActivity() {
 
         /** [pendingDeepLink] for the update notification: open the update sheet. */
         const val DEEP_LINK_OPEN_UPDATE = "open_update"
+        /** [pendingDeepLink] for a download notification: open the Downloads screen. */
+        const val DEEP_LINK_OPEN_DOWNLOADS = "open_downloads"
         /** [pendingDeepLink] prefix for a shared Spotify / YouTube link (text shared to Stash); the link follows. */
         const val DEEP_LINK_MUSIC_LINK_PREFIX = "music_link:"
 
@@ -416,6 +418,13 @@ class MainActivity : AppCompatActivity() {
         if (intent.getBooleanExtra(UpdateCheckWorker.EXTRA_OPEN_UPDATE, false)) {
             pendingDeepLink.value = DEEP_LINK_OPEN_UPDATE
             intent.removeExtra(UpdateCheckWorker.EXTRA_OPEN_UPDATE)
+            return
+        }
+
+        // A download notification (progress, out of space, slowed down, the sync summary): Downloads.
+        if (intent.getBooleanExtra(com.stash.core.data.sync.SyncNotificationManager.EXTRA_OPEN_DOWNLOADS, false)) {
+            pendingDeepLink.value = DEEP_LINK_OPEN_DOWNLOADS
+            intent.removeExtra(com.stash.core.data.sync.SyncNotificationManager.EXTRA_OPEN_DOWNLOADS)
             return
         }
 

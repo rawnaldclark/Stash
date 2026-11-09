@@ -1,6 +1,7 @@
 package com.stash.core.data.sync
 
 import android.content.Context
+import androidx.work.BackoffPolicy
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -11,6 +12,8 @@ import com.stash.core.data.sync.workers.constraintsForManualTrigger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import java.util.concurrent.TimeUnit
+import kotlin.time.Duration
 
 /**
  * Enqueues a one-shot [TrackDownloadWorker] run for a single
@@ -48,23 +51,45 @@ class SingleTrackDownloadEnqueuer @Inject constructor(
 ) {
     companion object {
         fun workName(queueId: Long): String = "single_track_$queueId"
+
+        /** Every single-song run carries it: the Downloads screen counts them as downloads running or waiting. */
+        const val TAG = "single_track_retry"
     }
 
     suspend fun enqueue(queueId: Long) {
-        val mode = downloadNetworkPreference.current()
-        val request = OneTimeWorkRequestBuilder<TrackDownloadWorker>()
-            .setInputData(
-                Data.Builder()
-                    .putLong(TrackDownloadWorker.KEY_QUEUE_ID, queueId)
-                    .build()
-            )
-            .setConstraints(constraintsForManualTrigger(mode))
-            .addTag("single_track_retry")
-            .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             workName(queueId),
             ExistingWorkPolicy.KEEP,
-            request,
+            request(queueId, initialDelay = Duration.ZERO),
         )
     }
+
+    /**
+     * The same song again after [delay], when YouTube asked us to wait (HTTP 429, its bot check):
+     * a retry with the usual backoff would ask again within a minute. Queued behind the run that
+     * calls this (APPEND_OR_REPLACE), which [enqueue]'s KEEP would drop.
+     */
+    suspend fun enqueueLater(queueId: Long, delay: Duration) {
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            workName(queueId),
+            ExistingWorkPolicy.APPEND_OR_REPLACE,
+            request(queueId, initialDelay = delay),
+        )
+    }
+
+    /**
+     * A transient failure (a network drop, say) hands the row back and asks WorkManager to retry
+     * ([TrackDownloadWorker]'s single-song mode): exponential from a minute.
+     */
+    private suspend fun request(queueId: Long, initialDelay: Duration) = OneTimeWorkRequestBuilder<TrackDownloadWorker>()
+        .setInputData(
+            Data.Builder()
+                .putLong(TrackDownloadWorker.KEY_QUEUE_ID, queueId)
+                .build()
+        )
+        .setConstraints(constraintsForManualTrigger(downloadNetworkPreference.current()))
+        .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
+        .apply { if (initialDelay > Duration.ZERO) setInitialDelay(initialDelay.inWholeMilliseconds, TimeUnit.MILLISECONDS) }
+        .addTag(TAG)
+        .build()
 }

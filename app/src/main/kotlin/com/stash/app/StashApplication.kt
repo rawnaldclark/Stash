@@ -128,6 +128,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var downloadJobs: com.stash.core.data.sync.DownloadJobRegistry
 
+    /** Downloads continue on their own: at a cold start and when the app comes back. */
+    @Inject
+    lateinit var downloadQueueResumer: com.stash.core.data.sync.DownloadQueueResumer
+
     @Inject
     lateinit var trackDao: TrackDao
 
@@ -405,6 +409,12 @@ class StashApplication : Application(), Configuration.Provider {
                     webRemote.onForeground()
                     // ...and an open Recap story carries its song on.
                     recapAudio.onAppForeground()
+                    // ...and songs left queued carry on downloading (at most once a minute; not while
+                    // paused or out of space): some phones drop scheduled jobs when the app is swiped away.
+                    applicationScope.launch {
+                        runCatching { downloadQueueResumer.onForeground() }
+                            .onFailure { Log.w("StashStartup", "resuming downloads on foreground failed", it) }
+                    }
                 }
 
                 override fun onStop(owner: LifecycleOwner) {
@@ -468,8 +478,10 @@ class StashApplication : Application(), Configuration.Provider {
             }.onFailure { Log.w("StashStartup", "stale IN_PROGRESS reset failed", it) }
             // Then pick waiting downloads back up (#474), Stash Mixes on or off: a
             // run cancelled or cut short leaves them otherwise until the next tap.
-            // Only when something waits, and under the background constraints.
-            runCatching { musicRepository.resumeWaitingDownloads() }
+            // Only when something waits, and under the background constraints: the
+            // songs a sync queued (the resume run) and the ones the user asked for
+            // (the drain). Not while the user has paused downloads.
+            runCatching { downloadQueueResumer.resume(com.stash.core.data.sync.ResumeTrigger.AUTO) }
                 .onFailure { Log.w("StashStartup", "resuming waiting downloads failed", it) }
         }
         // An extra Spotify account's sign-in is kept outside the database, under its row id: a full

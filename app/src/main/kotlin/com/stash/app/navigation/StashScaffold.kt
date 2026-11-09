@@ -271,6 +271,10 @@ fun StashScaffold(
                 updateViewModel.ask()
                 onDeepLinkConsumed()
             }
+            com.stash.app.MainActivity.DEEP_LINK_OPEN_DOWNLOADS -> {
+                navController.navigate(DownloadManagementRoute) { launchSingleTop = true }
+                onDeepLinkConsumed()
+            }
             null -> Unit
             else -> {
                 if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_SHARED_MIX_PREFIX)) {

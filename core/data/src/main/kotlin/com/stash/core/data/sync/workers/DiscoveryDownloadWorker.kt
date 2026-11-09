@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.ServiceInfo
 import android.util.Log
 import androidx.hilt.work.HiltWorker
+import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
@@ -20,7 +21,14 @@ import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.files.TrackFileReplacement
 import com.stash.core.data.mapper.toDomain
+import com.stash.core.data.R
+import com.stash.core.data.sync.DownloadQueueResumer
+import com.stash.core.data.sync.DownloadQueueState
 import com.stash.core.data.sync.SyncNotificationManager
+import com.stash.core.data.sync.classifier.DownloadFailureClassifier
+import com.stash.core.data.sync.classifier.DownloadFailureClassifier.FailureLane
+import com.stash.core.data.sync.classifier.DownloadPhase
+import com.stash.core.data.sync.classifier.FailureContext
 import com.stash.core.data.sync.DownloadJobRegistry
 import com.stash.core.data.sync.TrackDownloadOutcome
 import com.stash.core.data.sync.TrackDownloader
@@ -31,6 +39,7 @@ import com.stash.core.model.Track
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.io.File
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
@@ -74,37 +83,60 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
     private val syncNotificationManager: SyncNotificationManager,
     private val downloadJobs: DownloadJobRegistry,
     private val fileReplacement: TrackFileReplacement,
+    /** The one failure taxonomy every runner shares (a network blip retries, a source failure is final). */
+    private val classifier: DownloadFailureClassifier,
+    /** The user's Pause and the out-of-space hold. */
+    private val queueState: DownloadQueueState,
+    /** An automatic start's constraints, for the retry after YouTube asked us to wait. */
+    private val resumer: DownloadQueueResumer,
     /** The songs downloading at once, shared with sync downloads and DownloadManager. */
     private val downloadSlots: com.stash.core.data.sync.DownloadSlots = com.stash.core.data.sync.DownloadSlots(),
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
         const val UNIQUE_WORK_NAME = "discovery_download"
-        /** It downloads kept playlists, followed mixes and repairs, not just discoveries (#474). */
-        private const val NOTIFICATION_TITLE = "Downloading songs"
         private const val TAG = "DiscoveryDownload"
+
+        /** A drain that left songs for a transient failure retries at most this often per start. */
+        const val MAX_ATTEMPTS = 8
 
         /**
          * [policy] REPLACE (the default) restarts the drain now, for a tap.
          * APPEND_OR_REPLACE queues a drain behind the current one instead, so
          * background work never cancels the song in progress or swaps a waiting
-         * tap's constraints for its own (#474).
+         * tap's constraints for its own (#474). [initialDelay] holds it back
+         * (YouTube asked us to wait). A drain that left songs for a network blip
+         * retries with exponential backoff from a minute.
          */
         fun enqueueOneTime(
             context: Context,
             constraints: Constraints,
             policy: ExistingWorkPolicy = ExistingWorkPolicy.REPLACE,
+            initialDelay: kotlin.time.Duration = kotlin.time.Duration.ZERO,
         ): Operation {
             val work = OneTimeWorkRequestBuilder<DiscoveryDownloadWorker>()
                 .setConstraints(constraints)
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
+                .apply {
+                    if (initialDelay > kotlin.time.Duration.ZERO) {
+                        setInitialDelay(initialDelay.inWholeMilliseconds, TimeUnit.MILLISECONDS)
+                    }
+                }
                 .build()
             return WorkManager.getInstance(context).enqueueUniqueWork(UNIQUE_WORK_NAME, policy, work)
         }
     }
 
+    /** It downloads kept playlists, followed mixes and repairs, not just discoveries (#474). */
+    private val notificationTitle: String
+        get() = applicationContext.getString(R.string.notif_downloads_title)
+
     override suspend fun getForegroundInfo(): ForegroundInfo {
-        return buildForegroundInfo(NOTIFICATION_TITLE, "Preparing\u2026", progress = -1f)
+        return buildForegroundInfo(notificationTitle, applicationContext.getString(R.string.notif_downloads_preparing), progress = -1f)
     }
+
+    /** What one row came to, for the drain's tally and whether it stops. */
+    internal enum class ItemResult { COMPLETED, NOTHING, INTERRUPTED, RATE_LIMITED, STORAGE_FULL }
 
     /**
      * Promote to foreground. Wrapped in runCatching because the JVM unit
@@ -122,7 +154,14 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
     }
 
     override suspend fun doWork(): Result {
-        safeUpdateForeground(NOTIFICATION_TITLE, "Preparing\u2026", progress = -1f)
+        // Paused by the user: nothing downloads on its own until Resume, "Sync now" or a new
+        // download tap (which clears the pause before it starts a drain). Checked before the
+        // notification, so a paused start shows nothing.
+        if (queueState.isPaused()) {
+            Log.i(TAG, "downloads are paused; not draining")
+            return Result.success()
+        }
+        safeUpdateForeground(notificationTitle, applicationContext.getString(R.string.notif_downloads_preparing), progress = -1f)
 
         val pending = downloadQueueDao.pendingDiscoveryDownloads()
         if (pending.isEmpty()) {
@@ -146,16 +185,30 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
         // Unmatched / Deferred / blocked run surfaces nothing new, so chaining
         // would just re-spin the worker cycle for no benefit.
         var completed = 0
+        // Songs left PENDING for a transient failure: the drain retries later for them.
+        var interrupted = 0
+        // A rate limit or a full phone stops the drain: everything after it would fail the same way.
+        var stoppedBy: ItemResult? = null
 
         for ((index, queueItem) in pending.withIndex()) {
+            if (stoppedBy != null) break
             safeUpdateForeground(
-                title = NOTIFICATION_TITLE,
-                text = "${index + 1} of ${pending.size}",
+                title = notificationTitle,
+                text = applicationContext.getString(R.string.notif_downloads_progress, index + 1, pending.size),
                 progress = (index.toFloat() / pending.size),
             )
 
             try {
-                if (processQueueItem(queueItem)) completed++
+                when (val result = processQueueItem(queueItem)) {
+                    ItemResult.COMPLETED -> completed++
+                    ItemResult.INTERRUPTED -> interrupted++
+                    ItemResult.RATE_LIMITED -> {
+                        interrupted++
+                        stoppedBy = result
+                    }
+                    ItemResult.STORAGE_FULL -> stoppedBy = result
+                    ItemResult.NOTHING -> Unit
+                }
             } catch (cancelled: CancellationException) {
                 // NonCancellable around the status read ONLY. The child job is
                 // already cancelled, so a bare suspend DAO call throws instead
@@ -192,11 +245,39 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
         } else {
             Log.d(TAG, "drained ${pending.size} row(s) but completed 0 — not chaining refresh")
         }
+
+        when (stoppedBy) {
+            ItemResult.STORAGE_FULL -> {
+                // No automatic retry: the rest stay PENDING, no retry used, until Resume or a cold start.
+                Log.w(TAG, "out of space; drain stopped, ${pending.size - completed} song(s) left waiting")
+                queueState.setStorageFull(true)
+                syncNotificationManager.showStorageFull()
+                return Result.success()
+            }
+            ItemResult.RATE_LIMITED -> {
+                // A retry with the usual backoff would ask again within a minute: try again in
+                // about 15, as a fresh run queued behind this one.
+                val delay = DownloadQueueResumer.RATE_LIMIT_DELAY
+                Log.w(TAG, "YouTube asked us to wait; next drain in $delay")
+                syncNotificationManager.showRateLimited(System.currentTimeMillis() + delay.inWholeMilliseconds)
+                runCatching {
+                    enqueueOneTime(applicationContext, resumer.autoConstraints(), ExistingWorkPolicy.APPEND_OR_REPLACE, delay)
+                }.onFailure { Log.w(TAG, "couldn't schedule the drain after the rate limit", it) }
+                return Result.success()
+            }
+            else -> Unit
+        }
+        // A song that landed proves there is room again.
+        if (completed > 0) queueState.setStorageFull(false)
+        if (interrupted > 0 && runAttemptCount + 1 < MAX_ATTEMPTS) {
+            Log.i(TAG, "$interrupted song(s) left for a transient failure; retrying (attempt ${runAttemptCount + 1})")
+            return Result.retry()
+        }
         return Result.success()
     }
 
     /** Runs one discovery row in its own cancellable child, never the worker Job. */
-    private suspend fun processQueueItem(queueItem: DownloadQueueEntity): Boolean = supervisorScope {
+    private suspend fun processQueueItem(queueItem: DownloadQueueEntity): ItemResult = supervisorScope {
         // A row is claimed (shown as downloading) only once one of the shared download slots is free.
         val child = async {
             downloadSlots.withSlot {
@@ -205,14 +286,14 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
                 if (!downloadJobs.claimAndRegister(queueItem.id, itemJob) {
                         downloadQueueDao.claimForDownload(queueItem.id) != 0
                     }
-                ) return@async false
+                ) return@async ItemResult.NOTHING
                 if (downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED) {
                     // Cancelled as it was claimed: a replacement keeps its file.
                     fileReplacement.restoreAfterStop(queueItem.trackId)
-                    return@async false
+                    return@async ItemResult.NOTHING
                 }
 
-                val trackEntity = trackDao.getById(queueItem.trackId) ?: return@async false
+                val trackEntity = trackDao.getById(queueItem.trackId) ?: return@async ItemResult.NOTHING
                 if (blocklistGuard.isBlocked(
                         artist = trackEntity.artist,
                         title = trackEntity.title,
@@ -220,22 +301,27 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
                         youtubeId = null,
                     )) {
                     downloadQueueDao.deleteByTrackId(trackEntity.id)
-                    return@async false
+                    return@async ItemResult.NOTHING
                 }
                 if (trackEntity.isDownloaded && trackEntity.filePath != null) {
-                    return@async downloadQueueDao.completeIfInProgress(
+                    val done = downloadQueueDao.completeIfInProgress(
                         id = queueItem.id,
                         completedAt = System.currentTimeMillis(),
                     ) == 1
+                    return@async if (done) ItemResult.COMPLETED else ItemResult.NOTHING
                 }
 
                 val track = trackEntity.toDomain()
+                // What the downloader threw, if it threw: its cause chain classifies a network drop.
+                var thrown: Exception? = null
                 val outcome = try {
                     downloadSlots.holding { trackDownloader.downloadTrack(track, queueItem.youtubeUrl) }
                 } catch (cancelled: CancellationException) {
+                    // Re-thrown first, before anything classifies it: a stop is never a failure.
                     throw cancelled
                 } catch (error: Exception) {
                     Log.e(TAG, "downloadTrack threw for ${track.artist} - ${track.title}", error)
+                    thrown = error
                     TrackDownloadOutcome.Failed(error.message.orEmpty())
                 }
                 when (outcome) {
@@ -257,10 +343,14 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
                             }
                         }
                         if (cancelledMidFlight) {
-                            false
+                            ItemResult.NOTHING
                         } else {
                             handleSuccess(queueItem, trackEntity, outcome)
-                            downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.COMPLETED
+                            if (downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.COMPLETED) {
+                                ItemResult.COMPLETED
+                            } else {
+                                ItemResult.NOTHING
+                            }
                         }
                     }
                     is TrackDownloadOutcome.Unmatched -> {
@@ -268,14 +358,18 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
                         // The row is FAILED: a file kept for this re-download
                         // (TrackDao.markForReplacement) is the track's download again.
                         fileReplacement.restoreKeptFile(trackEntity.id, trackEntity.filePath)
-                        false
+                        ItemResult.NOTHING
                     }
                     is TrackDownloadOutcome.Failed -> {
-                        handleFailed(queueItem, track, outcome)
-                        fileReplacement.restoreKeptFile(trackEntity.id, trackEntity.filePath)
-                        false
+                        val result = handleFailed(queueItem, track, outcome, thrown)
+                        // Failed for good: a file kept for this re-download is the track's download
+                        // again. A row back to PENDING keeps waiting for its new file, as a sync's does.
+                        if (result == ItemResult.NOTHING) {
+                            fileReplacement.restoreKeptFile(trackEntity.id, trackEntity.filePath)
+                        }
+                        result
                     }
-                    is TrackDownloadOutcome.Deferred -> false
+                    is TrackDownloadOutcome.Deferred -> ItemResult.NOTHING
                 }
             }
         }
@@ -347,19 +441,54 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
         )
     }
 
+    /**
+     * A failed row, by the one taxonomy ([DownloadFailureClassifier.laneFor]): a source failure
+     * (or a transient one that keeps happening) is FAILED and shows in Failed downloads; a
+     * network blip, a rate limit or a mid-run sign-in problem goes back to PENDING with a retry
+     * used, and the drain retries later; a full phone goes back to PENDING with no retry used.
+     * Before, every failure here was FAILED/UNKNOWN, and a kept playlist's song that failed on a
+     * blip waited until some unrelated download happened to start a drain.
+     */
     private suspend fun handleFailed(
         queueItem: DownloadQueueEntity,
         track: Track,
         outcome: TrackDownloadOutcome.Failed,
-    ) {
+        thrown: Exception?,
+    ): ItemResult {
         Log.e(TAG, "Download failed for ${track.artist} - ${track.title}: ${outcome.error}")
-        downloadQueueDao.incrementRetryCount(queueItem.id)
-        downloadQueueDao.failIfInProgress(
-            id = queueItem.id,
-            failureType = DownloadFailureType.UNKNOWN,
-            errorMessage = outcome.error.take(500),
-            completedAt = System.currentTimeMillis(),
+        val type = classifier.classify(
+            FailureContext(
+                phase = DownloadPhase.DOWNLOADING,
+                errorText = outcome.error,
+                httpStatus = null,
+                causeChain = thrown?.let(DownloadFailureClassifier::causeChainOf).orEmpty(),
+            ),
         )
+        val message = outcome.error.take(500)
+        return when (DownloadFailureClassifier.laneFor(type, queueItem.retryCount)) {
+            FailureLane.FINAL -> {
+                downloadQueueDao.incrementRetryCount(queueItem.id)
+                downloadQueueDao.failIfInProgress(
+                    id = queueItem.id,
+                    failureType = type,
+                    errorMessage = message,
+                    completedAt = System.currentTimeMillis(),
+                )
+                ItemResult.NOTHING
+            }
+            FailureLane.RETRY -> {
+                downloadQueueDao.revertToPendingAfterInterruption(queueItem.id, message, type)
+                ItemResult.INTERRUPTED
+            }
+            FailureLane.RATE_LIMITED -> {
+                downloadQueueDao.revertToPendingAfterInterruption(queueItem.id, message, type)
+                ItemResult.RATE_LIMITED
+            }
+            FailureLane.STORAGE_FULL -> {
+                downloadQueueDao.revertToPendingKeepingRetries(queueItem.id, message, type)
+                ItemResult.STORAGE_FULL
+            }
+        }
     }
 
     /**
@@ -384,20 +513,20 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
 
     /**
      * Inline mirror of [TrackDownloadWorker]'s private `createForegroundInfo`
-     * helper. Duplicated rather than promoted to a public method on
-     * [SyncNotificationManager] because the WorkManager cancel intent is
-     * per-worker-instance and SyncNotificationManager is a singleton.
+     * helper, under its own notification id ([SyncNotificationManager.NOTIFICATION_ID_DOWNLOADS]).
      */
     private fun buildForegroundInfo(
         title: String,
         text: String,
         progress: Float,
     ): ForegroundInfo {
+        // Pause, not Cancel: the songs stay queued until Resume (Clear queue drops them).
         val notification = syncNotificationManager.buildProgressNotification(
             title = title,
             text = text,
             progress = progress,
-            cancelIntent = WorkManager.getInstance(applicationContext).createCancelPendingIntent(id),
+            pauseIntent = syncNotificationManager.pauseDownloadsIntent(),
+            contentIntent = syncNotificationManager.openDownloadsIntent(),
         )
         return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             ForegroundInfo(
