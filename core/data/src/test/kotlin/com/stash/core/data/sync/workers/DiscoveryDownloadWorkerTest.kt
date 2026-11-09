@@ -12,6 +12,9 @@ import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.TrackDownloadOutcome
 import com.stash.core.data.sync.TrackDownloader
 import com.stash.core.data.sync.DownloadJobRegistry
+import com.stash.core.data.sync.DownloadQueueResumer
+import com.stash.core.data.sync.DownloadQueueState
+import com.stash.core.data.sync.classifier.DownloadFailureClassifier
 import com.stash.core.model.DownloadFailureType
 import com.stash.core.model.DownloadStatus
 import io.mockk.coEvery
@@ -45,6 +48,10 @@ class DiscoveryDownloadWorkerTest {
     }
     private val syncNotificationManager: SyncNotificationManager = mockk(relaxed = true)
     private val downloadJobs = DownloadJobRegistry()
+    private val queueState: DownloadQueueState = mockk(relaxed = true) {
+        coEvery { isPaused() } returns false
+    }
+    private val resumer: DownloadQueueResumer = mockk(relaxed = true)
 
     /**
      * The worker now gates every row on an atomic claim and reads the row
@@ -65,6 +72,9 @@ class DiscoveryDownloadWorkerTest {
         downloadQueueDao, trackDao, trackDownloader,
         audioDurationExtractor, blocklistGuard, syncNotificationManager, downloadJobs,
         fileReplacement = mockk(relaxed = true),
+        classifier = DownloadFailureClassifier(),
+        queueState = queueState,
+        resumer = resumer,
     )
 
     @Test fun `empty queue returns success and does not invoke TrackDownloader`() = runTest {
@@ -194,7 +204,7 @@ class DiscoveryDownloadWorkerTest {
         }
     }
 
-    @Test fun `failed outcome marks FAILED with UNKNOWN`() = runTest {
+    @Test fun `a network failure goes back to the queue with a retry used and the drain retries`() = runTest {
         val entry = entry(id = 100L, trackId = 1L)
         coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry)
         coEvery { trackDao.getById(1L) } returns stubTrack(1L)
@@ -202,18 +212,124 @@ class DiscoveryDownloadWorkerTest {
             error = "yt-dlp timeout",
         )
 
-        newWorker().doWork()
+        val result = newWorker().doWork()
 
+        assertEquals(androidx.work.ListenableWorker.Result.retry(), result)
+        coVerify(exactly = 1) {
+            downloadQueueDao.revertToPendingAfterInterruption(100L, match { it!!.contains("yt-dlp timeout") }, DownloadFailureType.NETWORK)
+        }
+        coVerify(exactly = 0) { downloadQueueDao.failIfInProgress(any(), any(), any(), any(), any()) }
+    }
+
+    @Test fun `a thrown network error is classified by its cause`() = runTest {
+        val entry = entry(id = 100L, trackId = 1L)
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry)
+        coEvery { trackDao.getById(1L) } returns stubTrack(1L)
+        coEvery { trackDownloader.downloadTrack(any(), any()) } throws
+            java.io.IOException("download stalled", java.net.UnknownHostException("youtube.com"))
+
+        val result = newWorker().doWork()
+
+        assertEquals(androidx.work.ListenableWorker.Result.retry(), result)
+        coVerify(exactly = 1) { downloadQueueDao.revertToPendingAfterInterruption(100L, any(), DownloadFailureType.NETWORK) }
+    }
+
+    @Test fun `the last attempt stops asking WorkManager to retry`() = runTest {
+        every { workerParams.runAttemptCount } returns DiscoveryDownloadWorker.MAX_ATTEMPTS - 1
+        val entry = entry(id = 100L, trackId = 1L)
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry)
+        coEvery { trackDao.getById(1L) } returns stubTrack(1L)
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns TrackDownloadOutcome.Failed("yt-dlp timeout")
+
+        assertEquals(androidx.work.ListenableWorker.Result.success(), newWorker().doWork())
+    }
+
+    @Test fun `a source failure is FAILED with its type`() = runTest {
+        val entry = entry(id = 100L, trackId = 1L)
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry)
+        coEvery { trackDao.getById(1L) } returns stubTrack(1L)
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns TrackDownloadOutcome.Failed(
+            error = "ERROR: [youtube] abc: Video unavailable",
+        )
+
+        val result = newWorker().doWork()
+
+        assertEquals(androidx.work.ListenableWorker.Result.success(), result)
         coVerify(exactly = 1) { downloadQueueDao.incrementRetryCount(100L) }
         coVerify(exactly = 1) {
             downloadQueueDao.failIfInProgress(
                 id = 100L,
-                errorMessage = match { it.contains("yt-dlp timeout") },
-                failureType = DownloadFailureType.UNKNOWN,
+                errorMessage = any(),
+                failureType = DownloadFailureType.PROVIDER_UNAVAILABLE,
                 completedAt = any(),
                 rejectedVideoId = any(),
             )
         }
+    }
+
+    @Test fun `a network failure that keeps happening is FAILED`() = runTest {
+        val entry = entry(id = 100L, trackId = 1L).copy(retryCount = DownloadFailureClassifier.TRANSIENT_RETRY_LIMIT)
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry)
+        coEvery { trackDao.getById(1L) } returns stubTrack(1L)
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns TrackDownloadOutcome.Failed("yt-dlp timeout")
+
+        newWorker().doWork()
+
+        coVerify(exactly = 1) {
+            downloadQueueDao.failIfInProgress(
+                id = 100L,
+                errorMessage = any(),
+                failureType = DownloadFailureType.NETWORK,
+                completedAt = any(),
+                rejectedVideoId = any(),
+            )
+        }
+        coVerify(exactly = 0) { downloadQueueDao.revertToPendingAfterInterruption(any(), any(), any()) }
+    }
+
+    @Test fun `a full phone stops the drain, uses no retry and says so`() = runTest {
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns
+            listOf(entry(id = 100L, trackId = 1L), entry(id = 101L, trackId = 2L))
+        coEvery { trackDao.getById(any()) } answers { stubTrack(firstArg()) }
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns
+            TrackDownloadOutcome.Failed("ERROR: unable to write data: [Errno 28] No space left on device")
+
+        val result = newWorker().doWork()
+
+        assertEquals(androidx.work.ListenableWorker.Result.success(), result)
+        coVerify(exactly = 1) { trackDownloader.downloadTrack(any(), any()) }
+        coVerify(exactly = 1) { downloadQueueDao.revertToPendingKeepingRetries(100L, any(), DownloadFailureType.STORAGE_FULL) }
+        coVerify(exactly = 0) { downloadQueueDao.incrementRetryCount(any()) }
+        coVerify(exactly = 0) { downloadQueueDao.claimForDownload(101L) }
+        verify(exactly = 1) { queueState.setStorageFull(true) }
+        verify(exactly = 1) { syncNotificationManager.showStorageFull() }
+    }
+
+    @Test fun `a rate limit stops the drain and says when it tries again`() = runTest {
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns
+            listOf(entry(id = 100L, trackId = 1L), entry(id = 101L, trackId = 2L))
+        coEvery { trackDao.getById(any()) } answers { stubTrack(firstArg()) }
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns
+            TrackDownloadOutcome.Failed("ERROR: [youtube] abc: HTTP Error 429: Too Many Requests")
+
+        val result = newWorker().doWork()
+
+        assertEquals(androidx.work.ListenableWorker.Result.success(), result)
+        coVerify(exactly = 1) { trackDownloader.downloadTrack(any(), any()) }
+        coVerify(exactly = 1) { downloadQueueDao.revertToPendingAfterInterruption(100L, any(), DownloadFailureType.RATE_LIMITED) }
+        coVerify(exactly = 0) { downloadQueueDao.claimForDownload(101L) }
+        verify(exactly = 1) { syncNotificationManager.showRateLimited(any()) }
+    }
+
+    @Test fun `a paused queue downloads nothing`() = runTest {
+        coEvery { queueState.isPaused() } returns true
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry(id = 100L, trackId = 1L))
+
+        val result = newWorker().doWork()
+
+        assertEquals(androidx.work.ListenableWorker.Result.success(), result)
+        coVerify(exactly = 0) { downloadQueueDao.pendingDiscoveryDownloads() }
+        coVerify(exactly = 0) { trackDownloader.downloadTrack(any(), any()) }
     }
 
     @Test fun `deferred outcome does NOT touch the queue row`() = runTest {

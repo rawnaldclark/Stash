@@ -68,6 +68,9 @@ class SyncViewModelTest {
     private val librarySizeHolder = mockk<com.stash.data.download.files.LibrarySizeHolder>(relaxed = true)
     private val streamingPreference = mockk<com.stash.core.data.prefs.StreamingPreference>(relaxed = true)
     private val spotifyAccountDao = mockk<com.stash.core.data.db.dao.SpotifyAccountDao>(relaxed = true)
+    private val downloadQueueResumer = mockk<com.stash.core.data.sync.DownloadQueueResumer>(relaxed = true) {
+        every { runState() } returns MutableStateFlow(com.stash.core.data.sync.QueueRunState.Idle)
+    }
 
     /** Stub every flow the VM's init collects eagerly so construction doesn't throw. */
     private fun stubInitFlows() {
@@ -118,6 +121,7 @@ class SyncViewModelTest {
         playerRepository = mockk(relaxed = true),
         downloadManager = downloadManager,
         spotifyAccountDao = spotifyAccountDao,
+        downloadQueueResumer = downloadQueueResumer,
     )
 
     @Before fun setUp() {
@@ -338,6 +342,33 @@ class SyncViewModelTest {
         advanceUntilIdle()
 
         coVerify { syncScheduler.triggerManualSync(false) }
+    }
+
+    @Test
+    fun `Sync now ends a download pause before the sync starts`() = runTest {
+        val vm = newVm()
+
+        vm.onSyncNow()
+        advanceUntilIdle()
+
+        io.mockk.coVerifyOrder {
+            downloadQueueResumer.clearHold()
+            syncScheduler.triggerManualSync(any())
+        }
+    }
+
+    @Test
+    fun `the Downloads row says what holds the queue back`() {
+        assertEquals(SyncViewModel.DownloadsHold.PAUSED, downloadsHoldFor(com.stash.core.data.sync.QueueRunState.Paused, waiting = 0))
+        assertEquals(SyncViewModel.DownloadsHold.STORAGE_FULL, downloadsHoldFor(com.stash.core.data.sync.QueueRunState.StorageFull, waiting = 0))
+        assertEquals(SyncViewModel.DownloadsHold.WAITING_FOR_WIFI, downloadsHoldFor(com.stash.core.data.sync.QueueRunState.WaitingForWifi, waiting = 37))
+        assertEquals(null, downloadsHoldFor(com.stash.core.data.sync.QueueRunState.WaitingForWifi, waiting = 0))
+        assertEquals(
+            SyncViewModel.DownloadsHold.WAITING_FOR_CONNECTION,
+            downloadsHoldFor(com.stash.core.data.sync.QueueRunState.WaitingForConnection, waiting = 3),
+        )
+        assertEquals(null, downloadsHoldFor(com.stash.core.data.sync.QueueRunState.Running, waiting = 3))
+        assertEquals(null, downloadsHoldFor(com.stash.core.data.sync.QueueRunState.Idle, waiting = 3))
     }
 
     @Test

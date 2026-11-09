@@ -205,6 +205,9 @@ class TrackDownloadWorkerQueueTest {
                     flacUpgradeSweeper = mockk(relaxed = true),
                     downloadJobs = jobs,
                     fileReplacement = TrackFileReplacement(db.trackDao(), LocalFileOps(appContext)),
+                    queueState = mockk(relaxed = true),
+                    resumer = mockk(relaxed = true),
+                    singleTrackDownloadEnqueuer = mockk(relaxed = true),
                     downloadSlots = slots,
                 )
             })

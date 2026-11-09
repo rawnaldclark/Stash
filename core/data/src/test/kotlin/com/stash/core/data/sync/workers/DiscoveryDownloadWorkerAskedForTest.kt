@@ -93,6 +93,9 @@ class DiscoveryDownloadWorkerAskedForTest {
                 syncNotificationManager = mockk(relaxed = true),
                 downloadJobs = DownloadJobRegistry(),
                 fileReplacement = TrackFileReplacement(db.trackDao(), LocalFileOps(context)),
+                classifier = com.stash.core.data.sync.classifier.DownloadFailureClassifier(),
+                queueState = mockk(relaxed = true),
+                resumer = mockk(relaxed = true),
             )
         })
         .build()
