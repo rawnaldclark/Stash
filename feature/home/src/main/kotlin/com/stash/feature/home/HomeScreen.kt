@@ -176,7 +176,7 @@ fun HomeScreen(
     onNavigateToPlaylist: (Long) -> Unit = {},
     onNavigateToLibrary: () -> Unit = {},
     onNavigateToAlbum: (AlbumSummary) -> Unit = {},
-    /** An artist's page, by its YouTube Music channel id and name: a New from your artists album's Go to artist. */
+    /** An artist's page, by its YouTube Music channel id and name: a New from your artists album's View Artist. */
     onNavigateToArtist: (id: String, name: String) -> Unit = { _, _ -> },
     onSeeAllPlaylists: (String) -> Unit = {},
     onNavigateToMixBuilder: (Long?) -> Unit = {},

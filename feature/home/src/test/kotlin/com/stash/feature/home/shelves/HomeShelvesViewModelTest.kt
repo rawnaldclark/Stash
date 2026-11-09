@@ -378,7 +378,7 @@ class HomeShelvesViewModelTest {
     }
 
     @Test
-    fun `Go to artist opens the album's artist, or says the album names none`() = runTest(dispatcher) {
+    fun `View Artist opens the album's artist, or says the album names none`() = runTest(dispatcher) {
         whenever(albumCache.get(eq("MPREb_1"), any())).doReturn(detail)
         val vm = viewModel()
         val toasts = albumToasts(vm)

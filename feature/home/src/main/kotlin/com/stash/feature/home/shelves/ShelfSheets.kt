@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
@@ -61,6 +63,8 @@ import com.stash.feature.home.R
  * radio, Save to playlist (then the playlist picker) and Download. Hosted as Your record's song menu is
  * (`RecordSongMenu`). Not here: Post to Community (the song may have no row yet), Share (its links need ids a card
  * doesn't carry), View album (a card names its album but has no id for it), Like (Search's songs have none either).
+ *
+ * Both shelf sheets open fully expanded ([sheetOpensFully]) and scroll when taller than the screen.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,20 +74,22 @@ internal fun ShelfSongSheet(song: TrackSummary?, viewModel: HomeShelvesViewModel
         val surface = StashTheme.extendedColors.elevatedSurface
         ModalBottomSheet(
             onDismissRequest = onDismiss,
-            sheetState = rememberModalBottomSheetState(),
+            sheetState = sheetOpensFully(),
             containerColor = surface,
             properties = sheetBarsFollow(surface),
         ) {
             CompositionLocalProvider(LocalPostToCommunity provides null) {
-                TrackOptionsSheet(
-                    track = song.toStreamTrack(),
-                    onPlayNext = { viewModel.playNext(song); onDismiss() },
-                    onAddToQueue = { viewModel.addToQueue(song); onDismiss() },
-                    onStartRadio = { viewModel.startRadio(song); onDismiss() },
-                    onSaveToPlaylist = { saving = song; onDismiss() },
-                    onDownload = { viewModel.download(song); onDismiss() },
-                    onDismiss = onDismiss,
-                )
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    TrackOptionsSheet(
+                        track = song.toStreamTrack(),
+                        onPlayNext = { viewModel.playNext(song); onDismiss() },
+                        onAddToQueue = { viewModel.addToQueue(song); onDismiss() },
+                        onStartRadio = { viewModel.startRadio(song); onDismiss() },
+                        onSaveToPlaylist = { saving = song; onDismiss() },
+                        onDownload = { viewModel.download(song); onDismiss() },
+                        onDismiss = onDismiss,
+                    )
+                }
             }
         }
     }
@@ -105,8 +111,8 @@ internal fun ShelfSongSheet(song: TrackSummary?, viewModel: HomeShelvesViewModel
 }
 
 /**
- * A long-pressed "New from your artists" card's sheet, in the song sheet's look (its header and rows): Play, Shuffle,
- * Play next, Add to queue, Open album, Go to artist. Each closes the sheet at once; the album loads behind it (its
+ * A long-pressed "New from your artists" card's sheet, in the song sheet's look (its header and rows) and words: Play,
+ * Shuffle, Play Next, Add to Queue, View Album, View Artist. Each closes the sheet at once; the album loads behind it (its
  * page's own load, warmed when the sheet opened) and a failure is a toast. In a Listen Together session a guest has
  * no Play or Shuffle (the host picks what plays), and a guest whose adds go to the host as suggestions has no Play
  * next or Add to queue (an album would be a dozen suggestions).
@@ -128,11 +134,11 @@ internal fun ShelfAlbumSheet(
     val role = LocalListenTogetherRole.current
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(),
+        sheetState = sheetOpensFully(),
         containerColor = surface,
         properties = sheetBarsFollow(surface),
     ) {
-        Column(Modifier.fillMaxWidth().padding(bottom = 32.dp)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
             AlbumSheetHeader(album)
             HorizontalDivider(
                 modifier = Modifier.padding(horizontal = 20.dp),
@@ -166,17 +172,27 @@ internal fun ShelfAlbumSheet(
             }
             SheetOptionRow(
                 icon = Icons.Default.Album,
-                label = stringResource(R.string.home_album_open),
+                label = stringResource(R.string.home_album_view_album),
                 onClick = { onDismiss(); onOpenAlbum(album) },
             )
             SheetOptionRow(
                 icon = Icons.Default.Person,
-                label = stringResource(R.string.home_album_go_to_artist),
+                label = stringResource(R.string.home_album_view_artist),
                 onClick = { onDismiss(); onGoToArtist(album) },
             )
         }
     }
 }
+
+/**
+ * A shelf sheet's state: it opens fully expanded, as the app's other row sheets do (Now Playing's options, the queue,
+ * Settings' choices). Material's default stops halfway up the screen first when the content is taller than half of it,
+ * which left the album sheet's last rows below the screen's edge, under the navigation bar, until dragged up (Pixel 5,
+ * six rows). Fully open, the sheet's own window insets keep its last row above the navigation bar.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun sheetOpensFully() = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
 /** The album's cover, title and artist, laid out as the song sheet's header (`TrackOptionsSheet`). */
 @Composable
