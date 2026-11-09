@@ -261,7 +261,7 @@ jobs:
       (github.ref != 'refs/heads/master' && contains(github.event.head_commit.message, '[do test]'))
     name: Build release APK (R8)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Check out repository
@@ -284,8 +284,10 @@ jobs:
       - name: Install NDK and CMake
         run: echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" "cmake;3.22.1" > /dev/null
 
+      # A 6 GB Gradle heap, as release.yml uses: building from cold on the runner with gradle.properties' 4 GB, R8
+      # ran for over 20 minutes without finishing. The runner has 16 GB.
       - name: Assemble release APK
-        run: ./gradlew :app:assembleRelease --no-daemon
+        run: ./gradlew :app:assembleRelease --no-daemon "-Dorg.gradle.jvmargs=-Xmx6g -XX:+UseParallelGC -Dfile.encoding=UTF-8"
 
       - name: Report APK size
         run: |

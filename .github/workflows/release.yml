@@ -124,7 +124,9 @@ jobs:
           DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
           ONEDRIVE_CLIENT_ID: ${{ secrets.ONEDRIVE_CLIENT_ID }}
           GOOGLE_DRIVE_ENABLED: ${{ secrets.GOOGLE_DRIVE_ENABLED }}
-        run: ./gradlew :app:assembleRelease --no-daemon
+        # A 6 GB Gradle heap for R8: building from cold on the runner with gradle.properties' 4 GB, R8 ran for over
+        # 20 minutes without finishing (tests.yml builds the same way on every PR). The runner has 16 GB.
+        run: ./gradlew :app:assembleRelease --no-daemon "-Dorg.gradle.jvmargs=-Xmx6g -XX:+UseParallelGC -Dfile.encoding=UTF-8"
 
       - name: Locate release APK
         id: find_apk
