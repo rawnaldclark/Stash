@@ -88,6 +88,41 @@ class MixerSelectionTest {
         assertThat(d.bitPerfectMiss).isEqualTo(BitPerfectMiss.NOT_OFFERED)
     }
 
+    @Test fun `tuning with bit-perfect chosen falls back to matched, at the song's own rate, saying why`() {
+        val d = MixerSelection.choose(dac, HiResOutputMode.BIT_PERFECT, 96_000, 2, 1f, tuned = true) as Configure
+        assertThat(d.bitPerfect).isFalse()
+        assertThat(d.option.sampleRate).isEqualTo(96_000)
+        assertThat(d.trackFormat).isEqualTo(SampleFormat.FLOAT)
+        assertThat(d.bitPerfectMiss).isEqualTo(BitPerfectMiss.TUNING)
+        assertThat(OutputPlan(d, d.trackFormat, null, Any()).mixerPath).isEqualTo(MixerPath.MATCHED)
+    }
+
+    @Test fun `standard tuning leaves bit-perfect alone`() {
+        val d = MixerSelection.choose(dac, HiResOutputMode.BIT_PERFECT, 96_000, 2, 1f, tuned = false) as Configure
+        assertThat(d.bitPerfect).isTrue()
+        assertThat(d.bitPerfectMiss).isNull()
+    }
+
+    @Test fun `tuning is named over speed and over a Listen Together session`() {
+        val sped = MixerSelection.choose(dac, HiResOutputMode.BIT_PERFECT, 48_000, 2, 1.25f, tuned = true) as Configure
+        assertThat(sped.bitPerfectMiss).isEqualTo(BitPerfectMiss.TUNING)
+        val held = MixerSelection.choose(dac, HiResOutputMode.BIT_PERFECT, 48_000, 2, 1f, bitPerfectHeld = true, tuned = true) as Configure
+        assertThat(held.bitPerfectMiss).isEqualTo(BitPerfectMiss.TUNING)
+    }
+
+    @Test fun `a DAC with no bit-perfect mode still says that first when tuned`() {
+        val noBp = dac.filterNot { it.bitPerfect }
+        val d = MixerSelection.choose(noBp, HiResOutputMode.BIT_PERFECT, 96_000, 2, 1f, tuned = true) as Configure
+        assertThat(d.bitPerfectMiss).isEqualTo(BitPerfectMiss.NOT_OFFERED)
+    }
+
+    @Test fun `tuning changes nothing in Match or Standard mode`() {
+        assertThat(MixerSelection.choose(dac, HiResOutputMode.MATCH_RATE, 96_000, 2, 1f, tuned = true))
+            .isEqualTo(MixerSelection.choose(dac, HiResOutputMode.MATCH_RATE, 96_000, 2, 1f))
+        assertThat(MixerSelection.choose(dac, HiResOutputMode.STANDARD, 96_000, 2, 1f, tuned = true))
+            .isEqualTo(Shared(Reason.MODE_STANDARD))
+    }
+
     @Test fun `the hold changes nothing in Match mode`() {
         val held = MixerSelection.choose(dac, HiResOutputMode.MATCH_RATE, 96_000, 2, 1f, bitPerfectHeld = true)
         assertThat(held).isEqualTo(MixerSelection.choose(dac, HiResOutputMode.MATCH_RATE, 96_000, 2, 1f))

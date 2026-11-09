@@ -88,6 +88,7 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var eqController: EqController
     @Inject lateinit var loudnessController: LoudnessController
     @Inject lateinit var hiResOutputController: com.stash.core.media.output.HiResOutputController
+    @Inject lateinit var tuningController: com.stash.core.media.tuning.TuningController
     @Inject lateinit var trackDao: TrackDao
     @Inject lateinit var streamingPreference: com.stash.core.data.prefs.StreamingPreference
 
@@ -1497,7 +1498,7 @@ class StashPlaybackService : MediaLibraryService() {
             )
             .build()
         val renderersFactory = StashRenderersFactory(
-            this, eqController, loudnessController, hiResOutputController, mainPlayback = true,
+            this, eqController, loudnessController, hiResOutputController, tuningController, mainPlayback = true,
         )
         val player = ExoPlayer.Builder(this)
             .setRenderersFactory(renderersFactory)

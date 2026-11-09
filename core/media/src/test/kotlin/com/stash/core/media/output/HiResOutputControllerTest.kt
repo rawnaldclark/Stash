@@ -5,6 +5,10 @@ import android.media.AudioManager
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.prefs.HiResOutputMode
 import com.stash.core.data.prefs.HiResOutputPreference
+import com.stash.core.data.prefs.TuningPreference
+import com.stash.core.media.equalizer.dsp.PitchStage
+import com.stash.core.media.tuning.TuningController
+import com.stash.core.media.tuning.TuningEngine
 import com.stash.core.media.equalizer.EqController
 import com.stash.core.media.equalizer.EqState
 import com.stash.core.media.equalizer.LoudnessController
@@ -51,11 +55,23 @@ class HiResOutputControllerTest {
     }
     private val eq = mockk<EqController> { every { state } returns MutableStateFlow(EqState()) }
     private val loudness = mockk<LoudnessController> { every { state } returns MutableStateFlow(LoudnessState()) }
+    private val tuningPreference = object : TuningPreference {
+        override val referenceHz = MutableStateFlow(440f)
+        override suspend fun setReferenceHz(hz: Float) {
+            referenceHz.value = hz
+        }
+    }
+    private val engine = object : TuningEngine {
+        override val available = true
+        override fun newStage(sampleRate: Int, channels: Int): PitchStage? = null
+    }
+    private lateinit var tuning: TuningController
     private lateinit var controller: HiResOutputController
 
     @Before fun setUp() {
         Dispatchers.setMain(dispatcher)
-        controller = HiResOutputController(context, preference, eq, loudness)
+        tuning = TuningController(tuningPreference, engine)
+        controller = HiResOutputController(context, preference, eq, loudness, tuning)
     }
 
     @After fun tearDown() {
@@ -83,6 +99,19 @@ class HiResOutputControllerTest {
         platformAttributes = mockk(relaxed = true),
         bufferTier = 1,
     )
+
+    @Test fun `the signal path says when the music is retuned`() = runTest(dispatcher) {
+        runCurrent()
+        val song = stream(mainPlayback = true, plan = sharedPlan())
+        song.play()
+        runCurrent()
+        assertThat(controller.signalPath.value!!.stages.first { it.title == "Stash" }.detail).startsWith("Untouched")
+
+        tuningPreference.referenceHz.value = 432f
+        runCurrent()
+        assertThat(controller.signalPath.value!!.stages.first { it.title == "Stash" }.detail)
+            .startsWith("Retuned to A = 432 Hz")
+    }
 
     @Test fun `a preview is planned on the shared mixer whatever the mode`() = runTest(dispatcher) {
         runCurrent() // the stored mode (Bit-perfect) arrives

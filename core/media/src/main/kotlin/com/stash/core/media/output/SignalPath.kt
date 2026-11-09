@@ -1,6 +1,7 @@
 package com.stash.core.media.output
 
 import com.stash.core.data.prefs.HiResOutputMode
+import com.stash.core.model.TuningMath
 
 /** Where the audio physically goes, as far as the signal path cares. */
 enum class OutputDeviceKind { USB, BLUETOOTH, WIRED, SPEAKER, OTHER }
@@ -95,7 +96,16 @@ object SignalPathExplainer {
     /** Title of the first stage: the file or stream the decoder reads. */
     const val SOURCE_TITLE = "Source"
 
-    fun explain(source: SourceFormat?, output: OutputPathState?, dspActive: Boolean): SignalVerdict? {
+    /**
+     * @param dspActive the EQ or normalization is shaping the sound.
+     * @param tuningHz the reference playback is retuned to, or null at standard (440 Hz).
+     */
+    fun explain(
+        source: SourceFormat?,
+        output: OutputPathState?,
+        dspActive: Boolean,
+        tuningHz: Float? = null,
+    ): SignalVerdict? {
         if (output == null) return null
         val stages = ArrayList<SignalStage>(5)
         val srcRate = source?.sampleRate?.takeIf { it > 0 } ?: output.sampleRate
@@ -111,13 +121,18 @@ object SignalPathExplainer {
         }
 
         // 2. Decoder → output stage
-        val dspInPath = dspActive && output.mixer != MixerPath.BIT_PERFECT
+        val bitPerfect = output.mixer == MixerPath.BIT_PERFECT
+        val eqInPath = dspActive && !bitPerfect
+        val retuned = tuningHz != null && TuningMath.isRetuned(tuningHz) && !bitPerfect
+        val dspInPath = eqInPath || retuned
+        val float = SampleFormat.FLOAT.label
         stages += SignalStage(
             title = "Stash",
             detail = when {
-                output.mixer == MixerPath.BIT_PERFECT ->
-                    "Untouched · EQ and normalization bypassed for bit-perfect"
-                dspInPath -> "EQ / normalization in ${SampleFormat.FLOAT.label} (no truncation)"
+                bitPerfect -> "Untouched · EQ and normalization bypassed for bit-perfect"
+                retuned && eqInPath -> "${retunedTo(tuningHz!!)} · EQ / normalization in $float (no truncation)"
+                retuned -> "${retunedTo(tuningHz!!)} in $float (no truncation)"
+                eqInPath -> "EQ / normalization in $float (no truncation)"
                 else -> "Untouched · decoded to ${output.decodedFormat.label}"
             },
             ok = !dspInPath,
@@ -180,7 +195,11 @@ object SignalPathExplainer {
         val headline = when (quality) {
             SignalQuality.BIT_PERFECT -> "Bit-perfect"
             SignalQuality.LOSSLESS -> if (hiRes) "Hi-Res, not resampled" else "Lossless, not resampled"
-            SignalQuality.ENHANCED -> "Lossless + your EQ"
+            SignalQuality.ENHANCED -> when {
+                retuned && eqInPath -> "Lossless + retuned + your EQ"
+                retuned -> "Lossless + retuned to A = ${TuningMath.number(tuningHz!!)} Hz"
+                else -> "Lossless + your EQ"
+            }
             SignalQuality.RESAMPLED -> "Resampled to ${khz(output.mixerSampleRate ?: 0)} by Android"
             SignalQuality.LOSSY -> "Lossy source"
         }
@@ -206,8 +225,12 @@ object SignalPathExplainer {
     private fun missNote(miss: BitPerfectMiss): String = when (miss) {
         BitPerfectMiss.NOT_OFFERED -> "bit-perfect not offered at this rate"
         BitPerfectMiss.SPEED -> "bit-perfect needs 1x speed"
+        BitPerfectMiss.TUNING -> "bit-perfect needs standard tuning"
         BitPerfectMiss.LISTEN_TOGETHER -> "bit-perfect is off during Listen Together"
     }
+
+    /** "Retuned to A = 432 Hz". */
+    private fun retunedTo(hz: Float): String = "Retuned to A = ${TuningMath.number(hz)} Hz"
 
     private fun sharedHint(o: OutputPathState): String = when (o.sharedReason) {
         MixerDecision.Reason.RATE_UNSUPPORTED_BY_DAC -> " (your DAC doesn't offer ${khz(o.sampleRate)})"

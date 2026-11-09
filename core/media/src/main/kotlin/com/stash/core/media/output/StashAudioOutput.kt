@@ -4,6 +4,7 @@ import android.media.AudioRouting
 import android.media.AudioTrack
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.util.UnstableApi
@@ -14,6 +15,7 @@ import com.stash.core.media.equalizer.dsp.FloatDspChain
 import com.stash.core.media.equalizer.dsp.GainRamp
 import com.stash.core.media.output.HiResOutputController.Companion.toOutputDevice
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 /**
  * Stash's own output stage: the last thing the audio passes through before
@@ -22,7 +24,7 @@ import java.nio.ByteBuffer
  * Media3's `DefaultAudioSink` hands us the decoded audio — float for almost
  * everything, since float output is on — and this stage:
  *
- * 1. runs Stash's EQ / bass / loudness / limiter on it in float
+ * 1. runs Stash's Tuning / EQ / bass / loudness / limiter on it in float
  *    ([FloatDspChain]), only while a stage is actually doing something;
  * 2. converts to whatever the AudioTrack was opened with: float for the
  *    shared or rate-matched mixer, the DAC's exact integer format for
@@ -32,13 +34,24 @@ import java.nio.ByteBuffer
  *    none there), so a duck or a sleep-timer fade still works and unity volume
  *    stays bit-perfect.
  *
- * With nothing to do (the default: EQ off, normalization unmeasured, float in
- * and out) the buffer goes straight to the AudioTrack, untouched and uncopied.
+ * With nothing to do (the default: EQ off, normalization unmeasured, Tuning at
+ * 440 Hz, float in and out) the buffer goes straight to the AudioTrack,
+ * untouched and uncopied.
  *
- * Frame accounting is exact (see [ConvertingWriter]); no stage adds latency,
- * so position, gapless trimming and end-of-stream behave as without us. The
- * only delay is the AudioTrack's own buffer, kept at Media3's 1x size up to 2x
- * speed ([TrackBufferSizing]).
+ * Frame accounting is exact (see [ConvertingWriter]). Only Tuning adds latency
+ * (its pitch stage delays the audio by ~100 ms, frames still 1:1), and only
+ * while it is in the path, so this stage owns the consequences:
+ * - [getPositionUs] reports what is being heard, not what was written, so
+ *   lyrics and Listen Together's drift measurement stay in time;
+ * - [stop] (end of stream) feeds the stage that much silence so the last
+ *   ~100 ms of the song reach the AudioTrack (DefaultAudioSink waits until
+ *   the position reaches what it wrote: without the tail the queue's last
+ *   song would never end);
+ * - Tuning switched on or off mid-stream rebuilds the stream at its current
+ *   position ([requestReplan]), since its delay can't change without a jump.
+ * Otherwise position, gapless and end-of-stream behave as without us. The
+ * AudioTrack's own buffer is kept at Media3's 1x size up to 2x speed
+ * ([TrackBufferSizing]).
  */
 @OptIn(UnstableApi::class)
 class StashAudioOutput(
@@ -66,6 +79,16 @@ class StashAudioOutput(
     private val volume = GainRamp().apply { configure(streamSampleRate) }
     private var playerVolume = 1f
     private var framesWritten = 0L
+    private var lastPresentationTimeUs = 0L
+
+    /**
+     * Silence still to be pushed through Tuning's stage at end of stream, carrying out the
+     * song's last frames; null otherwise. See [stop].
+     */
+    private var tail: ByteBuffer? = null
+
+    /** [stop] came for this stream (end of stream); only a flush starts it again. */
+    private var stopping = false
 
     @Volatile private var replanRequested = false
 
@@ -78,11 +101,19 @@ class StashAudioOutput(
 
     init {
         dsp.configure(streamSampleRate, channelCount)
+        dsp.engageTuning(tuningWantedHere())
         controller.register(this)
         Looper.myLooper()?.let { audioTrack?.addOnRoutingChangedListener(routingListener, Handler(it)) }
     }
 
     private val bitPerfect: Boolean get() = plan.bitPerfect
+
+    /** Tuning belongs in this stream: wanted, and not bit-perfect (whose plan never has it). */
+    private fun tuningWantedHere(): Boolean = !bitPerfect && dsp.tuningWanted()
+
+    /** How far behind what was written the listener is, from Tuning's stage (0 without it). */
+    private val latencyUs: Long
+        get() = dsp.latencyFrames.let { if (it == 0) 0L else it * 1_000_000L / streamSampleRate }
 
     /**
      * Asks for this stream to be rebuilt with a fresh plan (route or mode
@@ -112,6 +143,13 @@ class StashAudioOutput(
     }
 
     override fun write(buffer: ByteBuffer, encodedAccessUnitCount: Int, presentationTimeUs: Long): Boolean {
+        lastPresentationTimeUs = presentationTimeUs
+        // Tuning switched on or off under this stream. Before its first frame (or after a
+        // flush) the stage just steps in or out; mid-stream its delay would skip or repeat a
+        // moment, so the stream is rebuilt at its position instead, like a route change.
+        if (dsp.tuningEngaged != tuningWantedHere()) {
+            if (framesWritten == 0L) dsp.engageTuning(!dsp.tuningEngaged) else replanRequested = true
+        }
         // DefaultAudioSink only treats the error as recoverable once audio has
         // been written; before that it would be fatal, so wait one buffer.
         if (replanRequested && framesWritten > 0) {
@@ -153,6 +191,8 @@ class StashAudioOutput(
         // flush: a replan thrown before any new audio is written after a seek
         // would reach it as NON-recoverable and stop playback.
         framesWritten = 0
+        tail = null
+        stopping = false
         writer.flush()
         dsp.reset()
         volume.snapTo(playerVolume)
@@ -184,11 +224,68 @@ class StashAudioOutput(
         }
     }
 
+    /**
+     * The listener's position: the AudioTrack's, less Tuning's delay while its stage is in the
+     * path. DefaultAudioSink uses this for the playback position (lyrics, seeking, Listen
+     * Together's drift) and for "has everything played", so it must be the audible one.
+     *
+     * At end of stream it also feeds the AudioTrack the rest of the tail as room frees up
+     * ([stop]); the sink polls this until the position reaches what it wrote.
+     */
+    override fun getPositionUs(): Long {
+        if (tail != null && pushTail()) super.stop()
+        val position = super.getPositionUs()
+        val lag = latencyUs
+        return if (lag == 0L || position <= 0L) position else maxOf(0L, position - lag)
+    }
+
+    /**
+     * End of stream: with Tuning in the path, the song's last ~100 ms are still inside its stage.
+     * Feed it as much silence as its delay, through the same writer, so they reach the AudioTrack
+     * and the written and played frame counts meet; only then stop the AudioTrack (which plays out
+     * what it holds). What the AudioTrack has no room for yet goes in from [getPositionUs], which
+     * the sink keeps polling. Without Tuning this is the plain stop.
+     */
+    override fun stop() {
+        if (stopping) return
+        stopping = true
+        val lag = dsp.latencyFrames
+        if (lag > 0 && !bitPerfect) {
+            tail = ByteBuffer.allocateDirect(lag * inFrameSize).order(ByteOrder.nativeOrder())
+            if (!pushTail()) return
+        }
+        super.stop()
+    }
+
+    /** Writes what the AudioTrack takes of [tail]; true once all of it is in. */
+    private fun pushTail(): Boolean {
+        val t = tail ?: return true
+        val done = try {
+            writer.write(
+                t,
+                process = { samples, frames -> dsp.process(samples, frames) },
+                sink = { out -> inner.write(out, 1, lastPresentationTimeUs) },
+            )
+        } catch (e: Exception) {
+            // The AudioTrack is gone (or refused the write): nothing more can be played from it.
+            Log.w(TAG, "tuning tail not written: ${e.javaClass.simpleName}")
+            true
+        }
+        if (done) tail = null
+        return done
+    }
+
     override fun release() {
         playing = false
+        tail = null
         audioTrack?.removeOnRoutingChangedListener(routingListener)
         controller.unregister(this)
         super.release()
+        dsp.release()
+    }
+
+    private companion object {
+        const val TAG = "StashAudioOutput"
     }
 
     /** What this stream looks like right now, for the signal path. */

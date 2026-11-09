@@ -18,6 +18,8 @@ import com.stash.core.data.prefs.HiResOutputPreference
 import com.stash.core.media.equalizer.EqController
 import com.stash.core.media.equalizer.LoudnessController
 import com.stash.core.media.equalizer.dsp.dspActivation
+import com.stash.core.media.tuning.TuningController
+import com.stash.core.model.TuningMath
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArraySet
@@ -32,6 +34,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -153,6 +157,7 @@ class HiResOutputController @Inject constructor(
     preference: HiResOutputPreference,
     eqController: EqController,
     loudnessController: LoudnessController,
+    private val tuning: TuningController,
 ) {
     private val audioManager: AudioManager = context.getSystemService(AudioManager::class.java)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -183,8 +188,9 @@ class HiResOutputController @Inject constructor(
 
     /** The listener-facing explanation of [output], ready for the signal-path sheet. */
     val signalPath: StateFlow<SignalVerdict?> =
-        combine(source, output, dspActive) { s, o, d -> SignalPathExplainer.explain(s, o, d) }
-            .stateIn(scope, SharingStarted.Eagerly, null)
+        combine(source, output, dspActive, tuning.effectiveHz) { s, o, d, hz ->
+            SignalPathExplainer.explain(s, o, d, tuningHz = hz.takeIf { TuningMath.isRetuned(it) })
+        }.stateIn(scope, SharingStarted.Eagerly, null)
 
     /** Listen Together holds bit-perfect off for its session; see [setBitPerfectHeld]. */
     @Volatile private var bitPerfectHeld = false
@@ -212,6 +218,12 @@ class HiResOutputController @Inject constructor(
 
     init {
         scope.launch { preference.mode.collect(::onModeChanged) }
+        // Tuning on or off changes what a bit-perfect request can get. (The streams themselves
+        // notice the change on their next write and rebuild; see StashAudioOutput.)
+        scope.launch {
+            tuning.effectiveHz.map { TuningMath.isRetuned(it) }.distinctUntilChanged().drop(1)
+                .collect { onTuningChanged() }
+        }
         audioManager.registerAudioDeviceCallback(
             object : AudioDeviceCallback() {
                 override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
@@ -250,7 +262,7 @@ class HiResOutputController @Inject constructor(
         if (attributes.usage != AudioAttributes.USAGE_MEDIA) return shared(MixerDecision.Reason.NOT_MEDIA_USAGE)
         if (device == null || !device.isUsb()) return shared(MixerDecision.Reason.NOT_USB)
         return refusals.screen(
-            MixerApi34.plan(audioManager, device, m, sampleRate, channelCount, session.speed, bitPerfectHeld),
+            MixerApi34.plan(audioManager, device, m, sampleRate, channelCount, session.speed, bitPerfectHeld, tuning.isRetuned()),
         )
     }
 
@@ -337,6 +349,12 @@ class HiResOutputController @Inject constructor(
         bitPerfectHeld = held
         // Logged at the wiring site: unit tests prove the planning, not that the service calls this.
         Log.i(TAG, if (held) "bit-perfect held off for Listen Together" else "bit-perfect hold released")
+        recheckLiveOutputs()
+    }
+
+    /** Tuning came on or went off: a bit-perfect stream must step down to matched, or back up. */
+    fun onTuningChanged() {
+        Log.i(TAG, if (tuning.isRetuned()) "tuning on: bit-perfect steps aside" else "tuning off")
         recheckLiveOutputs()
     }
 
@@ -496,6 +514,7 @@ private object MixerApi34 {
         channelCount: Int,
         speed: Float,
         bitPerfectHeld: Boolean,
+        tuned: Boolean,
     ): OutputPlan {
         val platform: List<AudioMixerAttributes> =
             runCatching { audioManager.getSupportedMixerAttributes(device) }.getOrDefault(emptyList())
@@ -515,7 +534,7 @@ private object MixerApi34 {
                 index = i,
             )
         }
-        return when (val d = MixerSelection.choose(options, mode, sampleRate, channelCount, speed, bitPerfectHeld)) {
+        return when (val d = MixerSelection.choose(options, mode, sampleRate, channelCount, speed, bitPerfectHeld, tuned)) {
             is MixerDecision.Configure -> OutputPlan(d, d.trackFormat, device, platform[d.option.index])
             is MixerDecision.Shared -> OutputPlan(d, SampleFormat.FLOAT, device, null)
         }
