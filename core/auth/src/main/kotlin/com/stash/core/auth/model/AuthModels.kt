@@ -112,23 +112,6 @@ sealed class AuthState {
 }
 
 /**
- * State for the OAuth 2.0 Device Authorization Grant flow (used by YouTube Music on TV / limited-input devices).
- *
- * @property deviceCode  Server-issued device code exchanged for tokens after user approval.
- * @property userCode    Short code displayed to the user for entry at [verificationUrl].
- * @property verificationUrl URL the user must visit to approve the device.
- * @property expiresAtEpoch  Absolute expiration time (epoch seconds) after which the codes are invalid.
- * @property intervalSeconds Minimum polling interval (seconds) when checking for user approval.
- */
-data class DeviceCodeState(
-    val deviceCode: String,
-    val userCode: String,
-    val verificationUrl: String,
-    val expiresAtEpoch: Long,
-    val intervalSeconds: Int,
-)
-
-/**
  * Which profile of the signed-in Google account YouTube Music requests act as (#664). A Google
  * account can own Brand Account profiles, each its own library; [pageId] is a brand profile's
  * 21-digit id (null = the account's own profile) and [authUser] the index of the Google account in

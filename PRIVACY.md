@@ -30,7 +30,6 @@ Stash has no account server, but it isn't a two-service app either. Everything t
 - **YouTube + YouTube Music** (`music.youtube.com`, `www.youtube.com`, and Google's OAuth endpoints if you use the Google sign-in) — library sync, search, artist and album pages, artist photos, and the audio itself via yt-dlp. Two optional features, both off by default, also write to your account: mirroring your likes, and sending your plays to your YouTube Music history. Each play is reported to the tracking address that comes back in YouTube's player response.
 - **`m.youtube.com`** — the YouTube sign-in window
 - **`*.googlevideo.com`** — YouTube's audio CDN; the URL comes back in the player response, so no hostname for it ships in the app
-- **Google OAuth** (`oauth2.googleapis.com`) — only if you use the YouTube device-code sign-in
 - **What the sign-in windows load** — the Spotify, YouTube and Discord sign-in windows show those services' own web pages, and the pages load what they need from other hosts, such as Spotify's `accounts.scdn.co`, Google reCAPTCHA (`www.google.com`, `www.gstatic.com`), Google's sign-in pages, and Discord's image CDN and CAPTCHA. Stash itself never calls those hosts; the pages do.
 - **GitHub** (`api.github.com`) — the update checks, for Stash itself and for yt-dlp's nightly builds, at every cold start and daily
 - **GitHub release downloads** (`github.com`, `release-assets.githubusercontent.com`) — a newer yt-dlp nightly build when there is one, and a helper script yt-dlp needs for YouTube playback, whether or not you use streaming
