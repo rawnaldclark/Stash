@@ -38,7 +38,7 @@ class YourStashViewModel @Inject constructor(
     /** The supporter row as Lossless sources shows it; null before the first read. */
     val supporter: StateFlow<SupporterRow?> = combine(
         quota.state,
-        combine(config.relays, config.tidalRelay) { relays, tidal -> relays.isNotEmpty() || tidal != null },
+        config.tidalRelay.map { it != null },
         supporter.token,
     ) { allowance, relayConfigured, token ->
         supporterRow(allowance, relayConfigured, token != null)

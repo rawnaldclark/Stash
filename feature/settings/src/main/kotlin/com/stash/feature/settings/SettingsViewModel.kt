@@ -52,7 +52,6 @@ import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
 import com.stash.data.download.lossless.qbdlx.QobuzAccountConnector
 import com.stash.data.download.lossless.qbdlx.QobuzLoginResult
 import com.stash.data.download.lossless.qobuz.QobuzSource
-import com.stash.data.download.lossless.relay.LosslessRelayClient
 import com.stash.data.download.prefs.StreamingQualityPreferences
 import com.stash.feature.settings.components.squidCaptchaStatus
 import com.stash.core.data.repository.MusicRepository
@@ -142,7 +141,6 @@ class SettingsViewModel @Inject constructor(
     private val listenBrainzApiClient: com.stash.core.data.listenbrainz.ListenBrainzApiClient,
     private val listenSinkCoordinator: com.stash.core.data.listen.ListenSinkCoordinator,
     private val listenSubmissionDao: com.stash.core.data.db.dao.ListenSubmissionDao,
-    private val relayClient: LosslessRelayClient,
     /**
      * Issue #255 — Last.fm-as-a-source lifecycle. Connect/disconnect
      * reconcile the "Recommended by Last.fm" recipe so the Sync-tab
@@ -510,52 +508,6 @@ class SettingsViewModel @Inject constructor(
         losslessAvailability.routingRows
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    // -- Custom lossless endpoint --------------------------------------------
-
-    /** Result of the manual "Test" — reachability only, never health. */
-    enum class EndpointTestState { IDLE, TESTING, REACHABLE, UNREACHABLE }
-
-    private val _customEndpointTest = MutableStateFlow(EndpointTestState.IDLE)
-    val customEndpointTest: StateFlow<EndpointTestState> = _customEndpointTest
-
-    /** "Must be an https:// URL" while the last commit was rejected, else null. */
-    private val _customEndpointError = MutableStateFlow<String?>(null)
-    val customEndpointError: StateFlow<String?> = _customEndpointError
-
-    /**
-     * The user's own relay base, normalised, or null. `QbdlxFileUrlRouter` puts it
-     * ahead of every relay from runtime config, so this field is the whole feature.
-     */
-    val customEndpoint: StateFlow<String?> =
-        losslessPrefs.customLosslessEndpoint
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-
-    /**
-     * Commits the field on IME Done / focus loss (the screen never calls this per
-     * keystroke — `https://re` must never be persisted as a base). Blank means
-     * "clear it", which is a valid instruction and not an error; anything else
-     * that [LosslessSourcePreferences.normaliseEndpoint] rejects is.
-     */
-    fun onCustomEndpointCommitted(raw: String) {
-        val trimmed = raw.trim()
-        val normalised = LosslessSourcePreferences.normaliseEndpoint(trimmed)
-        if (trimmed.isNotEmpty() && normalised == null) {
-            _customEndpointError.value = "Must be an https:// URL"
-            return
-        }
-        _customEndpointError.value = null
-        // A commit invalidates the last test result — it described the old base.
-        // This lives here and NOT in an `onEach` on [customEndpoint]: that operator
-        // runs inside the WhileSubscribed(5_000) share, so leaving Settings for more
-        // than five seconds and coming back silently wiped a "Reachable" the user
-        // had just earned, with nothing having changed.
-        _customEndpointTest.value = EndpointTestState.IDLE
-        viewModelScope.launch { losslessPrefs.setCustomLosslessEndpoint(normalised) }
-    }
-
-    /** Typing clears the rejection — it described text that is no longer in the field. */
-    fun onCustomEndpointEdited() { _customEndpointError.value = null }
-
     // -- Tidal via a self-hosted BitChord server ------------------------------
 
     /** The user's BitChord base (normalised), or null = the Tidal rung is off. */
@@ -580,7 +532,12 @@ class SettingsViewModel @Inject constructor(
     private val _bitchordEndpointError = MutableStateFlow<String?>(null)
     val bitchordEndpointError: StateFlow<String?> = _bitchordEndpointError
 
-    /** Commit-on-Done, same rules as [onCustomEndpointCommitted]; blank clears it. */
+    /**
+     * Commits the field on IME Done / focus loss (the screen never calls this per
+     * keystroke — `https://re` must never be persisted as a base). Blank means
+     * "clear it", which is a valid instruction and not an error; anything else
+     * that [LosslessSourcePreferences.normaliseEndpoint] rejects is.
+     */
     fun onBitchordEndpointCommitted(raw: String) {
         val trimmed = raw.trim()
         val normalised = LosslessSourcePreferences.normaliseEndpoint(trimmed)
@@ -597,30 +554,6 @@ class SettingsViewModel @Inject constructor(
     /** Blank clears the stored token. */
     fun onBitchordTokenCommitted(raw: String) {
         viewModelScope.launch { losslessPrefs.setBitchordAccessToken(raw) }
-    }
-
-    /** The in-flight probe, so a second Test cannot be answered by the first. */
-    private var testJob: Job? = null
-
-    /** No endpoint set = nothing to test; the button is disabled for the same reason. */
-    fun onTestCustomEndpoint() {
-        val base = customEndpoint.value ?: return
-        // A probe runs up to 8s and the field stays editable throughout: without
-        // cancelling the previous one AND re-checking what is on screen, a probe of
-        // the OLD base returned and painted a green "Reachable" beside the new one —
-        // a measurement of a URL the user had already replaced.
-        testJob?.cancel()
-        _customEndpointTest.value = EndpointTestState.TESTING
-        testJob = viewModelScope.launch {
-            val reachable = relayClient.probe(base)
-            if (customEndpoint.value == base) {
-                _customEndpointTest.value = if (reachable) {
-                    EndpointTestState.REACHABLE
-                } else {
-                    EndpointTestState.UNREACHABLE
-                }
-            }
-        }
     }
 
     /**

@@ -230,7 +230,7 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var mirrorSignal: com.stash.core.data.weblink.mirror.LibraryChangeSignal
 
     /**
-     * The signed runtime relay list — the APK ships no relay hostname. Started
+     * The signed runtime config (Stash's Tidal relay) — the APK ships no relay hostname. Started
      * from [onCreate]: loads the cached config, then fetches and signature-checks
      * a fresh one immediately and every 6 h.
      */
@@ -790,7 +790,9 @@ class StashApplication : Application(), Configuration.Provider {
                 nowMs = System::currentTimeMillis,
                 maxAgeMs = LOSSLESS_CONFIG_MAX_AGE_UNDER_SAVER_MS,
                 loadCached = { losslessConfigFetcher.loadCached() },
-                hasCached = { losslessConfigFetcher.relays.value.isNotEmpty() },
+                // The cache is worth deferring on only when it carries the Tidal relay, the one
+                // thing the app reads from it.
+                hasCached = { losslessConfigFetcher.tidalRelay.value != null },
                 startRefreshing = { losslessConfigFetcher.start(applicationScope) },
             )
             if (start != com.stash.core.common.power.SaverDeferral.Start.SAVER_OFF_AT_START) {

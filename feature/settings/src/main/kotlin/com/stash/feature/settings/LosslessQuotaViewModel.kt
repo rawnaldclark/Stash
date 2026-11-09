@@ -14,6 +14,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 
@@ -39,7 +40,7 @@ class LosslessQuotaViewModel @Inject constructor(
     /** The line, or null when it should not show. */
     val line: StateFlow<String?> = combine(
         quota.state,
-        combine(config.relays, config.tidalRelay) { relays, tidal -> relays.isNotEmpty() || tidal != null },
+        config.tidalRelay.map { it != null },
         minuteTicks,
     ) { allowance, relayConfigured, _ ->
         // On the relays' clock, like the rungs: the line turns over when their day does.
