@@ -350,6 +350,12 @@ class HttpAddonClient @Inject constructor(
                 val element = reply.body?.let { runCatching { json.parseToJsonElement(it) }.getOrNull() }
                 if (reply.code !in 200..299) {
                     debug("$tag: HTTP ${reply.code}")
+                    // A first-party 401 that names the server's clock is a skewed signature, not a
+                    // wrong token: signed once more above; still refused, it fails this call only
+                    // (SPEC.md 7 `bad_request`), never the 1 h `unauthorized` pause.
+                    if (reply.code == 401 && signed && reply.serverTimeNamed) {
+                        return AddonResult.Failed(AddonFailure.Refused(ErrorCode.BAD_REQUEST, 401, null, null))
+                    }
                     return AddonResult.Failed(refusal(reply, element))
                 }
                 element ?: return AddonResult.Failed(AddonFailure.InvalidResponse("", "not JSON"))
@@ -409,6 +415,8 @@ class HttpAddonClient @Inject constructor(
         val serverTimeAdopted: Boolean,
         val body: String?,
         val tooLarge: Boolean,
+        /** The answer carries `X-Stash-Server-Time` (a first-party add-on's skew 401). */
+        val serverTimeNamed: Boolean = false,
     )
 
     /** Runs [request] with a call timeout of [timeoutMs]; cancelling the coroutine cancels the call. */
@@ -436,11 +444,12 @@ class HttpAddonClient @Inject constructor(
     /** [adoptServerTime]: only a signed request's 401 may move the signing clock; no other add-on gets to. */
     private fun readReply(r: Response, adoptServerTime: Boolean): Reply {
         val adopted = adoptServerTime && r.code == 401 && signer.adoptServerTime(r)
+        val named = r.code == 401 && r.header(SERVER_TIME_HEADER) != null
         if (r.code in 300..399) return Reply(r.code, r.header("Location"), null, false, null, false)
-        val source = r.body?.source() ?: return Reply(r.code, null, r.header("Retry-After"), adopted, null, false)
-        if (source.request(Limits.BODY_BYTES + 1)) return Reply(r.code, null, r.header("Retry-After"), adopted, null, true)
+        val source = r.body?.source() ?: return Reply(r.code, null, r.header("Retry-After"), adopted, null, false, named)
+        if (source.request(Limits.BODY_BYTES + 1)) return Reply(r.code, null, r.header("Retry-After"), adopted, null, true, named)
         val text = source.buffer.readUtf8()
-        return Reply(r.code, null, r.header("Retry-After"), adopted, text, false)
+        return Reply(r.code, null, r.header("Retry-After"), adopted, text, false, named)
     }
 
     // ---------------------------------------------------------------------------------------------- helpers
@@ -463,6 +472,9 @@ class HttpAddonClient @Inject constructor(
     companion object {
         private const val TAG = "HttpAddonClient"
         private const val MAX_REDIRECTS = 3
+
+        /** The first-party skew answer's header (SPEC.md 6, informative): the server's clock, epoch seconds. */
+        const val SERVER_TIME_HEADER = "X-Stash-Server-Time"
 
         /** What a first-party `/quota` is signed over (SPEC.md 6, informative). */
         const val QUOTA_PAYLOAD = "quota"

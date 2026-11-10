@@ -132,9 +132,13 @@ abstract class SyncDebugNetworkConfigTask : DefaultTask() {
     @TaskAction
     fun write() {
         val host = cleartextHost.get()
-        val domain = if (host.isEmpty()) "" else """
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">$host</domain>
+        // Plus SPEC.md 1.1's development hosts for add-ons: an add-on under `wrangler dev` on the
+        // PC, reached over `adb reverse` (add-ons phase 2 phone runs). Debug builds only.
+        val hosts = (listOf(host).filter { it.isNotEmpty() } + listOf("127.0.0.1", "localhost")).distinct()
+        val domain = """
+    <domain-config cleartextTrafficPermitted="true">""" +
+            hosts.joinToString("") { """
+        <domain includeSubdomains="false">$it</domain>""" } + """
     </domain-config>"""
         val dir = outputDir.get().asFile.resolve("xml").apply { mkdirs() }
         dir.resolve("network_security_config_debug.xml").writeText(

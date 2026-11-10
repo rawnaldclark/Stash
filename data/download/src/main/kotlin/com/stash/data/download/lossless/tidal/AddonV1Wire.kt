@@ -96,7 +96,8 @@ class AddonV1Wire @Inject constructor(
                     WireReply.Error(f.status)
                 }
                 ErrorCode.QUOTA_EXCEEDED -> if (owner) {
-                    quota.onQuotaExceeded(f.quota?.used, f.quota?.limit, f.quota?.resetsAt, unlimited = f.quota != null && f.quota.limit == null)
+                    val q = f.quota
+                    quota.onQuotaExceeded(q?.used, q?.limit, q?.resetsAt, unlimited = q != null && q.limit == null)
                     WireReply.Spent
                 } else {
                     WireReply.Busy(now + (retryMs?.coerceIn(TidalClient.MIN_RETRY_AFTER_MS, TidalClient.MAX_RETRY_AFTER_MS) ?: TidalClient.BUSY_BACKOFF_MS))
@@ -141,13 +142,14 @@ class AddonV1Wire @Inject constructor(
         internal fun StreamInfo.toWireStream(): TidalWireStream {
             val dash = manifest == Delivery.DASH
             val linkExpiry = url.toHttpUrlOrNull()?.queryParameter("exp") != null
+            val c = codec
             return TidalWireStream(
                 url = url,
-                codec = when (codec) {
+                codec = when (c) {
                     Codec.FLAC -> "flac"
                     Codec.AAC, Codec.HE_AAC -> "aac"
                     null -> if (tier.isLossless) "flac" else "aac"
-                    else -> codec.name.lowercase()
+                    else -> c.name.lowercase()
                 },
                 isDash = dash,
                 bitDepth = bitDepth ?: 0,

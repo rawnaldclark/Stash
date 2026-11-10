@@ -112,7 +112,8 @@ class SignedConfigDefaultAddons @Inject constructor(
 @Singleton
 class SignedConfigAddonTrust @Inject constructor(
     private val config: LosslessConfigFetcher,
-    private val defaults: SignedConfigDefaultAddons,
+    /** [SignedConfigDefaultAddons] in the app (bound in [AddonHostModule]). */
+    private val defaults: DefaultAddons,
 ) : AddonTrust {
     override fun isFirstParty(base: String): Boolean {
         val listed = defaults.entries.value.any { e ->
