@@ -16,9 +16,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.stash.core.data.sync.AuthExpiryState
+import com.stash.feature.sync.R
 
 /**
  * Amber banner mounted at the top of the Sync tab when either Spotify or
@@ -43,21 +45,21 @@ fun AuthExpiredBanner(
     val buttonText: String
     when {
         state.spotifyExpired && state.youtubeExpired -> {
-            headline = "Sign-ins expired"
-            body = "Both Spotify and YouTube need fresh sign-ins to resume sync."
-            buttonText = "Re-authenticate"
+            headline = stringResource(R.string.sync_auth_expired_both_headline)
+            body = stringResource(R.string.sync_auth_expired_both_body)
+            buttonText = stringResource(R.string.sync_auth_expired_both_btn)
         }
         state.spotifyExpired -> {
             // Only Spotify is expired \u2014 any other connected source still syncs,
             // so this is NOT a full pause. Copy reflects partial sync.
-            headline = "Spotify session expired"
-            body = "Re-authenticate to include your Spotify library in sync."
-            buttonText = "Re-authenticate Spotify"
+            headline = stringResource(R.string.sync_auth_expired_spotify_headline)
+            body = stringResource(R.string.sync_auth_expired_spotify_body)
+            buttonText = stringResource(R.string.sync_auth_expired_spotify_btn)
         }
         else -> {
-            headline = "YouTube session expired"
-            body = "Re-authenticate to include your YouTube library in sync."
-            buttonText = "Re-authenticate YouTube"
+            headline = stringResource(R.string.sync_auth_expired_youtube_headline)
+            body = stringResource(R.string.sync_auth_expired_youtube_body)
+            buttonText = stringResource(R.string.sync_auth_expired_youtube_btn)
         }
     }
 

@@ -31,10 +31,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.stash.core.ui.theme.StashTheme
+import com.stash.feature.sync.R
 
 /**
  * Gradient-tinted hero card carrying last-sync metadata + the Sync Now button.
@@ -94,17 +97,16 @@ fun SyncHeroCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "LAST SYNC",
+                        text = stringResource(R.string.sync_hero_last_sync),
                         style = MaterialTheme.typography.labelSmall,
                         color = StashTheme.extendedColors.purpleLight,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Spacer(Modifier.height(2.dp))
                     val body = when {
-                        lastSyncTrackCount == null -> "Never synced"
-                        lastSyncTrackCount == 0 -> "$lastSyncRelativeTime · no new songs"
-                        lastSyncTrackCount == 1 -> "$lastSyncRelativeTime · 1 new song"
-                        else -> "$lastSyncRelativeTime · $lastSyncTrackCount new songs"
+                        lastSyncTrackCount == null -> stringResource(R.string.sync_hero_never_synced)
+                        lastSyncTrackCount == 0 -> stringResource(R.string.sync_hero_no_new_songs, lastSyncRelativeTime)
+                        else -> pluralStringResource(R.plurals.sync_hero_new_songs, lastSyncTrackCount, lastSyncRelativeTime, lastSyncTrackCount)
                     }
                     Text(
                         text = body,
@@ -131,17 +133,16 @@ fun SyncHeroCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "DOWNLOAD",
+                        text = stringResource(R.string.sync_hero_download),
                         style = MaterialTheme.typography.labelSmall,
                         color = StashTheme.extendedColors.purpleLight,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        text = if (downloadOnline) {
-                            "Off — switched-on playlists stream instead"
-                        } else {
-                            "On — switched-on playlists and mixes save to this phone"
-                        },
+                        text = stringResource(
+                            if (downloadOnline) R.string.sync_hero_download_off
+                            else R.string.sync_hero_download_on
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -170,7 +171,10 @@ fun SyncHeroCard(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = if (downloadOnline) "Update Streaming Index" else "Download Tracks to Device",
+                        text = stringResource(
+                            if (downloadOnline) R.string.sync_hero_btn_stream
+                            else R.string.sync_hero_btn_download
+                        ),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,

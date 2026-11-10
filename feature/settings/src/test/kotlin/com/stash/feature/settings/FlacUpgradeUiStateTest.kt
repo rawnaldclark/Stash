@@ -1,5 +1,8 @@
 package com.stash.feature.settings
 
+import android.content.Context
+import android.content.res.Resources
+import androidx.test.core.app.ApplicationProvider
 import androidx.work.Data
 import androidx.work.WorkInfo
 import androidx.work.workDataOf
@@ -8,12 +11,22 @@ import com.stash.core.data.lossless.FlacSweepResult
 import com.stash.core.data.sync.workers.FlacUpgradeWorker
 import java.util.UUID
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * Library Health's "FLAC upgrades" card reads the batch worker's own state, so it tells
  * the truth after the screen was left, and a stopped run never reads as finished.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class FlacUpgradeUiStateTest {
+
+    /** The module's own strings: what the app shows, not a copy of it. */
+    private val res: Resources = ApplicationProvider.getApplicationContext<Context>().resources
+
+    private fun state(infos: List<WorkInfo>, tap: FlacSweepResult?) = flacUpgradeUiState(infos, tap, res)
 
     private fun work(state: WorkInfo.State, output: Data = Data.EMPTY) =
         WorkInfo(UUID.randomUUID(), state, emptySet(), output)
@@ -28,51 +41,51 @@ class FlacUpgradeUiStateTest {
     )
 
     @Test fun `nothing to say before any run`() {
-        assertThat(flacUpgradeUiState(emptyList(), null)).isEqualTo(FlacUpgradeUiState())
+        assertThat(state(emptyList(), null)).isEqualTo(FlacUpgradeUiState())
     }
 
     @Test fun `a running batch shows progress, a waiting one says it will carry on`() {
-        val running = flacUpgradeUiState(listOf(work(WorkInfo.State.RUNNING)), null)
+        val running = state(listOf(work(WorkInfo.State.RUNNING)), null)
         assertThat(running.active).isTrue()
         assertThat(running.message).isEqualTo("Checking for upgrades…")
 
         // A paced batch sits ENQUEUED between retries; it is still under way.
-        val waiting = flacUpgradeUiState(listOf(work(WorkInfo.State.ENQUEUED)), FlacSweepResult.Queued(40))
+        val waiting = state(listOf(work(WorkInfo.State.ENQUEUED)), FlacSweepResult.Queued(40))
         assertThat(waiting.active).isTrue()
         assertThat(waiting.message).startsWith("Waiting to run.")
     }
 
     @Test fun `a finished batch says what it did, from the worker's own counts`() {
-        val state = flacUpgradeUiState(listOf(finished(upgraded = 3, noMatch = 1, failed = 2)), null)
+        val st = state(listOf(finished(upgraded = 3, noMatch = 1, failed = 2)), null)
 
-        assertThat(state.active).isFalse()
-        assertThat(state.message).isEqualTo("Done: 3 tracks upgraded to FLAC.")
-        assertThat(state.detail).isEqualTo(
+        assertThat(st.active).isFalse()
+        assertThat(st.message).isEqualTo("Done: 3 tracks upgraded to FLAC.")
+        assertThat(st.detail).isEqualTo(
             "No lossless version yet for 1 track. They're checked again in two weeks.\n" +
                 "Couldn't check 2 tracks this time. They're tried again next run.",
         )
     }
 
     @Test fun `a batch that found nothing says so`() {
-        val state = flacUpgradeUiState(listOf(finished(upgraded = 0, noMatch = 0, failed = 0)), null)
+        val st = state(listOf(finished(upgraded = 0, noMatch = 0, failed = 0)), null)
 
-        assertThat(state.message).isEqualTo("Done: no new FLAC versions found.")
-        assertThat(state.detail).isNull()
+        assertThat(st.message).isEqualTo("Done: no new FLAC versions found.")
+        assertThat(st.detail).isNull()
     }
 
     @Test fun `a batch cancelled from its notification is not reported as finished`() {
-        val state = flacUpgradeUiState(listOf(work(WorkInfo.State.CANCELLED)), FlacSweepResult.Queued(40))
+        val st = state(listOf(work(WorkInfo.State.CANCELLED)), FlacSweepResult.Queued(40))
 
-        assertThat(state.message).isEqualTo("Stopped before it finished.")
+        assertThat(st.message).isEqualTo("Stopped before it finished.")
     }
 
     @Test fun `a tap that queued nothing says why`() {
-        assertThat(flacUpgradeUiState(emptyList(), FlacSweepResult.LosslessDisabled).message)
+        assertThat(state(emptyList(), FlacSweepResult.LosslessDisabled).message)
             .isEqualTo("Set Download quality to Lossless in Audio & Quality first.")
-        assertThat(flacUpgradeUiState(emptyList(), FlacSweepResult.StreamingMode).message)
+        assertThat(state(emptyList(), FlacSweepResult.StreamingMode).message)
             .isEqualTo("Stash is set to Online, so there are no downloads to upgrade.")
         // ... and is newer news than the last batch's result.
-        assertThat(flacUpgradeUiState(listOf(finished(3, 0, 0)), FlacSweepResult.NothingToUpgrade).message)
+        assertThat(state(listOf(finished(3, 0, 0)), FlacSweepResult.NothingToUpgrade).message)
             .startsWith("Nothing to upgrade.")
     }
 }

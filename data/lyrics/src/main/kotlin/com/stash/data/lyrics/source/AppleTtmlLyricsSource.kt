@@ -14,9 +14,7 @@ import okhttp3.Dns
 import org.json.JSONObject
 import org.json.JSONTokener
 import java.io.IOException
-import java.util.Locale
 import java.util.concurrent.TimeUnit
-import kotlin.math.abs
 
 /**
  * Word-synced lyrics: iTunes Search (title/artist -> Apple Music song id) then
@@ -48,10 +46,12 @@ class AppleTtmlLyricsSource(
     client: OkHttpClient,
     private val appVersionName: String,
     private val lyricsBaseUrl: String = DEFAULT_LYRICS_BASE_URL,
-    private val searchBaseUrl: String = DEFAULT_SEARCH_BASE_URL,
+    searchBaseUrl: String = DEFAULT_SEARCH_BASE_URL,
     private val clock: Clock = SystemClock(),
     /** [LyricsDns] in the app; tests pass [Dns.SYSTEM] so they never reach Cloudflare. */
     lyricsDns: Dns = LyricsDns(),
+    /** Shared with [SpicyLyricsSource], so a song is searched on iTunes once between them. Tests get their own, on [searchBaseUrl]. */
+    private val appleIds: AppleMusicIdResolver = AppleMusicIdResolver(client, appVersionName, searchBaseUrl, lyricsDns, clock),
 ) : LyricsSource {
 
     override val id = SOURCE_ID
@@ -104,34 +104,8 @@ class AppleTtmlLyricsSource(
         )
     }
 
-    private fun findSongId(query: LyricsQuery): String? {
-        val url = searchBaseUrl.toHttpUrl().newBuilder()
-            .addPathSegment("search")
-            .addQueryParameter("term", "${query.title} ${query.artist}")
-            .addQueryParameter("media", "music")
-            .addQueryParameter("entity", "song")
-            .addQueryParameter("limit", "10")
-            .build()
-        val body = get(url, query.interactive) ?: return null
-        val results = JSONObject(body).optJSONArray("results") ?: return null
-        val candidates = (0 until results.length()).mapNotNull { i ->
-            val o = results.optJSONObject(i) ?: return@mapNotNull null
-            val trackId = o.optLong("trackId", 0L).takeIf { it > 0 } ?: return@mapNotNull null
-            Candidate(
-                id = trackId.toString(),
-                title = o.optString("trackName"),
-                artist = o.optString("artistName"),
-                durationMs = o.optLong("trackTimeMillis", 0L),
-            )
-        }
-        Log.d(
-            TAG,
-            "iTunes search \"${query.title}\" - ${query.artist}: " +
-                candidates.joinToString { "${it.id}:${it.title}/${it.artist}(${it.durationMs}ms)" }
-                    .ifEmpty { "0 results" },
-        )
-        return pickBest(query, candidates)?.id
-    }
+    /** The iTunes lookup lives in [AppleMusicIdResolver]; a failed request still throws from here, as before. */
+    private fun findSongId(query: LyricsQuery): String? = appleIds.find(query)
 
     /**
      * `apple-music/cache/{id}`: 200 + raw TTML XML on a hit. A miss is HTTP 404 with a JSON body
@@ -258,38 +232,6 @@ class AppleTtmlLyricsSource(
             }
         }
         throw lastError!!
-    }
-
-    private data class Candidate(val id: String, val title: String, val artist: String, val durationMs: Long)
-
-    private fun normalize(s: String): String = s.lowercase(Locale.ROOT)
-        .replace(Regex("""\s*[(\[][^)\]]*[)\]]"""), "")
-        .replace(Regex("""\s+-\s+.*$"""), "")
-        .replace(Regex("""[^\p{L}\p{N}]+"""), " ")
-        .trim()
-
-    private fun pickBest(query: LyricsQuery, candidates: List<Candidate>): Candidate? {
-        val wantTitle = normalize(query.title)
-        val wantArtists = listOfNotNull(query.albumArtist, query.artist).map(::normalize).filter { it.isNotEmpty() }
-        val wantMs = query.durationMs ?: 0L
-        return candidates.mapNotNull { c ->
-            val t = normalize(c.title)
-            val titleScore = when {
-                t == wantTitle -> 3
-                t.contains(wantTitle) || wantTitle.contains(t) -> 1
-                else -> 0
-            }
-            if (titleScore == 0) return@mapNotNull null
-            val a = normalize(c.artist)
-            if (wantArtists.none { a.contains(it) || it.contains(a) }) return@mapNotNull null
-            var score = titleScore
-            if (wantMs > 0 && c.durationMs > 0) {
-                val diff = abs(wantMs - c.durationMs)
-                if (diff > 8_000) return@mapNotNull null
-                score += if (diff <= 3_000) 2 else 1
-            }
-            c to score
-        }.maxByOrNull { it.second }?.first
     }
 
     companion object {

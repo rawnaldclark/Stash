@@ -1,5 +1,8 @@
 package com.stash.feature.settings
 
+import android.content.Context
+import android.content.res.Resources
+import androidx.test.core.app.ApplicationProvider
 import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.model.UserInfo
 import com.stash.core.model.QualityTier
@@ -7,21 +10,36 @@ import com.stash.core.model.ThemeMode
 import com.stash.data.download.lossless.LosslessQualityTier
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * Tests for [settingsHubSummaries] — the pure derivation of the Settings-hub
  * row subtitles from current app state. Kept pure (no BuildConfig / Context)
  * precisely so it can be unit-tested here.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class SettingsHubSummariesTest {
 
     private fun connected(name: String = "user") =
         AuthState.Connected(UserInfo(id = name, displayName = name))
+    /** The module's own strings: what the app shows, not a copy of it. */
+    private val res: Resources = ApplicationProvider.getApplicationContext<Context>().resources
+
+    private fun summaries(
+        state: SettingsUiState,
+        versionName: String = "0.9.51",
+        streamingEnabled: Boolean = true,
+        streamOnCellular: Boolean = false,
+        otherAccounts: List<String> = emptyList(),
+    ) = settingsHubSummaries(state, versionName, streamingEnabled, streamOnCellular, otherAccounts, res)
 
     // --- playback ---------------------------------------------------------
 
     @Test fun `playback Online + cellular off`() {
-        val s = settingsHubSummaries(
+        val s = summaries(
             state = SettingsUiState(),
             versionName = "0.9.51",
             streamingEnabled = true,
@@ -31,7 +49,7 @@ class SettingsHubSummariesTest {
     }
 
     @Test fun `playback Offline + cellular on`() {
-        val s = settingsHubSummaries(
+        val s = summaries(
             state = SettingsUiState(),
             versionName = "0.9.51",
             streamingEnabled = false,
@@ -43,7 +61,7 @@ class SettingsHubSummariesTest {
     // --- audioQuality -----------------------------------------------------
 
     @Test fun `audio lossless on with MAX tier → Lossless · Max`() {
-        val s = settingsHubSummaries(
+        val s = summaries(
             state = SettingsUiState(
                 losslessEnabled = true,
                 losslessQualityTier = LosslessQualityTier.MAX,
@@ -56,7 +74,7 @@ class SettingsHubSummariesTest {
     }
 
     @Test fun `audio lossless on with HI_RES tier → Lossless · Hi-Res`() {
-        val s = settingsHubSummaries(
+        val s = summaries(
             state = SettingsUiState(
                 losslessEnabled = true,
                 losslessQualityTier = LosslessQualityTier.HI_RES,
@@ -69,7 +87,7 @@ class SettingsHubSummariesTest {
     }
 
     @Test fun `Opus downloads → Opus and the YouTube quality`() {
-        val s = settingsHubSummaries(
+        val s = summaries(
             state = SettingsUiState(
                 losslessEnabled = false,
                 downloadMode = com.stash.core.model.DownloadMode.OPUS,
@@ -83,7 +101,7 @@ class SettingsHubSummariesTest {
     }
 
     @Test fun `AAC downloads → AAC 320, whatever the streaming switch says`() {
-        val s = settingsHubSummaries(
+        val s = summaries(
             state = SettingsUiState(
                 losslessEnabled = true,
                 downloadMode = com.stash.core.model.DownloadMode.AAC,
@@ -98,7 +116,7 @@ class SettingsHubSummariesTest {
     // --- accounts ---------------------------------------------------------
 
     @Test fun `accounts Spotify + YouTube connected → joined`() {
-        val s = settingsHubSummaries(
+        val s = summaries(
             state = SettingsUiState(
                 spotifyAuthState = connected("spotify"),
                 youTubeAuthState = connected("yt"),
@@ -111,7 +129,7 @@ class SettingsHubSummariesTest {
     }
 
     @Test fun `accounts all three connected → ordered join`() {
-        val s = settingsHubSummaries(
+        val s = summaries(
             state = SettingsUiState(
                 spotifyAuthState = connected("spotify"),
                 youTubeAuthState = connected("yt"),
@@ -125,7 +143,7 @@ class SettingsHubSummariesTest {
     }
 
     @Test fun `accounts cloud storage alone counts as connected`() {
-        val s = settingsHubSummaries(
+        val s = summaries(
             state = SettingsUiState(),
             versionName = "0.9.51",
             streamingEnabled = true,
@@ -136,7 +154,7 @@ class SettingsHubSummariesTest {
     }
 
     @Test fun `accounts past three become a count`() {
-        val s = settingsHubSummaries(
+        val s = summaries(
             state = SettingsUiState(
                 spotifyAuthState = connected("spotify"),
                 youTubeAuthState = connected("yt"),
@@ -150,7 +168,7 @@ class SettingsHubSummariesTest {
     }
 
     @Test fun `accounts none connected → Not connected`() {
-        val s = settingsHubSummaries(
+        val s = summaries(
             state = SettingsUiState(),
             versionName = "0.9.51",
             streamingEnabled = true,
@@ -162,7 +180,7 @@ class SettingsHubSummariesTest {
     // --- libraryStorage ---------------------------------------------------
 
     @Test fun `libraryStorage default → 0 tracks 0 B`() {
-        val s = settingsHubSummaries(
+        val s = summaries(
             state = SettingsUiState(),
             versionName = "0.9.51",
             streamingEnabled = true,
@@ -172,7 +190,7 @@ class SettingsHubSummariesTest {
     }
 
     @Test fun `libraryStorage single track is singular`() {
-        val s = settingsHubSummaries(
+        val s = summaries(
             state = SettingsUiState(totalTracks = 1, totalStorageBytes = 1536L),
             versionName = "0.9.51",
             streamingEnabled = true,
@@ -184,7 +202,7 @@ class SettingsHubSummariesTest {
     // --- appearance -------------------------------------------------------
 
     @Test fun `appearance SYSTEM → Follow system`() {
-        val s = settingsHubSummaries(
+        val s = summaries(
             state = SettingsUiState(themeMode = ThemeMode.SYSTEM, amoledDark = false),
             versionName = "0.9.51",
             streamingEnabled = true,
@@ -194,7 +212,7 @@ class SettingsHubSummariesTest {
     }
 
     @Test fun `appearance DARK → Dark`() {
-        val s = settingsHubSummaries(
+        val s = summaries(
             state = SettingsUiState(themeMode = ThemeMode.DARK, amoledDark = false),
             versionName = "0.9.51",
             streamingEnabled = true,
@@ -204,7 +222,7 @@ class SettingsHubSummariesTest {
     }
 
     @Test fun `appearance DARK plus AMOLED → Dark · Pure black`() {
-        val s = settingsHubSummaries(
+        val s = summaries(
             state = SettingsUiState(themeMode = ThemeMode.DARK, amoledDark = true),
             versionName = "0.9.51",
             streamingEnabled = true,
@@ -214,7 +232,7 @@ class SettingsHubSummariesTest {
     }
 
     @Test fun `appearance LIGHT hides dormant AMOLED flag`() {
-        val s = settingsHubSummaries(
+        val s = summaries(
             state = SettingsUiState(themeMode = ThemeMode.LIGHT, amoledDark = true),
             versionName = "0.9.51",
             streamingEnabled = true,
@@ -226,7 +244,7 @@ class SettingsHubSummariesTest {
     // --- about ------------------------------------------------------------
 
     @Test fun `about prefixes v to versionName`() {
-        val s = settingsHubSummaries(
+        val s = summaries(
             state = SettingsUiState(),
             versionName = "0.9.51",
             streamingEnabled = true,

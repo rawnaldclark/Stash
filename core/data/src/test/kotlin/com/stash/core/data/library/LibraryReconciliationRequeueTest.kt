@@ -4,7 +4,9 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthService
+import com.stash.core.data.db.LoneCancelBackfill
 import com.stash.core.data.db.StashDatabase
+import com.stash.core.data.db.dao.KEPT_OUT_MARK
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
@@ -87,6 +89,83 @@ class LibraryReconciliationRequeueTest {
             listOf(DownloadStatus.PENDING.name to 1),
             db.downloadQueueDao().getStatusCounts().map { it.status to it.count },
         )
+    }
+
+    /**
+     * Clear queue stops an attempt; the next sync is a new one (owner, 2026-11-09). A song the user
+     * cancelled on its own stays out. The sync's row replaces the cleared one, so History doesn't
+     * list the song as cancelled while it downloads.
+     */
+    @Test fun `a sync requeues a song Clear queue cancelled, never one cancelled on its own`() = runTest {
+        val cleared = missingSong(title = "Cleared")
+        val keptOut = missingSong(title = "Cancelled on its own")
+        val dao = db.downloadQueueDao()
+        val earlier = db.syncHistoryDao().insert(SyncHistoryEntity())
+        val clearedRow = dao.insert(DownloadQueueEntity(trackId = cleared, syncId = earlier))
+        val keptOutRow = dao.insert(DownloadQueueEntity(trackId = keptOut, syncId = earlier))
+        dao.markCancelledIfActive(clearedRow, completedAt = 700, keptOut = false)
+        dao.markCancelledIfActive(keptOutRow, completedAt = 700, keptOut = true)
+        val run = db.syncHistoryDao().insert(SyncHistoryEntity())
+
+        val result = reconciler().reconcile(syncId = run)
+
+        assertEquals(1, result.unqueuedRequeued)
+        assertNull("the cleared row is replaced", dao.getById(clearedRow))
+        val requeued = dao.getByTrackId(cleared)!!
+        assertEquals(DownloadStatus.PENDING, requeued.status)
+        assertEquals(run, requeued.syncId)
+        assertEquals(DownloadStatus.SKIPPED, dao.getByTrackId(keptOut)!!.status)
+        assertEquals(keptOutRow, dao.getByTrackId(keptOut)!!.id)
+    }
+
+    /**
+     * Review of #873, R2-3: the first launch after the update. The one-time pass that marks old
+     * lone cancels starts at launch, and a sync WorkManager restarts in the new process can reach
+     * its requeue first. Queued there, a lone cancel's row was dropped, so the pass could never
+     * mark it. The requeue waits for the pass.
+     */
+    @Test fun `on the first launch after the update the requeue waits for the pass over old cancels`() = runTest {
+        val lone = missingSong(title = "Cancelled on its own")
+        val cleared = listOf(missingSong(title = "Cleared 1", position = 1), missingSong(title = "Cleared 2", position = 2))
+        val dao = db.downloadQueueDao()
+        val since = LoneCancelBackfill.CLEAR_QUEUE_SINCE_MS
+        val loneRow = cancelled(lone, at = since + DAY)
+        cleared.forEachIndexed { i, song -> cancelled(song, at = since + 2 * DAY + 40L * i) }
+        val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .getSharedPreferences("lone_cancels_requeue_test", android.content.Context.MODE_PRIVATE)
+            .also { it.edit().clear().commit() }
+        val pass = LoneCancelBackfill(dao, prefs, now = { LoneCancelBackfill.MARK_SINCE_MS + DAY })
+        val run = db.syncHistoryDao().insert(SyncHistoryEntity())
+
+        val result = LibraryReconciliationUseCase(dao, db.trackDao(), tokens, db.playlistDao(), DownloadJobRegistry(), pass)
+            .reconcile(syncId = run)
+
+        assertEquals("the Clear queue's songs come back", 2, result.unqueuedRequeued)
+        cleared.forEach { assertEquals(DownloadStatus.PENDING, dao.getByTrackId(it)!!.status) }
+        assertEquals("the lone cancel keeps its row", loneRow, dao.getByTrackId(lone)!!.id)
+        assertEquals(KEPT_OUT_MARK, dao.getById(loneRow)!!.errorMessage)
+    }
+
+    /** A cancelled row for [song], finished at [at]: what a build before the mark wrote. */
+    private suspend fun cancelled(song: Long, at: Long): Long = db.downloadQueueDao().insert(
+        DownloadQueueEntity(trackId = song, status = DownloadStatus.SKIPPED, completedAt = java.time.Instant.ofEpochMilli(at)),
+    )
+
+    @Test fun `a song Clear queue cancelled during the sync waits for the next sync's requeue`() = runTest {
+        val song = missingSong(title = "Cleared during the sync")
+        val dao = db.downloadQueueDao()
+        val running = db.syncHistoryDao().insert(SyncHistoryEntity(startedAt = java.time.Instant.ofEpochMilli(1_000)))
+        val row = dao.insert(DownloadQueueEntity(trackId = song, syncId = running))
+        dao.markCancelledIfActive(row, completedAt = 1_500, keptOut = false)
+
+        // The sync the user stopped doesn't start the song again.
+        assertEquals(0, reconciler().reconcile(syncId = running).unqueuedRequeued)
+        assertEquals(DownloadStatus.SKIPPED, dao.getById(row)!!.status)
+
+        val next = db.syncHistoryDao().insert(SyncHistoryEntity(startedAt = java.time.Instant.ofEpochMilli(2_000)))
+        assertEquals(1, reconciler().reconcile(syncId = next).unqueuedRequeued)
+        assertNull(dao.getById(row))
+        assertEquals(next, dao.getByTrackId(song)!!.syncId)
     }
 
     /**
@@ -237,6 +316,10 @@ class LibraryReconciliationRequeueTest {
     }
 
     private fun reconciler() = LibraryReconciliationUseCase(db.downloadQueueDao(), db.trackDao(), tokens, db.playlistDao(), DownloadJobRegistry())
+
+    private companion object {
+        const val DAY = 86_400_000L
+    }
 
     /** The switched-on playlist [missingSong] puts its songs in; returns its id. */
     private suspend fun syncedPlaylist(): Long =

@@ -61,6 +61,7 @@ data class DownloadManagementItem(
     val action: DownloadManagementAction,
     /** Why a waiting row waits (kept on the row), or null: not waiting, or from before reasons were kept. */
     val waitReason: DownloadWaitReason? = null,
+    @param:androidx.annotation.StringRes val phaseLabelRes: Int = 0,
     /** Queued by a sync: in Online mode it downloads only once the user switches to Offline. */
     val fromSync: Boolean = false,
 )
@@ -109,6 +110,18 @@ data class DownloadManagementUiState(
                 DownloadWaitReason.LOSSLESS, null -> "Waiting for lossless"
             }
         }
+
+    @androidx.annotation.StringRes
+    fun waitingLabelRes(): Int {
+        val reasons = waiting.map { it.waitReason ?: DownloadWaitReason.LOSSLESS }.distinct()
+        return if (reasons.size > 1) R.string.sync_downloads_waiting_generic else when (reasons.singleOrNull()) {
+            DownloadWaitReason.AAC -> R.string.sync_downloads_waiting_aac
+            DownloadWaitReason.RESET -> R.string.sync_downloads_waiting_reset
+            DownloadWaitReason.TIDAL_BUSY -> R.string.sync_downloads_waiting_tidal
+            DownloadWaitReason.FALLBACK -> R.string.sync_downloads_waiting_fallback
+            DownloadWaitReason.LOSSLESS, null -> R.string.sync_downloads_waiting_lossless
+        }
+    }
 }
 
 /**
@@ -148,6 +161,7 @@ class DownloadManagementViewModel @Inject constructor(
     private val cancellationController: DownloadCancellationController,
     private val resumer: DownloadQueueResumer,
     streamingPreference: StreamingPreference,
+    @param:dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context? = null,
 ) : ViewModel() {
     private val selectedTab = MutableStateFlow(DownloadManagementTab.QUEUE)
     private val progressByTrackId = MutableStateFlow<Map<Long, DownloadProgress>>(emptyMap())
@@ -212,19 +226,28 @@ class DownloadManagementViewModel @Inject constructor(
 
     fun cancel(queueId: Long) = viewModelScope.launch {
         val cancelled = cancellationController.cancel(queueId)
-        message.value = if (cancelled) "Download cancelled" else "Download could not be cancelled"
+        message.value = context?.getString(if (cancelled) R.string.sync_downloads_msg_cancelled else R.string.sync_downloads_msg_cancel_failed)
+            ?: (if (cancelled) "Download cancelled" else "Download could not be cancelled")
     }
 
-    /** Cancels every waiting and running download. */
+    /**
+     * Cancels every waiting and running download. Only this attempt: the songs aren't kept out,
+     * so a playlist's Download or the next sync queues them again ([DownloadCancellationController.cancelAll]).
+     */
     fun clearQueue() = viewModelScope.launch {
         val cancelled = cancellationController.cancelAll()
-        message.value = if (cancelled == 0) "Nothing to cancel" else "Cancelled $cancelled ${if (cancelled == 1) "download" else "downloads"}"
+        message.value = if (cancelled == 0) {
+            context?.getString(R.string.sync_downloads_msg_nothing_to_cancel) ?: "Nothing to cancel"
+        } else {
+            context?.resources?.getQuantityString(R.plurals.sync_downloads_msg_cancelled_count, cancelled, cancelled)
+                ?: "Cancelled $cancelled ${if (cancelled == 1) "download" else "downloads"}"
+        }
     }
 
     /** Removes finished and cancelled downloads from History; failed ones stay, so they can be retried. */
     fun clearHistory() = viewModelScope.launch {
         downloadQueueDao.deleteCompleted()
-        message.value = "History cleared"
+        message.value = context?.getString(R.string.sync_downloads_msg_history_cleared) ?: "History cleared"
     }
 
     /** Pause: downloads stop and stay stopped until Resume (the songs stay queued). */
@@ -247,7 +270,7 @@ class DownloadManagementViewModel @Inject constructor(
             // A tap ends a Pause, or the retry would wait for Resume without saying so.
             resumer.clearHold()
             downloadEnqueuer.enqueue(queueId)
-            message.value = "Download queued"
+            message.value = context?.getString(R.string.sync_downloads_msg_queued) ?: "Download queued"
         }
     }
 
@@ -259,6 +282,20 @@ class DownloadManagementViewModel @Inject constructor(
 private fun DownloadManagementRow.toItem(progress: DownloadProgress?): DownloadManagementItem {
     val pipeline = progress?.status
     val waitReason = DownloadWaitReason.fromCode(errorMessage).takeIf { status == QueueStatus.WAITING_FOR_LOSSLESS }
+    val phaseLabelRes = when {
+        status == QueueStatus.SKIPPED -> R.string.sync_downloads_phase_cancelled
+        pipeline == PipelineStatus.MATCHING -> R.string.sync_downloads_phase_matching
+        pipeline == PipelineStatus.DOWNLOADING -> R.string.sync_downloads_phase_downloading
+        pipeline == PipelineStatus.PROCESSING -> R.string.sync_downloads_phase_processing
+        pipeline == PipelineStatus.TAGGING -> R.string.sync_downloads_phase_tagging
+        status == QueueStatus.IN_PROGRESS -> R.string.sync_downloads_phase_in_progress
+        status == QueueStatus.PENDING -> R.string.sync_downloads_phase_queued
+        status == QueueStatus.WAITING_FOR_LOSSLESS -> waitLabelRes(waitReason)
+        status == QueueStatus.COMPLETED -> R.string.sync_downloads_phase_downloaded
+        status == QueueStatus.FAILED && failureType == DownloadFailureType.NO_MATCH -> R.string.sync_downloads_phase_needs_review
+        status == QueueStatus.FAILED -> R.string.sync_downloads_phase_failed
+        else -> 0
+    }
     return DownloadManagementItem(
         queueId = queueId,
         trackId = trackId,
@@ -282,10 +319,12 @@ private fun DownloadManagementRow.toItem(progress: DownloadProgress?): DownloadM
             status == QueueStatus.FAILED -> "Failed"
             else -> status.name.lowercase().replaceFirstChar(Char::titlecase)
         },
+        phaseLabelRes = phaseLabelRes,
         createdAt = createdAt,
         completedAt = completedAt,
-        // A waiting row's error_message is its reason code, not an error.
-        errorMessage = errorMessage.takeIf { waitReason == null },
+        // A waiting row's error_message is its reason code, and a cancelled row's its mark
+        // (DownloadQueueDao.KEPT_OUT_MARK): neither is an error.
+        errorMessage = errorMessage.takeIf { waitReason == null && status != QueueStatus.SKIPPED },
         waitReason = waitReason,
         fromSync = syncId != null,
         action = when {
@@ -295,14 +334,23 @@ private fun DownloadManagementRow.toItem(progress: DownloadProgress?): DownloadM
             status == QueueStatus.PENDING ||
                 status == QueueStatus.IN_PROGRESS ||
                 status == QueueStatus.WAITING_FOR_LOSSLESS -> DownloadManagementAction.CANCEL
-            // Un-cancel. Without this a cancelled row is a dead end: nothing
-            // re-enqueues it (getUnqueuedTrackIds skips SKIPPED on purpose),
+            // Un-cancel. Without this a song cancelled on its own is a dead end:
+            // nothing re-enqueues it (DownloadQueueDao.KEPT_OUT_MARK, on purpose),
             // so a mis-tap on Cancel was unrecoverable from this screen.
             status == QueueStatus.SKIPPED -> DownloadManagementAction.RETRY
             status == QueueStatus.FAILED && failureType != DownloadFailureType.NO_MATCH -> DownloadManagementAction.RETRY
             else -> DownloadManagementAction.NONE
         },
     )
+}
+
+@androidx.annotation.StringRes
+internal fun waitLabelRes(reason: DownloadWaitReason?): Int = when (reason) {
+    DownloadWaitReason.AAC -> R.string.sync_downloads_waiting_aac_item
+    DownloadWaitReason.RESET -> R.string.sync_downloads_waiting_reset_item
+    DownloadWaitReason.TIDAL_BUSY -> R.string.sync_downloads_waiting_tidal_item
+    DownloadWaitReason.FALLBACK -> R.string.sync_downloads_waiting_fallback_item
+    DownloadWaitReason.LOSSLESS, null -> R.string.sync_downloads_waiting_lossless_item
 }
 
 /** What a waiting row says, by why it waits. */

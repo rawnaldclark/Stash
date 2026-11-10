@@ -107,4 +107,31 @@ class RecentSyncRowMappingTest {
         assertEquals(0, row.unreadCount)
         assertEquals("not json", row.diagnostics)
     }
+
+    @Test
+    fun `toRecentSyncRow with Resources resolves localized strings`() {
+        val res = io.mockk.mockk<android.content.res.Resources> {
+            io.mockk.every { getString(R.string.sync_history_mode_online) } returns "En ligne"
+            io.mockk.every { getString(R.string.sync_history_mode_offline) } returns "Hors ligne"
+            io.mockk.every { getString(R.string.sync_history_surfaced) } returns "découverts"
+            io.mockk.every { getString(R.string.sync_history_downloaded) } returns "téléchargés"
+        }
+        val onlineRow = SyncHistoryInfo(
+            id = 1, startedAt = 0, completedAt = 1000, status = "COMPLETED",
+            tracksDownloaded = 0, tracksFailed = 0, newTracksFound = 10,
+            playlistsChecked = 2, streamingMode = true,
+            displayStatus = SyncDisplayStatus.Success,
+        ).toRecentSyncRow(relativeTime = "35m ago", res = res)
+        assertEquals("En ligne", onlineRow.modeLabel)
+        assertEquals("découverts", onlineRow.addedNoun)
+
+        val offlineRow = SyncHistoryInfo(
+            id = 2, startedAt = 0, completedAt = 1000, status = "COMPLETED",
+            tracksDownloaded = 10, tracksFailed = 0, newTracksFound = 0,
+            playlistsChecked = 2, streamingMode = false,
+            displayStatus = SyncDisplayStatus.Success,
+        ).toRecentSyncRow(relativeTime = "35m ago", res = res)
+        assertEquals("Hors ligne", offlineRow.modeLabel)
+        assertEquals("téléchargés", offlineRow.addedNoun)
+    }
 }

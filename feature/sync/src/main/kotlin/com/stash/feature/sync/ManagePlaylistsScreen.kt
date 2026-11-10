@@ -128,7 +128,7 @@ fun ManagePlaylistsScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Last.fm") },
+                    title = { Text(stringResource(R.string.sync_source_lastfm)) },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.sync_back))
@@ -158,9 +158,9 @@ fun ManagePlaylistsScreen(
     val showAlbumsTab = source == SyncSource.SPOTIFY || albums.isNotEmpty()
     val name = when {
         otherAccount != null -> stringResource(R.string.sync_account_spotify_named, otherAccount.name)
-        source == SyncSource.SPOTIFY -> "Spotify"
-        source == SyncSource.SOUNDCLOUD -> "SoundCloud"
-        else -> "YouTube Music"
+        source == SyncSource.SPOTIFY -> stringResource(R.string.sync_source_spotify)
+        source == SyncSource.SOUNDCLOUD -> stringResource(R.string.sync_source_soundcloud)
+        else -> stringResource(R.string.sync_source_youtube_music)
     }
     val brand = if (source == SyncSource.SOUNDCLOUD) androidx.compose.ui.graphics.Color(0xFFFF5500) else if (source == SyncSource.SPOTIFY) StashTheme.extendedColors.spotifyGreen else StashTheme.extendedColors.youtubeRed
 
@@ -381,7 +381,7 @@ fun ManagePlaylistsScreen(
                 if (inThisTab.isEmpty() && !switchFirst) return@forEach
                 item(key = "group-$groupKey") {
                     AccountGroupHeader(
-                        name = other?.let { stringResource(R.string.sync_account_spotify_named, it.name) } ?: "Spotify",
+                        name = other?.let { stringResource(R.string.sync_account_spotify_named, it.name) } ?: stringResource(R.string.sync_source_spotify),
                     )
                 }
                 if (tab == ManageTab.MIXES) {
@@ -544,13 +544,14 @@ private fun StackPill(stacking: Boolean, playlistName: String, onToggle: (Boolea
 /** The fold over the playlists taken out of the library: "Not in your library · 12". */
 @Composable
 private fun OutOfLibraryHeader(count: Int, expanded: Boolean, onToggle: () -> Unit) {
+    val expandedDesc = stringResource(if (expanded) R.string.sync_state_expanded else R.string.sync_state_collapsed)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 10.dp)
             .clip(RoundedCornerShape(10.dp))
             .clickable(role = Role.Button, onClick = onToggle)
-            .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+            .semantics { stateDescription = expandedDesc }
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -646,16 +647,12 @@ private fun DiscoverMixesRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Discover mixes automatically",
+                text = stringResource(R.string.sync_discover_mixes_title),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                text = if (enabled) {
-                    "Daily Mixes and similar are added as they appear"
-                } else {
-                    "Off — no new mixes are added, and syncs run shorter"
-                },
+                text = stringResource(if (enabled) R.string.sync_discover_mixes_on else R.string.sync_discover_mixes_off),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -783,11 +780,18 @@ private fun SyncSavedAlbumsRow(
  * freshest mixes; an untouched mix surfaces when a sync adds to it, a pinned one
  * always leads, a hidden one never appears.
  */
-internal fun homeVisibilityLabel(hidden: Boolean, pinned: Boolean): String = when {
-    hidden -> "Hidden from Home"
-    pinned -> "Pinned on Home"
-    else -> "On Home when it updates"
+@androidx.annotation.StringRes
+internal fun homeVisibilityLabelRes(hidden: Boolean, pinned: Boolean): Int = when {
+    hidden -> R.string.sync_home_visibility_hidden
+    pinned -> R.string.sync_home_visibility_pinned
+    else -> R.string.sync_home_visibility_default
 }
+
+internal fun homeVisibilityLabel(
+    hidden: Boolean,
+    pinned: Boolean,
+    res: android.content.res.Resources,
+): String = res.getString(homeVisibilityLabelRes(hidden, pinned))
 
 // ── Last.fm (issue #255) ─────────────────────────────────────────────────────
 
@@ -808,7 +812,7 @@ private fun LastFmManageContent(
         modifier = modifier.padding(horizontal = 16.dp),
     ) {
         Text(
-            text = "Recommendations",
+            text = stringResource(R.string.sync_lastfm_recommendations_header),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.SemiBold,
@@ -827,18 +831,22 @@ private fun LastFmManageContent(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Recommended by Last.fm",
+                    text = stringResource(R.string.sync_lastfm_recommended_title),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     text = when {
                         !state.connected ->
-                            "Connect Last.fm in Settings → Accounts to enable"
+                            stringResource(R.string.sync_lastfm_connect_to_enable)
                         !state.enabled ->
-                            "Off — no recommendations are generated"
+                            stringResource(R.string.sync_lastfm_recommended_disabled_desc)
                         else ->
-                            "On · ${state.trackCount ?: 0} tracks synced"
+                            pluralStringResource(
+                                R.plurals.sync_lastfm_synced_tracks,
+                                state.trackCount ?: 0,
+                                state.trackCount ?: 0,
+                            )
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -852,17 +860,13 @@ private fun LastFmManageContent(
         }
 
         Text(
-            text = "Builds a rotating playlist of tracks Last.fm recommends, " +
-                "seeded from what you play and scrobble most. Each refresh " +
-                "swaps in fresh picks; tracks are matched against YouTube " +
-                "Music / Spotify and downloaded like any other sync, " +
-                "respecting your network settings.",
+            text = stringResource(R.string.sync_lastfm_explainer),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
         )
         Text(
-            text = "Find it as “Recommended by Last.fm” under Library → Mixes.",
+            text = stringResource(R.string.sync_lastfm_find_it_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.SemiBold,

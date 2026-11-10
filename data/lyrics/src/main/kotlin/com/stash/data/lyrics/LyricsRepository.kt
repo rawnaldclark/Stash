@@ -515,6 +515,8 @@ class LyricsRepository @Inject constructor(
             spotifyTrackId = SpotifyTrackId.parse(track.spotifyUri),
             interactive = interactive,
             onDemand = sources != TtmlUpgradeSources.APPLE,
+            // A background pass: the song has lyrics already, so a title/artist id search delays nothing.
+            searchForIds = true,
         )
         var found: LyricsResult? = null
         var cleanMisses = 0
@@ -584,7 +586,8 @@ class LyricsRepository @Inject constructor(
         }
         return when (failures.first()) {
             is AppleTtmlLyricsSource.AppleSkippedException,
-            is IsrcLyricsHostBreaker.SkippedException -> TtmlUpgradeResult.PAUSED
+            is IsrcLyricsHostBreaker.SkippedException,
+            is SpicyLyricsSource.SkippedException -> TtmlUpgradeResult.PAUSED
             is InterruptedIOException ->
                 if (cleanMisses > 0) TtmlUpgradeResult.UNCONFIRMED_MISS else TtmlUpgradeResult.NOT_READY
             else ->

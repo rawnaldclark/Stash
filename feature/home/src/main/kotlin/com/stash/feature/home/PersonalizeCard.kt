@@ -9,6 +9,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.stash.core.ui.components.GlassCard
 
@@ -29,17 +30,17 @@ fun PersonalizeCard(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
-                text = "Personalize your Home",
+                text = stringResource(R.string.home_personalize_title),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                text = "Connect a service and run a sync so Stash can tailor daily discovery to your taste.",
+                text = stringResource(R.string.home_personalize_body),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Button(onClick = onConnect) {
-                Text("Get started")
+                Text(stringResource(R.string.home_personalize_btn))
             }
         }
     }

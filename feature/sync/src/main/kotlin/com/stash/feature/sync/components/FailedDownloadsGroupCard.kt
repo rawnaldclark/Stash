@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -47,6 +48,7 @@ import com.stash.core.data.db.dao.FailedDownloadRow
 import com.stash.core.model.DownloadFailureType
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.sync.FailedDownloadsGroup
+import com.stash.feature.sync.R
 import com.stash.feature.sync.display
 
 /**
@@ -127,14 +129,14 @@ fun FailedDownloadsGroupCard(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "${group.rows.size} track${if (group.rows.size != 1) "s" else ""}",
+                    text = pluralStringResource(R.plurals.sync_tracks_count, group.rows.size, group.rows.size),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Icon(
                 imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = if (expanded) "Collapse" else "Expand",
+                contentDescription = stringResource(if (expanded) R.string.sync_cd_collapse else R.string.sync_cd_expand),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(24.dp),
             )
@@ -152,7 +154,7 @@ fun FailedDownloadsGroupCard(
                 ) {
                     Icon(Icons.Default.Refresh, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Retry ${group.rows.size} track${if (group.rows.size != 1) "s" else ""}")
+                    Text(pluralStringResource(R.plurals.sync_failed_downloads_retry_tracks, group.rows.size, group.rows.size))
                 }
                 Spacer(Modifier.height(4.dp))
                 // Cap visible rows so a giant group (e.g. one user reported
@@ -175,8 +177,14 @@ fun FailedDownloadsGroupCard(
                     }
                 }
                 if (group.rows.size > MAX_VISIBLE_ROWS_PER_GROUP) {
+                    val excess = group.rows.size - MAX_VISIBLE_ROWS_PER_GROUP
                     Text(
-                        text = "+ ${group.rows.size - MAX_VISIBLE_ROWS_PER_GROUP} more (showing first $MAX_VISIBLE_ROWS_PER_GROUP)",
+                        text = pluralStringResource(
+                            R.plurals.sync_failed_downloads_more_count,
+                            excess,
+                            excess,
+                            MAX_VISIBLE_ROWS_PER_GROUP,
+                        ),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(14.dp),
@@ -241,19 +249,18 @@ private fun FailedDownloadRowItem(
         // Title + subtitle ("<playlist> · <short reason>")
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "${row.title} \u2014 ${row.artist}",
+                text = stringResource(R.string.sync_failed_downloads_title_artist, row.title, row.artist),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            val reason = stringResource(display.shortLabel)
-            val subtitle = buildString {
-                if (!row.playlistName.isNullOrBlank()) {
-                    append(row.playlistName)
-                    append(" \u00B7 ")
-                }
-                append(reason)
+            val shortReason = stringResource(display.shortLabel)
+            val playlist = row.playlistName
+            val subtitle = if (!playlist.isNullOrBlank()) {
+                stringResource(R.string.sync_failed_downloads_playlist_reason, playlist, shortReason)
+            } else {
+                shortReason
             }
             Text(
                 text = subtitle,
@@ -268,14 +275,14 @@ private fun FailedDownloadRowItem(
         IconButton(onClick = onRetry, modifier = Modifier.size(40.dp)) {
             Icon(
                 imageVector = Icons.Default.Refresh,
-                contentDescription = "Retry",
+                contentDescription = stringResource(R.string.sync_failed_downloads_cd_retry),
                 tint = MaterialTheme.colorScheme.primary,
             )
         }
         IconButton(onClick = onBlock, modifier = Modifier.size(40.dp)) {
             Icon(
                 imageVector = Icons.Default.Block,
-                contentDescription = "Block",
+                contentDescription = stringResource(R.string.sync_failed_downloads_cd_block),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

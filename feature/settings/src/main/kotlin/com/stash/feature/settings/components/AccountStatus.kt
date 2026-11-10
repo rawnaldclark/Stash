@@ -1,6 +1,8 @@
 package com.stash.feature.settings.components
 
+import android.content.res.Resources
 import com.stash.core.auth.model.AuthState
+import com.stash.feature.settings.R
 
 /** How an [AccountConnectionCard]'s status line is coloured. */
 enum class AccountStatusTone { CONNECTED, EXPIRED, ERROR, NEUTRAL }
@@ -24,24 +26,24 @@ internal data class AccountStatus(
  * since been disconnected (or is mid sign-in) must not override what the card
  * otherwise shows.
  */
-internal fun accountStatus(authState: AuthState, expired: Boolean): AccountStatus = when (authState) {
+internal fun accountStatus(authState: AuthState, expired: Boolean, res: Resources): AccountStatus = when (authState) {
     is AuthState.Connected -> {
         val name = authState.user.displayName
         if (expired) {
             AccountStatus(
                 text = if (name.isBlank()) {
-                    "Session expired. Reconnect to keep syncing."
+                    res.getString(R.string.settings_account_session_expired)
                 } else {
-                    "Session expired for $name. Reconnect to keep syncing."
+                    res.getString(R.string.settings_account_session_expired_for, name)
                 },
                 tone = AccountStatusTone.EXPIRED,
                 offerReconnect = true,
             )
         } else {
-            AccountStatus("Connected as $name", AccountStatusTone.CONNECTED)
+            AccountStatus(res.getString(R.string.settings_connected_as, name), AccountStatusTone.CONNECTED)
         }
     }
-    is AuthState.Connecting -> AccountStatus("Connecting...", AccountStatusTone.NEUTRAL)
+    is AuthState.Connecting -> AccountStatus(res.getString(R.string.settings_account_connecting), AccountStatusTone.NEUTRAL)
     is AuthState.Error -> AccountStatus(authState.message, AccountStatusTone.ERROR)
-    AuthState.NotConnected -> AccountStatus("Not connected", AccountStatusTone.NEUTRAL)
+    AuthState.NotConnected -> AccountStatus(res.getString(R.string.settings_account_not_connected), AccountStatusTone.NEUTRAL)
 }

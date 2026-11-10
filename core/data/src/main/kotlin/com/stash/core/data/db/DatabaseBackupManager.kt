@@ -759,6 +759,7 @@ class DatabaseBackupManager @Inject constructor(
                 rearmCanonicalRecompute(runNow = false)
                 rearmDuplicateCleanup(runNow = false)
                 rearmMixPinCleanup(runNow = false)
+                rearmLoneCancelBackfill()
                 rearmMixRecipeRetune()
             }
 
@@ -839,6 +840,23 @@ class DatabaseBackupManager @Inject constructor(
             throw e
         } catch (e: Exception) {
             android.util.Log.w("BackupManager", "Couldn't re-arm the mix pin cleanup", e)
+        }
+    }
+
+    /**
+     * A swapped-in backup made before the kept-out mark brings back cancels that look alike, and the
+     * one-time [LoneCancelBackfill] that marks the lone ones has its done flag in SharedPreferences,
+     * which a restore leaves alone. Re-armed here, it runs at the restart. It still looks only at
+     * cancels from before the mark existed and before its first run on this phone, so a Clear queue
+     * a build with the mark made, here or on the phone the backup came from, is never marked. A
+     * merge copies no download queue, so only a swap re-arms it. Best-effort, like
+     * [rearmCanonicalRecompute].
+     */
+    private fun rearmLoneCancelBackfill() {
+        try {
+            LoneCancelBackfill.forContext(context, database.downloadQueueDao()).rearm()
+        } catch (e: Exception) {
+            android.util.Log.w("BackupManager", "Couldn't re-arm the lone-cancel backfill", e)
         }
     }
 

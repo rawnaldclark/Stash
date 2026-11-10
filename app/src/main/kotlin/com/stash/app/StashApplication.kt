@@ -123,6 +123,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var downloadQueueDao: DownloadQueueDao
 
+    /** The one-time pass over old cancels; a sync's requeue waits for this same instance. */
+    @Inject
+    lateinit var loneCancelBackfill: com.stash.core.data.db.LoneCancelBackfill
+
     /** Which download rows a job in this process holds: a cold start leaves their claims alone. */
     @Inject
     lateinit var downloadJobs: com.stash.core.data.sync.DownloadJobRegistry
@@ -439,6 +443,9 @@ class StashApplication : Application(), Configuration.Provider {
             runCatching { musicRepository.runMigrations() }
                 .onFailure { Log.w("StashStartup", "runMigrations failed", it) }
         }
+        // A song cancelled on its own before this build must stay out (LoneCancelBackfill). One
+        // quick UPDATE; a sync's requeue and a playlist's Download wait for it (ensureRan).
+        applicationScope.launch { maybeMarkLoneCancels() }
         // Hand back IN_PROGRESS download_queue rows left over from an
         // interrupted worker run / process death, or they linger forever showing
         // "downloading". Only claims no live job holds: WorkManager can restart a
@@ -1156,6 +1163,17 @@ class StashApplication : Application(), Configuration.Provider {
             Log.i("StashMigration", "maybePinSyncedPlaylists: pinned $pinned already-synced playlist(s) to Home")
             prefs.edit().putInt("synced_playlists_pin_version", SYNCED_PLAYLISTS_PIN_VERSION).apply()
         }
+    }
+
+    /**
+     * Once per install (and again after a restored backup re-arms it), see
+     * [com.stash.core.data.db.LoneCancelBackfill]: songs cancelled one by one before
+     * Clear queue stopped keeping songs out stay out. On IO; a failure is logged there and the
+     * next launch tries again.
+     */
+    private suspend fun maybeMarkLoneCancels() {
+        val marked = loneCancelBackfill.ensureRan() ?: return
+        Log.i("StashMigration", "maybeMarkLoneCancels: $marked song(s) cancelled on their own before the mark stay out")
     }
 
     /**

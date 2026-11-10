@@ -27,6 +27,7 @@ import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
@@ -231,6 +232,126 @@ class PlaylistDetailViewModelTest {
         assertEquals(true to "Every song is already on your phone.", tapPlaylist(playlist(), allThere))
     }
 
+    @Test fun `on with songs missing and none on its way, the button offers them instead of saying Downloading`() = runTest {
+        // Clear queue stopped them, say: nothing of the playlist is queued or running.
+        val someMissing = listOf(track(1L, downloaded = true), track(2L), track(3L))
+        val stalled = checkNotNull(downloadButton(playlist(keepOffline = true), tracks = someMissing, queued = false))
+        assertEquals(true, stalled.stalled)
+        assertEquals("Download 2 more", stalled.label)
+        // In Download mode a synced playlist is on too.
+        val synced = downloadButton(playlist(syncEnabled = true), streamOnly = false, tracks = someMissing, queued = false)
+        assertEquals("Download 2 more", synced?.label)
+        // While one of them is queued or running (a Pause included), it still says Downloading.
+        assertEquals("Downloading 1 of 3", downloadButton(playlist(keepOffline = true), tracks = someMissing)?.label)
+        // Off, or every song there: as before.
+        assertEquals("Download", downloadButton(playlist(), tracks = someMissing, queued = false)?.label)
+        val allThere = listOf(track(1L, downloaded = true))
+        assertEquals("Downloaded", downloadButton(playlist(keepOffline = true), tracks = allThere, queued = false)?.label)
+    }
+
+    @Test fun `a tap on Download n more queues the songs and stays on, and Turn off turns it off`() = runTest {
+        val someMissing = listOf(track(1L, downloaded = true), track(2L), track(3L))
+        // Not off: in Download mode off would also have switched the playlist's sync off.
+        assertEquals(true to "Downloading 2 songs", tapPlaylist(playlist(keepOffline = true), someMissing, queued = false))
+        assertEquals(true to "Downloading 2 songs", tapPlaylist(playlist(syncEnabled = true), someMissing, queued = false, streamOnly = false))
+        assertEquals(
+            false to "Stopped. Downloaded songs stay on your phone.",
+            tapPlaylist(playlist(keepOffline = true), someMissing, queued = false) { turnDownloadOff() },
+        )
+        // While songs are on their way, a tap turns it off, as it always has.
+        assertEquals(false to "Stopped. Downloaded songs stay on your phone.", tapPlaylist(playlist(keepOffline = true), someMissing, queued = true))
+    }
+
+    @Test fun `a tap on a followed mix's Download n more queues through the shared-mix repository`() = runTest {
+        val follower = com.stash.core.data.db.entity.SharedMixEntity(
+            1, "Kx7Qa2pL", com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER, name = "Ambient",
+        )
+        val shared = mock<com.stash.core.data.share.SharedMixRepository> { on { observe(any()) } doReturn flowOf(follower) }
+        val music = musicRepoMock().stub {
+            onBlocking { getPlaylistWithTracks(1L) } doReturn playlist(syncEnabled = true)
+            on { getSongsByPlaylist(any()) } doReturn flowOf(listOf(track(1L, downloaded = true), track(2L)))
+            onBlocking { countSongsToQueue(1L) } doReturn 1
+        }
+        val vm = buildVm(musicRepository = music, sharedMixRepository = shared, downloadQueueDao = nothingQueued())
+        backgroundScope.launch { vm.downloadButton.collect {} }
+        runCurrent()
+        assertEquals("Download 1 more", vm.downloadButton.value?.label)
+        vm.toggleDownload()
+        runCurrent()
+        org.mockito.kotlin.verifyBlocking(shared) { setDownload(1L, true) }
+    }
+
+    /**
+     * Review of #873, R2-2: the offer is what a tap really queues. A song whose copy on the phone a
+     * tap links instead (or anything else the Download skips) left it at "Download 1 more" for good,
+     * and each tap said "Downloading 1 song" while queueing nothing.
+     */
+    @Test fun `the offer counts only the songs a tap would queue, and with none the playlist reads Downloaded`() = runTest {
+        val someMissing = listOf(track(1L, downloaded = true), track(2L), track(3L))
+        val one = checkNotNull(downloadButton(playlist(keepOffline = true), tracks = someMissing, queued = false, toQueue = 1))
+        assertEquals("Download 1 more", one.label)
+
+        val none = checkNotNull(downloadButton(playlist(keepOffline = true), tracks = someMissing, queued = false, toQueue = 0))
+        assertEquals(false, none.stalled)
+        assertEquals("Downloaded", none.label)
+    }
+
+    @Test fun `a SoundCloud preview never downloads, so it leaves the count`() = runTest {
+        val tracks = listOf(track(1L, downloaded = true), track(2L), track(3L, preview = true))
+        assertEquals("Downloading 1 of 2", downloadButton(playlist(keepOffline = true), tracks = tracks)?.label)
+        assertEquals("Download 1 more", downloadButton(playlist(keepOffline = true), tracks = tracks, queued = false)?.label)
+    }
+
+    @Test fun `a tap's message counts what it queued, and says so when that is nothing`() = runTest {
+        val someMissing = listOf(track(1L, downloaded = true), track(2L), track(3L))
+        assertEquals(true to "Downloading 1 song", tapPlaylist(playlist(keepOffline = true), someMissing, queued = false, queuedByTap = 1))
+        assertEquals(true to "Nothing more to download.", tapPlaylist(playlist(keepOffline = true), someMissing, queued = false, queuedByTap = 0))
+        assertEquals(true to "Nothing more to download.", tapPlaylist(playlist(), someMissing, queuedByTap = 0))
+    }
+
+    /**
+     * Review of #873, R2-5: the switch lands before the rows (a query per song), and meanwhile the
+     * button read "Download 2 more" with "Turn off" beside it.
+     */
+    @Test fun `while a tap is still filing its rows the button reads Downloading, with no Turn off`() = runTest {
+        val live = MutableStateFlow<com.stash.core.model.Playlist?>(playlist())
+        val queuedFlow = MutableStateFlow(false)
+        val filed = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val music = musicRepoMock().stub {
+            on { observePlaylist(any()) } doReturn live
+            onBlocking { getPlaylistWithTracks(1L) } doReturn playlist()
+            on { getSongsByPlaylist(any()) } doReturn flowOf(listOf(track(1L, downloaded = true), track(2L), track(3L)))
+            onBlocking { countSongsToQueue(1L) } doReturn 2
+            onBlocking { setPlaylistDownload(any(), any()) } doSuspendableAnswer {
+                live.value = playlist(keepOffline = true) // the switch, written first
+                filed.await()
+                queuedFlow.value = true // the rows
+                2
+            }
+        }
+        val vm = buildVm(
+            musicRepository = music,
+            downloadQueueDao = mock {
+                on { observeGivenUpTrackIds(any()) } doReturn flowOf(emptyList())
+                on { observeHasQueuedSongs(any()) } doReturn queuedFlow
+            },
+        )
+        backgroundScope.launch { vm.downloadButton.collect {} }
+        runCurrent()
+        assertEquals("Download", vm.downloadButton.value?.label)
+
+        vm.toggleDownload()
+        runCurrent()
+        assertEquals(true, vm.downloadButton.value?.on)
+        assertEquals(false, vm.downloadButton.value?.stalled)
+        assertEquals("Downloading 1 of 3", vm.downloadButton.value?.label)
+
+        filed.complete(Unit)
+        runCurrent()
+        assertEquals(false, vm.downloadButton.value?.stalled)
+        assertEquals("Downloading 1 of 3", vm.downloadButton.value?.label)
+    }
+
     @Test fun `a tap on a followed mix's button goes through the shared-mix repository`() = runTest {
         val follower = com.stash.core.data.db.entity.SharedMixEntity(
             1, "Kx7Qa2pL", com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER, name = "Ambient",
@@ -288,6 +409,7 @@ class PlaylistDetailViewModelTest {
     /**
      * The page's button for [playlist] holding [tracks], in the given mode: null = no button.
      * [givenUp]: the songs that won't download unless the user acts (failed, cancelled, dismissed).
+     * [toQueue]: what a tap would queue ([MusicRepository.countSongsToQueue]); every missing song by default.
      */
     private fun kotlinx.coroutines.test.TestScope.downloadButton(
         playlist: com.stash.core.model.Playlist,
@@ -295,11 +417,14 @@ class PlaylistDetailViewModelTest {
         shared: com.stash.core.data.db.entity.SharedMixEntity? = null,
         tracks: List<Track> = emptyList(),
         givenUp: List<Long> = emptyList(),
+        queued: Boolean = true,
+        toQueue: Int = missing(tracks, givenUp),
     ): DownloadButtonState? {
         val music = musicRepoMock().stub {
             onBlocking { getPlaylistWithTracks(1L) } doReturn playlist
             on { getSongsByPlaylist(any()) } doReturn flowOf(tracks)
             on { getShownTracksByPlaylist(any()) } doReturn flowOf(tracks)
+            onBlocking { countSongsToQueue(1L) } doReturn toQueue
         }
         val vm = buildVm(
             musicRepository = music,
@@ -308,27 +433,46 @@ class PlaylistDetailViewModelTest {
                 on { enabled } doReturn flowOf(streamOnly)
             },
             sharedMixRepository = mock { on { observe(any()) } doReturn flowOf(shared) },
-            downloadQueueDao = mock { on { observeGivenUpTrackIds(1L) } doReturn flowOf(givenUp) },
+            downloadQueueDao = mock {
+                on { observeGivenUpTrackIds(1L) } doReturn flowOf(givenUp)
+                on { observeHasQueuedSongs(1L) } doReturn flowOf(queued)
+            },
         )
         backgroundScope.launch { vm.downloadButton.collect {} }
         runCurrent()
         return vm.downloadButton.value
     }
 
-    /** One tap on [playlist]'s button: the value it wrote through setPlaylistDownload, and the message. */
+    /**
+     * One tap on [playlist]'s button: the value it wrote through setPlaylistDownload, and the message.
+     * [queuedByTap]: how many songs setPlaylistDownload queued; every missing song by default.
+     */
     private fun kotlinx.coroutines.test.TestScope.tapPlaylist(
         playlist: com.stash.core.model.Playlist,
         tracks: List<Track>,
+        queued: Boolean = true,
+        streamOnly: Boolean = true,
+        queuedByTap: Int = missing(tracks),
+        tap: PlaylistDetailViewModel.() -> Unit = { toggleDownload() },
     ): Pair<Boolean, String> {
         val music = musicRepoMock().stub {
             onBlocking { getPlaylistWithTracks(1L) } doReturn playlist
             on { getSongsByPlaylist(any()) } doReturn flowOf(tracks)
             on { getShownTracksByPlaylist(any()) } doReturn flowOf(tracks)
+            onBlocking { countSongsToQueue(1L) } doReturn missing(tracks)
+            onBlocking { setPlaylistDownload(any(), any()) } doReturn queuedByTap
         }
-        val vm = buildVm(musicRepository = music)
+        val vm = buildVm(
+            musicRepository = music,
+            streamingPreference = mock {
+                onBlocking { current() } doReturn streamOnly
+                on { enabled } doReturn flowOf(streamOnly)
+            },
+            downloadQueueDao = if (queued) songsQueued() else nothingQueued(),
+        )
         backgroundScope.launch { vm.downloadButton.collect {} }
         val messages = collectMessages(vm)
-        vm.toggleDownload()
+        vm.tap()
         runCurrent()
         val written = org.mockito.kotlin.argumentCaptor<Boolean>()
         org.mockito.kotlin.verifyBlocking(music) { setPlaylistDownload(eq(1L), written.capture()) }
@@ -576,8 +720,24 @@ class PlaylistDetailViewModelTest {
     // Helpers
     // ------------------------------------------------------------------
 
-    private fun track(id: Long, downloaded: Boolean = false) =
-        Track(id = id, title = "Track $id", artist = "Artist", isDownloaded = downloaded)
+    private fun track(id: Long, downloaded: Boolean = false, preview: Boolean = false) =
+        Track(id = id, title = "Track $id", artist = "Artist", isDownloaded = downloaded, soundCloudPreview = preview)
+
+    /** Every song a tap would queue: not on the phone, not given up, not a preview. */
+    private fun missing(tracks: List<Track>, givenUp: List<Long> = emptyList()) =
+        tracks.count { !it.isDownloaded && it.id !in givenUp && !it.soundCloudPreview }
+
+    /** A queue DAO where one of the playlist's songs is waiting or running. */
+    private fun songsQueued(): com.stash.core.data.db.dao.DownloadQueueDao = mock {
+        on { observeGivenUpTrackIds(any()) } doReturn flowOf(emptyList())
+        on { observeHasQueuedSongs(any()) } doReturn flowOf(true)
+    }
+
+    /** A queue DAO where none of the playlist's songs is waiting or running (Clear queue stopped them). */
+    private fun nothingQueued(): com.stash.core.data.db.dao.DownloadQueueDao = mock {
+        on { observeGivenUpTrackIds(any()) } doReturn flowOf(emptyList())
+        on { observeHasQueuedSongs(any()) } doReturn flowOf(false)
+    }
 
     /**
      * Collects [PlaylistDetailViewModel.userMessages] into a list for the life
@@ -637,8 +797,10 @@ class PlaylistDetailViewModelTest {
         sharedMixRepository: com.stash.core.data.share.SharedMixRepository = mock {
             on { observe(any()) } doReturn flowOf(null)
         },
+        // Songs on their way unless a test says otherwise: the button then works as it always has.
         downloadQueueDao: com.stash.core.data.db.dao.DownloadQueueDao = mock {
             on { observeGivenUpTrackIds(any()) } doReturn flowOf(emptyList())
+            on { observeHasQueuedSongs(any()) } doReturn flowOf(true)
         },
     ): PlaylistDetailViewModel = PlaylistDetailViewModel(
         savedStateHandle = savedStateHandle,

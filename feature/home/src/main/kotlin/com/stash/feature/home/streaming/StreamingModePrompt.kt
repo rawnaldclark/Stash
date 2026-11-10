@@ -4,8 +4,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import com.stash.core.ui.theme.StashTheme
+import com.stash.feature.home.R
 
 /**
  * Shown once, the first time the user switches to "Online" (called "Stream only"
@@ -21,18 +23,13 @@ fun StreamingDisclosureDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Online") },
+        title = { Text(stringResource(R.string.home_streaming_dialog_title)) },
         text = {
-            Text(
-                "Sync will keep your playlists up to date without saving " +
-                    "music to this phone, and everything streams. Switch to " +
-                    "Offline any time: it plays only your downloads, and Sync " +
-                    "saves your switched-on playlists and mixes.",
-            )
+            Text(stringResource(R.string.home_streaming_dialog_body))
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Got it")
+                Text(stringResource(R.string.home_streaming_dialog_confirm))
             }
         },
     )
