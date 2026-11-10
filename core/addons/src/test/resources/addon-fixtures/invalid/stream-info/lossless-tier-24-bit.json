@@ -1,0 +1,9 @@
+{
+  "url": "https://cdn.example.org/a.flac",
+  "manifest": "none",
+  "tier": "lossless",
+  "codec": "flac",
+  "cors": true,
+  "bitDepth": 24,
+  "sampleRate": 96000
+}

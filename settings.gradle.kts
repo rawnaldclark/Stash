@@ -32,6 +32,7 @@ include(":core:data")
 include(":core:media")
 include(":core:auth")
 include(":core:network")
+include(":core:addons")
 
 include(":data:spotify")
 include(":data:ytmusic")

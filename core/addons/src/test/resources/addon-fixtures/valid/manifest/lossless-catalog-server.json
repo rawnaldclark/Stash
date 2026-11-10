@@ -1,0 +1,27 @@
+{
+  "stash": 1,
+  "id": "lossless",
+  "name": "Lossless",
+  "version": "1.0.0",
+  "kind": "server",
+  "resources": [
+    "search",
+    "album",
+    "artist",
+    "catalog"
+  ],
+  "catalogs": [
+    {
+      "id": "new-releases",
+      "title": "New releases",
+      "kind": "album",
+      "genres": true
+    },
+    {
+      "id": "top-albums",
+      "title": "Top albums",
+      "kind": "album",
+      "genres": true
+    }
+  ]
+}

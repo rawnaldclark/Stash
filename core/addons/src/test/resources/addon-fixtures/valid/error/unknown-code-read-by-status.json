@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "busy_seats",
+    "message": "A code a newer add-on may send",
+    "retryAfter": 60
+  }
+}

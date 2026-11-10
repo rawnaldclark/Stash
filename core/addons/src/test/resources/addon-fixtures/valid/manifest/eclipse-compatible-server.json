@@ -1,0 +1,33 @@
+{
+  "stash": 1,
+  "id": "com.example.dual",
+  "name": "Dual",
+  "version": "2.1.0",
+  "kind": "server",
+  "resources": [
+    "search",
+    "stream",
+    "resolve",
+    "catalog",
+    "settings",
+    "notifications"
+  ],
+  "types": [
+    "track",
+    "album"
+  ],
+  "stream": {
+    "cors": true
+  },
+  "settings": [
+    {
+      "key": "bitrate",
+      "type": "number",
+      "label": "Bit rate (kbps)",
+      "default": 320,
+      "min": 96,
+      "max": 320,
+      "step": 32
+    }
+  ]
+}

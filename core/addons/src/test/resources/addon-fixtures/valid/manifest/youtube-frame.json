@@ -1,0 +1,18 @@
+{
+  "stash": 1,
+  "id": "youtube",
+  "name": "YouTube",
+  "version": "1.0.0",
+  "kind": "frame",
+  "frame": "https://youtube-addon.example.org/frame.html",
+  "resources": [
+    "search",
+    "resolve",
+    "stream",
+    "album",
+    "artist"
+  ],
+  "stream": {
+    "cors": true
+  }
+}

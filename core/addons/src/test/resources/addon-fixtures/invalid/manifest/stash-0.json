@@ -1,0 +1,32 @@
+{
+  "stash": 0,
+  "id": "tidal",
+  "name": "Tidal",
+  "version": "1.0.0",
+  "kind": "server",
+  "description": "Lossless and Hi-Res from Tidal",
+  "resources": [
+    "search",
+    "resolve",
+    "stream",
+    "download",
+    "quota"
+  ],
+  "stream": {
+    "cors": false,
+    "manifests": [
+      "none",
+      "dash"
+    ],
+    "tiers": [
+      "low",
+      "high",
+      "lossless",
+      "hires"
+    ],
+    "headers": false
+  },
+  "auth": {
+    "token": "path"
+  }
+}

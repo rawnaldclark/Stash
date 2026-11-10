@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "rate_limited",
+    "message": "Tidal relay is rate limiting",
+    "retryAfter": 30
+  }
+}

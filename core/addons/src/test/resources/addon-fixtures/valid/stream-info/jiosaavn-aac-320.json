@@ -1,0 +1,10 @@
+{
+  "url": "https://aac.saavncdn.com/123/4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e_320.mp4",
+  "manifest": "none",
+  "tier": "high",
+  "mime": "audio/mp4",
+  "cors": true,
+  "bitrate": 320000,
+  "sampleRate": 44100,
+  "durationMs": 320000
+}

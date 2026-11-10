@@ -1,0 +1,33 @@
+{
+  "stash": 1,
+  "id": "spotify",
+  "name": "Spotify",
+  "version": "1.2.0",
+  "kind": "phone",
+  "description": "Your Spotify playlists, mixes and likes",
+  "resources": [
+    "search",
+    "account"
+  ],
+  "phone": {
+    "bundle": {
+      "path": "main.js",
+      "sha256": "a3f1c2d4e5b6978877665544332211ffeeddccbbaa99887766554433221100aa"
+    },
+    "domains": [
+      "open.spotify.com",
+      "accounts.spotify.com",
+      "api-partner.spotify.com",
+      "*.spotifycdn.com"
+    ],
+    "signIn": {
+      "title": "Sign in to Spotify",
+      "url": "https://accounts.spotify.com/login",
+      "domain": "spotify.com",
+      "cookieNames": [
+        "sp_dc"
+      ],
+      "accounts": "many"
+    }
+  }
+}
