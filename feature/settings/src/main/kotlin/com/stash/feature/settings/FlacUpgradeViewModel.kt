@@ -1,6 +1,7 @@
 package com.stash.feature.settings
 
 import android.content.Context
+import android.content.res.Resources
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -65,7 +66,7 @@ class FlacUpgradeViewModel @Inject constructor(
             // A batch started since (a sync, the Library) is newer news than the old tap.
             .onEach { infos -> if (infos.any { !it.state.isFinished }) tapResult.value = null },
         tapResult,
-    ) { infos, tap -> flacUpgradeUiState(infos, tap) }
+    ) { infos, tap -> flacUpgradeUiState(infos, tap, context.resources) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FlacUpgradeUiState())
 
     fun runNow() {
@@ -90,50 +91,50 @@ class FlacUpgradeViewModel @Inject constructor(
  * The card's state from the batch worker's unique work and the last tap's answer.
  * A live batch wins; then a tap that queued nothing; then how the last batch ended.
  */
-internal fun flacUpgradeUiState(infos: List<WorkInfo>, tap: FlacSweepResult?): FlacUpgradeUiState {
+internal fun flacUpgradeUiState(infos: List<WorkInfo>, tap: FlacSweepResult?, res: Resources): FlacUpgradeUiState {
     infos.firstOrNull { !it.state.isFinished }?.let { live ->
         return FlacUpgradeUiState(
             active = true,
             message = if (live.state == WorkInfo.State.RUNNING) {
-                "Checking for upgrades…"
+                res.getString(R.string.settings_flac_upgrade_checking)
             } else {
                 // Just queued, waiting for a connection, or paced by the lossless service.
-                "Waiting to run. It starts by itself when it can, on Wi-Fi if sync is set to Wi-Fi only."
+                res.getString(R.string.settings_flac_upgrade_waiting)
             },
         )
     }
-    tapMessage(tap)?.let { return FlacUpgradeUiState(message = it) }
+    tapMessage(tap, res)?.let { return FlacUpgradeUiState(message = it) }
     val last = infos.lastOrNull { it.state != WorkInfo.State.CANCELLED }
         ?: infos.lastOrNull()
         ?: return FlacUpgradeUiState()
     return if (last.state == WorkInfo.State.SUCCEEDED) {
-        finishedState(last.outputData)
+        finishedState(last.outputData, res)
     } else {
-        FlacUpgradeUiState(message = "Stopped before it finished.")
+        FlacUpgradeUiState(message = res.getString(R.string.settings_flac_upgrade_stopped))
     }
 }
 
-private fun tapMessage(tap: FlacSweepResult?): String? = when (tap) {
-    FlacSweepResult.StreamingMode -> "Stash is set to Online, so there are no downloads to upgrade."
-    FlacSweepResult.LosslessDisabled -> "Set Download quality to Lossless in Audio & Quality first."
+private fun tapMessage(tap: FlacSweepResult?, res: Resources): String? = when (tap) {
+    FlacSweepResult.StreamingMode -> res.getString(R.string.settings_flac_upgrade_streaming_mode)
+    FlacSweepResult.LosslessDisabled -> res.getString(R.string.settings_flac_upgrade_lossless_disabled)
     FlacSweepResult.NothingToUpgrade ->
-        "Nothing to upgrade. Every downloaded track is FLAC already or was checked in the last two weeks."
+        res.getString(R.string.settings_flac_upgrade_nothing)
     // Queued / already running: the batch itself has the news. AutoUpgradeOff is post-sync only.
     FlacSweepResult.AutoUpgradeOff, FlacSweepResult.AlreadyRunning, is FlacSweepResult.Queued, null -> null
 }
 
-private fun finishedState(output: Data): FlacUpgradeUiState {
+private fun finishedState(output: Data, res: Resources): FlacUpgradeUiState {
     val upgraded = output.getInt(FlacUpgradeWorker.KEY_UPGRADED, 0)
     val noMatch = output.getInt(FlacUpgradeWorker.KEY_NO_MATCH, 0)
     val failed = output.getInt(FlacUpgradeWorker.KEY_FAILED, 0)
     val detail = listOfNotNull(
-        if (noMatch > 0) "No lossless version yet for ${tracks(noMatch)}. They're checked again in two weeks." else null,
-        if (failed > 0) "Couldn't check ${tracks(failed)} this time. They're tried again next run." else null,
+        if (noMatch > 0) res.getString(R.string.settings_flac_upgrade_detail_no_match, tracks(noMatch, res)) else null,
+        if (failed > 0) res.getString(R.string.settings_flac_upgrade_detail_failed, tracks(failed, res)) else null,
     ).joinToString("\n").ifEmpty { null }
     return FlacUpgradeUiState(
-        message = if (upgraded > 0) "Done: ${tracks(upgraded)} upgraded to FLAC." else "Done: no new FLAC versions found.",
+        message = if (upgraded > 0) res.getString(R.string.settings_flac_upgrade_done_upgraded, tracks(upgraded, res)) else res.getString(R.string.settings_flac_upgrade_done_none),
         detail = detail,
     )
 }
 
-private fun tracks(n: Int) = "$n ${if (n == 1) "track" else "tracks"}"
+private fun tracks(n: Int, res: Resources) = res.getQuantityString(R.plurals.settings_flac_upgrade_tracks, n, n)

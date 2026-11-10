@@ -1,5 +1,6 @@
 package com.stash.feature.settings
 
+import android.content.res.Resources
 import com.stash.core.auth.model.AuthState
 import com.stash.core.model.ThemeMode
 
@@ -21,8 +22,7 @@ data class HubSummaries(
 
 /**
  * Pure derivation of the Settings-hub row subtitles from current state.
- * Kept pure (no BuildConfig / Context reads) so it is unit-testable; the
- * hub passes the app version + the two streaming StateFlow values in.
+ * Reads strings through [res] so it supports localization and can be unit-tested.
  */
 fun settingsHubSummaries(
     state: SettingsUiState,
@@ -31,19 +31,20 @@ fun settingsHubSummaries(
     streamOnCellular: Boolean,
     /** Connected accounts that live outside [SettingsUiState] (ListenBrainz, cloud storage). */
     otherAccounts: List<String> = emptyList(),
+    res: Resources,
 ): HubSummaries {
-    val mode = if (streamingEnabled) "Online" else "Offline"
-    val cellular = if (streamOnCellular) "Cellular on" else "Cellular off"
+    val mode = if (streamingEnabled) res.getString(R.string.settings_mode_online) else res.getString(R.string.settings_mode_offline)
+    val cellular = if (streamOnCellular) res.getString(R.string.settings_summary_cellular_on) else res.getString(R.string.settings_summary_cellular_off)
     val playback = "$mode · $cellular"
 
     // What downloads save (Download quality); streaming's Lossless switch is inside the screen.
     val audioQuality = when (state.downloadMode) {
         com.stash.core.model.DownloadMode.LOSSLESS -> {
             val shortLossless = state.losslessQualityTier.displayLabel.substringBefore(" (")
-            "Lossless · $shortLossless"
+            res.getString(R.string.settings_summary_lossless, shortLossless)
         }
         com.stash.core.model.DownloadMode.AAC -> "AAC 320"
-        com.stash.core.model.DownloadMode.OPUS -> "Opus · ${state.audioQuality.label}"
+        com.stash.core.model.DownloadMode.OPUS -> res.getString(R.string.settings_summary_opus, state.audioQuality.label)
     }
 
     val connectedServices = buildList {
@@ -55,22 +56,22 @@ fun settingsHubSummaries(
     }
     // Names while they fit on the row's one line; a count past that.
     val accounts = when {
-        connectedServices.isEmpty() -> "Not connected"
+        connectedServices.isEmpty() -> res.getString(R.string.settings_account_not_connected)
         connectedServices.size <= 3 -> connectedServices.joinToString(" · ")
-        else -> "${connectedServices.size} connected"
+        else -> res.getString(R.string.settings_summary_connected_count, connectedServices.size)
     }
 
-    val tracks = "${state.totalTracks} ${if (state.totalTracks == 1) "track" else "tracks"}"
+    val tracks = res.getQuantityString(R.plurals.settings_summary_tracks_count, state.totalTracks, state.totalTracks)
     val size = formatBytes(state.totalStorageBytes)
     val libraryStorage = "$tracks · $size"
 
     val appearance = when (state.themeMode) {
-        ThemeMode.LIGHT -> "Light"
-        ThemeMode.DARK -> "Dark"
-        ThemeMode.SYSTEM -> "Follow system"
+        ThemeMode.LIGHT -> res.getString(R.string.settings_theme_light)
+        ThemeMode.DARK -> res.getString(R.string.settings_theme_dark)
+        ThemeMode.SYSTEM -> res.getString(R.string.settings_theme_follow_system)
     }.let { base ->
         // AMOLED only ever applies to dark; a forced-light picker hides it.
-        if (state.amoledDark && state.themeMode != ThemeMode.LIGHT) "$base · Pure black" else base
+        if (state.amoledDark && state.themeMode != ThemeMode.LIGHT) "$base · ${res.getString(R.string.settings_summary_pure_black)}" else base
     }
 
     val about = "v$versionName"

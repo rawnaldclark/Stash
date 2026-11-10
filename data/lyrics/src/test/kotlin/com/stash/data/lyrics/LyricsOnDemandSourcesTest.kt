@@ -26,7 +26,9 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
 import java.util.Collections
@@ -99,6 +101,18 @@ class LyricsOnDemandSourcesTest {
         // ...and then gets its one detached follow-up try for word timing.
         withTimeout(5_000) { lrcRed.asked.await() }
         assertEquals(1, apple.calls.size)
+    }
+
+    @Test fun `only the background follow-up may search for ids, never the first lookup (#671)`() = runBlocking {
+        val lrcRed = Recording(IsrcTtmlLyricsSource.LRC_RED_ID, onDemandOnly = true)
+        val apple = Recording(AppleTtmlLyricsSource.SOURCE_ID)
+        val lrclib = Recording("lrclib") { lrcResult }
+
+        withTimeout(5_000) { repo(listOf(apple, lrclib, lrcRed), lyricsDao()).resolveAndStore(query()) }
+        withTimeout(5_000) { lrcRed.asked.await() }
+
+        assertFalse("the first lookup", apple.calls.single().searchForIds)
+        assertTrue("the follow-up", lrcRed.calls.single().searchForIds)
     }
 
     @Test fun `the follow-up upgrades the row to word-synced and never writes tracks isrc`() = runBlocking {
@@ -212,6 +226,7 @@ class LyricsOnDemandSourcesTest {
         )
         assertEquals(TtmlUpgradeResult.PAUSED, upgrade(AppleTtmlLyricsSource.AppleSkippedException(), IOException("down")))
         assertEquals(TtmlUpgradeResult.PAUSED, upgrade(IsrcLyricsHostBreaker.SkippedException(), IOException("down")))
+        assertEquals(TtmlUpgradeResult.PAUSED, upgrade(SpicyLyricsSource.SkippedException(), IOException("down")))
         assertEquals(TtmlUpgradeResult.FAILED, upgrade(IOException("down"), AppleTtmlLyricsSource.HttpStatusException(503, "lrc.red")))
     }
 

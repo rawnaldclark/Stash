@@ -20,7 +20,9 @@ import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.stash.feature.sync.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,7 +48,7 @@ fun SyncTimeBottomSheet(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
             Text(
-                text = "Sync time",
+                text = stringResource(R.string.sync_time_title),
                 style = MaterialTheme.typography.titleLarge,
             )
             Spacer(Modifier.height(16.dp))
@@ -64,9 +66,9 @@ fun SyncTimeBottomSheet(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.sync_cancel)) }
                 TextButton(onClick = { onConfirm(timeState.hour, timeState.minute) }) {
-                    Text("Set")
+                    Text(stringResource(R.string.sync_time_set))
                 }
             }
         }

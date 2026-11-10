@@ -1,5 +1,7 @@
 package com.stash.feature.sync
 
+import android.content.Context
+
 /**
  * Progress of the approved Failed Matches downloads, for the "Downloading 12
  * approved songs" banner. Approving hides a row at once (the download then
@@ -40,12 +42,31 @@ internal data class ApprovedDownloads(
 private fun songs(n: Int) = if (n == 1) "song" else "songs"
 
 /** "Downloading 12 approved songs" while a run is going; null otherwise. */
-internal fun approvedDownloadsTitle(d: ApprovedDownloads): String? =
-    if (d.active) "Downloading ${d.total} approved ${songs(d.total)}" else null
+internal fun approvedDownloadsTitle(d: ApprovedDownloads, context: Context? = null): String? {
+    if (!d.active) return null
+    return if (context != null) {
+        context.resources.getQuantityString(R.plurals.sync_approved_downloads_title, d.total, d.total)
+    } else {
+        "Downloading ${d.total} approved ${songs(d.total)}"
+    }
+}
 
 /** "3 of 12 done", plus how many didn't download (they are back in the list). */
-internal fun approvedDownloadsDetail(d: ApprovedDownloads): String {
+internal fun approvedDownloadsDetail(d: ApprovedDownloads, context: Context? = null): String {
     val finished = d.done + d.failed
+    if (context != null) {
+        return if (d.failed > 0) {
+            context.resources.getQuantityString(
+                R.plurals.sync_approved_downloads_detail_failed,
+                d.failed,
+                finished,
+                d.total,
+                d.failed,
+            )
+        } else {
+            context.getString(R.string.sync_approved_downloads_detail_base, finished, d.total)
+        }
+    }
     val base = "$finished of ${d.total} done"
     return if (d.failed > 0) "$base · ${d.failed} didn't download" else base
 }
@@ -54,5 +75,11 @@ internal fun approvedDownloadsDetail(d: ApprovedDownloads): String {
  * The snackbar when a run ends with songs downloaded ("Downloaded 12 approved
  * songs."); null when none did, since each failure already said so.
  */
-internal fun approvedDownloadsFinishedMessage(d: ApprovedDownloads): String? =
-    if (!d.active && d.done > 0) "Downloaded ${d.done} approved ${songs(d.done)}." else null
+internal fun approvedDownloadsFinishedMessage(d: ApprovedDownloads, context: Context? = null): String? {
+    if (d.active || d.done <= 0) return null
+    return if (context != null) {
+        context.resources.getQuantityString(R.plurals.sync_approved_downloads_finished, d.done, d.done)
+    } else {
+        "Downloaded ${d.done} approved ${songs(d.done)}."
+    }
+}

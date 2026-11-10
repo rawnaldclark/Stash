@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.stash.core.ui.ambient.Ground
@@ -52,9 +53,9 @@ internal fun DailyDiscoverBuildingCard(modifier: Modifier = Modifier) {
         }
         Spacer(Modifier.width(14.dp))
         DiscoverHeroText(
-            eyebrow = "Updated daily",
-            title = "Building your Daily Discover…",
-            body = "Fresh finds from what you listen to.",
+            eyebrow = stringResource(R.string.home_updated_daily),
+            title = stringResource(R.string.home_hero_building_title),
+            body = stringResource(R.string.home_hero_building_body),
             roles = roles,
             modifier = Modifier.weight(1f),
         )

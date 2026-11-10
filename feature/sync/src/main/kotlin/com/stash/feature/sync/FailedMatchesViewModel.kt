@@ -1,5 +1,6 @@
 package com.stash.feature.sync
 
+import android.content.Context
 import android.util.Log
 import androidx.media3.common.PlaybackException
 import androidx.lifecycle.ViewModel
@@ -29,6 +30,7 @@ import com.stash.data.download.ytdlp.YtDlpSearchResult
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.SearchResultSection
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -158,6 +160,7 @@ class FailedMatchesViewModel @Inject constructor(
     private val trackIdentityEvents: TrackIdentityEvents,
     private val albumMatchExecutor: AlbumMatchExecutor,
     private val ytMusicApi: YTMusicApiClient,
+    @param:ApplicationContext private val context: Context? = null,
 ) : ViewModel() {
 
     companion object {
@@ -471,13 +474,24 @@ class FailedMatchesViewModel @Inject constructor(
             // indistinguishable from a button that did nothing. Always report
             // the outcome so the user knows the pass actually ran.
             val found = _resyncCandidates.value.size
-            _userMessages.trySend(
+            val msg = if (context != null) {
+                if (found == 0) {
+                    context.getString(R.string.sync_failed_matches_msg_no_new_matches)
+                } else {
+                    context.resources.getQuantityString(
+                        R.plurals.sync_failed_matches_msg_found_replacements,
+                        found,
+                        found,
+                    )
+                }
+            } else {
                 when (found) {
                     0 -> "No new matches found."
                     1 -> "Found 1 replacement."
                     else -> "Found $found replacements."
-                },
-            )
+                }
+            }
+            _userMessages.trySend(msg)
 
             // Pre-extract stream URLs for instant audio previews
             preExtractStreamUrls(_resyncCandidates.value)
@@ -656,7 +670,10 @@ class FailedMatchesViewModel @Inject constructor(
             // without the YouTube video-id shape goes no further.
             val url = YouTubeVideoId.watchUrl(candidate.videoId) ?: run {
                 Log.w(TAG, "approve: candidate for trackId=$trackId isn't a YouTube video id")
-                _userMessages.trySend("Can't approve — this match isn't a valid YouTube video.")
+                _userMessages.trySend(
+                    context?.getString(R.string.sync_failed_matches_msg_invalid_video)
+                        ?: "Can't approve — this match isn't a valid YouTube video."
+                )
                 return@launch
             }
 
@@ -664,15 +681,23 @@ class FailedMatchesViewModel @Inject constructor(
             // for a track the user already blocked would re-mark it
             // downloaded and resurrect the file.
             if (blocklistGuard.isBlockedByTrackId(trackId)) {
-                _userMessages.trySend("Can't approve — this track is on your blocklist.")
+                _userMessages.trySend(
+                    context?.getString(R.string.sync_failed_matches_msg_blocked)
+                        ?: "Can't approve — this track is on your blocklist."
+                )
                 return@launch
             }
 
             val existing = trackDao.findByYoutubeId(candidate.videoId)
             if (existing != null && existing.id != trackId) {
                 _userMessages.trySend(
-                    "Can't approve \u2014 '${candidate.title}' is already linked to " +
-                        "${existing.artist} \u2014 ${existing.title}. Try Dismiss instead.",
+                    context?.getString(
+                        R.string.sync_failed_matches_msg_already_linked,
+                        candidate.title,
+                        existing.artist,
+                        existing.title,
+                    ) ?: ("Can't approve \u2014 '${candidate.title}' is already linked to " +
+                        "${existing.artist} \u2014 ${existing.title}. Try Dismiss instead.")
                 )
                 return@launch
             }
@@ -693,7 +718,10 @@ class FailedMatchesViewModel @Inject constructor(
                 _resyncCandidates.update { it - trackId }
             } catch (e: Exception) {
                 Log.e(TAG, "Approve failed for trackId=$trackId", e)
-                _userMessages.trySend("Couldn't approve this match. Please try again.")
+                _userMessages.trySend(
+                    context?.getString(R.string.sync_failed_matches_msg_approve_error)
+                        ?: "Couldn't approve this match. Please try again."
+                )
                 return@launch
             }
 
@@ -729,11 +757,14 @@ class FailedMatchesViewModel @Inject constructor(
                         } catch (e: Exception) {
                             Log.w(TAG, "Couldn't put ${candidate.title} back in Failed Matches", e)
                         }
-                        _userMessages.trySend("Couldn't download '${candidate.title}'. It's back in the list to try again.")
+                        _userMessages.trySend(
+                            context?.getString(R.string.sync_failed_matches_msg_download_error, candidate.title)
+                                ?: "Couldn't download '${candidate.title}'. It's back in the list to try again."
+                        )
                     }
                 } finally {
                     val after = approvedDownloadsState.updateAndGet { it.finished(downloaded) }
-                    approvedDownloadsFinishedMessage(after)?.let { _userMessages.trySend(it) }
+                    approvedDownloadsFinishedMessage(after, context)?.let { _userMessages.trySend(it) }
                 }
             }
         }
@@ -827,7 +858,10 @@ class FailedMatchesViewModel @Inject constructor(
                 // Defense in depth: candidates normally pass the resync exclusion
                 // above, but stale UI state or an external caller must not self-swap.
                 if (candidate.videoId == row.currentYoutubeId) {
-                    _userMessages.trySend("Choose a different replacement for this track.")
+                    _userMessages.trySend(
+                        context?.getString(R.string.sync_flagged_msg_choose_different)
+                            ?: "Choose a different replacement for this track."
+                    )
                     return@launch
                 }
 
@@ -899,7 +933,8 @@ class FailedMatchesViewModel @Inject constructor(
             }
             is SwapOutcome.Blocked -> {
                 _resyncCandidates.update { it - outcome.trackId }
-                "Can't swap — this song is on your blocklist."
+                context?.getString(R.string.sync_flagged_msg_blocked)
+                    ?: "Can't swap — this song is on your blocklist."
             }
         }
         _userMessages.trySend(message)
@@ -933,7 +968,8 @@ class FailedMatchesViewModel @Inject constructor(
         } else {
             "$ownerArtist — $ownerTitle ($ownerAlbum)"
         }
-        return "Can't swap — '$candidateTitle' is already linked to $owner."
+        return context?.getString(R.string.sync_flagged_msg_already_linked, candidateTitle, owner)
+            ?: "Can't swap — '$candidateTitle' is already linked to $owner."
     }
 
     /**
@@ -1009,7 +1045,10 @@ class FailedMatchesViewModel @Inject constructor(
             } ?: run {
                 Log.w(TAG, "find it yourself: trackId=$trackId never reached Failed Matches; nothing opened")
                 // Said, not just logged: the listener came here for this song.
-                _userMessages.trySend(FOCUS_NOT_FOUND_MESSAGE)
+                _userMessages.trySend(
+                    context?.getString(R.string.sync_failed_matches_msg_focus_not_found)
+                        ?: FOCUS_NOT_FOUND_MESSAGE
+                )
                 return@launch
             }
             if (_manualSearch.value != null) return@launch
@@ -1360,7 +1399,10 @@ class FailedMatchesViewModel @Inject constructor(
         activePreviewAttemptId = null
         if (_previewLoading.value == videoId) _previewLoading.value = null
         previewPlayer.stopIfCurrent(ownedAttemptId)
-        _userMessages.trySend(PREVIEW_FAILURE_MESSAGE)
+        _userMessages.trySend(
+            context?.getString(R.string.sync_failed_matches_msg_preview_failed)
+                ?: PREVIEW_FAILURE_MESSAGE
+        )
     }
 
     private fun isIoError(error: PlaybackException): Boolean =

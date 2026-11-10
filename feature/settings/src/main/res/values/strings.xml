@@ -1319,4 +1319,72 @@
     <string name="soundcloud_disconnect">Disconnect SoundCloud</string>
     <string name="soundcloud_disconnect_body">Stop syncing this account. Your library and downloaded files stay here.</string>
     <string name="soundcloud_cancel">Cancel</string>
+
+    <!-- Settings > Accounts: Connection Status -->
+    <string name="settings_account_session_expired">Session expired. Reconnect to keep syncing.</string>
+    <string name="settings_account_session_expired_for">Session expired for %1$s. Reconnect to keep syncing.</string>
+    <string name="settings_account_connecting">Connecting...</string>
+
+    <!-- Settings Hub Subtitles -->
+    <string name="settings_summary_cellular_on">Cellular on</string>
+    <string name="settings_summary_cellular_off">Cellular off</string>
+    <string name="settings_summary_lossless">Lossless · %1$s</string>
+    <string name="settings_summary_opus">Opus · %1$s</string>
+    <string name="settings_summary_connected_count">%1$d connected</string>
+    <string name="settings_theme_follow_system">Follow system</string>
+    <string name="settings_summary_pure_black">Pure black</string>
+    <plurals name="settings_summary_tracks_count">
+        <item quantity="one">%d track</item>
+        <item quantity="other">%d tracks</item>
+    </plurals>
+
+    <!-- Settings > Supporter Claim Messages -->
+    <string name="settings_supporter_msg_code_sent">A new code is on its way.</string>
+    <string name="settings_supporter_msg_bad_email">That doesn\'t look like an email address. Check it and try again.</string>
+    <string name="settings_supporter_msg_bad_code">That code didn\'t work. Check it, or send a new one.</string>
+    <string name="settings_supporter_msg_rate_limited_min">Too many tries. Wait a minute.</string>
+    <string name="settings_supporter_msg_rate_limited_mins">Too many tries. Wait %1$d minutes.</string>
+    <string name="settings_supporter_msg_not_configured">Unlocking isn\'t available right now. Please try again later.</string>
+    <string name="settings_supporter_msg_unreachable">Couldn\'t reach Stash. Check your connection and try again.</string>
+    <string name="settings_supporter_msg_unlocked_pending">Code accepted. Unlimited Tidal shows here once Stash confirms it.</string>
+
+    <!-- Settings > Web Library Import -->
+    <string name="web_library_import_intro_this_file_has">This file has</string>
+    <string name="web_library_import_intro_body">%1$s %2$s, %3$s and %4$s.</string>
+    <string name="web_library_import_result_added">Added %1$s.</string>
+    <string name="web_library_import_result_nothing_new">Nothing new: you already had all of it.</string>
+    <plurals name="web_library_import_playlists_updated">
+        <item quantity="one">new songs in %,d playlist you had</item>
+        <item quantity="other">new songs in %,d playlists you had</item>
+    </plurals>
+    <!-- The import picker's and result's counts, with thousands separators: "This file has 1,204 likes, 5,000 plays and 14 playlists." -->
+    <plurals name="web_library_import_likes">
+        <item quantity="one">%,d like</item>
+        <item quantity="other">%,d likes</item>
+    </plurals>
+    <plurals name="web_library_import_plays">
+        <item quantity="one">%,d play</item>
+        <item quantity="other">%,d plays</item>
+    </plurals>
+    <plurals name="web_library_import_playlists">
+        <item quantity="one">%,d playlist</item>
+        <item quantity="other">%,d playlists</item>
+    </plurals>
+    <string name="web_library_inbox_add_failed">Couldn\'t add it. Try again.</string>
+
+    <!-- Settings > FLAC Upgrades -->
+    <string name="settings_flac_upgrade_checking">Checking for upgrades…</string>
+    <string name="settings_flac_upgrade_waiting">Waiting to run. It starts by itself when it can, on Wi-Fi if sync is set to Wi-Fi only.</string>
+    <string name="settings_flac_upgrade_stopped">Stopped before it finished.</string>
+    <string name="settings_flac_upgrade_streaming_mode">Stash is set to Online, so there are no downloads to upgrade.</string>
+    <string name="settings_flac_upgrade_lossless_disabled">Set Download quality to Lossless in Audio &amp; Quality first.</string>
+    <string name="settings_flac_upgrade_nothing">Nothing to upgrade. Every downloaded track is FLAC already or was checked in the last two weeks.</string>
+    <string name="settings_flac_upgrade_done_none">Done: no new FLAC versions found.</string>
+    <string name="settings_flac_upgrade_done_upgraded">Done: %1$s upgraded to FLAC.</string>
+    <string name="settings_flac_upgrade_detail_no_match">No lossless version yet for %1$s. They\'re checked again in two weeks.</string>
+    <string name="settings_flac_upgrade_detail_failed">Couldn\'t check %1$s this time. They\'re tried again next run.</string>
+    <plurals name="settings_flac_upgrade_tracks">
+        <item quantity="one">%d track</item>
+        <item quantity="other">%d tracks</item>
+    </plurals>
 </resources>

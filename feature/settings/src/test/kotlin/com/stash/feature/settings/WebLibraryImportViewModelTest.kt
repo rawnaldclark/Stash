@@ -1,5 +1,8 @@
 package com.stash.feature.settings
 
+import android.content.Context
+import android.content.res.Resources
+import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.weblibrary.ImportSelection
 import com.stash.core.data.weblibrary.ImportedLike
@@ -9,8 +12,13 @@ import com.stash.core.data.weblibrary.WebLibraryFile
 import com.stash.core.data.weblibrary.WebLibraryImportResult
 import com.stash.core.data.weblink.handoff.WireSong
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /** The import picker's words and choice (link-sync spec §2.3). */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class WebLibraryImportViewModelTest {
     private val content = WebLibraryContent(
         likes = List(1_204) { ImportedLike(WireSong("S$it", "A"), 1) },
@@ -20,6 +28,9 @@ class WebLibraryImportViewModelTest {
         ),
         history = emptyList(),
     )
+
+    /** The module's own strings: what the app shows, not a copy of it. */
+    private val res: Resources = ApplicationProvider.getApplicationContext<Context>().resources
 
     @Test fun `the picker starts with everything the file holds, and a part with nothing in it can't be taken`() {
         val pick = WebLibraryImportViewModel.pickOf(content)
@@ -32,9 +43,9 @@ class WebLibraryImportViewModelTest {
     }
 
     @Test fun `the words`() {
-        assertThat(WebLibraryImportViewModel.introOf(content)).isEqualTo("This file has 1,204 likes, 0 plays and 2 playlists.")
-        assertThat(WebLibraryImportViewModel.resultText(WebLibraryImportResult(likesAdded = 40, playlistsAdded = 3, playlistsUpdated = 1, playsAdded = 1)))
+        assertThat(WebLibraryImportViewModel.introOf(content, res)).isEqualTo("This file has 1,204 likes, 0 plays and 2 playlists.")
+        assertThat(WebLibraryImportViewModel.resultText(WebLibraryImportResult(likesAdded = 40, playlistsAdded = 3, playlistsUpdated = 1, playsAdded = 1), res))
             .isEqualTo("Added 40 likes, 3 playlists, new songs in 1 playlist you had and 1 play.")
-        assertThat(WebLibraryImportViewModel.resultText(WebLibraryImportResult(likesSkipped = 9))).isEqualTo("Nothing new: you already had all of it.")
+        assertThat(WebLibraryImportViewModel.resultText(WebLibraryImportResult(likesSkipped = 9), res)).isEqualTo("Nothing new: you already had all of it.")
     }
 }

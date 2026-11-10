@@ -18,8 +18,9 @@ import kotlin.math.abs
  * title/artist -> ISRC via the lrc.red search API (`lrc.red/api/v1`, which is where
  * `lyrics-api.binimum.org` redirects; asked directly to save the redirect hop).
  *
- * Only for [IsrcTtmlLyricsSource]'s own use: the ISRC found here picks which TTML file to fetch
- * and is kept in `lyrics.source_lyrics_id`. It is NEVER written to `tracks.isrc` — that column
+ * For [IsrcTtmlLyricsSource] (the ISRC found here picks which TTML file to fetch and is kept in
+ * `lyrics.source_lyrics_id`) and for [SpicyLyricsSource]'s background upgrade passes, which look a
+ * song without a Spotify id up by it. It is NEVER written to `tracks.isrc` — that column
  * decides which version of a song streams and downloads, and a fuzzy title/artist search is not
  * evidence enough to change it.
  *

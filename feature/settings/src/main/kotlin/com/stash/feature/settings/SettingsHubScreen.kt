@@ -87,7 +87,7 @@ fun SettingsHubScreen(
         if (listenBrainz is com.stash.feature.settings.components.ListenBrainzState.Connected) add("ListenBrainz")
         cloudAccounts.map { it.account.provider.displayName }.distinct().forEach(::add)
     }
-    val summaries = settingsHubSummaries(uiState, versionName, streamingEnabled, streamOnCellular, otherAccounts)
+    val summaries = settingsHubSummaries(uiState, versionName, streamingEnabled, streamOnCellular, otherAccounts, context.resources)
 
     var searchQuery by remember { mutableStateOf("") }
     val searchIndex = remember(context) { searchableIndex(settingsSearchIndex(context), yourStash = onOpenYourStash != null) }
