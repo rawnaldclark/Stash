@@ -1,0 +1,175 @@
+package com.stash.data.download.lossless.addon
+
+import com.google.common.truth.Truth.assertThat
+import com.stash.addons.contract.AddonKind
+import com.stash.addons.contract.Delivery
+import com.stash.addons.contract.Manifest
+import com.stash.addons.contract.StreamCapabilities
+import com.stash.addons.contract.StreamInfo
+import com.stash.addons.contract.StreamRequest
+import com.stash.addons.contract.Tier
+import com.stash.addons.contract.Track
+import com.stash.core.addons.AddonRegistry
+import com.stash.core.addons.AddonResult
+import com.stash.core.addons.HttpAddonClient
+import com.stash.core.addons.InstalledAddon
+import com.stash.data.download.lossless.AggregatorRateLimiter
+import com.stash.data.download.lossless.LosslessQualityTier
+import com.stash.data.download.lossless.LosslessSourcePreferences
+import com.stash.data.download.lossless.TrackQuery
+import com.stash.data.download.lossless.relay.LosslessConfigFetcher
+import com.stash.data.download.lossless.relay.RelaySigner
+import com.stash.data.download.lossless.relay.TidalRelay
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.coVerifyOrder
+import io.mockk.every
+import io.mockk.just
+import io.mockk.mockk
+import io.mockk.runs
+import io.mockk.slot
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runTest
+import okhttp3.Request
+import org.junit.Test
+
+/** The download side of Stash Add-ons v1 (phase 1): the source seam, and the client's host ports. */
+@OptIn(ExperimentalCoroutinesApi::class)
+class AddonDownloadSeamTest {
+
+    private class Registry(list: List<InstalledAddon>) : AddonRegistry {
+        override val addons: StateFlow<List<InstalledAddon>> = MutableStateFlow(list)
+    }
+
+    private val prefs: LosslessSourcePreferences = mockk { coEvery { qualityTierNow() } returns LosslessQualityTier.HI_RES }
+
+    private fun addon(resources: List<String> = listOf("resolve", "download"), tiers: List<String>? = listOf("lossless", "hires")) = InstalledAddon(
+        base = "https://addon.example/",
+        manifest = Manifest(
+            stash = 1, id = "dl", name = "Downloads", version = "1", kind = AddonKind.SERVER, resources = resources,
+            stream = StreamCapabilities(cors = false, manifests = listOf("none", "dash"), tiers = tiers),
+        ),
+    )
+
+    private val flac = StreamInfo(
+        url = "https://cdn.example/a.flac", manifest = Delivery.DASH, tier = Tier.HIRES, cors = false,
+        bitDepth = 24, sampleRate = 96_000, bitrate = 4_608_000,
+    )
+
+    // ------------------------------------------------------------------------------------------ inert
+
+    @Test fun `an empty registry gives no download sources and asks nothing`() {
+        // Strict mocks: any call to the client or the limiter fails the test.
+        val sources = AddonDownloadSources(Registry(emptyList()), mockk(), mockk(), mockk())
+        assertThat(sources.sources()).isEmpty()
+    }
+
+    @Test fun `only add-ons that resolve and give lossless files become sources`() {
+        val limiter = AggregatorRateLimiter()
+        val ok = addon()
+        val lossyOnly = addon(tiers = listOf("high")).let { it.copy(manifest = it.manifest.copy(id = "lossy")) }
+        val noResolve = addon(resources = listOf("download")).let { it.copy(manifest = it.manifest.copy(id = "noresolve")) }
+        val sources = AddonDownloadSources(Registry(listOf(ok, lossyOnly, noResolve)), mockk(), limiter, prefs).sources()
+        assertThat(sources.map { it.id }).containsExactly("addon:dl")
+    }
+
+    // ------------------------------------------------------------------------------------------ the source
+
+    @Test fun `a source resolves, then downloads at the download quality`() = runTest {
+        val request = slot<StreamRequest>()
+        val client: HttpAddonClient = mockk {
+            coEvery { resolve(any(), any(), any()) } returns AddonResult.Ok(Track(id = "td:7", title = "B", artist = "A", isrc = "GBAAA0000001"))
+            coEvery { download(any(), "td:7", capture(request), any()) } returns AddonResult.Ok(flac)
+        }
+        val source = AddonDownloadSources(Registry(listOf(addon())), client, AggregatorRateLimiter(), prefs).sources().single()
+        val r = source.resolve(TrackQuery(artist = "A", title = "B", isrc = "GBAAA0000001"))!!
+        assertThat(r.sourceId).isEqualTo("addon:dl")
+        assertThat(r.downloadUrl).isEqualTo(flac.url)
+        assertThat(r.isDash).isTrue()
+        assertThat(r.format.codec).isEqualTo("flac")
+        assertThat(r.format.bitsPerSample).isEqualTo(24)
+        assertThat(r.format.bitrateKbps).isEqualTo(4608)
+        assertThat(r.confidence).isEqualTo(1f)
+        assertThat(request.captured).isEqualTo(StreamRequest(Tier.HIRES, Tier.LOSSLESS, listOf(Delivery.NONE, Delivery.DASH)))
+        // A download is background work: paced.
+        coVerify { client.resolve(any(), any(), true) }
+    }
+
+    @Test fun `CD quality asks for lossless only`() {
+        assertThat(AddonLosslessSource.lossless(LosslessQualityTier.CD).tier).isEqualTo(Tier.LOSSLESS)
+        assertThat(AddonLosslessSource.lossless(LosslessQualityTier.MAX).tier).isEqualTo(Tier.HIRES)
+    }
+
+    @Test fun `no match, a failure, or an answer needing headers is no source result`() = runTest {
+        val client: HttpAddonClient = mockk {
+            coEvery { resolve(any(), any(), any()) } returnsMany listOf(
+                AddonResult.Ok(null),
+                AddonResult.Failed(com.stash.core.addons.AddonFailure.Timeout),
+                AddonResult.Ok(Track(id = "1", title = "B", artist = "A")),
+            )
+            coEvery { download(any(), any(), any(), any()) } returns AddonResult.Ok(flac.copy(headers = mapOf("Referer" to "https://x.example/")))
+        }
+        val source = AddonDownloadSources(Registry(listOf(addon())), client, AggregatorRateLimiter(), prefs).sources().single()
+        repeat(3) { assertThat(source.resolve(TrackQuery(artist = "A", title = "B"))).isNull() }
+    }
+
+    // ------------------------------------------------------------------------------------------ host ports
+
+    @Test fun `a Retry-After pauses for exactly that long, and null keeps the configured backoff`() = runTest {
+        val limiter = AggregatorRateLimiter().apply { clock = virtualClock() }
+        limiter.reportRateLimited("addon_x", 30_000L)
+        assertThat(limiter.stateOf("addon_x").msUntilUnblock).isEqualTo(30_000L)
+        advanceTimeBy(30_001)
+        assertThat(limiter.stateOf("addon_x").isCircuitBroken).isFalse()
+
+        limiter.reportRateLimited("addon_y", null)
+        assertThat(limiter.stateOf("addon_y").msUntilUnblock).isEqualTo(AggregatorRateLimiter.Config().backoff429Ms)
+    }
+
+    @Test fun `the gate paces background calls and only checks the circuit in the foreground`() = runTest {
+        val limiter = AggregatorRateLimiter().apply { clock = virtualClock() }
+        val gate = RateLimiterAddonGate(limiter)
+        assertThat(gate.admit("addon_x", paced = false)).isTrue()
+        assertThat(limiter.stateOf("addon_x").tokensAvailable).isEqualTo(3.0) // nothing spent
+        assertThat(gate.admit("addon_x", paced = true)).isTrue()
+        assertThat(limiter.stateOf("addon_x").tokensAvailable).isLessThan(3.0)
+        gate.onRateLimited("addon_x", 60_000L)
+        assertThat(gate.admit("addon_x", paced = false)).isFalse()
+    }
+
+    @Test fun `first-party is the signed config's relay, by origin and path`() {
+        val relay = MutableStateFlow<TidalRelay?>(TidalRelay("https://relay.stash.example/tok", null))
+        val trust = SignedConfigAddonTrust(mockk<LosslessConfigFetcher> { every { tidalRelay } returns relay })
+        assertThat(trust.isFirstParty("https://relay.stash.example/tok/")).isTrue()
+        assertThat(trust.isFirstParty("https://relay.stash.example/tok/addon/")).isTrue()
+        assertThat(trust.isFirstParty("https://relay.stash.example/tokens/")).isFalse()
+        assertThat(trust.isFirstParty("https://relay.stash.example.evil.example/tok/")).isFalse()
+        assertThat(trust.isFirstParty("http://relay.stash.example/tok/")).isFalse()
+        assertThat(trust.isFirstParty("https://relay.stash.example:8443/tok/")).isFalse()
+        relay.value = null
+        assertThat(trust.isFirstParty("https://relay.stash.example/tok/")).isFalse()
+    }
+
+    @Test fun `the signer adds the build, the signature and the supporter token`() = runTest {
+        val relaySigner: RelaySigner = mockk {
+            every { appBuild(any()) } just runs
+            coEvery { sign(any(), "td:7", any()) } returns true
+            coEvery { entitle(any()) } just runs
+        }
+        val signer = RelayAddonSigner(relaySigner)
+        assertThat(signer.sign(Request.Builder().url("https://relay.stash.example/stream/td:7"), "td:7")).isTrue()
+        coVerifyOrder {
+            relaySigner.appBuild(any())
+            relaySigner.sign(any(), "td:7", any())
+            relaySigner.entitle(any())
+        }
+    }
+
+    private fun TestScope.virtualClock(): AggregatorRateLimiter.Clock = object : AggregatorRateLimiter.Clock {
+        override fun nowMs(): Long = testScheduler.currentTime
+    }
+}

@@ -73,6 +73,8 @@ dependencies {
     implementation(project(":data:spotify"))
     // Cloud songs (Dropbox / OneDrive) download from the user's own cloud: CloudTrackDownloader.
     implementation(project(":data:cloud"))
+    // Stash Add-ons v1: add-on download sources (lossless/addon) and the client's host ports.
+    implementation(project(":core:addons"))
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.android.compiler)

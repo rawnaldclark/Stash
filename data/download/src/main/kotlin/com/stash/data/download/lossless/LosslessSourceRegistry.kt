@@ -2,6 +2,7 @@ package com.stash.data.download.lossless
 
 import android.util.Log
 import com.stash.core.data.prefs.StreamingPreference
+import com.stash.data.download.lossless.addon.AddonDownloadSources
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -23,6 +24,10 @@ import javax.inject.Singleton
  *
  * A user's own Tidal server, with none of their own Qobuz set up, is asked before
  * the Qobuz source above CD quality ([LosslessAvailability.ownTidalFirst]) — see [withOwnTidalFirst].
+ *
+ * Add-ons that hand over lossless files ([AddonDownloadSources]) join after the Hilt-bound
+ * sources in [orderedSources], unless the priority list names them. With no add-on on (all of
+ * phase 1) the list is exactly the Hilt-bound one.
  */
 @Singleton
 class LosslessSourceRegistry @Inject constructor(
@@ -31,6 +36,7 @@ class LosslessSourceRegistry @Inject constructor(
     private val healthGate: LosslessSourceHealthGate,
     private val streamingPreference: StreamingPreference,
     private val availability: LosslessAvailability,
+    private val addons: AddonDownloadSources,
 ) {
 
     /**
@@ -142,7 +148,11 @@ class LosslessSourceRegistry @Inject constructor(
      */
     suspend fun orderedSources(): List<LosslessSource> {
         val priority = prefs.priorityOrderNow()
-        val byId = sources.associateBy { it.id }
+        // Add-on sources come from the registry at call time (they come and go while the app
+        // runs). None on: `all` IS the Hilt-bound set, and nothing below changes.
+        val dynamic = addons.sources()
+        val all: Collection<LosslessSource> = if (dynamic.isEmpty()) sources else sources + dynamic
+        val byId = all.associateBy { it.id }
         val ordered = mutableListOf<LosslessSource>()
         val seen = mutableSetOf<String>()
 
@@ -154,7 +164,7 @@ class LosslessSourceRegistry @Inject constructor(
         }
         // Append any registered source not in the priority list (e.g. a
         // newly added source on app upgrade that the user hasn't ranked yet).
-        for (source in sources) {
+        for (source in all) {
             if (source.id !in seen) ordered.add(source)
         }
         return ordered
