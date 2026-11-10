@@ -282,10 +282,17 @@ internal class FullArtState {
     fun newSong(now: Long) {
         songMs = 0L
         settleUntilMs = now + NEW_SONG_SETTLE_MS
-        segment = 0
         offset = 0
-        pending = pageFor(0)
         pendingIsNewSong = true
+        if (pages.isEmpty()) {
+            // No pages yet (a Listen Together session just ended, or the song has no art): nothing to
+            // fade to. The first tick that has pages finds segment -1 and takes this song's front.
+            segment = -1
+            pending = null
+        } else {
+            segment = 0
+            pending = pageFor(0)
+        }
         wake()
     }
 
@@ -347,9 +354,11 @@ internal class FullArtState {
 
         val at = schedule.segmentAt(songMs)
         if (at != segment) {
+            // Still a new song's front when [newSong] came before its pages did.
+            val newSongFront = segment == -1 && pendingIsNewSong
             segment = at
             pending = pageFor(at)
-            pendingIsNewSong = false
+            pendingIsNewSong = newSongFront
         }
         // A page that can't load is passed over for the one after it.
         var skips = 0
