@@ -50,9 +50,10 @@ import javax.inject.Singleton
  *   server still serves, and so does a user's own Qobuz account). Playback falls to JioSaavn
  *   and YouTube.
  *   1c. Add-ons ([AddonStreamRungs], Stash Add-ons v1) that stream lossless: user-added ones
- *      just ahead of 1 (as the user's own Tidal server), the defaults after 1b. Same gates as
- *      1b; a metered one never spends its allowance on a look-ahead. None in phase 1: the
- *      registry is empty and the chain is exactly the one above.
+ *      just ahead of 1 on every play (unlike the user's own Tidal server, with no quality or
+ *      own-Qobuz condition), the defaults after 1b. Same gates as 1b; a metered one never
+ *      spends its allowance on a look-ahead. None in phase 1: the registry is empty and the
+ *      chain is exactly the one above.
  *   2. [YouTubeStreamResolver] — yt-dlp / InnerTube extraction. Last
  *      resort, reached only when the track genuinely isn't in the Qobuz
  *      catalog (Bandcamp re-uploads, region-exclusive, underground
@@ -376,7 +377,8 @@ class StreamSourceRegistry internal constructor(
                         add(rung.name to { t: TrackEntity -> rung.resolve(t, addonTier) })
                     }
                 }
-                // The user's own add-ons go ahead of Qobuz, as the user's own Tidal server does.
+                // The user's own add-ons go ahead of Qobuz on every play (no quality or own-Qobuz
+                // condition, unlike the user's own Tidal server above).
                 addonRungs.filter { it.userAdded }.forEach { addAddon(it) }
                 // qbdlx (direct Qobuz API) is the primary lossless source:
                 // plain Range-seekable FLAC, no proxy, no client-side decrypt —

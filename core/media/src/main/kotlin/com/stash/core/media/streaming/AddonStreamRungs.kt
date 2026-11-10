@@ -67,7 +67,10 @@ class AddonStreamRung internal constructor(
 ) {
     val name: String = ORIGIN_PREFIX + addon.id
 
-    /** Added by the user: goes ahead of Qobuz, as the user's own Tidal server does. */
+    /**
+     * Added by the user: asked ahead of Qobuz on every play. Unlike the user's own Tidal server,
+     * which leads only above CD and only without the user's own Qobuz, there is no condition.
+     */
     val userAdded: Boolean get() = addon.userAdded
 
     /** A metered add-on (its manifest lists `quota`): a look-ahead never spends its allowance. */
@@ -99,7 +102,10 @@ class AddonStreamRung internal constructor(
             Log.d(TAG, "$name answer needs request headers; not played yet")
             return null
         }
-        return toStreamUrl(info, item.artwork?.maxByOrNull { it.width ?: 0 }?.url, name)
+        return toStreamUrl(info, item.artwork?.maxByOrNull { it.width ?: 0 }?.url, name) ?: run {
+            Log.d(TAG, "$name answer has already expired; not played")
+            null
+        }
     }
 
     companion object {
@@ -121,12 +127,16 @@ class AddonStreamRung internal constructor(
             manifest = listOf(Delivery.NONE, Delivery.DASH),
         )
 
-        internal fun toStreamUrl(info: StreamInfo, coverArtUrl: String?, origin: String, nowMs: Long = System.currentTimeMillis()): StreamUrl {
-            // SPEC.md 5.3: cache until `expiresAt - 60 s`.
-            val expires = info.expiresAt?.let { it * 1000 - 60_000 } ?: (nowMs + DEFAULT_TTL_MS)
+        /** Null for an answer whose `expiresAt` has already passed: that URL is dead. */
+        internal fun toStreamUrl(info: StreamInfo, coverArtUrl: String?, origin: String, nowMs: Long = System.currentTimeMillis()): StreamUrl? {
+            val expiresAtSec = info.expiresAt
+            if (expiresAtSec != null && expiresAtSec * 1000 <= nowMs) return null
+            // SPEC.md 5.3: cache until `expiresAt - 60 s`; one closer than that is held to now
+            // (played once, never cached).
+            val expires = expiresAtSec?.let { it * 1000 - 60_000 } ?: (nowMs + DEFAULT_TTL_MS)
             return StreamUrl(
                 url = info.url,
-                expiresAtMs = expires.coerceAtMost(nowMs + MAX_TTL_MS),
+                expiresAtMs = expires.coerceIn(nowMs, nowMs + MAX_TTL_MS),
                 codec = when (info.codec) {
                     Codec.ALAC -> "alac"
                     Codec.PCM -> "wav"
