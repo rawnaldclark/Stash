@@ -9,6 +9,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.stash.core.addons.DefaultAddonEntry
+import com.stash.core.addons.HttpAddonClient
 import com.stash.data.download.BuildConfig
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -32,7 +34,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -68,7 +76,52 @@ data class LosslessConfig(
     @SerialName("tidal_relay_url") val tidalRelayUrl: String? = null,
     /** That server's ACCESS_TOKEN, sent as `X-Access-Token`. Optional; rotates like [relayKey]. */
     @SerialName("tidal_relay_token") val tidalRelayToken: String? = null,
-)
+    /**
+     * The add-ons every install turns on (add-ons phase 2 §5.3): `[{manifest, enabled, first_party}]`.
+     * Kept as raw JSON and read by [defaultAddonEntries], entry by entry, so one malformed entry
+     * is dropped alone and can never make the whole config unreadable (which would turn Tidal off).
+     * Releases before phase 2 ignore the key (unknown keys are ignored).
+     */
+    @SerialName("default_addons") val defaultAddons: JsonElement? = null,
+) {
+    /**
+     * [defaultAddons] as entries: https manifest URLs ending in `/manifest.json` with no query or
+     * fragment, `enabled` (default true) and `first_party` (default false) booleans when given,
+     * at most [MAX_DEFAULT_ADDONS], no duplicates. Anything else is skipped, never repaired.
+     */
+    fun defaultAddonEntries(): List<DefaultAddonEntry> {
+        val list = defaultAddons as? JsonArray ?: return emptyList()
+        val seen = HashSet<String>()
+        return list.asSequence().mapNotNull { e ->
+            val o = e as? JsonObject ?: return@mapNotNull null
+            val url = (o["manifest"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim() ?: return@mapNotNull null
+            if (!isManifestUrl(url) || !seen.add(url)) return@mapNotNull null
+            val enabled = flag(o["enabled"]) ?: return@mapNotNull null
+            val firstParty = flag(o["first_party"], default = false) ?: return@mapNotNull null
+            DefaultAddonEntry(url, enabled = enabled, firstParty = firstParty)
+        }.take(MAX_DEFAULT_ADDONS).toList()
+    }
+
+    companion object {
+        /** The most `default_addons` entries read (the publisher allows no more). */
+        const val MAX_DEFAULT_ADDONS = 16
+
+        /** A boolean, [default] when absent; null (skip the entry) when present and not a boolean. */
+        private fun flag(v: JsonElement?, default: Boolean = true): Boolean? = when {
+            v == null || v is kotlinx.serialization.json.JsonNull -> default
+            v is JsonPrimitive && !v.isString -> v.booleanOrNull
+            else -> null
+        }
+
+        private fun isManifestUrl(url: String): Boolean {
+            if (url.length > 2048 || url.any { it.isWhitespace() || it == '\\' } || '?' in url || '#' in url) return false
+            if (!url.startsWith("https://") || !url.endsWith("/manifest.json")) return false
+            if (HttpAddonClient.baseOf(url) == null) return false
+            val u = url.toHttpUrlOrNull() ?: return false
+            return u.username.isEmpty() && u.password.isEmpty()
+        }
+    }
+}
 
 private val Context.losslessRelayConfigDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "lossless_relay_config",
@@ -110,6 +163,14 @@ class LosslessConfigFetcher @Inject constructor(
 
     /** The Tidal (BitChord) server from the signed config, or null. See [LosslessConfig.tidalRelayUrl]. */
     val tidalRelay: StateFlow<TidalRelay?> = _tidalRelay.asStateFlow()
+
+    private val _defaultAddons = MutableStateFlow<List<DefaultAddonEntry>>(emptyList())
+
+    /**
+     * The applied config's `default_addons` ([LosslessConfig.defaultAddonEntries]); empty without
+     * the key. Their manifest URLs can carry a token: never logged.
+     */
+    val defaultAddons: StateFlow<List<DefaultAddonEntry>> = _defaultAddons.asStateFlow()
 
     private val _updatedAt = MutableStateFlow(0L)
     /** `updated_at` (unix seconds) of the applied config; 0 until one is loaded. For the diagnostics bundle. */
@@ -172,7 +233,11 @@ class LosslessConfigFetcher @Inject constructor(
         }
         apply(fresh)
         ioCatching("cache write") { context.losslessRelayConfigDataStore.edit { it[jsonKey] = text } }
-        Log.i(TAG, "lossless config applied (Tidal relay: ${if (fresh.tidalRelayUrl != null) "yes" else "no"})")
+        Log.i(
+            TAG,
+            "lossless config applied (Tidal relay: ${if (fresh.tidalRelayUrl != null) "yes" else "no"}, " +
+                "default add-ons: ${_defaultAddons.value.size})",
+        )
         _refreshedAt.value = System.currentTimeMillis()
         true
     }
@@ -180,6 +245,7 @@ class LosslessConfigFetcher @Inject constructor(
     private fun apply(cfg: LosslessConfig) {
         _relayKey.value = cfg.relayKey
         _tidalRelay.value = cfg.tidalRelayUrl?.let { TidalRelay(it, cfg.tidalRelayToken?.takeIf { t -> t.isNotBlank() }) }
+        _defaultAddons.value = cfg.defaultAddonEntries()
         _updatedAt.value = cfg.updatedAt
     }
 
@@ -271,6 +337,7 @@ class LosslessConfigFetcher @Inject constructor(
     internal suspend fun clearForTest() {
         _relayKey.value = null
         _tidalRelay.value = null
+        _defaultAddons.value = emptyList()
         context.losslessRelayConfigDataStore.edit { it.clear() }
     }
 

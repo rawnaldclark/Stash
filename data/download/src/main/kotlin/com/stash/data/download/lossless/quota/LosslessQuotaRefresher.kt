@@ -3,6 +3,7 @@ package com.stash.data.download.lossless.quota
 import android.util.Log
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.RelaySigner
+import com.stash.data.download.lossless.tidal.TidalDebugSettings
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -27,6 +28,10 @@ import okhttp3.Request
  * Only the owner's Tidal relay from the signed config is asked (a user's own server does not
  * keep the shared count), signed `"<install>:quota:<ts>"` by [RelaySigner]. No key or no Tidal
  * relay in the config → no request at all.
+ *
+ * Add-ons phase 2 keeps this on the legacy route for release N, whichever wire the Tidal rung
+ * uses: the Worker serves `/quota` there and on its v1 face from the same count, and a v1
+ * `/stream` answer carries the allowance too. Release N+1 moves it to v1 `/quota` (plan §5.4).
  */
 @Singleton
 class LosslessQuotaRefresher @Inject constructor(
@@ -34,6 +39,7 @@ class LosslessQuotaRefresher @Inject constructor(
     private val config: LosslessConfigFetcher,
     private val signer: RelaySigner,
     private val quota: LosslessQuota,
+    private val debug: TidalDebugSettings = TidalDebugSettings.off(),
 ) {
     /** Test seam; short timeouts like the relay client — this is a nicety, never a wait. */
     internal var httpClient: OkHttpClient = sharedClient.newBuilder()
@@ -74,7 +80,8 @@ class LosslessQuotaRefresher @Inject constructor(
         withTimeoutOrNull(configWaitMs) {
             combine(config.relayKey, config.tidalRelay) { key, tidal -> key != null && tidal != null }.first { it }
         } ?: return@withContext false
-        val tidal = config.tidalRelay.value ?: return@withContext false
+        // A debug build's owner server override stands in for the config's relay (signing kept).
+        val tidal = debug.relay(config.tidalRelay.value) ?: return@withContext false
         fetch("${tidal.base}/quota", tidal.token)
     }
 

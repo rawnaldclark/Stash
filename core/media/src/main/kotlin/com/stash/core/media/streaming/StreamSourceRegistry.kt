@@ -330,7 +330,7 @@ class StreamSourceRegistry internal constructor(
                 // download mode's request) ahead of Qobuz, for a listener saving data. Only
                 // where the Tidal rung itself runs (foreground, Lossless on, a relay set), and
                 // a miss, busy pool, spent day or error falls straight on to the lossless rungs
-                // below with no wait. Its own in-flight key and miss stamp in BitchordClient, so it never
+                // below with no wait. Its own in-flight key and miss stamp in TidalClient, so it never
                 // hides the Tidal FLAC lookup further down (or the other way round).
                 // Kept where Data saver applies: AAC 320 is not FLAC, and the user who turned
                 // this on chose to spend the daily allowance on it (Data saver alone never does).

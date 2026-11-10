@@ -152,7 +152,7 @@ class LosslessRetryWorker @AssistedInject constructor(
             val query = queryFor(track)
             if (mode == DownloadMode.AAC) {
                 // AAC 320 mode: Tidal's AAC only (?aac=only), never a lossless lookup. A miss is
-                // cached on its own stamp (BitchordClient), so the next pass skips it for free.
+                // cached on its own stamp (TidalClient), so the next pass skips it for free.
                 when (val aac = tidalAacResolver.resolve(query, aacOnly = true)) {
                     is TidalAac.Found -> {
                         handoff.put(track.id, aac.source, ResolvedSourceHandoff.Kind.TIDAL_AAC)

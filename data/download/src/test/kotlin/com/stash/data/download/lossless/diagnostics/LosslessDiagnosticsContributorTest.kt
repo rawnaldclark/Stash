@@ -20,6 +20,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import com.stash.data.download.lossless.tidal.TidalWires
 import okhttp3.OkHttpClient
 import org.junit.Test
 
@@ -56,8 +57,10 @@ class LosslessDiagnosticsContributorTest {
         every { getSystemService(ConnectivityManager::class.java) } returns connectivity
     }
 
+    private val wires: TidalWires = mockk { coEvery { describe() } returns "legacy relay" }
+
     private fun contributor() = LosslessDiagnosticsContributor(
-        context, availability, config, OkHttpClient(), losslessPrefs, streamingQuality, streamingPreference,
+        context, availability, config, OkHttpClient(), losslessPrefs, streamingQuality, streamingPreference, wires,
     ).also { it.nowMs = { 1_758_000_000_000L } }
 
     @Test fun `reports the mode and the quality settings in plain words`() = runTest {
@@ -93,6 +96,7 @@ class LosslessDiagnosticsContributorTest {
         val s = contributor().section()
         assertThat(s).contains("Lossless config:    updated_at=2025-09-16T05:20:00Z")
         assertThat(s).contains("Tidal relay:        configured (tidal.example.workers.dev)")
+        assertThat(s).contains("Tidal:              legacy relay")
         assertThat(s).doesNotContain("https://tidal.example.workers.dev") // host only
         assertThat(s).doesNotContain("Relay config")
         assertThat(s).doesNotContain("Custom endpoint")

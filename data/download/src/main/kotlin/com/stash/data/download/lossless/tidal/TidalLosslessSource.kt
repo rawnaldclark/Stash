@@ -7,8 +7,6 @@ import com.stash.data.download.lossless.LosslessSource
 import com.stash.data.download.lossless.RateLimitState
 import com.stash.data.download.lossless.SourceResult
 import com.stash.data.download.lossless.TrackQuery
-import com.stash.data.download.lossless.bitchord.BitchordClient
-import com.stash.data.download.lossless.bitchord.TidalLookup
 import com.stash.data.download.lossless.relay.LosslessDownloadPurpose
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -19,7 +17,7 @@ import kotlinx.coroutines.sync.withLock
 
 /**
  * [LosslessSource] for Tidal through the BitChord relay — the same server and
- * matching the streaming rung uses ([BitchordClient]), so a track that streams
+ * matching the streaming rung uses ([TidalClient]), so a track that streams
  * from Tidal also downloads from it. DASH answers come back with
  * [SourceResult.isDash] set; the downloader fetches the segments and remuxes.
  *
@@ -33,12 +31,12 @@ import kotlinx.coroutines.sync.withLock
  */
 @Singleton
 class TidalLosslessSource internal constructor(
-    private val client: BitchordClient,
+    private val client: TidalClient,
     private val rateLimiter: AggregatorRateLimiter,
     private val nowMs: () -> Long,
 ) : LosslessSource {
 
-    @Inject constructor(client: BitchordClient, rateLimiter: AggregatorRateLimiter) :
+    @Inject constructor(client: TidalClient, rateLimiter: AggregatorRateLimiter) :
         this(client, rateLimiter, System::currentTimeMillis)
 
     override val id: String = SOURCE_ID

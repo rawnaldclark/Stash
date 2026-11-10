@@ -6,8 +6,6 @@ import com.stash.data.download.lossless.AudioFormat
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.SourceResult
 import com.stash.data.download.lossless.TrackQuery
-import com.stash.data.download.lossless.bitchord.BitchordClient
-import com.stash.data.download.lossless.bitchord.TidalLookup
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -77,7 +75,7 @@ sealed interface TidalAac {
  */
 @Singleton
 class TidalAacResolver @Inject constructor(
-    private val client: BitchordClient,
+    private val client: TidalClient,
     private val rateLimiter: AggregatorRateLimiter,
     private val prefs: LosslessSourcePreferences,
 ) {

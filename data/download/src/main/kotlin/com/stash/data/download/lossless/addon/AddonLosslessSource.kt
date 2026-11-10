@@ -5,6 +5,7 @@ import com.stash.addons.contract.Codec
 import com.stash.addons.contract.Container
 import com.stash.addons.contract.Delivery
 import com.stash.addons.contract.Descriptor
+import com.stash.addons.contract.ResolveQuery
 import com.stash.addons.contract.Resource
 import com.stash.addons.contract.StreamInfo
 import com.stash.addons.contract.StreamRequest
@@ -31,8 +32,8 @@ import javax.inject.Singleton
  * Hilt-bound sources. They come from [AddonRegistry] at call time, never from `@IntoSet`: add-ons
  * come and go while the app runs.
  *
- * Phase 1: the registry is empty, so [sources] is always empty and the download chain is the
- * one the app had before add-ons.
+ * With no add-on of the user's and no generic default, [sources] is empty and the download
+ * chain is the one the app had before add-ons.
  */
 @Singleton
 class AddonDownloadSources @Inject constructor(
@@ -46,10 +47,11 @@ class AddonDownloadSources @Inject constructor(
 
     /**
      * The add-ons that can resolve a song and hand over a lossless file, in the registry's
-     * order (user-added first). Empty, with no work done, when no add-on is on.
+     * order (user-added first). Empty, with no work done, when no add-on is on. The first-party
+     * Tidal add-on is never one: the Tidal source downloads it ([AddonRegistry.generic]).
      */
     fun sources(): List<LosslessSource> {
-        val addons = registry.addons.value
+        val addons = registry.generic()
         if (addons.isEmpty()) return emptyList()
         return synchronized(cache) {
             addons.filter(::canDownloadLossless).map { addon ->
@@ -117,7 +119,8 @@ class AddonLosslessSource internal constructor(
             isrc = query.isrc,
             explicit = query.explicit,
         )
-        val item = when (val r = client.resolve(addon, descriptor, paced)) {
+        // Rule 7: a lossless source asks for a recording it can hand over lossless, or none.
+        val item = when (val r = client.resolve(addon, ResolveQuery(descriptor, minTier = Tier.LOSSLESS), paced)) {
             is AddonResult.Ok -> r.value ?: return null
             is AddonResult.Failed -> return null
         }

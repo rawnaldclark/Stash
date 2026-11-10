@@ -1,15 +1,32 @@
 package com.stash.data.download.lossless.addon
 
+import android.content.Context
+import android.content.pm.ApplicationInfo
+import com.stash.core.addons.AddonHostOptions
 import com.stash.core.addons.AddonInstallSigner
+import com.stash.core.addons.AddonManifestStore
 import com.stash.core.addons.AddonRateGate
 import com.stash.core.addons.AddonTrust
+import com.stash.core.addons.DefaultAddonEntry
+import com.stash.core.addons.DefaultAddons
+import com.stash.core.addons.HttpAddonClient
+import com.stash.core.addons.UserAddons
 import com.stash.data.download.lossless.AggregatorRateLimiter
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.RelaySigner
+import com.stash.data.download.lossless.tidal.TidalDebugSettings
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import okhttp3.Response
@@ -17,8 +34,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Binds `:core:addons`' host ports to the app's existing pieces, so the add-on client paces,
- * pauses and signs exactly as the lossless sources already do.
+ * Binds `:core:addons`' host ports and registry inputs to the app's existing pieces, so the add-on
+ * client paces, pauses and signs exactly as the lossless sources already do, and the registry
+ * reads the signed config's defaults and the user's own add-ons.
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -31,6 +49,18 @@ abstract class AddonHostModule {
 
     @Binds @Singleton
     abstract fun bindSigner(impl: RelayAddonSigner): AddonInstallSigner
+
+    @Binds @Singleton
+    abstract fun bindDefaultAddons(impl: SignedConfigDefaultAddons): DefaultAddons
+
+    @Binds @Singleton
+    abstract fun bindUserAddons(impl: EncryptedUserAddons): UserAddons
+
+    @Binds @Singleton
+    abstract fun bindManifestStore(impl: DataStoreAddonManifestStore): AddonManifestStore
+
+    @Binds @Singleton
+    abstract fun bindHostOptions(impl: BuildAddonHostOptions): AddonHostOptions
 }
 
 /**
@@ -53,17 +83,42 @@ class RateLimiterAddonGate @Inject constructor(
 }
 
 /**
- * First-party = served from the relay the ECDSA-signed lossless config names (today its
- * `tidal_relay_url`): the same rule `RelaySigner.isOwnerRelay` applied before #871, and the
- * one `BitchordClient` applies to the owner's relay. Same scheme, host and port, and a path at
- * or under the relay's. Never decided by anything an add-on says about itself. Phase 2 adds the
- * signed config's first-party add-on list here.
+ * The default add-ons: the signed config's `default_addons` (decision D9: an enabled
+ * `first_party` Tidal entry switches the Tidal rung to the v1 wire). On a debug build with an
+ * owner server override set ([TidalDebugSettings]), that override's v1 manifest stands in for the
+ * config's first-party entries, in memory.
+ */
+@Singleton
+class SignedConfigDefaultAddons @Inject constructor(
+    config: LosslessConfigFetcher,
+    debug: TidalDebugSettings,
+) : DefaultAddons {
+    override val entries: StateFlow<List<DefaultAddonEntry>> =
+        combine(config.defaultAddons, config.tidalRelay, debug.state) { list, relay, _ ->
+            val override = debug.addonEntry(relay) ?: return@combine list
+            listOf(override) + list.filterNot { it.firstParty }
+        }.stateIn(CoroutineScope(SupervisorJob() + Dispatchers.IO), SharingStarted.Eagerly, config.defaultAddons.value)
+}
+
+/**
+ * First-party = Stash's own, decided only by the ECDSA-signed lossless config, never by anything an
+ * add-on says about itself:
+ *  - served from the relay the config names (`tidal_relay_url`): the rule `RelaySigner.isOwnerRelay`
+ *    applied before #871 (same scheme, host and port, and a path at or under the relay's);
+ *  - or the base of an enabled `default_addons` entry marked `first_party` (phase 2), the debug
+ *    override's stand-in included.
+ * Only first-party add-ons get the install signature and the supporter token.
  */
 @Singleton
 class SignedConfigAddonTrust @Inject constructor(
     private val config: LosslessConfigFetcher,
+    private val defaults: SignedConfigDefaultAddons,
 ) : AddonTrust {
     override fun isFirstParty(base: String): Boolean {
+        val listed = defaults.entries.value.any { e ->
+            e.enabled && e.firstParty && HttpAddonClient.baseOf(e.manifestUrl)?.let { sameBase(it, base) } == true
+        }
+        if (listed) return true
         val relay = config.tidalRelay.value?.takeIf { !it.userOwned }?.base ?: return false
         return isUnder(base, relay)
     }
@@ -78,13 +133,20 @@ class SignedConfigAddonTrust @Inject constructor(
             val path = b.encodedPath.trimEnd('/')
             return path == rootPath || path.startsWith("$rootPath/")
         }
+
+        /** The same base, compared as URLs (host case and default ports normalised). */
+        fun sameBase(a: String, b: String): Boolean {
+            val x = a.toHttpUrlOrNull() ?: return false
+            val y = b.toHttpUrlOrNull() ?: return false
+            return x.scheme == y.scheme && x.host == y.host && x.port == y.port && x.encodedPath == y.encodedPath
+        }
     }
 }
 
 /**
  * [AddonInstallSigner] on [RelaySigner]: the app build, the install signature over the payload,
- * and the supporter token, the headers `BitchordClient` sends the owner's relay on a `/stream`.
- * [HttpAddonClient][com.stash.core.addons.HttpAddonClient] calls it for first-party add-ons only.
+ * and the supporter token, the headers the Tidal rung sends the owner's relay on a `/stream`.
+ * [HttpAddonClient] calls it for first-party add-ons only.
  */
 @Singleton
 class RelayAddonSigner @Inject constructor(
@@ -101,4 +163,15 @@ class RelayAddonSigner @Inject constructor(
     }
 
     override fun adoptServerTime(response: Response): Boolean = signer.adoptServerTime(response, nowMs())
+}
+
+/**
+ * SPEC.md 1.1's development exception (`http:` on 127.0.0.1, localhost, [::1]) on debuggable builds
+ * only: an add-on under `wrangler dev` on the PC, reached over `adb reverse`. Release: https only.
+ */
+@Singleton
+class BuildAddonHostOptions @Inject constructor(
+    @ApplicationContext context: Context,
+) : AddonHostOptions {
+    override val allowLocalHttp: Boolean = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 }
