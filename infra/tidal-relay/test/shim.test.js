@@ -21,7 +21,7 @@ function database() {
   return db;
 }
 
-/** A D1-shaped binding over node:sqlite. batch() is one transaction, as on D1. */
+/** A D1-shaped binding over node:sqlite. batch() is one transaction, and answers each statement's rows, as on D1. */
 function d1(db) {
   const statement = (sql) => ({
     args: [],
@@ -34,8 +34,9 @@ function d1(db) {
     prepare: statement,
     async batch(list) {
       db.exec("BEGIN");
-      try { for (const s of list) await s.run(); db.exec("COMMIT"); } catch (e) { db.exec("ROLLBACK"); throw e; }
-      return list.map(() => ({ success: true }));
+      const out = [];
+      try { for (const s of list) out.push({ success: true, ...(await s.all()) }); db.exec("COMMIT"); } catch (e) { db.exec("ROLLBACK"); throw e; }
+      return out;
     },
   };
 }
@@ -101,7 +102,9 @@ test("REDIRECT_ORIGIN unset, blank or unusable serves locally; an unusable one i
   const original = console.error;
   console.error = (line) => errors.push(String(line));
   try {
-    for (const origin of [undefined, "", "  ", "http://new.example", "https://new.example/v1", "https://user:pw@new.example", "https://new.example?x=1", "not a url"]) {
+    // A loopback origin is a typo in production: refused unless REDIRECT_ALLOW_LOCAL is "1" (tests, wrangler dev).
+    for (const origin of [undefined, "", "  ", "http://new.example", "https://new.example/v1", "https://user:pw@new.example", "https://new.example?x=1", "not a url",
+      "http://127.0.0.1:8787", "https://localhost", "http://[::1]:8787"]) {
       const r = await get("/search?q=", shimEnv({ DB: d1(db), REQUEST_RL: undefined, REDIRECT_ORIGIN: origin }), { headers: { "X-Access-Token": ACCESS_TOKEN } });
       assert.equal(r.status, 200, String(origin));
     }
@@ -119,7 +122,7 @@ test("a real HTTP client follows the 307 to another origin with the same method,
   });
   await new Promise((resolve) => target.listen(0, "127.0.0.1", resolve));
   const targetOrigin = `http://127.0.0.1:${target.address().port}`;
-  const env = shimEnv({ REDIRECT_ORIGIN: targetOrigin });
+  const env = shimEnv({ REDIRECT_ORIGIN: targetOrigin, REDIRECT_ALLOW_LOCAL: "1" });
   const shim = createServer(async (req, res) => {
     const r = await worker.fetch(new Request(`http://localhost:${shim.address().port}${req.url}`, { method: req.method, headers: req.headers }), env);
     res.writeHead(r.status, Object.fromEntries(r.headers)).end(await r.text());
@@ -184,8 +187,8 @@ test("import copies every column exactly; a second import updates in place; the 
   } finally { console.log = original; }
   assert.equal(first.status, 200);
   const firstText = await first.clone().text();
-  assert.deepEqual(await first.json(), { status: "ok", imported: 3, inserted: 3, updated: 0 });
-  assert.deepEqual(await second.json(), { status: "ok", imported: 2, inserted: 1, updated: 1 });
+  assert.deepEqual(await first.json(), { status: "ok", imported: 3, inserted: 3, updated: 0, skipped_older: 0 });
+  assert.deepEqual(await second.json(), { status: "ok", imported: 2, inserted: 1, updated: 1, skipped_older: 0 });
   const rows = allSeats(db);
   assert.equal(rows.length, 4);
   assert.deepEqual(rows.find((r) => r.id === seats[0].id), seats[0]);
@@ -213,6 +216,9 @@ test("import refuses without ADMIN_TOKEN (the access token is not enough), and w
     [{ seats: [seatRow({ surprise: "x" })] }, "seats[0].surprise"],
     [{ seats: [(({ strikes, ...rest }) => rest)(seatRow())] }, "seats[0].strikes"],
     [{ seats: [seatRow({ day_key: "yesterday" })] }, "seats[0].day_key"],
+    // A live or reserve seat needs both tokens; only a dead one may have had them wiped.
+    [{ seats: [seatRow({ access_token: "" })] }, "seats[0].access_token"],
+    [{ seats: [seatRow({ state: "reserve", refresh_token: "" })] }, "seats[0].refresh_token"],
   ];
   for (const [body, field] of refusals) {
     const r = await adminPost(env, body);
@@ -225,6 +231,25 @@ test("import refuses without ADMIN_TOKEN (the access token is not enough), and w
   assert.equal((await adminPost(env, { seats: [dupe, { ...dupe }] })).status, 400);
   assert.equal(allSeats(db).length, 0, "nothing written by a refused import");
   assert.equal((await adminPost(env, "x".repeat(2 * 1024 * 1024 + 1))).status, 400);
+});
+
+test("import never writes an older generation over a newer one: re-runs and wrong-direction copies are skipped and counted", async () => {
+  const db = database();
+  const env = seatEnv(db);
+  const fresh = seatRow({ generation: 10, access_token: "tok-access-fresh-SECRETVALUE", refresh_token: "tok-refresh-fresh-SECRETVALUE" });
+  assert.equal((await adminPost(env, { seats: [fresh] })).status, 200);
+  // A stale copy (a refresh happened here since): parked, older tokens, lower generation. Nothing of it is written.
+  const stale = { ...fresh, generation: 9, state: "reserve", dead_reason: "parked", access_token: "tok-access-stale-SECRETVALUE", refresh_token: "tok-refresh-stale-SECRETVALUE", hour_n: 0 };
+  const other = seatRow();
+  const r = await adminPost(env, { seats: [stale, other] });
+  assert.deepEqual(await r.json(), { status: "ok", imported: 1, inserted: 1, updated: 0, skipped_older: 1 });
+  assert.deepEqual(allSeats(db).find((s) => s.id === fresh.id), fresh);
+  // The same generation, or a newer one, is written as before.
+  const same = { ...fresh, hour_n: 77 };
+  assert.deepEqual(await (await adminPost(env, { seats: [same] })).json(), { status: "ok", imported: 1, inserted: 0, updated: 1, skipped_older: 0 });
+  const newer = { ...fresh, generation: 11, access_token: "tok-access-newer-SECRETVALUE" };
+  assert.deepEqual(await (await adminPost(env, { seats: [newer] })).json(), { status: "ok", imported: 1, inserted: 0, updated: 1, skipped_older: 0 });
+  assert.deepEqual(allSeats(db).find((s) => s.id === fresh.id), newer);
 });
 
 test("import is all or nothing: a seat the database refuses rolls the whole batch back", async () => {

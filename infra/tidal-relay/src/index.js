@@ -113,15 +113,20 @@ function paused() {
 // X-Access-Token and the X-Stash-* install signature (over "<install>:td:<n>:<ts>", not the host) verify on the other
 // side. /health, /dash/* (links this side signed, up to an hour old) and /admin/* are still served here.
 
-/** REDIRECT_ORIGIN as a bare origin: https, or http on localhost (tests, wrangler dev). null = unset or unusable. */
+/**
+ * REDIRECT_ORIGIN as a bare https origin, or null = unset or unusable. A loopback host (localhost, 127.0.0.1, [::1]),
+ * http or https, only with REDIRECT_ALLOW_LOCAL="1" (tests, wrangler dev): in production a typo must never send
+ * every phone to localhost.
+ */
 function redirectOrigin(env) {
   const raw = typeof env.REDIRECT_ORIGIN === "string" ? env.REDIRECT_ORIGIN.trim() : "";
   if (!raw) return null;
   try {
     const u = new URL(raw);
-    const local = u.hostname === "127.0.0.1" || u.hostname === "localhost";
+    const loopback = u.hostname === "127.0.0.1" || u.hostname === "localhost" || u.hostname === "[::1]";
     const bare = !u.username && !u.password && u.pathname === "/" && !u.search && !u.hash && !raw.includes("?") && !raw.includes("#");
-    if (bare && (u.protocol === "https:" || (local && u.protocol === "http:"))) return u.origin;
+    const allowed = loopback ? env.REDIRECT_ALLOW_LOCAL === "1" && (u.protocol === "http:" || u.protocol === "https:") : u.protocol === "https:";
+    if (bare && allowed) return u.origin;
   } catch { /* reported below */ }
   // Serving locally beats redirecting every phone to a typo; the old seats are parked as 'reserve' anyway (cutover step 4).
   if (!warnedBadRedirect) { warnedBadRedirect = true; console.error("REDIRECT_ORIGIN is not a bare https origin: ignored, serving locally"); }
@@ -167,7 +172,30 @@ function badSeat(seat, i) {
     if (column === "day_key") { if (typeof v !== "string" || !/^(?:\d{4}-\d{2}-\d{2})?$/.test(v)) return at(column); continue; }
     if (column === "dead_reason") { if (typeof v !== "string" || !/^[A-Za-z0-9_ .:-]{0,200}$/.test(v)) return at(column); continue; }
   }
+  // A live seat (or a reserve one, which is promoted by hand) without its tokens fails at its first call: refused here,
+  // before a cutover leans on it. Only dead seats may have had their tokens wiped.
+  if (seat.state !== "dead") for (const column of SEAT_TOKEN_COLUMNS) if (!seat[column]) return at(column);
   return null;
+}
+export { badSeat };
+
+/** The body as text, or null past `max` bytes: counted as it arrives, so a body without Content-Length is capped too. */
+async function cappedText(request, max) {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) { await reader.cancel().catch(() => {}); return null; }
+    chunks.push(value);
+  }
+  const all = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) { all.set(c, at); at += c.byteLength; }
+  return new TextDecoder().decode(all);
 }
 
 /**
@@ -175,13 +203,16 @@ function badSeat(seat, i) {
  * counters, last_call_at, generation), so caps and pacing carry on and nobody re-links an account. Body:
  * {"seats":[{<every SEAT_COLUMNS key>}, ...]}. Every seat must name every column and nothing else, so a copy between
  * two schemas fails loudly instead of resetting a counter. One atomic batch: all seats or none.
+ * Never older over newer: a seat already here is overwritten only by a copy whose `generation` (bumped by every
+ * refresh and re-link) is at least its own, so a re-run, or a copy in the wrong direction, cannot put stale tokens
+ * (or a stale state) over fresh ones; those seats are counted as skipped_older.
  * Answers counts only. Token values are never logged or echoed, and an error names the field, never its value.
  */
 async function importSeats(request, env) {
   if (!authorized(request, env.ADMIN_TOKEN)) return unauthorized();
   if (Number(request.headers.get("content-length") || 0) > MAX_IMPORT_BYTES) return json({ error: "bad_request", message: "body too large" }, 400);
-  const text = await request.text().catch(() => "");
-  if (text.length > MAX_IMPORT_BYTES) return json({ error: "bad_request", message: "body too large" }, 400);
+  const text = await cappedText(request, MAX_IMPORT_BYTES).catch(() => "");
+  if (text === null) return json({ error: "bad_request", message: "body too large" }, 400);
   let body = null;
   try { body = JSON.parse(text); } catch { /* reported below */ }
   const seats = body && typeof body === "object" ? body.seats : null;
@@ -194,13 +225,16 @@ async function importSeats(request, env) {
   }
   const ids = seats.map((s) => s.id);
   if (new Set(ids).size !== ids.length) return json({ error: "bad_request", message: "duplicate seat id" }, 400);
-  if (!seats.length) return json({ status: "ok", imported: 0, inserted: 0, updated: 0 });
+  if (!seats.length) return json({ status: "ok", imported: 0, inserted: 0, updated: 0, skipped_older: 0 });
   const { results: existing = [] } = await env.DB.prepare("SELECT id FROM tidal_accounts WHERE id IN (SELECT value FROM json_each(?1))")
     .bind(JSON.stringify(ids)).all();
   const updates = SEAT_COLUMNS.filter((c) => c !== "id").map((c) => `${c}=excluded.${c}`).join(",");
-  const sql = `INSERT INTO tidal_accounts(${SEAT_COLUMNS.join(",")}) VALUES(${SEAT_COLUMNS.map(() => "?").join(",")}) ON CONFLICT(id) DO UPDATE SET ${updates}`;
-  await env.DB.batch(seats.map((s) => env.DB.prepare(sql).bind(...SEAT_COLUMNS.map((c) => s[c]))));
-  const counts = { imported: seats.length, inserted: seats.length - existing.length, updated: existing.length };
+  const sql = `INSERT INTO tidal_accounts(${SEAT_COLUMNS.join(",")}) VALUES(${SEAT_COLUMNS.map(() => "?").join(",")})
+    ON CONFLICT(id) DO UPDATE SET ${updates} WHERE excluded.generation>=tidal_accounts.generation RETURNING id`;
+  const results = await env.DB.batch(seats.map((s) => env.DB.prepare(sql).bind(...SEAT_COLUMNS.map((c) => s[c]))));
+  const written = results.reduce((n, r) => n + (Array.isArray(r?.results) ? r.results.length : 0), 0);
+  const inserted = seats.length - existing.length;
+  const counts = { imported: written, inserted, updated: written - inserted, skipped_older: seats.length - written };
   console.log(`tidal_seats_import ${JSON.stringify(counts)}`);
   return json({ status: "ok", ...counts });
 }
