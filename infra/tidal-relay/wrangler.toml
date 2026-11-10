@@ -34,7 +34,8 @@ SUPPORTER_DAILY_CAP = "5000"
 REQUIRE_INSTALL = "1" # App /stream calls need install signature headers; recognized web lanes are exempt
 TIDAL_V2_MANIFESTS = "1" # "1": lossless streams try openapi v2 trackManifests (CD FLAC as DASH) before v1 playbackinfo; ?aac=only stays v1
 # The cutover shim (README "Moving to another account"): a bare https origin turns /search, /stream/* and /quota into
-# 307s to that origin (same path and query, plus via=old). Empty = serve here, as always.
+# 307s to that origin (same path and query, plus via=old). Empty = serve here, as always. While it is set on the live
+# Worker, deploy with `npm run deploy` (scripts/deploy.mjs), which refuses a deploy that would turn it off by accident.
 REDIRECT_ORIGIN = ""
 
 [[d1_databases]]

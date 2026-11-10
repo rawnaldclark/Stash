@@ -224,14 +224,28 @@ The same relay code runs on both sides for the overlap; whichever side does not 
   the host, so it verifies on the other side. `/health`, `/dash/*` (links signed here, at most an hour old) and
   `/admin/*` are still served here. A request that already carries `via`, or a target that is this very origin, is
   served here instead, so two shims pointed at each other cannot loop. A value that is not a bare https origin is
-  ignored (served here) and logged once. The web shim `stash-src-tidal` refuses redirects: repoint it first.
+  ignored (served here) and logged once. So is a loopback origin (`localhost`, `127.0.0.1`), unless
+  `REDIRECT_ALLOW_LOCAL = "1"` (tests and `wrangler dev` only). The web shim `stash-src-tidal` refuses redirects:
+  repoint it first.
 - **`GET /admin/seats`** (`ADMIN_TOKEN`): every seat with every column except the tokens, plus `has_access_token` /
   `has_refresh_token` and counts by state. It never outputs a token.
 - **`POST /admin/seats/import`** (`ADMIN_TOKEN`): `{"seats":[{...}, ...]}`, at most 500 seats, each naming every column
   of `tidal_accounts` and nothing else (tokens, state, counters, `last_call_at`, `generation`, `client`), so caps and
-  pacing carry over and no account is re-linked. One atomic batch: all seats or none. It upserts by `id` and answers
-  counts only (`imported`, `inserted`, `updated`); errors name the field (`invalid seats[2].state`), never a value.
+  pacing carry over and no account is re-linked. One atomic batch: all seats or none. It upserts by `id`, but never
+  older over newer: a seat already here is overwritten only by a copy whose `generation` (bumped by every refresh and
+  re-link) is at least its own, so a re-run or a copy in the wrong direction cannot put stale tokens or a stale state
+  over fresh ones. A `live` or `reserve` seat must carry both tokens. It answers counts only (`imported`, `inserted`,
+  `updated`, `skipped_older`); errors name the field (`invalid seats[2].state`), never a value. The body is capped at
+  2 MiB as it arrives.
 
-The move itself is scripted in the add-on repo (`move-seats.mjs`): read the seats from one D1 with
-`wrangler d1 execute --json` (in memory), send them to the other side's import route, then flip this var. Never run
+The move itself is scripted in the add-on repo (`move-seats.mjs`, its README "Cutover" and "Rollback"): it reads the
+seats with `wrangler d1 execute --json` run with `WRANGLER_WRITE_LOGS=false` (otherwise wrangler copies every row it
+prints, tokens included, into its log folder for 30 days) and sends them to the other side's import route. Never run
 `wrangler d1 export` on this database while it serves traffic.
+
+**Deploying while the shim is on.** From cutover step 3 until this Worker is deleted, deploy it only with
+`npm run deploy` (`scripts/deploy.mjs`), never `wrangler deploy`. It first asks the live Worker whether it redirects
+(`GET /search`, redirects not followed) and refuses a deploy that would turn the redirect off or point it elsewhere:
+its own seats are parked then, so every phone still on this URL would get `503 busy`. Right after step 3, commit
+`REDIRECT_ORIGIN = "<new origin>"` to `wrangler.toml` on master, so a routine deploy keeps it. Only the rollback turns
+it off, with `npm run deploy -- --shim-off-on-purpose`.
