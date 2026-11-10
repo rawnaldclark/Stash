@@ -421,6 +421,58 @@ class HttpAddonClientTest {
         assertThat(signer.signed).containsExactly("td:9", "td:9")
     }
 
+    // The Tidal add-on's three signature answers on /v1/ (stash-addon-tidal f0c2014, SPEC.md 6 and 7).
+
+    @Test fun `signature case 1 - a skew 401 is signed again at the server's time and the call goes on`() = runBlocking<Unit> {
+        firstParty = true
+        signer.adopt = true
+        server.enqueue(json("""{"error":{"code":"unauthorized","message":"Install clock is off"}}""", 401).setHeader("X-Stash-Server-Time", "1893456000"))
+        server.enqueue(json("""{"used":3,"limit":300,"resetsAt":1893456000,"label":"Tidal plays"}"""))
+        val r = client.quota(addon(resources = listOf("search", "stream", "quota")))
+        assertThat(r).isInstanceOf(AddonResult.Ok::class.java)
+        assertThat(signer.adopted).isEqualTo(1)
+        assertThat(signer.signed).containsExactly("quota", "quota")
+        assertThat(gate.events.none { it.startsWith("rateLimited") }).isTrue()
+    }
+
+    @Test fun `signature case 1b - a skew 401 that persists after the one re-sign fails the call, never pauses the add-on`() = runBlocking<Unit> {
+        firstParty = true
+        signer.adopt = true
+        repeat(2) {
+            server.enqueue(json("""{"error":{"code":"unauthorized","message":"Install clock is off"}}""", 401).setHeader("X-Stash-Server-Time", "1893456000"))
+        }
+        val f = (client.stream(addon(), "td:9", lossless) as AddonResult.Failed).failure as AddonFailure.Refused
+        assertThat(f.code).isEqualTo(ErrorCode.BAD_REQUEST)
+        assertThat(f.status).isEqualTo(401)
+        assertThat(server.requestCount).isEqualTo(2)
+        assertThat(gate.events.last()).isEqualTo("answer addon_test-addon")
+        assertThat(gate.events.none { it.startsWith("rateLimited") }).isTrue()
+    }
+
+    @Test fun `signature case 2 - any other signature failure is a 400 for this call only`() = runBlocking<Unit> {
+        firstParty = true
+        server.enqueue(json("""{"error":{"code":"bad_request","message":"Install signature refused"}}""", 400))
+        server.enqueue(json(flacCd))
+        val f = (client.stream(addon(), "td:9", lossless) as AddonResult.Failed).failure as AddonFailure.Refused
+        assertThat(f.code).isEqualTo(ErrorCode.BAD_REQUEST)
+        assertThat(server.requestCount).isEqualTo(1) // not signed again
+        assertThat(gate.events.last()).isEqualTo("answer addon_test-addon")
+        assertThat(gate.events.none { it.startsWith("rateLimited") }).isTrue()
+        // And the next call goes out.
+        assertThat(client.stream(addon(), "td:9", lossless)).isInstanceOf(AddonResult.Ok::class.java)
+    }
+
+    @Test fun `signature case 3 - a 401 without the server's time is a wrong token and pauses the add-on`() = runBlocking<Unit> {
+        firstParty = true
+        signer.adopt = true
+        server.enqueue(json("""{"error":{"code":"unauthorized","message":"Missing or wrong token"}}""", 401))
+        val f = (client.stream(addon(), "td:9", lossless) as AddonResult.Failed).failure as AddonFailure.Refused
+        assertThat(f.code).isEqualTo(ErrorCode.UNAUTHORIZED)
+        assertThat(server.requestCount).isEqualTo(1)
+        assertThat(signer.adopted).isEqualTo(1) // asked, and the signer found no time to adopt
+        assertThat(gate.events.last()).isEqualTo("rateLimited addon_test-addon ${HttpAddonClient.UNAUTHORIZED_PAUSE_MS}")
+    }
+
     @Test fun `an unsigned add-on's 401 never moves the signing clock`() = runBlocking<Unit> {
         firstParty = false
         signer.adopt = true
@@ -552,6 +604,10 @@ class HttpAddonClientTest {
             builder.header("X-Stash-Auth", "sig:$payload")
             return true
         }
-        override fun adoptServerTime(response: Response): Boolean { adopted++; return adopt }
+        /** As RelaySigner: asked on every signed 401, adopts only a named server time. */
+        override fun adoptServerTime(response: Response): Boolean {
+            adopted++
+            return adopt && response.header(HttpAddonClient.SERVER_TIME_HEADER) != null
+        }
     }
 }

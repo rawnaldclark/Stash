@@ -4,9 +4,6 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.data.download.lossless.AggregatorRateLimiter
 import com.stash.data.download.lossless.RateLimitState
 import com.stash.data.download.lossless.TrackQuery
-import com.stash.data.download.lossless.bitchord.BitchordClient
-import com.stash.data.download.lossless.bitchord.BitchordStream
-import com.stash.data.download.lossless.bitchord.TidalLookup
 import com.stash.data.download.lossless.relay.LosslessDownloadPurpose
 import kotlinx.coroutines.withContext
 import io.mockk.coEvery
@@ -17,7 +14,7 @@ import org.junit.Test
 
 class TidalLosslessSourceTest {
 
-    private val client: BitchordClient = mockk()
+    private val client: TidalClient = mockk()
     private val rateLimiter: AggregatorRateLimiter = mockk(relaxUnitFun = true)
     private var now = 0L
     private val source = TidalLosslessSource(client, rateLimiter) { now }
@@ -29,7 +26,7 @@ class TidalLosslessSourceTest {
         coEvery { client.lookup(any(), any(), true) } returns TidalLookup.NeedsRelay
     }
 
-    private val stream = BitchordStream(
+    private val stream = TidalStream(
         url = "https://relay/dash/td/1.mpd?exp=9&sig=s",
         isDash = true,
         bitDepth = 24,

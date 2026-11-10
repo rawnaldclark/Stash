@@ -2,9 +2,9 @@ package com.stash.core.media.streaming
 
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.data.download.lossless.LosslessSourcePreferences
-import com.stash.data.download.lossless.bitchord.BitchordClient
-import com.stash.data.download.lossless.bitchord.BitchordStream
-import com.stash.data.download.lossless.bitchord.TidalLookup
+import com.stash.data.download.lossless.tidal.TidalClient
+import com.stash.data.download.lossless.tidal.TidalStream
+import com.stash.data.download.lossless.tidal.TidalLookup
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -14,7 +14,7 @@ import org.junit.Test
 
 class TidalStreamResolverTest {
 
-    private val client: BitchordClient = mockk {
+    private val client: TidalClient = mockk {
         coEvery { isConfigured() } returns true
         coEvery { resolve(any(), any()) } returns null
     }
@@ -42,7 +42,7 @@ class TidalStreamResolverTest {
     private val track = TrackEntity(title = "Get Lucky", artist = "Daft Punk")
     private val prefs: LosslessSourcePreferences = mockk { coEvery { tidalAacFallbackNow() } returns false }
 
-    private fun stream(codec: String) = BitchordStream(
+    private fun stream(codec: String) = TidalStream(
         url = "https://cdn.example/a.mp4", isDash = false, bitDepth = 0, sampleRateHz = 44_100,
         bitrateKbps = 320, coverArtUrl = null, expiresAtMs = Long.MAX_VALUE, codec = codec,
     )

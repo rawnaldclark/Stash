@@ -166,7 +166,7 @@ class AddonDownloadSeamTest {
 
     @Test fun `first-party is the signed config's relay, by origin and path`() {
         val relay = MutableStateFlow<TidalRelay?>(TidalRelay("https://relay.stash.example/tok", null))
-        val trust = SignedConfigAddonTrust(mockk<LosslessConfigFetcher> { every { tidalRelay } returns relay })
+        val trust = SignedConfigAddonTrust(mockk<LosslessConfigFetcher> { every { tidalRelay } returns relay }, com.stash.core.addons.NoDefaultAddons)
         assertThat(trust.isFirstParty("https://relay.stash.example/tok/")).isTrue()
         assertThat(trust.isFirstParty("https://relay.stash.example/tok/addon/")).isTrue()
         assertThat(trust.isFirstParty("https://relay.stash.example/tokens/")).isFalse()
