@@ -26,6 +26,7 @@ import com.stash.addons.contract.Manifest
 import com.stash.addons.contract.PhoneSpec
 import com.stash.addons.contract.Quota
 import com.stash.addons.contract.RESERVED_PARAMS
+import com.stash.addons.contract.ResolveQuery
 import com.stash.addons.contract.ResolveResponse
 import com.stash.addons.contract.SearchResponse
 import com.stash.addons.contract.SearchTop
@@ -325,7 +326,7 @@ object AddonValidator {
         }
     }
 
-    /** `GET /resolve` (SPEC.md 4.3). Strictness against the request is [checkResolveStrict]. */
+    /** `GET /resolve` (SPEC.md 4.3). What a host checks against its own query is [checkResolve]. */
     fun resolveResponse(v: JsonElement?, options: Options = DEFAULT): ResolveResponse {
         val o = obj(v, "")
         requireKeys(o, "", "item")
@@ -333,17 +334,19 @@ object AddonValidator {
     }
 
     /**
-     * SPEC.md 4.3: a host rejects a resolve item that breaks rule 2 (a known ISRC that differs from
-     * the asked one) or rule 3 (a length more than max(8000 ms, 3 %) from the asked one).
+     * SPEC.md 4.3 (draft 2), what a host checks: rule 3, a length more than max(8000 ms, 3 %) from
+     * the asked one when both are known, and rule 7, an item whose `maxTier` is below the asked
+     * `minTier`. An item is never rejected for its ISRC: another release of the same song often
+     * carries an ISRC of its own (rule 2).
      */
-    fun checkResolveStrict(item: Track, askedIsrc: String?, askedDurationMs: Long?) {
-        if (askedIsrc != null && item.isrc != null && !item.isrc.equals(askedIsrc, ignoreCase = true)) {
-            fail("/item/isrc", "another recording's ISRC")
+    fun checkResolve(item: Track, query: ResolveQuery) {
+        val asked = query.song.durationMs
+        if (asked != null && asked > 0 && item.durationMs != null) {
+            val tolerance = maxOf(8_000L, asked * 3 / 100)
+            if (kotlin.math.abs(item.durationMs - asked) > tolerance) fail("/item/durationMs", "another recording's length")
         }
-        if (askedDurationMs != null && askedDurationMs > 0 && item.durationMs != null) {
-            val tolerance = maxOf(8_000L, askedDurationMs * 3 / 100)
-            if (kotlin.math.abs(item.durationMs - askedDurationMs) > tolerance) fail("/item/durationMs", "another recording's length")
-        }
+        val minTier = query.minTier
+        if (minTier != null && item.maxTier != null && item.maxTier < minTier) fail("/item/maxTier", "below the asked minTier")
     }
 
     private val MIME = Regex("^audio/[A-Za-z0-9_.+-]+(\\s*;[^\\u0000-\\u001f]*)?$")
@@ -571,6 +574,21 @@ object AddonValidator {
     private const val LABEL = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
     private val HOSTNAME = Regex("^$LABEL(?:\\.$LABEL)+$")
     private val COOKIE_NAME = Regex("^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$")
+
+    /**
+     * A manifest of a contract this host reads (SPEC.md 10): v1 itself, and v0 read as v1 through
+     * [AddonV0]. Anything else is refused: a newer `stash` ("needs a newer Stash"), and for now an
+     * Eclipse-family manifest without one (phase 4).
+     */
+    fun anyManifest(v: JsonElement?, options: Options = DEFAULT): Manifest {
+        val stash = ((v as? JsonObject)?.get("stash") as? JsonPrimitive)?.takeIf { !it.isString }?.content
+        return when (stash) {
+            "0" -> AddonV0.manifest(v, options)
+            "1" -> manifest(v, options)
+            null -> fail("/stash", "not a Stash add-on")
+            else -> fail("/stash", "This add-on needs a newer Stash")
+        }
+    }
 
     /** `GET /manifest.json` (SPEC.md 2), v1 only: v0 and Eclipse-family manifests need their adapters first (SPEC.md 10). */
     fun manifest(v: JsonElement?, options: Options = DEFAULT): Manifest {
