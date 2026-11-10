@@ -3,6 +3,7 @@ package com.stash.data.lyrics.source
 import android.content.Context
 import android.content.pm.PackageInfo
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import com.stash.addons.contract.AddonKind
 import com.stash.addons.contract.ErrorCode
 import com.stash.addons.contract.LyricLine
@@ -87,11 +88,37 @@ class AddonLyricsSourceTest {
         assertThat(AddonLyricsSource(Registry(listOf(addon("a"))), client).resolve(query)).isNull()
     }
 
-    @Test fun `an add-on that could not be asked is never filed as no lyrics`() = runTest {
-        val client: HttpAddonClient = mockk {
-            coEvery { lyrics(any(), any(), any(), any()) } returns AddonResult.Failed(AddonFailure.Timeout)
+    @Test fun `an add-on that was asked and could not answer is never filed as no lyrics`() = runTest {
+        for (failure in listOf(
+            AddonFailure.Timeout,
+            AddonFailure.Network,
+            AddonFailure.InvalidResponse("/synced", "not a list"),
+            AddonFailure.Refused(ErrorCode.UNAVAILABLE, 500, null, null),
+        )) {
+            val client: HttpAddonClient = mockk {
+                coEvery { lyrics(any(), any(), any(), any()) } returns AddonResult.Failed(failure)
+            }
+            val e = runCatching { AddonLyricsSource(Registry(listOf(addon("a"))), client).resolve(query) }.exceptionOrNull()
+            assertWithMessage("$failure").that(e).isInstanceOf(IOException::class.java)
         }
-        val e = runCatching { AddonLyricsSource(Registry(listOf(addon("a"))), client).resolve(query) }.exceptionOrNull()
-        assertThat(e).isInstanceOf(IOException::class.java)
+    }
+
+    @Test fun `an add-on not asked, or refusing on its own terms, is absent and the song can settle`() = runTest {
+        // A paused add-on (a 401's hour, an open breaker) must not keep every lyric-less song
+        // walking the whole chain again on each open, for as long as it stays paused.
+        for (failure in listOf(
+            AddonFailure.Paused,
+            AddonFailure.NotOffered,
+            AddonFailure.Refused(ErrorCode.RATE_LIMITED, 429, 30, null),
+            AddonFailure.Refused(ErrorCode.UNAUTHORIZED, 401, null, null),
+            AddonFailure.Refused(ErrorCode.QUOTA_EXCEEDED, 429, 600, null),
+        )) {
+            val client: HttpAddonClient = mockk {
+                coEvery { lyrics(any(), any(), any(), any()) } returns AddonResult.Failed(failure)
+            }
+            val r = runCatching { AddonLyricsSource(Registry(listOf(addon("a"))), client).resolve(query) }
+            assertWithMessage("$failure").that(r.exceptionOrNull()).isNull()
+            assertWithMessage("$failure").that(r.getOrNull()).isNull()
+        }
     }
 }

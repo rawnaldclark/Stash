@@ -19,9 +19,12 @@ import javax.inject.Singleton
  * (`LyricsModule`: after KuGou, before InnerTube's plain text). Asks each add-on that lists
  * `lyrics`, in the registry's order, and returns the first answer.
  *
- * As the other sources do: null is a definitive miss (every add-on asked said `not_found`), and a
- * throw is "couldn't ask" (one timed out, failed or was paused, and none had the song), so the
- * repository never files a song as "no lyrics" over an add-on that was down.
+ * As the other sources do: null is a definitive miss, and a throw is "couldn't ask", so the
+ * repository never files a song as "no lyrics" over an add-on that was down. Only an outage
+ * ([AddonFailure.isOutage]: a timeout, no connection, an invalid answer, `unavailable`) is
+ * "couldn't ask". A paused add-on, or one that refused (rate limit, quota, unauthorized), counts as
+ * absent, the way an add-on without lyrics does: otherwise every song no source has would be
+ * walked again on every open for as long as the pause lasts.
  *
  * Phase 1: the registry is empty, so this returns null at once and asks nothing.
  */
@@ -48,7 +51,7 @@ class AddonLyricsSource @Inject constructor(
         for (addon in addons) {
             when (val r = client.lyrics(addon, descriptor)) {
                 is AddonResult.Ok -> return toResult(addon.id, r.value)
-                is AddonResult.Failed -> if (!r.failure.isMiss && r.failure != AddonFailure.NotOffered) {
+                is AddonResult.Failed -> if (r.failure.isOutage) {
                     Log.d(TAG, "${addon.id}: no answer (${r.failure.javaClass.simpleName})")
                     if (couldNotAsk == null) couldNotAsk = addon.id
                 }
