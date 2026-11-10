@@ -1389,7 +1389,7 @@
     </plurals>
     <!-- Add-ons phase 2: Add from a link (Settings › Lossless sources › Advanced). -->
     <string name="settings_addons_link_title">Add from a link</string>
-    <string name="settings_addons_link_desc">Paste a Stash add-on's link to add it. You can remove it here at any time.</string>
+    <string name="settings_addons_link_desc">Paste the link of a Stash add-on to add it. You can remove it here at any time.</string>
     <string name="settings_addons_link_label">Add-on link</string>
     <string name="settings_addons_link_check">Check link</string>
     <string name="settings_addons_link_checking">Reading the add-on…</string>
