@@ -4,7 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.addons.contract.Resource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -33,7 +33,7 @@ class AddonRegistryTest {
     private fun manifestJson(id: String, kind: String = "server", extra: String = "") =
         """{"stash":1,"id":"$id","name":"N","version":"1","kind":"$kind","resources":["lyrics"]$extra}"""
 
-    @Test fun `phase 1 - no defaults, nothing on, nothing asked`() = runTest {
+    @Test fun `phase 1 - no defaults, nothing on, nothing asked`() = runBlocking<Unit> {
         val registry = InTreeAddonRegistry(NoDefaultAddons(), client)
         registry.refresh()
         assertThat(registry.addons.value).isEmpty()
@@ -42,7 +42,7 @@ class AddonRegistryTest {
         assertThat(server.requestCount).isEqualTo(0)
     }
 
-    @Test fun `defaults are read from their manifests, in order`() = runTest {
+    @Test fun `defaults are read from their manifests, in order`() = runBlocking<Unit> {
         server.enqueue(MockResponse().setBody(manifestJson("one")))
         server.enqueue(MockResponse().setBody(manifestJson("two")))
         val registry = InTreeAddonRegistry(
@@ -60,7 +60,7 @@ class AddonRegistryTest {
         assertThat(server.requestCount).isEqualTo(2)
     }
 
-    @Test fun `an add-on whose manifest fails keeps its last good one`() = runTest {
+    @Test fun `an add-on whose manifest fails keeps its last good one`() = runBlocking<Unit> {
         val registry = InTreeAddonRegistry(Defaults(listOf(DefaultAddonEntry("http://127.0.0.1:${server.port}/a/manifest.json"))), client)
         server.enqueue(MockResponse().setBody(manifestJson("one")))
         registry.refresh()
@@ -69,7 +69,7 @@ class AddonRegistryTest {
         assertThat(registry.addons.value.map { it.id }).containsExactly("one")
     }
 
-    @Test fun `only server add-ons are loaded`() = runTest {
+    @Test fun `only server add-ons are loaded`() = runBlocking<Unit> {
         server.enqueue(MockResponse().setBody(
             manifestJson("frame-one", kind = "frame", extra = ""","frame":"https://frame.example/""""),
         ))

@@ -19,9 +19,12 @@ import javax.inject.Singleton
  * @property base Where its routes live: the manifest URL without `manifest.json`, ending in `/`
  *   (SPEC.md 3). Holds a path token when the add-on uses one, so it is a secret: never logged.
  * @property token The `X-Access-Token` for an add-on whose manifest says `auth.token: "header"`.
+ *   Only printable ASCII (a request header can't carry anything else): any other value is refused
+ *   here, with a message that never repeats it.
  * @property userAdded Added by the user ("Add from a link", phase 4) rather than a default from the
- *   signed config. User-added add-ons go first in the play order, as the user's own Tidal server
- *   does today (`LosslessAvailability.ownTidalFirst`).
+ *   signed config. User-added add-ons are asked ahead of Qobuz on every play (`StreamSourceRegistry`);
+ *   unlike the user's own Tidal server, whatever the quality and whether or not the user has
+ *   their own Qobuz. Phase 4 may give them the same conditions.
  * @property settings The add-on's setting values, sent as query parameters (SPEC.md 2.2).
  */
 data class InstalledAddon(
@@ -31,12 +34,25 @@ data class InstalledAddon(
     val token: String? = null,
     val settings: Map<String, String> = emptyMap(),
 ) {
+    init {
+        require(token == null || isHeaderSafe(token)) { "an add-on token must be printable ASCII" }
+    }
+
     val id: String get() = manifest.id
 
     fun offers(resource: Resource): Boolean = manifest.offers(resource)
 
     /** Never names [base] or [token]: logs and crash reports carry only the id. */
     override fun toString(): String = "InstalledAddon(${manifest.id} ${manifest.version}${if (userAdded) ", user" else ""})"
+
+    companion object {
+        /**
+         * True when [value] can go in a request header: not empty, tab or printable ASCII only. The
+         * check "Add from a link" (phase 4) runs before keeping a token, so a bad one is refused
+         * with a message of our own; OkHttp's would repeat the value.
+         */
+        fun isHeaderSafe(value: String): Boolean = value.isNotEmpty() && value.all { it == '\t' || it in ' '..'~' }
+    }
 }
 
 /**
