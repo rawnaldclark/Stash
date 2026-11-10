@@ -511,9 +511,12 @@ class LibraryViewModelTest {
         onBlocking { deleteTrack(any()) } doReturn true
     }
 
+    private fun spotifyAccountsMock(): com.stash.core.auth.spotify.SpotifyAccounts = mock {
+        on { spotifyAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected)
+    }
+
     private fun tokenManagerMock(): TokenManager = mock {
         on { soundCloudSession } doReturn flowOf(null)
-        on { spotifyAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected)
         on { youTubeAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected)
     }
 
@@ -532,6 +535,7 @@ class LibraryViewModelTest {
         playerRepository: PlayerRepository = playerRepoMock(),
         musicRepository: MusicRepository = musicRepoMock(),
         tokenManager: TokenManager = tokenManagerMock(),
+        spotifyAccounts: com.stash.core.auth.spotify.SpotifyAccounts = spotifyAccountsMock(),
         playlistImageHelper: PlaylistImageHelper = mock(),
         localImportCoordinator: LocalImportCoordinator = mock {
             on { state } doReturn MutableStateFlow<LocalImportState>(LocalImportState.Idle)
@@ -545,6 +549,7 @@ class LibraryViewModelTest {
         musicRepository = musicRepository,
         playerRepository = playerRepository,
         tokenManager = tokenManager,
+        spotifyAccounts = spotifyAccounts,
         playlistImageHelper = playlistImageHelper,
         localImportCoordinator = localImportCoordinator,
         streamingPreference = streamingPreference,

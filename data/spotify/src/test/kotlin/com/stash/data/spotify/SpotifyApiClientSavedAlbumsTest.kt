@@ -1,6 +1,6 @@
 package com.stash.data.spotify
 
-import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.auth.spotify.SpotifyAuthManager
 import io.mockk.coEvery
 import io.mockk.every
@@ -37,7 +37,7 @@ class SpotifyApiClientSavedAlbumsTest {
     /** Answers before [pages] when it returns non-null: (operation, variables) to a response. */
     private var respond: ((String, String) -> Pair<Int, String>?)? = null
 
-    private val tokenManager = mockk<TokenManager> {
+    private val tokenManager = mockk<SpotifyAccounts> {
         coEvery { getSpotifyAccessToken() } returns "access-token"
         coEvery { getSpotifyClientId() } returns "client-id"
         coEvery { forceRefreshSpotifyAccessToken() } returns null

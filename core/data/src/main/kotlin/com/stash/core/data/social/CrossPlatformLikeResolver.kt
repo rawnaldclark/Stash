@@ -5,7 +5,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.sync.TrackMatcher
 import com.stash.core.data.sync.TrackIdentityEvents
 import com.stash.core.model.Track
-import com.stash.data.spotify.SpotifyApiClient
+import com.stash.data.spotify.SpotifyLibrary
 import com.stash.data.spotify.SpotifyTrackCandidate
 import com.stash.data.ytmusic.YTMusicApiClient
 import kotlinx.coroutines.CancellationException
@@ -39,7 +39,7 @@ import kotlin.math.abs
  */
 @Singleton
 class CrossPlatformLikeResolver @Inject constructor(
-    private val spotifyApiClient: SpotifyApiClient,
+    private val spotifyLibrary: SpotifyLibrary,
     private val ytMusicApiClient: YTMusicApiClient,
     private val matcher: TrackMatcher,
     private val trackDao: TrackDao,
@@ -51,7 +51,7 @@ class CrossPlatformLikeResolver @Inject constructor(
         if (track.title.isBlank() || track.artist.isBlank()) return null
 
         val candidates = try {
-            spotifyApiClient.searchTracksGraphQL("${track.artist} ${track.title}")
+            spotifyLibrary.searchTracksGraphQL("${track.artist} ${track.title}")
         } catch (ce: CancellationException) {
             throw ce
         } catch (e: Exception) {

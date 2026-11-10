@@ -1,7 +1,7 @@
 package com.stash.data.spotify
 
 import android.util.Log
-import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.auth.model.UserInfo
 import com.stash.core.auth.spotify.SpotifyAuthConfig
 import com.stash.core.auth.spotify.SpotifyAuthManager
@@ -78,23 +78,22 @@ class SpotifyApiException(
 @Singleton
 class SpotifyApiClient @Inject constructor(
     private val okHttpClient: OkHttpClient,
-    private val tokenManager: TokenManager,
+    private val spotifyAccounts: SpotifyAccounts,
     private val spotifyAuthManager: SpotifyAuthManager,
-) {
+) : SpotifyLibrary {
     private val json = Json { ignoreUnknownKeys = true }
 
     private fun nowEpochSeconds(): Long = System.currentTimeMillis() / 1000
 
     companion object {
         private const val TAG = "StashSync"
-        private const val DEFAULT_LIMIT = 50
         private const val HTTP_TOO_MANY_REQUESTS = 429
 
         /**
          * The order the sync lists saved albums in: newest save first, an order that holds while the
          * listener plays (one of the response's `availableSortOrders`, captured 2026-11-02).
          */
-        const val SAVED_ALBUMS_ORDER = "Recently Added"
+        const val SAVED_ALBUMS_ORDER = SpotifyLibrary.SAVED_ALBUMS_ORDER
 
         /** Songs per `getAlbum` page: the web player's own size. */
         private const val ALBUM_TRACK_PAGE = 50
@@ -325,7 +324,7 @@ class SpotifyApiClient @Inject constructor(
      * failed page. The public Web API prong's 429s are not counted: they land on the shared
      * client-credentials token ([webApiRateLimitedUntil]), not on the account.
      */
-    val rateLimitedAnswers: Int get() = rateLimitedAnswerCount.get()
+    override val rateLimitedAnswers: Int get() = rateLimitedAnswerCount.get()
 
     /**
      * Serializes refreshes of [clientCredentialsToken]. Concurrent callers
@@ -391,7 +390,7 @@ class SpotifyApiClient @Inject constructor(
      * @return A [UserInfo] with the user's ID, or null if resolution fails.
      */
     suspend fun getCurrentUserProfile(): UserInfo? = withContext(Dispatchers.IO) {
-        val username = tokenManager.getSpotifyUsername()
+        val username = spotifyAccounts.getSpotifyUsername()
         if (username != null) {
             Log.d(TAG, "getCurrentUserProfile: userId resolved (${username.length} chars)")
             return@withContext UserInfo(
@@ -418,10 +417,10 @@ class SpotifyApiClient @Inject constructor(
      *   libraryV3 is hierarchical: folder-filed playlists never appear at
      *   the root (issues #48/#26/#80/#136).
      */
-    suspend fun getUserPlaylists(
-        limit: Int = DEFAULT_LIMIT,
-        offset: Int = 0,
-        folderUri: String? = null,
+    override suspend fun getUserPlaylists(
+        limit: Int,
+        offset: Int,
+        folderUri: String?,
     ): SpotifyLibraryPage = withContext(Dispatchers.IO) {
         Log.d(
             TAG,
@@ -476,10 +475,10 @@ class SpotifyApiClient @Inject constructor(
      * that order, the page is asked for again in its default order; [SpotifySavedAlbumsPage.sortOrder]
      * says which order it came in.
      */
-    suspend fun getSavedAlbumsPage(
-        limit: Int = DEFAULT_LIMIT,
-        offset: Int = 0,
-        order: String? = SAVED_ALBUMS_ORDER,
+    override suspend fun getSavedAlbumsPage(
+        limit: Int,
+        offset: Int,
+        order: String?,
     ): SpotifySavedAlbumsPage = withContext(Dispatchers.IO) {
         try {
             val response = savedAlbumsResponse(limit, offset, order)
@@ -525,7 +524,7 @@ class SpotifyApiClient @Inject constructor(
      * (`getAlbum`, 50 a page). Read-only. Null when no page could be read; a walk that stopped short
      * of Spotify's own count comes back with [SpotifyAlbumTracklist.complete] false.
      */
-    suspend fun getAlbumTracks(albumId: String): SpotifyAlbumTracklist? = withContext(Dispatchers.IO) {
+    override suspend fun getAlbumTracks(albumId: String): SpotifyAlbumTracklist? = withContext(Dispatchers.IO) {
         val tracks = mutableListOf<SpotifyAlbumTrack>()
         var offset = 0
         var total: Int? = null
@@ -589,7 +588,7 @@ class SpotifyApiClient @Inject constructor(
      *   an Error.
      * @throws SpotifyApiException if all approaches fail.
      */
-    suspend fun getPlaylistTracks(playlistId: String): SyncResult<SpotifyPlaylistTracks> {
+    override suspend fun getPlaylistTracks(playlistId: String): SyncResult<SpotifyPlaylistTracks> {
         Log.d(TAG, "getPlaylistTracks: playlistId=$playlistId")
 
         try {
@@ -647,9 +646,9 @@ class SpotifyApiClient @Inject constructor(
      *   Spotify returned no items at all; [SyncResult.Error] when the request
      *   failed or the response had no recognisable items list.
      */
-    suspend fun getLikedSongs(
-        limit: Int = DEFAULT_LIMIT,
-        offset: Int = 0,
+    override suspend fun getLikedSongs(
+        limit: Int,
+        offset: Int,
     ): SyncResult<SpotifyLikedSongsPage> = withContext(Dispatchers.IO) {
         Log.d(TAG, "getLikedSongs: limit=$limit, offset=$offset (via sp_dc GraphQL)")
 
@@ -727,7 +726,7 @@ class SpotifyApiClient @Inject constructor(
      * personalized families here (`…1F` Wrapped, `…1CK` all-time, `…EVX`) are
      * distinct from the `37i9dQZF1D` editorial prefix the mix filter rejects.
      */
-    suspend fun getYearlyMixes(): SyncResult<List<SpotifyPlaylistItem>> = withContext(Dispatchers.IO) {
+    override suspend fun getYearlyMixes(): SyncResult<List<SpotifyPlaylistItem>> = withContext(Dispatchers.IO) {
         try {
             val out = linkedMapOf<String, SpotifyPlaylistItem>()
             for (term in YEARLY_SEARCH_TERMS) {
@@ -792,7 +791,7 @@ class SpotifyApiClient @Inject constructor(
      * parses. Both requests stop when the caller's coroutine is cancelled (review on #738): the
      * artist page bounds them, and a stalled answer must not hold up the bio.
      */
-    suspend fun getArtistVisuals(name: String): SpotifyArtistVisuals? = withContext(Dispatchers.IO) {
+    override suspend fun getArtistVisuals(name: String): SpotifyArtistVisuals? = withContext(Dispatchers.IO) {
         try {
             val search = executeGraphQL(
                 operationName = "searchDesktop",
@@ -835,7 +834,7 @@ class SpotifyApiClient @Inject constructor(
         }
     }
 
-    suspend fun getDailyMixes(): SyncResult<List<SpotifyPlaylistItem>> = withContext(Dispatchers.IO) {
+    override suspend fun getDailyMixes(): SyncResult<List<SpotifyPlaylistItem>> = withContext(Dispatchers.IO) {
         Log.d(TAG, "getDailyMixes: fetching home feed for Spotify mixes")
 
         try {
@@ -1000,7 +999,7 @@ class SpotifyApiClient @Inject constructor(
         // fresh token) — search requires a user-authorized token. This web
         // token is the same one used for liked-songs / private playlists
         // (executeGraphQL) and carries the user's search quota.
-        val token = tokenManager.getSpotifyAccessToken()
+        val token = spotifyAccounts.getSpotifyAccessToken()
             ?: throw SpotifyApiException(
                 httpCode = 0,
                 url = "$WEB_API_BASE/search",
@@ -1018,7 +1017,7 @@ class SpotifyApiClient @Inject constructor(
         // 401: web token expired — force-refresh once and retry.
         if (response.code == 401) {
             Log.w(TAG, "searchTracks: 401, refreshing web access token and retrying once")
-            val refreshed = tokenManager.forceRefreshSpotifyAccessToken()
+            val refreshed = spotifyAccounts.forceRefreshSpotifyAccessToken()
                 ?: throw SpotifyApiException(
                     httpCode = 401,
                     url = url,
@@ -1072,7 +1071,7 @@ class SpotifyApiClient @Inject constructor(
      * throw on rate limits — the Partner API isn't quota-throttled like the
      * public API — so the caller treats an empty list as "no candidates".
      */
-    suspend fun searchTracksGraphQL(query: String, limit: Int = 10): List<SpotifyTrackCandidate> =
+    override suspend fun searchTracksGraphQL(query: String, limit: Int): List<SpotifyTrackCandidate> =
         withContext(Dispatchers.IO) {
             val variables = buildJsonObject {
                 put("searchTerm", query)
@@ -1403,11 +1402,11 @@ class SpotifyApiClient @Inject constructor(
      * tokens. This mutation is the real web player's path, on the same token
      * the library reads already use.
      */
-    suspend fun addToLibrary(uris: List<String>): SpotifyLibraryWriteResult =
+    override suspend fun addToLibrary(uris: List<String>): SpotifyLibraryWriteResult =
         mutateLibrary("addToLibrary", uris)
 
     /** Removes [uris] from the user's library (`removeFromLibrary`, symmetric un-like). */
-    suspend fun removeFromLibrary(uris: List<String>): SpotifyLibraryWriteResult =
+    override suspend fun removeFromLibrary(uris: List<String>): SpotifyLibraryWriteResult =
         mutateLibrary("removeFromLibrary", uris)
 
     /** Seeded hash, swapped for a re-scraped one after a PersistedQueryNotFound. */
@@ -1420,7 +1419,7 @@ class SpotifyApiClient @Inject constructor(
     ): SpotifyLibraryWriteResult = withContext(Dispatchers.IO) {
         if (uris.isEmpty()) return@withContext SpotifyLibraryWriteResult.Success
 
-        val accessToken = tokenManager.getSpotifyAccessToken()
+        val accessToken = spotifyAccounts.getSpotifyAccessToken()
             ?: return@withContext SpotifyLibraryWriteResult.AuthFailed
         val clientToken = ensureClientToken()
             ?: return@withContext SpotifyLibraryWriteResult.Failed("no client token")
@@ -1577,7 +1576,7 @@ class SpotifyApiClient @Inject constructor(
         cancellable: Boolean = false,
     ): JsonObject? {
         val hash = liveHashes[operationName] ?: seedHash
-        val accessToken = tokenManager.getSpotifyAccessToken()
+        val accessToken = spotifyAccounts.getSpotifyAccessToken()
         if (accessToken == null) {
             Log.e(TAG, "executeGraphQL: no access token available")
             return null
@@ -1637,7 +1636,7 @@ class SpotifyApiClient @Inject constructor(
             // If we get 401, try refreshing the access token and retrying once
             if (responseCode == 401) {
                 Log.w(TAG, "executeGraphQL: 401, attempting token refresh and retry")
-                val refreshedToken = tokenManager.forceRefreshSpotifyAccessToken()
+                val refreshedToken = spotifyAccounts.forceRefreshSpotifyAccessToken()
                 if (refreshedToken != null) {
                     cachedClientToken = null
                     val newClientToken = ensureClientToken()
@@ -1771,12 +1770,12 @@ class SpotifyApiClient @Inject constructor(
     private suspend fun ensureClientToken(): String? {
         cachedClientToken?.let { return it }
 
-        var clientId = tokenManager.getSpotifyClientId()
+        var clientId = spotifyAccounts.getSpotifyClientId()
 
         if (clientId == null) {
             Log.w(TAG, "ensureClientToken: no clientId in storage, forcing token refresh to populate it")
-            tokenManager.forceRefreshSpotifyAccessToken()
-            clientId = tokenManager.getSpotifyClientId()
+            spotifyAccounts.forceRefreshSpotifyAccessToken()
+            clientId = spotifyAccounts.getSpotifyClientId()
         }
 
         if (clientId == null) {

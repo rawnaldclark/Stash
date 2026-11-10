@@ -6,7 +6,7 @@ import com.stash.core.data.db.entity.SpotifyResolutionEntity
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.matching.ArtistMatching
 import com.stash.data.download.matching.SpotifySearchScorer
-import com.stash.data.spotify.SpotifyApiClient
+import com.stash.data.spotify.SpotifyLibrary
 import com.stash.data.spotify.SpotifyRateLimitException
 import com.stash.data.spotify.SpotifyTrackCandidate
 import java.io.IOException
@@ -46,7 +46,7 @@ import kotlinx.coroutines.sync.withLock
  */
 @Singleton
 class SpotifyUriResolver @Inject constructor(
-    private val spotify: SpotifyApiClient,
+    private val spotify: SpotifyLibrary,
     private val scorer: SpotifySearchScorer,
     private val dao: SpotifyResolutionDao,
 ) {

@@ -327,6 +327,7 @@ class TrackDownloadWorkerStopRestoreTest {
                     syncNotificationManager = mockk(relaxed = true),
                     trackDownloader = trackDownloader,
                     tokenManager = mockk(relaxed = true),
+                    spotifyAccounts = mockk(relaxed = true),
                     audioDurationExtractor = mockk(relaxed = true),
                     blocklistGuard = mockk(relaxed = true),
                     streamingPreference = mockk(relaxed = true),

@@ -2,7 +2,7 @@ package com.stash.core.data.sync
 
 import android.util.Log
 import androidx.room.withTransaction
-import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.data.db.StashDatabase
 import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
@@ -46,7 +46,7 @@ sealed interface SpotifyAccountRemoval {
 @Singleton
 class SpotifyExtraAccountRemover @Inject constructor(
     private val database: StashDatabase,
-    private val tokenManager: TokenManager,
+    private val spotifyAccounts: SpotifyAccounts,
 ) {
 
     /**
@@ -59,7 +59,7 @@ class SpotifyExtraAccountRemover @Inject constructor(
         val accounts = database.spotifyAccountDao()
         if (accounts.getById(rowId) == null) return SpotifyAccountRemoval.NotFound
         try {
-            tokenManager.clearSpotifyExtra(rowId)
+            spotifyAccounts.clearSpotifyExtra(rowId)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

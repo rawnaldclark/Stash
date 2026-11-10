@@ -1,6 +1,7 @@
 package com.stash.core.data.diagnostics
 
 import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.auth.model.AuthState
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.PlaylistDao
@@ -54,8 +55,10 @@ class DiagnosticsBundleBuilderTest {
     }
     private val trackDao: TrackDao = mockk { coEvery { diagnosticsTotals() } returns TrackDiagnosticsTotals(120, 80, 2) }
     private val tokenManager: TokenManager = mockk {
-        every { spotifyAuthState } returns MutableStateFlow(AuthState.NotConnected)
         every { youTubeAuthState } returns MutableStateFlow(AuthState.NotConnected)
+    }
+    private val spotifyAccounts: SpotifyAccounts = mockk {
+        every { spotifyAuthState } returns MutableStateFlow(AuthState.NotConnected)
     }
 
     // `answers`, not `returns`: the rule creates the folder after this field initialises.
@@ -65,7 +68,7 @@ class DiagnosticsBundleBuilderTest {
 
     private fun builder(contributors: Set<DiagnosticsContributor> = emptySet()) = DiagnosticsBundleBuilder(
         context, syncHistoryDao, downloadQueueDao, trackBlocklistDao,
-        sourceAccountDao, spotifyAccountDao, playlistDao, trackDao, tokenManager, crashFileStore, logcatCapture, contributors,
+        sourceAccountDao, spotifyAccountDao, playlistDao, trackDao, tokenManager, spotifyAccounts, crashFileStore, logcatCapture, contributors,
     )
 
     private fun contributor(name: String, body: suspend () -> String) = object : DiagnosticsContributor {
@@ -169,8 +172,8 @@ class DiagnosticsBundleBuilderTest {
             id = 9, userId = "jo.example", label = "Jo Example", addedAt = 3, syncLiked = false,
         )
         coEvery { spotifyAccountDao.getAll() } returns listOf(restored, signedOut, signedIn)
-        coEvery { tokenManager.hasSpotifyExtraSignIn(match { it.rowId == 2L || it.rowId == 5L }) } returns true
-        coEvery { tokenManager.hasSpotifyExtraSignIn(match { it.rowId == 9L }) } returns false
+        coEvery { spotifyAccounts.hasSpotifyExtraSignIn(match { it.rowId == 2L || it.rowId == 5L }) } returns true
+        coEvery { spotifyAccounts.hasSpotifyExtraSignIn(match { it.rowId == 9L }) } returns false
 
         val text = builder().buildText()
 

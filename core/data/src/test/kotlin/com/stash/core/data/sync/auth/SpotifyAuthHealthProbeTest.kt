@@ -1,6 +1,6 @@
 package com.stash.core.data.sync.auth
 
-import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -11,7 +11,7 @@ import org.junit.Test
 
 class SpotifyAuthHealthProbeTest {
 
-    private val tokenManager: TokenManager = mockk {
+    private val tokenManager: SpotifyAccounts = mockk {
         coEvery { rememberSpotifyAccount() } returns Unit
     }
     private val probe = SpotifyAuthHealthProbe(tokenManager)

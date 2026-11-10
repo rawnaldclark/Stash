@@ -35,7 +35,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Default [TokenManager] implementation backed by [EncryptedTokenStore].
+ * Default [TokenManager] implementation backed by [EncryptedTokenStore], and the in-tree
+ * [com.stash.core.auth.spotify.SpotifyAccounts] (the same singleton, so one set of refresh locks).
  *
  * Observes the encrypted token and user flows for each service and maps them into
  * reactive [AuthState] values. The Spotify access-token getter automatically refreshes
@@ -51,7 +52,7 @@ class TokenManagerImpl @Inject constructor(
     private val spotifyAuthManager: SpotifyAuthManager,
     private val youTubeCookieHelper: YouTubeCookieHelper,
     private val soundCloudAccounts: com.stash.core.auth.soundcloud.SoundCloudAccountManager,
-) : TokenManager {
+) : TokenManager, com.stash.core.auth.spotify.SpotifyAccounts {
 
     override val soundCloudSession get() = soundCloudAccounts.session
     override suspend fun connectSoundCloudWithToken(token: String) = soundCloudAccounts.connect(token)
@@ -258,6 +259,11 @@ class TokenManagerImpl @Inject constructor(
             UserInfo(id = identity.pageId ?: "youtube_user", displayName = displayName, imageUrl = imageUrl),
         )
     }
+
+    // SpotifyAccounts' names for the two Spotify answers of the generic calls below: the same code.
+    override suspend fun isSpotifyAuthenticated(): Boolean = isAuthenticated(AuthService.SPOTIFY)
+
+    override suspend fun clearSpotifyAuth() = clearAuth(AuthService.SPOTIFY)
 
     override suspend fun clearAuth(service: AuthService) {
         when (service) {

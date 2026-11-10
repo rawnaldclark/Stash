@@ -5,6 +5,7 @@ import android.net.Uri
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.spotify.SpotifyAccount
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.SourceAccountDao
@@ -65,6 +66,7 @@ class DiagnosticsBundleBuilder @Inject constructor(
     private val playlistDao: PlaylistDao,
     private val trackDao: TrackDao,
     private val tokenManager: TokenManager,
+    private val spotifyAccounts: SpotifyAccounts,
     private val crashFileStore: CrashFileStore,
     private val logcatCapture: LogcatCapture,
     private val contributors: Set<@JvmSuppressWildcards DiagnosticsContributor>,
@@ -165,7 +167,7 @@ class DiagnosticsBundleBuilder @Inject constructor(
         val accounts = sourceAccountDao.getAll().first()
         return buildString {
             appendLine("== Connection ==")
-            appendLine(connectionLine("Spotify", tokenManager.spotifyAuthState.value, accounts, MusicSource.SPOTIFY))
+            appendLine(connectionLine("Spotify", spotifyAccounts.spotifyAuthState.value, accounts, MusicSource.SPOTIFY))
             extraSpotifyLines().forEach { appendLine(it) }
             append(connectionLine("YouTube", tokenManager.youTubeAuthState.value, accounts, MusicSource.YOUTUBE))
         }
@@ -191,7 +193,7 @@ class DiagnosticsBundleBuilder @Inject constructor(
         }
         return rows.sortedBy { it.id }.mapIndexed { index, row ->
             val signedIn = runCatching {
-                tokenManager.hasSpotifyExtraSignIn(SpotifyAccount(row.id, row.userId))
+                spotifyAccounts.hasSpotifyExtraSignIn(SpotifyAccount(row.id, row.userId))
             }.getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it else false }
             val state = when {
                 !signedIn -> "No sign-in on this phone"

@@ -95,6 +95,7 @@ private const val SPOTIFY_COOKIE_INVALID = "Invalid or expired sp_dc cookie. Ple
 class SettingsViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val tokenManager: TokenManager,
+    private val spotifyAccounts: com.stash.core.auth.spotify.SpotifyAccounts,
     private val musicRepository: MusicRepository,
     private val librarySizeHolder: LibrarySizeHolder,
     private val qualityPreference: QualityPreference,
@@ -604,7 +605,7 @@ class SettingsViewModel @Inject constructor(
      * the persisted quality tier, and local UI state.
      */
     val uiState: StateFlow<SettingsUiState> = combine(
-        tokenManager.spotifyAuthState,
+        spotifyAccounts.spotifyAuthState,
         tokenManager.youTubeAuthState,
         tokenManager.discordAuthState,
         musicRepository.getTrackCount(),
@@ -1233,7 +1234,7 @@ class SettingsViewModel @Inject constructor(
     /**
      * Validates the user-provided sp_dc cookie and connects their Spotify account.
      *
-     * Calls [TokenManager.connectSpotifyWithCookie] which exchanges the cookie for
+     * Calls [com.stash.core.auth.spotify.SpotifyAccounts.connectSpotifyWithCookie] which exchanges the cookie for
      * an access token. On success the dialog is dismissed; on failure an error
      * message is displayed in the dialog.
      *
@@ -1272,9 +1273,9 @@ class SettingsViewModel @Inject constructor(
 
             val connected = connectGuarded {
                 if (checked == null) {
-                    tokenManager.connectSpotifyWithCookie(cookie, username)
+                    spotifyAccounts.connectSpotifyWithCookie(cookie, username)
                 } else {
-                    tokenManager.connectSpotifyWithSignIn(checked, username)
+                    spotifyAccounts.connectSpotifyWithSignIn(checked, username)
                 }
             }
             when (val result = connected) {
@@ -1355,11 +1356,11 @@ class SettingsViewModel @Inject constructor(
      * A Connect (or Reconnect) on the Spotify card must not take an account that is already one of
      * the other Spotify accounts: the same account would then be both, its library read twice and
      * its likes counted as the main account's. core:auth can't see that list, so the cookie is
-     * identified here first ([TokenManager.validateSpotifyCookie], which saves nothing), only while
+     * identified here first ([com.stash.core.auth.spotify.SpotifyAccounts.validateSpotifyCookie], which saves nothing), only while
      * there are other accounts at all: with none, the connect runs exactly as before. A check that
      * can't tell whose account it is lets the connect go ahead, as the account-swap guard does: a
      * guard that can't see must not lock anyone out. A sign-in it checked is connected from that
-     * check ([TokenManager.connectSpotifyWithSignIn]): one token exchange, not two, so a rate-limited
+     * check ([com.stash.core.auth.spotify.SpotifyAccounts.connectSpotifyWithSignIn]): one token exchange, not two, so a rate-limited
      * second exchange can't turn a good cookie into "invalid".
      */
     private suspend fun precheckSpotifyConnect(cookie: String): MainConnectPrecheck {
@@ -1372,7 +1373,7 @@ class SettingsViewModel @Inject constructor(
             false
         }
         if (!anyOther) return MainConnectPrecheck.ConnectCookie
-        return when (val check = connectGuarded { tokenManager.validateSpotifyCookie(cookie.trim()) }) {
+        return when (val check = connectGuarded { spotifyAccounts.validateSpotifyCookie(cookie.trim()) }) {
             null -> MainConnectPrecheck.Failed(CONNECT_SAVE_FAILED)
             com.stash.core.auth.model.SpotifyCookieCheck.Invalid -> MainConnectPrecheck.Failed(SPOTIFY_COOKIE_INVALID)
             is com.stash.core.auth.model.SpotifyCookieCheck.Valid -> {
@@ -1455,7 +1456,7 @@ class SettingsViewModel @Inject constructor(
                 return@launch
             }
             musicRepository.cancelPendingDownloadsForSource("SPOTIFY")
-            tokenManager.clearAuth(AuthService.SPOTIFY)
+            spotifyAccounts.clearSpotifyAuth()
             // Nothing left to re-authenticate: the Sync tab's banner stops asking.
             syncStateManager.clearAuthExpiry(spotify = true)
         }

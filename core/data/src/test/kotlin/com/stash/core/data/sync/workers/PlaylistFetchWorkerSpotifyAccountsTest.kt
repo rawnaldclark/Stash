@@ -12,7 +12,7 @@ import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.testing.WorkManagerTestInitHelper
 import androidx.work.workDataOf
 import com.stash.core.auth.TokenManager
-import com.stash.core.auth.model.AuthService
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.auth.spotify.SpotifyAccount
 import com.stash.core.auth.spotify.SpotifyAuthManager
 import com.stash.core.data.blocklist.BlocklistGuard
@@ -84,7 +84,7 @@ import org.robolectric.annotation.Config
  * "B" ([userB]) an extra one.
  *
  * MockK runs a `coAnswers` block in a coroutine of its own, so a faked [SpotifyApiClient] can't see
- * which account is acting. [ActingTokenManager] can (it is a real suspend implementation): every
+ * which account is acting. [ActingSpotifyAccounts] can (it is a real suspend implementation): every
  * token read records the acting account, and the fake answers from that account's [Library]. The
  * worker asks for an extra's token right before its pass, so the fake follows each pass. The
  * wiring test at the end proves the acting account reaches the network with the real client.
@@ -98,7 +98,9 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
     private val syncLog = SyncLog()
     private val prefs = mockk<SyncPreferencesManager>()
     private val streamingPreference = mockk<StreamingPreference>()
-    private val tokens = ActingTokenManager(mockk(relaxed = true))
+    private val tokens = ActingSpotifyAccounts(mockk(relaxed = true))
+    /** YouTube Music and SoundCloud: not signed in (only Spotify's accounts are under test). */
+    private val tokenManager = mockk<TokenManager>(relaxed = true) { coEvery { isAuthenticated(any()) } returns false }
     private val spotify = mockk<SpotifyApiClient>()
     private var spotifyClient: SpotifyApiClient = spotify
     private val probe = mockk<SpotifyAuthHealthProbe> { coEvery { isExpired() } returns false }
@@ -924,8 +926,9 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
                     workerParameters: WorkerParameters,
                 ) = PlaylistFetchWorker(
                     appContext, workerParameters,
-                    tokenManager = tokens,
-                    spotifyApiClient = spotifyClient,
+                    tokenManager = tokenManager,
+                    spotifyAccounts = tokens,
+                    spotifyLibrary = spotifyClient,
                     ytMusicApiClient = mockk(relaxed = true),
                     innerTubeClient = mockk(relaxed = true),
                     playlistDao = db.playlistDao(),
@@ -993,12 +996,12 @@ class PlaylistFetchWorkerSpotifyAccountsTest {
 }
 
 /**
- * A [TokenManager] that answers per acting account, as the real one does: the main account
+ * A [SpotifyAccounts] that answers per acting account, as the real one does: the main account
  * ("token-main") with no [SpotifyAccount] in the context, an extra's own token ("token-<userId>")
  * with one, and null for an extra in [dead]. Each token read records the acting account
  * ([actingNow], [asked]).
  */
-private class ActingTokenManager(base: TokenManager) : TokenManager by base {
+private class ActingSpotifyAccounts(base: SpotifyAccounts) : SpotifyAccounts by base {
     /** The account the last token read acted as: null for the main. */
     @Volatile var actingNow: String? = null
     val asked: MutableList<String?> = java.util.Collections.synchronizedList(mutableListOf())
@@ -1015,7 +1018,7 @@ private class ActingTokenManager(base: TokenManager) : TokenManager by base {
 
     override suspend fun getSpotifyClientId(): String = "client-id"
 
-    override suspend fun isAuthenticated(service: AuthService): Boolean = service == AuthService.SPOTIFY
+    override suspend fun isSpotifyAuthenticated(): Boolean = true
 
     override suspend fun clearSpotifyExtra(rowId: Long) = Unit
 }

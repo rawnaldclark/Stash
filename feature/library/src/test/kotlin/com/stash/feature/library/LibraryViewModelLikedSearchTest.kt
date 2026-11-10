@@ -96,9 +96,9 @@ class LibraryViewModelLikedSearchTest {
             playerRepository = mock { on { playerState } doReturn MutableStateFlow(PlayerState()) },
             tokenManager = mock {
                 on { soundCloudSession } doReturn flowOf(null)
-                on { spotifyAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected)
                 on { youTubeAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected)
             },
+            spotifyAccounts = mock { on { spotifyAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected) },
             playlistImageHelper = mock(),
             localImportCoordinator = mock { on { state } doReturn MutableStateFlow<LocalImportState>(LocalImportState.Idle) },
             streamingPreference = mock { on { enabled } doReturn flowOf(false) },

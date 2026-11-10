@@ -1,14 +1,14 @@
 package com.stash.core.data.sync.auth
 
 import android.util.Log
-import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * Real HTTP-based Spotify auth probe (issue #117).
  *
- * `TokenManager.getSpotifyAccessToken()` is the right signal: it returns the
+ * `SpotifyAccounts.getSpotifyAccessToken()` is the right signal: it returns the
  * cached access token if still fresh (no network), otherwise refreshes via the
  * stored sp_dc cookie. Refresh fails — and the call returns `null` — when the
  * sp_dc is invalid or expired (Spotify returns an anonymous token, which
@@ -16,12 +16,12 @@ import javax.inject.Singleton
  * `null`). A non-null result means auth is healthy.
  *
  * **Contract assumption:** the caller (`PlaylistFetchWorker.runAuthProbes`)
- * only invokes this probe when `TokenManager.spotifyAuthState is Connected`,
+ * only invokes this probe when `SpotifyAccounts.spotifyAuthState is Connected`,
  * so `null` here cannot mean "not connected" — it can only mean
  * "expired / invalid sp_dc". The connection-state guard lives at the worker.
  *
  * Side benefit: when the cached token is stale, the probe refreshes it and
- * persists the new value via TokenManager. The about-to-run sync gets a
+ * persists the new value via SpotifyAccounts. The about-to-run sync gets a
  * pre-warmed token for free.
  *
  * Conservative on exceptions: a network failure (DNS, timeout, etc.) returns
@@ -30,20 +30,20 @@ import javax.inject.Singleton
  * (Task 7) when individual track downloads return 401/403.
  *
  * Second side job: a working session is when Stash can learn whose account
- * it is, if that was never recorded ([TokenManager.rememberSpotifyAccount]).
+ * it is, if that was never recorded ([com.stash.core.auth.spotify.SpotifyAccounts.rememberSpotifyAccount]).
  * The account-swap guard needs it later, when this session may be dead and a
  * "Reconnect" could be signed in as another account. Best-effort: it never
  * changes the verdict.
  */
 @Singleton
 class SpotifyAuthHealthProbe @Inject constructor(
-    private val tokenManager: TokenManager,
+    private val spotifyAccounts: SpotifyAccounts,
 ) : AuthHealthProbe {
     override val source: AuthSource = AuthSource.SPOTIFY
 
     override suspend fun isExpired(): Boolean {
         val expired = try {
-            tokenManager.getSpotifyAccessToken() == null
+            spotifyAccounts.getSpotifyAccessToken() == null
         } catch (ce: kotlinx.coroutines.CancellationException) {
             throw ce
         } catch (e: Throwable) {
@@ -56,7 +56,7 @@ class SpotifyAuthHealthProbe @Inject constructor(
 
     private suspend fun rememberAccount() {
         try {
-            tokenManager.rememberSpotifyAccount()
+            spotifyAccounts.rememberSpotifyAccount()
         } catch (ce: kotlinx.coroutines.CancellationException) {
             throw ce
         } catch (e: Throwable) {

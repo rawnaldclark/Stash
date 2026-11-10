@@ -2,6 +2,7 @@ package com.stash.core.data.library
 
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.dao.TrackExistenceRef
@@ -32,8 +33,11 @@ class LibraryReconciliationAdoptionTest {
     private val tokenManager: TokenManager = mockk(relaxed = true) {
         coEvery { isAuthenticated(any()) } returns false
     }
+    private val spotifyAccounts: SpotifyAccounts = mockk {
+        coEvery { isSpotifyAuthenticated() } returns false
+    }
 
-    private fun useCase() = LibraryReconciliationUseCase(downloadQueueDao, trackDao, tokenManager, mockk(relaxed = true), com.stash.core.data.sync.DownloadJobRegistry())
+    private fun useCase() = LibraryReconciliationUseCase(downloadQueueDao, trackDao, tokenManager, spotifyAccounts, mockk(relaxed = true), com.stash.core.data.sync.DownloadJobRegistry())
 
     @Test
     fun `adopter runs before the requeue step`() = runTest {
