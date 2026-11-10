@@ -138,9 +138,10 @@ interface SpotifyAccounts {
      * account couldn't be told apart, so the account-swap guard couldn't refuse it. Called while
      * the session is known to work (the sync's auth probe). Best-effort: a failed lookup is tried
      * again a few hours later. The main account's only: acting as an extra, it does nothing (that
-     * session working says nothing about the main's).
+     * session working says nothing about the main's). Abstract on purpose: an implementation that
+     * forgot it would silently turn the account-swap guard off.
      */
-    suspend fun rememberSpotifyAccount() = Unit
+    suspend fun rememberSpotifyAccount()
 
     /**
      * Removes the main account's stored Spotify sign-in (`clearAuth(SPOTIFY)` before the split;
