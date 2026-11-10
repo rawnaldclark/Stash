@@ -130,6 +130,29 @@ class AddonDownloadSeamTest {
         assertThat(limiter.stateOf("addon_y").msUntilUnblock).isEqualTo(AggregatorRateLimiter.Config().backoff429Ms)
     }
 
+    @Test fun `a breaker the pause trips never shortens it, nor the pause a longer breaker`() = runTest {
+        // Two bad answers, then a 429 asking for an hour: the 429 is the third failure and trips the
+        // 30-minute breaker, which used to overwrite the hour.
+        val limiter = AggregatorRateLimiter().apply { clock = virtualClock() }
+        repeat(2) { limiter.reportFailure("addon_x") }
+        limiter.reportRateLimited("addon_x", 3_600_000L)
+        assertThat(limiter.stateOf("addon_x").msUntilUnblock).isEqualTo(3_600_000L)
+
+        // A pause shorter than the breaker it trips leaves the breaker's block.
+        repeat(2) { limiter.reportFailure("addon_y") }
+        limiter.reportRateLimited("addon_y", 60_000L)
+        assertThat(limiter.stateOf("addon_y").msUntilUnblock).isEqualTo(AggregatorRateLimiter.Config().circuitBreakDurationMs)
+    }
+
+    @Test fun `quota pauses only the metered key`() = runTest {
+        val limiter = AggregatorRateLimiter().apply { clock = virtualClock() }
+        val gate = RateLimiterAddonGate(limiter)
+        gate.onAnswer(HttpAddonClient.rateKey("x"))
+        gate.onRateLimited(HttpAddonClient.meteredKey("x"), 600_000L)
+        assertThat(gate.admit(HttpAddonClient.rateKey("x"), paced = false)).isTrue()
+        assertThat(gate.admit(HttpAddonClient.meteredKey("x"), paced = false)).isFalse()
+    }
+
     @Test fun `the gate paces background calls and only checks the circuit in the foreground`() = runTest {
         val limiter = AggregatorRateLimiter().apply { clock = virtualClock() }
         val gate = RateLimiterAddonGate(limiter)
