@@ -72,3 +72,16 @@ test("npm run deploy refuses to switch a live shim off, deploys when the redirec
   assert.equal(other.code, 1);
   assert.match(other.out, /another account/);
 });
+
+test("npm run deploy refuses when the live Worker cannot be asked, unless --no-live-check", async () => {
+  const gone = await server(serving);
+  const origin = gone.origin;
+  gone.close();
+  const refused = await deploy(["--origin", origin]);
+  assert.equal(refused.code, 1);
+  assert.match(refused.out, /REFUSED: cannot ask/);
+  assert.equal(refused.call, null);
+  const skipped = await deploy(["--origin", origin, "--no-live-check"]);
+  assert.equal(skipped.code, 0, skipped.out);
+  assert.deepEqual(skipped.call?.argv, ["deploy"]);
+});
