@@ -17,6 +17,7 @@
     "domains": [
       "open.spotify.com",
       "accounts.spotify.com",
+      "*.spotify.com",
       "api-partner.spotify.com",
       "*.spotifycdn.com"
     ],

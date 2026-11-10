@@ -11,7 +11,7 @@ import java.io.File
 
 /**
  * The spec's fixtures (stash-addon-spec `fixtures/`, copied to `src/test/resources/addon-fixtures`
- * at 341004d) through [AddonValidator]: every valid one passes, and every invalid one is rejected
+ * at 5238551) through [AddonValidator]: every valid one passes, and every invalid one is rejected
  * at the JSON pointer `invalid/expect.json` names, except the two whose only fault is text over
  * its cap, which a host cuts (SPEC.md 1.1 rule 2) rather than rejects.
  *
@@ -42,13 +42,6 @@ class AddonValidatorFixturesTest {
     /** Invalid by the schema (the checker fails them), but the host's answer is to cut the text. */
     private val hostCut = setOf("artist/listeners-text-too-long.json", "catalog-genres/genre-id-too-long.json")
 
-    /**
-     * Valid by the schema, but against SPEC.md 8.2's semantic rule (which the spec's own checker,
-     * `checker/src/semantics.mjs`, also applies): its `signIn.domain` "spotify.com" is not in its
-     * `domains`, nor is `*.spotify.com`. A spec fixture to fix; the host is right to reject it.
-     */
-    private val specFixtureDefects = setOf("manifest/spotify-phone.json")
-
     private fun read(f: File): JsonElement = json.parseToJsonElement(f.readText())
 
     @Test fun `every valid fixture passes`() {
@@ -56,7 +49,6 @@ class AddonValidatorFixturesTest {
         for (dir in File(root, "valid").listFiles()!!.filter { it.isDirectory }) {
             val validate = validators[dir.name] ?: continue
             for (f in dir.listFiles()!!.filter { it.name.endsWith(".json") }) {
-                if ("${dir.name}/${f.name}" in specFixtureDefects) continue
                 try {
                     validate(read(f))
                 } catch (e: AddonContractException) {
@@ -65,7 +57,7 @@ class AddonValidatorFixturesTest {
                 checked++
             }
         }
-        assertThat(checked).isAtLeast(37)
+        assertThat(checked).isAtLeast(38)
     }
 
     @Test fun `every invalid fixture is rejected at the expected path`() {
@@ -92,7 +84,26 @@ class AddonValidatorFixturesTest {
     }
 
     @Test fun `a sign-in cookie domain outside the add-on's domains is rejected`() {
-        val e = runCatching { AddonValidator.manifest(read(File(root, "valid/manifest/spotify-phone.json"))) }.exceptionOrNull()
+        // SPEC.md 8.2's semantic rule, which the schema can't say (so no fixture shows it; the spec's
+        // checker applies it in checker/src/semantics.mjs): "spotify.com" is in neither `domains`
+        // entry, nor matched by a wildcard.
+        val manifest = json.parseToJsonElement(
+            """
+            {
+              "stash": 1, "id": "spotify", "name": "Spotify", "version": "1.2.0", "kind": "phone",
+              "resources": ["search", "account"],
+              "phone": {
+                "bundle": { "path": "main.js", "sha256": "a3f1c2d4e5b6978877665544332211ffeeddccbbaa99887766554433221100aa" },
+                "domains": ["open.spotify.com", "accounts.spotify.com"],
+                "signIn": {
+                  "title": "Sign in to Spotify", "url": "https://accounts.spotify.com/login",
+                  "domain": "spotify.com", "cookieNames": ["sp_dc"], "accounts": "many"
+                }
+              }
+            }
+            """,
+        )
+        val e = runCatching { AddonValidator.manifest(manifest) }.exceptionOrNull()
         assertThat((e as AddonContractException).path).isEqualTo("/phone/signIn/domain")
     }
 

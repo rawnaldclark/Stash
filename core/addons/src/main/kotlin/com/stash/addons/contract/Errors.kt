@@ -1,4 +1,4 @@
-// Vendored from stash-addon-spec types/kotlin at 341004d (Stash Add-ons v1, draft 1). Edit the spec, then copy it here again.
+// Vendored from stash-addon-spec types/kotlin at 5238551 (Stash Add-ons v1, draft 1). Edit the spec, then copy it here again.
 package com.stash.addons.contract
 
 import kotlinx.serialization.Serializable
