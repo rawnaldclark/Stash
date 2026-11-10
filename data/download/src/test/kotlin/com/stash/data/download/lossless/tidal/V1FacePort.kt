@@ -61,7 +61,7 @@ internal object V1FacePort {
             listOf(row.str("artworkURL"), row.str("artwork")).firstOrNull { it != null && it.startsWith("https://") && it.length <= 2048 }?.let { art ->
                 put("artwork", buildJsonArray { add(buildJsonObject { put("url", art); put("width", 1280); put("height", 1280) }) })
             }
-            mapOf("HI_RES_LOSSLESS" to "hires", "LOSSLESS" to "lossless", "HIGH" to "high")[row.str("audioQuality")]?.let { put("maxTier", it) }
+            row.str("audioQuality")?.let { q -> mapOf("HI_RES_LOSSLESS" to "hires", "LOSSLESS" to "lossless", "HIGH" to "high")[q] }?.let { put("maxTier", it) }
         }
     }
 
@@ -131,7 +131,7 @@ internal object V1FacePort {
         val bitDepth = (b["bitDepth"] as? JsonPrimitive)?.intOrNull?.takeIf { it in 1..64 } ?: 16
         val sampleRate = (b["sampleRate"] as? JsonPrimitive)?.intOrNull?.takeIf { it in 1..1_000_000 } ?: 44_100
         val tier = if (bitDepth >= 24 || sampleRate > 48_000) "hires" else "lossless"
-        val expiry = if (dash) url.toHttpUrlOrNull()?.queryParameter("exp")?.toLongOrNull() ?: 0 else expiresAt
+        val expiry: Long? = if (dash) url.toHttpUrlOrNull()?.queryParameter("exp")?.toLongOrNull() ?: 0L else expiresAt
         val kbps = (b["bitrate"] as? JsonPrimitive)?.intOrNull?.takeIf { it > 0 } ?: 1411
         return buildJsonObject {
             put("url", url); put("manifest", if (dash) "dash" else "none"); put("tier", tier); put("codec", "flac")
