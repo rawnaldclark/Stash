@@ -102,7 +102,7 @@ class DiffWorkerKeepOfflineTest {
 
         assertEquals(3, db.playlistDao().getTracksForPlaylist(id).size)
         coVerify(exactly = 0) { downloadQueueDao.insertAll(any()) }
-        coVerify(exactly = 1) { musicRepository.queueKeptPlaylists(false) }
+        coVerify(exactly = 1) { musicRepository.queueKeptPlaylists(false, any()) }
     }
 
     /** "Sync now" downloads on any network, and the sweep's songs must too. */
@@ -113,7 +113,7 @@ class DiffWorkerKeepOfflineTest {
 
         buildWorker(manualSync = true).doWork()
 
-        coVerify(exactly = 1) { musicRepository.queueKeptPlaylists(true) }
+        coVerify(exactly = 1) { musicRepository.queueKeptPlaylists(true, any()) }
     }
 
     private suspend fun assertOneSweep(streamOnly: Boolean) {
@@ -123,7 +123,7 @@ class DiffWorkerKeepOfflineTest {
 
         buildWorker().doWork()
 
-        coVerify(exactly = 1) { musicRepository.queueKeptPlaylists(false) }
+        coVerify(exactly = 1) { musicRepository.queueKeptPlaylists(false, any()) }
         coVerify(exactly = 0) { musicRepository.queueDownloadsForPlaylist(any(), any()) }
     }
 

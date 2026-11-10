@@ -24,7 +24,7 @@ class LibraryReconciliationAdoptionTest {
 
     private val downloadQueueDao: DownloadQueueDao = mockk(relaxed = true) {
         coEvery { deleteOrphanedQueueEntries() } returns 0
-        coEvery { getUnqueuedTrackIds(any()) } returns emptyList()
+        coEvery { getUnqueuedTrackIds(any(), any()) } returns emptyList()
     }
     private val trackDao: TrackDao = mockk(relaxed = true) {
         coEvery { getDownloadedTrackRefs() } returns emptyList()
@@ -38,7 +38,7 @@ class LibraryReconciliationAdoptionTest {
     @Test
     fun `adopter runs before the requeue step`() = runTest {
         var adopted = false
-        coEvery { downloadQueueDao.getUnqueuedTrackIds(any()) } answers {
+        coEvery { downloadQueueDao.getUnqueuedTrackIds(any(), any()) } answers {
             // The requeue query must only see the world AFTER adoption marked
             // on-disk files as downloaded — otherwise a reinstalled library is
             // queued for a full re-download in the same pass that adopts it.
@@ -52,7 +52,7 @@ class LibraryReconciliationAdoptionTest {
 
         coVerifyOrder {
             trackDao.getDownloadedTrackRefs()
-            downloadQueueDao.getUnqueuedTrackIds(any())
+            downloadQueueDao.getUnqueuedTrackIds(any(), any())
         }
         assertThat(adopted).isTrue()
     }

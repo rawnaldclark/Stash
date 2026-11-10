@@ -11,9 +11,7 @@ import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import io.mockk.coEvery
 import io.mockk.coVerify
-import io.mockk.Runs
 import io.mockk.every
-import io.mockk.just
 import io.mockk.mockk
 import io.mockk.spyk
 import kotlinx.coroutines.flow.flowOf
@@ -148,7 +146,7 @@ class MusicRepositoryPlaylistDownloadTest {
         ),
     ).also {
         coEvery { it.queueDownloadsForPlaylist(any(), any()) } returns 0
-        coEvery { it.queueKeptPlaylist(any()) } just Runs
+        coEvery { it.queueKeptPlaylist(any()) } returns 0
     }
 
     private companion object {

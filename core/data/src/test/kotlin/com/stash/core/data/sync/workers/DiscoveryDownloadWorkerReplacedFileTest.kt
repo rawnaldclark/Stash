@@ -87,7 +87,7 @@ class DiscoveryDownloadWorkerReplacedFileTest {
         // The user cancels while the downloader returns: the worker's cancel
         // branch deletes the new file before any row write.
         coEvery { trackDownloader.downloadTrack(any(), any()) } coAnswers {
-            db.downloadQueueDao().markCancelledIfActive(queueId, System.currentTimeMillis())
+            db.downloadQueueDao().markCancelledIfActive(queueId, System.currentTimeMillis(), keptOut = true)
             TrackDownloadOutcome.Success(newFile.absolutePath)
         }
 
@@ -130,7 +130,7 @@ class DiscoveryDownloadWorkerReplacedFileTest {
         val trackId = trackHandedBackForReplacement()
         val queueId = db.downloadQueueDao().getByTrackId(trackId)!!.id
         coEvery { trackDownloader.downloadTrack(any(), any()) } coAnswers {
-            db.downloadQueueDao().markCancelledIfActive(queueId, System.currentTimeMillis())
+            db.downloadQueueDao().markCancelledIfActive(queueId, System.currentTimeMillis(), keptOut = true)
             throw CancellationException("cancelled")
         }
 

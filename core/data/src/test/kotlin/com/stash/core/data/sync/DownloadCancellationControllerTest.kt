@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.testing.WorkManagerTestInitHelper
 import com.stash.core.data.db.StashDatabase
+import com.stash.core.data.db.dao.KEPT_OUT_MARK
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.DownloadStatus
@@ -14,6 +15,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -49,6 +51,21 @@ class DownloadCancellationControllerTest {
 
         songs.forEach { assertEquals(DownloadStatus.SKIPPED, db.downloadQueueDao().getStatusById(it)) }
         coVerify(exactly = 1) { queueState.setPaused(false) }
+    }
+
+    @Test fun `clear queue only stops the attempt, a cancel on its own keeps the song out`() = runBlocking {
+        val one = queue(1)
+        val rest = (2..3).map { queue(it) }
+
+        controller.cancel(one)
+        controller.cancelAll()
+
+        val dao = db.downloadQueueDao()
+        assertEquals(KEPT_OUT_MARK, dao.getById(one)!!.errorMessage)
+        rest.forEach { assertNull(dao.getById(it)!!.errorMessage) }
+        // A playlist's Download queues Clear queue's songs again, never the one cancelled on its own.
+        assertEquals(true, dao.hasRowToLeaveAlone(dao.getById(one)!!.trackId))
+        rest.forEach { assertEquals(false, dao.hasRowToLeaveAlone(dao.getById(it)!!.trackId)) }
     }
 
     @Test fun `clear queue on an empty queue still ends the pause`() = runBlocking {

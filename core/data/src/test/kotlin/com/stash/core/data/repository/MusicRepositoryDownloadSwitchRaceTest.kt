@@ -52,10 +52,10 @@ class MusicRepositoryDownloadSwitchRaceTest {
             )
         }
         every { trackDao.getByPlaylist(PID, includeStreamable = true) } returns flowOf((1L..3L).map(::track))
-        coEvery { downloadQueueDao.hasRowToLeaveAlone(any()) } returns false
-        coEvery { downloadQueueDao.insertAll(any()) } answers {
+        coEvery { downloadQueueDao.songsToLeaveAlone(any(), any(), any()) } returns emptySet()
+        coEvery { downloadQueueDao.queueSongs(any(), any(), any()) } answers {
             waiting += firstArg<List<DownloadQueueEntity>>().map { it.trackId }
-            emptyList()
+            firstArg<List<DownloadQueueEntity>>().size
         }
         coEvery { downloadQueueDao.cancelWaitingForPlaylist(PID) } answers {
             waiting.size.also { waiting.clear() }
@@ -65,11 +65,11 @@ class MusicRepositoryDownloadSwitchRaceTest {
     @Test fun `an off that lands while on is still checking songs wins`() = runTest {
         val onChecking = CompletableDeferred<Unit>()
         val offWritten = CompletableDeferred<Unit>()
-        // On pauses in its per-song check until off has flipped the switch.
-        coEvery { downloadQueueDao.hasRowToLeaveAlone(any()) } coAnswers {
+        // On pauses in its check of the songs until off has flipped the switch.
+        coEvery { downloadQueueDao.songsToLeaveAlone(any(), any(), any()) } coAnswers {
             onChecking.complete(Unit)
             offWritten.await()
-            false
+            emptySet()
         }
         coEvery { playlistDao.setKeepOffline(PID, false) } answers { kept = false; offWritten.complete(Unit) }
         val repo = repo()
@@ -81,7 +81,7 @@ class MusicRepositoryDownloadSwitchRaceTest {
 
         // Off came last: nothing queued, and no run started only to find nothing.
         assertEquals(emptyList<Long>(), waiting)
-        coVerify(exactly = 0) { downloadQueueDao.insertAll(any()) }
+        coVerify(exactly = 0) { downloadQueueDao.queueSongs(any(), any(), any()) }
         coVerify(exactly = 0) { repo.startDiscoveryDrain(any(), any()) }
     }
 
@@ -89,11 +89,11 @@ class MusicRepositoryDownloadSwitchRaceTest {
         val onInserting = CompletableDeferred<Unit>()
         val insert = CompletableDeferred<Unit>()
         val offWritten = CompletableDeferred<Unit>()
-        coEvery { downloadQueueDao.insertAll(any()) } coAnswers {
+        coEvery { downloadQueueDao.queueSongs(any(), any(), any()) } coAnswers {
             onInserting.complete(Unit)
             insert.await()
             waiting += firstArg<List<DownloadQueueEntity>>().map { it.trackId }
-            emptyList()
+            firstArg<List<DownloadQueueEntity>>().size
         }
         coEvery { playlistDao.setKeepOffline(PID, false) } answers { kept = false; offWritten.complete(Unit) }
         val repo = repo()
@@ -109,7 +109,7 @@ class MusicRepositoryDownloadSwitchRaceTest {
 
         assertEquals(emptyList<Long>(), waiting)
         coVerifyOrder {
-            downloadQueueDao.insertAll(any())
+            downloadQueueDao.queueSongs(any(), any(), any())
             downloadQueueDao.cancelWaitingForPlaylist(PID)
         }
     }

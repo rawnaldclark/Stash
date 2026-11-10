@@ -316,6 +316,7 @@ class MixOfflineTapGuardTest {
             },
             downloadQueueDao = mock {
                 on { observeGivenUpTrackIds(any()) } doReturn flowOf(emptyList())
+                on { observeHasQueuedSongs(any()) } doReturn flowOf(true)
             },
             orderDao = mock {
                 on { observeIsCustom(any()) } doReturn flowOf(false)

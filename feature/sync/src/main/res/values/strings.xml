@@ -22,7 +22,7 @@
     <string name="sync_downloads_empty_queue_title">No downloads in progress</string>
     <string name="sync_downloads_empty_queue_subtitle">New downloads will appear here.</string>
     <string name="sync_downloads_clear_queue">Clear queue</string>
-    <string name="sync_downloads_clear_queue_confirm">Every waiting download is cancelled and the ones running now stop. Cancelled songs come back the next time you download them.</string>
+    <string name="sync_downloads_clear_queue_confirm">Every waiting download is cancelled and the ones running now stop. Songs from your playlists download again with the next sync, or when you tap Download on the playlist.</string>
     <string name="sync_downloads_section_downloading">Downloading</string>
     <string name="sync_downloads_section_up_next">Up next</string>
     <string name="sync_downloads_section_recent">Recent</string>
