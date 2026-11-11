@@ -64,7 +64,7 @@ class LosslessSourceRegistryTest {
         registry = object : com.stash.core.addons.AddonRegistry {
             override val addons = MutableStateFlow(emptyList<com.stash.core.addons.InstalledAddon>())
         },
-        client = mockk(),
+        refs = mockk(),
         limiter = mockk(),
         prefs = prefs,
     )

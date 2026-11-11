@@ -32,6 +32,15 @@ class FakeAddonRefDao : AddonRefDao {
     override suspend fun upsert(entity: AddonRefEntity) { rows[entity.songKey] = entity }
 
     override suspend fun deleteOlderThan(addonId: String, before: Long): Int = 0
+
+    override suspend fun delete(addonId: String, songKey: String): Int =
+        if (rows[songKey]?.addonId == addonId) { rows.remove(songKey); 1 } else 0
+
+    override suspend fun deleteFor(addonId: String): Int {
+        val gone = rows.filterValues { it.addonId == addonId }.keys
+        gone.forEach { rows.remove(it) }
+        return gone.size
+    }
 }
 
 /** A `tidal` row as the old `tidal_match_cache` tests wrote it. */

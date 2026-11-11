@@ -15,6 +15,17 @@ interface AddonRefDao {
     @Upsert
     suspend fun upsert(entity: AddonRefEntity)
 
+    /** One song's row of [addonId]: a ref the add-on no longer knows (`not_found` from `/stream`). */
+    @Query("DELETE FROM addon_refs WHERE addon_id = :addonId AND song_key = :songKey")
+    suspend fun delete(addonId: String, songKey: String): Int
+
+    /**
+     * Every row of [addonId]: the add-on was removed, so a later add-on with the same id never
+     * inherits its answers (add-ons plan phase 4 §2.4).
+     */
+    @Query("DELETE FROM addon_refs WHERE addon_id = :addonId")
+    suspend fun deleteFor(addonId: String): Int
+
     /** Drops [addonId]'s rows whose newest stamp is older than [before]; keeps the table small. */
     @Query(
         "DELETE FROM addon_refs WHERE addon_id = :addonId AND resolved_at < :before " +

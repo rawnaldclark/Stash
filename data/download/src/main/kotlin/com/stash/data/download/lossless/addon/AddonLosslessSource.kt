@@ -4,14 +4,11 @@ import android.util.Log
 import com.stash.addons.contract.Codec
 import com.stash.addons.contract.Container
 import com.stash.addons.contract.Delivery
-import com.stash.addons.contract.Descriptor
-import com.stash.addons.contract.ResolveQuery
 import com.stash.addons.contract.Resource
 import com.stash.addons.contract.StreamInfo
 import com.stash.addons.contract.StreamRequest
 import com.stash.addons.contract.Tier
 import com.stash.core.addons.AddonRegistry
-import com.stash.core.addons.AddonResult
 import com.stash.core.addons.HttpAddonClient
 import com.stash.core.addons.InstalledAddon
 import com.stash.data.download.lossless.AggregatorRateLimiter
@@ -38,7 +35,7 @@ import javax.inject.Singleton
 @Singleton
 class AddonDownloadSources @Inject constructor(
     private val registry: AddonRegistry,
-    private val client: HttpAddonClient,
+    private val refs: AddonRefs,
     private val limiter: AggregatorRateLimiter,
     private val prefs: LosslessSourcePreferences,
 ) {
@@ -56,17 +53,22 @@ class AddonDownloadSources @Inject constructor(
         return synchronized(cache) {
             addons.filter(::canDownloadLossless).map { addon ->
                 cache[addon.id]?.takeIf { it.addon == addon }
-                    ?: AddonLosslessSource(addon, client, limiter, prefs).also { cache[addon.id] = it }
+                    ?: AddonLosslessSource(addon, refs, limiter, prefs).also { cache[addon.id] = it }
             }
         }
     }
 
     internal companion object {
-        /** Resolves, gives a stream or a download, and says it can answer a lossless tier. */
+        /**
+         * Finds songs (resolve, or search matched on the phone, phase 4 §2.4), gives a stream or a
+         * download, allows downloads (BitChord's `allowDownloads: 0` says no), and can answer a
+         * lossless tier.
+         */
         fun canDownloadLossless(addon: InstalledAddon): Boolean {
             val m = addon.manifest
-            if (!m.offers(Resource.RESOLVE)) return false
+            if (!m.offers(Resource.RESOLVE) && !m.offers(Resource.SEARCH)) return false
             if (!m.offers(Resource.DOWNLOAD) && !m.offers(Resource.STREAM)) return false
+            if (!addon.allowsDownloads) return false
             val caps = m.stream ?: return false
             val tiers = caps.knownTiers
             if (tiers.isNotEmpty() && tiers.none { it.isLossless }) return false
@@ -76,9 +78,9 @@ class AddonDownloadSources @Inject constructor(
 }
 
 /**
- * One add-on as a download source: `/resolve` for the exact recording, then `/download/{id}`
- * (else `/stream/{id}`) for a lossless file in one progressive file or DASH, the two the
- * downloader takes. Its id is `addon:<manifest id>`; its pacing and breaker are the add-on's
+ * One add-on as a download source: its ref, `/resolve` or a matched `/search` for the song
+ * ([AddonRefs]), then `/download/{id}` (else `/stream/{id}`) for a lossless file in one
+ * progressive file or DASH, the two the downloader takes. Its id is `addon:<manifest id>`; its pacing and breaker are the add-on's
  * own [HttpAddonClient.rateKey] bucket in [AggregatorRateLimiter].
  *
  * An answer that needs request headers is not used yet: the downloader would send them to every
@@ -86,7 +88,7 @@ class AddonDownloadSources @Inject constructor(
  */
 class AddonLosslessSource internal constructor(
     val addon: InstalledAddon,
-    private val client: HttpAddonClient,
+    private val refs: AddonRefs,
     private val limiter: AggregatorRateLimiter,
     private val prefs: LosslessSourcePreferences,
 ) : LosslessSource {
@@ -111,26 +113,11 @@ class AddonLosslessSource internal constructor(
     }
 
     private suspend fun lookup(query: TrackQuery, paced: Boolean): SourceResult? {
-        val descriptor = Descriptor(
-            title = query.title,
-            artist = query.artist,
-            album = query.album,
-            durationMs = query.durationMs?.takeIf { query.durationReliable && it > 0 },
-            isrc = query.isrc,
-            explicit = query.explicit,
-        )
-        // Rule 7: a lossless source asks for a recording it can hand over lossless, or none.
-        val item = when (val r = client.resolve(addon, ResolveQuery(descriptor, minTier = Tier.LOSSLESS), paced)) {
-            is AddonResult.Ok -> r.value ?: return null
-            is AddonResult.Failed -> return null
-        }
         val request = lossless(prefs.qualityTierNow())
-        val answer = if (addon.offers(Resource.DOWNLOAD)) {
-            client.download(addon, item.id, request, paced)
-        } else {
-            client.stream(addon, item.id, request, paced)
-        }
-        val info = answer.valueOrNull() ?: return null
+        val streamed = refs.stream(addon, query, AddonRefs.Pass.LOSSLESS, request, paced = paced, download = true)
+            as? AddonRefs.Streamed.Ok ?: return null
+        val info = streamed.info
+        val ref = streamed.ref
         if (!info.headers.isNullOrEmpty()) {
             Log.d(TAG, "$id answer needs request headers; not used for downloads yet")
             return null
@@ -140,18 +127,15 @@ class AddonLosslessSource internal constructor(
             downloadUrl = info.url,
             downloadHeaders = emptyMap(),
             format = format(info),
-            confidence = if (!query.isrc.isNullOrBlank() && item.isrc.equals(query.isrc, ignoreCase = true)) 1f else MATCH_CONFIDENCE,
-            sourceTrackId = item.id,
-            coverArtUrl = item.artwork?.maxByOrNull { it.width ?: 0 }?.url,
+            confidence = if (!query.isrc.isNullOrBlank() && ref.isrc.equals(query.isrc, ignoreCase = true)) 1f else ref.confidence,
+            sourceTrackId = ref.remoteId,
+            coverArtUrl = ref.artwork,
             isDash = info.manifest == Delivery.DASH,
         )
     }
 
     companion object {
         private const val TAG = "AddonLosslessSource"
-
-        /** `/resolve` answers the exact recording or nothing (SPEC.md 4.3): as sure as a matched search. */
-        private const val MATCH_CONFIDENCE = 0.9f
 
         /** The [LosslessSource.id] of add-on [addonId]. */
         fun sourceId(addonId: String): String = "addon:$addonId"
