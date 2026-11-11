@@ -78,7 +78,10 @@ object AddonValidator {
     private val UNSAFE_RANGES = listOf(
         0x00..0x1f, 0x7f..0x9f, 0x61c..0x61c, 0x200b..0x200f, 0x2028..0x202e, 0x2060..0x2069, 0xfeff..0xfeff,
     )
-    private val WHITESPACE = Regex("(?U)\\s+")
+    // Unicode white space without the inline U flag (UNICODE_CHARACTER_CLASS): Android's ICU regex refuses it (a PatternSyntaxException in
+    // this object's initializer failed every add-on call on a phone). `\s`, U+0085 and the separators
+    // (`\p{Z}`: NBSP, the em and en spaces, U+2028/9) read the same on the JVM and on ICU.
+    private val WHITESPACE = Regex("[\\s\\u0085\\p{Z}]+")
     private val INLINE_SPACE = Regex("[ \\t]+")
     private val THREE_NEWLINES = Regex("\\n{3,}")
 
