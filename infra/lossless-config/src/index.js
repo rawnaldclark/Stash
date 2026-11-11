@@ -331,7 +331,8 @@ export function isP256(key) {
 
 /** A key's public half as base64 SPKI DER: the form LOSSLESS_CONFIG_PUBKEY (the app's `lossless.configPubKey`) holds. */
 export function publicKeyBase64(key) {
-    return createPublicKey(key).export({ type: "spki", format: "der" }).toString("base64");
+    const pub = key.type === "public" ? key : createPublicKey(key);
+    return pub.export({ type: "spki", format: "der" }).toString("base64");
 }
 
 /**
