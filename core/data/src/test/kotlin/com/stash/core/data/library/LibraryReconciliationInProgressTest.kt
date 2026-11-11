@@ -3,6 +3,7 @@ package com.stash.core.data.library
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.SyncHistoryEntity
@@ -80,7 +81,8 @@ class LibraryReconciliationInProgressTest {
             coEvery { isAuthenticated(any()) } returns false
             coEvery { hasSoundCloudConnection() } returns false
         }
-        LibraryReconciliationUseCase(db.downloadQueueDao(), db.trackDao(), tokens, db.playlistDao(), jobs).reconcile(syncId = syncId)
+        val spotify = mockk<SpotifyAccounts> { coEvery { isSpotifyAuthenticated() } returns false }
+        LibraryReconciliationUseCase(db.downloadQueueDao(), db.trackDao(), tokens, spotify, db.playlistDao(), jobs).reconcile(syncId = syncId)
     }
 
     private suspend fun song(title: String): Long = db.trackDao().insert(

@@ -1,0 +1,10 @@
+{
+  "url": "https://cdn.example.org/a.flac",
+  "manifest": "none",
+  "tier": "lossless",
+  "codec": "flac",
+  "cors": true,
+  "headers": {
+    "Host": "evil.example.org"
+  }
+}

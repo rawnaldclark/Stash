@@ -1,0 +1,10 @@
+{
+  "stash": 1,
+  "id": "lrclib",
+  "name": "LRCLIB",
+  "version": "1.0.0",
+  "kind": "server",
+  "resources": [
+    "lyrics"
+  ]
+}

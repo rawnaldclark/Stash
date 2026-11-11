@@ -1,0 +1,14 @@
+{
+  "url": "https://sp-pr-fa.audio.tidal.com/mediatracks/CAEaKAgDEiQ0ZjZlNmRiMjZmODFlMjA5NjZkNzQ1OTdjNGQ4ZTJiNl82MS5tcDQ/0.mp4?token=1893456000~NmIxYmE4NTk3YjQ2ZTY4ZDJmNTFiZDhhMTM2ZTFkODE2YjQxMzE4Mg==",
+  "manifest": "none",
+  "tier": "high",
+  "codec": "aac",
+  "container": "mp4",
+  "mime": "audio/mp4",
+  "bitrate": 320000,
+  "sampleRate": 44100,
+  "cors": false,
+  "expiresAt": 1893455940,
+  "quality": "320kbps",
+  "download": "https://tidal-addon.example.org/download/5048735"
+}

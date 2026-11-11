@@ -1,0 +1,54 @@
+{
+  "stash": 1,
+  "id": "jiosaavn",
+  "name": "Saavn",
+  "version": "1.0.0",
+  "kind": "server",
+  "resources": [
+    "search",
+    "resolve",
+    "stream",
+    "album",
+    "artist",
+    "settings"
+  ],
+  "stream": {
+    "cors": true,
+    "manifests": [
+      "none"
+    ],
+    "tiers": [
+      "low",
+      "high"
+    ]
+  },
+  "settings": [
+    {
+      "key": "language",
+      "type": "select",
+      "label": "Catalog language",
+      "default": "english",
+      "options": [
+        {
+          "value": "english",
+          "label": "English"
+        },
+        {
+          "value": "hindi",
+          "label": "Hindi"
+        },
+        {
+          "value": "punjabi",
+          "label": "Punjabi"
+        }
+      ]
+    },
+    {
+      "key": "explicitOk",
+      "type": "toggle",
+      "label": "Allow explicit songs",
+      "default": true,
+      "perNetwork": false
+    }
+  ]
+}

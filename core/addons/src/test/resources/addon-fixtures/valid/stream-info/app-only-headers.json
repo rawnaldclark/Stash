@@ -1,0 +1,13 @@
+{
+  "url": "https://media.example.org/a/track_123.m4a",
+  "manifest": "none",
+  "tier": "high",
+  "codec": "aac",
+  "container": "mp4",
+  "bitrate": 256000,
+  "cors": false,
+  "headers": {
+    "Referer": "https://www.example.org/",
+    "User-Agent": "Mozilla/5.0 (Linux; Android 14)"
+  }
+}

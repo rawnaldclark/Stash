@@ -38,7 +38,7 @@ data class UserInfo(
     val imageUrl: String? = null,
 )
 
-/** What became of a Spotify sign-in handed to `TokenManager.connectSpotifyWithCookie`. */
+/** What became of a Spotify sign-in handed to `SpotifyAccounts.connectSpotifyWithCookie`. */
 sealed interface SpotifyConnectResult {
     /** Saved: a first sign-in, or the connected account signing in again (an expired session). */
     data object Connected : SpotifyConnectResult
@@ -60,8 +60,8 @@ sealed interface SpotifyConnectResult {
 }
 
 /**
- * A Spotify sign-in Spotify accepted but Stash has NOT saved ([com.stash.core.auth.TokenManager.validateSpotifyCookie]),
- * carried to [com.stash.core.auth.TokenManager.saveSpotifyExtra] so saving it needs no second (TOTP-guarded,
+ * A Spotify sign-in Spotify accepted but Stash has NOT saved ([com.stash.core.auth.spotify.SpotifyAccounts.validateSpotifyCookie]),
+ * carried to [com.stash.core.auth.spotify.SpotifyAccounts.saveSpotifyExtra] so saving it needs no second (TOTP-guarded,
  * rate-limited) token exchange. Only core:auth can make one, so a saved extra always went through validation.
  *
  * It holds a live credential: [toString] says nothing about it, and it should live no longer than the
@@ -70,8 +70,8 @@ sealed interface SpotifyConnectResult {
  * @property account Whose account the cookie signs in to, as Spotify's own profile names it. Null when
  *   Spotify didn't say in time; such a sign-in can't be saved as an extra (its rows are tagged by this id).
  * @property connected The main (connected) account as the check found it: null when none was connected
- *   or it couldn't be told. [com.stash.core.auth.TokenManager.connectSpotifyWithSignIn]'s account-swap
- *   guard judges by it, as [com.stash.core.auth.TokenManager.connectSpotifyWithCookie]'s judges by its own
+ *   or it couldn't be told. [com.stash.core.auth.spotify.SpotifyAccounts.connectSpotifyWithSignIn]'s account-swap
+ *   guard judges by it, as [com.stash.core.auth.spotify.SpotifyAccounts.connectSpotifyWithCookie]'s judges by its own
  *   lookup.
  */
 class ValidatedSpotifySignIn internal constructor(
@@ -82,7 +82,7 @@ class ValidatedSpotifySignIn internal constructor(
     override fun toString(): String = "ValidatedSpotifySignIn(identified=${account != null})"
 }
 
-/** What checking a Spotify cookie without saving it found ([com.stash.core.auth.TokenManager.validateSpotifyCookie]). */
+/** What checking a Spotify cookie without saving it found ([com.stash.core.auth.spotify.SpotifyAccounts.validateSpotifyCookie]). */
 sealed interface SpotifyCookieCheck {
     /** The cookie gave no signed-in session (invalid, expired, or Spotify refused). */
     data object Invalid : SpotifyCookieCheck
@@ -90,7 +90,7 @@ sealed interface SpotifyCookieCheck {
     /**
      * A working sign-in, not saved.
      *
-     * @property signIn What [com.stash.core.auth.TokenManager.saveSpotifyExtra] saves.
+     * @property signIn What [com.stash.core.auth.spotify.SpotifyAccounts.saveSpotifyExtra] saves.
      * @property isMainAccount True when it is the main (connected) account, false when it is another account,
      *   null when either can't be told (Spotify didn't say in time, or no main account is connected).
      */

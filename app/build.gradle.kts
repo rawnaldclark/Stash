@@ -309,6 +309,8 @@ dependencies {
     implementation(project(":core:data"))
     implementation(project(":core:media"))
     implementation(project(":core:network"))
+    // Stash Add-ons v1 host (registry + client); Hilt needs it on the app's classpath.
+    implementation(project(":core:addons"))
     implementation(project(":feature:home"))
     implementation(project(":feature:library"))
     implementation(project(":feature:nowplaying"))

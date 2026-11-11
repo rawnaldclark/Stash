@@ -1,0 +1,8 @@
+{
+  "url": "https://cdn.example.org/a.flac",
+  "manifest": "none",
+  "tier": "high",
+  "codec": "aac",
+  "bitrate": 128000,
+  "cors": true
+}

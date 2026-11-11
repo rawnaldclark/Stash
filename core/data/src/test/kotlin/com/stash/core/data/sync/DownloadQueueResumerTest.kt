@@ -76,7 +76,7 @@ class DownloadQueueResumerTest {
         )
         coEvery { dao.hasResumableSyncDownload(any()) } returns true
         resumer = DownloadQueueResumer(
-            context, dao, queueState, streaming, syncPrefs, mockk(relaxed = true), musicRepository,
+            context, dao, queueState, streaming, syncPrefs, mockk(relaxed = true), mockk(relaxed = true), musicRepository,
             mockk(relaxed = true), notifications, singleTrack,
         )
     }

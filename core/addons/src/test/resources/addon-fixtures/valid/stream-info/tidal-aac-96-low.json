@@ -1,0 +1,13 @@
+{
+  "url": "https://sp-pr-fa.audio.tidal.com/mediatracks/CAEaKAgBEiQ0ZjZlNmRiMjZmODFlMjA5NjZkNzQ1OTdjNGQ4ZTJiNl82MS5tcDQ/0.mp4?token=1893456000~MTJhYmNk",
+  "manifest": "none",
+  "tier": "low",
+  "codec": "aac",
+  "container": "mp4",
+  "mime": "audio/mp4",
+  "bitrate": 96000,
+  "sampleRate": 44100,
+  "cors": false,
+  "expiresAt": 1893455940,
+  "quality": "96kbps"
+}

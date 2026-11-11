@@ -55,8 +55,22 @@ class LosslessSourceRegistryTest {
 
     private val query = TrackQuery(artist = "A", title = "B")
 
+    /**
+     * Phase 1's add-on download sources: an empty registry, and a client and limiter that fail the
+     * test if anything asks them (strict mocks). Every test below therefore also proves the add-on
+     * seam is inert.
+     */
+    private val noAddons = com.stash.data.download.lossless.addon.AddonDownloadSources(
+        registry = object : com.stash.core.addons.AddonRegistry {
+            override val addons = MutableStateFlow(emptyList<com.stash.core.addons.InstalledAddon>())
+        },
+        client = mockk(),
+        limiter = mockk(),
+        prefs = prefs,
+    )
+
     private fun registry(sources: Set<LosslessSource>) =
-        LosslessSourceRegistry(sources, prefs, healthGate, streamingPreference, availability)
+        LosslessSourceRegistry(sources, prefs, healthGate, streamingPreference, availability, noAddons)
 
     private fun flacResult(srcId: String) = SourceResult(
         sourceId = srcId,

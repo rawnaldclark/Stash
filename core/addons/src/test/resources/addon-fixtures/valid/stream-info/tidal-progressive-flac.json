@@ -1,0 +1,13 @@
+{
+  "url": "https://sp-pr-fa.audio.tidal.com/mediatracks/CAEaKwgDEidhNmQ0YjA2ZTYxZjNkYjYzNDE1NjQ1ZDc4ZmE5ODlhZF82MS5tcDQ/0.flac?token=1893456000~ZGQ0OWQ5ZGQ2YzJkNjE0ZjE3ZTc0ZWE5ZjE4ZmQ5ZWQ4ZDIxNjFkNQ==",
+  "manifest": "none",
+  "tier": "lossless",
+  "codec": "flac",
+  "container": "flac",
+  "mime": "audio/flac",
+  "bitDepth": 16,
+  "sampleRate": 44100,
+  "bitrate": 1411000,
+  "cors": false,
+  "expiresAt": 1893455940
+}

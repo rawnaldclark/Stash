@@ -1,0 +1,12 @@
+{
+  "url": "https://tidal-edge.example.org/t/eyJ0IjoiNTA0ODczNSJ9.c2lnbmF0dXJl/file.flac",
+  "manifest": "none",
+  "tier": "lossless",
+  "codec": "flac",
+  "container": "flac",
+  "mime": "audio/flac",
+  "bitDepth": 16,
+  "sampleRate": 44100,
+  "cors": true,
+  "expiresAt": 1893456000
+}

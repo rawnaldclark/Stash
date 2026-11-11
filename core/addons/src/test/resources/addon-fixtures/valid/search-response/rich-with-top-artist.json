@@ -1,0 +1,49 @@
+{
+  "tracks": [
+    {
+      "id": "Nn9Fq3uD",
+      "title": "One More Time",
+      "artist": "Daft Punk",
+      "album": "Discovery",
+      "durationMs": 320000,
+      "isrc": "GBDUW0000053",
+      "explicit": false,
+      "artwork": [
+        {
+          "url": "https://c.saavncdn.com/123/Discovery-English-2001-500x500.jpg",
+          "width": 500,
+          "height": 500
+        }
+      ],
+      "maxTier": "high",
+      "albumId": "k3Lp0AqZ",
+      "artistId": "m1Dp"
+    }
+  ],
+  "artists": [
+    {
+      "id": "m1Dp",
+      "name": "Daft Punk",
+      "artwork": [
+        {
+          "url": "https://c.saavncdn.com/artists/Daft_Punk_500x500.jpg"
+        }
+      ]
+    }
+  ],
+  "albums": [
+    {
+      "id": "k3Lp0AqZ",
+      "title": "Discovery",
+      "artist": "Daft Punk",
+      "year": 2001
+    }
+  ],
+  "top": {
+    "kind": "artist",
+    "item": {
+      "id": "m1Dp",
+      "name": "Daft Punk"
+    }
+  }
+}

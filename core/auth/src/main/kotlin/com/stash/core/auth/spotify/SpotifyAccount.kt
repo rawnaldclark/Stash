@@ -10,16 +10,16 @@ import kotlin.coroutines.CoroutineContext
  * named by its `spotify_accounts` row: the row id and the row's Spotify user id. No element in
  * the context means the main account, exactly as before extras existed.
  *
- * Every per-account read of [com.stash.core.auth.TokenManager] follows it: the access token
+ * Every per-account read of [SpotifyAccounts] follows it: the access token
  * (and its forced refresh), the sp_dc cookie, the username, the client id, and
- * `isAuthenticated(SPOTIFY)`. So a sync pass wrapped in [withSpotifyAccount] makes every
- * `SpotifyApiClient` call in it act as that extra, with no account parameter threaded through.
+ * `isSpotifyAuthenticated()`. So a sync pass wrapped in [withSpotifyAccount] makes every
+ * `SpotifyLibrary` call in it act as that extra, with no account parameter threaded through.
  *
  * **The safety rule.** With an extra set, nothing answers with the main account's sign-in: an
  * extra's pass would otherwise read the main's library as the extra's. Without a sign-in of its
  * own every read answers null; with one that has died, the access token and forced refresh answer
  * null and the cookie, username and client id answer with the extra's own stored values (see
- * `TokenManager.getSpotifyAccessToken`). So a pass runs only when the access token is non-null.
+ * `SpotifyAccounts.getSpotifyAccessToken`). So a pass runs only when the access token is non-null.
  * The rule lives in `TokenManagerImpl` (`actingExtra()` and `extraSignIn()`).
  *
  * **Why the user id too.** The sign-in is stored under the row id, outside the database, so a

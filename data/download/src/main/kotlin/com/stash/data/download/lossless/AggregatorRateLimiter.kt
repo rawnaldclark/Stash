@@ -248,7 +248,19 @@ class AggregatorRateLimiter @Inject constructor() {
      * the configured backoff period — caller-side logic should not retry
      * before then, and [acquire] will return false for that interval.
      */
-    suspend fun reportRateLimited(sourceId: String) {
+    suspend fun reportRateLimited(sourceId: String) = rateLimited(sourceId, pauseMs = null)
+
+    /**
+     * [reportRateLimited] for a source whose answer said how long to wait: an add-on's
+     * `Retry-After` (Stash Add-ons v1, SPEC.md 7). The pause is [retryAfterMs] (held to
+     * 1 s .. 24 h) instead of the configured backoff; null means the configured backoff. Everything
+     * else (the 429 window, the self-tuning rate, the breaker count) is the same, except that a
+     * breaker this 429 trips can't shorten the pause: the source is never asked before it said.
+     */
+    suspend fun reportRateLimited(sourceId: String, retryAfterMs: Long?) =
+        rateLimited(sourceId, pauseMs = retryAfterMs?.coerceIn(1_000L, 24 * 60 * 60_000L))
+
+    private suspend fun rateLimited(sourceId: String, pauseMs: Long?) {
         mutex.withLock {
             val bucket = bucketFor(sourceId)
             val cfg = configFor(sourceId)
@@ -259,7 +271,7 @@ class AggregatorRateLimiter @Inject constructor() {
             // the breaker latch was still set, the "reset" fired a minute later
             // and LosslessRetryScheduler swept WAITING_FOR_LOSSLESS against a
             // source that had just failed five times in a row.
-            bucket.blockedUntilMs = maxOf(bucket.blockedUntilMs, now + cfg.backoff429Ms)
+            bucket.blockedUntilMs = maxOf(bucket.blockedUntilMs, now + (pauseMs ?: cfg.backoff429Ms))
             bucket.totalRateLimited++
 
             // Auto-backoff: track 429 timestamps in a rolling 60-second
@@ -289,6 +301,11 @@ class AggregatorRateLimiter @Inject constructor() {
                 bucket.consecutiveFailures++
                 maybeTripCircuitBreaker(bucket, cfg)
             }
+            // A stated pause outlasts a shorter breaker: the trip above sets the block to the
+            // breaker's duration, which can be shorter than the source asked for. Only a stated
+            // pause (the two-argument call) gets this; the configured backoff never outlasts its
+            // own breaker, so the one-argument path is exactly what it was.
+            if (pauseMs != null) bucket.blockedUntilMs = maxOf(bucket.blockedUntilMs, now + pauseMs)
         }
     }
 

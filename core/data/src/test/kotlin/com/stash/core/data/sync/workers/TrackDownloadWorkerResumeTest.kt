@@ -455,6 +455,7 @@ class TrackDownloadWorkerResumeTest {
                     syncNotificationManager = notifications,
                     trackDownloader = trackDownloader,
                     tokenManager = mockk(relaxed = true),
+                    spotifyAccounts = mockk(relaxed = true),
                     audioDurationExtractor = mockk(relaxed = true),
                     blocklistGuard = mockk(relaxed = true),
                     streamingPreference = streamingPreference,

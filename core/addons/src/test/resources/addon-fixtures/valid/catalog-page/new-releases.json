@@ -1,0 +1,20 @@
+{
+  "id": "new-releases",
+  "title": "New releases",
+  "items": [
+    {
+      "id": "0060254770497",
+      "title": "Discovery",
+      "artist": "Daft Punk",
+      "year": 2001,
+      "artwork": [
+        {
+          "url": "https://static.qobuz.com/images/covers/97/04/0060254770497_600.jpg",
+          "width": 600,
+          "height": 600
+        }
+      ]
+    }
+  ],
+  "next": 20
+}
