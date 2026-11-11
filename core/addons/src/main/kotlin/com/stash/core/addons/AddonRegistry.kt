@@ -277,6 +277,11 @@ class InTreeAddonRegistry @Inject constructor(
     /** Every entry: the user's add-ons (on or off), then the defaults; live. For Settings › Add-ons. */
     val entries: StateFlow<List<AddonEntryState>> = entryState.asStateFlow()
 
+    private val readingState = MutableStateFlow(false)
+
+    /** True while manifests are being read: an entry that isn't loaded yet has no verdict until this is false. */
+    val reading: StateFlow<Boolean> = readingState.asStateFlow()
+
     private val refreshLock = Mutex()
 
     /** Tests: the clock [MIN_REFRESH_MS] is measured on. */
@@ -377,11 +382,20 @@ class InTreeAddonRegistry @Inject constructor(
         if (!force && wanted == lastWanted && now - lastRefreshMs < MIN_REFRESH_MS) return@withLock
         lastWanted = wanted
         lastRefreshMs = now
+        readingState.value = true
+        try {
+            read(wanted)
+        } finally {
+            readingState.value = false
+        }
+    }
+
+    private suspend fun read(wanted: List<Wanted>) {
         val off = defaultsOff()
         val before = slots.associateBy { it.w.base }
         // First, with nothing asked: an add-on that was removed, switched off or turned off by
         // Stash stops being asked now, not once every manifest has been read again.
-        if (state.value.isNotEmpty()) {
+        if (state.value.isNotEmpty() || entryState.value.isNotEmpty()) {
             publish(wanted.map { w -> settle(w, before[w.base]?.read, before[w.base]?.needsNewer == true) }, off)
         }
         val loaded = wanted.map { w ->

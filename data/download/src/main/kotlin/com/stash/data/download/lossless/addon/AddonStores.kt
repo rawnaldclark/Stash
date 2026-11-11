@@ -109,10 +109,22 @@ class EncryptedUserAddons internal constructor(
     /**
      * One entry as sealed. [kind] is [UserAddonKind]'s name; absent (a list sealed before phase 4)
      * is a manifest add-on. A kind this build doesn't know is kept, untouched, but not used, so a
-     * newer build's entry survives an older build's writes.
+     * newer build's entry survives an older build's writes. [id] and [name]: the add-on's manifest
+     * id and name when it was added; [consent]: what the user agreed its server may see
+     * (`AddonSees` names); [addedAt]: epoch milliseconds (add-ons plan phase 4 §2.13). All absent
+     * in a list sealed before them, and unknown keys are ignored, so blobs read both ways.
      */
     @Serializable
-    private data class Stored(val manifest: String, val token: String? = null, val enabled: Boolean = true, val kind: String? = null)
+    private data class Stored(
+        val manifest: String,
+        val token: String? = null,
+        val enabled: Boolean = true,
+        val kind: String? = null,
+        val id: String? = null,
+        val name: String? = null,
+        val consent: List<String>? = null,
+        @kotlinx.serialization.SerialName("added_at") val addedAt: Long? = null,
+    )
 
     private val state = MutableStateFlow<List<UserAddonEntry>>(emptyList())
     override val entries: StateFlow<List<UserAddonEntry>> = state.asStateFlow()
@@ -146,6 +158,31 @@ class EncryptedUserAddons internal constructor(
         list.filterNot { it.kind == UserAddonKind.MANIFEST && it.manifestUrl == manifestUrl }
     }
 
+    /**
+     * Puts [entry] where the add-on added from [oldManifestUrl] is, keeping its place in the list
+     * (Replace link, phase 4 §2.9). With no such add-on it is added at the end.
+     */
+    suspend fun replace(oldManifestUrl: String, entry: UserAddonEntry) = update { list ->
+        require(entry.token == null || InstalledAddon.isHeaderSafe(entry.token!!)) { "token not header-safe" }
+        val at = list.indexOfFirst { it.kind == UserAddonKind.MANIFEST && it.manifestUrl == oldManifestUrl }
+        if (at < 0) {
+            list.filterNot { it.kind == entry.kind && it.manifestUrl == entry.manifestUrl } + entry
+        } else {
+            list.mapIndexedNotNull { i, e ->
+                when {
+                    i == at -> entry
+                    e.kind == entry.kind && e.manifestUrl == entry.manifestUrl -> null // the new link was already another entry's
+                    else -> e
+                }
+            }
+        }
+    }
+
+    /** Records what the user agreed the add-on added from [manifestUrl] may see (phase 4 §2.7). */
+    suspend fun setConsent(manifestUrl: String, consent: Set<String>) = update { list ->
+        list.map { if (it.kind == UserAddonKind.MANIFEST && it.manifestUrl == manifestUrl) it.copy(consent = consent) else it }
+    }
+
     /** Removes every entry of [kind]. */
     suspend fun removeKind(kind: UserAddonKind) = update { list -> list.filterNot { it.kind == kind } }
 
@@ -168,7 +205,12 @@ class EncryptedUserAddons internal constructor(
     private suspend fun update(change: (List<UserAddonEntry>) -> List<UserAddonEntry>) = writeLock.withLock {
         loaded.await()
         val next = change(state.value)
-        val stored = next.map { Stored(it.manifestUrl, it.token, it.enabled, it.kind.takeIf { k -> k != UserAddonKind.MANIFEST }?.name) } + unknown
+        val stored = next.map {
+            Stored(
+                it.manifestUrl, it.token, it.enabled, it.kind.takeIf { k -> k != UserAddonKind.MANIFEST }?.name,
+                it.id, it.name, it.consent?.sorted(), it.addedAt,
+            )
+        } + unknown
         val blob = Base64.getEncoder().encodeToString(sealer.seal(json.encodeToString(LIST, stored).toByteArray()))
         store.edit { it[KEY] = blob }
         state.value = next
@@ -187,7 +229,9 @@ class EncryptedUserAddons internal constructor(
             val plain = sealer.open(Base64.getDecoder().decode(blob))
             val all = json.decodeFromString(LIST, String(plain))
             unknown = all.filter { kindOf(it) == null }
-            all.mapNotNull { s -> kindOf(s)?.let { UserAddonEntry(s.manifest, s.token, s.enabled, it) } }
+            all.mapNotNull { s ->
+                kindOf(s)?.let { UserAddonEntry(s.manifest, s.token, s.enabled, it, s.id, s.name, s.consent?.toSet(), s.addedAt) }
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
