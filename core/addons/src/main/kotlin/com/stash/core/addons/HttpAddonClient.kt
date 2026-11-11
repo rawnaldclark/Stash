@@ -29,6 +29,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.ConnectionSpec
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
@@ -97,6 +98,9 @@ class HttpAddonClient @Inject constructor(
         }
         .followRedirects(false)
         .followSslRedirects(false)
+        // The app's shared client speaks TLS only (MODERN_TLS). The development exception needs
+        // cleartext too; the URL rule still limits it to 127.0.0.1, localhost and [::1].
+        .apply { if (hostOptions.allowLocalHttp) connectionSpecs(listOf(ConnectionSpec.MODERN_TLS, ConnectionSpec.CLEARTEXT)) }
         .build()
 
     private val json = Json { ignoreUnknownKeys = true }

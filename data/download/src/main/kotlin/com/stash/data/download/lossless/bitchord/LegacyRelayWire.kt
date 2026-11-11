@@ -6,6 +6,7 @@ import com.stash.data.download.lossless.relay.RelaySigner
 import com.stash.data.download.lossless.relay.TidalRelay
 import com.stash.data.download.lossless.tidal.TidalCandidate
 import com.stash.data.download.lossless.tidal.TidalClient
+import com.stash.data.download.lossless.tidal.TidalDebugSettings
 import com.stash.data.download.lossless.tidal.TidalStreamMode
 import com.stash.data.download.lossless.tidal.TidalWire
 import com.stash.data.download.lossless.tidal.TidalWireStream
@@ -192,7 +193,7 @@ class LegacyRelayWire @Inject constructor(
                 val signed = signPayload != null && signer.sign(b, signPayload, clock())
                 if (signPayload != null && owner) signer.entitle(b)
                 val response = try {
-                    httpClient.newCall(b.build()).execute()
+                    TidalDebugSettings.clientFor(httpClient, url).newCall(b.build()).execute()
                 } catch (e: IOException) {
                     // Class only: an IOException's text can carry the URL, and the base may hold
                     // the access token as its path prefix.

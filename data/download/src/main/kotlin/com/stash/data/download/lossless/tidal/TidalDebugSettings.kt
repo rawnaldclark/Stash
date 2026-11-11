@@ -110,6 +110,19 @@ class TidalDebugSettings internal constructor(
         private val WIRE = stringPreferencesKey("wire")
         private val ORIGIN = stringPreferencesKey("owner_origin")
 
+        /**
+         * [client] for an `http:` base, which only the owner server override can give (local
+         * development hosts on a debug build): the app's shared client speaks TLS only. Any other
+         * base gets [client] itself. Android's network security config still allows cleartext to
+         * 127.0.0.1 and localhost on debug builds only.
+         */
+        fun clientFor(client: okhttp3.OkHttpClient, url: okhttp3.HttpUrl): okhttp3.OkHttpClient =
+            if (url.isHttps) {
+                client
+            } else {
+                client.newBuilder().connectionSpecs(listOf(okhttp3.ConnectionSpec.MODERN_TLS, okhttp3.ConnectionSpec.CLEARTEXT)).build()
+            }
+
         /** For tests and release-like wiring: nothing stored, nothing honoured. */
         fun off(): TidalDebugSettings = TidalDebugSettings(null, honored = false)
 

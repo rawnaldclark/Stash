@@ -97,7 +97,7 @@ class LosslessQuotaRefresher @Inject constructor(
             // The owner's relay: a supporter token makes the answer `supporter:true`.
             signer.entitle(b)
             try {
-                httpClient.newCall(b.build()).execute().use { r ->
+                TidalDebugSettings.clientFor(httpClient, parsed).newCall(b.build()).execute().use { r ->
                     if (r.code == 401 && mayRetrySkew && signer.adoptServerTime(r, nowMs())) {
                         mayRetrySkew = false
                         return@use
