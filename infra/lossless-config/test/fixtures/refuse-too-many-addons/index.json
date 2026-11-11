@@ -1,0 +1,398 @@
+{
+  "type": "stash-addon-index",
+  "v": 1,
+  "updated_at": 1794355200,
+  "addons": [
+    {
+      "id": "addon-0",
+      "name": "Add-on 0",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a0/manifest.json"
+    },
+    {
+      "id": "addon-1",
+      "name": "Add-on 1",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a1/manifest.json"
+    },
+    {
+      "id": "addon-2",
+      "name": "Add-on 2",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a2/manifest.json"
+    },
+    {
+      "id": "addon-3",
+      "name": "Add-on 3",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a3/manifest.json"
+    },
+    {
+      "id": "addon-4",
+      "name": "Add-on 4",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a4/manifest.json"
+    },
+    {
+      "id": "addon-5",
+      "name": "Add-on 5",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a5/manifest.json"
+    },
+    {
+      "id": "addon-6",
+      "name": "Add-on 6",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a6/manifest.json"
+    },
+    {
+      "id": "addon-7",
+      "name": "Add-on 7",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a7/manifest.json"
+    },
+    {
+      "id": "addon-8",
+      "name": "Add-on 8",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a8/manifest.json"
+    },
+    {
+      "id": "addon-9",
+      "name": "Add-on 9",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a9/manifest.json"
+    },
+    {
+      "id": "addon-10",
+      "name": "Add-on 10",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a10/manifest.json"
+    },
+    {
+      "id": "addon-11",
+      "name": "Add-on 11",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a11/manifest.json"
+    },
+    {
+      "id": "addon-12",
+      "name": "Add-on 12",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a12/manifest.json"
+    },
+    {
+      "id": "addon-13",
+      "name": "Add-on 13",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a13/manifest.json"
+    },
+    {
+      "id": "addon-14",
+      "name": "Add-on 14",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a14/manifest.json"
+    },
+    {
+      "id": "addon-15",
+      "name": "Add-on 15",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a15/manifest.json"
+    },
+    {
+      "id": "addon-16",
+      "name": "Add-on 16",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a16/manifest.json"
+    },
+    {
+      "id": "addon-17",
+      "name": "Add-on 17",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a17/manifest.json"
+    },
+    {
+      "id": "addon-18",
+      "name": "Add-on 18",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a18/manifest.json"
+    },
+    {
+      "id": "addon-19",
+      "name": "Add-on 19",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a19/manifest.json"
+    },
+    {
+      "id": "addon-20",
+      "name": "Add-on 20",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a20/manifest.json"
+    },
+    {
+      "id": "addon-21",
+      "name": "Add-on 21",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a21/manifest.json"
+    },
+    {
+      "id": "addon-22",
+      "name": "Add-on 22",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a22/manifest.json"
+    },
+    {
+      "id": "addon-23",
+      "name": "Add-on 23",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a23/manifest.json"
+    },
+    {
+      "id": "addon-24",
+      "name": "Add-on 24",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a24/manifest.json"
+    },
+    {
+      "id": "addon-25",
+      "name": "Add-on 25",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a25/manifest.json"
+    },
+    {
+      "id": "addon-26",
+      "name": "Add-on 26",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a26/manifest.json"
+    },
+    {
+      "id": "addon-27",
+      "name": "Add-on 27",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a27/manifest.json"
+    },
+    {
+      "id": "addon-28",
+      "name": "Add-on 28",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a28/manifest.json"
+    },
+    {
+      "id": "addon-29",
+      "name": "Add-on 29",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a29/manifest.json"
+    },
+    {
+      "id": "addon-30",
+      "name": "Add-on 30",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a30/manifest.json"
+    },
+    {
+      "id": "addon-31",
+      "name": "Add-on 31",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a31/manifest.json"
+    },
+    {
+      "id": "addon-32",
+      "name": "Add-on 32",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a32/manifest.json"
+    },
+    {
+      "id": "addon-33",
+      "name": "Add-on 33",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a33/manifest.json"
+    },
+    {
+      "id": "addon-34",
+      "name": "Add-on 34",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a34/manifest.json"
+    },
+    {
+      "id": "addon-35",
+      "name": "Add-on 35",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a35/manifest.json"
+    },
+    {
+      "id": "addon-36",
+      "name": "Add-on 36",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a36/manifest.json"
+    },
+    {
+      "id": "addon-37",
+      "name": "Add-on 37",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a37/manifest.json"
+    },
+    {
+      "id": "addon-38",
+      "name": "Add-on 38",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a38/manifest.json"
+    },
+    {
+      "id": "addon-39",
+      "name": "Add-on 39",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a39/manifest.json"
+    },
+    {
+      "id": "addon-40",
+      "name": "Add-on 40",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a40/manifest.json"
+    },
+    {
+      "id": "addon-41",
+      "name": "Add-on 41",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a41/manifest.json"
+    },
+    {
+      "id": "addon-42",
+      "name": "Add-on 42",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a42/manifest.json"
+    },
+    {
+      "id": "addon-43",
+      "name": "Add-on 43",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a43/manifest.json"
+    },
+    {
+      "id": "addon-44",
+      "name": "Add-on 44",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a44/manifest.json"
+    },
+    {
+      "id": "addon-45",
+      "name": "Add-on 45",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a45/manifest.json"
+    },
+    {
+      "id": "addon-46",
+      "name": "Add-on 46",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a46/manifest.json"
+    },
+    {
+      "id": "addon-47",
+      "name": "Add-on 47",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a47/manifest.json"
+    },
+    {
+      "id": "addon-48",
+      "name": "Add-on 48",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a48/manifest.json"
+    },
+    {
+      "id": "addon-49",
+      "name": "Add-on 49",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a49/manifest.json"
+    },
+    {
+      "id": "addon-50",
+      "name": "Add-on 50",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a50/manifest.json"
+    },
+    {
+      "id": "addon-51",
+      "name": "Add-on 51",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a51/manifest.json"
+    },
+    {
+      "id": "addon-52",
+      "name": "Add-on 52",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a52/manifest.json"
+    },
+    {
+      "id": "addon-53",
+      "name": "Add-on 53",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a53/manifest.json"
+    },
+    {
+      "id": "addon-54",
+      "name": "Add-on 54",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a54/manifest.json"
+    },
+    {
+      "id": "addon-55",
+      "name": "Add-on 55",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a55/manifest.json"
+    },
+    {
+      "id": "addon-56",
+      "name": "Add-on 56",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a56/manifest.json"
+    },
+    {
+      "id": "addon-57",
+      "name": "Add-on 57",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a57/manifest.json"
+    },
+    {
+      "id": "addon-58",
+      "name": "Add-on 58",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a58/manifest.json"
+    },
+    {
+      "id": "addon-59",
+      "name": "Add-on 59",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a59/manifest.json"
+    },
+    {
+      "id": "addon-60",
+      "name": "Add-on 60",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a60/manifest.json"
+    },
+    {
+      "id": "addon-61",
+      "name": "Add-on 61",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a61/manifest.json"
+    },
+    {
+      "id": "addon-62",
+      "name": "Add-on 62",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a62/manifest.json"
+    },
+    {
+      "id": "addon-63",
+      "name": "Add-on 63",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a63/manifest.json"
+    },
+    {
+      "id": "addon-64",
+      "name": "Add-on 64",
+      "summary": "One of too many",
+      "manifest": "https://addons.example.org/a64/manifest.json"
+    }
+  ],
+  "blocked": []
+}
