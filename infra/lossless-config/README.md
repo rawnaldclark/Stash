@@ -21,6 +21,11 @@ What it carries:
   (decision D9): publish it to turn the wire on, publish without it to turn it off again. Released apps before
   phase 2 ignore the key. Keep `tidal_relay_url`, `tidal_relay_token` and `relay_key` in every publish anyway: they are
   what those apps, and the legacy wire, use.
+- `addon_index` (optional; add-ons phase 4): the https URL of the signed add-on index, the official list and the
+  blocklist (`https://raw.githubusercontent.com/stash-addons/registry/main/index.json`; the app also fetches
+  `<url>.sig`). It ends in `.json`, with no query or fragment, and is public, so the script prints it. Moving the index
+  (to Pages, or a Worker) is one publish of this key. Released apps before phase 4 ignore it. The index itself is built
+  and signed by `scripts/publish-index.mjs` (below).
 - `v: 1` and `updated_at` (set by the script: max(now, live + 1), never by hand).
 
 **Leaving out `tidal_relay_url` or `relay_key` switches Tidal off in every installed app.** Always
