@@ -124,6 +124,11 @@ interface AddonManifestStore {
 
     /** Forgets every manifest whose key is not in [keys]. */
     suspend fun retain(keys: Set<String>)
+
+    /** Forgets the manifests kept under [keys]. A store that can't delete one writes nothing in its place. */
+    suspend fun forget(keys: Set<String>) {
+        keys.forEach { write(it, "") }
+    }
 }
 
 /** Keeps nothing: for hand-built registries in tests. */
@@ -226,7 +231,7 @@ enum class AddonSees {
     /** "what you search for": it lists `search`. */
     SEARCHES,
 
-    /** "the songs you play": it lists `stream` or `resolve`. */
+    /** "the songs you play": it lists `stream`, `resolve` or `lyrics`. */
     PLAYS,
 
     /** "and save": it lists `download`. */
@@ -235,7 +240,8 @@ enum class AddonSees {
     companion object {
         fun of(m: Manifest): Set<AddonSees> = buildSet {
             if (m.offers(Resource.SEARCH)) add(SEARCHES)
-            if (m.offers(Resource.STREAM) || m.offers(Resource.RESOLVE)) add(PLAYS)
+            // Lyrics are asked for the song that is playing, by its title and artist: the same thing seen.
+            if (m.offers(Resource.STREAM) || m.offers(Resource.RESOLVE) || m.offers(Resource.LYRICS)) add(PLAYS)
             if (m.offers(Resource.DOWNLOAD)) add(SAVES)
         }
 

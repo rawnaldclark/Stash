@@ -271,18 +271,20 @@ class StreamSourceRegistryAddonsTest {
         assertThat(calls).contains("health:served")
     }
 
-    @Test fun `a user-added add-on goes ahead of Qobuz`() = runTest {
+    @Test fun `a user-added add-on is asked after Stash's own lossless sources`() = runTest {
+        // Owner decision Q3 (add-ons phase 4 §2.8): it sees only the songs Qobuz and Tidal miss, until the
+        // user drags it up. Phase 2 asked it ahead of Qobuz on every play.
         val rungs = AddonStreamRungs(Registry(listOf(addon(id = "mine", userAdded = true))), refs(addonClient(hit = false)))
         registry(rungs).resolve(track(), allowYouTube = false, allowYtDlp = true)
-        assertThat(asked()).containsExactly("addon:mine", "qbdlx", "tidal").inOrder()
+        assertThat(asked()).containsExactly("qbdlx", "tidal", "addon:mine").inOrder()
         assertThat(calls.last()).isEqualTo("health:miss")
     }
 
-    @Test fun `the user's own Tidal server, when it leads, stays ahead of a user-added add-on`() = runTest {
+    @Test fun `the user's own Tidal server, when it leads, moves alone - a user-added add-on stays after Qobuz`() = runTest {
         ownTidalFirst = true
         val rungs = AddonStreamRungs(Registry(listOf(addon(id = "mine", userAdded = true))), refs(addonClient(hit = false)))
         registry(rungs).resolve(track(), allowYouTube = false, allowYtDlp = true)
-        assertThat(asked()).containsExactly("tidal-lossless", "addon:mine", "qbdlx").inOrder()
+        assertThat(asked()).containsExactly("tidal-lossless", "qbdlx", "addon:mine").inOrder()
     }
 
     @Test fun `a look-ahead stops before a metered add-on`() = runTest {

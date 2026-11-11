@@ -542,8 +542,6 @@
     <string name="settings_lossy_fallback_switch_label_aac">JioSaavn, then YouTube, when Tidal has no AAC</string>
     <string name="settings_advanced">Advanced</string>
     <string name="settings_url_placeholder">https://…</string>
-    <string name="settings_bitchord_server_label">Custom Tidal server (optional)</string>
-    <string name="settings_access_token_label">Access token (optional)</string>
     <string name="settings_equalizer_title">Equalizer</string>
 
     <!-- Settings > Audio & Quality > Lossless tiers -->
@@ -1385,16 +1383,125 @@
         <item quantity="other">%d tracks</item>
     </plurals>
     <!-- Add-ons phase 2: Add from a link (Settings › Lossless sources › Advanced). -->
+    <!-- Settings › Add-ons (add-ons phase 4): the list, the play order, an add-on's page, Add from a link, the "Not made by Stash" sheet. -->
+    <string name="settings_addons_title">Add-ons</string>
+    <string name="settings_addons_hub_empty">Add songs from other places</string>
+    <string name="settings_addons_order_section">Play order</string>
+    <string name="settings_addons_order_hint">Stash asks these for a song from top to bottom. Drag to change the order.</string>
+    <string name="settings_addons_order_footer">When none of these has a song: JioSaavn, then YouTube.</string>
+    <string name="settings_addons_row_qobuz">Your Qobuz account</string>
+    <string name="settings_addons_row_tidal">Tidal</string>
+    <string name="settings_addons_row_tidal_own">Tidal · your own server</string>
+    <string name="settings_addons_official">Official</string>
+    <string name="settings_addons_not_made">Not made by Stash</string>
+    <string name="settings_addons_not_made_host">Not made by Stash · %1$s</string>
+    <string name="settings_addons_get_section">Get add-ons</string>
     <string name="settings_addons_link_title">Add from a link</string>
-    <string name="settings_addons_link_desc">Paste the link of a Stash add-on to add it. You can remove it here at any time.</string>
+    <string name="settings_addons_link_subtitle">Paste · Scan</string>
+    <string name="settings_addons_other_section">Other add-ons</string>
+    <string name="settings_addons_move_up">Move %1$s up</string>
+    <string name="settings_addons_move_down">Move %1$s down</string>
+    <string name="settings_addons_switch_desc">Use %1$s</string>
+    <string name="settings_addons_open_desc">Open %1$s</string>
+    <!-- How an add-on is doing, in plain words. -->
+    <string name="settings_addons_status_working">Working</string>
+    <string name="settings_addons_status_off">Switched off</string>
+    <string name="settings_addons_not_loaded">Not reachable right now</string>
+    <string name="settings_addons_status_new_link">Needs a new link</string>
+    <string name="settings_addons_status_new_link_detail">The link you added stopped working. Ask whoever runs this add-on for a new one, then replace it here.</string>
+    <string name="settings_addons_status_newer">Needs a newer Stash</string>
+    <string name="settings_addons_status_newer_detail">Its newest version needs a newer Stash than this one. Update Stash to keep using it.</string>
+    <string name="settings_addons_status_wants_more">Wants to see more: review</string>
+    <string name="settings_addons_status_wants_more_detail">It now asks for more than you agreed to. Stash won\'t use it until you review it.</string>
+    <string name="settings_addons_status_changed">No longer the add-on you added</string>
+    <string name="settings_addons_status_changed_detail">Its link now leads to a different add-on, so Stash stopped using it. Remove it, and add it again only if you trust where it comes from.</string>
+    <string name="settings_addons_status_replaced">Stash has this one built in</string>
+    <string name="settings_addons_status_replaced_detail">Stash now has its own add-on by this name and uses that one. This copy isn\'t used; you can remove it.</string>
+    <string name="settings_addons_status_only_bitchord_detail">Stash stopped using it. You can remove it.</string>
+    <string name="settings_addons_could_not_save">Couldn\'t save. Try again.</string>
+    <string name="settings_addons_unreadable">Stash couldn\'t read the add-ons you added just now, so they aren\'t shown here. They are still saved. Close Stash and open it again.</string>
+    <string name="settings_addons_status_paused">Paused for now</string>
+    <string name="settings_addons_status_paused_detail">It asked Stash to wait, or it failed a few times in a row. Stash will try it again shortly.</string>
+    <string name="settings_addons_status_unreachable_detail">Stash couldn\'t reach it. It will try again by itself.</string>
+    <string name="settings_addons_blocked_harmful">Stash turned this add-on off. It was reported as harmful.</string>
+    <string name="settings_addons_blocked_broken">Stash turned this add-on off. It was reported as not working.</string>
+    <string name="settings_addons_blocked_impersonation">Stash turned this add-on off. It was reported as a fake.</string>
+    <!-- What Stash uses from an add-on. -->
+    <string name="settings_addons_use_plays">Plays songs</string>
+    <string name="settings_addons_use_lossless">Lossless</string>
+    <string name="settings_addons_use_downloads">Downloads</string>
+    <string name="settings_addons_use_lyrics">Lyrics</string>
+    <!-- An add-on's page. -->
+    <string name="settings_addons_version">Version %1$s</string>
+    <string name="settings_addons_page_does">What it does</string>
+    <string name="settings_addons_page_sees">What it can see</string>
+    <string name="settings_addons_page_order">Play order</string>
+    <!-- ICU message: {0} is the row's place (1, 2, 3…), {1} how many rows there are. -->
+    <string name="settings_addons_page_asked">Asked {0,selectordinal,one{#st}two{#nd}few{#rd}other{#th}} of {1}</string>
+    <string name="settings_addons_page_move_up">Move up</string>
+    <string name="settings_addons_page_move_down">Move down</string>
+    <string name="settings_addons_page_allowance">Allowance</string>
+    <string name="settings_addons_page_used_of">%1$d of %2$d used today</string>
+    <string name="settings_addons_page_used">%1$d used today</string>
+    <string name="settings_addons_page_review">Review</string>
+    <string name="settings_addons_replace_link">Replace link</string>
+    <string name="settings_addons_remove">Remove</string>
+    <string name="settings_addons_remove_title">Remove %1$s?</string>
+    <string name="settings_addons_remove_body">Stash stops asking it for songs and forgets what it found there. Songs you already downloaded stay.</string>
+    <string name="settings_addons_tidal_stash_desc">Stash\'s own Tidal source. Lossless and Hi-Res for everyone, with a daily allowance.</string>
+    <string name="settings_addons_tidal_own_desc">Tidal plays through your own server instead of Stash\'s.</string>
+    <string name="settings_addons_tidal_own_server">Server</string>
+    <string name="settings_addons_tidal_own_token">Token saved</string>
+    <string name="settings_addons_tidal_use_stash">Use Stash\'s Tidal instead</string>
+    <string name="settings_addons_tidal_use_stash_title">Use Stash\'s Tidal instead?</string>
+    <string name="settings_addons_tidal_use_stash_body">Stash forgets your server and its token, and Tidal goes back to Stash\'s own. To use your server again you would add it from its add-on link. A server that has no add-on link can\'t be added back in this version.</string>
+    <string name="settings_addons_qobuz_desc">Your own account is asked like any other source. Sign in or out under Lossless sources.</string>
+    <!-- Add from a link. -->
+    <string name="settings_addons_add_desc">Paste, share or scan the link of an add-on. Stash shows you what it is before anything is added.</string>
+    <string name="settings_addons_replace_desc">Paste or scan the new link for this add-on. It keeps its place in the play order.</string>
     <string name="settings_addons_link_label">Add-on link</string>
-    <string name="settings_addons_link_check">Check link</string>
+    <string name="settings_addons_paste">Paste</string>
+    <string name="settings_addons_scan">Scan</string>
+    <string name="settings_addons_link_check">Read link</string>
     <string name="settings_addons_link_checking">Reading the add-on…</string>
-    <string name="settings_addons_link_added">Added. Stash asks it for songs from now on.</string>
-    <string name="settings_addons_offers">Offers: %1$s</string>
-    <string name="settings_addons_privacy">Its server sees what you search and the songs you play.</string>
+    <string name="settings_addons_preview_uses">Stash will use: %1$s</string>
+    <string name="settings_addons_preview_after_tidal">Stash asks it for songs Tidal doesn\'t have. Drag it up to ask it first.</string>
+    <string name="settings_addons_preview_after_others">Stash asks it after your other sources. Drag it up to ask it first.</string>
+    <string name="settings_addons_password_label">Password</string>
+    <string name="settings_addons_password_desc">This add-on asks for a password. Whoever runs it gave it to you.</string>
     <string name="settings_addons_add">Add</string>
     <string name="settings_addons_cancel">Cancel</string>
-    <string name="settings_addons_remove">Remove</string>
-    <string name="settings_addons_not_loaded">Not reachable right now</string>
+    <string name="settings_addons_replace">Replace</string>
+    <!-- Why a link can't be added. -->
+    <string name="settings_addons_refused_not_addon">That link isn\'t an add-on.</string>
+    <string name="settings_addons_refused_only_bitchord">This add-on only works in BitChord.</string>
+    <string name="settings_addons_refused_newer">This add-on needs a newer Stash.</string>
+    <string name="settings_addons_refused_unreachable">Couldn\'t reach that add-on. Check the link and your connection.</string>
+    <string name="settings_addons_refused_nothing">This add-on offers nothing Stash can play yet.</string>
+    <string name="settings_addons_refused_https">Add-on links must start with https://.</string>
+    <string name="settings_addons_refused_local">Add-ons can\'t use addresses on your own network.</string>
+    <string name="settings_addons_refused_phone">This add-on runs on the phone. Stash can\'t add those yet.</string>
+    <string name="settings_addons_refused_already">You already have this add-on.</string>
+    <string name="settings_addons_refused_different">That link is for a different add-on. Add it from Add-ons instead.</string>
+    <string name="settings_addons_refused_needs_password">This add-on needs its password.</string>
+    <string name="settings_addons_refused_bad_password">That password has characters Stash can\'t send.</string>
+    <string name="settings_addons_clipboard_empty">Nothing to paste. Copy the add-on\'s link first.</string>
+    <!-- The "Not made by Stash" sheet. %1$s is the add-on's name, %2$s the address its server runs on. -->
+    <string name="settings_addons_sheet_runs_on">%1$s runs on %2$s. Stash doesn\'t run it or check it.</string>
+    <string name="settings_addons_sheet_sees_label">Its server will see</string>
+    <string name="settings_addons_sees_search_play_save">What you search for, the songs you play and save, and your internet address.</string>
+    <string name="settings_addons_sees_search_play">What you search for, the songs you play, and your internet address.</string>
+    <string name="settings_addons_sees_search_save">What you search for, the songs you save, and your internet address.</string>
+    <string name="settings_addons_sees_play_save">The songs you play and save, and your internet address.</string>
+    <string name="settings_addons_sees_search">What you search for, and your internet address.</string>
+    <string name="settings_addons_sees_play">The songs you play, and your internet address.</string>
+    <string name="settings_addons_sees_save">The songs you save, and your internet address.</string>
+    <string name="settings_addons_sees_address">Your internet address.</string>
+    <string name="settings_addons_sheet_never_label">It never gets</string>
+    <string name="settings_addons_sheet_never">Your accounts, your passwords, or anything from your other add-ons.</string>
+    <string name="settings_addons_sheet_trust">Only add add-ons from people you trust.</string>
+    <string name="settings_addons_sheet_add">Add anyway</string>
+    <string name="settings_addons_sheet_more_title">Wants to see more</string>
+    <string name="settings_addons_sheet_more_intro">%1$s, on %2$s, now asks for more than you agreed to. Stash doesn\'t run it or check it.</string>
+    <string name="settings_addons_sheet_allow">Allow</string>
 </resources>

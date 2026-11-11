@@ -2,17 +2,31 @@ package com.stash.core.addons
 
 import com.google.common.truth.Truth.assertThat
 import com.stash.addons.contract.Resource
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import java.net.InetAddress
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
 
 class AddonRegistryTest {
 
@@ -20,8 +34,23 @@ class AddonRegistryTest {
     private lateinit var client: HttpAddonClient
     private val store = MapStore()
 
+    /** What each path answers (`a` for `/a/manifest.json`); a path with no answer is a 404. Add-ons are read side by side, so answers go by path, never by order. */
+    private val answers = ConcurrentHashMap<String, () -> MockResponse>()
+
+    /** The paths asked, in the order they arrived. */
+    private val asked = CopyOnWriteArrayList<String>()
+
     @Before fun setUp() {
-        server = MockWebServer().apply { start(InetAddress.getByName("127.0.0.1"), 0) }
+        server = MockWebServer().apply {
+            dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty().removePrefix("/").removeSuffix("/manifest.json")
+                    asked += path
+                    return answers[path]?.invoke() ?: MockResponse().setResponseCode(404)
+                }
+            }
+            start(InetAddress.getByName("127.0.0.1"), 0)
+        }
         client = HttpAddonClient(OkHttpClient(), OpenAddonRateGate, NoFirstPartyAddons, UnsignedAddons)
         client.options = AddonValidator.Options(allowLocalHttp = true)
     }
@@ -34,7 +63,8 @@ class AddonRegistryTest {
     }
 
     private class Users(list: List<UserAddonEntry>) : UserAddons {
-        override val entries: StateFlow<List<UserAddonEntry>> = MutableStateFlow(list)
+        val flow = MutableStateFlow(list)
+        override val entries: StateFlow<List<UserAddonEntry>> = flow
     }
 
     class MapStore : AddonManifestStore {
@@ -42,6 +72,22 @@ class AddonRegistryTest {
         override suspend fun read(key: String) = rows[key]
         override suspend fun write(key: String, json: String) { rows[key] = json }
         override suspend fun retain(keys: Set<String>) { rows.keys.retainAll(keys) }
+        override suspend fun forget(keys: Set<String>) { rows.keys.removeAll(keys) }
+    }
+
+    /** A catalog a test sets: what is blocked (by origin, or origin and id), and a tick for "the index changed". */
+    private class Catalog : AddonCatalog {
+        @Volatile var blocked: (base: String, id: String?) -> BlockReason? = { _, _ -> null }
+        val ticks = MutableSharedFlow<Any?>(extraBufferCapacity = 8)
+        override fun trustOf(base: String, id: String?) = if (blocked(base, id) != null) Trust.BLOCKED else Trust.UNOFFICIAL
+        override fun blockReason(base: String, id: String?) = blocked(base, id)
+        override val official: StateFlow<List<OfficialEntry>> = MutableStateFlow(emptyList())
+        override val changes: Flow<Any?> = ticks
+    }
+
+    private class Switches(off: Set<String> = emptySet()) : AddonSwitches {
+        val flow = MutableStateFlow(off)
+        override val defaultsOff: Flow<Set<String>> = flow
     }
 
     private fun url(path: String) = "http://127.0.0.1:${server.port}/$path/manifest.json"
@@ -49,8 +95,14 @@ class AddonRegistryTest {
     private fun manifestJson(id: String, kind: String = "server", extra: String = "", resources: String = "\"lyrics\"") =
         """{"stash":1,"id":"$id","name":"N","version":"1","kind":"$kind","resources":[$resources]$extra}"""
 
-    private fun registry(defaults: DefaultAddons = NoDefaultAddons, users: UserAddons = NoUserAddons) =
-        InTreeAddonRegistry(defaults, users, client, store)
+    private fun serve(path: String, body: String) { answers[path] = { MockResponse().setBody(body) } }
+
+    private fun registry(
+        defaults: DefaultAddons = NoDefaultAddons,
+        users: UserAddons = NoUserAddons,
+        catalog: AddonCatalog = NoAddonCatalog,
+        switches: AddonSwitches = AllDefaultsOn,
+    ) = InTreeAddonRegistry(defaults, users, client, store, catalog, switches)
 
     @Test fun `no entries - nothing on, nothing asked`() = runBlocking<Unit> {
         val registry = registry()
@@ -62,8 +114,8 @@ class AddonRegistryTest {
     }
 
     @Test fun `defaults are read from their manifests, in order`() = runBlocking<Unit> {
-        server.enqueue(MockResponse().setBody(manifestJson("one")))
-        server.enqueue(MockResponse().setBody(manifestJson("two")))
+        serve("a", manifestJson("one"))
+        serve("b", manifestJson("two"))
         val registry = registry(
             Defaults(listOf(
                 DefaultAddonEntry(url("a")),
@@ -80,16 +132,16 @@ class AddonRegistryTest {
 
     @Test fun `an add-on whose manifest fails keeps its last good one`() = runBlocking<Unit> {
         val registry = registry(Defaults(listOf(DefaultAddonEntry(url("a")))))
-        server.enqueue(MockResponse().setBody(manifestJson("one")))
+        serve("a", manifestJson("one"))
         registry.refresh()
-        server.enqueue(MockResponse().setResponseCode(503))
+        answers["a"] = { MockResponse().setResponseCode(503) }
         registry.refresh()
         assertThat(registry.addons.value.map { it.id }).containsExactly("one")
     }
 
     @Test fun `an offline cold start keeps the kept manifest, asking nothing`() = runBlocking<Unit> {
         val defaults = Defaults(listOf(DefaultAddonEntry(url("v1/tok"), firstParty = true)))
-        server.enqueue(MockResponse().setBody(manifestJson("tidal", resources = "\"search\",\"stream\"", extra = ""","stream":{"cors":false}""")))
+        serve("v1/tok", manifestJson("tidal", resources = "\"search\",\"stream\"", extra = ""","stream":{"cors":false}"""))
         registry(defaults).refresh()
         // The kept copy is keyed by a hash: the URL (and its token) is never stored.
         assertThat(store.rows.keys).containsExactly(InTreeAddonRegistry.keyOf(url("v1/tok")))
@@ -116,8 +168,8 @@ class AddonRegistryTest {
 
     @Test fun `the Tidal add-on is the named rung's, never a generic one`() = runBlocking<Unit> {
         val streamy = """"search","resolve","stream","lyrics""""
-        server.enqueue(MockResponse().setBody(manifestJson("tidal", resources = streamy, extra = ""","stream":{"cors":false}""")))
-        server.enqueue(MockResponse().setBody(manifestJson("other", resources = streamy, extra = ""","stream":{"cors":false}""")))
+        serve("t", manifestJson("tidal", resources = streamy, extra = ""","stream":{"cors":false}"""))
+        serve("o", manifestJson("other", resources = streamy, extra = ""","stream":{"cors":false}"""))
         val registry = registry(Defaults(listOf(DefaultAddonEntry(url("t"), firstParty = true), DefaultAddonEntry(url("o")))))
         registry.refresh()
         assertThat(registry.addons.value.map { it.id }).containsExactly("tidal", "other").inOrder()
@@ -128,14 +180,15 @@ class AddonRegistryTest {
 
     @Test fun `a third-party add-on named tidal is generic, and a first-party default wins its id`() = runBlocking<Unit> {
         val body = manifestJson("tidal", resources = "\"search\",\"stream\"", extra = ""","stream":{"cors":false}""")
-        server.enqueue(MockResponse().setBody(body)) // the user's
-        server.enqueue(MockResponse().setBody(body)) // the default
+        serve("u", body) // the user's
+        serve("t", body) // the default
         val both = registry(Defaults(listOf(DefaultAddonEntry(url("t"), firstParty = true))), Users(listOf(UserAddonEntry(url("u")))))
         both.refresh()
         assertThat(both.addons.value).hasSize(1)
         assertThat(both.addons.value.single().firstParty).isTrue()
+        // The user's copy says why it is not used, instead of "not reachable".
+        assertThat(both.entries.value.single { it.userAdded }.hold).isEqualTo(AddonHold.REPLACED)
 
-        server.enqueue(MockResponse().setBody(body))
         val userOnly = registry(users = Users(listOf(UserAddonEntry(url("u")))))
         userOnly.refresh()
         assertThat(userOnly.generic().map { it.id }).containsExactly("tidal")
@@ -143,13 +196,15 @@ class AddonRegistryTest {
     }
 
     @Test fun `user add-ons come first, with their token`() = runBlocking<Unit> {
-        server.enqueue(MockResponse().setBody(manifestJson("mine", extra = ""","auth":{"token":"header"}""")))
-        server.enqueue(MockResponse().setBody(manifestJson("default")))
+        serve("m", manifestJson("mine", extra = ""","auth":{"token":"header"}"""))
+        serve("d", manifestJson("default"))
         val registry = registry(Defaults(listOf(DefaultAddonEntry(url("d")))), Users(listOf(UserAddonEntry(url("m"), token = "s3cret"))))
         registry.refresh()
         assertThat(registry.addons.value.map { it.id }).containsExactly("mine", "default").inOrder()
         assertThat(registry.addons.value.first().userAdded).isTrue()
         assertThat(registry.addons.value.first().token).isEqualTo("s3cret")
+        // Where each stands with Stash: the user's is not Stash's, a default is.
+        assertThat(registry.addons.value.map { it.trust }).containsExactly(Trust.UNOFFICIAL, Trust.OFFICIAL).inOrder()
     }
 
     @Test fun `the user's own Tidal server is never loaded as an add-on`() = runBlocking<Unit> {
@@ -165,7 +220,7 @@ class AddonRegistryTest {
         var now = 1_000_000L
         val registry = registry(Defaults(listOf(DefaultAddonEntry(url("a")))))
         registry.nowMs = { now }
-        repeat(3) { server.enqueue(MockResponse().setBody(manifestJson("one"))) }
+        serve("a", manifestJson("one"))
         registry.refresh(force = false)
         now += 60_000
         registry.refresh(force = false)
@@ -178,18 +233,14 @@ class AddonRegistryTest {
     }
 
     @Test fun `only server add-ons are loaded`() = runBlocking<Unit> {
-        server.enqueue(MockResponse().setBody(
-            manifestJson("frame-one", kind = "frame", extra = ""","frame":"https://frame.example/""""),
-        ))
+        serve("f", manifestJson("frame-one", kind = "frame", extra = ""","frame":"https://frame.example/""""))
         val registry = registry(Defaults(listOf(DefaultAddonEntry(url("f")))))
         registry.refresh()
         assertThat(registry.addons.value).isEmpty()
     }
 
     @Test fun `a v0 manifest is read as a v1 server add-on`() = runBlocking<Unit> {
-        server.enqueue(MockResponse().setBody(
-            """{"stash":0,"id":"jiosaavn","name":"JioSaavn","version":"0.3.0","runtime":"remote","resources":["search","resolve","stream"],"stream":{"cors":true}}""",
-        ))
+        serve("j", """{"stash":0,"id":"jiosaavn","name":"JioSaavn","version":"0.3.0","runtime":"remote","resources":["search","resolve","stream"],"stream":{"cors":true}}""")
         val registry = registry(Defaults(listOf(DefaultAddonEntry(url("j")))))
         registry.refresh()
         val addon = registry.addons.value.single()
@@ -202,5 +253,225 @@ class AddonRegistryTest {
         val user = UserAddonEntry("https://mine.example/s3cret/manifest.json", token = "t0ken").toString()
         assertThat(user).doesNotContain("s3cret")
         assertThat(user).doesNotContain("t0ken")
+    }
+
+    // ------------------------------------------------------------------------------------------ each entry on its own (reviews J1, M2, M12)
+
+    @Test fun `a failed read is not a read - the entry is asked again at the next tick`() = runBlocking<Unit> {
+        var now = 1_000_000L
+        val registry = registry(Defaults(listOf(DefaultAddonEntry(url("a")))))
+        registry.nowMs = { now }
+        answers["a"] = { MockResponse().setResponseCode(503) }
+        registry.refresh(force = false)
+        assertThat(registry.addons.value).isEmpty()
+        // A minute later, well inside the 10 minutes: it never answered, so it is asked again.
+        now += 60_000
+        serve("a", manifestJson("one"))
+        registry.refresh(force = false)
+        assertThat(server.requestCount).isEqualTo(2)
+        assertThat(registry.addons.value.map { it.id }).containsExactly("one")
+    }
+
+    @Test fun `one poisoned entry never costs the others`() = runBlocking<Unit> {
+        // A manifest that passes every check and then overflows the stack when it is written out
+        // again (an unknown key nested 100,000 deep), or is refused as invalid: either way an
+        // `Error` or a failure of one entry must leave the good one published.
+        val deep = "{\"a\":".repeat(100_000) + "1" + "}".repeat(100_000)
+        serve("bad", """{"stash":1,"id":"bad","name":"N","version":"1","kind":"server","resources":["lyrics"],"x":$deep}""")
+        serve("good", manifestJson("good"))
+        val registry = registry(users = Users(listOf(UserAddonEntry(url("bad")), UserAddonEntry(url("good")))))
+        registry.refresh()
+        assertThat(registry.addons.value.map { it.id }).contains("good")
+        // And the next pass still runs: the registry is not frozen.
+        serve("more", manifestJson("more"))
+        val again = registry(users = Users(listOf(UserAddonEntry(url("bad")), UserAddonEntry(url("good")), UserAddonEntry(url("more")))))
+        again.refresh()
+        assertThat(again.addons.value.map { it.id }).containsAtLeast("good", "more")
+    }
+
+    @Test fun `a slow add-on never delays another`() = runBlocking<Unit> {
+        answers["slow"] = { MockResponse().setBody(manifestJson("slow")).setBodyDelay(3, TimeUnit.SECONDS) }
+        serve("fast", manifestJson("fast"))
+        val registry = registry(Defaults(listOf(DefaultAddonEntry(url("fast")))), Users(listOf(UserAddonEntry(url("slow")))))
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            registry.start(scope, emptyFlow())
+            // The fast one is on while the slow one is still being read.
+            withTimeout(2_500) { registry.addons.first { list -> list.any { it.id == "fast" } } }
+            assertThat(registry.addons.value.map { it.id }).containsExactly("fast")
+            withTimeout(6_000) { registry.addons.first { it.size == 2 } }
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test fun `start publishes the kept manifest of a default that arrives after it, before anything answers`() = runBlocking<Unit> {
+        // The real start order: the registry starts, and the signed config's defaults come a moment later.
+        serve("v1/tok", manifestJson("tidal", resources = "\"search\",\"stream\"", extra = ""","stream":{"cors":false}"""))
+        registry(Defaults(listOf(DefaultAddonEntry(url("v1/tok"), firstParty = true)))).refresh()
+        asked.clear()
+        // The next run: the server takes its time over the manifest.
+        answers["v1/tok"] = { MockResponse().setBody(manifestJson("tidal", resources = "\"search\",\"stream\"", extra = ""","stream":{"cors":false}""")).setBodyDelay(3, TimeUnit.SECONDS) }
+        val defaults = Defaults(emptyList())
+        val restarted = registry(defaults)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            restarted.start(scope, emptyFlow())
+            delay(200)
+            assertThat(restarted.addons.value).isEmpty()
+            defaults.flow.value = listOf(DefaultAddonEntry(url("v1/tok"), firstParty = true))
+            // On from the kept copy, long before the manifest read returns.
+            withTimeout(2_000) { restarted.addons.first { it.isNotEmpty() } }
+            assertThat(restarted.firstParty(NamedRungAddons.TIDAL)).isNotNull()
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test fun `removing the last add-on leaves no kept manifest`() = runBlocking<Unit> {
+        serve("m", manifestJson("mine"))
+        val users = Users(listOf(UserAddonEntry(url("m"))))
+        val registry = registry(users = users)
+        registry.refresh()
+        assertThat(store.rows).hasSize(1)
+        users.flow.value = emptyList()
+        registry.refresh()
+        assertThat(registry.addons.value).isEmpty()
+        assertThat(store.rows).isEmpty()
+    }
+
+    // ------------------------------------------------------------------------------------------ the blocklist (plan §1.9)
+
+    @Test fun `a blocked user add-on is not published and not even asked, and lifting the block brings it back`() = runBlocking<Unit> {
+        serve("m", manifestJson("mine"))
+        serve("t", manifestJson("tidal", resources = "\"search\",\"stream\"", extra = ""","stream":{"cors":false}"""))
+        val catalog = Catalog()
+        val registry = registry(
+            Defaults(listOf(DefaultAddonEntry(url("t"), firstParty = true))),
+            Users(listOf(UserAddonEntry(url("m"), id = "mine"))),
+            catalog,
+        )
+        // Blocked by origin and id, as the signed index writes one. The add-on and the default share
+        // an origin here: a block never touches a default or anything first-party.
+        catalog.blocked = { _, id -> BlockReason.HARMFUL.takeIf { id == "mine" } }
+        registry.refresh()
+        assertThat(registry.addons.value.map { it.id }).containsExactly("tidal")
+        assertThat(asked).containsExactly("t")
+        val held = registry.entries.value.single { it.userAdded }
+        assertThat(held.hold).isEqualTo(AddonHold.BLOCKED)
+        assertThat(held.trust).isEqualTo(Trust.BLOCKED)
+        assertThat(held.blockReason).isEqualTo(BlockReason.HARMFUL)
+
+        // The block is lifted: it is read and comes back.
+        catalog.blocked = { _, _ -> null }
+        registry.refresh()
+        assertThat(registry.addons.value.map { it.id }).containsExactly("mine", "tidal").inOrder()
+    }
+
+    @Test fun `a new index blocks an add-on that is on, at once and with nothing asked`() = runBlocking<Unit> {
+        serve("m", manifestJson("mine"))
+        val catalog = Catalog()
+        val registry = registry(users = Users(listOf(UserAddonEntry(url("m"), id = "mine"))), catalog = catalog)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            registry.start(scope, emptyFlow())
+            withTimeout(5_000) { registry.addons.first { it.isNotEmpty() } }
+            val before = server.requestCount
+            catalog.blocked = { _, _ -> BlockReason.BROKEN }
+            catalog.ticks.emit(Unit)
+            withTimeout(5_000) { registry.addons.first { it.isEmpty() } }
+            assertThat(server.requestCount).isEqualTo(before)
+            assertThat(registry.entries.value.single().blockReason).isEqualTo(BlockReason.BROKEN)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------ switches, consent, the approved id
+
+    @Test fun `a default switched off is not on, keeps its entry, and comes back with nothing asked`() = runBlocking<Unit> {
+        serve("a", manifestJson("one"))
+        serve("b", manifestJson("two"))
+        val switches = Switches(off = setOf("two"))
+        val registry = registry(Defaults(listOf(DefaultAddonEntry(url("a")), DefaultAddonEntry(url("b")))), switches = switches)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            registry.start(scope, emptyFlow())
+            withTimeout(5_000) { registry.entries.first { list -> list.size == 2 && list.all { it.manifest != null } } }
+            assertThat(registry.addons.value.map { it.id }).containsExactly("one")
+            assertThat(registry.entries.value.single { it.manifest?.manifest?.id == "two" }.hold).isEqualTo(AddonHold.OFF)
+            val before = server.requestCount
+            switches.flow.value = emptySet()
+            withTimeout(5_000) { registry.addons.first { it.size == 2 } }
+            assertThat(server.requestCount).isEqualTo(before)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test fun `a user add-on switched off is not asked and keeps its entry`() = runBlocking<Unit> {
+        serve("m", manifestJson("mine"))
+        val users = Users(listOf(UserAddonEntry(url("m"), id = "mine")))
+        val registry = registry(users = users)
+        registry.refresh()
+        users.flow.value = listOf(UserAddonEntry(url("m"), id = "mine", enabled = false))
+        val before = server.requestCount
+        registry.refresh()
+        assertThat(registry.addons.value).isEmpty()
+        assertThat(server.requestCount).isEqualTo(before)
+        val entry = registry.entries.value.single()
+        assertThat(entry.hold).isEqualTo(AddonHold.OFF)
+        // Its name is still known for its row.
+        assertThat(entry.manifest!!.manifest.id).isEqualTo("mine")
+    }
+
+    @Test fun `an add-on that wants to see more than was agreed waits, and one that sees no more does not`() = runBlocking<Unit> {
+        // Agreed to: its lyrics route sees the songs played. Now it lists search too.
+        serve("m", manifestJson("mine", resources = "\"lyrics\",\"search\",\"stream\"", extra = ""","stream":{"cors":false}"""))
+        val users = Users(listOf(UserAddonEntry(url("m"), id = "mine", consent = setOf(AddonSees.PLAYS.name))))
+        val registry = registry(users = users)
+        registry.refresh()
+        assertThat(registry.addons.value).isEmpty()
+        assertThat(registry.entries.value.single().hold).isEqualTo(AddonHold.WANTS_MORE)
+
+        // The user agrees to what it lists now: it is on.
+        users.flow.value = listOf(UserAddonEntry(url("m"), id = "mine", consent = setOf(AddonSees.PLAYS.name, AddonSees.SEARCHES.name)))
+        registry.refresh()
+        assertThat(registry.addons.value.map { it.id }).containsExactly("mine")
+        // A new version alone never asks again.
+        serve("m", manifestJson("mine", resources = "\"search\",\"stream\"", extra = ""","stream":{"cors":false}""").replace("\"version\":\"1\"", "\"version\":\"2\""))
+        registry.refresh()
+        assertThat(registry.addons.value.single().manifest.version).isEqualTo("2")
+    }
+
+    @Test fun `a link that starts serving another add-on is not used, and its manifest is not kept`() = runBlocking<Unit> {
+        serve("m", manifestJson("mine"))
+        val registry = registry(users = Users(listOf(UserAddonEntry(url("m"), id = "mine"))))
+        registry.refresh()
+        val kept = store.rows.values.single()
+        serve("m", manifestJson("someone-else"))
+        registry.refresh()
+        assertThat(registry.addons.value).isEmpty()
+        val entry = registry.entries.value.single()
+        assertThat(entry.hold).isEqualTo(AddonHold.CHANGED)
+        // What is shown stays the add-on the user approved.
+        assertThat(entry.manifest!!.manifest.id).isEqualTo("mine")
+        assertThat(store.rows.values.single()).isEqualTo(kept)
+    }
+
+    @Test fun `an add-on that turns BitChord-only is switched off, and its kept manifest goes`() = runBlocking<Unit> {
+        val eclipse = """{"id":"relay","name":"Relay","version":"1","resources":["search","stream"]}"""
+        serve("m", eclipse)
+        val registry = registry(users = Users(listOf(UserAddonEntry(url("m"), id = "relay"))))
+        registry.refresh()
+        assertThat(registry.addons.value.map { it.id }).containsExactly("relay")
+        serve("m", eclipse.replace("\"version\"", "\"bitchordAuth\":true,\"version\""))
+        registry.refresh()
+        assertThat(registry.addons.value).isEmpty()
+        assertThat(registry.entries.value.single().hold).isEqualTo(AddonHold.ONLY_BITCHORD)
+        // A new process doesn't bring it back from the kept copy.
+        val restarted = registry(users = Users(listOf(UserAddonEntry(url("m"), id = "relay"))))
+        restarted.loadPersisted()
+        assertThat(restarted.addons.value).isEmpty()
     }
 }

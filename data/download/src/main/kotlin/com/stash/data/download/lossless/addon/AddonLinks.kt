@@ -6,7 +6,6 @@ import com.stash.addons.contract.Manifest
 import com.stash.addons.contract.Resource
 import com.stash.addons.contract.TokenPlacement
 import com.stash.core.addons.AddonCatalog
-import com.stash.core.addons.AddonEclipse
 import com.stash.core.addons.AddonFailure
 import com.stash.core.addons.AddonHostOptions
 import com.stash.core.addons.AddonResult
@@ -20,9 +19,12 @@ import com.stash.core.addons.Trust
 import com.stash.core.addons.UserAddonEntry
 import com.stash.core.addons.UserAddonKind
 import com.stash.data.download.lossless.PlayOrder
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -95,6 +97,9 @@ class AddonLinks @Inject constructor(
 
         /** [add] was called for an add-on Stash doesn't run without the user's agreement. */
         NOT_AGREED,
+
+        /** The add-on store could not be written (the phone's Keystore failed): nothing changed. */
+        COULD_NOT_SAVE,
     }
 
     /** What the Add screen shows before Add. [manifestUrl] is the user's own link, never displayed. */
@@ -145,7 +150,11 @@ class AddonLinks @Inject constructor(
      * the handle of an add-on whose link is being replaced (its page, §2.9); the new link must then
      * be the same add-on (origin and id), and keeps its place and what was agreed.
      */
-    suspend fun preview(link: String, replacingKey: String? = null): Outcome {
+    suspend fun preview(link: String, replacingKey: String? = null): Outcome =
+        // Off the main thread: an add-on's manifest can be 2 MiB of JSON to parse and check.
+        withContext(Dispatchers.Default) { read(link, replacingKey) }
+
+    private suspend fun read(link: String, replacingKey: String?): Outcome {
         val url = when (val n = normalise(link)) {
             is Normalised.Url -> n.url
             is Normalised.No -> return Outcome.Refused(n.reason)
@@ -154,7 +163,7 @@ class AddonLinks @Inject constructor(
         val mine = users.loadedEntries().filter { it.kind == UserAddonKind.MANIFEST }
         val target = replacingKey?.let { k -> mine.firstOrNull { InTreeAddonRegistry.keyOf(it.manifestUrl) == k } }
         if (replacingKey != null && target == null) return Outcome.Refused(Refusal.DIFFERENT_ADDON)
-        if (target == null && mine.any { it.manifestUrl == url }) return Outcome.Refused(Refusal.ALREADY_ADDED)
+        if (target == null && mine.any { sameLink(it.manifestUrl, url) }) return Outcome.Refused(Refusal.ALREADY_ADDED)
         // Turned off by Stash, origin and all: refused before anything is asked of it.
         catalog.blockReason(base, null)?.let { return Outcome.Refused(blocked(it)) }
         val unvouched = catalog.trustOf(base, null).let { it != Trust.FIRST_PARTY && it != Trust.OFFICIAL }
@@ -203,7 +212,21 @@ class AddonLinks @Inject constructor(
      * the manifest asks for one. [agreed]: the user tapped "Add anyway" on the "Not made by Stash"
      * sheet; an add-on that needs it is never added without.
      */
-    suspend fun add(preview: Preview, token: String?, agreed: Boolean = false): Outcome {
+    suspend fun add(preview: Preview, token: String?, agreed: Boolean = false): Outcome =
+        // Off the main thread: sealing the list is the phone's Keystore at work. A save that fails
+        // (the Keystore does, now and then) changes nothing and is said, never thrown at the screen.
+        withContext(Dispatchers.Default) {
+            try {
+                save(preview, token, agreed)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "an add-on could not be saved: ${e.javaClass.simpleName}")
+                Outcome.Refused(Refusal.COULD_NOT_SAVE)
+            }
+        }
+
+    private suspend fun save(preview: Preview, token: String?, agreed: Boolean): Outcome {
         val t = token?.trim()?.takeIf { it.isNotEmpty() }
         if (preview.needsToken && t == null) return Outcome.Refused(Refusal.NEEDS_PASSWORD)
         if (t != null && !InstalledAddon.isHeaderSafe(t)) return Outcome.Refused(Refusal.BAD_PASSWORD)
@@ -243,9 +266,12 @@ class AddonLinks @Inject constructor(
         return Outcome.Added(key)
     }
 
-    /** Removes the user's add-on [key] ([InTreeAddonRegistry.keyOf]): its refs, its place in the play order and any pause go with it. */
-    suspend fun remove(key: String) {
-        val entry = entry(key) ?: return
+    /**
+     * Removes the user's add-on [key] ([InTreeAddonRegistry.keyOf]): its refs, its place in the play
+     * order and any pause go with it. False when it could not be saved (nothing changed).
+     */
+    suspend fun remove(key: String): Boolean = saving("removed") {
+        val entry = entry(key) ?: return@saving
         val id = entry.id ?: registry.entries.value.firstOrNull { it.key == key }?.manifest?.manifest?.id
         users.remove(entry.manifestUrl)
         if (id != null) {
@@ -257,21 +283,40 @@ class AddonLinks @Inject constructor(
         Log.i(TAG, "a user add-on was removed")
     }
 
-    /** Switches the user's add-on [key] on or off. Off, it is never asked; it keeps its row and its place. */
-    suspend fun setEnabled(key: String, enabled: Boolean) {
-        val entry = entry(key) ?: return
+    /**
+     * Switches the user's add-on [key] on or off. Off, it is never asked; it keeps its row and its
+     * place. False when it could not be saved.
+     */
+    suspend fun setEnabled(key: String, enabled: Boolean): Boolean = saving("switched") {
+        val entry = entry(key) ?: return@saving
         users.setEnabled(entry.manifestUrl, enabled)
     }
 
     /**
      * The user agreed to what the add-on [key] now wants to see ("Wants to see more", §2.7): what
-     * its manifest lists today is recorded, and it is asked again.
+     * its manifest lists today is recorded, and it is asked again. False when it could not be saved.
      */
-    suspend fun agree(key: String) {
-        val entry = entry(key) ?: return
-        val manifest = registry.entries.value.firstOrNull { it.key == key }?.manifest?.manifest ?: return
+    suspend fun agree(key: String): Boolean = saving("agreed to") {
+        val entry = entry(key) ?: return@saving
+        val manifest = registry.entries.value.firstOrNull { it.key == key }?.manifest?.manifest ?: return@saving
         users.setConsent(entry.manifestUrl, AddonSees.namesOf(manifest))
         Log.i(TAG, "the user agreed to what an add-on sees now: ${manifest.id}")
+    }
+
+    /**
+     * A change to the sealed list, off the main thread (the seal is the Keystore's work). A write
+     * that fails is logged and answered false: the caller says "Couldn't save. Try again."
+     */
+    private suspend fun saving(what: String, change: suspend () -> Unit): Boolean = withContext(Dispatchers.Default) {
+        try {
+            change()
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "an add-on could not be $what: ${e.javaClass.simpleName}")
+            false
+        }
     }
 
     private suspend fun entry(key: String): UserAddonEntry? =
@@ -329,11 +374,12 @@ class AddonLinks @Inject constructor(
     private fun linkOptions() = AddonValidator.Options(allowLocalHttp = host.allowLocalHttp, publicOnly = true)
 
     private fun refusalOf(f: AddonFailure): Refusal = when (f) {
-        is AddonFailure.InvalidResponse -> when {
-            f.reason.startsWith(AddonValidator.NEEDS_NEWER_STASH) -> Refusal.NEEDS_NEWER_STASH
-            f.reason.startsWith(AddonEclipse.ONLY_BITCHORD) -> Refusal.ONLY_BITCHORD
-            f.reason.startsWith(AddonEclipse.PRIVATE_ADDRESS) -> Refusal.LOCAL_ADDRESS
-            else -> Refusal.NOT_AN_ADDON
+        // By code, never by the words of the reason.
+        is AddonFailure.InvalidResponse -> when (f.code) {
+            AddonFailure.InvalidResponse.Code.NEEDS_NEWER_STASH -> Refusal.NEEDS_NEWER_STASH
+            AddonFailure.InvalidResponse.Code.ONLY_BITCHORD -> Refusal.ONLY_BITCHORD
+            AddonFailure.InvalidResponse.Code.PRIVATE_ADDRESS -> Refusal.LOCAL_ADDRESS
+            AddonFailure.InvalidResponse.Code.NOT_AN_ADDON, null -> Refusal.NOT_AN_ADDON
         }
         is AddonFailure.Refused -> when {
             f.onlyBitChord -> Refusal.ONLY_BITCHORD
@@ -347,6 +393,16 @@ class AddonLinks @Inject constructor(
 
     companion object {
         private const val TAG = "AddonLinks"
+
+        /**
+         * Two links to one manifest, compared as URLs: `https://Host/x/` and `https://host:443/x/manifest.json`
+         * are the same add-on, however they were typed.
+         */
+        fun sameLink(a: String, b: String): Boolean {
+            val x = HttpAddonClient.baseOf(a) ?: return false
+            val y = HttpAddonClient.baseOf(b) ?: return false
+            return SignedConfigAddonTrust.sameBase(x, y) && HttpAddonClient.manifestFileOf(a) == HttpAddonClient.manifestFileOf(b)
+        }
 
         fun blocked(reason: BlockReason): Refusal = when (reason) {
             BlockReason.HARMFUL -> Refusal.BLOCKED_HARMFUL

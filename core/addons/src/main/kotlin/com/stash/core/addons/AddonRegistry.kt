@@ -7,6 +7,8 @@ import com.stash.addons.contract.Resource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +25,8 @@ import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -193,6 +197,17 @@ interface UserAddons {
 
     /** [entries] once the store has been read: [entries] holds an empty list until then. */
     suspend fun loadedEntries(): List<UserAddonEntry> = entries.value
+
+    /**
+     * True when the stored list is there but could not be opened this run (the Keystore failed):
+     * the user's add-ons are not known right now, which is not the same as having none. Settings
+     * says so instead of showing an empty list.
+     */
+    val unreadable: StateFlow<Boolean> get() = READABLE
+
+    companion object {
+        private val READABLE: StateFlow<Boolean> = MutableStateFlow(false).asStateFlow()
+    }
 }
 
 /** No user add-ons: for hand-built registries in tests. */
@@ -211,8 +226,23 @@ enum class AddonHold {
     /** Its manifest now lists more than the user agreed its server may see: it waits until they agree. */
     WANTS_MORE,
 
-    /** No manifest could be read, and none is kept (or another add-on already has its id). */
+    /** No manifest could be read, and none is kept. */
     NOT_LOADED,
+
+    /**
+     * Its link now serves a manifest with another id than the one the user approved: it is no
+     * longer the add-on they added, and is not used until they remove it or add it again.
+     */
+    CHANGED,
+
+    /** Another add-on that is on has its id (one of Stash's own beats a user's): this copy is not used. */
+    REPLACED,
+
+    /**
+     * It now says it serves only the genuine BitChord (`bitchordAuth` in its manifest, or BitChord's
+     * own 401 on a call). Stash respects that: it is not asked again, kept manifest or not.
+     */
+    ONLY_BITCHORD,
 }
 
 /**
@@ -247,8 +277,9 @@ data class AddonEntryState(
  * add-ons are loaded here; phone add-ons are phase 3.
  *
  * **When it reads** ([start]): whenever either list changes, when the signed index lifts a block,
- * and on every applied config, at most every [MIN_REFRESH_MS] then (SPEC.md 3: hosts re-read a
- * manifest at most every 10 minutes).
+ * and on every applied config, at most every [MIN_REFRESH_MS] per add-on then (SPEC.md 3: hosts
+ * re-read a manifest at most every 10 minutes). Every pass publishes the kept manifests first,
+ * reads the add-ons side by side, and one add-on's failure never costs another ([refresh]).
  *
  * **Ids.** An id is on at most once. A first-party default beats a user add-on with the same id
  * (the Tidal rung's switch must not be turned off by adding a link); otherwise the user's own wins.
@@ -257,7 +288,8 @@ data class AddonEntryState(
  *  - an add-on the signed index blocks ([AddonCatalog], §1.6): not even its manifest is asked for;
  *  - one that is switched off: the user's own by its entry, a default by [AddonSwitches];
  *  - an add-on Stash doesn't run whose manifest now lists more than the user agreed it may see
- *    (§2.7): it waits until they agree again.
+ *    (§2.7): it waits until they agree again;
+ *  - a user's add-on whose link now serves a manifest with another id than the one they approved.
  */
 @Singleton
 class InTreeAddonRegistry @Inject constructor(
@@ -282,16 +314,28 @@ class InTreeAddonRegistry @Inject constructor(
     /** True while manifests are being read: an entry that isn't loaded yet has no verdict until this is false. */
     val reading: StateFlow<Boolean> = readingState.asStateFlow()
 
+    /** One pass at a time. Held for a whole read, which can take as long as the slowest manifest. */
     private val refreshLock = Mutex()
+
+    /** Guards [slots] and every publish. Held for a moment only, so a switch or a new index never waits on a read. */
+    private val applyLock = Mutex()
 
     /** Tests: the clock [MIN_REFRESH_MS] is measured on. */
     internal var nowMs: () -> Long = System::currentTimeMillis
 
-    @Volatile private var lastRefreshMs = 0L
-    @Volatile private var lastWanted: List<Wanted>? = null
+    /** When each entry's manifest last read, by [keyOf] of its URL. An entry that didn't answer has no stamp, so it is asked again. */
+    private val answeredAt = ConcurrentHashMap<String, Long>()
 
     /** What the last pass came to, entry by entry: the next one starts from it. */
     @Volatile private var slots: List<Slot> = emptyList()
+
+    /** The keys of the entries wanted at the last pass of this run: one that is gone at the next was removed. */
+    private val seen = HashSet<String>()
+
+    /** [start]'s scope: where an entry that didn't answer is retried from. Null in tests that never start it. */
+    @Volatile private var scope: CoroutineScope? = null
+    private val retryRound = AtomicInteger(0)
+    @Volatile private var retries = 0
 
     /** One entry: a user add-on (on or off) or an enabled default, with the base its routes live under. */
     private data class Wanted(
@@ -305,16 +349,22 @@ class InTreeAddonRegistry @Inject constructor(
         val id: String?,
         val consent: Set<String>?,
     ) {
+        val key: String get() = keyOf(url)
+
         override fun toString(): String = "Wanted(user=$userAdded, firstParty=$firstParty, enabled=$enabled)"
     }
 
-    /** An entry and where it stands: its manifest when one is known, and why it is held when it is. */
-    private class Slot(val w: Wanted, val read: AddonManifest?, val trust: Trust, val hold: AddonHold?, val needsNewer: Boolean) {
+    /**
+     * An entry and where it stands: its manifest when one is known, why it is held when it is, and
+     * what its last read was refused for ([refused]), when it was one of the refusals a host acts on.
+     */
+    private class Slot(val w: Wanted, val read: AddonManifest?, val trust: Trust, val hold: AddonHold?, val refused: AddonFailure.InvalidResponse.Code?) {
         val id: String? get() = read?.manifest?.id ?: w.id
     }
 
-    private fun wanted(): List<Wanted> {
-        val user = users.entries.value.filter { it.kind == UserAddonKind.MANIFEST }.mapNotNull { e ->
+    /** The entries now. The user's list is waited for: a pass that ran before it was read would take "not read yet" for "none". */
+    private suspend fun wanted(): List<Wanted> {
+        val user = users.loadedEntries().filter { it.kind == UserAddonKind.MANIFEST }.mapNotNull { e ->
             HttpAddonClient.baseOf(e.manifestUrl)?.let {
                 Wanted(
                     e.manifestUrl, it, HttpAddonClient.manifestFileOf(e.manifestUrl), userAdded = true, token = e.token,
@@ -335,8 +385,11 @@ class InTreeAddonRegistry @Inject constructor(
 
     /** Reads and refreshes in the background: see the class doc. [configApplied] ticks on every applied config. */
     fun start(scope: CoroutineScope, configApplied: Flow<Any?>) {
+        this.scope = scope
         scope.launch(Dispatchers.IO) {
             guarded { loadPersisted() }
+            // The signed config's defaults and the user's sealed list both arrive after this starts:
+            // every arrival is a pass, and every pass publishes the kept manifests before it asks anything.
             combine(defaults.entries, users.entries) { d, u -> d to u }
                 .distinctUntilChanged()
                 .collectLatest { guarded { refresh(force = true) } }
@@ -346,15 +399,21 @@ class InTreeAddonRegistry @Inject constructor(
         scope.launch(Dispatchers.IO) { catalog.changes.collect { guarded { recheck() } } }
         // The first value is the one every pass already read.
         scope.launch(Dispatchers.IO) { switches.defaultsOff.drop(1).collect { guarded { republish() } } }
+        // An add-on that answered a call "BitChord only" stops being asked now.
+        scope.launch(Dispatchers.IO) { client.onlyBitChord.drop(1).collect { guarded { republish() } } }
     }
 
+    /**
+     * Nothing a pass throws, bar cancellation, may end a collector: an `Error` too (a hostile
+     * manifest once overflowed the stack), or the registry would stay frozen for the whole run.
+     */
     private suspend fun guarded(block: suspend () -> Unit) {
         try {
             block()
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
-            Log.w(TAG, "add-on refresh failed: ${e.javaClass.simpleName}")
+        } catch (t: Throwable) {
+            Log.w(TAG, "add-on refresh failed: ${t.javaClass.simpleName}")
         }
     }
 
@@ -366,62 +425,161 @@ class InTreeAddonRegistry @Inject constructor(
     suspend fun loadPersisted() = refreshLock.withLock {
         if (state.value.isNotEmpty()) return@withLock
         catalog.awaitLoaded()
-        publish(wanted().map { w -> settle(w, persisted(w), needsNewer = false) }, defaultsOff())
+        val kept = wanted().map { w -> kept(w, null) }
+        applyLock.withLock { publish(kept, defaultsOff()) }
         val loaded = state.value
         if (loaded.isNotEmpty()) Log.i(TAG, "kept add-ons loaded: ${loaded.joinToString(",") { it.id }}")
     }
 
     /**
-     * Reads the enabled entries' manifests and publishes the add-ons that answered a valid one, or
-     * kept one. Not [force]d (a config was applied, nothing changed): skipped within
-     * [MIN_REFRESH_MS] of the last read.
+     * Publishes the entries' kept manifests, then reads the manifests that are due, all at once, and
+     * publishes each add-on as it answers. [force]: every enabled entry is read; otherwise only the
+     * ones whose last answer is older than [MIN_REFRESH_MS] (a config was applied, nothing changed)
+     * or that never answered.
+     *
+     *  - **Kept first.** Before anything is asked, every entry is published from the manifest it
+     *    had this run, else the one kept from an earlier run. So the Tidal add-on is there from the
+     *    moment the signed config names it, not once its manifest has been read again, and an
+     *    add-on that was removed, switched off or turned off by Stash stops being asked at once.
+     *  - **Side by side.** One add-on that hangs never delays another: each is read on its own.
+     *  - **Each on its own.** Whatever one entry's read throws, bar cancellation, costs that entry
+     *    only: it keeps its last good manifest.
+     *  - **Asked again.** An entry that didn't answer has no stamp: the next pass asks it again, and
+     *    [start]'s scope retries it by itself after [RETRY_DELAYS_MS].
      */
     suspend fun refresh(force: Boolean = true) = refreshLock.withLock {
         val wanted = wanted()
         val now = nowMs()
-        if (!force && wanted == lastWanted && now - lastRefreshMs < MIN_REFRESH_MS) return@withLock
-        lastWanted = wanted
-        lastRefreshMs = now
-        readingState.value = true
-        try {
-            read(wanted)
-        } finally {
-            readingState.value = false
+        answeredAt.keys.retainAll(wanted.map { it.key }.toSet())
+        val before = slots.associateBy { it.w.base }
+        val kept = wanted.map { w -> kept(w, before[w.base]) }
+        applyLock.withLock { publish(kept, defaultsOff()) }
+        kept.filter { it.hold == AddonHold.BLOCKED }.forEach { Log.i(TAG, "blocked add-on not loaded: ${it.id ?: "(no id known)"}") }
+        val due = kept.filter { s ->
+            s.w.enabled && s.hold != AddonHold.BLOCKED &&
+                (force || answeredAt[s.w.key].let { it == null || now - it !in 0 until MIN_REFRESH_MS })
+        }
+        if (force) {
+            // The list changed (or the caller wants everything read): its own retries start over.
+            retryRound.incrementAndGet()
+            retries = 0
+        }
+        if (due.isNotEmpty()) {
+            readingState.value = true
+            try {
+                coroutineScope {
+                    due.forEach { s -> launch { readOne(s) } }
+                }
+            } finally {
+                readingState.value = false
+            }
+        }
+        forgetRemoved(wanted)
+        retryUnanswered(due)
+    }
+
+    /**
+     * Forgets the kept manifests of entries that are gone. Every entry that is still there keeps
+     * its own, a switched-off or blocked one too: it is how its row keeps its name, and how an
+     * offline switch back on works.
+     *
+     * What counts as gone is decided carefully, because at a cold start the signed config's
+     * defaults arrive a moment after the first pass: "not wanted yet" must never delete the kept
+     * manifest that pass is about to need (it is what keeps Tidal's add-on on, offline). So:
+     *  - an entry that was wanted earlier in this run and no longer is (the user removed it, the
+     *    last one too) is forgotten at once;
+     *  - once the config's defaults are here (the list is not empty), everything not wanted is stale.
+     */
+    private suspend fun forgetRemoved(wanted: List<Wanted>) {
+        val keys = wanted.map { it.key }.toSet()
+        val removed = seen - keys
+        seen += keys
+        runCatchingStore {
+            if (wanted.any { !it.userAdded }) store.retain(keys) else if (removed.isNotEmpty()) store.forget(removed)
+        }
+        seen.retainAll(keys)
+    }
+
+    /** [s]'s manifest, read now and published when it answers. Never throws, bar cancellation. */
+    private suspend fun readOne(s: Slot) {
+        val w = s.w
+        val settled = try {
+            val fetched = fetch(w, s.trust)
+            when {
+                // "BitChord only" now: the manifest it had before must not outlive that. Its kept
+                // copy goes, so the next start doesn't bring it back before this is read again.
+                fetched.refused == AddonFailure.InvalidResponse.Code.ONLY_BITCHORD -> {
+                    answeredAt[w.key] = nowMs()
+                    Log.i(TAG, "an add-on now serves only BitChord: not used (${s.id ?: "no id known"})")
+                    runCatchingStore { store.write(w.key, NO_MANIFEST) }
+                    Slot(w, s.read, s.trust, AddonHold.ONLY_BITCHORD, fetched.refused)
+                }
+                fetched.read == null -> settle(w, s.read, fetched.refused)
+                // The add-on the user approved is the one with the id they saw (add-ons plan phase 4
+                // §2.7): a link that starts serving another add-on's manifest is not used, and its
+                // manifest is not kept in place of the approved one's.
+                idChanged(w, fetched.read) -> {
+                    answeredAt[w.key] = nowMs()
+                    Log.w(TAG, "an add-on's link now serves a different add-on: not used (${w.id})")
+                    Slot(w, s.read?.takeUnless { idChanged(w, it) }, s.trust, AddonHold.CHANGED, refused = null)
+                }
+                else -> {
+                    answeredAt[w.key] = nowMs()
+                    if (fetched.read.manifest.kind == AddonKind.SERVER && fetched.json != null) runCatchingStore { store.write(w.key, fetched.json) }
+                    settle(w, fetched.read, refused = null)
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            Log.w(TAG, "add-on manifest read failed: ${t.javaClass.simpleName}")
+            return
+        }
+        if (settled.hold == AddonHold.BLOCKED && s.hold != AddonHold.BLOCKED) Log.i(TAG, "blocked add-on not loaded: ${settled.id ?: "(no id known)"}")
+        applyLock.withLock {
+            // Into the list as it is now: a switch or a new index may have published since this read started.
+            val at = slots.indexOfFirst { it.w == w }
+            if (at >= 0) publish(slots.toMutableList().also { it[at] = settled }, defaultsOff())
         }
     }
 
-    private suspend fun read(wanted: List<Wanted>) {
-        val off = defaultsOff()
-        val before = slots.associateBy { it.w.base }
-        // First, with nothing asked: an add-on that was removed, switched off or turned off by
-        // Stash stops being asked now, not once every manifest has been read again.
-        if (state.value.isNotEmpty() || entryState.value.isNotEmpty()) {
-            publish(wanted.map { w -> settle(w, before[w.base]?.read, before[w.base]?.needsNewer == true) }, off)
+    /** [w] from what is already known, asking nothing: the manifest it had this run ([before]), else the kept one. */
+    private suspend fun kept(w: Wanted, before: Slot?): Slot = try {
+        settle(w, before?.read ?: persisted(w), before?.refused)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (t: Throwable) {
+        Log.w(TAG, "a kept add-on manifest could not be used: ${t.javaClass.simpleName}")
+        Slot(w, null, if (w.firstParty) Trust.FIRST_PARTY else if (w.userAdded) Trust.UNOFFICIAL else Trust.OFFICIAL, AddonHold.NOT_LOADED, refused = null)
+    }
+
+    /**
+     * The entries of [due] that didn't answer are asked again from [start]'s scope: after 15 s, 30 s,
+     * 1, 2, 5 and 10 minutes, then not until something else starts a pass (an applied config, a
+     * changed list, Settings › Add-ons opening). Each retry is a pass that reads only what is due.
+     */
+    private fun retryUnanswered(due: List<Slot>) {
+        val unanswered = due.any { answeredAt[it.w.key] == null }
+        if (!unanswered) {
+            retries = 0
+            return
         }
-        val loaded = wanted.map { w ->
-            val known = before[w.base]?.read ?: persisted(w)
-            val first = settle(w, known, needsNewer = false)
-            if (first.hold == AddonHold.BLOCKED) {
-                Log.i(TAG, "blocked add-on not loaded: ${first.id ?: "(no id known)"}")
-                return@map first
-            }
-            if (!w.enabled) return@map first
-            val (fresh, needsNewer) = fetch(w, first.trust)
-            val settled = if (fresh != null) settle(w, fresh, needsNewer = false) else settle(w, known, needsNewer)
-            if (settled.hold == AddonHold.BLOCKED) Log.i(TAG, "blocked add-on not loaded: ${settled.id ?: "(no id known)"}")
-            settled
+        val scope = scope ?: return
+        val delayMs = RETRY_DELAYS_MS.getOrNull(retries) ?: return
+        retries++
+        val round = retryRound.get()
+        scope.launch(Dispatchers.IO) {
+            delay(delayMs)
+            // A forced pass since (the list changed) starts its own retries.
+            if (retryRound.get() == round) guarded { refresh(force = false) }
         }
-        publish(loaded, off)
-        // Every entry's kept manifest stays, a switched-off or blocked one's too: it is how their
-        // row keeps its name, and how an offline switch back on works. A removed entry's goes.
-        runCatchingStore { store.retain(wanted.map { keyOf(it.url) }.toSet()) }
     }
 
     /** The index changed: blocks apply now, from what is already known; a lifted block reads the manifest again. */
     private suspend fun recheck() {
-        val lifted = refreshLock.withLock {
+        val lifted = applyLock.withLock {
             val before = slots
-            val settled = before.map { settle(it.w, it.read, it.needsNewer) }
+            val settled = before.map { settle(it.w, it.read, it.refused) }
             before.zip(settled).forEach { (a, b) ->
                 if (a.hold != AddonHold.BLOCKED && b.hold == AddonHold.BLOCKED) Log.i(TAG, "blocked add-on not loaded: ${b.id ?: "(no id known)"}")
             }
@@ -432,18 +590,21 @@ class InTreeAddonRegistry @Inject constructor(
     }
 
     /** A default was switched on or off: publish again from what is known, asking nothing. */
-    private suspend fun republish() = refreshLock.withLock {
-        publish(slots.map { settle(it.w, it.read, it.needsNewer) }, defaultsOff())
+    private suspend fun republish() = applyLock.withLock {
+        publish(slots.map { settle(it.w, it.read, it.refused) }, defaultsOff())
     }
 
     private suspend fun defaultsOff(): Set<String> = runCatchingStore { switches.defaultsOff.first() }.orEmpty()
+
+    /** The manifest [read] is another add-on's than the one the user approved under [w]. */
+    private fun idChanged(w: Wanted, read: AddonManifest): Boolean = w.userAdded && w.id != null && read.manifest.id != w.id
 
     /**
      * Where [w] stands with the manifest [read] (null: none known), asking nothing: its trust, and
      * whether it is held. A block is checked against the id the manifest gives and the id the
      * entry was added with, so changing one never slips past a block of the other.
      */
-    private fun settle(w: Wanted, read: AddonManifest?, needsNewer: Boolean): Slot {
+    private fun settle(w: Wanted, read: AddonManifest?, refused: AddonFailure.InvalidResponse.Code?): Slot {
         val trust = when {
             w.firstParty -> Trust.FIRST_PARTY
             !w.userAdded -> Trust.OFFICIAL
@@ -456,35 +617,28 @@ class InTreeAddonRegistry @Inject constructor(
         val hold = when {
             trust == Trust.BLOCKED -> AddonHold.BLOCKED
             !w.enabled -> AddonHold.OFF
+            // BitChord only: by its manifest at the last read, or by its own answer to a call.
+            w.userAdded && (refused == AddonFailure.InvalidResponse.Code.ONLY_BITCHORD || (read?.manifest?.id ?: w.id) in client.onlyBitChord.value) ->
+                AddonHold.ONLY_BITCHORD
             read == null || read.manifest.kind != AddonKind.SERVER -> AddonHold.NOT_LOADED
+            idChanged(w, read) -> AddonHold.CHANGED
             trust == Trust.UNOFFICIAL && w.consent != null && !w.consent.containsAll(AddonSees.namesOf(read.manifest)) -> AddonHold.WANTS_MORE
             else -> null
         }
-        return Slot(w, read, trust, hold, needsNewer)
+        return Slot(w, read, trust, hold, refused)
     }
 
-    /** [w]'s manifest, asked for now: null when it didn't read, with whether that was "needs a newer Stash". */
-    private suspend fun fetch(w: Wanted, trust: Trust): Pair<AddonManifest?, Boolean> {
-        val result = try {
-            client.manifestWithJson(w.base, publicOnly = trust == Trust.UNOFFICIAL, file = w.file)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.w(TAG, "add-on manifest failed: ${e.javaClass.simpleName}")
-            return null to false
-        }
-        return when (result) {
-            is AddonResult.Ok -> {
-                val (read, json) = result.value
-                if (read.manifest.kind == AddonKind.SERVER) runCatchingStore { store.write(keyOf(w.url), json) }
-                read to false
-            }
-            is AddonResult.Failed ->
-                null to ((result.failure as? AddonFailure.InvalidResponse)?.reason?.startsWith(AddonValidator.NEEDS_NEWER_STASH) == true)
-        }
-    }
+    /** What asking for [Wanted]'s manifest came to. [read] null: it didn't read; [refused]: for one of the reasons a host acts on. */
+    private class Fetched(val read: AddonManifest?, val json: String?, val refused: AddonFailure.InvalidResponse.Code?)
 
-    /** Publishes [all]: the add-ons that are on to [addons], every entry to [entries]. */
+    /** [w]'s manifest, asked for now. Throws nothing but cancellation and what [readOne] catches. */
+    private suspend fun fetch(w: Wanted, trust: Trust): Fetched =
+        when (val result = client.manifestWithJson(w.base, publicOnly = trust == Trust.UNOFFICIAL, file = w.file)) {
+            is AddonResult.Ok -> Fetched(result.value.first, result.value.second, refused = null)
+            is AddonResult.Failed -> Fetched(null, null, refused = (result.failure as? AddonFailure.InvalidResponse)?.code)
+        }
+
+    /** Publishes [all]: the add-ons that are on to [addons], every entry to [entries]. Call with [applyLock] held. */
     private fun publish(all: List<Slot>, off: Set<String>) {
         slots = all
         val built = all.map { s -> if (s.hold == null && s.read != null) install(s.w, s.read, s.trust) else null }
@@ -497,7 +651,7 @@ class InTreeAddonRegistry @Inject constructor(
         entryState.value = all.mapIndexed { i, s ->
             val a = built[i]
             AddonEntryState(
-                key = keyOf(s.w.url),
+                key = s.w.key,
                 userAdded = s.w.userAdded,
                 firstParty = s.w.firstParty,
                 host = hostOf(s.w.base),
@@ -505,11 +659,12 @@ class InTreeAddonRegistry @Inject constructor(
                 blockReason = if (s.trust == Trust.BLOCKED) blockReason(s) else null,
                 manifest = s.read?.takeIf { it.manifest.kind == AddonKind.SERVER },
                 hold = s.hold ?: when {
-                    a == null || a !in keep -> AddonHold.NOT_LOADED
+                    a == null -> AddonHold.NOT_LOADED
+                    a !in keep -> AddonHold.REPLACED
                     switchedOff(a) -> AddonHold.OFF
                     else -> null
                 },
-                needsNewerStash = s.needsNewer,
+                needsNewerStash = s.refused == AddonFailure.InvalidResponse.Code.NEEDS_NEWER_STASH,
             )
         }
     }
@@ -532,7 +687,7 @@ class InTreeAddonRegistry @Inject constructor(
 
     /** The kept manifest of [w], checked again as if it had just arrived; null when none or no longer valid. */
     private suspend fun persisted(w: Wanted): AddonManifest? {
-        val json = runCatchingStore { store.read(keyOf(w.url)) } ?: return null
+        val json = runCatchingStore { store.read(w.key) } ?: return null
         return runCatching { AddonValidator.readManifest(Json.parseToJsonElement(json), client.optionsFor(publicOnly = w.userAdded)) }.getOrNull()
     }
 
@@ -550,6 +705,12 @@ class InTreeAddonRegistry @Inject constructor(
 
         /** SPEC.md 3: a manifest is re-read at most every 10 minutes when nothing else changed. */
         const val MIN_REFRESH_MS = 10 * 60_000L
+
+        /** Written over a kept manifest that must not be used again: it reads as none kept. */
+        private const val NO_MANIFEST = ""
+
+        /** When an entry that didn't answer is asked again, one wait after another; after the last, not until something else starts a pass. */
+        val RETRY_DELAYS_MS: List<Long> = listOf(15_000L, 30_000L, 60_000L, 120_000L, 300_000L, 600_000L)
 
         /** The [AddonManifestStore] key of a manifest URL: its SHA-256, so the URL (and any token in it) is never stored there. */
         fun keyOf(manifestUrl: String): String =

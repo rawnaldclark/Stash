@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Info
@@ -31,12 +32,13 @@ import com.stash.feature.settings.components.SettingsNavRow
 import com.stash.feature.settings.components.SettingsSearchField
 import com.stash.feature.settings.components.SupportBanner
 import com.stash.core.ui.components.bottomChromePadding
+import com.stash.feature.settings.addons.title
 
 /**
  * The Settings hub — the host for `composable<SettingsRoute>`.
  *
  * This is the hub of the hub-and-spoke Settings redesign: a pinned Support
- * banner, a cross-settings search pill, and six category rows. Each row shows a
+ * banner, a cross-settings search pill, and seven category rows. Each row shows a
  * current-state subtitle (derived purely by [settingsHubSummaries]) plus a thin
  * leading icon and a trailing chevron, and navigates to one of the six category
  * "spoke" screens (built in later tasks) via the `onOpen*` callbacks.
@@ -57,6 +59,8 @@ fun SettingsHubScreen(
     onOpenUrl: (String) -> Unit,
     onOpenLosslessSources: () -> Unit,
     onOpenEqualizer: () -> Unit,
+    /** Settings › Add-ons: the play order, each add-on's page, Add from a link (add-ons phase 4 §2.1). */
+    onOpenAddons: () -> Unit,
     /** Library & Storage › Your Stash, for a search hit; null when the link is switched off in this build. */
     onOpenYourStash: (() -> Unit)? = null,
     onOpenHomeLayout: () -> Unit,
@@ -88,6 +92,8 @@ fun SettingsHubScreen(
         cloudAccounts.map { it.account.provider.displayName }.distinct().forEach(::add)
     }
     val summaries = settingsHubSummaries(uiState, versionName, streamingEnabled, streamOnCellular, otherAccounts, context.resources)
+    val addonsHub: com.stash.feature.settings.addons.AddonsHubViewModel = hiltViewModel()
+    val addonRows by addonsHub.rows.collectAsStateWithLifecycle()
 
     var searchQuery by remember { mutableStateOf("") }
     val searchIndex = remember(context) { searchableIndex(settingsSearchIndex(context), yourStash = onOpenYourStash != null) }
@@ -99,6 +105,7 @@ fun SettingsHubScreen(
                 " › " + context.getString(R.string.settings_lossless_sources_title),
             SettingsPage.EQUALIZER to context.getString(R.string.settings_audio_quality_title) +
                 " › " + context.getString(R.string.settings_equalizer_title),
+            SettingsPage.ADDONS to context.getString(R.string.settings_addons_title),
             SettingsPage.ACCOUNTS to context.getString(R.string.settings_accounts_sync_title),
             SettingsPage.LIBRARY to context.getString(R.string.settings_library_storage_title),
             SettingsPage.YOUR_STASH to context.getString(R.string.settings_library_storage_title) +
@@ -117,6 +124,7 @@ fun SettingsHubScreen(
         SettingsPage.AUDIO -> onOpenAudioQuality()
         SettingsPage.LOSSLESS_SOURCES -> onOpenLosslessSources()
         SettingsPage.EQUALIZER -> onOpenEqualizer()
+        SettingsPage.ADDONS -> onOpenAddons()
         SettingsPage.ACCOUNTS -> onOpenAccounts()
         SettingsPage.LIBRARY -> onOpenLibraryStorage()
         SettingsPage.YOUR_STASH -> onOpenYourStash?.invoke()
@@ -127,6 +135,7 @@ fun SettingsHubScreen(
     fun iconOf(page: SettingsPage) = when (page) {
         SettingsPage.PLAYBACK -> Icons.Rounded.PlayArrow
         SettingsPage.AUDIO, SettingsPage.LOSSLESS_SOURCES, SettingsPage.EQUALIZER -> Icons.Rounded.GraphicEq
+        SettingsPage.ADDONS -> Icons.Rounded.Extension
         SettingsPage.ACCOUNTS -> Icons.Rounded.Person
         SettingsPage.LIBRARY, SettingsPage.YOUR_STASH -> Icons.Rounded.FolderOpen
         SettingsPage.APPEARANCE, SettingsPage.HOME_LAYOUT -> Icons.Rounded.Palette
@@ -204,6 +213,16 @@ fun SettingsHubScreen(
                         subtitle = summaries.audioQuality,
                         leadingIcon = Icons.Rounded.GraphicEq,
                         onClick = onOpenAudioQuality,
+                    )
+                },
+                {
+                    // What is on, in the order it is asked: "Tidal, Hi-Fi Relay".
+                    val names = addonRows.map { it.title() }
+                    SettingsNavRow(
+                        title = stringResource(R.string.settings_addons_title),
+                        subtitle = if (names.isEmpty()) stringResource(R.string.settings_addons_hub_empty) else names.joinToString(", "),
+                        leadingIcon = Icons.Rounded.Extension,
+                        onClick = onOpenAddons,
                     )
                 },
                 {

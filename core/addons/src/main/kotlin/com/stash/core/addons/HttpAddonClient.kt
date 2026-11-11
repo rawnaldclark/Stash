@@ -166,9 +166,26 @@ class HttpAddonClient @Inject constructor(
      */
     val unauthorized: StateFlow<Set<String>> = unauthorizedIds.asStateFlow()
 
+    /**
+     * A play stopped waiting for [addonId] (the host's own budget for an add-on Stash doesn't run):
+     * a failure for its breaker, as a timeout is, so an add-on that is slow every time stops being
+     * asked instead of holding every play for that long.
+     */
+    suspend fun reportTooSlow(addonId: String) = rateGate.onFailure(rateKey(addonId))
+
+    private val onlyBitChordIds = MutableStateFlow<Set<String>>(emptySet())
+
+    /**
+     * The add-ons that answered a call with BitChord's own 401 (`WWW-Authenticate: BitChord`): they
+     * serve only the genuine BitChord, and Stash respects that by not asking them again (the
+     * registry holds them). An id leaves through [forgive].
+     */
+    val onlyBitChord: StateFlow<Set<String>> = onlyBitChordIds.asStateFlow()
+
     /** The user replaced [addonId]'s link (or removed it): its pause ends now and the 401 is forgotten. */
     suspend fun forgive(addonId: String) {
         unauthorizedIds.update { it - addonId }
+        onlyBitChordIds.update { it - addonId }
         rateGate.reset(rateKey(addonId))
         rateGate.reset(meteredKey(addonId))
     }
@@ -444,7 +461,7 @@ class HttpAddonClient @Inject constructor(
                 // ([unauthorized]). An add-on that serves only BitChord is not waiting for a new link.
                 ErrorCode.UNAUTHORIZED -> {
                     rateGate.onRateLimited(key, UNAUTHORIZED_PAUSE_MS)
-                    if (!f.onlyBitChord) unauthorizedIds.update { it + addonId }
+                    if (f.onlyBitChord) onlyBitChordIds.update { it + addonId } else unauthorizedIds.update { it + addonId }
                 }
                 ErrorCode.BAD_REQUEST, ErrorCode.NOT_FOUND, ErrorCode.QUALITY_UNAVAILABLE, ErrorCode.REGION_UNAVAILABLE ->
                     rateGate.onAnswer(key)

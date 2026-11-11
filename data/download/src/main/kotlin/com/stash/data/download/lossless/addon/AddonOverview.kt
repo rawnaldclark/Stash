@@ -20,10 +20,13 @@ import com.stash.data.download.lossless.PlayOrder
 import com.stash.data.download.lossless.PlayOrderSwitches
 import com.stash.data.download.lossless.tidal.OwnTidalServer
 import com.stash.data.download.lossless.tidal.TidalWires
+import android.util.Log
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -75,6 +78,15 @@ class AddonOverview @Inject constructor(
         /** Its manifest now asks for a newer Stash than this one. */
         NEEDS_NEWER_STASH,
 
+        /** Its link now serves another add-on than the one the user approved: not used. */
+        CHANGED,
+
+        /** One of Stash's own add-ons has its id, and is the one in use: this copy is not. */
+        REPLACED,
+
+        /** It now serves only the genuine BitChord, and Stash respects that: not used. */
+        ONLY_BITCHORD,
+
         /** No manifest could be read, and none is kept. */
         NOT_REACHABLE,
     }
@@ -124,6 +136,11 @@ class AddonOverview @Inject constructor(
         val keys: List<String> = emptyList(),
         /** False until the first value has been built. */
         val loaded: Boolean = false,
+        /**
+         * The user's add-ons could not be read this run (the phone's Keystore failed): the ones
+         * they added are not shown, and that is not the same as having none.
+         */
+        val unreadable: Boolean = false,
     ) {
         fun row(key: String): Row? = order.firstOrNull { it.key == key } ?: others.firstOrNull { it.key == key }
     }
@@ -136,13 +153,17 @@ class AddonOverview @Inject constructor(
         }
 
     val state: Flow<State> = combine(
-        combine(users.entries, registry.entries, registry.reading) { u, e, reading -> Triple(u, e, reading) },
+        combine(users.entries, registry.entries, registry.reading, users.unreadable) { u, e, reading, unreadable ->
+            Read(u, e, reading, unreadable)
+        },
         named,
         prefs.playOrder,
         combine(index.index, catalog.official, client.unauthorized) { _, official, unauthorized -> official to unauthorized },
-    ) { (userEntries, entries, reading), named, saved, (official, unauthorized) ->
-        build(userEntries, entries, reading, named, saved, official, unauthorized)
+    ) { read, named, saved, (official, unauthorized) ->
+        build(read.users, read.entries, read.reading, named, saved, official, unauthorized).copy(unreadable = read.unreadable)
     }.distinctUntilChanged()
+
+    private data class Read(val users: List<UserAddonEntry>, val entries: List<AddonEntryState>, val reading: Boolean, val unreadable: Boolean)
 
     private fun build(
         userEntries: List<UserAddonEntry>,
@@ -190,12 +211,16 @@ class AddonOverview @Inject constructor(
     }
 
     private fun addonRow(s: AddonEntryState?, e: UserAddonEntry?, handle: String, reading: Boolean, unauthorized: Set<String>): Row {
-        val manifest = s?.manifest?.manifest
+        // The add-on the user approved: a manifest under another id is not it, and none of its words are shown.
+        val manifest = s?.manifest?.manifest?.takeUnless { e?.id != null && it.id != e.id }
         val id = manifest?.id ?: e?.id
         val trust = s?.trust ?: Trust.UNOFFICIAL
         val status = when {
             s?.hold == AddonHold.BLOCKED -> Status.TURNED_OFF_BY_STASH
             e?.enabled == false || s?.hold == AddonHold.OFF -> Status.OFF
+            s?.hold == AddonHold.ONLY_BITCHORD -> Status.ONLY_BITCHORD
+            s?.hold == AddonHold.CHANGED -> Status.CHANGED
+            s?.hold == AddonHold.REPLACED -> Status.REPLACED
             s?.hold == AddonHold.WANTS_MORE -> Status.WANTS_MORE
             id != null && id in unauthorized -> Status.NEEDS_NEW_LINK
             s?.needsNewerStash == true -> Status.NEEDS_NEWER_STASH
@@ -208,14 +233,15 @@ class AddonOverview @Inject constructor(
             key = id?.let(PlayOrder::addonKey) ?: "entry:$handle",
             kind = Kind.ADDON,
             name = manifest?.name ?: e?.name ?: s?.host.orEmpty(),
-            host = s?.host?.takeIf { !official && it.isNotEmpty() },
+            // Always, for an add-on Stash doesn't run: its name is its own word, its address is not.
+            host = (s?.host ?: e?.manifestUrl?.let(HttpAddonClient::baseOf)?.let(InTreeAddonRegistry::hostOf))?.takeIf { !official && it.isNotEmpty() },
             mark = if (official) Mark.OFFICIAL else Mark.NOT_MADE_BY_STASH,
             status = status,
             blockReason = s?.blockReason,
-            on = status != Status.OFF && status != Status.TURNED_OFF_BY_STASH,
-            canSwitch = status != Status.TURNED_OFF_BY_STASH,
+            on = status !in NOT_ON,
+            canSwitch = status !in NO_SWITCH,
             canRemove = e != null,
-            playsSongs = manifest != null && id != null && PlayOrder.playsSongs(manifest),
+            playsSongs = manifest != null && id != null && PlayOrder.playsSongs(manifest) && status != Status.REPLACED,
             version = manifest?.version,
             uses = manifest?.let { AddonLinks.uses(it, allowsDownloads = s?.manifest?.eclipse?.allowDownloads != false) }.orEmpty(),
             sees = manifest?.let(AddonSees::of).orEmpty(),
@@ -226,38 +252,54 @@ class AddonOverview @Inject constructor(
         )
     }
 
-    /** The row [key] of the list on screen was dropped at index [to] of it: the first drag saves the whole order. */
-    suspend fun move(key: String, to: Int) {
-        val s = state.first()
-        PlayOrder.moved(s.keys, s.order.map { it.key }, key, to)?.let { playOrder.set(it) }
+    /**
+     * The row [key] of the list on screen ([shown], the state the screen drew) was dropped at index
+     * [to] of it: the first drag saves the whole order.
+     */
+    suspend fun move(shown: State, key: String, to: Int): Boolean {
+        val next = PlayOrder.moved(shown.keys, shown.order.map { it.key }, key, to) ?: return true
+        return saved { playOrder.set(next) }
     }
 
     /** One place up or down (TalkBack's Move up / Move down, and the add-on page's). */
-    suspend fun nudge(key: String, up: Boolean) {
-        val at = state.first().order.indexOfFirst { it.key == key }
-        if (at >= 0) move(key, if (up) at - 1 else at + 1)
+    suspend fun nudge(shown: State, key: String, up: Boolean): Boolean {
+        val at = shown.order.indexOfFirst { it.key == key }
+        return if (at >= 0) move(shown, key, if (up) at - 1 else at + 1) else true
     }
 
-    suspend fun setOn(row: Row, on: Boolean) {
-        when {
-            row.kind == Kind.TIDAL -> switches.setOn(PlayOrder.TIDAL, on)
-            row.kind == Kind.QOBUZ -> Unit
-            row.userAdded -> row.entryKey?.let { links.setEnabled(it, on) }
-            else -> PlayOrder.addonIdOf(row.key)?.let { switches.setOn(row.key, on) }
+    /** The switch. False when it could not be saved: the screen says so, and nothing changed. */
+    suspend fun setOn(row: Row, on: Boolean): Boolean = when {
+        row.kind == Kind.TIDAL -> saved { switches.setOn(PlayOrder.TIDAL, on) }
+        row.kind == Kind.QOBUZ -> true
+        row.userAdded -> row.entryKey?.let { links.setEnabled(it, on) } ?: true
+        PlayOrder.addonIdOf(row.key) != null -> saved { switches.setOn(row.key, on) }
+        else -> true
+    }
+
+    /**
+     * Remove: the user's add-on and everything it left, or their own Tidal server (the rung goes back
+     * to Stash's). False when it could not be saved.
+     */
+    suspend fun remove(row: Row): Boolean = when {
+        row.kind == Kind.TIDAL && row.ownServer -> saved { own.remove() }
+        row.userAdded -> row.entryKey?.let { links.remove(it) } ?: true
+        else -> true
+    }
+
+    /** "Wants to see more": the user agreed to what it lists now. False when it could not be saved. */
+    suspend fun agree(row: Row): Boolean = row.entryKey?.let { links.agree(it) } ?: true
+
+    /** Saving the order after a drag or a nudge; false when it could not be saved. */
+    private suspend fun saved(change: suspend () -> Unit): Boolean = withContext(Dispatchers.Default) {
+        try {
+            change()
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "a change in Add-ons could not be saved: ${e.javaClass.simpleName}")
+            false
         }
-    }
-
-    /** Remove: the user's add-on and everything it left, or their own Tidal server (the rung goes back to Stash's). */
-    suspend fun remove(row: Row) {
-        when {
-            row.kind == Kind.TIDAL && row.ownServer -> own.remove()
-            row.userAdded -> row.entryKey?.let { links.remove(it) }
-        }
-    }
-
-    /** "Wants to see more": the user agreed to what it lists now. */
-    suspend fun agree(row: Row) {
-        row.entryKey?.let { links.agree(it) }
     }
 
     /** Whether the add-on [row] is paused right now (it failed, or asked to be left alone): "Not reachable right now". */
@@ -271,6 +313,16 @@ class AddonOverview @Inject constructor(
         val id = PlayOrder.addonIdOf(row.key) ?: return null
         val addon = registry.addons.value.firstOrNull { it.id == id && !NamedRungAddons.owns(it) } ?: return null
         return client.quota(addon).valueOrNull()
+    }
+
+    private companion object {
+        const val TAG = "AddonOverview"
+
+        /** Rows whose switch shows off. */
+        val NOT_ON = setOf(Status.OFF, Status.TURNED_OFF_BY_STASH, Status.CHANGED, Status.REPLACED, Status.ONLY_BITCHORD)
+
+        /** Rows with no switch: switching them on would do nothing. */
+        val NO_SWITCH = setOf(Status.TURNED_OFF_BY_STASH, Status.CHANGED, Status.REPLACED, Status.ONLY_BITCHORD)
     }
 
     /** Reads the index and the manifests again when they are stale: called as Settings › Add-ons opens (§1.5). */

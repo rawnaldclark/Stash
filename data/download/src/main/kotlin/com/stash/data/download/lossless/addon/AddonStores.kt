@@ -72,6 +72,11 @@ class DataStoreAddonManifestStore internal constructor(
         store.edit { p -> gone.forEach { p.remove(stringPreferencesKey(it)) } }
     }
 
+    override suspend fun forget(keys: Set<String>) {
+        if (keys.isEmpty()) return
+        store.edit { p -> keys.forEach { p.remove(prefKey(it)) } }
+    }
+
     private fun prefKey(key: String) = stringPreferencesKey(PREFIX + key)
 
     private companion object {

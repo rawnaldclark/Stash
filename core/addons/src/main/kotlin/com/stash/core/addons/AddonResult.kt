@@ -50,7 +50,28 @@ sealed interface AddonFailure {
     data object Network : AddonFailure
 
     /** The answer broke the contract ([AddonValidator]) and was dropped whole. */
-    data class InvalidResponse(val path: String, val reason: String) : AddonFailure
+    data class InvalidResponse(val path: String, val reason: String) : AddonFailure {
+        /**
+         * The refusals a host does something about, as a code. [reason] is text for logs; nothing
+         * should match on its words. Null for every other broken answer.
+         */
+        val code: Code? get() = Code.entries.firstOrNull { it.reason == reason }
+
+        /** Each is thrown with exactly its [reason], a constant, by the readers in this module. */
+        enum class Code(val reason: String) {
+            /** The manifest was written for a newer host. */
+            NEEDS_NEWER_STASH(AddonValidator.NEEDS_NEWER_STASH),
+
+            /** No `stash` field and nothing Eclipse-shaped: not an add-on at all. */
+            NOT_AN_ADDON(AddonValidator.NOT_AN_ADDON),
+
+            /** `bitchordAuth`: it serves only the genuine BitChord. */
+            ONLY_BITCHORD(AddonEclipse.ONLY_BITCHORD),
+
+            /** A URL on the user's own network, which the base rules refuse. */
+            PRIVATE_ADDRESS(AddonEclipse.PRIVATE_ADDRESS),
+        }
+    }
 
     /** Not asked: the add-on (or, for metered routes, its allowance) is paused ([AddonRateGate]). */
     data object Paused : AddonFailure

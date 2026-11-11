@@ -39,6 +39,15 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data object SettingsPlaybackRoute
 @Serializable data object SettingsAudioQualityRoute
 @Serializable data object SettingsLosslessSourcesRoute
+/** Settings › Add-ons: the play order, each add-on's switch, Get add-ons (add-ons phase 4 §2.1). */
+@Serializable data object SettingsAddonsRoute
+/** One add-on's page (§2.9); [key]: its row in the play order, `tidal` or `addon:<id>`. Never a link. */
+@Serializable data class SettingsAddonRoute(val key: String)
+/**
+ * Add from a link (§2.2). [link]: a link shared to Stash or an official add-on's, read as the screen opens.
+ * [replace]: the handle of the add-on whose link is being replaced, from its page.
+ */
+@Serializable data class SettingsAddonAddRoute(val link: String? = null, val replace: String? = null)
 /** Settings › Accounts & Sync; [cloud]: opened from Your Stash's Cloud rows, Cloud storage is scrolled into view. */
 @Serializable data class SettingsAccountsRoute(val cloud: Boolean = false)
 /**
