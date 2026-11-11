@@ -5,7 +5,6 @@ import com.stash.addons.contract.Album
 import com.stash.addons.contract.Artist
 import com.stash.addons.contract.CatalogGenres
 import com.stash.addons.contract.CatalogPage
-import com.stash.addons.contract.Delivery
 import com.stash.addons.contract.Descriptor
 import com.stash.addons.contract.ErrorCode
 import com.stash.addons.contract.Limits
@@ -18,11 +17,13 @@ import com.stash.addons.contract.SearchResponse
 import com.stash.addons.contract.SearchTop
 import com.stash.addons.contract.StreamInfo
 import com.stash.addons.contract.StreamRequest
+import com.stash.addons.contract.Tier
 import com.stash.addons.contract.TimeoutsMs
 import com.stash.addons.contract.TokenPlacement
 import com.stash.addons.contract.Track
 import com.stash.addons.contract.Auth
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
@@ -62,7 +63,11 @@ import kotlin.coroutines.resumeWithException
  *    relay gets them today. The payload is the id exactly as sent (`td:12345`), and `quota` for
  *    `/quota` (SPEC.md 6, informative).
  *  - **v0 add-ons** (`stash: 0`, the web player's contract) are read through [AddonV0]: their
- *    manifest and streams as v1 (SPEC.md 10.1).
+ *    manifest and streams as v1 (SPEC.md 10.1). **Eclipse-family add-ons** (no `stash`) through
+ *    [AddonEclipse] (SPEC.md 10.2, add-ons plan phase 4 §2.3), asked with their own parameters.
+ *  - **The base rules** for an add-on the user added (phase 4 §2.6): its URLs, every redirect hop
+ *    and every URL it hands back must name a public host, and its DNS answers must be public
+ *    ([PublicOnlyDns]). Every request carries `User-Agent: Stash/<versionName>`.
  *  - At most 3 redirects, https only; a header token and the signing headers never go to another
  *    origin. Bodies over 2 MiB are rejected.
  *  - Nothing logs a URL or a token: an add-on's base can carry its token (SPEC.md 6). A token
@@ -81,7 +86,8 @@ class HttpAddonClient @Inject constructor(
 ) {
     /**
      * The URL rule's development exception (SPEC.md 1.1): `http:` on localhost, for debug builds
-     * ([AddonHostOptions]) and for a MockWebServer add-on in tests.
+     * ([AddonHostOptions]) and for a MockWebServer add-on in tests. The base every call's rules
+     * start from: [optionsFor] adds the base rules for an add-on Stash doesn't vouch for.
      */
     internal var options: AddonValidator.Options = AddonValidator.Options(allowLocalHttp = hostOptions.allowLocalHttp)
 
@@ -90,6 +96,9 @@ class HttpAddonClient @Inject constructor(
 
     /** Tests: sees every line this client logs, to prove none carries a secret. */
     internal var logHook: ((String) -> Unit)? = null
+
+    /** `Stash/<versionName>` on every add-on request (add-ons plan phase 4 §2.3). */
+    private val userAgent: String = hostOptions.userAgent
 
     private val http: OkHttpClient = sharedClient.newBuilder()
         .apply {
@@ -102,6 +111,45 @@ class HttpAddonClient @Inject constructor(
         // cleartext too; the URL rule still limits it to 127.0.0.1, localhost and [::1].
         .apply { if (hostOptions.allowLocalHttp) connectionSpecs(listOf(ConnectionSpec.MODERN_TLS, ConnectionSpec.CLEARTEXT)) }
         .build()
+
+    /**
+     * [http] for add-ons Stash doesn't vouch for: its DNS drops private answers ([PublicOnlyDns]).
+     * OkHttp pools connections per address, and an address includes its DNS, so a connection one
+     * client made is never handed to the other.
+     */
+    private val publicHttp: OkHttpClient = http.newBuilder()
+        .dns(PublicOnlyDns(sharedClient.dns, allowLoopback = hostOptions.allowLocalHttp))
+        .build()
+
+    /**
+     * What the player fetches add-on streams with (`addon:` origins, add-ons plan phase 4 §2.6): the
+     * app's shared client without its interceptors (their debug logging prints URLs, and a stream
+     * URL can carry a signature), following redirects as a player must, with [PublicOnlyDns] and
+     * a connection guard ([PublicOnlyDns.connectionGuard]) for an IP literal in a redirect, so no
+     * add-on can make the player fetch from the user's own network.
+     */
+    val mediaClient: OkHttpClient by lazy {
+        sharedClient.newBuilder()
+            .apply {
+                interceptors().clear()
+                networkInterceptors().clear()
+            }
+            .dns(PublicOnlyDns(sharedClient.dns, allowLoopback = hostOptions.allowLocalHttp))
+            .addNetworkInterceptor(PublicOnlyDns.connectionGuard(allowLoopback = hostOptions.allowLocalHttp))
+            .apply { if (hostOptions.allowLocalHttp) connectionSpecs(listOf(ConnectionSpec.MODERN_TLS, ConnectionSpec.CLEARTEXT)) }
+            .build()
+    }
+
+    /** The User-Agent the player sends with add-on media: the same as the API calls'. */
+    val mediaUserAgent: String get() = userAgent
+
+    /**
+     * The rules a call follows: [options], plus the base rules ([AddonValidator.Options.publicOnly])
+     * for an add-on the user added. The signed config's defaults are the owner's own choices.
+     */
+    fun optionsFor(publicOnly: Boolean): AddonValidator.Options = options.copy(publicOnly = publicOnly)
+
+    private fun optionsFor(addon: InstalledAddon): AddonValidator.Options = optionsFor(publicOnly = addon.userAdded)
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -127,51 +175,93 @@ class HttpAddonClient @Inject constructor(
 
     /**
      * `GET <base>manifest.json`: never with a header token (SPEC.md 6), never paused or signed. A v1
-     * manifest, or a v0 one read as v1 ([AddonV0]); anything else is an invalid response.
+     * manifest, a v0 one read as v1 ([AddonV0]), or an Eclipse-family one ([AddonEclipse]); anything
+     * else is an invalid response. [publicOnly]: the base rules ([optionsFor]); true for a link the
+     * user added, false for the signed config's defaults.
      */
-    suspend fun manifest(base: String): AddonResult<Manifest> =
-        when (val r = manifestWithJson(base)) {
+    suspend fun manifest(base: String, publicOnly: Boolean = true): AddonResult<Manifest> =
+        when (val r = readManifest(base, publicOnly)) {
+            is AddonResult.Ok -> AddonResult.Ok(r.value.manifest)
+            is AddonResult.Failed -> r
+        }
+
+    /** [manifest], with the dialect it came in and an Eclipse add-on's traits. */
+    suspend fun readManifest(base: String, publicOnly: Boolean = true): AddonResult<AddonManifest> =
+        when (val r = manifestWithJson(base, publicOnly)) {
             is AddonResult.Ok -> AddonResult.Ok(r.value.first)
             is AddonResult.Failed -> r
         }
 
     /**
-     * [manifest], with the checked answer as JSON text too, for a host that keeps the last good
+     * [readManifest], with the checked answer as JSON text too, for a host that keeps the last good
      * manifest across restarts ([AddonManifestStore]). The text holds no URL or token of ours.
      */
-    suspend fun manifestWithJson(base: String): AddonResult<Pair<Manifest, String>> =
-        exchange(null, base, Route.MANIFEST, listOf("manifest.json"), emptyList(), signPayload = null) {
-            AddonValidator.anyManifest(it, options) to it.toString()
+    suspend fun manifestWithJson(base: String, publicOnly: Boolean = true): AddonResult<Pair<AddonManifest, String>> {
+        val opts = optionsFor(publicOnly)
+        return exchange(null, base, Route.MANIFEST, listOf("manifest.json"), emptyList(), signPayload = null, opts) {
+            AddonValidator.readManifest(it, opts) to it.toString()
         }
+    }
 
     /**
      * `GET /search` (SPEC.md 4.2), with artists, albums and ids the manifest can't back dropped.
      * [circuit] false: a caller that keeps its own busy circuit (the named Tidal rung) asks
      * without this client's `Retry-After` gate, which then neither holds the call nor hears of it.
+     * An Eclipse-family add-on is sent `q` alone, and its rows read through [AddonEclipse].
      */
     suspend fun search(
         addon: InstalledAddon, q: String, limit: Int = 20, paced: Boolean = false, circuit: Boolean = true,
-    ): AddonResult<SearchResponse> =
-        call(
-            addon, Route.SEARCH, emptyList(), listOf("q" to q.take(200), "limit" to limit.coerceIn(1, 200).toString()),
-            paced = paced, circuit = circuit,
-        ) {
-            gateSearch(addon.manifest, AddonValidator.searchResponse(it, options))
+    ): AddonResult<SearchResponse> {
+        val opts = optionsFor(addon)
+        val eclipse = addon.dialect == AddonDialect.ECLIPSE
+        val params = if (eclipse) listOf("q" to q.take(200)) else listOf("q" to q.take(200), "limit" to limit.coerceIn(1, 200).toString())
+        return call(addon, Route.SEARCH, emptyList(), params, paced = paced, circuit = circuit) {
+            gateSearch(addon.manifest, if (eclipse) AddonEclipse.searchResponse(it, opts) else AddonValidator.searchResponse(it, opts))
         }
+    }
 
     /**
      * `GET /resolve` (SPEC.md 4.3, draft 2): the add-on's own item for the same song as [query], or
      * null for no match. An item that breaks rule 3 (length) or rule 7 (`maxTier` below the asked
      * `minTier`) is rejected; its ISRC alone never is.
+     *
+     * Eclipse-family add-ons get `title`, `artist`, `isrc` and `durationMs` only; one that lists
+     * `isrc` without `resolve` is asked `/resolve-isrc?isrc=`, and only for a song with an ISRC.
      */
-    suspend fun resolve(addon: InstalledAddon, query: ResolveQuery, paced: Boolean = false): AddonResult<Track?> =
-        call(addon, Route.RESOLVE, emptyList(), resolveParams(query), paced = paced) {
-            val item = AddonValidator.resolveResponse(it, options).item ?: return@call null
+    suspend fun resolve(addon: InstalledAddon, query: ResolveQuery, paced: Boolean = false): AddonResult<Track?> {
+        val opts = optionsFor(addon)
+        if (addon.dialect == AddonDialect.ECLIPSE) {
+            val song = query.song
+            if (addon.eclipse?.resolveViaIsrc == true) {
+                val isrc = song.isrc?.takeIf { it.isNotBlank() } ?: return AddonResult.Ok(null)
+                return call(addon, Route.RESOLVE, listOf("resolve-isrc"), listOf("isrc" to isrc), paced = paced) {
+                    AddonEclipse.resolveIsrcResponse(it, song)
+                }
+            }
+            val params = buildList {
+                add("title" to song.title)
+                add("artist" to song.artist)
+                song.isrc?.takeIf { it.isNotBlank() }?.let { add("isrc" to it) }
+                song.durationMs?.takeIf { it > 0 }?.let { add("durationMs" to it.toString()) }
+            }
+            return call(addon, Route.RESOLVE, emptyList(), params, paced = paced) {
+                val item = AddonEclipse.resolveResponse(it, opts) ?: return@call null
+                AddonValidator.checkResolve(item, query)
+                gateIds(addon.manifest, item)
+            }
+        }
+        return call(addon, Route.RESOLVE, emptyList(), resolveParams(query), paced = paced) {
+            val item = AddonValidator.resolveResponse(it, opts).item ?: return@call null
             AddonValidator.checkResolve(item, query)
             gateIds(addon.manifest, item)
         }
+    }
 
-    /** `GET /stream/{id}` (SPEC.md 4.4): an answer outside [request] or marked encrypted is rejected. [circuit]: as [search]. */
+    /**
+     * `GET /stream/{id}` (SPEC.md 4.4). An answer outside [request] is `quality_unavailable` for that
+     * range, in every dialect, holding the answer ([AddonFailure.Refused.held]) for a lower range of
+     * the same play; one marked encrypted is not playable. [circuit]: as [search].
+     */
     suspend fun stream(
         addon: InstalledAddon, id: String, request: StreamRequest, paced: Boolean = false, circuit: Boolean = true,
     ): AddonResult<StreamInfo> =
@@ -186,22 +276,47 @@ class HttpAddonClient @Inject constructor(
     private suspend fun streamLike(
         addon: InstalledAddon, route: Route, segment: String, id: String, request: StreamRequest, paced: Boolean, circuit: Boolean,
     ): AddonResult<StreamInfo> {
-        val v0 = addon.manifest.stash == 0
-        val result = call(addon, route, listOf(segment, id), request.queryParameters(), signPayload = id, paced = paced, circuit = circuit) {
-            if (v0) return@call AddonV0.streamInfo(it, options)
-            val info = AddonValidator.streamInfo(it, options)
-            if (info.tier !in request.minTier..request.tier) throw AddonContractException("/tier", "outside the asked range")
-            if (info.manifest !in request.manifest) throw AddonContractException("/manifest", "a delivery that wasn't asked for")
-            if (info.encrypted == true) throw AddonContractException("/encrypted", "v1 defines no keys: not playable")
-            info
+        val opts = optionsFor(addon)
+        val dialect = addon.dialect
+        val params = if (dialect == AddonDialect.ECLIPSE) listOf("quality" to qualityParam(addon, request)) else request.queryParameters()
+        val ask = suspend {
+            call(addon, route, listOf(segment, id), params, signPayload = id, paced = paced, circuit = circuit) {
+                val info = when (dialect) {
+                    AddonDialect.V0 -> AddonV0.streamInfo(it, opts)
+                    AddonDialect.ECLIPSE -> AddonEclipse.streamInfo(it, opts)
+                    AddonDialect.V1 -> AddonValidator.streamInfo(it, opts).also { info ->
+                        if (info.encrypted == true) throw AddonContractException("/encrypted", "v1 defines no keys: not playable")
+                    }
+                }
+                // SPEC.md 10.1 and phase 4 §2.3: an answer out of range is a quality miss, never a broken answer.
+                if (info.tier !in request.minTier..request.tier || info.manifest !in request.manifest) {
+                    throw AddonRefusalException(ErrorCode.QUALITY_UNAVAILABLE, held = info)
+                }
+                info
+            }
         }
-        // SPEC.md 10.1: v0 ignores the range, so a derived tier outside it is a quality miss, not a broken answer.
-        val info = (result as? AddonResult.Ok)?.value
-        if (v0 && info != null && (info.tier !in request.minTier..request.tier || Delivery.NONE !in request.manifest)) {
-            return AddonResult.Failed(AddonFailure.Refused(ErrorCode.QUALITY_UNAVAILABLE, 404, null, null))
+        val first = ask()
+        // Eclipse's per-song "still preparing": a foreground play waits once, briefly, then moves on.
+        val preparing = ((first as? AddonResult.Failed)?.failure as? AddonFailure.Refused)?.takeIf { it.preparing }
+        if (preparing != null && !paced) {
+            val waitMs = ((preparing.retryAfterSec ?: 1) * 1000L).coerceIn(0L, PREPARING_WAIT_MS)
+            debug("${addon.id} ${route.name.lowercase()}: still preparing; asking once more in ${waitMs} ms")
+            delay(waitMs)
+            return ask()
         }
-        return result
+        return first
     }
+
+    /**
+     * The `quality` an Eclipse-family add-on is sent (phase 4 §2.3): the first option of its own
+     * `quality` select, else `LOSSLESS` for a lossless range, `HIGH` for a high one, `LOW` below.
+     */
+    private fun qualityParam(addon: InstalledAddon, request: StreamRequest): String =
+        addon.eclipse?.qualityOption ?: when {
+            request.minTier.isLossless -> "LOSSLESS"
+            request.tier >= Tier.HIGH -> "HIGH"
+            else -> "LOW"
+        }
 
     /** `GET /lyrics` by the add-on's own [id], else by [d] (SPEC.md 4.6). No lyrics is `not_found`. */
     suspend fun lyrics(addon: InstalledAddon, d: Descriptor?, id: String? = null, paced: Boolean = false): AddonResult<Lyrics> {
@@ -213,23 +328,28 @@ class HttpAddonClient @Inject constructor(
         return call(addon, Route.LYRICS, emptyList(), params, paced = paced) { AddonValidator.lyrics(it) }
     }
 
-    suspend fun album(addon: InstalledAddon, id: String): AddonResult<Album> =
-        call(addon, Route.ALBUM, listOf("album", id), emptyList(), paced = false) {
-            AddonValidator.album(it, options).let { a -> a.copy(tracks = a.tracks.map { t -> gateIds(addon.manifest, t) }) }
+    suspend fun album(addon: InstalledAddon, id: String): AddonResult<Album> {
+        val opts = optionsFor(addon)
+        return call(addon, Route.ALBUM, listOf("album", id), emptyList(), paced = false) {
+            AddonValidator.album(it, opts).let { a -> a.copy(tracks = a.tracks.map { t -> gateIds(addon.manifest, t) }) }
         }
+    }
 
-    suspend fun artist(addon: InstalledAddon, id: String): AddonResult<Artist> =
-        call(addon, Route.ARTIST, listOf("artist", id), emptyList(), paced = false) {
-            AddonValidator.artist(it, options).let { a -> a.copy(topTracks = a.topTracks.map { t -> gateIds(addon.manifest, t) }) }
+    suspend fun artist(addon: InstalledAddon, id: String): AddonResult<Artist> {
+        val opts = optionsFor(addon)
+        return call(addon, Route.ARTIST, listOf("artist", id), emptyList(), paced = false) {
+            AddonValidator.artist(it, opts).let { a -> a.copy(topTracks = a.topTracks.map { t -> gateIds(addon.manifest, t) }) }
         }
+    }
 
     suspend fun catalog(addon: InstalledAddon, id: String, genre: String? = null, limit: Int = 20, offset: Int = 0): AddonResult<CatalogPage> {
+        val opts = optionsFor(addon)
         val params = buildList {
             if (genre != null) add("genre" to genre)
             add("limit" to limit.coerceIn(1, 100).toString())
             add("offset" to offset.coerceAtLeast(0).toString())
         }
-        return call(addon, Route.CATALOG, listOf("catalog", id), params, paced = false) { AddonValidator.catalogPage(it, options) }
+        return call(addon, Route.CATALOG, listOf("catalog", id), params, paced = false) { AddonValidator.catalogPage(it, opts) }
     }
 
     suspend fun catalogGenres(addon: InstalledAddon): AddonResult<CatalogGenres> =
@@ -268,7 +388,7 @@ class HttpAddonClient @Inject constructor(
         }
         val path = if (segments.isEmpty()) listOf(route.name.lowercase().replace('_', '-')) else segments
         val withSettings = params + addon.settings.map { (k, v) -> k to v }
-        val result = exchange(addon, addon.base, route, path, withSettings, signPayload, parse)
+        val result = exchange(addon, addon.base, route, path, withSettings, signPayload, optionsFor(addon), parse)
         if (circuit) report(addon.id, result)
         return result
     }
@@ -285,8 +405,12 @@ class HttpAddonClient @Inject constructor(
                     rateGate.onAnswer(key)
                     rateGate.onRateLimited(meteredKey(addonId), f.retryAfterSec?.let { it * 1000L })
                 }
-                ErrorCode.UNAVAILABLE ->
-                    if (f.retryAfterSec != null) rateGate.onRateLimited(key, f.retryAfterSec * 1000L) else rateGate.onFailure(key)
+                // An Eclipse-family song still being prepared is about that song, not the add-on.
+                ErrorCode.UNAVAILABLE -> when {
+                    f.preparing -> rateGate.onAnswer(key)
+                    f.retryAfterSec != null -> rateGate.onRateLimited(key, f.retryAfterSec * 1000L)
+                    else -> rateGate.onFailure(key)
+                }
                 // "Stops calling; asks the user": until there is a screen to ask on (phase 4), a long pause.
                 ErrorCode.UNAUTHORIZED -> rateGate.onRateLimited(key, UNAUTHORIZED_PAUSE_MS)
                 ErrorCode.BAD_REQUEST, ErrorCode.NOT_FOUND, ErrorCode.QUALITY_UNAVAILABLE, ErrorCode.REGION_UNAVAILABLE ->
@@ -304,17 +428,23 @@ class HttpAddonClient @Inject constructor(
         segments: List<String>,
         params: List<Pair<String, String>>,
         signPayload: String?,
+        opts: AddonValidator.Options,
         parse: (JsonElement) -> T,
     ): AddonResult<T> {
-        val baseUrl = base.takeIf { AddonValidator.isAllowedUrl(it, options) }?.toHttpUrlOrNull()
-            ?: return AddonResult.Failed(AddonFailure.Network)
+        val tag = "${addon?.id ?: "manifest"} ${route.name.lowercase()}"
+        val baseUrl = base.takeIf { AddonValidator.isAllowedUrl(it, opts) }?.toHttpUrlOrNull()
+            ?: run {
+                if (AddonValidator.isLocalAddressUrl(base, opts)) warn("$tag: ${AddonEclipse.PRIVATE_ADDRESS}")
+                return AddonResult.Failed(AddonFailure.Network)
+            }
         var url = baseUrl.newBuilder().apply {
             segments.forEach { addPathSegment(it) }
             params.forEach { (k, v) -> addQueryParameter(k, v) }
         }.build()
-        val tag = "${addon?.id ?: "manifest"} ${route.name.lowercase()}"
         val deadline = nowMs() + route.timeoutMs
         val firstParty = signPayload != null && trust.isFirstParty(base)
+        val client = if (opts.publicOnly) publicHttp else http
+        val eclipse = addon?.dialect == AddonDialect.ECLIPSE
         var redirects = 0
         var mayResign = true
         try {
@@ -322,7 +452,9 @@ class HttpAddonClient @Inject constructor(
                 val sameOrigin = url.sameOrigin(baseUrl)
                 // Building the request throws IllegalArgumentException, with the value in its
                 // message, for a token or header value a request can't carry: caught below.
-                val builder = Request.Builder().url(url).get().header("Accept", "application/json")
+                val builder = Request.Builder().url(url).get()
+                    .header("Accept", "application/json")
+                    .header("User-Agent", userAgent)
                 val token = addon?.token?.takeIf { route != Route.MANIFEST }
                 if (sameOrigin && addon != null && token != null && addon.manifest.auth?.token == TokenPlacement.HEADER) {
                     builder.header(Auth.HEADER_NAME, token)
@@ -332,15 +464,15 @@ class HttpAddonClient @Inject constructor(
                 if (remaining <= 0) return AddonResult.Failed(AddonFailure.Timeout)
                 // The call timeout only starts once OkHttp's dispatcher runs the call: this also
                 // bounds the wait for a connection slot.
-                val reply = withTimeoutOrNull(remaining) { execute(builder.build(), remaining, adoptServerTime = signed) }
+                val reply = withTimeoutOrNull(remaining) { execute(client, builder.build(), remaining, adoptServerTime = signed) }
                     ?: run {
                         debug("$tag: timed out")
                         return AddonResult.Failed(AddonFailure.Timeout)
                     }
                 if (reply.code in 300..399 && reply.location != null) {
                     val next = url.resolve(reply.location)
-                    if (next == null || ++redirects > MAX_REDIRECTS || !AddonValidator.isAllowedUrl(next.toString(), options)) {
-                        warn("$tag: redirect refused")
+                    if (next == null || ++redirects > MAX_REDIRECTS || !AddonValidator.isAllowedUrl(next.toString(), opts)) {
+                        warn("$tag: redirect refused${if (next != null && AddonValidator.isLocalAddressUrl(next.toString(), opts)) " (private address)" else ""}")
                         return AddonResult.Failed(AddonFailure.Network)
                     }
                     url = next
@@ -360,11 +492,18 @@ class HttpAddonClient @Inject constructor(
                     if (reply.code == 401 && signed && reply.serverTimeNamed) {
                         return AddonResult.Failed(AddonFailure.Refused(ErrorCode.BAD_REQUEST, 401, null, null))
                     }
-                    return AddonResult.Failed(refusal(reply, element))
+                    val refused = refusal(reply, element, eclipse)
+                    if (refused.onlyBitChord) warn("$tag: ${AddonEclipse.ONLY_BITCHORD}")
+                    return AddonResult.Failed(
+                        if (eclipse && (route == Route.STREAM || route == Route.DOWNLOAD) && refused.isPreparing()) refused.copy(preparing = true) else refused,
+                    )
                 }
                 element ?: return AddonResult.Failed(AddonFailure.InvalidResponse("", "not JSON"))
                 return try {
                     AddonResult.Ok(parse(element))
+                } catch (e: AddonRefusalException) {
+                    debug("$tag: ${e.code.wire}")
+                    AddonResult.Failed(AddonFailure.Refused(e.code, reply.code, null, null, held = e.held?.let(::HeldStream)))
                 } catch (e: AddonContractException) {
                     warn("$tag: invalid answer at ${loggable(e.path.ifEmpty { "/" })}: ${loggable(e.reason)}")
                     AddonResult.Failed(AddonFailure.InvalidResponse(e.path, e.reason))
@@ -385,6 +524,10 @@ class HttpAddonClient @Inject constructor(
         }
     }
 
+    /** An Eclipse-family "still preparing": a 503 with a `Retry-After` of 30 s or less (phase 4 §2.3). */
+    private fun AddonFailure.Refused.isPreparing(): Boolean =
+        status == 503 && retryAfterSec != null && retryAfterSec <= PREPARING_MAX_RETRY_AFTER_S
+
     private fun warn(line: String) {
         Log.w(TAG, line)
         logHook?.invoke(line)
@@ -400,14 +543,22 @@ class HttpAddonClient @Inject constructor(
      * body's code when it is the contract's shape and known, else by status. `retryAfter`, else
      * the header.
      */
-    private fun refusal(reply: Reply, element: JsonElement?): AddonFailure.Refused {
+    private fun refusal(reply: Reply, element: JsonElement?, eclipse: Boolean = false): AddonFailure.Refused {
         val info = element?.let { runCatching { AddonValidator.errorInfo(it) }.getOrNull() }
         val header = reply.retryAfterHeader?.trim()?.toIntOrNull()?.takeIf { it in 1..86_400 }
+        // BitChord's own error body carries `retryAfter` at the top (phase 4 §2.3).
+        val topLevel = if (eclipse) {
+            ((element as? kotlinx.serialization.json.JsonObject)?.get("retryAfter") as? kotlinx.serialization.json.JsonPrimitive)
+                ?.content?.toDoubleOrNull()?.toInt()?.takeIf { it in 1..86_400 }
+        } else {
+            null
+        }
         return AddonFailure.Refused(
             code = if (reply.code in 500..599 && reply.code != 503) ErrorCode.UNAVAILABLE else ErrorCode.of(reply.code, info?.code),
             status = reply.code,
-            retryAfterSec = info?.retryAfter ?: header,
+            retryAfterSec = info?.retryAfter ?: header ?: topLevel,
             quota = info?.quota,
+            onlyBitChord = reply.code == 401 && reply.wwwAuthenticate?.trim()?.startsWith("BitChord", ignoreCase = true) == true,
         )
     }
 
@@ -421,11 +572,13 @@ class HttpAddonClient @Inject constructor(
         val tooLarge: Boolean,
         /** The answer carries `X-Stash-Server-Time` (a first-party add-on's skew 401). */
         val serverTimeNamed: Boolean = false,
+        /** A 401's `WWW-Authenticate` (BitChord's attestation names itself there). */
+        val wwwAuthenticate: String? = null,
     )
 
     /** Runs [request] with a call timeout of [timeoutMs]; cancelling the coroutine cancels the call. */
-    private suspend fun execute(request: Request, timeoutMs: Long, adoptServerTime: Boolean): Reply = suspendCancellableCoroutine { cont ->
-        val call = http.newCall(request)
+    private suspend fun execute(client: OkHttpClient, request: Request, timeoutMs: Long, adoptServerTime: Boolean): Reply = suspendCancellableCoroutine { cont ->
+        val call = client.newCall(request)
         call.timeout().timeout(timeoutMs, TimeUnit.MILLISECONDS)
         cont.invokeOnCancellation { call.cancel() }
         call.enqueue(object : Callback {
@@ -449,11 +602,12 @@ class HttpAddonClient @Inject constructor(
     private fun readReply(r: Response, adoptServerTime: Boolean): Reply {
         val adopted = adoptServerTime && r.code == 401 && signer.adoptServerTime(r)
         val named = r.code == 401 && r.header(SERVER_TIME_HEADER) != null
+        val www = if (r.code == 401) r.header("WWW-Authenticate") else null
         if (r.code in 300..399) return Reply(r.code, r.header("Location"), null, false, null, false)
-        val source = r.body?.source() ?: return Reply(r.code, null, r.header("Retry-After"), adopted, null, false, named)
-        if (source.request(Limits.BODY_BYTES + 1)) return Reply(r.code, null, r.header("Retry-After"), adopted, null, true, named)
+        val source = r.body?.source() ?: return Reply(r.code, null, r.header("Retry-After"), adopted, null, false, named, www)
+        if (source.request(Limits.BODY_BYTES + 1)) return Reply(r.code, null, r.header("Retry-After"), adopted, null, true, named, www)
         val text = source.buffer.readUtf8()
-        return Reply(r.code, null, r.header("Retry-After"), adopted, text, false, named)
+        return Reply(r.code, null, r.header("Retry-After"), adopted, text, false, named, www)
     }
 
     // ---------------------------------------------------------------------------------------------- helpers
@@ -485,6 +639,12 @@ class HttpAddonClient @Inject constructor(
 
         /** How long an add-on that answered 401 is left alone (its token needs fixing). */
         const val UNAUTHORIZED_PAUSE_MS = 60 * 60_000L
+
+        /** An Eclipse-family 503 with a `Retry-After` up to this is "still preparing" this song (phase 4 §2.3). */
+        const val PREPARING_MAX_RETRY_AFTER_S = 30
+
+        /** How long a foreground play waits for a song still being prepared, once: min(Retry-After, this). */
+        const val PREPARING_WAIT_MS = 3_000L
 
         /** The [AddonRateGate] key of add-on [addonId]: its own bucket and breaker. */
         fun rateKey(addonId: String): String = "addon_$addonId"

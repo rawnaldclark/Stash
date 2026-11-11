@@ -83,6 +83,17 @@ interface AddonHostOptions {
      * only, for an add-on under `wrangler dev` reached over `adb reverse`; never in a release build.
      */
     val allowLocalHttp: Boolean
+
+    /**
+     * The `User-Agent` on every add-on request, in every dialect: `Stash/<versionName>` (add-ons plan
+     * phase 4 §2.3). An add-on author can tell Stash apart and say no, just as Stash asks of other
+     * apps for its own Tidal add-on. Without the app's own interceptors, OkHttp would send its own.
+     */
+    val userAgent: String get() = DEFAULT_USER_AGENT
+
+    companion object {
+        const val DEFAULT_USER_AGENT: String = "Stash"
+    }
 }
 
 /** The release rule: https only. */

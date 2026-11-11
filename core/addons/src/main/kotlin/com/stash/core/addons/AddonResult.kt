@@ -21,7 +21,24 @@ sealed interface AddonFailure {
      * other than 503 is `unavailable` whatever its body says; otherwise the body's code when this
      * host knows it, else by status.
      */
-    data class Refused(val code: ErrorCode, val status: Int, val retryAfterSec: Int?, val quota: Quota?) : AddonFailure
+    data class Refused(
+        val code: ErrorCode,
+        val status: Int,
+        val retryAfterSec: Int?,
+        val quota: Quota?,
+        /**
+         * `quality_unavailable` for a stream outside the asked range: the answer itself, which a
+         * lower range in the same play may use without asking again (add-ons plan phase 4 §2.3).
+         */
+        val held: HeldStream? = null,
+        /**
+         * An Eclipse-family `503` with a short `Retry-After` on `/stream`: this song is still being
+         * prepared. It never pauses the add-on (phase 4 §2.3).
+         */
+        val preparing: Boolean = false,
+        /** A `401` with `WWW-Authenticate: BitChord`: the add-on serves only the genuine BitChord app. */
+        val onlyBitChord: Boolean = false,
+    ) : AddonFailure
 
     /** No answer within the route's time (SPEC.md 3.1). */
     data object Timeout : AddonFailure

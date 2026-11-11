@@ -1,0 +1,44 @@
+{
+  "tracks": [
+    {
+      "id": 12345,
+      "title": "One More Time",
+      "artist": "Daft Punk",
+      "album": "Discovery",
+      "duration": 320.357,
+      "artworkURL": "https://img.example.org/a.jpg",
+      "isrc": "gbduw0000059",
+      "explicit": false,
+      "format": "flac",
+      "streamURL": "https://cdn.example.org/s.flac"
+    },
+    {
+      "id": "b2",
+      "title": "Aerodynamic",
+      "artist": "Daft Punk",
+      "durationMs": 207000.4,
+      "artworkUrl": "https://img.example.org/b.jpg"
+    },
+    {
+      "id": "c3",
+      "title": "",
+      "artist": "No title"
+    },
+    {
+      "id": "d4",
+      "title": "Private art",
+      "artist": "X",
+      "albumArtworkURL": "https://192.168.1.2/c.jpg",
+      "isrc": "not-an-isrc"
+    }
+  ],
+  "albums": [
+    {
+      "id": "al",
+      "title": "Discovery",
+      "artist": "Daft Punk",
+      "year": "2001"
+    }
+  ],
+  "playlists": []
+}
