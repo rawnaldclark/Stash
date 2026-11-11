@@ -2,6 +2,7 @@ package com.stash.data.download.lossless
 
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
+import com.stash.data.download.lossless.tidal.OwnTidalServer
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -36,7 +37,8 @@ import kotlinx.coroutines.flow.first
 class LosslessAvailability @Inject constructor(
     private val credentialStore: QbdlxCredentialStore,
     private val config: LosslessConfigFetcher,
-    private val prefs: LosslessSourcePreferences,
+    /** The user's own Tidal server (add-ons phase 4 §2.10). */
+    private val own: OwnTidalServer,
 ) {
     val qbdlxEnabled: Flow<Boolean> = credentialStore.hasLogin
 
@@ -60,7 +62,7 @@ class LosslessAvailability @Inject constructor(
      * server, or Stash's Tidal relay from the signed config. Configuration, not liveness.
      */
     val anySourceConfigured: Flow<Boolean> =
-        combine(credentialStore.hasLogin, prefs.bitchordEndpoint, config.tidalRelay) { login, ownTidal, stashTidal ->
+        combine(credentialStore.hasLogin, own.endpoint, config.tidalRelay) { login, ownTidal, stashTidal ->
             login || ownTidal != null || stashTidal != null
         }
 
@@ -70,7 +72,7 @@ class LosslessAvailability @Inject constructor(
      * allowance and the supporter unlock mean anything to them.
      */
     val stashTidalRelayInUse: Flow<Boolean> =
-        combine(config.tidalRelay, prefs.bitchordEndpoint) { stashTidal, ownTidal ->
+        combine(config.tidalRelay, own.endpoint) { stashTidal, ownTidal ->
             stashTidal != null && ownTidal == null
         }
 
@@ -85,7 +87,7 @@ class LosslessAvailability @Inject constructor(
      * must not flip on one transient failure.
      */
     val ownTidalFirst: Flow<Boolean> =
-        combine(credentialStore.hasLogin, prefs.bitchordEndpoint) { login, tidal ->
+        combine(credentialStore.hasLogin, own.endpoint) { login, tidal ->
             ownTidalLeads(login, tidal)
         }
 
@@ -119,7 +121,7 @@ class LosslessAvailability @Inject constructor(
     val routingRows: Flow<List<RoutingRow>> = combine(
         credentialStore.hasLogin,
         credentialStore.connectedEmailFlow,
-        prefs.bitchordEndpoint,
+        own.endpoint,
         config.tidalRelay,
     ) { hasLogin, email, ownTidal, stashTidal ->
         val tidalFirst = ownTidalLeads(hasLogin, ownTidal)

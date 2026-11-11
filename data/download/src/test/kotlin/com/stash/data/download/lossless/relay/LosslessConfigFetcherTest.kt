@@ -85,7 +85,7 @@ class LosslessConfigFetcherTest {
             coEvery { loginLive() } returns false
         }
         val prefs: LosslessSourcePreferences = mockk { every { bitchordEndpoint } returns MutableStateFlow(null) }
-        val availability = LosslessAvailability(store, f, prefs)
+        val availability = LosslessAvailability(store, f, com.stash.data.download.lossless.tidal.OwnTidalServer(com.stash.core.addons.NoUserAddons, prefs))
         assertThat(availability.qbdlxEnabledNow()).isFalse()
         assertThat(availability.fileUrlAvailableNow()).isFalse()
         assertThat(availability.anySourceConfigured.first()).isTrue() // Tidal, not the relays

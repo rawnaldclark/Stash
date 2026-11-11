@@ -103,14 +103,13 @@ class LosslessSourcePreferences @Inject constructor(
     suspend fun enabledNow(): Boolean = enabled.first()
 
     /**
-     * The user's own self-hosted BitChord Lossless Relay (Tidal), or null = the Tidal
-     * rung uses Stash's relay from the signed config, when it carries one. Set, it
-     * replaces that relay and, with none of the user's own Qobuz set up, leads the
-     * lossless chain above CD quality ([LosslessAvailability.ownTidalFirst]). Stored normalised by
-     * [normaliseEndpoint] (https only, no query, no trailing slash), so a path prefix
-     * survives: BitChord's own `https://host/<ACCESS_TOKEN>` form works as-is.
-     * The APK ships no default — the user's server spends ONE person's Tidal account,
-     * so it is never shared through the signed runtime config. Deduped and fail-closed.
+     * The OLD place of the user's own Tidal server: the Custom Tidal server field kept its base
+     * here in plain text (https, normalised by [normaliseEndpoint]; BitChord's
+     * `https://host/<ACCESS_TOKEN>` form kept its path). Add-ons phase 4 §2.10 moves it into the
+     * sealed add-on store ([com.stash.data.download.lossless.tidal.OwnTidalServerMigration]), and
+     * nothing writes it any more. Read only by that move and by
+     * [com.stash.data.download.lossless.tidal.OwnTidalServer], which falls back to it until the
+     * move has happened. Deduped and fail-closed.
      */
     val bitchordEndpoint: Flow<String?> = context.losslessDataStore.data.map { prefs ->
         prefs[bitchordEndpointKey]?.takeIf { it.isNotBlank() }
@@ -118,17 +117,10 @@ class LosslessSourcePreferences @Inject constructor(
 
     suspend fun bitchordEndpointNow(): String? = bitchordEndpoint.first()
 
-    suspend fun setBitchordEndpoint(raw: String?) {
-        val v = normaliseEndpoint(raw)
-        context.losslessDataStore.edit { prefs ->
-            if (v == null) prefs.remove(bitchordEndpointKey) else prefs[bitchordEndpointKey] = v
-        }
-    }
-
     /**
-     * The server's `ACCESS_TOKEN`, sent as `X-Access-Token` — or null when the
-     * server runs open, or the token is already the endpoint's path prefix. A
-     * secret: never logged, never in the diagnostics bundle.
+     * The OLD place of that server's `ACCESS_TOKEN` (sent as `X-Access-Token`), as for
+     * [bitchordEndpoint]. A secret: never logged, never in the diagnostics bundle, never in a
+     * backup (`DatabaseBackupManager` drops it on export and on import).
      */
     val bitchordAccessToken: Flow<String?> = context.losslessDataStore.data.map { prefs ->
         prefs[bitchordAccessTokenKey]?.takeIf { it.isNotBlank() }
@@ -136,10 +128,11 @@ class LosslessSourcePreferences @Inject constructor(
 
     suspend fun bitchordAccessTokenNow(): String? = bitchordAccessToken.first()
 
-    suspend fun setBitchordAccessToken(raw: String?) {
-        val v = raw?.trim()?.takeIf { it.isNotEmpty() }
+    /** Deletes both old keys in one edit: after the move, or when the user removes their server. */
+    suspend fun clearBitchordServer() {
         context.losslessDataStore.edit { prefs ->
-            if (v == null) prefs.remove(bitchordAccessTokenKey) else prefs[bitchordAccessTokenKey] = v
+            prefs.remove(bitchordEndpointKey)
+            prefs.remove(bitchordAccessTokenKey)
         }
     }
 

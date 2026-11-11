@@ -50,7 +50,7 @@ class LosslessSourceRegistryTest {
         config = mockk<LosslessConfigFetcher> {
             every { tidalRelay } returns MutableStateFlow<TidalRelay?>(TidalRelay("https://tidal.stash.example", null))
         },
-        prefs = prefs,
+        own = com.stash.data.download.lossless.tidal.OwnTidalServer(com.stash.core.addons.NoUserAddons, prefs),
     )
 
     private val query = TrackQuery(artist = "A", title = "B")

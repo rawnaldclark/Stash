@@ -140,13 +140,36 @@ object NoDefaultAddons : DefaultAddons {
  * One add-on the user added from a link. [manifestUrl] and [token] are secrets: kept encrypted
  * (SPEC.md 6), never logged, never in diagnostics or backups.
  */
-data class UserAddonEntry(val manifestUrl: String, val token: String? = null, val enabled: Boolean = true) {
-    override fun toString(): String = "UserAddonEntry(enabled=$enabled, token=${if (token != null) "set" else "none"})"
+data class UserAddonEntry(
+    val manifestUrl: String,
+    val token: String? = null,
+    val enabled: Boolean = true,
+    val kind: UserAddonKind = UserAddonKind.MANIFEST,
+) {
+    override fun toString(): String =
+        "UserAddonEntry(kind=$kind, enabled=$enabled, token=${if (token != null) "set" else "none"})"
+}
+
+/** What a [UserAddonEntry] is. */
+enum class UserAddonKind {
+    /** An add-on added from a link: [UserAddonEntry.manifestUrl] is its manifest. */
+    MANIFEST,
+
+    /**
+     * The user's own Tidal server, moved out of the old Custom Tidal server field (add-ons plan
+     * phase 4 §2.10): [UserAddonEntry.manifestUrl] is the server's base and the token its
+     * `X-Access-Token`. It serves no manifest; the Tidal rung plays it over the legacy wire, and the
+     * registry never loads it. At most one.
+     */
+    OWN_TIDAL_SERVER,
 }
 
 /** The user's own add-ons, in their order (`:data:download` `EncryptedUserAddons`). */
 interface UserAddons {
     val entries: StateFlow<List<UserAddonEntry>>
+
+    /** [entries] once the store has been read: [entries] holds an empty list until then. */
+    suspend fun loadedEntries(): List<UserAddonEntry> = entries.value
 }
 
 /** No user add-ons: for hand-built registries in tests. */
@@ -195,7 +218,7 @@ class InTreeAddonRegistry @Inject constructor(
     }
 
     private fun wanted(): List<Wanted> {
-        val user = users.entries.value.filter { it.enabled }.mapNotNull { e ->
+        val user = users.entries.value.filter { it.enabled && it.kind == UserAddonKind.MANIFEST }.mapNotNull { e ->
             HttpAddonClient.baseOf(e.manifestUrl)?.let { Wanted(e.manifestUrl, it, userAdded = true, token = e.token, firstParty = false) }
         }
         val defaults = defaults.entries.value.filter { it.enabled }.mapNotNull { e ->

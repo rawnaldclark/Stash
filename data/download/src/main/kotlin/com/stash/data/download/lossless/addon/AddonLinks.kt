@@ -14,6 +14,7 @@ import com.stash.core.addons.AddonValidator
 import com.stash.core.addons.HttpAddonClient
 import com.stash.core.addons.InstalledAddon
 import com.stash.core.addons.UserAddonEntry
+import com.stash.core.addons.UserAddonKind
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import javax.inject.Inject
@@ -64,7 +65,8 @@ class AddonLinks @Inject constructor(
     /** The user's add-ons, named after their loaded manifests where there is one; live. */
     val added: Flow<List<Added>> = combine(users.entries, registry.addons) { entries, addons ->
         val loaded = addons.filter { it.userAdded }
-        entries.map { e ->
+        // The user's own Tidal server is not a link add-on: Settings shows it on its own row.
+        entries.filter { it.kind == UserAddonKind.MANIFEST }.map { e ->
             val base = HttpAddonClient.baseOf(e.manifestUrl)
             val a = loaded.firstOrNull { it.base == base }
             Added(e.manifestUrl, a?.manifest?.name ?: hostOf(e.manifestUrl), a?.id.orEmpty(), a != null, e.enabled)
@@ -80,7 +82,7 @@ class AddonLinks @Inject constructor(
                 else -> "Paste the add-on's manifest link. It ends in /manifest.json."
             },
         )
-        if (users.entries.value.any { it.manifestUrl == url }) return Outcome.Refused("This add-on is already added.")
+        if (users.entries.value.any { it.kind == UserAddonKind.MANIFEST && it.manifestUrl == url }) return Outcome.Refused("This add-on is already added.")
         val base = HttpAddonClient.baseOf(url) ?: return Outcome.Refused("Paste the add-on's manifest link. It ends in /manifest.json.")
         val read = when (val r = client.readManifest(base, publicOnly = true)) {
             is AddonResult.Ok -> r.value

@@ -8,6 +8,7 @@ import com.stash.core.addons.AddonRegistry
 import com.stash.core.addons.AddonTrust
 import com.stash.core.addons.HttpAddonClient
 import com.stash.core.addons.InstalledAddon
+import com.stash.core.addons.NoUserAddons
 import com.stash.core.data.db.dao.AddonRefDao
 import com.stash.core.data.db.entity.AddonRefEntity
 import com.stash.data.download.lossless.LosslessSourcePreferences
@@ -92,7 +93,7 @@ fun tidalClient(
     debug: TidalDebugSettings = TidalDebugSettings.off(),
 ): TidalClient {
     val legacy = LegacyRelayWire(http, signer, quota)
-    val wires = TidalWires(prefs, config, registry, legacy, AddonV1Wire(addonClient, quota), debug)
+    val wires = TidalWires(config, registry, legacy, AddonV1Wire(addonClient, quota), debug, OwnTidalServer(NoUserAddons, prefs))
     return TidalClient(prefs, dao, quota, wires)
 }
 

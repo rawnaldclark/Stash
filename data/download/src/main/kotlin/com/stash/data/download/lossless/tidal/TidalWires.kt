@@ -4,7 +4,6 @@ import com.stash.addons.contract.Resource
 import com.stash.core.addons.AddonRegistry
 import com.stash.core.addons.InstalledAddon
 import com.stash.core.addons.NamedRungAddons
-import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.bitchord.LegacyRelayWire
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.TidalRelay
@@ -20,8 +19,9 @@ import javax.inject.Singleton
 
 /**
  * Which server, over which wire, the Tidal rung asks (plan §5.4). In order:
- *  1. **The user's own server** (Settings › Lossless sources › Advanced): the legacy wire, as
- *     before. An explicit choice beats an implicit one, and its token goes with it.
+ *  1. **The user's own server** ([OwnTidalServer], sealed with the add-ons since phase 4 §2.10):
+ *     the legacy wire, as before. An explicit choice beats an implicit one, and its token goes
+ *     with it.
  *  2. **The first-party Tidal add-on**: the v1 wire, when an enabled `first_party` default entry
  *     whose manifest id is `tidal` has a loaded manifest (a kept one counts: the registry keeps the
  *     last good manifest across restarts). The `default_addons` entry IS the switch (decision D9):
@@ -35,12 +35,12 @@ import javax.inject.Singleton
  */
 @Singleton
 class TidalWires @Inject constructor(
-    private val prefs: LosslessSourcePreferences,
     private val config: LosslessConfigFetcher,
     private val registry: AddonRegistry,
     val legacy: LegacyRelayWire,
     private val v1: AddonV1Wire,
     private val debug: TidalDebugSettings,
+    private val own: OwnTidalServer,
 ) {
     /** Where a lookup goes, before it is bound to a wire. */
     sealed interface Route {
@@ -58,11 +58,14 @@ class TidalWires @Inject constructor(
     /** The signed config's relay, or the debug override standing in for it. */
     fun ownerRelay(): TidalRelay? = debug.relay(config.tidalRelay.value)
 
+    /** The user's own server is set (a spent day never stops it: its answers never touch Stash's relay). */
+    suspend fun ownServerSet(): Boolean = own.now() != null
+
     /** The route a lookup takes now (the class doc's order); null = the rung is off. [ownServer] false skips the user's own server. */
     suspend fun route(ownServer: Boolean = true): Route? {
         val forced = debug.state.value.wire
         if (ownServer && forced != TidalDebugSettings.Wire.V1) {
-            prefs.bitchordEndpointNow()?.let { return Route.Relay(TidalRelay(it, prefs.bitchordAccessTokenNow(), userOwned = true)) }
+            own.now()?.let { return Route.Relay(TidalRelay(it.base, it.token, userOwned = true)) }
         }
         if (forced != TidalDebugSettings.Wire.LEGACY) tidalAddon()?.let { return Route.Addon(it) }
         if (forced == TidalDebugSettings.Wire.V1) return null
@@ -99,7 +102,7 @@ class TidalWires @Inject constructor(
      * on the playback thread. Eager, so it has settled long before the first track is prepared.
      */
     val configured: StateFlow<Boolean> =
-        combine(prefs.bitchordEndpoint, config.tidalRelay, registry.addons, debug.state) { own, signed, _, d ->
+        combine(own.endpoint, config.tidalRelay, registry.addons, debug.state) { own, signed, _, d ->
             when (d.wire) {
                 TidalDebugSettings.Wire.V1 -> tidalAddon() != null
                 TidalDebugSettings.Wire.LEGACY -> own != null || debug.relay(signed) != null
