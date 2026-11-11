@@ -1,5 +1,7 @@
 package com.stash.data.download.lossless
 
+import com.stash.core.addons.AddonRegistry
+import com.stash.core.addons.InstalledAddon
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.tidal.OwnTidalServer
@@ -8,6 +10,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 
 /**
  * The ONE place that answers "is lossless available, and whose is it?" — each
@@ -31,15 +34,30 @@ import kotlinx.coroutines.flow.first
  *  - [ownTidalFirst]         own Tidal server && no Qobuz account → the Tidal rung
  *                            leads both chains above CD quality ([ownTidalFirstNow])
  *  - [routingRows]           the same facts spelled out per path, in the order a
- *                            song asks them, for Settings › Lossless sources
+ *                            song asks them (the play order), for Settings › Lossless sources
  */
 @Singleton
-class LosslessAvailability @Inject constructor(
+class LosslessAvailability(
     private val credentialStore: QbdlxCredentialStore,
     private val config: LosslessConfigFetcher,
     /** The user's own Tidal server (add-ons phase 4 §2.10). */
     private val own: OwnTidalServer,
+    /** The play order (phase 4 §2.8); the automatic one in hand-built tests. */
+    private val order: Flow<PlayOrder.Order> = flowOf(PlayOrder.Order.AUTOMATIC),
+    /** The play-order rows switched off in Settings › Add-ons; none in hand-built tests. */
+    private val switchedOff: Flow<Set<String>> = flowOf(emptySet()),
+    /** The add-ons that are on; none in hand-built tests. */
+    private val addons: Flow<List<InstalledAddon>> = flowOf(emptyList()),
 ) {
+    @Inject constructor(
+        credentialStore: QbdlxCredentialStore,
+        config: LosslessConfigFetcher,
+        own: OwnTidalServer,
+        playOrder: PlayOrder,
+        switches: PlayOrderSwitches,
+        registry: AddonRegistry,
+    ) : this(credentialStore, config, own, playOrder.order, switches.off, registry.addons)
+
     val qbdlxEnabled: Flow<Boolean> = credentialStore.hasLogin
 
     suspend fun qbdlxEnabledNow(): Boolean = qbdlxEnabled.first()
@@ -101,55 +119,75 @@ class LosslessAvailability @Inject constructor(
         tier > LosslessQualityTier.CD && ownTidalFirst.first()
 
     /**
+     * The Tidal rung is the user's own server right now. A look-ahead may ask it wherever the play
+     * order puts it; Stash's shared relay is never searched for a song that may not be played.
+     */
+    suspend fun ownTidalServerNow(): Boolean = own.now() != null
+
+    /**
      * The Settings › Lossless sources ROUTING list — one row per lossless path,
      * built here from the same predicates the sources and downloads read, so the
      * screen cannot disagree with what actually resolves.
      *
-     * In the order a song asks them (the Qobuz rung, then the Tidal rung): the screen
-     * draws each row as a `↳`, so the list reads as "then". The Qobuz row is listed
-     * even when no account is connected (it is where one would go); the user's own
-     * Tidal server, which leads when no Qobuz account is connected ([ownTidalFirst]),
-     * says it leads above CD only: the list can't follow the tier, which differs by
-     * network and between streams and downloads. The Tidal row is the user's own
-     * server when one is set (it replaces Stash's relay), else Stash's relay from the
-     * signed config.
+     * In the order a song asks them, which is the play order (add-ons plan phase 4 §2.8, the
+     * order Settings › Add-ons shows): the screen draws each row as a `↳`, so the list reads as
+     * "then". Until the user drags that order it is the Qobuz rung, the Tidal rung, then the
+     * add-ons that play songs. The Qobuz row is listed even when no account is connected (it is
+     * where one would go); while the order is automatic, the user's own Tidal server, which leads
+     * when no Qobuz account is connected ([ownTidalFirst]), says it leads above CD only: the list
+     * can't follow the tier, which differs by network and between streams and downloads. The
+     * Tidal row is the user's own server when one is set (it replaces Stash's relay), else
+     * Stash's relay from the signed config; switched off in Settings › Add-ons, it says so.
      *
      * Rows describe CONFIGURATION, not liveness, deliberately: a connected account
      * inside its 60s [QbdlxCredentialStore.DEAD_COOLDOWN_MS] must not flicker to
      * "offline" over one transient 401.
      */
     val routingRows: Flow<List<RoutingRow>> = combine(
-        credentialStore.hasLogin,
-        credentialStore.connectedEmailFlow,
-        own.endpoint,
-        config.tidalRelay,
-    ) { hasLogin, email, ownTidal, stashTidal ->
-        val tidalFirst = ownTidalLeads(hasLogin, ownTidal)
+        combine(
+            credentialStore.hasLogin,
+            credentialStore.connectedEmailFlow,
+            own.endpoint,
+            config.tidalRelay,
+        ) { hasLogin, email, ownTidal, stashTidal -> Named(hasLogin, email, ownTidal, stashTidal != null) },
+        order,
+        switchedOff,
+        addons,
+    ) { named, order, off, addons ->
+        val tidalFirst = order.automatic && ownTidalLeads(named.hasLogin, named.ownTidal)
+        val tidalOff = PlayOrder.TIDAL in off
         // Never the address itself: a BitChord base can carry the server's access token as its path.
-        val tidalRow = if (ownTidal != null) {
-            RoutingRow("tidal", "Custom Tidal server", if (tidalFirst) "first above CD" else "configured", RoutingState.CONFIGURED)
-        } else {
-            RoutingRow(
-                id = "tidal",
+        val tidalRow = when {
+            tidalOff && (named.ownTidal != null || named.stashTidal) ->
+                RoutingRow(PlayOrder.TIDAL, if (named.ownTidal != null) "Custom Tidal server" else "Tidal", "switched off", RoutingState.NOT_CONFIGURED)
+            named.ownTidal != null ->
+                RoutingRow(PlayOrder.TIDAL, "Custom Tidal server", if (tidalFirst) "first above CD" else "configured", RoutingState.CONFIGURED)
+            else -> RoutingRow(
+                id = PlayOrder.TIDAL,
                 label = "Tidal",
-                detail = if (stashTidal != null) "configured" else "not configured",
-                state = if (stashTidal != null) RoutingState.CONFIGURED else RoutingState.NOT_CONFIGURED,
+                detail = if (named.stashTidal) "configured" else "not configured",
+                state = if (named.stashTidal) RoutingState.CONFIGURED else RoutingState.NOT_CONFIGURED,
             )
         }
-        listOf(
-            // Listed first even when not connected: it is where a connected account would go.
-            RoutingRow(
-                id = "qobuz",
-                label = "Your Qobuz account",
-                // Keyed on hasLogin, NEVER on the email: a migrated pasted token
-                // has none, and keying on it would render "not connected" while
-                // the badge on the same screen says a source IS configured.
-                detail = if (hasLogin) (email ?: "connected (token)") else "not connected",
-                state = if (hasLogin) RoutingState.CONNECTED else RoutingState.NOT_CONFIGURED,
-            ),
-            tidalRow,
+        // Listed even when not connected: it is where a connected account would go.
+        val qobuzRow = RoutingRow(
+            id = PlayOrder.QOBUZ,
+            label = "Your Qobuz account",
+            // Keyed on hasLogin, NEVER on the email: a migrated pasted token
+            // has none, and keying on it would render "not connected" while
+            // the badge on the same screen says a source IS configured.
+            detail = if (named.hasLogin) (named.email ?: "connected (token)") else "not connected",
+            state = if (named.hasLogin) RoutingState.CONNECTED else RoutingState.NOT_CONFIGURED,
         )
+        // The add-ons that play songs: a row each, by its name (never its address).
+        val addonRows = addons
+            .filter { !com.stash.core.addons.NamedRungAddons.owns(it) && PlayOrder.playsSongs(it.manifest) }
+            .map { RoutingRow(PlayOrder.addonKey(it.id), it.manifest.name, "add-on", RoutingState.CONFIGURED) }
+        order.sorted(listOf(qobuzRow, tidalRow) + addonRows) { it.id }
     }
+
+    /** The two named rows' facts, as one value for [routingRows]' combine. */
+    private data class Named(val hasLogin: Boolean, val email: String?, val ownTidal: String?, val stashTidal: Boolean)
 
     private companion object {
         /** [ownTidalFirst]'s ownership rule, shared with [routingRows] so the list and the chains agree. */

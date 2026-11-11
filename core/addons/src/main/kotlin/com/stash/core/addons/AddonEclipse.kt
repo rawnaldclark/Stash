@@ -100,7 +100,7 @@ object AddonEclipse {
     /** An Eclipse-family manifest as the v1 [Manifest] a host reads it as, with what v1 has no field for. */
     fun manifest(v: JsonElement?, options: AddonValidator.Options = AddonValidator.Options()): AddonManifest {
         val o = v as? JsonObject ?: fail("", "expected an object")
-        if (!isEclipse(o)) fail("/stash", "not a Stash add-on")
+        if (!isEclipse(o)) fail("/stash", AddonValidator.NOT_AN_ADDON)
         val id = idOf(o["id"])!!.lowercase()
         if (!MANIFEST_ID.matches(id)) fail("/id", "expected an id that fits v1's rule once lowercased")
         // BitChord's attestation: meant to serve only the genuine BitChord, and Stash respects that.

@@ -22,7 +22,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
-/** DataStore for lossless-source preferences (priority order, min quality, etc). */
+/** DataStore for lossless-source preferences (play order, min quality, etc). */
 private val Context.losslessDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "lossless_source_preferences",
     corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
@@ -31,24 +31,26 @@ private val Context.losslessDataStore: DataStore<Preferences> by preferencesData
 /**
  * Persists user preferences for the lossless-source resolver chain:
  *
- *  - Priority order (which source the registry tries first, second, etc.)
+ *  - The play order (which source both chains ask first, second, etc.), read through `PlayOrder`
  *  - Minimum quality threshold (skip sources whose stated format is lower)
  *
  * Per-source enable/disable lives on the [LosslessSource] implementation
  * itself (typically gated on whether the user has provided required
- * credentials or a configured URL template). This preference store is
- * only for the cross-source ordering and threshold.
+ * credentials or a configured URL template), except the Tidal rung and the
+ * default add-ons, which Settings › Add-ons can switch off ([playOrderOff]).
  *
- * Order is stored as a comma-joined string of source ids — survives across
- * app versions, tolerates unknown ids gracefully (registry filters them
- * out before resolving), and keeps the schema trivially debuggable.
+ * The order is stored as a comma-joined string of keys: it survives across
+ * app versions, tolerates unknown keys (the chains skip them), and keeps the
+ * schema trivially debuggable.
  */
 @Singleton
 class LosslessSourcePreferences @Inject constructor(
     @ApplicationContext private val context: Context,
     private val downloadQueueDao: DownloadQueueDao,
 ) {
-    private val priorityKey = stringPreferencesKey("priority_order")
+    // The play order (add-ons phase 4 §2.8): the saved order's keys, and the rows switched off.
+    private val playOrderKey = stringPreferencesKey("play_order")
+    private val playOrderOffKey = stringPreferencesKey("play_order_off")
     private val minQualityKey = stringPreferencesKey("min_quality")
     private val enabledKey = booleanPreferencesKey("enabled")
     private val bitchordEndpointKey = stringPreferencesKey("bitchord_endpoint")
@@ -70,6 +72,8 @@ class LosslessSourcePreferences @Inject constructor(
     // The squid.wtf captcha cookie and when it was set, retired with squid.wtf (2026-11).
     private val squidCaptchaCookieKey = stringPreferencesKey("squid_wtf_captcha_verified_at")
     private val squidCaptchaSetAtKey = longPreferencesKey("squid_wtf_captcha_set_at_ms")
+    // The priority list no screen ever wrote, replaced by the play order (add-ons phase 4 §2.8).
+    private val retiredPriorityKey = stringPreferencesKey("priority_order")
 
     /**
      * Master switch for the lossless-source pipeline. When false, the
@@ -233,9 +237,9 @@ class LosslessSourcePreferences @Inject constructor(
     /**
      * One-shot cleanup for removed sources: deletes the harvested antra.hoshi.cfd
      * session cookie, cf_clearance cookie and username, arcod's retired banner
-     * flag, the retired custom relay endpoint and the squid.wtf captcha cookie
-     * with its timestamp, so no stale login state or dead setting lingers on
-     * disk. Called once at startup (see StashApplication).
+     * flag, the retired custom relay endpoint, the squid.wtf captcha cookie
+     * with its timestamp and the priority list the play order replaced, so no
+     * stale login state or dead setting lingers on disk. Called once at startup (see StashApplication).
      * No-op when the keys are absent.
      */
     suspend fun purgeRetiredSourceKeys() {
@@ -247,6 +251,7 @@ class LosslessSourcePreferences @Inject constructor(
             prefs.remove(customLosslessEndpointKey)
             prefs.remove(squidCaptchaCookieKey)
             prefs.remove(squidCaptchaSetAtKey)
+            prefs.remove(retiredPriorityKey)
         }
     }
 
@@ -310,28 +315,42 @@ class LosslessSourcePreferences @Inject constructor(
     }
 
     /**
-     * Emits the user's source-id priority order. Falls back to
-     * [DEFAULT_PRIORITY] when no order has been explicitly saved —
-     * fresh installs get a known, stable resolution order rather than
-     * relying on Hilt registration order.
+     * The saved play order (add-ons phase 4 §2.8): the keys of `PlayOrder`, in the order the user
+     * dragged them into. Null until the first drag: the order is automatic until then. One order
+     * for streaming and downloads. Deduped and fail-open to automatic: a read error must never
+     * leave the chains without an order.
      */
-    val priorityOrder: Flow<List<String>> = context.losslessDataStore.data.map { prefs ->
-        prefs[priorityKey]
-            ?.split(",")
-            ?.map { it.trim() }
-            ?.filter { it.isNotEmpty() }
-            ?.ifEmpty { DEFAULT_PRIORITY }
-            ?: DEFAULT_PRIORITY
-    }
+    val playOrder: Flow<List<String>?> = context.losslessDataStore.data.map { prefs ->
+        prefs[playOrderKey]?.let(::keys)?.takeIf { it.isNotEmpty() }
+    }.distinctUntilChanged().catch { emit(null) }
 
-    /** One-shot read for callers that want the current value without subscribing. */
-    suspend fun priorityOrderNow(): List<String> = priorityOrder.first()
+    suspend fun playOrderNow(): List<String>? = playOrder.first()
 
-    suspend fun setPriorityOrder(order: List<String>) {
+    /** Saves the whole order; null goes back to automatic. */
+    suspend fun setPlayOrder(order: List<String>?) {
         context.losslessDataStore.edit { prefs ->
-            prefs[priorityKey] = order.joinToString(",")
+            if (order.isNullOrEmpty()) prefs.remove(playOrderKey) else prefs[playOrderKey] = order.distinct().joinToString(",")
         }
     }
+
+    /**
+     * The rows of the play order the user switched off in Settings › Add-ons: `tidal` (the Tidal
+     * rung) and `addon:<id>` for an add-on Stash turns on by default. An add-on the user added
+     * carries its switch in its own sealed entry. Fail-open to "everything on".
+     */
+    val playOrderOff: Flow<Set<String>> = context.losslessDataStore.data.map { prefs ->
+        prefs[playOrderOffKey]?.let(::keys)?.toSet().orEmpty()
+    }.distinctUntilChanged().catch { emit(emptySet()) }
+
+    suspend fun setPlayOrderOff(key: String, off: Boolean) {
+        context.losslessDataStore.edit { prefs ->
+            val now = prefs[playOrderOffKey]?.let(::keys)?.toSet().orEmpty()
+            val next = if (off) now + key else now - key
+            if (next.isEmpty()) prefs.remove(playOrderOffKey) else prefs[playOrderOffKey] = next.joinToString(",")
+        }
+    }
+
+    private fun keys(raw: String): List<String> = raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
     /**
      * Minimum acceptable quality. Sources whose [SourceResult.format]
@@ -370,37 +389,6 @@ class LosslessSourcePreferences @Inject constructor(
     }
 
     companion object {
-        /**
-         * Default priority order used by fresh installs (no DataStore
-         * entry yet). Existing users with explicitly-saved priority
-         * preserve their value.
-         *
-         * Order:
-         * 1. qbdlx_qobuz — Qobuz Hi-Res FLAC via a direct www.qobuz.com call
-         *    (MD5 request signing with the user's own credentials).
-         *    Ranked FIRST: it's
-         *    the fastest lossless path — plain Range-seekable FLAC, no proxy
-         *    operator and no client-side decryption.
-         * 2. tidal_bitchord — Tidal FLAC through a BitChord server (the user's own,
-         *    or Stash's from the signed config). The registry moves it ahead of 1
-         *    when it is the user's own server, none of their own Qobuz is set up and
-         *    the tier is above CD ([LosslessAvailability.ownTidalFirstNow]): their
-         *    endpoint is asked first. Nothing calls [setPriorityOrder] today; if a
-         *    manual order is ever offered, that rule has to respect it, so streaming
-         *    and Settings follow it too.
-         *
-         * Every rung is user-owned OR build-carried: 1 self-gates off without a
-         * connected Qobuz account, 2 without a server (the user's own, or the Tidal
-         * relay in the signed config). With nothing of the user's
-         * own connected, a build carrying the Tidal relay still resolves through 2
-         * with no user action; a build without one reaches NO lossless source at
-         * all and falls back to lossy.
-         */
-        val DEFAULT_PRIORITY: List<String> = listOf(
-            "qbdlx_qobuz",
-            "tidal_bitchord",
-        )
-
         /**
          * Validates + normalises a relay base URL: must parse as an https URL
          * (OkHttp's rules — a bad host is rejected here, never at request time),

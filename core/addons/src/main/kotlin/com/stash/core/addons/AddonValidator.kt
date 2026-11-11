@@ -645,8 +645,8 @@ object AddonValidator {
             stash == "0" -> AddonManifest(AddonV0.manifest(v, options), AddonDialect.V0)
             stash == "1" -> AddonManifest(manifest(v, options), AddonDialect.V1)
             (raw == null || raw is JsonNull) && AddonEclipse.isEclipse(v) -> AddonEclipse.manifest(v, options)
-            raw == null || raw is JsonNull -> fail("/stash", "not a Stash add-on")
-            else -> fail("/stash", "This add-on needs a newer Stash")
+            raw == null || raw is JsonNull -> fail("/stash", NOT_AN_ADDON)
+            else -> fail("/stash", NEEDS_NEWER_STASH)
         }
     }
 
@@ -840,6 +840,12 @@ object AddonValidator {
     }
 
     // ---------------------------------------------------------------------------------------------- caps not in Limits
+
+    /** Why [readManifest] refuses a manifest written for a newer host; a caller tells it apart by this text. */
+    const val NEEDS_NEWER_STASH = "This add-on needs a newer Stash"
+
+    /** Why [readManifest] refuses a manifest with no `stash` field and nothing Eclipse-shaped. */
+    const val NOT_AN_ADDON = "not a Stash add-on"
 
     const val MAX_DURATION_MS = 86_400_000L
     const val MAX_UNIX_SECONDS = 4_102_444_800L

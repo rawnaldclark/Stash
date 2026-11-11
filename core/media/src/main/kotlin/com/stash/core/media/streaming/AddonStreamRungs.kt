@@ -35,8 +35,8 @@ class AddonStreamRungs @Inject constructor(
     private val refs: AddonRefs,
 ) {
     /**
-     * The lossless rungs, in the registry's order (user-added first). Empty, with no work done,
-     * when none are on. The first-party Tidal add-on is never one: the Tidal rung plays it
+     * The lossless rungs, in the registry's order (user-added first); [StreamSourceRegistry] places
+     * them by the play order. Empty, with no work done, when none are on. The first-party Tidal add-on is never one: the Tidal rung plays it
      * ([AddonRegistry.generic]).
      */
     fun rungs(): List<AddonStreamRung> {
@@ -96,10 +96,7 @@ class AddonStreamRung internal constructor(
     /** The lossy pass's chain label: never counted as a lossless serve. */
     val lossyName: String = LOSSY_PREFIX + name
 
-    /**
-     * Added by the user: asked ahead of Qobuz on every play. Unlike the user's own Tidal server,
-     * which leads only above CD and only without the user's own Qobuz, there is no condition.
-     */
+    /** Added by the user. Where it is asked is the play order's call (`PlayOrder`). */
     val userAdded: Boolean get() = addon.userAdded
 
     /** A metered add-on (its manifest lists `quota`): a look-ahead never spends its allowance. */

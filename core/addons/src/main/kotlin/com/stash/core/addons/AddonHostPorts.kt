@@ -1,5 +1,13 @@
 package com.stash.core.addons
 
+import com.stash.addons.contract.Manifest
+import com.stash.addons.contract.Resource
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
 import okhttp3.Request
 import okhttp3.Response
 
@@ -30,6 +38,9 @@ interface AddonRateGate {
 
     /** Timeout, network failure, an invalid answer, or `unavailable` without a `Retry-After`. */
     suspend fun onFailure(key: String)
+
+    /** Ends any pause now: the user replaced the add-on's link (add-ons plan phase 4 §2.9). */
+    suspend fun reset(key: String) = Unit
 }
 
 /**
@@ -120,4 +131,115 @@ object NoManifestStore : AddonManifestStore {
     override suspend fun read(key: String): String? = null
     override suspend fun write(key: String, json: String) = Unit
     override suspend fun retain(keys: Set<String>) = Unit
+}
+
+/**
+ * Where an add-on stands with Stash (add-ons plan phase 4 §1.6). Decided only by the signed config
+ * and the signed index ([AddonCatalog]), never by anything an add-on says about itself.
+ */
+enum class Trust {
+    /** Stash's own: it gets the install signature ([AddonTrust]). Marked Official. */
+    FIRST_PARTY,
+
+    /** Run by Stash: a default of the signed config, or listed in the signed index. No sheet. */
+    OFFICIAL,
+
+    /** Everything else: "Not made by Stash". The sheet once, the base rules always. */
+    UNOFFICIAL,
+
+    /** The signed index turned it off: never loaded or asked. */
+    BLOCKED,
+}
+
+/** Why the signed index turned an add-on off. The app shows its own sentence for each, never text from the file. */
+enum class BlockReason(val wire: String) {
+    HARMFUL("harmful"),
+    BROKEN("broken"),
+    IMPERSONATION("impersonation"),
+}
+
+/**
+ * One add-on of the official list (the signed index's `addons`, phase 4 §1.3). [manifestUrl] null:
+ * an add-on Stash turns on by default, whose manifest comes from the signed config by [id].
+ */
+data class OfficialEntry(
+    val id: String,
+    val name: String,
+    val summary: String,
+    val icon: String? = null,
+    val manifestUrl: String? = null,
+)
+
+/**
+ * The official list and the blocklist (phase 4 §1.6), bound in `:data:download` to the signed index
+ * (`SignedIndexAddonCatalog`).
+ */
+interface AddonCatalog {
+    /**
+     * Where the add-on at [base] stands. [id]: its manifest id when known; a block can name one id
+     * on an origin, and with no id known only a block of the whole origin applies.
+     */
+    fun trustOf(base: String, id: String?): Trust
+
+    /** Why [trustOf] says [Trust.BLOCKED]; null otherwise. */
+    fun blockReason(base: String, id: String?): BlockReason?
+
+    /** The official add-ons a user can add (those with a manifest of their own); live. */
+    val official: StateFlow<List<OfficialEntry>>
+
+    /** Emits whenever what [trustOf] answers may have changed (a new index or config was applied). */
+    val changes: Flow<Any?>
+
+    /** Returns once the copy kept from the last run has been read, so a cold start never loads a blocked add-on. */
+    suspend fun awaitLoaded() = Unit
+}
+
+/** No index: nothing is official, nothing is blocked. For hand-built registries in tests. */
+object NoAddonCatalog : AddonCatalog {
+    override fun trustOf(base: String, id: String?): Trust = Trust.UNOFFICIAL
+    override fun blockReason(base: String, id: String?): BlockReason? = null
+    override val official: StateFlow<List<OfficialEntry>> = MutableStateFlow(emptyList<OfficialEntry>()).asStateFlow()
+    override val changes: Flow<Any?> = emptyFlow()
+}
+
+/**
+ * The add-ons Stash turns on by default that the user switched off in Settings › Add-ons, by
+ * manifest id (phase 4 §2.9: a default has only the switch). An add-on the user added carries its
+ * switch in its own entry ([UserAddonEntry.enabled]). Bound in `:data:download` (`PlayOrderSwitches`).
+ */
+interface AddonSwitches {
+    val defaultsOff: Flow<Set<String>>
+}
+
+/** Every default on: for hand-built registries in tests. */
+object AllDefaultsOn : AddonSwitches {
+    override val defaultsOff: Flow<Set<String>> = flowOf(emptySet())
+}
+
+/**
+ * What an add-on's server gets to see (phase 4 §2.7), read from its manifest's resources. The
+ * "Not made by Stash" sheet names these, and the user's agreement is kept as their names
+ * ([UserAddonEntry.consent]): an add-on that later wants more waits until the user agrees again.
+ * Every server add-on also sees the phone's internet address.
+ */
+enum class AddonSees {
+    /** "what you search for": it lists `search`. */
+    SEARCHES,
+
+    /** "the songs you play": it lists `stream` or `resolve`. */
+    PLAYS,
+
+    /** "and save": it lists `download`. */
+    SAVES;
+
+    companion object {
+        fun of(m: Manifest): Set<AddonSees> = buildSet {
+            if (m.offers(Resource.SEARCH)) add(SEARCHES)
+            if (m.offers(Resource.STREAM) || m.offers(Resource.RESOLVE)) add(PLAYS)
+            if (m.offers(Resource.DOWNLOAD)) add(SAVES)
+        }
+
+        /** The names kept in a sealed entry. */
+        fun namesOf(m: Manifest): Set<String> = of(m).map { it.name }.toSet()
+    }
 }
