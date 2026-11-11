@@ -126,6 +126,12 @@ class LazyResolvingDataSource(
     private val localDelegate: (() -> DataSource)? = null,
     /** False in Download mode: nothing is resolved, the open fails and the song is skipped. */
     private val streamAllowed: () -> Boolean = { true },
+    /**
+     * Opens an add-on's stream (`addon:` origins) on the add-on media client, whose DNS and
+     * connection guard refuse the user's own network (add-ons plan phase 4 §2.6). Null in tests:
+     * such a stream then opens on [httpDelegate].
+     */
+    private val addonDelegate: (() -> DataSource)? = null,
 ) : DataSource {
 
     private var active: DataSource? = null
@@ -246,7 +252,7 @@ class LazyResolvingDataSource(
         val delegate = when (stream.origin) {
             JioSaavnStreamResolver.ORIGIN -> jioSaavnDelegate()
             CloudCopyFinder.ORIGIN -> cloudDelegate?.invoke() ?: throw IOException("cloud playback isn't wired")
-            else -> httpDelegate()
+            else -> if (stream.origin?.startsWith(AddonStreamRung.ORIGIN_PREFIX) == true) addonDelegate?.invoke() ?: httpDelegate() else httpDelegate()
         }
         return delegateTo(delegate, dataSpec.buildUpon().setUri(Uri.parse(stream.url)).build())
     }

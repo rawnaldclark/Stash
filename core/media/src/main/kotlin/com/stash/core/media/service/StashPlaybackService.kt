@@ -153,6 +153,8 @@ class StashPlaybackService : MediaLibraryService() {
      * [androidx.media3.datasource.okhttp.OkHttpDataSource].
      */
     @Inject lateinit var okHttpClient: okhttp3.OkHttpClient
+    /** The add-on client: its media client plays `addon:` streams under the base rules (add-ons plan phase 4 §2.6). */
+    @Inject lateinit var addonClient: com.stash.core.addons.HttpAddonClient
     @Inject lateinit var cloudLinkResolver: com.stash.data.cloud.playback.CloudLinkResolver
     @Inject lateinit var cloudCopyFinder: com.stash.core.media.streaming.CloudCopyFinder
     @Inject @field:com.stash.core.media.streaming.StreamCache
@@ -757,6 +759,16 @@ class StashPlaybackService : MediaLibraryService() {
                 val origin = item.mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN)
                 (scheme == "http" || scheme == "https") &&
                     origin == com.stash.core.media.streaming.JioSaavnStreamResolver.ORIGIN
+            },
+            // An add-on's stream plays on the add-on media client: no fetch from the user's own
+            // network, whatever the add-on answered (add-ons plan phase 4 §2.6).
+            addonDataSourceFactory = androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(addonClient.mediaClient)
+                .setUserAgent(addonClient.mediaUserAgent),
+            isAddonOrigin = { item ->
+                val scheme = item.localConfiguration?.uri?.scheme?.lowercase()
+                val origin = item.mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN)
+                (scheme == "http" || scheme == "https") &&
+                    origin?.startsWith(com.stash.core.media.streaming.AddonStreamRung.ORIGIN_PREFIX) == true
             },
             httpClient = okHttpClient,
             // Full-timeline queue: stash-resolve:// placeholders resolve

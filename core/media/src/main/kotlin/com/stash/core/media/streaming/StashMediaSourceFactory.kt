@@ -69,6 +69,14 @@ class StashMediaSourceFactory(
      */
     private val streamAllowed: () -> Boolean = { true },
     resolveDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
+    /**
+     * Add-on streams (`addon:` origins): the add-on media client's HTTP source, whose DNS and
+     * connection guard refuse the user's own network (add-ons plan phase 4 §2.6). Null in tests;
+     * such a stream then plays on the default path.
+     */
+    addonDataSourceFactory: DataSource.Factory? = null,
+    /** An item whose stream an add-on answered (its origin extra starts `addon:`). */
+    private val isAddonOrigin: (MediaItem) -> Boolean = { false },
 ) : MediaSource.Factory {
 
     private val resolver = resolver
@@ -95,6 +103,9 @@ class StashMediaSourceFactory(
         streamAllowed,
     )
     private val jioSaavnFactory = DefaultMediaSourceFactory(jioSaavnDataSourceFactory)
+
+    private val addonSourceFactory: DataSource.Factory? = addonDataSourceFactory?.let { DownloadModeGate.gate(it, streamAllowed) }
+    private val addonFactory: DefaultMediaSourceFactory? = addonSourceFactory?.let { DefaultMediaSourceFactory(it) }
 
     // Full-timeline placeholders: stash-resolve://track/<id> items resolve
     // their URL inside LazyResolvingDataSource.open() on the loader thread.
@@ -123,6 +134,7 @@ class StashMediaSourceFactory(
                 downloadedFile = { row -> row.usableDownload(context) },
                 localDelegate = { localDataSourceFactory.createDataSource() },
                 streamAllowed = streamAllowed,
+                addonDelegate = addonSourceFactory?.let { f -> { f.createDataSource() } },
             )
         }
     private val lazyFactory = DefaultMediaSourceFactory(lazyDataSourceFactory)
@@ -145,6 +157,7 @@ class StashMediaSourceFactory(
         provider: DrmSessionManagerProvider,
     ): MediaSource.Factory {
         localFactory.setDrmSessionManagerProvider(provider)
+        addonFactory?.setDrmSessionManagerProvider(provider)
         refusedFactory.setDrmSessionManagerProvider(provider)
         jioSaavnFactory.setDrmSessionManagerProvider(provider)
         lazyFactory.setDrmSessionManagerProvider(provider)
@@ -156,6 +169,7 @@ class StashMediaSourceFactory(
         policy: LoadErrorHandlingPolicy,
     ): MediaSource.Factory {
         localFactory.setLoadErrorHandlingPolicy(policy)
+        addonFactory?.setLoadErrorHandlingPolicy(policy)
         refusedFactory.setLoadErrorHandlingPolicy(policy)
         jioSaavnFactory.setLoadErrorHandlingPolicy(policy)
         lazyFactory.setLoadErrorHandlingPolicy(policy)
@@ -180,6 +194,7 @@ class StashMediaSourceFactory(
         }
         streamingTrackId(mediaItem)?.let { return streamingFactory.createUncachedDataSourceFactory(it) }
         if (isJioSaavnOrigin(mediaItem)) return jioSaavnDataSourceFactory
+        if (addonSourceFactory != null && isAddonOrigin(mediaItem)) return addonSourceFactory
         return localDataSourceFactory
     }
 
@@ -228,7 +243,8 @@ class StashMediaSourceFactory(
                         if (resolved?.isHls == true) {
                             streamingFactory.createHlsMediaSource(item, resolved)
                         } else if (resolved?.isDash == true) {
-                            streamingFactory.createDashMediaSource(item, resolved.url)
+                            val addon = addonSourceFactory?.takeIf { resolved.origin?.startsWith(AddonStreamRung.ORIGIN_PREFIX) == true }
+                            streamingFactory.createDashMediaSource(item, resolved.url, addon)
                         } else {
                             lazyFactory.createMediaSource(item)
                         }
@@ -241,7 +257,7 @@ class StashMediaSourceFactory(
         // Keyed on the path, not an extra: the session strips local configuration,
         // and upstream serves every MPD at `/dash/td/<id>.mpd`.
         if ((uri?.scheme == "https" || uri?.scheme == "http") && uri.path?.endsWith(".mpd") == true) {
-            return streamingFactory.createDashMediaSource(mediaItem, uri.toString())
+            return streamingFactory.createDashMediaSource(mediaItem, uri.toString(), addonSourceFactory?.takeIf { isAddonOrigin(mediaItem) })
         }
         // Order matches existing precedence: YouTube-trackId refresh chain first,
         // then JioSaavn authed-HTTP, then local/default.
@@ -251,6 +267,7 @@ class StashMediaSourceFactory(
         if (isJioSaavnOrigin(mediaItem)) {
             return jioSaavnFactory.createMediaSource(mediaItem)
         }
+        if (addonFactory != null && isAddonOrigin(mediaItem)) return addonFactory.createMediaSource(mediaItem)
         return localFactory.createMediaSource(mediaItem)
     }
 }

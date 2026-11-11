@@ -167,12 +167,19 @@ class RelayAddonSigner @Inject constructor(
 }
 
 /**
- * SPEC.md 1.1's development exception (`http:` on 127.0.0.1, localhost, [::1]) on debuggable builds
- * only: an add-on under `wrangler dev` on the PC, reached over `adb reverse`. Release: https only.
+ * SPEC.md 1.1's development exception (`http:` and `https:` on 127.0.0.1, localhost, [::1]) on
+ * debuggable builds only: an add-on under `wrangler dev` on the PC, reached over `adb reverse`.
+ * Release: https only, and the base rules for add-ons the user added. And the User-Agent.
  */
 @Singleton
 class BuildAddonHostOptions @Inject constructor(
     @ApplicationContext context: Context,
 ) : AddonHostOptions {
     override val allowLocalHttp: Boolean = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+
+    /** `Stash/<versionName>` (add-ons plan phase 4 §2.3), read once from the package. */
+    override val userAgent: String = runCatching {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName
+    }.getOrNull()?.takeIf { it.isNotBlank() && it.all { c -> c in '!'..'~' } }
+        ?.let { "${AddonHostOptions.DEFAULT_USER_AGENT}/$it" } ?: AddonHostOptions.DEFAULT_USER_AGENT
 }
