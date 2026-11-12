@@ -579,6 +579,28 @@ class AddonRegistryTest {
         }
     }
 
+    @Test fun `a list that changes while a manifest is being read does not make it asked again`() = runBlocking<Unit> {
+        // review-885 N2: at a cold start the user's list and the config's defaults arrive a moment
+        // apart. The newer list cancelled the read under way, and the pass after it asked again.
+        answers["slow"] = { MockResponse().setBody(manifestJson("slow")).setHeadersDelay(600, TimeUnit.MILLISECONDS) }
+        serve("d", manifestJson("def"))
+        val users = Users(listOf(agreed(url("slow"), id = "slow")))
+        val defaults = Defaults(emptyList())
+        val registry = registry(defaults = defaults, users = users)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            registry.start(scope, emptyFlow())
+            // Its read is under way when the other list arrives.
+            withTimeout(5_000) { while ("slow" !in asked) delay(10) }
+            defaults.flow.value = listOf(DefaultAddonEntry(url("d")))
+            withTimeout(5_000) { registry.addons.first { it.size == 2 } }
+            assertThat(asked.count { it == "slow" }).isEqualTo(1)
+            assertThat(asked.count { it == "d" }).isEqualTo(1)
+        } finally {
+            scope.cancel()
+        }
+    }
+
     @Test fun `a removed add-on's kept manifest goes at once, not when a pass that is reading ends`() = runBlocking<Unit> {
         // review-885 N7.
         serve("hangs", manifestJson("hangs"))
