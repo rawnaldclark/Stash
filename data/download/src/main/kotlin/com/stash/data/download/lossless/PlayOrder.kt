@@ -32,7 +32,8 @@ import javax.inject.Singleton
  * skip them; an add-on that isn't in it yet goes last. Removing an add-on forgets its key.
  */
 @Singleton
-class PlayOrder internal constructor(
+class PlayOrder(
+    /** The saved keys; null while the order is automatic. The app's is `lossless_source_preferences`. */
     private val saved: Flow<List<String>?>,
     private val save: suspend (List<String>?) -> Unit,
     private val registry: AddonRegistry,

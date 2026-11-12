@@ -14,6 +14,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.addons.AddonSees
 import com.stash.core.addons.BlockReason
@@ -207,7 +208,8 @@ class AddonScreensTest {
     @Test fun `an official add-on not added yet is offered, and a lyrics add-on has its own group`() {
         val words = relay.copy(key = "addon:words", name = "Words", playsSongs = false)
         showList(state(tidal, others = listOf(words), official = listOf(OfficialEntry("radio", "Example Radio", "Live stations", manifestUrl = "https://addons.example.org/radio/manifest.json"))))
-        rule.onNodeWithText("Other add-ons").assertExists()
+        // Section labels are drawn in capitals.
+        rule.onNodeWithText("Other add-ons", ignoreCase = true).assertExists()
         rule.onNodeWithText("Words").assertExists()
         rule.onNodeWithText("Example Radio").performScrollTo().performClick()
         assertThat(addFromLink).containsExactly("https://addons.example.org/radio/manifest.json")
@@ -254,7 +256,8 @@ class AddonScreensTest {
         assertThat(added).isEmpty()
         rule.onNodeWithText("Its server will see").assertExists()
         rule.onNodeWithText("What you search for, the songs you play, and your internet address.").assertExists()
-        rule.onNodeWithText("Add anyway").performClick()
+        // The button's own click, wherever the sheet has slid to in a test window.
+        rule.onNodeWithText("Add anyway").performSemanticsAction(SemanticsActions.OnClick)
         assertThat(added).containsExactly(Triple("hifi", null, true))
     }
 

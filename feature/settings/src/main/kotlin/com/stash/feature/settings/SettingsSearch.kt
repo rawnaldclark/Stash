@@ -106,7 +106,7 @@ internal fun settingsSearchIndex(s: (Int) -> String): List<SettingsSearchEntry> 
         // listener's own Tidal server is on its Tidal row now, so the old field's words lead here.
         SettingsSearchEntry(s(R.string.settings_addons_title), SettingsPage.ADDONS, listOf("plugin", "plugins", "extension", "source", "sources", "eclipse", "bitchord", "tidal server", "relay", "official")),
         SettingsSearchEntry(s(R.string.settings_addons_order_section), SettingsPage.ADDONS, listOf("order", "priority", "first", "qobuz", "tidal", "drag")),
-        SettingsSearchEntry(s(R.string.settings_addons_link_title), SettingsPage.ADDONS, listOf("add on", "link", "paste", "scan", "qr", "manifest", "share")),
+        SettingsSearchEntry(s(R.string.settings_addons_link_title), SettingsPage.ADDONS, listOf("add on", "link", "paste", "scan", "code", "share", "eclipse", "bitchord")),
         // Accounts & Sync
         SettingsSearchEntry("Spotify", SettingsPage.ACCOUNTS, listOf("connect", "sign in", "login")),
         SettingsSearchEntry("YouTube Music", SettingsPage.ACCOUNTS, listOf("google", "connect", "sign in", "login")),
