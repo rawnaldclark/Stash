@@ -50,10 +50,10 @@ class AddonMediaGuard(
         while (true) {
             val url = request.url
             if (!allowed(url)) {
-                val private = isLocalAddress(url)
+                val ownNetwork = isLocalAddress(url)
                 // Never the URL: it can carry a signature or a token. What kind of refusal, and on which hop.
-                Log.w(TAG, "${if (hops == 0) "media URL" else "redirect hop $hops"} refused (${if (private) "private address" else "not an https URL on a public host"})")
-                throw if (private) PrivateAddressException() else RefusedAddonUrlException()
+                Log.w(TAG, "${if (hops == 0) "media URL" else "redirect hop $hops"} refused (${if (ownNetwork) "private address" else "not an https URL on a public host"})")
+                throw if (ownNetwork) PrivateAddressException() else RefusedAddonUrlException()
             }
             if (viaProxy(url, proxy, proxySelector)) {
                 try {
