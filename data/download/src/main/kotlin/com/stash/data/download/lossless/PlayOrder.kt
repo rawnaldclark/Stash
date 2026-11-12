@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -84,13 +86,27 @@ class PlayOrder(
     /** The saved keys, or null while the order is automatic. */
     suspend fun savedNow(): List<String>? = saved.first()
 
+    /** One write of the saved order at a time: a change that reads it first never starts from an order another change is about to replace. */
+    private val writes = Mutex()
+
     /** Saves [keys] as the whole order: the first drag ends the automatic order. */
-    suspend fun set(keys: List<String>) = save(keys.distinct())
+    suspend fun set(keys: List<String>) = writes.withLock { save(keys.distinct()) }
+
+    /**
+     * One change to the saved order, made from the order as it is saved at that moment: [next] is
+     * given the saved keys (null while the order is automatic) and answers the keys to save, or
+     * null to leave it as it is. Two quick moves therefore both count (review-885 N3): each used to
+     * start from the order the screen had drawn, and the second repeated the first.
+     */
+    suspend fun change(next: (saved: List<String>?) -> List<String>?) = writes.withLock {
+        next(saved.first())?.let { save(it.distinct()) }
+        Unit
+    }
 
     /** An add-on was removed: its place goes with it. Nothing to do while the order is automatic. */
-    suspend fun forget(key: String) {
-        val now = saved.first() ?: return
-        if (key in now) save(now - key)
+    suspend fun forget(key: String) = writes.withLock {
+        val now = saved.first()
+        if (now != null && key in now) save(now - key)
     }
 
     companion object {

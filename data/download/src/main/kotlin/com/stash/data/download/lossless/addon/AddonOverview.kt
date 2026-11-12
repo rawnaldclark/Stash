@@ -176,9 +176,16 @@ class AddonOverview @Inject constructor(
     }
 
     /** One place up or down (TalkBack's Move up / Move down, and the add-on page's). */
-    suspend fun nudge(shown: State, key: String, up: Boolean): Boolean {
-        val at = shown.order.indexOfFirst { it.key == key }
-        return if (at >= 0) move(shown, key, if (up) at - 1 else at + 1) else true
+    suspend fun nudge(shown: State, key: String, up: Boolean): Boolean = saved {
+        playOrder.change { savedNow ->
+            // The rows the screen drew, in the order as it is saved now. A second tap before the first
+            // one's save has flowed back to the screen moves the row once more; from the order on
+            // screen it repeated the first move (review-885 N3).
+            val keys = PlayOrder.effective(savedNow, shown.keys.filter { PlayOrder.addonIdOf(it) != null }).keys
+            val onScreen = shown.order.map { it.key }.sortedBy { keys.indexOf(it) }
+            val at = onScreen.indexOf(key)
+            if (at < 0) null else PlayOrder.moved(keys, onScreen, key, if (up) at - 1 else at + 1)
+        }
     }
 
     /** The switch. False when it could not be saved: the screen says so, and nothing changed. */

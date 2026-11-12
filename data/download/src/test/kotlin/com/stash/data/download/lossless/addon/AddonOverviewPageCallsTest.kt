@@ -13,7 +13,9 @@ import com.stash.core.addons.InstalledAddon
 import com.stash.core.addons.NoFirstPartyAddons
 import com.stash.core.addons.UnsignedAddons
 import com.stash.data.download.lossless.AggregatorRateLimiter
+import com.stash.data.download.lossless.PlayOrder
 import com.stash.data.download.lossless.RateLimitState
+import com.stash.data.download.lossless.tidal.FixedRegistry
 import com.stash.data.download.lossless.tidal.LocalHttp
 import io.mockk.coEvery
 import io.mockk.every
@@ -90,11 +92,12 @@ class AddonOverviewPageCallsTest {
 
     private fun overview(
         client: HttpAddonClient = HttpAddonClient(OkHttpClient(), gate, NoFirstPartyAddons, UnsignedAddons, LocalHttp),
+        playOrder: PlayOrder = mockk(relaxed = true),
     ): AddonOverview {
         val registry: InTreeAddonRegistry = mockk(relaxed = true) { every { addons } returns MutableStateFlow(listOf(addon())) }
         return AddonOverview(
             users = mockk(relaxed = true), registry = registry, catalog = mockk(relaxed = true), index = mockk(relaxed = true),
-            prefs = mockk(relaxed = true), playOrder = mockk(relaxed = true), switches = mockk(relaxed = true),
+            prefs = mockk(relaxed = true), playOrder = playOrder, switches = mockk(relaxed = true),
             availability = mockk(relaxed = true), wires = mockk(relaxed = true), own = mockk(relaxed = true),
             client = client, limiter = limiter, links = mockk(relaxed = true),
         )
@@ -115,6 +118,29 @@ class AddonOverviewPageCallsTest {
         assertThat(quota?.used).isEqualTo(3)
         assertThat(quota?.limit).isEqualTo(10)
         assertThat(gateCalls).isEmpty()
+    }
+
+    @Test fun `two quick moves both count - the second starts from what the first saved`() = runBlocking<Unit> {
+        // review-885 N3: Move up tapped twice before the screen has drawn the first move. Each tap
+        // worked from the order on screen and saved the whole order, so the second repeated the first.
+        val savedOrder = MutableStateFlow<List<String>?>(null)
+        val order = PlayOrder(savedOrder, { savedOrder.value = it }, FixedRegistry(listOf(addon())))
+        val overview = overview(playOrder = order)
+        val qobuz = row.copy(key = "qobuz", kind = AddonOverview.Kind.QOBUZ)
+        val tidal = row.copy(key = "tidal", kind = AddonOverview.Kind.TIDAL)
+        // What the screen drew, and goes on showing while the taps come in.
+        val shown = AddonOverview.State(order = listOf(qobuz, tidal, row), keys = listOf("qobuz", "tidal", "addon:mine"), loaded = true)
+
+        assertThat(overview.nudge(shown, "addon:mine", up = true)).isTrue()
+        assertThat(savedOrder.value).containsExactly("qobuz", "addon:mine", "tidal").inOrder()
+        assertThat(overview.nudge(shown, "addon:mine", up = true)).isTrue()
+        assertThat(savedOrder.value).containsExactly("addon:mine", "qobuz", "tidal").inOrder()
+        // At the top there is nowhere further up, and nothing is saved again.
+        assertThat(overview.nudge(shown, "addon:mine", up = true)).isTrue()
+        assertThat(savedOrder.value).containsExactly("addon:mine", "qobuz", "tidal").inOrder()
+        // And back down from there.
+        assertThat(overview.nudge(shown, "addon:mine", up = false)).isTrue()
+        assertThat(savedOrder.value).containsExactly("qobuz", "addon:mine", "tidal").inOrder()
     }
 
     @Test fun `the page's two questions leave the thread of the screen that asks them`() {
