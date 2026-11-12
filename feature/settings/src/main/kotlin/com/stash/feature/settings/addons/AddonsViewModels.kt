@@ -168,13 +168,24 @@ class AddFromLinkViewModel @Inject constructor(
     private val stepState = MutableStateFlow<Step>(Step.Idle)
     val step: StateFlow<Step> = stepState.asStateFlow()
 
-    /**
-     * The play order ends with Tidal, switched on: a new add-on lands right after it, and the
-     * preview can say "for songs Tidal doesn't have". Otherwise it says "after your other sources".
-     */
-    val landsAfterTidal: StateFlow<Boolean> = overview.state
-        .map { s -> s.order.lastOrNull()?.let { it.kind == AddonOverview.Kind.TIDAL && it.on } == true }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+    /** Where a new add-on that plays songs lands among the sources that are on: the preview says so (§2.1). */
+    enum class Lands {
+        /** Right after Tidal: "for songs Tidal doesn't have". */
+        AFTER_TIDAL,
+
+        /** After the other sources that are on. */
+        AFTER_OTHERS,
+
+        /**
+         * No other source is on (no Qobuz account, Tidal switched off or not there at all): it is
+         * asked for every song, and the preview must say that, not "after your other sources".
+         */
+        ALONE,
+    }
+
+    val lands: StateFlow<Lands> = overview.state
+        .map { landsAmong(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Lands.AFTER_OTHERS)
 
     /** Reads the add-on behind [link]. [replacingKey]: the add-on whose link this replaces, from its page. */
     fun read(link: String, replacingKey: String?) {
@@ -201,6 +212,19 @@ class AddFromLinkViewModel @Inject constructor(
 
     fun reset() {
         if (stepState.value != Step.Reading) stepState.value = Step.Idle
+    }
+
+    companion object {
+        /** [Lands] for the rows as they stand. Before the rows have been read once, the sentence that claims least. */
+        internal fun landsAmong(state: AddonOverview.State): Lands {
+            if (!state.loaded) return Lands.AFTER_OTHERS
+            val on = state.order.filter { it.on }
+            return when {
+                on.isEmpty() -> Lands.ALONE
+                on.last().kind == AddonOverview.Kind.TIDAL -> Lands.AFTER_TIDAL
+                else -> Lands.AFTER_OTHERS
+            }
+        }
     }
 }
 

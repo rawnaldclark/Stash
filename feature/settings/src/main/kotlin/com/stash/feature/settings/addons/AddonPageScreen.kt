@@ -229,8 +229,8 @@ internal fun AddonPageContent(
             )
         }
 
-        // Where it is asked.
-        if (place >= 0) {
+        // Where it is asked. Alone in the order there is no first or last to speak of, and nowhere to move.
+        if (place >= 0 && places > 1) {
             SettingsSectionLabel(stringResource(R.string.settings_addons_page_order))
             SettingsGroupCard(
                 rows = listOf(

@@ -77,7 +77,7 @@ fun AddFromLinkScreen(
     viewModel: AddFromLinkViewModel = hiltViewModel(),
 ) {
     val step by viewModel.step.collectAsStateWithLifecycle()
-    val landsAfterTidal by viewModel.landsAfterTidal.collectAsStateWithLifecycle()
+    val lands by viewModel.lands.collectAsStateWithLifecycle()
     // The field's own text, written in the same frame as each key: never a value that waits on the view model.
     // Keyed by the link the screen was opened with: another link shared to Stash while this screen is
     // open arrives as a new one, and takes the field over.
@@ -103,7 +103,7 @@ fun AddFromLinkScreen(
             step = step,
             link = link,
             replacing = replacingKey != null,
-            landsAfterTidal = landsAfterTidal,
+            lands = lands,
             clipboardEmpty = clipboardEmpty,
             onBack = onBack,
             onLinkChange = {
@@ -160,7 +160,7 @@ internal fun AddFromLinkContent(
     step: AddFromLinkViewModel.Step,
     link: String,
     replacing: Boolean,
-    landsAfterTidal: Boolean,
+    lands: AddFromLinkViewModel.Lands,
     clipboardEmpty: Boolean,
     onBack: () -> Unit,
     onLinkChange: (String) -> Unit,
@@ -243,7 +243,7 @@ internal fun AddFromLinkContent(
             ),
         )
         if (step is AddFromLinkViewModel.Step.Ready) {
-            PreviewCard(preview = step.preview, landsAfterTidal = landsAfterTidal, onAdd = onAdd, onCancel = onCancel)
+            PreviewCard(preview = step.preview, lands = lands, onAdd = onAdd, onCancel = onCancel)
         }
     }
 }
@@ -257,7 +257,7 @@ internal fun AddFromLinkContent(
 @Composable
 private fun PreviewCard(
     preview: AddonLinks.Preview,
-    landsAfterTidal: Boolean,
+    lands: AddFromLinkViewModel.Lands,
     onAdd: (AddonLinks.Preview, String?, Boolean) -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -301,7 +301,13 @@ private fun PreviewCard(
                     }
                     if (preview.playsSongs && preview.replacesKey == null) {
                         Text(
-                            text = stringResource(if (landsAfterTidal) R.string.settings_addons_preview_after_tidal else R.string.settings_addons_preview_after_others),
+                            text = stringResource(
+                                when (lands) {
+                                    AddFromLinkViewModel.Lands.AFTER_TIDAL -> R.string.settings_addons_preview_after_tidal
+                                    AddFromLinkViewModel.Lands.AFTER_OTHERS -> R.string.settings_addons_preview_after_others
+                                    AddFromLinkViewModel.Lands.ALONE -> R.string.settings_addons_preview_alone
+                                },
+                            ),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

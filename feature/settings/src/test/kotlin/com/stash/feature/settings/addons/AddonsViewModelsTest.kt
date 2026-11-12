@@ -49,7 +49,7 @@ class AddonsViewModelsTest {
     private fun shown(vararg order: AddonOverview.Row) =
         AddonOverview.State(order = order.toList(), keys = order.map { it.key }, loaded = true)
 
-    private val pages = MutableStateFlow(shown(tidal, relay))
+    private val pages = MutableStateFlow(shown(relay, tidal))
     private val overview: AddonOverview = mockk(relaxed = true) { every { state } returns pages }
     private val links: AddonLinks = mockk(relaxed = true) { every { lastAdded } returns MutableStateFlow<String?>(null) }
 
@@ -114,15 +114,28 @@ class AddonsViewModelsTest {
         assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Added)
     }
 
-    @Test fun `the preview says after Tidal only when Tidal is the last source that is on`() = runTest {
+    @Test fun `where a new add-on lands is said from the sources that are on`() = runTest {
+        val after = AddFromLinkViewModel.Lands.AFTER_OTHERS
+        val afterTidal = AddFromLinkViewModel.Lands.AFTER_TIDAL
+        val alone = AddFromLinkViewModel.Lands.ALONE
+        val off = AddonOverview.Status.OFF
+        // Tidal is the last source that is on: "for songs Tidal doesn't have".
+        assertThat(AddFromLinkViewModel.landsAmong(shown(tidal))).isEqualTo(afterTidal)
+        assertThat(AddFromLinkViewModel.landsAmong(shown(relay, tidal))).isEqualTo(afterTidal)
+        assertThat(AddFromLinkViewModel.landsAmong(shown(tidal, relay.copy(on = false, status = off)))).isEqualTo(afterTidal)
+        // Another source that is on comes after Tidal: "after your other sources".
+        assertThat(AddFromLinkViewModel.landsAmong(shown(tidal, relay))).isEqualTo(after)
+        // Nothing else is on (no Tidal at all, or Tidal switched off): it is asked for every song, and says so.
+        assertThat(AddFromLinkViewModel.landsAmong(shown())).isEqualTo(alone)
+        assertThat(AddFromLinkViewModel.landsAmong(shown(tidal.copy(on = false, status = off)))).isEqualTo(alone)
+        // Before the rows have been read once, nothing is claimed about what is on.
+        assertThat(AddFromLinkViewModel.landsAmong(AddonOverview.State())).isEqualTo(after)
+
+        // And the screen is told as the rows change.
         val vm = AddFromLinkViewModel(links, overview)
-        // Tidal, then an add-on: the new one lands after that add-on.
-        assertThat(vm.landsAfterTidal.first { !it }).isFalse()
-        pages.value = shown(relay, tidal)
-        assertThat(vm.landsAfterTidal.first { it }).isTrue()
-        // Tidal switched off is not "songs Tidal doesn't have".
-        pages.value = shown(tidal.copy(on = false, status = AddonOverview.Status.OFF))
-        assertThat(vm.landsAfterTidal.first { !it }).isFalse()
+        assertThat(vm.lands.first { it != after }).isEqualTo(afterTidal)
+        pages.value = shown()
+        assertThat(vm.lands.first { it == alone }).isEqualTo(alone)
     }
 
     // ------------------------------------------------------------------------------------------ the list

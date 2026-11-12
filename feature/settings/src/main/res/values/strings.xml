@@ -1469,6 +1469,7 @@
     <string name="settings_addons_preview_uses">Stash will use</string>
     <string name="settings_addons_preview_after_tidal">Stash asks it for songs Tidal doesn\'t have. Drag it up to ask it first.</string>
     <string name="settings_addons_preview_after_others">Stash asks it after your other sources. Drag it up to ask it first.</string>
+    <string name="settings_addons_preview_alone">No other source is switched on, so Stash asks it for every song you stream or download.</string>
     <string name="settings_addons_password_label">Password</string>
     <string name="settings_addons_password_desc">This add-on asks for a password. Whoever runs it gave it to you.</string>
     <string name="settings_addons_add">Add</string>

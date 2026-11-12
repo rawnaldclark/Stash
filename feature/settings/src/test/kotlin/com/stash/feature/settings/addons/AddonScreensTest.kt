@@ -18,6 +18,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -169,6 +170,9 @@ class AddonScreensTest {
         // The address is always beside an add-on Stash doesn't run: its name is its own word.
         rule.onNodeWithText("Not made by Stash · relay.example.org").assertExists()
         rule.onNodeWithText("When none of these has a song: JioSaavn, then YouTube.").assertExists()
+        // Three rows: the order can be changed, so the page says how, and each row has its handle.
+        rule.onNodeWithText("Stash asks these for a song from top to bottom. Drag to change the order.").assertExists()
+        assertThat(rule.onAllNodesWithTag(ADDON_DRAG_HANDLE_TAG).fetchSemanticsNodes()).hasSize(3)
         rule.onNodeWithText("Add from a link").assertExists()
         rule.onNodeWithText("Paste · Scan").assertExists()
         // Your Qobuz account has no switch; the other two have one, on.
@@ -186,6 +190,17 @@ class AddonScreensTest {
         act("Hi-Fi Relay", "Move Hi-Fi Relay up")
         act("Tidal", "Move Tidal down")
         assertThat(nudged).containsExactly("addon:hifi" to true, "tidal" to false).inOrder()
+    }
+
+    @Test fun `a single source has nothing to be dragged past - no word about dragging, no handle, no moves`() {
+        // What most people see: Tidal alone.
+        showList(state(tidal))
+        rule.onNodeWithText("Tidal").assertExists()
+        rule.onNodeWithContentDescription("Use Tidal").assertIsOn()
+        rule.onAllNodesWithText("Drag to change the order", substring = true).assertCountEquals0()
+        assertThat(rule.onAllNodesWithTag(ADDON_DRAG_HANDLE_TAG).fetchSemanticsNodes()).isEmpty()
+        assertThat(actionsOf("Tidal")).isEmpty()
+        rule.onNodeWithText("When none of these has a song: JioSaavn, then YouTube.").assertExists()
     }
 
     @Test fun `a row opens its page and its switch switches it`() {
@@ -445,6 +460,14 @@ class AddonScreensTest {
         assertThat(pageNudged).containsExactly(true)
     }
 
+    @Test fun `alone in the play order, the page has no place to state and no moves to offer`() {
+        showPage(relay, place = 0, places = 1)
+        rule.onNodeWithText("Working").assertExists()
+        rule.onAllNodesWithText("Move up").assertCountEquals0()
+        rule.onAllNodesWithText("Move down").assertCountEquals0()
+        rule.onAllNodesWithText("Asked", substring = true).assertCountEquals0()
+    }
+
     @Test fun `a metered add-on says how much of its allowance is used`() {
         showPage(relay, live = AddonPageViewModel.Live(quota = Quota(used = 12, limit = 300, resetsAt = 0L)))
         rule.onNodeWithText("12 of 300 used today").assertExists()
@@ -464,10 +487,14 @@ class AddonScreensTest {
         needsConsent = trust == Trust.UNOFFICIAL, playsSongs = true,
     )
 
-    private fun showAdd(step: AddFromLinkViewModel.Step, link: String = "") = rule.setContent {
+    private fun showAdd(
+        step: AddFromLinkViewModel.Step,
+        link: String = "",
+        lands: AddFromLinkViewModel.Lands = AddFromLinkViewModel.Lands.AFTER_TIDAL,
+    ) = rule.setContent {
         MaterialTheme {
             AddFromLinkContent(
-                step = step, link = link, replacing = false, landsAfterTidal = true, clipboardEmpty = false,
+                step = step, link = link, replacing = false, lands = lands, clipboardEmpty = false,
                 onBack = {}, onLinkChange = {}, onRead = {}, onPaste = {}, onScan = {},
                 onAdd = { p, token, agreed -> added += Triple(p.id, token, agreed) },
                 onCancel = {},
@@ -485,6 +512,18 @@ class AddonScreensTest {
         rule.onNodeWithText("Stash asks it for songs Tidal doesn't have. Drag it up to ask it first.").assertExists()
         // The rest of the link (a token can be in it) is never on screen.
         rule.onAllNodesWithText("s3cret-tok", substring = true).assertCountEquals0()
+    }
+
+    @Test fun `with no other source switched on, the preview says the add-on is asked for every song`() {
+        // No Qobuz account, and Tidal switched off or not there: "after your other sources" would be untrue.
+        showAdd(AddFromLinkViewModel.Step.Ready(preview()), lands = AddFromLinkViewModel.Lands.ALONE)
+        rule.onNodeWithText("No other source is switched on, so Stash asks it for every song you stream or download.").assertExists()
+        rule.onAllNodesWithText("Drag it up", substring = true).assertCountEquals0()
+    }
+
+    @Test fun `after another source that is on, the preview says so`() {
+        showAdd(AddFromLinkViewModel.Step.Ready(preview()), lands = AddFromLinkViewModel.Lands.AFTER_OTHERS)
+        rule.onNodeWithText("Stash asks it after your other sources. Drag it up to ask it first.").assertExists()
     }
 
     @Test fun `an add-on Stash doesn't run is added only by Add anyway on the sheet`() {

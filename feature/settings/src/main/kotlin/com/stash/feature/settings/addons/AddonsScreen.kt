@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
@@ -146,12 +147,17 @@ internal fun AddonsContent(
         }
         if (state.order.isNotEmpty()) {
             SettingsSectionLabel(stringResource(R.string.settings_addons_order_section))
-            Text(
-                text = stringResource(R.string.settings_addons_order_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 4.dp),
-            )
+            // One row (Tidal alone, for most people) has nothing to be dragged past: no word about
+            // dragging, and no handle on it.
+            val canReorder = state.order.size > 1
+            if (canReorder) {
+                Text(
+                    text = stringResource(R.string.settings_addons_order_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
             val rows = state.order.associateBy { it.key }
             // Dragged by the handle like a song in the queue; the drop saves the order once, as one move.
             val reorder = rememberReorderableColumnState(
@@ -196,7 +202,7 @@ internal fun AddonsContent(
                                             canMoveDown = i < shown.lastIndex && !reorder.isDragging,
                                             onMoveUp = { onNudged(rowKey, true) },
                                             onMoveDown = { onNudged(rowKey, false) },
-                                            handleModifier = Modifier.reorderHandle(reorder, rowKey),
+                                            handleModifier = if (canReorder) Modifier.reorderHandle(reorder, rowKey) else null,
                                         )
                                     }
                                 }
@@ -354,7 +360,7 @@ private fun AddonRow(
             }
         }
         if (handleModifier != null) {
-            Box(modifier = Modifier.size(HandleSize).then(handleModifier), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.size(HandleSize).testTag(ADDON_DRAG_HANDLE_TAG).then(handleModifier), contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = Icons.Default.DragHandle,
                     contentDescription = null, // TalkBack moves the row with its Move up / Move down actions
@@ -396,6 +402,9 @@ private fun OfficialRow(entry: OfficialEntry, onAdd: () -> Unit) {
 
 /** The drag handle's touch target: the queue's. */
 private val HandleSize = 48.dp
+
+/** On each row's drag handle, so a test can count them: the handle says nothing to TalkBack (its row has the moves). */
+internal const val ADDON_DRAG_HANDLE_TAG = "addon-drag-handle"
 
 /** How long a just-added add-on's row stays tinted. */
 private const val HIGHLIGHT_MS = 2_500L
