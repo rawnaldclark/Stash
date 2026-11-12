@@ -77,6 +77,8 @@ class StashMediaSourceFactory(
     addonDataSourceFactory: DataSource.Factory? = null,
     /** An item whose stream an add-on answered (its origin extra starts `addon:`). */
     private val isAddonOrigin: (MediaItem) -> Boolean = { false },
+    /** An item whose URL is a DASH manifest by its own word (its DASH extra), whatever its path. */
+    private val isDashStream: (MediaItem) -> Boolean = { false },
 ) : MediaSource.Factory {
 
     private val resolver = resolver
@@ -262,7 +264,11 @@ class StashMediaSourceFactory(
         // A resolved Tidal MPD (prefetch / foreground tap set the item's URI to it).
         // Keyed on the path, not an extra: the session strips local configuration,
         // and upstream serves every MPD at `/dash/td/<id>.mpd`.
-        if ((uri?.scheme == "https" || uri?.scheme == "http") && uri.path?.endsWith(".mpd") == true) {
+        // An add-on's manifest can sit at any path (`/dash?id=1`), so its item says it is one
+        // (review-882 N4): it went to the progressive source, which cannot read a manifest.
+        if (uri != null && (uri.scheme == "https" || uri.scheme == "http") &&
+            (uri.path?.endsWith(".mpd") == true || (isAddonOrigin(mediaItem) && isDashStream(mediaItem)))
+        ) {
             if (isAddonOrigin(mediaItem)) {
                 // An add-on's manifest and segments on the add-on media client, or refused.
                 return addonSourceFactory?.let { streamingFactory.createDashMediaSource(mediaItem, uri.toString(), it) }

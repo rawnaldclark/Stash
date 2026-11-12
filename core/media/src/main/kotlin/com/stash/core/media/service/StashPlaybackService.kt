@@ -319,6 +319,12 @@ class StashPlaybackService : MediaLibraryService() {
          * has dropped from FLAC to YouTube-extracted audio.
          */
         const val EXTRA_STREAM_ORIGIN = "stash_stream_origin"
+        /**
+         * True when the item's URL is a DASH manifest, not a file. Tidal's manifests are known by
+         * their `.mpd` path; an add-on's can sit at any path (`/dash?id=1`), so its item says so
+         * (review-882 N4).
+         */
+        const val EXTRA_STREAM_DASH = "stash_stream_dash"
 
         private const val ROOT_ID = "ROOT"
         private const val PLAYLISTS_ID = "PLAYLISTS"
@@ -769,6 +775,7 @@ class StashPlaybackService : MediaLibraryService() {
                 (scheme == "http" || scheme == "https") &&
                     com.stash.core.media.streaming.AddonPlayback.isAddonOrigin(origin)
             },
+            isDashStream = { item -> item.mediaMetadata.extras?.getBoolean(EXTRA_STREAM_DASH) == true },
             httpClient = okHttpClient,
             // Full-timeline queue: stash-resolve:// placeholders resolve
             // just-in-time inside LazyResolvingDataSource at open().

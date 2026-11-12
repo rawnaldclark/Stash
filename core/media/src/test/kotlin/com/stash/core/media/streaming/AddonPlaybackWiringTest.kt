@@ -15,6 +15,7 @@ import com.stash.core.addons.OpenAddonRateGate
 import com.stash.core.addons.PrivateAddressException
 import com.stash.core.addons.UnsignedAddons
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_DASH
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_ORIGIN
 import io.mockk.coEvery
 import io.mockk.mockk
@@ -122,14 +123,20 @@ class AddonPlaybackWiringTest {
         trackDao = dao,
         addonDataSourceFactory = if (wired) AddonPlayback.dataSourceFactory(addons) else null,
         isAddonOrigin = { AddonPlayback.isAddonOrigin(it.mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN)) },
+        isDashStream = { it.mediaMetadata.extras?.getBoolean(EXTRA_STREAM_DASH) == true },
     )
 
     /** An item resolved to [url], stamped with the rung that answered it, as the player stamps it. */
-    private fun item(url: String, origin: String? = "addon:stranger"): MediaItem = MediaItem.Builder()
+    private fun item(url: String, origin: String? = "addon:stranger", dash: Boolean = false): MediaItem = MediaItem.Builder()
         .setMediaId("42")
         .setUri(url)
         .setMediaMetadata(
-            MediaMetadata.Builder().setExtras(Bundle().apply { origin?.let { putString(EXTRA_STREAM_ORIGIN, it) } }).build(),
+            MediaMetadata.Builder().setExtras(
+                Bundle().apply {
+                    origin?.let { putString(EXTRA_STREAM_ORIGIN, it) }
+                    if (dash) putBoolean(EXTRA_STREAM_DASH, true)
+                },
+            ).build(),
         )
         .build()
 
@@ -248,6 +255,25 @@ class AddonPlaybackWiringTest {
 
     @Test fun `with no add-on source wired, an add-on's DASH manifest is refused, never handed to the default source`() {
         factory(wired = false).createMediaSource(item(at("/dash/1.mpd")))
+        verify(exactly = 0) { streaming.createDashMediaSource(any(), any(), any()) }
+    }
+
+    /** review-882 N4: only a path ending `.mpd` was taken for a manifest; `/dash?id=1` went to the progressive source. */
+    @Test fun `an add-on's manifest at any path is a DASH source when its item says so, on the add-on client`() {
+        val http = slot<DataSource.Factory>()
+        val manifest = at("/dash?id=1")
+        factory().createMediaSource(item(manifest, dash = true))
+        verify(exactly = 1) { streaming.createDashMediaSource(any(), manifest, capture(http)) }
+        server.enqueue(redirect("https://192.168.1.1/seg-1.m4s"))
+        val segment = at("/seg-1.m4s")
+        assertThat(failure(http.captured.createDataSource(), segment).causes().any { it is PrivateAddressException }).isTrue()
+        assertThat(wire.offLoopback).isEmpty()
+    }
+
+    @Test fun `without that word an add-on's file is not taken for a manifest, and only an add-on's word counts`() {
+        factory().createMediaSource(item(at("/a.flac")))
+        // Tidal's manifests are known by their path alone: the flag on another origin changes nothing.
+        factory().createMediaSource(item(at("/track/1"), origin = "tidal", dash = true))
         verify(exactly = 0) { streaming.createDashMediaSource(any(), any(), any()) }
     }
 
