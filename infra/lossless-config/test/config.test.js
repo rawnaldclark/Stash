@@ -63,6 +63,11 @@ test("default_addons: bad entries throw, and no message repeats the URL (it can 
         ["fragment", [{ manifest: "https://a.example/manifest.json#x" }]],
         ["credentials", [{ manifest: "https://u:p@a.example/manifest.json" }]],
         ["whitespace", [{ manifest: "https://a.example/a b/manifest.json" }]],
+        // Hosts the URL parser takes and the app's add-on client refuses (review-881 N4): published, they would never load.
+        ["underscore in the host", [{ manifest: "https://my_addon.example/manifest.json" }]],
+        ["IPv6 literal", [{ manifest: "https://[2001:db8::1]/manifest.json" }]],
+        ["IDN host", [{ manifest: "https://bücher.example/manifest.json" }]],
+        ["control character in the path", [{ manifest: "https://a.example/tok\u0007en/manifest.json" }]],
         ["too long", [{ manifest: `https://a.example/${"x".repeat(2040)}/manifest.json` }]],
         ["string flag", [{ manifest: TIDAL_V1, enabled: "true" }]],
         ["number flag", [{ manifest: TIDAL_V1, first_party: 1 }]],
@@ -88,6 +93,11 @@ test("normaliseManifestUrl and describeDefaultAddons: the printed form never has
     assert.equal(normaliseManifestUrl(` ${TIDAL_V1} `), TIDAL_V1);
     assert.equal(normaliseManifestUrl("https://a.example/manifest.json"), "https://a.example/manifest.json");
     assert.equal(normaliseManifestUrl("https://a.example/manifest.jsonx"), null);
+    // The app's host rule: letters, digits, dots and hyphens; a port is fine; the parser's spelling is what is published.
+    assert.equal(normaliseManifestUrl("https://A.Example:8443/v1/Tok_1-2.3~x/manifest.json"), "https://a.example:8443/v1/Tok_1-2.3~x/manifest.json");
+    assert.equal(normaliseManifestUrl("https://my_addon.example/manifest.json"), null);
+    assert.equal(normaliseManifestUrl("https://[::1]/manifest.json"), null);
+    assert.equal(normaliseManifestUrl("https://xn--bcher-kva.example/manifest.json"), "https://xn--bcher-kva.example/manifest.json");
     assert.equal(normaliseManifestUrl(42), null);
     const text = describeDefaultAddons([{ manifest: TIDAL_V1, enabled: true, first_party: true }, { manifest: "https://b.example/manifest.json", enabled: false, first_party: false }]);
     assert.equal(text, "https://stash-addon-tidal.example.workers.dev first_party, https://b.example (off)");
