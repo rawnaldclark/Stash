@@ -203,16 +203,32 @@ internal fun AddonPageContent(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = SettingsRowPadH, vertical = SettingsRowPadV),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Text(
-                                text = stringResource(R.string.settings_addons_sheet_sees_label),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                text = stringResource(seesText(row.sees)),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            // "Its server will see" is true only while Stash asks it. Switched off,
+                            // turned off by Stash, or waiting for the user's review, it is asked
+                            // nothing, and the page says that (review-885 N11). One the user can
+                            // switch back on also says what it will see then.
+                            val unused = !row.on || row.status == AddonOverview.Status.WANTS_MORE
+                            if (unused) {
+                                Text(
+                                    text = stringResource(R.string.settings_addons_page_sees_nothing_now),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (!unused || row.status == AddonOverview.Status.OFF) {
+                                Text(
+                                    text = stringResource(
+                                        if (unused) R.string.settings_addons_page_sees_when_on_label else R.string.settings_addons_sheet_sees_label,
+                                    ),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = stringResource(seesText(row.sees)),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                             Text(
                                 text = stringResource(R.string.settings_addons_sheet_never_label),
                                 style = MaterialTheme.typography.labelLarge,

@@ -93,7 +93,9 @@ internal fun NotMadeByStashContent(
         val intro = stringResource(if (more) R.string.settings_addons_sheet_more_intro else R.string.settings_addons_sheet_runs_on, name, host)
         Text(
             text = buildAnnotatedString {
-                val at = intro.indexOf(host)
+                // The address comes after the name in both sentences, and a name can hold the same
+                // text ("relay.example.org radio"): the last place it stands is the address.
+                val at = intro.lastIndexOf(host)
                 if (at < 0 || host.isEmpty()) {
                     append(intro)
                 } else {

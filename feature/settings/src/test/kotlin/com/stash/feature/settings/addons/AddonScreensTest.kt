@@ -355,6 +355,57 @@ class AddonScreensTest {
         assertThat(pageReplaced).isEqualTo(1)
     }
 
+    @Test fun `the page of an add-on Stash is not asking says so, never that its server will see your songs`() {
+        // review-885 N11: switched off, or turned off by Stash, the page still said "Its server will see…".
+        val sees = setOf(AddonSees.PLAYS, AddonSees.NEXT_UP)
+        val line = "The name, artist, album, length and recording code of each song you play and of the next song in your queue, and your internet address."
+        val nothing = "Stash isn't asking this add-on for anything now, so its server sees nothing."
+
+        // Switched off by the user: nothing now, and what it will see once it is back on.
+        showPage(relay.copy(status = AddonOverview.Status.OFF, on = false, sees = sees))
+        rule.onNodeWithText(nothing).assertExists()
+        rule.onAllNodesWithText("Its server will see").assertCountEquals0()
+        rule.onNodeWithText("When it is on, its server will see").assertExists()
+        rule.onNodeWithText(line).assertExists()
+        rule.onNodeWithText("It never gets").assertExists()
+    }
+
+    @Test fun `the page of an add-on Stash turned off, or one waiting for a review, says its server sees nothing`() {
+        val sees = setOf(AddonSees.PLAYS, AddonSees.NEXT_UP)
+        showPage(relay.copy(status = AddonOverview.Status.TURNED_OFF_BY_STASH, on = false, canSwitch = false, sees = sees, blockReason = BlockReason.HARMFUL))
+        val nothing = "Stash isn't asking this add-on for anything now, so its server sees nothing."
+        rule.onNodeWithText(nothing).assertExists()
+        rule.onAllNodesWithText("Its server will see").assertCountEquals0()
+        rule.onAllNodesWithText("When it is on, its server will see").assertCountEquals0()
+        rule.onAllNodesWithText("each song you play", substring = true).assertCountEquals0()
+
+        // Waiting for the user's review ("Wants to see more"): not used until they allow it.
+        pageRow = relay.copy(status = AddonOverview.Status.WANTS_MORE, sees = sees)
+        rule.waitForIdle()
+        rule.onNodeWithText(nothing).assertExists()
+        rule.onAllNodesWithText("Its server will see").assertCountEquals0()
+        rule.onAllNodesWithText("When it is on, its server will see").assertCountEquals0()
+
+        // Working again: the sentence is back.
+        pageRow = relay.copy(sees = sees)
+        rule.waitForIdle()
+        rule.onAllNodesWithText(nothing).assertCountEquals0()
+        rule.onNodeWithText("Its server will see").assertExists()
+    }
+
+    @Test fun `the sheet's bold address is the address, not the same words inside the add-on's name`() {
+        // review-885 N11: the first place the address's text stood was made bold, and that can be in the name.
+        rule.setContent {
+            MaterialTheme { NotMadeByStashContent("relay.example.org radio", "relay.example.org", setOf(AddonSees.PLAYS), {}, {}) }
+        }
+        val intro = "relay.example.org radio runs on relay.example.org. Stash doesn't run it or check it."
+        val text = rule.onNodeWithText(intro).fetchSemanticsNode().config[SemanticsProperties.Text].single()
+        val bold = text.spanStyles.single()
+        assertThat(text.text.substring(bold.start, bold.end)).isEqualTo("relay.example.org")
+        assertThat(bold.start).isEqualTo(intro.lastIndexOf("relay.example.org"))
+        assertThat(bold.start).isGreaterThan(0)
+    }
+
     @Test fun `the page says what is wrong in plain words, and what to do about it`() {
         showPage(relay.copy(status = AddonOverview.Status.OFF, on = false))
         rule.onNodeWithText("Switched off").assertExists()
