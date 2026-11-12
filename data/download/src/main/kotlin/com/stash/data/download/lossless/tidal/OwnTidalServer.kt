@@ -62,14 +62,19 @@ class OwnTidalServer(
 
     /**
      * Removes the server and its token, sealed and plain: the Tidal rung goes back to Stash's.
-     * False when it could not be saved, and then nothing changed. The Keystore fails for a moment
-     * now and then (the seal throws, or the stored list has not opened and the store refuses to
-     * write over it); that must not reach a `viewModelScope.launch` with no handler, which is a
+     * False when it could not be saved, and then the server is still set. The Keystore fails for a
+     * moment now and then (the seal throws, or the stored list has not opened and the store refuses
+     * to write over it); that must not reach a `viewModelScope.launch` with no handler, which is a
      * crash on Remove (review-882 J2).
+     *
+     * The plain keys go first (review-882 round 2, n3). The other way round, a sealed entry that
+     * was removed and plain keys that then failed to clear answered false after doing half, and
+     * the next start moved the server back in from those keys. Now a failure of the first step
+     * changes nothing, and one of the second leaves the sealed entry, which is the server either way.
      */
     suspend fun remove(): Boolean = try {
-        removeSealed()
         prefs.clearBitchordServer()
+        removeSealed()
         true
     } catch (e: CancellationException) {
         throw e

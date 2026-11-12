@@ -105,7 +105,7 @@ class TidalWiresOwnServerTest {
     }
 
     /** review-882 J2: Remove is called from a `viewModelScope.launch` with no handler; a throw there is a crash. */
-    @Test fun `removing the own server when the list cannot be saved is false, throws nothing and changes nothing`() = runBlocking<Unit> {
+    @Test fun `removing the own server when the list cannot be saved is false, throws nothing and the server stays`() = runBlocking<Unit> {
         val prefs: LosslessSourcePreferences = mockk {
             every { bitchordEndpoint } returns MutableStateFlow<String?>(null)
             coEvery { bitchordEndpointNow() } returns null
@@ -117,12 +117,31 @@ class TidalWiresOwnServerTest {
         }
         assertThat(keystoreDown.remove()).isFalse()
         assertThat(keystoreDown.now()).isEqualTo(OwnTidalServer.Server("https://tidal.mine.example/path", "own-token"))
-        // The plain keys are only cleared once the sealed entry is gone.
-        io.mockk.coVerify(exactly = 0) { prefs.clearBitchordServer() }
 
         val working = OwnTidalServer(Users(listOf(sealed)), prefs) {}
         assertThat(working.remove()).isTrue()
-        io.mockk.coVerify(exactly = 1) { prefs.clearBitchordServer() }
+        io.mockk.coVerify(exactly = 2) { prefs.clearBitchordServer() }
+    }
+
+    /**
+     * review-882 round 2, n3: the plain keys are cleared first. The sealed entry removed and the
+     * keys left behind was "false" after doing half: the next start moved the server back in.
+     */
+    @Test fun `removing the own server clears the plain keys first, and removes no sealed entry when they do not clear`() = runBlocking<Unit> {
+        val steps = mutableListOf<String>()
+        val prefs: LosslessSourcePreferences = mockk {
+            every { bitchordEndpoint } returns MutableStateFlow<String?>(null)
+            coEvery { bitchordEndpointNow() } returns null
+            coEvery { bitchordAccessTokenNow() } returns null
+            coEvery { clearBitchordServer() } answers { steps += "plain keys" }
+        }
+        assertThat(OwnTidalServer(Users(listOf(sealed)), prefs) { steps += "sealed entry" }.remove()).isTrue()
+        assertThat(steps).containsExactly("plain keys", "sealed entry").inOrder()
+
+        steps.clear()
+        coEvery { prefs.clearBitchordServer() } throws java.io.IOException("the preferences file could not be written")
+        assertThat(OwnTidalServer(Users(listOf(sealed)), prefs) { steps += "sealed entry" }.remove()).isFalse()
+        assertThat(steps).isEmpty()
     }
 
     @Test fun `the own server's toString names neither its address nor its token`() {
