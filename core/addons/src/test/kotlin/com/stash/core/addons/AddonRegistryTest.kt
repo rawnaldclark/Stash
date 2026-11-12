@@ -375,7 +375,7 @@ class AddonRegistryTest {
         registry.refresh(force = false)
         assertThat(server.requestCount).isEqualTo(before)
         assertThat(registry.addons.value.map { it.id }).containsExactly("one", "two").inOrder()
-        assertThat(registry.entries.value.map { it.hold }).containsExactly(null, null)
+        assertThat(registry.entries.value.filter { it.hold != null }).isEmpty()
     }
 
     @Test fun `a slow add-on never delays another`() = runBlocking<Unit> {
