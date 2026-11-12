@@ -12,6 +12,7 @@ import com.stash.core.addons.AddonValidator
 import com.stash.core.addons.HttpAddonClient
 import com.stash.core.addons.InstalledAddon
 import com.stash.core.addons.UserAddonEntry
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import javax.inject.Inject
@@ -111,17 +112,39 @@ class AddonLinks @Inject constructor(
         if (preview.needsToken && t == null) return Outcome.Refused("This add-on needs its access token.")
         if (t != null && !InstalledAddon.isHeaderSafe(t)) return Outcome.Refused("That token has characters a request can't carry.")
         if (registry.addons.value.any { it.id == preview.id }) return Outcome.Refused("Stash already has an add-on with this id (${preview.id}).")
-        users.put(UserAddonEntry(preview.manifestUrl, token = t.takeIf { preview.needsToken }, enabled = true))
+        if (!saved { users.put(UserAddonEntry(preview.manifestUrl, token = t.takeIf { preview.needsToken }, enabled = true)) }) {
+            return Outcome.Refused(NOT_SAVED)
+        }
         Log.i(TAG, "add-on added from a link: ${preview.id}")
         return Outcome.Added
     }
 
-    suspend fun remove(manifestUrl: String) {
-        users.remove(manifestUrl)
+    /** Removes the add-on added from [manifestUrl]. False when the list could not be saved ([NOT_SAVED]): nothing changed. */
+    suspend fun remove(manifestUrl: String): Boolean {
+        if (!saved { users.remove(manifestUrl) }) return false
         Log.i(TAG, "a user add-on was removed")
+        return true
     }
 
-    suspend fun setEnabled(manifestUrl: String, enabled: Boolean) = users.setEnabled(manifestUrl, enabled)
+    /** Switches the add-on added from [manifestUrl] on or off. False when the list could not be saved ([NOT_SAVED]): nothing changed. */
+    suspend fun setEnabled(manifestUrl: String, enabled: Boolean): Boolean = saved { users.setEnabled(manifestUrl, enabled) }
+
+    /**
+     * Runs a write to the sealed list. The Keystore fails for a moment now and then: the seal
+     * throws, or the stored list has not opened and the store refuses to write over it
+     * ([EncryptedUserAddons.UnreadableException]). Neither may reach a `viewModelScope.launch`
+     * with no handler (a crash on Add or Remove, review-882 J2): false, and nothing was changed.
+     */
+    private suspend fun saved(write: suspend () -> Unit): Boolean = try {
+        write()
+        true
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        // Class only: a message could quote the link or the token.
+        Log.w(TAG, "the add-on list could not be saved: ${e.javaClass.simpleName}")
+        false
+    }
 
     /** The link as kept: a manifest URL the client may call, else null. A base (ending in `/`) gets `manifest.json`. */
     internal fun normalise(link: String): String? {
@@ -166,6 +189,9 @@ class AddonLinks @Inject constructor(
             Resource.QUOTA -> "A daily allowance"
             else -> null
         }
+
+        /** What to show when Add, Remove or the switch could not be saved; nothing was changed. */
+        const val NOT_SAVED = "Couldn't save. Try again."
 
         /** The privacy line the sheet shows above Add (plan §5.5). */
         const val PRIVACY_NOTE = "Its server sees what you search and the songs you play."
