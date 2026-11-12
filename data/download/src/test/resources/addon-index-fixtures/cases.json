@@ -46,6 +46,21 @@
       "what": "An index from a later publisher: an unknown field at the top, in an add-on and in a block. Unknown fields are ignored (plan 1.3), so a reader accepts it. This publisher never writes it, and refuses it as a source."
     },
     {
+      "dir": "valid-unknown-reason",
+      "expect": "accept",
+      "signature": "valid",
+      "canonical": false,
+      "updated_at": 1794355200,
+      "addons": 0,
+      "blocked": 2,
+      "blocked_reasons": [
+        "harmful",
+        "unknown"
+      ],
+      "bytes": 261,
+      "what": "An index from a later publisher: two blocks, the second with the reason `spam`, a word no reader knows. A reader accepts the index and blocks both add-ons; the second one's reason reads as unknown and gets a generic fixed sentence. A newer list must never make an older reader drop its blocks. This publisher never writes it, and refuses it as a source."
+    },
+    {
       "dir": "refuse-lossless-json",
       "expect": "refuse",
       "refused_by": "type",
@@ -108,14 +123,6 @@
       "signature": "valid",
       "bytes": 67069,
       "what": "A body over the 65536-byte cap: 256 blocks (within the count cap) on long host names."
-    },
-    {
-      "dir": "refuse-bad-reason",
-      "expect": "refuse",
-      "refused_by": "rule",
-      "signature": "valid",
-      "bytes": 261,
-      "what": "A block whose `reason` is not one of harmful, broken, impersonation."
     }
   ]
 }

@@ -15,7 +15,7 @@ converting line endings (`* -text`). If you copy these files elsewhere in the re
 | File | What it is |
 |---|---|
 | `pubkey.b64` | The fixture key's public half: base64 of the SubjectPublicKeyInfo DER, on one line with no line break. This is the form `LOSSLESS_CONFIG_PUBKEY` (`lossless.configPubKey`) holds, so a test sets it as the verifier's key. |
-| `cases.json` | The list below for a program: per case `dir`, `expect` (`accept` or `refuse`), `refused_by`, `signature` (`valid` or `invalid` against `pubkey.b64`), `bytes`, and for accept cases `canonical`, `updated_at` and the entry counts. |
+| `cases.json` | The list below for a program: per case `dir`, `expect` (`accept` or `refuse`), `refused_by`, `signature` (`valid` or `invalid` against `pubkey.b64`), `bytes`, and for accept cases `canonical`, `updated_at` and the entry counts. `valid-unknown-reason` also has `blocked_reasons`: what a reader reports as each block's reason, in order. |
 | `<case>/index.json` | The body as served. |
 | `<case>/index.json.sig` | The signature as served: base64 of a DER ECDSA signature (SHA-256, P-256) over the exact bytes of `index.json`, one line, no line break. A reader trims it before decoding. |
 
@@ -27,6 +27,7 @@ converting line endings (`* -text`). If you copy these files elsewhere in the re
 | `valid-older` | The same index with `updated_at` one day lower. Valid by itself. A reader that has already applied `valid` refuses it (the rollback floor). |
 | `valid-launch` | The shape of the first real index: the one default entry, nothing blocked. |
 | `valid-unknown-fields` | An index from a later publisher, with a field no reader knows at the top level, in an add-on and in a block. Unknown fields are ignored, so it is accepted and reads as one add-on and one block. This publisher never writes such a file and refuses it as a source. |
+| `valid-unknown-reason` | An index from a later publisher, with two blocks: `https://bad.example` for `harmful`, and `https://spam.example` for `spam`, a word no reader knows. **A reader accepts the index and blocks both add-ons.** The second one's reason reads as unknown, and the app shows a generic fixed sentence for it, never the word from the file. A newer list must never make an older reader drop its blocks. This publisher never writes such a file and refuses it as a source. (Until this rule was settled the same two files were named `refuse-bad-reason`; their bytes have not changed.) |
 
 `valid`, `valid-older` and `valid-launch` are byte for byte what the publisher writes (`canonical` in `cases.json`).
 
@@ -45,7 +46,6 @@ refuses it.
 | `refuse-too-many-addons` | rule | 65 add-ons; the cap is 64. |
 | `refuse-too-many-blocked` | rule | 257 blocks; the cap is 256. |
 | `refuse-oversize` | size | 67069 bytes; the cap is 65536. 256 blocks on long host names, so every count is within its cap. |
-| `refuse-bad-reason` | rule | Two blocks; the second one's `reason` is `spam`. |
 
 ## What the publisher writes
 
@@ -56,6 +56,8 @@ refuses it.
 - An add-on always has `id`, `name` and `summary`, and exactly one of `manifest` or `"default": true`. `icon`,
   `min_build` and `platforms` are optional and are left out when not given (never `null`).
 - A block always has `origin` and `reason`; `id` is optional and left out when not given.
+- `reason` is always one of `harmful`, `broken`, `impersonation`. A reader still takes any other word as a block
+  with an unknown reason (`valid-unknown-reason`); a `reason` that is missing or not a string is a broken file.
 - `name` and `summary` are 1 to 60 UTF-16 units, so they are within 60 however a reader counts.
 - A blocked `origin` is written exactly as `https://host` or `https://host:port`: lower case, no default port, no
   path, no trailing slash.

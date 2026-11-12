@@ -15,7 +15,7 @@ import org.junit.Test
 
 /**
  * The app's reader of the signed add-on index against the PUBLISHER'S OWN BYTES: the fixtures of
- * `infra/lossless-config/test/fixtures/` (branch `feat/addons-phase4-index`, commit `0b18554a`),
+ * `infra/lossless-config/test/fixtures/` (branch `feat/addons-phase4-index`, commit `321ec000`),
  * copied byte for byte into `src/test/resources/addon-index-fixtures/` (that folder's
  * `.gitattributes` keeps git from touching their line endings, as the signatures cover every byte).
  * `cases.json` says what a reader must do with each; this test does exactly that, so the reader
@@ -33,14 +33,9 @@ class AddonIndexFixturesTest {
     private fun signatureOf(dir: String) = String(bytes("$dir/index.json.sig")).trim()
 
     @Test fun `every fixture is read the way cases json says a reader must`() {
-        assertThat(cases.size).isAtLeast(12)
+        assertThat(cases).hasSize(13)
         for (case in cases) {
             val dir = case.getValue("dir").jsonPrimitive.content
-            // Decided after these bytes were made: a block whose reason this app doesn't know is ACCEPTED and
-            // still blocks (a newer list must never make an older app drop its blocks). The publisher is
-            // replacing this refuse case with `valid-unknown-reason`; until that copy lands, the decision
-            // is pinned by `a block whose reason this app doesn't know still blocks` below.
-            if (dir == "refuse-bad-reason") continue
             val body = bytes("$dir/index.json")
             assertWithMessage("$dir: the bytes are the publisher's").that(body.size).isEqualTo(case.getValue("bytes").jsonPrimitive.int)
             val signed = SignedJson.verify(body, signatureOf(dir), publicKey)
@@ -53,6 +48,12 @@ class AddonIndexFixturesTest {
                     assertWithMessage("$dir: updated_at").that(index.updatedAt).isEqualTo(case.getValue("updated_at").jsonPrimitive.long)
                     assertWithMessage("$dir: addons").that(index.addons).hasSize(case.getValue("addons").jsonPrimitive.int)
                     assertWithMessage("$dir: blocked").that(index.blocked).hasSize(case.getValue("blocked").jsonPrimitive.int)
+                    // Where the case says how each block's reason reads: a word a reader doesn't know reads as
+                    // "unknown" (here BlockReason.OTHER), and the add-on is blocked all the same.
+                    case["blocked_reasons"]?.jsonArray?.map { it.jsonPrimitive.content }?.let { reasons ->
+                        assertWithMessage("$dir: blocked_reasons").that(index.blocked.map { it.reason.wire ?: "unknown" })
+                            .containsExactlyElementsIn(reasons).inOrder()
+                    }
                 }
                 "refuse" -> when (val by = case.getValue("refused_by").jsonPrimitive.content) {
                     // Only the signature is wrong: the body itself would read.
@@ -182,9 +183,12 @@ class AddonIndexFixturesTest {
             AddonIndex.Block("https://spam.example", "spammer", BlockReason.OTHER),
         ).inOrder()
         assertThat(index.blockOf("https://spam.example", "spammer")!!.reason).isEqualTo(BlockReason.OTHER)
-        // The fixture the publisher made before the decision reads the same way.
-        val old = javaClass.classLoader!!.getResourceAsStream("addon-index-fixtures/refuse-bad-reason/index.json")?.use { it.readBytes() }
-        if (old != null) assertThat(AddonIndex.parse(old).blocked.map { it.reason }).containsExactly(BlockReason.HARMFUL, BlockReason.OTHER).inOrder()
+        // The publisher's own case for it: both add-ons are blocked, and the word from the file is not kept.
+        val later = AddonIndex.parse(bytes("valid-unknown-reason/index.json"))
+        assertThat(later.blocked.map { it.reason }).containsExactly(BlockReason.HARMFUL, BlockReason.OTHER).inOrder()
+        assertThat(later.blockOf("https://bad.example", null)).isNotNull()
+        assertThat(later.blockOf("https://spam.example", "any-id")).isNotNull()
+        assertThat(later.toString()).doesNotContain("spam\"")
         // A block with no reason at all, or one that isn't text, is still a broken entry.
         assertThat(refusedRule(index(blocked = """[{"origin":"https://bad.example"}]"""))).isEqualTo("blocked[0].reason")
         assertThat(refusedRule(index(blocked = """[{"origin":"https://bad.example","reason":3}]"""))).isEqualTo("blocked[0].reason")

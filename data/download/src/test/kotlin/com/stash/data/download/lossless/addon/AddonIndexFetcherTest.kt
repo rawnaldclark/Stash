@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.addons.BlockReason
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -137,6 +138,14 @@ class AddonIndexFetcherTest {
             assertThat(f.refresh(force = true)).isFalse()
         }
         assertThat(f.index.value!!.addons.single().id).isEqualTo("tidal")
+    }
+
+    @Test fun `an index from a later publisher with a reason this app doesn't know applies, and both its blocks hold`() = runBlocking<Unit> {
+        serve("valid-unknown-reason")
+        val f = fetcher()
+        assertThat(f.refresh()).isTrue()
+        assertThat(f.index.value!!.blocked.map { it.origin }).containsExactly("https://bad.example", "https://spam.example").inOrder()
+        assertThat(f.index.value!!.blocked.map { it.reason }).containsExactly(BlockReason.HARMFUL, BlockReason.OTHER).inOrder()
     }
 
     @Test fun `an oversized body is refused before its signature is even asked for`() = runBlocking<Unit> {
