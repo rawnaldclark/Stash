@@ -220,14 +220,18 @@ class AddonOverview @Inject constructor(
     /** Whether the add-on [row] is paused right now (it failed, or asked to be left alone): "Not reachable right now". */
     suspend fun paused(row: Row): Boolean {
         val id = PlayOrder.addonIdOf(row.key) ?: return false
-        return limiter.stateOf(HttpAddonClient.rateKey(id)).isCircuitBroken
+        // Asked from a screen: off its thread (review-885 M10).
+        return withContext(Dispatchers.Default) { limiter.stateOf(HttpAddonClient.rateKey(id)).isCircuitBroken }
     }
 
     /** The allowance of a metered add-on, asked once; null when it doesn't say. */
     suspend fun quota(row: Row): Quota? {
         val id = PlayOrder.addonIdOf(row.key) ?: return null
         val addon = registry.addons.value.firstOrNull { it.id == id && !NamedRungAddons.owns(it) } ?: return null
-        return client.quota(addon).valueOrNull()
+        // Off the screen's thread: the answer is someone else's JSON, read on the thread that asks.
+        // And outside the add-on's breaker: looking at its page is not a play, so a `/quota` that
+        // fails must never pause its plays, however often the page is opened (review-885 M10).
+        return withContext(Dispatchers.Default) { client.quota(addon, circuit = false).valueOrNull() }
     }
 
     companion object {
