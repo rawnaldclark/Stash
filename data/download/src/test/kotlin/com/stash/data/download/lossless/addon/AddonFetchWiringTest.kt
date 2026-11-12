@@ -286,11 +286,16 @@ class AddonFetchWiringTest {
     // ------------------------------------------------------------------------------------------ the size ceiling (M11)
 
     @Test fun `a file larger than the song can be is refused by its Content-Length, before a byte is kept`() = runBlocking<Unit> {
-        server.enqueue(MockResponse().setBody("x".repeat(4_000)))
+        // Larger than one read of the body (64 KiB), so the byte count alone would let a first
+        // chunk through and report it: that the Content-Length was what refused it is the test
+        // (review-882 round 2, n5: with a 4 KB body this passed with the check removed).
+        server.enqueue(MockResponse().setBody("x".repeat(300_000)))
         val dest = dest()
-        val result = downloader.download(source("/a.flac", maxBytes = 1_000), dest)
+        var chunks = 0
+        val result = downloader.download(source("/a.flac", maxBytes = 200_000), dest) { _, _ -> chunks++ }
         assertThat(result.isFailure).isTrue()
         assertThat(dest.exists()).isFalse()
+        assertThat(chunks).isEqualTo(0)
     }
 
     @Test fun `a body with no length is cut off at the ceiling and nothing is kept`() = runBlocking<Unit> {
