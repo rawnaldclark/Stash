@@ -144,14 +144,20 @@ class StreamSourceRegistryPlayOrderTest {
         suspend fun save(keys: List<String>?) { flow.value = keys }
     }
 
-    private fun TestScope.registry(addons: List<InstalledAddon>, saved: List<String>?, client: HttpAddonClient = client()): StreamSourceRegistry {
+    private fun TestScope.registry(
+        addons: List<InstalledAddon>,
+        saved: List<String>?,
+        client: HttpAddonClient = client(),
+        /** The rows switched off in Settings › Add-ons. */
+        off: Set<String> = emptySet(),
+    ): StreamSourceRegistry {
         val reg = Registry(addons)
         val order = Saved(saved)
         return StreamSourceRegistry(
             qbdlx, jiosaavn, youtube, streamingPreference, health, losslessPrefs, StandardTestDispatcher(testScheduler),
             PlaybackDiagnosticsLog(), tidal, quota, policy, null, null, availability,
             AddonStreamRungs(reg, AddonRefs(client, RefDao())),
-            PlayOrder(order.flow, order::save, reg),
+            PlayOrder(order.flow, order::save, reg, MutableStateFlow(off)),
         )
     }
 
@@ -296,6 +302,39 @@ class StreamSourceRegistryPlayOrderTest {
         val plain = mine.copy(manifest = mine.manifest.copy(stream = mine.manifest.stream!!.copy(manifests = listOf("none"))))
         assertThat(AddonPlayback.resolveBeforeSourcePick(tidalConfigured = false, addons = rungs(plain))).isFalse()
         assertThat(AddonPlayback.resolveBeforeSourcePick(tidalConfigured = false, addons = rungs())).isFalse()
+    }
+
+    @Test fun `a switched-off Tidal is not in the chain - never asked, and never named in the chain line`() = runTest {
+        // Seen on a phone: with Tidal switched off in Settings › Add-ons the line still read
+        // "[qbdlx,addon:p5-echo,tidal,jiosaavn,youtube]", though Tidal was not asked. The line is what
+        // a diagnostics bundle carries: it must name what was really in play.
+        val lines = mutableListOf<String>()
+        suspend fun chainLine(off: Set<String>, speculative: Boolean = false): String {
+            calls.clear(); lines.clear()
+            val registry = registry(listOf(addon("mine", userAdded = true)), saved = listOf("qobuz", "addon:mine", "tidal"), off = off)
+            registry.chainLog = { lines += it }
+            registry.resolve(track(), allowYouTube = true, allowYtDlp = true, speculative = speculative)
+            return lines.single { it.startsWith("chain for ") }
+        }
+        reset()
+        assertThat(chainLine(off = emptySet())).startsWith("chain for 1: [qbdlx,addon:mine,tidal,jiosaavn,youtube] ")
+        assertThat(calls).contains("tidal")
+
+        assertThat(chainLine(off = setOf("tidal"))).startsWith("chain for 1: [qbdlx,addon:mine,jiosaavn,youtube] ")
+        assertThat(calls.filter { it.startsWith("tidal") }).isEmpty()
+
+        // Its AAC rung ("Prefer Tidal AAC") is Tidal too.
+        preferTidalAac = true
+        assertThat(chainLine(off = emptySet())).startsWith("chain for 1: [tidal-aac,qbdlx,addon:mine,tidal,jiosaavn,youtube] ")
+        assertThat(chainLine(off = setOf("tidal"))).startsWith("chain for 1: [qbdlx,addon:mine,jiosaavn,youtube] ")
+        assertThat(calls.filter { it.startsWith("tidal") }).isEmpty()
+
+        // And a look-ahead has nothing of Tidal's to stop at.
+        preferTidalAac = false; tidalUncached = true
+        assertThat(chainLine(off = setOf("tidal"), speculative = true)).startsWith("chain for 1: [qbdlx,addon:mine,jiosaavn,youtube] ")
+        // Another row's switch changes nothing here: an add-on that is off is simply not in the registry's list.
+        tidalUncached = false
+        assertThat(chainLine(off = setOf("addon:other"))).startsWith("chain for 1: [qbdlx,addon:mine,tidal,jiosaavn,youtube] ")
     }
 
     @Test fun `a look-ahead stops at a metered add-on wherever it is saved`() = runTest {

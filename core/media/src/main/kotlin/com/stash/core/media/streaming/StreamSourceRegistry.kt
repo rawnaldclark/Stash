@@ -141,6 +141,10 @@ class StreamSourceRegistry internal constructor(
         losslessSourceHealth, losslessPrefs, Dispatchers.IO, diagnosticsLog, tidal, losslessQuota,
         qualityPolicy, cloudCopies, soundCloud, availability, addons, playOrder,
     )
+
+    /** Where the chain line goes; tests read it. */
+    internal var chainLog: (String) -> Unit = { Log.i(TAG, it) }
+
     /**
      * The user's own lossless copy of [track] in their cloud storage, as a [StreamUrl] whose url is
      * its `stash-cloud://` address ([CloudCopyFinder.ORIGIN]); [LazyResolvingDataSource] opens it,
@@ -348,7 +352,11 @@ class StreamSourceRegistry internal constructor(
                 // hides the Tidal FLAC lookup further down (or the other way round).
                 // Kept where Data saver applies: AAC 320 is not FLAC, and the user who turned
                 // this on chose to spend the daily allowance on it (Data saver alone never does).
-                val tidalAacRung = tidal
+                // Tidal switched off in Settings › Add-ons: its rungs are not in the chain at all, so
+                // it is never asked and never named in the chain line below (a switched-off source
+                // answered nothing anyway, but the line said it was in play).
+                val tidalOn = playOrder?.switchedOffNow()?.contains(PlayOrder.TIDAL) != true
+                val tidalAacRung = tidal?.takeIf { tidalOn }
                 if (preferTidalAac && allowYtDlp && lossless && tidalAacRung != null) {
                     // Speculative: like the Tidal rung, never make the relay search for a
                     // look-ahead. Stopping here (rather than skipping) keeps a Qobuz FLAC from
@@ -364,7 +372,7 @@ class StreamSourceRegistry internal constructor(
                 // signed config. Same gates as qbdlx (foreground only, Lossless switch
                 // on, Data saver not applying): it spends a Tidal account. Off (returns null at once) when no
                 // server is configured.
-                val tidalRung = tidal?.takeIf { allowYtDlp && losslessRungs }
+                val tidalRung = tidal?.takeIf { allowYtDlp && losslessRungs && tidalOn }
                 // The play order (add-ons plan phase 4 §2.8): ONE order for this chain and the
                 // download chain. Hand-built tests pass none: the automatic order.
                 val order = playOrder?.now() ?: PlayOrder.Order.AUTOMATIC
@@ -478,8 +486,7 @@ class StreamSourceRegistry internal constructor(
         if (skipQobuz && resolvers.none { it.first == "qbdlx" }) {
             Log.i(TAG, "TEST skip-qobuz on → chain [${resolvers.joinToString(",") { it.first }}]")
         }
-        Log.i(
-            TAG,
+        chainLog(
             "chain for ${track.id}: [${resolvers.joinToString(",") { it.first }}] " +
                 "allowYouTube=$allowYouTube allowYtDlp=$allowYtDlp lossless=$lossless" +
                 (if (preferTidalAac) " preferTidalAac=true" else "") +

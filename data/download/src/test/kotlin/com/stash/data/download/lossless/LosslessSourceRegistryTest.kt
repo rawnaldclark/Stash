@@ -107,6 +107,40 @@ class LosslessSourceRegistryTest {
     }
 
     @Test
+    fun `a switched-off Tidal is not in the download chain - never asked, and never named in the chain line`() = runTest {
+        // The chain line is what a diagnostics bundle carries: it must name what was really in play.
+        acceptAnyQuality()
+        coEvery { healthGate.isDegraded(any()) } returns false
+        val qobuz = fakeSource("qbdlx_qobuz", null)
+        val tidal = fakeSource("tidal_bitchord", flacResult("tidal_bitchord"))
+        val off = MutableStateFlow(emptySet<String>())
+        val order = PlayOrder(
+            savedOrder,
+            { savedOrder.value = it },
+            object : com.stash.core.addons.AddonRegistry {
+                override val addons = MutableStateFlow(emptyList<com.stash.core.addons.InstalledAddon>())
+            },
+            off,
+        )
+        val lines = mutableListOf<String>()
+        val registry = LosslessSourceRegistry(linkedSetOf(qobuz, tidal), prefs, healthGate, streamingPreference, availability, noAddons, order)
+            .also { it.chainLog = { line -> lines += line } }
+
+        assertThat(registry.resolve(query)?.sourceId).isEqualTo("tidal_bitchord")
+        assertThat(lines.last()).isEqualTo("chain [qbdlx_qobuz,tidal_bitchord]")
+
+        off.value = setOf(PlayOrder.TIDAL)
+        assertThat(registry.resolve(query)).isNull()
+        assertThat(lines.last()).isEqualTo("chain [qbdlx_qobuz]")
+        coVerify(exactly = 1) { tidal.resolve(any()) }
+        // The screen that lists every source still has it.
+        assertThat(registry.orderedSources().map { it.id }).containsExactly("qbdlx_qobuz", "tidal_bitchord").inOrder()
+
+        off.value = emptySet()
+        assertThat(registry.resolve(query)?.sourceId).isEqualTo("tidal_bitchord")
+    }
+
+    @Test
     fun `degraded source is skipped without resolving and the next source wins`() = runTest {
         acceptAnyQuality()
         // Use active (non-parked) sources so the normal chain reaches them.

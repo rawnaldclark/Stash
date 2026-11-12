@@ -37,9 +37,11 @@ class PlayOrder(
     private val saved: Flow<List<String>?>,
     private val save: suspend (List<String>?) -> Unit,
     private val registry: AddonRegistry,
+    /** The keys switched off in Settings › Add-ons ([PlayOrderSwitches]'s store); hand-built wiring has none. */
+    private val switchedOff: Flow<Set<String>> = flowOf(emptySet()),
 ) {
     @Inject constructor(prefs: LosslessSourcePreferences, registry: AddonRegistry) :
-        this(prefs.playOrder, prefs::setPlayOrder, registry)
+        this(prefs.playOrder, prefs::setPlayOrder, registry, prefs.playOrderOff)
 
     /**
      * The order as it stands. [keys] always holds [QOBUZ] and [TIDAL]. [automatic]: nothing was
@@ -70,6 +72,14 @@ class PlayOrder(
 
     /** The order right now, read from the store: what a chain walks. */
     suspend fun now(): Order = effective(saved.first(), keysOf(registry.addons.value))
+
+    /**
+     * The keys switched off in Settings › Add-ons, right now. A chain leaves those sources out
+     * altogether: never asked, and never named in the line it logs (which a diagnostics bundle
+     * carries, and which must say what was really in play). An add-on that is off is not in the
+     * registry's list to begin with; this is what takes [TIDAL] out.
+     */
+    suspend fun switchedOffNow(): Set<String> = switchedOff.first()
 
     /** The saved keys, or null while the order is automatic. */
     suspend fun savedNow(): List<String>? = saved.first()

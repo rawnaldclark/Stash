@@ -48,10 +48,13 @@ class LosslessSourceRegistry @Inject constructor(
      * pipeline as a last resort (the strict-superset behavior we want for
      * Path ii of the source-priority model).
      */
+    /** Where the chain line goes; tests read it. */
+    internal var chainLog: (String) -> Unit = { Log.i(TAG, it) }
+
     suspend fun resolve(query: TrackQuery, bypassRateLimit: Boolean = false): SourceResult? {
         val ordered = chain()
         // The order this download asks its sources in: the play order (Settings › Add-ons).
-        Log.i(TAG, "chain [${ordered.joinToString(",") { it.id }}]")
+        chainLog("chain [${ordered.joinToString(",") { it.id }}]")
         val minQuality = prefs.minQualityNow()
 
         for (source in ordered) {
@@ -136,7 +139,10 @@ class LosslessSourceRegistry @Inject constructor(
      */
     private suspend fun ordered(): List<LosslessSource> {
         val order = playOrder.now()
-        val sorted = sortedBy(order)
+        // A source switched off in Settings › Add-ons is not in the chain: never asked, and never
+        // named in the chain line.
+        val off = playOrder.switchedOffNow()
+        val sorted = sortedBy(order).let { all -> if (off.isEmpty()) all else all.filterNot { PlayOrder.keyOfSource(it.id) in off } }
         return if (order.automatic) withOwnTidalFirst(sorted) else sorted
     }
 
