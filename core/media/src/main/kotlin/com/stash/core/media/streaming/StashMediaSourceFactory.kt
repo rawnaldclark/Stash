@@ -72,7 +72,7 @@ class StashMediaSourceFactory(
     /**
      * Add-on streams (`addon:` origins): the add-on media client's HTTP source, whose DNS and
      * connection guard refuse the user's own network (add-ons plan phase 4 §2.6). Null in tests;
-     * such a stream then plays on the default path.
+     * such a stream is then refused, never played on the default path (review-882 B1).
      */
     addonDataSourceFactory: DataSource.Factory? = null,
     /** An item whose stream an add-on answered (its origin extra starts `addon:`). */
@@ -194,7 +194,8 @@ class StashMediaSourceFactory(
         }
         streamingTrackId(mediaItem)?.let { return streamingFactory.createUncachedDataSourceFactory(it) }
         if (isJioSaavnOrigin(mediaItem)) return jioSaavnDataSourceFactory
-        if (addonSourceFactory != null && isAddonOrigin(mediaItem)) return addonSourceFactory
+        // An add-on's URL on the add-on media client, or refused: never on the default source.
+        if (isAddonOrigin(mediaItem)) return addonSourceFactory ?: refusedDataSourceFactory
         return localDataSourceFactory
     }
 
@@ -267,7 +268,8 @@ class StashMediaSourceFactory(
         if (isJioSaavnOrigin(mediaItem)) {
             return jioSaavnFactory.createMediaSource(mediaItem)
         }
-        if (addonFactory != null && isAddonOrigin(mediaItem)) return addonFactory.createMediaSource(mediaItem)
+        // An add-on's URL on the add-on media client, or refused: never on the default source.
+        if (isAddonOrigin(mediaItem)) return (addonFactory ?: refusedFactory).createMediaSource(mediaItem)
         return localFactory.createMediaSource(mediaItem)
     }
 }

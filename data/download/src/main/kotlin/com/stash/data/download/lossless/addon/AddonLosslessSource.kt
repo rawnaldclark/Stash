@@ -20,6 +20,7 @@ import com.stash.data.download.lossless.RateLimitState
 import com.stash.data.download.lossless.SourceResult
 import com.stash.data.download.lossless.TrackQuery
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -104,7 +105,8 @@ class AddonLosslessSource internal constructor(
     override suspend fun rateLimitState(): RateLimitState = limiter.stateOf(rateKey)
 
     override suspend fun resolve(query: TrackQuery, bypassRateLimit: Boolean): SourceResult? = try {
-        lookup(query, paced = !bypassRateLimit)
+        // A caller that asks no add-on (the search preview): no request at all.
+        if (currentCoroutineContext()[NoAddonSources.Key] != null) null else lookup(query, paced = !bypassRateLimit)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
@@ -129,8 +131,10 @@ class AddonLosslessSource internal constructor(
             format = format(info),
             confidence = if (!query.isrc.isNullOrBlank() && ref.isrc.equals(query.isrc, ignoreCase = true)) 1f else ref.confidence,
             sourceTrackId = ref.remoteId,
+            // Null for an add-on Stash doesn't vouch for ([AddonRefs.keepsArtwork]).
             coverArtUrl = ref.artwork,
             isDash = info.manifest == Delivery.DASH,
+            maxBytes = ceilingBytes(query.durationMs?.takeIf { query.durationReliable }, info),
         )
     }
 
@@ -146,6 +150,23 @@ class AddonLosslessSource internal constructor(
             minTier = Tier.LOSSLESS,
             manifest = listOf(Delivery.NONE, Delivery.DASH),
         )
+
+        /**
+         * The most bytes a file for a song of [durationMs] can be (review-882 M11): the stated
+         * format's own PCM size (nothing lossless is larger than the samples it holds), a quarter
+         * more for a container and a tail, and 8 MiB of slack. With no format stated: 24-bit /
+         * 192 kHz, the largest the app asks for. With no length known: an hour. A 4-minute CD FLAC
+         * may be 61 MB (it is about 28); the same song at 24/192 may be 354 MB (about 140).
+         */
+        fun ceilingBytes(durationMs: Long?, info: StreamInfo): Long {
+            val seconds = ((durationMs?.takeIf { it > 0 } ?: UNKNOWN_LENGTH_MS) + 999) / 1000
+            val bits = (info.bitDepth?.takeIf { it > 0 } ?: 24).coerceIn(16, 32)
+            val rate = (info.sampleRate?.takeIf { it > 0 } ?: 192_000).coerceIn(44_100, 384_000)
+            val pcmBytesPerSecond = bits.toLong() / 8 * rate * 2
+            return seconds * pcmBytesPerSecond * 5 / 4 + 8L * 1024 * 1024
+        }
+
+        private const val UNKNOWN_LENGTH_MS = 60 * 60_000L
 
         internal fun format(info: StreamInfo): AudioFormat {
             val codec = when (info.codec) {

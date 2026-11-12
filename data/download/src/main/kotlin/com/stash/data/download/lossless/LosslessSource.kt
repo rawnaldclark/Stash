@@ -285,6 +285,14 @@ data class SourceResult(
      * itself; [LosslessUrlDownloader] then fetches the segments and remuxes.
      */
     val isDash: Boolean = false,
+
+    /**
+     * The most bytes the file at [downloadUrl] may be; the downloader stops there and fails the
+     * fetch. Null = no ceiling (Stash's own sources). An add-on's source sets it from the song's
+     * length and the stated format, so a server Stash doesn't run cannot hand every syncing
+     * phone an endless "FLAC" (review-882 M11).
+     */
+    val maxBytes: Long? = null,
 )
 
 /**

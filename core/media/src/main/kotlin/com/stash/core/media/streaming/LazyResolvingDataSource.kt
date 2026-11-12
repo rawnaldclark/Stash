@@ -252,7 +252,13 @@ class LazyResolvingDataSource(
         val delegate = when (stream.origin) {
             JioSaavnStreamResolver.ORIGIN -> jioSaavnDelegate()
             CloudCopyFinder.ORIGIN -> cloudDelegate?.invoke() ?: throw IOException("cloud playback isn't wired")
-            else -> if (stream.origin?.startsWith(AddonStreamRung.ORIGIN_PREFIX) == true) addonDelegate?.invoke() ?: httpDelegate() else httpDelegate()
+            // An add-on's URL opens on the add-on media client or not at all (review-882 B1): never
+            // on the plain HTTP source, which follows redirects and resolves names unguarded.
+            else -> if (stream.origin?.startsWith(AddonStreamRung.ORIGIN_PREFIX) == true) {
+                addonDelegate?.invoke() ?: throw IOException("add-on playback isn't wired")
+            } else {
+                httpDelegate()
+            }
         }
         return delegateTo(delegate, dataSpec.buildUpon().setUri(Uri.parse(stream.url)).build())
     }
