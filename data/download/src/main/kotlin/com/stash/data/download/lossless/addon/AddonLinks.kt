@@ -326,11 +326,13 @@ class AddonLinks @Inject constructor(
      * The user agreed to what the add-on [key] now wants to see ("Wants to see more", §2.7): what
      * its manifest lists today is recorded, and it is asked again. False when it could not be saved.
      */
-    suspend fun agree(key: String): Boolean = saving("agreed to") {
+    suspend fun agree(key: String, sees: Set<AddonSees>): Boolean = saving("agreed to") {
         val entry = entry(key) ?: return@saving
-        val read = registry.entries.value.firstOrNull { it.key == key }?.manifest ?: return@saving
-        users.setConsent(entry.manifestUrl, AddonSees.namesOf(read))
-        Log.i(TAG, "the user agreed to what an add-on sees now: ${read.manifest.id}")
+        // What is recorded is what the sheet showed ([sees]), never what the registry holds at the
+        // tap (review-885 N4): a manifest read in between that wants yet more is asked about again.
+        users.setConsent(entry.manifestUrl, sees.map { it.name }.toSet())
+        val id = registry.entries.value.firstOrNull { it.key == key }?.manifest?.manifest?.id ?: entry.id
+        Log.i(TAG, "the user agreed to what an add-on sees now: ${id ?: "(no id known)"}")
     }
 
     /**

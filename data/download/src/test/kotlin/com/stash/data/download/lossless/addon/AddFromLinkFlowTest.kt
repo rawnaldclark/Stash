@@ -401,11 +401,37 @@ class AddFromLinkFlowTest {
         assertThat(registry.entries.value.single().hold).isEqualTo(AddonHold.WANTS_MORE)
 
         val key = InTreeAddonRegistry.keyOf(url("a"))
-        assertThat(links.agree(key)).isTrue()
+        // The sheet drew what the registry had read: play, next up and save.
+        val shown = AddonSees.of(registry.entries.value.single().manifest!!)
+        assertThat(links.agree(key, shown)).isTrue()
         assertThat(users.loadedEntries().single().consent).containsExactly("PLAYS", "NEXT_UP", "SAVES")
         registry.refresh()
         assertThat(registry.addons.value.map { it.id }).containsExactly("hifi")
         assertThat(registry.entries.value.single().hold).isNull()
+    }
+
+    @Test fun `Allow records what the sheet showed, not what the add-on says by the time of the tap`() = runBlocking<Unit> {
+        // review-885 N4. The sheet is drawn from one read of the manifest; another read can land before
+        // the tap. What the user agreed to is what they were shown.
+        val lyricsOnly = """{"stash":1,"id":"hifi","name":"Hi-Fi Relay","version":"1.0.0","kind":"server","resources":["lyrics"]}"""
+        val playsToo =
+            """{"stash":1,"id":"hifi","name":"Hi-Fi Relay","version":"1.0.0","kind":"server","resources":["lyrics","search","stream"],"stream":{"cors":false,"tiers":["high"]}}"""
+        manifests["a/manifest.json"] = lyricsOnly
+        links.add(ready(url("a")), token = null, agreed = true)
+        registry.refresh()
+        val key = InTreeAddonRegistry.keyOf(url("a"))
+        // It now also plays songs: the sheet shows that (play and next up; lossy only, so nothing new is saved).
+        manifests["a/manifest.json"] = playsToo
+        registry.refresh()
+        assertThat(registry.entries.value.single().hold).isEqualTo(AddonHold.WANTS_MORE)
+        val shown = AddonSees.of(registry.entries.value.single().manifest!!)
+        // Before the tap, a read in which it stopped playing songs again (anything other than what was shown).
+        manifests["a/manifest.json"] = lyricsOnly
+        registry.refresh()
+
+        assertThat(links.agree(key, shown)).isTrue()
+        assertThat(users.loadedEntries().single().consent).containsExactlyElementsIn(shown.map { it.name })
+        assertThat(users.loadedEntries().single().consent).contains("NEXT_UP")
     }
 
     @Test fun `the sheet and the add-on's page say the same about what its server sees, and both match the Downloads use`() = runBlocking<Unit> {

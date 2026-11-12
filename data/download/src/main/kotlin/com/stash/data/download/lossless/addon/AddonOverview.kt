@@ -202,7 +202,7 @@ class AddonOverview @Inject constructor(
     }
 
     /** "Wants to see more": the user agreed to what it lists now. False when it could not be saved. */
-    suspend fun agree(row: Row): Boolean = row.entryKey?.let { links.agree(it) } ?: true
+    suspend fun agree(row: Row): Boolean = row.entryKey?.let { links.agree(it, row.sees) } ?: true
 
     /** Saving the order after a drag or a nudge; false when it could not be saved. */
     private suspend fun saved(change: suspend () -> Unit): Boolean = withContext(Dispatchers.Default) {
