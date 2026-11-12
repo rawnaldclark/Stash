@@ -9,6 +9,7 @@ import com.stash.data.download.lossless.addon.AddonOverview
 import com.stash.data.download.lossless.tidal.OwnTidalServer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -187,12 +188,33 @@ class AddFromLinkViewModel @Inject constructor(
         .map { landsAmong(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Lands.AFTER_OTHERS)
 
-    /** Reads the add-on behind [link]. [replacingKey]: the add-on whose link this replaces, from its page. */
+    /** The read that is under way, and what it is a read of. Touched on the main thread only. */
+    private var reading: Job? = null
+    private var readingFor: Pair<String, String?>? = null
+
+    /**
+     * Reads the add-on behind [link]. [replacingKey]: the add-on whose link this replaces, from its page.
+     *
+     * A read can take ten seconds on a slow host, and another link can arrive meanwhile (a second
+     * share, Paste, a scanned code, an edit). The newest link wins: the read under way is cancelled,
+     * and an answer is shown only if it is for the link asked last (review-885 M2). The screen used to
+     * show the first link's preview under a field that held the second one.
+     */
     fun read(link: String, replacingKey: String?) {
-        if (link.isBlank() || stepState.value == Step.Reading) return
+        if (link.isBlank()) return
+        val asked = link to replacingKey
+        // A second tap on Read for the link already being read asks nothing twice.
+        if (stepState.value == Step.Reading && readingFor == asked) return
+        // Named before the old read is cancelled: a read that ends as it is cancelled finds it is not the one asked for.
+        readingFor = asked
+        reading?.cancel()
         stepState.value = Step.Reading
-        viewModelScope.launch {
-            stepState.value = when (val o = links.preview(link, replacingKey)) {
+        reading = viewModelScope.launch {
+            val o = links.preview(link, replacingKey)
+            // Cancelled or overtaken while it was read: its answer is for nothing on the screen.
+            if (readingFor !== asked) return@launch
+            readingFor = null
+            stepState.value = when (o) {
                 is AddonLinks.Outcome.Ready -> Step.Ready(o.preview)
                 is AddonLinks.Outcome.Refused -> Step.Refused(o.reason)
                 is AddonLinks.Outcome.Added -> Step.Added
@@ -210,8 +232,12 @@ class AddFromLinkViewModel @Inject constructor(
         }
     }
 
+    /** The field changed or was cleared: whatever was read, or is being read, is no longer what it holds. */
     fun reset() {
-        if (stepState.value != Step.Reading) stepState.value = Step.Idle
+        readingFor = null
+        reading?.cancel()
+        reading = null
+        stepState.value = Step.Idle
     }
 
     companion object {

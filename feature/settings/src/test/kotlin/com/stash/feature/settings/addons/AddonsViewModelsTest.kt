@@ -10,6 +10,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -78,14 +79,13 @@ class AddonsViewModelsTest {
         coVerify(exactly = 0) { links.add(any(), any(), any()) }
     }
 
-    @Test fun `while a link is being read, another tap and a reset change nothing`() {
+    @Test fun `a second tap on Read while its link is being read asks nothing twice`() {
         val answer = CompletableDeferred<AddonLinks.Outcome>()
         coEvery { links.preview(any(), any()) } coAnswers { answer.await() }
         val vm = AddFromLinkViewModel(links, overview)
         vm.read("https://relay.example.org/", null)
         assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Reading)
         vm.read("https://relay.example.org/", null)
-        vm.reset()
         assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Reading)
         answer.complete(AddonLinks.Outcome.Ready(preview))
         assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Ready(preview))
@@ -93,6 +93,61 @@ class AddonsViewModelsTest {
         // Editing the link afterwards starts over.
         vm.reset()
         assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Idle)
+    }
+
+    @Test fun `a new link while another is being read takes over, and the first link's answer is never shown`() {
+        // review-885 M2: a second share, Paste or scanned code while a slow host is still being read.
+        // The field showed the new link, its read never started, and the first link's preview came up
+        // under it: Add then added the first link's add-on.
+        val first = CompletableDeferred<AddonLinks.Outcome>()
+        val second = CompletableDeferred<AddonLinks.Outcome>()
+        // The first read ends with an answer even when it is cancelled: nothing may show it.
+        coEvery { links.preview("https://one.example.org/", any()) } coAnswers {
+            try {
+                first.await()
+            } catch (e: CancellationException) {
+                AddonLinks.Outcome.Ready(preview)
+            }
+        }
+        coEvery { links.preview("https://two.example.org/", any()) } coAnswers { second.await() }
+        val other = preview.copy(manifestUrl = "https://two.example.org/manifest.json", id = "two", name = "Two", host = "two.example.org")
+        val vm = AddFromLinkViewModel(links, overview)
+        vm.read("https://one.example.org/", null)
+        // What the screen does when another link arrives: reset, then read.
+        vm.reset()
+        vm.read("https://two.example.org/", null)
+        assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Reading)
+        first.complete(AddonLinks.Outcome.Ready(preview))
+        assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Reading)
+        second.complete(AddonLinks.Outcome.Ready(other))
+        assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Ready(other))
+        coVerify(exactly = 1) { links.preview("https://two.example.org/", null) }
+    }
+
+    @Test fun `a new link read without a reset first also takes over`() {
+        val first = CompletableDeferred<AddonLinks.Outcome>()
+        coEvery { links.preview("https://one.example.org/", any()) } coAnswers { first.await() }
+        coEvery { links.preview("https://two.example.org/", any()) } returns AddonLinks.Outcome.Refused(AddonLinks.Refusal.NOT_AN_ADDON)
+        val vm = AddFromLinkViewModel(links, overview)
+        vm.read("https://one.example.org/", null)
+        vm.read("https://two.example.org/", null)
+        assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Refused(AddonLinks.Refusal.NOT_AN_ADDON))
+        first.complete(AddonLinks.Outcome.Ready(preview))
+        assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Refused(AddonLinks.Refusal.NOT_AN_ADDON))
+    }
+
+    @Test fun `editing the field while its link is being read drops the read`() {
+        val answer = CompletableDeferred<AddonLinks.Outcome>()
+        coEvery { links.preview(any(), any()) } coAnswers { answer.await() }
+        val vm = AddFromLinkViewModel(links, overview)
+        vm.read("https://relay.example.org/", null)
+        vm.reset()
+        assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Idle)
+        answer.complete(AddonLinks.Outcome.Ready(preview))
+        assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Idle)
+        // The same link can be read again afterwards.
+        vm.read("https://relay.example.org/", null)
+        assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Ready(preview))
     }
 
     @Test fun `Replace link reads the new link for the add-on it replaces`() {
