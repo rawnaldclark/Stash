@@ -55,6 +55,11 @@ import javax.inject.Singleton
  * the next applied config. Counted per route, because a lookup is a `/search` and then a
  * `/stream`: a face whose `/stream` refuses every call still answers every `/search`.
  *
+ * **Downloads ask `/stream/{id}` too**, though the manifest lists `download` (SPEC.md 4.5;
+ * review-881 N6, left on purpose). A play and a download of one song share one in-flight lookup
+ * here ([TidalClient.lookup]), which is the relay's budget; asking `/download` for one of them
+ * would split that into two requests, and the add-on serves both routes from the same code.
+ *
  * The client's own `Retry-After` gate is off for these calls (`circuit = false`): [TidalClient]
  * keeps the busy circuit, as on the legacy wire, and pacing stays with the Tidal download source.
  */
