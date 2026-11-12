@@ -424,6 +424,9 @@ class AddonLinks @Inject constructor(
             if ('?' in u || '#' in u) return Normalised.No(Refusal.NOT_AN_ADDON)
             val scheme = u.substringBefore("://").lowercase()
             val rest = u.substringAfter("://")
+            // A final dot on the host is the same server under another spelling: "https://bad.example./"
+            // is not the origin a block names, and not the link that is "already added" (review-885 M4).
+            if (rest.substringBefore('/').substringBefore(':').endsWith('.')) return Normalised.No(Refusal.NOT_AN_ADDON)
             val file = rest.substringAfterLast('/', missingDelimiterValue = "")
             val url = if (file.length > ".json".length && file.endsWith(".json")) {
                 "$scheme://$rest"

@@ -115,6 +115,21 @@ class AddonLinksAcceptTest {
         assertThat(refused("https://[::1]/manifest.json")).isNotNull()
     }
 
+    @Test fun `a host written with a final dot is refused - it would walk past a block and past already added`() {
+        // review-885 M4: the network takes "bad.example." for "bad.example"; a block's origin and the
+        // links the user already has are compared as written.
+        for (dotted in listOf(
+            "https://bad.example./manifest.json",
+            "https://bad.example.:8443/v1/tok/manifest.json",
+            "bad.example./",
+            "https://bad.example.",
+        )) {
+            assertThat(refused(dotted)).isEqualTo(AddonLinks.Refusal.NOT_AN_ADDON)
+        }
+        // A dot inside the path, or before the file's ending, is nobody's host.
+        assertThat(url("https://relay.example/v1.2/manifest.json")).isEqualTo("https://relay.example/v1.2/manifest.json")
+    }
+
     @Test fun `a debug build also takes its own local test servers, and nothing else local`() {
         assertThat(url("http://127.0.0.1:8798/manifest.json", local = true)).isEqualTo("http://127.0.0.1:8798/manifest.json")
         assertThat(url("http://127.0.0.1:8798", local = true)).isEqualTo("http://127.0.0.1:8798/manifest.json")
