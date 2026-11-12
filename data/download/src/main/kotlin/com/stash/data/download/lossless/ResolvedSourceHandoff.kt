@@ -20,9 +20,16 @@ import javax.inject.Singleton
  */
 @Singleton
 class ResolvedSourceHandoff @Inject constructor(
-    /** The add-ons that are on. Built without one (tests of other things), nothing is held back. */
-    private val addons: AddonRegistry = NoAddonGate,
+    /** The add-ons that are on. */
+    private val addons: AddonRegistry,
 ) {
+    /**
+     * Built without the registry (hand-built wiring in tests of other things): nothing is held back.
+     * A constructor of its own, not a default value: with every parameter defaulted Kotlin also
+     * emits a no-argument constructor, and Dagger then finds two to inject.
+     */
+    constructor() : this(NoAddonGate)
+
 
     /** Which lookup found it: a lossless one never stands in for AAC, or the other way. */
     enum class Kind { LOSSLESS, TIDAL_AAC }
