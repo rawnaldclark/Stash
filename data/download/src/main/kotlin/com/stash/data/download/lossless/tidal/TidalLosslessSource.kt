@@ -3,7 +3,9 @@ package com.stash.data.download.lossless.tidal
 import android.util.Log
 import com.stash.data.download.lossless.AggregatorRateLimiter
 import com.stash.data.download.lossless.AudioFormat
+import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSource
+import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.RateLimitState
 import com.stash.data.download.lossless.SourceResult
 import com.stash.data.download.lossless.TrackQuery
@@ -33,11 +35,16 @@ import kotlinx.coroutines.sync.withLock
 class TidalLosslessSource internal constructor(
     private val client: TidalClient,
     private val rateLimiter: AggregatorRateLimiter,
+    /**
+     * The download quality is CD: "CD means CD" (decision D15), so Stash's Tidal add-on is asked
+     * for CD FLAC and no higher. The legacy relay cannot be asked that ([TidalClient.lookup]).
+     */
+    private val cdOnly: suspend () -> Boolean = { false },
     private val nowMs: () -> Long,
 ) : LosslessSource {
 
-    @Inject constructor(client: TidalClient, rateLimiter: AggregatorRateLimiter) :
-        this(client, rateLimiter, System::currentTimeMillis)
+    @Inject constructor(client: TidalClient, rateLimiter: AggregatorRateLimiter, prefs: LosslessSourcePreferences) :
+        this(client, rateLimiter, { prefs.qualityTierNow() == LosslessQualityTier.CD }, System::currentTimeMillis)
 
     override val id: String = SOURCE_ID
     override val displayName: String = "Tidal"
@@ -73,7 +80,7 @@ class TidalLosslessSource internal constructor(
         }
         if (!bypassRateLimit && !rateLimiter.acquire(id)) return null
         val outcome = try {
-            client.lookup(query)
+            client.lookup(query, cdOnly = cdOnly())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

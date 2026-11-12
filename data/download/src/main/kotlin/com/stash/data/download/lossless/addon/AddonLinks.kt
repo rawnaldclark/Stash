@@ -154,7 +154,7 @@ class AddonLinks @Inject constructor(
      * be the same add-on (origin and id), and keeps its place and what was agreed.
      */
     suspend fun preview(link: String, replacingKey: String? = null): Outcome =
-        // Off the main thread: an add-on's manifest can be 2 MiB of JSON to parse and check.
+        // Off the main thread: reading and checking a manifest is work (up to 64 KiB of someone else's JSON).
         withContext(Dispatchers.Default) { read(link, replacingKey) }
 
     private suspend fun read(link: String, replacingKey: String?): Outcome {

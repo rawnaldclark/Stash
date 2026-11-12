@@ -7,22 +7,88 @@ import java.io.File
 /**
  * Android compiles regexes with ICU, which refuses some JVM-only syntax: `(?U)` in the validator's
  * initializer made every add-on call fail on a phone (seen on the Pixel 5, add-ons phase 2) while
- * every JVM test passed. The JVM can't run ICU, so this pins the behaviour and bans the syntax.
+ * every JVM test passed.
+ *
+ * **What this can and cannot prove** (review-881 M13). No JVM runs ICU's regex engine, so no unit
+ * test can show that a pattern compiles on Android: only a phone can (the add-on client reading
+ * one manifest loads every pattern in `AddonValidator`). What a JVM test can do is read the
+ * sources: the scan below finds every regex literal in `:core:addons` and fails on a construct
+ * `java.util.regex` takes and ICU does not. It is a rule about syntax, checked on every build; it
+ * is not a compile on ICU.
  */
 class AddonValidatorAndroidRegexTest {
 
-    @Test fun `unicode white space still collapses without the (?U) flag`() {
+    /** Pins what replaced `(?U)\s+`: the same white space, in syntax both engines share. Says nothing about Android. */
+    @Test fun `on the JVM, unicode white space still collapses without the (?U) flag`() {
         val nbsp = ' '
         val em = ' '
         assertThat(AddonValidator.cleanText("a${nbsp}${nbsp}b${em}c \t d", 100)).isEqualTo("a b c d")
     }
 
-    @Test fun `no main source uses regex syntax Android's ICU refuses`() {
-        val banned = listOf("(?U)", "(?X)", "\\p{IsWhite_Space}", "\\h", "\\R")
-        val src = File("src/main/kotlin").walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
-        assertThat(src).isNotEmpty()
-        val hits = src.flatMap { f -> banned.filter { it in f.readText() }.map { "${f.name}: $it" } }
+    @Test fun `every regex in the module keeps to the syntax both engines share`() {
+        val patterns = regexLiterals()
+        // The scan found the validator's patterns (it has well over a dozen): an empty scan proves nothing.
+        assertThat(patterns.size).isAtLeast(12)
+        assertThat(patterns.map { it.second }).contains(WHITESPACE_AS_WRITTEN)
+        val hits = patterns.flatMap { (file, source) -> androidTrouble(source).map { "$file: $it in ${source.take(60)}" } }
         assertThat(hits).isEmpty()
+    }
+
+    @Test fun `the scan knows the constructs ICU refuses`() {
+        // Patterns as they are written in a Kotlin source file: B is one backslash of regex, two characters in the file.
+        val b = "\\\\"
+        assertThat(androidTrouble("(?U)${b}s+")).isNotEmpty()
+        assertThat(androidTrouble("(?iu)abc")).isNotEmpty()
+        assertThat(androidTrouble("(?d:a)")).isNotEmpty()
+        assertThat(androidTrouble("(?X)a")).isNotEmpty()
+        assertThat(androidTrouble("${b}p{IsWhite_Space}")).isNotEmpty()
+        assertThat(androidTrouble("${b}p{javaLowerCase}")).isNotEmpty()
+        assertThat(androidTrouble("${b}h+")).isNotEmpty()
+        assertThat(androidTrouble("a${b}Rb")).isNotEmpty()
+        // What the validator uses is fine.
+        assertThat(androidTrouble(WHITESPACE_AS_WRITTEN)).isEmpty()
+        assertThat(androidTrouble("^(?i)https://[A-Za-z0-9.${b}-]+(:[0-9]{1,5})?")).isEmpty()
+        assertThat(androidTrouble("(?<year>${b}d{4})-(?:${b}d{2})")).isEmpty()
+    }
+
+    private companion object {
+        /** `AddonValidator`'s white-space pattern, as its source line spells it (each backslash doubled). */
+        const val WHITESPACE_AS_WRITTEN = "[\\\\s\\\\u0085\\\\p{Z}]+"
+
+        /** `Regex("...")`, `"...".toRegex()` and `Pattern.compile("...")` literals in main sources: (file, pattern as written). */
+        fun regexLiterals(): List<Pair<String, String>> {
+            // A double-quoted Kotlin string literal: its text between the quotes, escapes as written.
+            val literal = "\"((?:[^\"\\\\]|\\\\.)*)\""
+            val forms = listOf(
+                Regex("Regex\\(\\s*$literal"),
+                Regex("$literal\\s*\\.toRegex\\("),
+                Regex("Pattern\\.compile\\(\\s*$literal"),
+            )
+            val src = File("src/main/kotlin").walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
+            assertThat(src).isNotEmpty()
+            return src.flatMap { f ->
+                val text = f.readText()
+                // A raw-string pattern would slip past the literal above: none is allowed, so none is missed.
+                assertThat(text.contains("Regex(\"\"\"") || text.contains("\"\"\".toRegex(")).isFalse()
+                forms.flatMap { form -> form.findAll(text).map { f.name to it.groupValues[1] }.toList() }
+            }
+        }
+
+        /**
+         * What in [source] (a pattern as written in a Kotlin source file, backslashes doubled)
+         * `java.util.regex` takes and Android's ICU engine refuses:
+         *  - an inline flag other than `i`, `m`, `s`, `x` (ICU has no `U`, `u`, `d` or `X`);
+         *  - `\p{Is...}` and `\p{java...}` property names;
+         *  - `\h` and `\R`, banned here since the first version of this guard.
+         */
+        fun androidTrouble(source: String): List<String> = buildList {
+            Regex("\\(\\?([A-Za-z]*)(?:-([A-Za-z]*))?[:)]").findAll(source).forEach { m ->
+                val flags = m.groupValues[1] + m.groupValues[2]
+                if (flags.any { it !in "imsx" }) add("inline flag (?$flags)")
+            }
+            if (Regex("\\\\\\\\[pP]\\{(Is|java)").containsMatchIn(source)) add("a Java-only property name")
+            Regex("\\\\\\\\([hR])").findAll(source).forEach { add("backslash " + it.groupValues[1]) }
+        }
     }
 }
 
