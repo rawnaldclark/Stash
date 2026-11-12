@@ -132,7 +132,15 @@ class AddonRefs @Inject constructor(
             // An ISRC miss from an add-on that can also search is not the last word: its search
             // is. Nothing is stamped for it, or a download (which may not search) would close the
             // song to the play that could.
+            // A download that may not search remembers that miss here instead, in memory and for
+            // downloads only (round 2, n8): every retry pass asked `/resolve-isrc` again.
+            val downloadOnly = isrcOnly && searches && !bySearch
+            if (downloadOnly && isrcMisses["$rid|$key"]?.let { now - it < TidalClient.MISS_TTL_MS } == true) return Found.Unavailable
             val found = viaResolve(addon, rid, query, key, pass, paced, row, stampMisses = !(isrcOnly && searches))
+            if (downloadOnly && found == Found.Miss) {
+                if (isrcMisses.size >= MAX_ISRC_MISSES) isrcMisses.clear()
+                isrcMisses["$rid|$key"] = now
+            }
             if (!(isrcOnly && found == Found.Miss && searches)) return found
         }
         if (searches && !bySearch) {
@@ -264,8 +272,13 @@ class AddonRefs @Inject constructor(
     suspend fun forget(addonId: String) {
         val rid = rowId(addonId)
         held.forget(rid)
+        answeredStreams.values.removeIf { it.rid == rid }
+        isrcMisses.keys.removeIf { it.startsWith("$rid|") }
         write(rid) { refs.deleteFor(rid) }
     }
+
+    /** A download's `/resolve-isrc` miss from an add-on that can also search, by add-on and song: when ([find]). Memory only. */
+    private val isrcMisses = ConcurrentHashMap<String, Long>()
 
     // ---------------------------------------------------------------------------------------------- lookups
 
@@ -510,6 +523,9 @@ class AddonRefs @Inject constructor(
 
         /** Rows a search asks for: enough for a song's versions, small enough for a phone. */
         const val SEARCH_LIMIT = 20
+
+        /** How many download misses of ISRC-only resolvers are remembered ([find]); past it the memory starts over. */
+        private const val MAX_ISRC_MISSES = 4_096
 
         /** How many answered streams are remembered for [refusedOnTheWire], and for how long (a stream's URL lives an hour at most). */
         private const val MAX_ANSWERED = 512

@@ -321,6 +321,35 @@ class AddonRefsTest {
         assertThat(refs.find(eclipse, song, AddonRefs.Pass.LOSSLESS)).isInstanceOf(AddonRefs.Found.Hit::class.java)
     }
 
+    /** review-882 round 2, n8: nothing may be stamped for such a miss, so every retry pass asked `/resolve-isrc` again. */
+    @Test fun `an ISRC-only resolver's miss on a download is remembered for downloads, in memory - a play still asks and searches`() = runTest {
+        val client: HttpAddonClient = mockk {
+            coEvery { resolve(any(), any(), any()) } returns AddonResult.Ok(null)
+            coEvery { search(any(), any(), any(), any()) } returns AddonResult.Ok(SearchResponse(tracks = listOf(exact)))
+        }
+        val refs = refs(client)
+        val eclipse = addon(resources = listOf("search", "resolve", "stream"), dialect = AddonDialect.ECLIPSE, eclipse = EclipseTraits(resolveViaIsrc = true))
+        suspend fun download() = refs.find(eclipse, song, AddonRefs.Pass.LOSSLESS, paced = true, bySearch = false)
+
+        // Three retry passes: asked once.
+        repeat(3) { assertThat(download()).isEqualTo(AddonRefs.Found.Unavailable) }
+        coVerify(exactly = 1) { client.resolve(any(), any(), any()) }
+        assertThat(dao.rows).isEmpty()
+        // As long as a miss lasts, and no longer.
+        now += TidalClient.MISS_TTL_MS
+        download()
+        coVerify(exactly = 2) { client.resolve(any(), any(), any()) }
+        // Gone with the add-on.
+        refs.forget(eclipse.id)
+        download()
+        coVerify(exactly = 3) { client.resolve(any(), any(), any()) }
+
+        // The play is closed by none of it: it asks, and its search finds the song.
+        assertThat(refs.find(eclipse, song, AddonRefs.Pass.LOSSLESS)).isInstanceOf(AddonRefs.Found.Hit::class.java)
+        coVerify(exactly = 4) { client.resolve(any(), any(), any()) }
+        coVerify(exactly = 1) { client.search(any(), any(), any(), any()) }
+    }
+
     // ------------------------------------------------------------------------------------------ no match on words alone (review-882 J4)
 
     private val noLength = Track(id = "55", title = "Digital Love", artist = "Daft Punk")
