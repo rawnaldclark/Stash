@@ -7,6 +7,7 @@ import com.stash.core.addons.UserAddons
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.PlayOrder
 import com.stash.data.download.lossless.PlayOrderSwitches
+import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.bitchord.LegacyRelayWire
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.TidalRelay
@@ -74,6 +75,19 @@ class TidalSwitchTest {
         switches.setOn(PlayOrder.TIDAL, false)
         assertThat(w.route()).isNull()
         assertThat(w.route(ownServer = false)).isNull()
+    }
+
+    @Test fun `a look-ahead with Tidal switched off is told Off, not to ask it later`() = runBlocking<Unit> {
+        // review-885 M1: "ask it later" stops a look-ahead at Tidal. With the switch off that was every
+        // song, so nothing behind Tidal (an add-on, JioSaavn, YouTube) was fetched ahead for the next one.
+        val client = TidalClient(prefs, FakeAddonRefDao(), mockk(relaxed = true), wires())
+        val song = TrackQuery(artist = "Artist", title = "Title")
+        assertThat(client.lookup(song, cacheOnly = true)).isEqualTo(TidalLookup.NeedsRelay)
+        switches.setOn(PlayOrder.TIDAL, false)
+        assertThat(client.lookup(song, cacheOnly = true)).isEqualTo(TidalLookup.Off)
+        assertThat(client.lookup(song, allowAac = true, cacheOnly = true)).isEqualTo(TidalLookup.Off)
+        switches.setOn(PlayOrder.TIDAL, true)
+        assertThat(client.lookup(song, cacheOnly = true)).isEqualTo(TidalLookup.NeedsRelay)
     }
 
     @Test fun `another row's switch leaves Tidal on`() = runBlocking<Unit> {

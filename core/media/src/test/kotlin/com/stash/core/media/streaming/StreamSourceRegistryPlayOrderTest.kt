@@ -260,6 +260,15 @@ class StreamSourceRegistryPlayOrderTest {
         assertThat(asked()).containsExactly("tidal-lossless", "qbdlx").inOrder()
     }
 
+    @Test fun `with Tidal switched off, a look-ahead goes on to the add-on behind it and to YouTube`() = runTest {
+        // review-885 M1. Switched off, the Tidal rung says it has nothing to ask later (`TidalSwitchTest`
+        // holds the client to that), so the look-ahead no longer stops before it: the next song is found ahead.
+        reset(); tidalUncached = false
+        walk(listOf(addon("mine", userAdded = true)), saved = null, speculative = true)
+        assertThat(asked()).containsAtLeast("qbdlx", "tidal", "addon:mine").inOrder()
+        assertThat(calls).contains("youtube")
+    }
+
     @Test fun `a look-ahead stops at a metered add-on wherever it is saved`() = runTest {
         reset()
         assertThat(walk(listOf(addon("paid", userAdded = true, metered = true)), saved = listOf("qobuz", "addon:paid", "tidal"), speculative = true)).isNull()
