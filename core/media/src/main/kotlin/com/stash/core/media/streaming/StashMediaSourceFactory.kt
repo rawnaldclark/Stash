@@ -244,8 +244,13 @@ class StashMediaSourceFactory(
                         if (resolved?.isHls == true) {
                             streamingFactory.createHlsMediaSource(item, resolved)
                         } else if (resolved?.isDash == true) {
-                            val addon = addonSourceFactory?.takeIf { resolved.origin?.startsWith(AddonStreamRung.ORIGIN_PREFIX) == true }
-                            streamingFactory.createDashMediaSource(item, resolved.url, addon)
+                            if (AddonPlayback.isAddonOrigin(resolved.origin)) {
+                                // An add-on's manifest and segments on the add-on media client, or refused.
+                                addonSourceFactory?.let { streamingFactory.createDashMediaSource(item, resolved.url, it) }
+                                    ?: refusedFactory.createMediaSource(item)
+                            } else {
+                                streamingFactory.createDashMediaSource(item, resolved.url, null)
+                            }
                         } else {
                             lazyFactory.createMediaSource(item)
                         }
@@ -258,7 +263,12 @@ class StashMediaSourceFactory(
         // Keyed on the path, not an extra: the session strips local configuration,
         // and upstream serves every MPD at `/dash/td/<id>.mpd`.
         if ((uri?.scheme == "https" || uri?.scheme == "http") && uri.path?.endsWith(".mpd") == true) {
-            return streamingFactory.createDashMediaSource(mediaItem, uri.toString(), addonSourceFactory?.takeIf { isAddonOrigin(mediaItem) })
+            if (isAddonOrigin(mediaItem)) {
+                // An add-on's manifest and segments on the add-on media client, or refused.
+                return addonSourceFactory?.let { streamingFactory.createDashMediaSource(mediaItem, uri.toString(), it) }
+                    ?: refusedFactory.createMediaSource(mediaItem)
+            }
+            return streamingFactory.createDashMediaSource(mediaItem, uri.toString(), null)
         }
         // Order matches existing precedence: YouTube-trackId refresh chain first,
         // then JioSaavn authed-HTTP, then local/default.

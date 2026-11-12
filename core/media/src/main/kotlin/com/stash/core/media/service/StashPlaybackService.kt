@@ -762,13 +762,12 @@ class StashPlaybackService : MediaLibraryService() {
             },
             // An add-on's stream plays on the add-on media client: no fetch from the user's own
             // network, whatever the add-on answered (add-ons plan phase 4 §2.6).
-            addonDataSourceFactory = androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(addonClient.mediaClient)
-                .setUserAgent(addonClient.mediaUserAgent),
+            addonDataSourceFactory = com.stash.core.media.streaming.AddonPlayback.dataSourceFactory(addonClient),
             isAddonOrigin = { item ->
                 val scheme = item.localConfiguration?.uri?.scheme?.lowercase()
                 val origin = item.mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN)
                 (scheme == "http" || scheme == "https") &&
-                    origin?.startsWith(com.stash.core.media.streaming.AddonStreamRung.ORIGIN_PREFIX) == true
+                    com.stash.core.media.streaming.AddonPlayback.isAddonOrigin(origin)
             },
             httpClient = okHttpClient,
             // Full-timeline queue: stash-resolve:// placeholders resolve
