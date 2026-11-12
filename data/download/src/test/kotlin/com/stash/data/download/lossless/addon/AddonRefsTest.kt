@@ -443,7 +443,8 @@ class AddonRefsTest {
     }
 
     @Test fun `a default add-on's cover art is handed out and kept`() = runTest {
-        val official = addon().copy(userAdded = false)
+        // Art is kept by trust level (a copy keeps the trust it was built with, so it is named here).
+        val official = addon().copy(userAdded = false, trust = com.stash.core.addons.Trust.OFFICIAL)
         val found = refs(searching(withArt)).find(official, song, AddonRefs.Pass.LOSSLESS)
         assertThat((found as AddonRefs.Found.Hit).ref.artwork).isEqualTo(art)
         assertThat(dao.rows["bc" to key]!!.artwork).isEqualTo(art)
@@ -454,7 +455,8 @@ class AddonRefsTest {
         // Strict: the ref answers, nothing is asked.
         val found = refs(mockk()).find(addon(), song, AddonRefs.Pass.LOSSLESS)
         assertThat((found as AddonRefs.Found.Hit).ref.artwork).isNull()
-        assertThat((refs(mockk()).find(addon().copy(userAdded = false), song, AddonRefs.Pass.LOSSLESS) as AddonRefs.Found.Hit).ref.artwork).isEqualTo(art)
+        val official = addon().copy(userAdded = false, trust = com.stash.core.addons.Trust.OFFICIAL)
+        assertThat((refs(mockk()).find(official, song, AddonRefs.Pass.LOSSLESS) as AddonRefs.Found.Hit).ref.artwork).isEqualTo(art)
     }
 
     @Test fun `an add-on that calls itself tidal never shares the Tidal rung's rows`() = runTest {
