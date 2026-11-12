@@ -172,7 +172,7 @@ class AddFromLinkFlowTest {
         assertThat(p.trust).isEqualTo(Trust.UNOFFICIAL)
         assertThat(p.needsConsent).isTrue()
         // It has no download route, and Stash would still take downloads from its stream: it sees what is saved too.
-        assertThat(p.sees).containsExactly(AddonSees.SEARCHES, AddonSees.PLAYS, AddonSees.SAVES)
+        assertThat(p.sees).containsExactly(AddonSees.PLAYS, AddonSees.NEXT_UP, AddonSees.SAVES)
         assertThat(p.uses).containsExactly(AddonLinks.Use.PLAYS_SONGS, AddonLinks.Use.DOWNLOADS).inOrder()
         assertThat(p.playsSongs).isTrue()
         // Reading it added nothing.
@@ -232,7 +232,7 @@ class AddFromLinkFlowTest {
         val entry = users.loadedEntries().single()
         assertThat(entry.id).isEqualTo("hifi")
         assertThat(entry.name).isEqualTo("Hi-Fi Relay")
-        assertThat(entry.consent).containsExactly("SEARCHES", "PLAYS", "SAVES")
+        assertThat(entry.consent).containsExactly("PLAYS", "NEXT_UP", "SAVES")
         assertThat(entry.addedAt).isNotNull()
         assertThat(links.lastAdded.value).isEqualTo((added as AddonLinks.Outcome.Added).key)
     }
@@ -298,13 +298,13 @@ class AddFromLinkFlowTest {
             """{"stash":1,"id":"hifi","name":"Hi-Fi Relay","version":"1.0.0","kind":"server","resources":["search","stream"],"stream":{"cors":false,"tiers":[$tiers]}}"""
         manifests["a/manifest.json"] = v1("\"high\"")
         links.add(ready(url("a")), token = null, agreed = true)
-        assertThat(users.loadedEntries().single().consent).containsExactly("SEARCHES", "PLAYS")
+        assertThat(users.loadedEntries().single().consent).containsExactly("PLAYS", "NEXT_UP")
         manifests["b/manifest.json"] = v1("\"high\",\"lossless\"")
         val p = ready(url("b"), replacing = InTreeAddonRegistry.keyOf(url("a")))
         assertThat(p.needsConsent).isTrue()
         assertThat(links.add(p, token = null)).isEqualTo(AddonLinks.Outcome.Refused(AddonLinks.Refusal.NOT_AGREED))
         assertThat(links.add(p, token = null, agreed = true)).isInstanceOf(AddonLinks.Outcome.Added::class.java)
-        assertThat(users.loadedEntries().single().consent).containsExactly("SEARCHES", "PLAYS", "SAVES")
+        assertThat(users.loadedEntries().single().consent).containsExactly("PLAYS", "NEXT_UP", "SAVES")
     }
 
     @Test fun `Remove takes its place in the play order with it`() = runBlocking<Unit> {
@@ -381,7 +381,7 @@ class AddFromLinkFlowTest {
 
         val key = InTreeAddonRegistry.keyOf(url("a"))
         assertThat(links.agree(key)).isTrue()
-        assertThat(users.loadedEntries().single().consent).containsExactly("SEARCHES", "PLAYS", "SAVES")
+        assertThat(users.loadedEntries().single().consent).containsExactly("PLAYS", "NEXT_UP", "SAVES")
         registry.refresh()
         assertThat(registry.addons.value.map { it.id }).containsExactly("hifi")
         assertThat(registry.entries.value.single().hold).isNull()
@@ -394,7 +394,7 @@ class AddFromLinkFlowTest {
             """{"stash":1,"id":"echo","name":"Echo","version":"1.0.0","kind":"server","resources":["search","resolve","stream"],"stream":{"cors":false}}"""
         val p = ready(url("p"))
         assertThat(p.uses).contains(AddonLinks.Use.DOWNLOADS)
-        assertThat(p.sees).containsExactly(AddonSees.SEARCHES, AddonSees.PLAYS, AddonSees.SAVES)
+        assertThat(p.sees).containsExactly(AddonSees.PLAYS, AddonSees.NEXT_UP, AddonSees.SAVES)
         links.add(p, token = null, agreed = true)
         registry.refresh()
         val row = AddonOverview.build(

@@ -241,27 +241,51 @@ object AllDefaultsOn : AddonSwitches {
  * Every server add-on also sees the phone's internet address.
  */
 enum class AddonSees {
-    /** "what you search for": it lists `search`. */
-    SEARCHES,
-
-    /** "the songs you play": it lists `stream`, `resolve` or `lyrics`. */
+    /**
+     * "each song you play": Stash asks it about the song that is playing. It is a stream source
+     * ([streams]), or it gives lyrics.
+     */
     PLAYS,
 
     /**
-     * "and save": Stash would take a song to keep from it ([keeps]), which is exactly when its
-     * preview and its page show "Downloads". Through its `/download` when it lists one; without,
-     * a download goes through its `/resolve` and `/stream`, so its server learns of songs the
-     * user saves and never played (review-882 J3). Listing `download` is not what decides.
+     * "the next song in your queue": a stream source is also asked about the song that is up next,
+     * whether or not it ends up played (the look-ahead). Lyrics are asked for the playing song only.
+     */
+    NEXT_UP,
+
+    /**
+     * "each song you save": Stash would take a song to keep from it ([keeps]), which is exactly when
+     * its preview and its page show "Downloads"; or it gives lyrics, which are fetched for a song
+     * once it is downloaded. A download from an add-on with no `/download` route goes through its
+     * `/resolve` and `/stream`, so its server learns of songs the user saves and never played
+     * (review-882 J3). Listing `download` is not what decides.
      */
     SAVES;
 
     companion object {
-        /** [allowsDownloads]: false for an Eclipse-family manifest that says `allowDownloads: 0`. */
+        /**
+         * What Stash will ask the add-on with manifest [m] about. Nothing here is "what you search
+         * for": nothing the user types in Search is ever sent to an add-on. An add-on's `/search`
+         * is asked for a song Stash is looking for, by its artist and title, as its `/resolve` is.
+         * [allowsDownloads]: false for an Eclipse-family manifest that says `allowDownloads: 0`.
+         */
         fun of(m: Manifest, allowsDownloads: Boolean = true): Set<AddonSees> = buildSet {
-            if (m.offers(Resource.SEARCH)) add(SEARCHES)
-            // Lyrics are asked for the song that is playing, by its title and artist: the same thing seen.
-            if (m.offers(Resource.STREAM) || m.offers(Resource.RESOLVE) || m.offers(Resource.LYRICS)) add(PLAYS)
-            if (keeps(m, allowsDownloads)) add(SAVES)
+            val lyrics = m.offers(Resource.LYRICS)
+            if (streams(m) || lyrics) add(PLAYS)
+            if (streams(m)) add(NEXT_UP)
+            if (keeps(m, allowsDownloads) || lyrics) add(SAVES)
+        }
+
+        /**
+         * Stash would ask this add-on for a song to play: it lists `stream`, has a way to find a
+         * song (`resolve`, or `search` matched on the phone) and plays in a delivery the player
+         * takes. The stream chain's own rule (`:core:media` `AddonStreamRungs.canStream`).
+         */
+        fun streams(m: Manifest): Boolean {
+            if (!m.offers(Resource.STREAM)) return false
+            if (!m.offers(Resource.RESOLVE) && !m.offers(Resource.SEARCH)) return false
+            val caps = m.stream ?: return false
+            return caps.knownManifests.any { it == Delivery.NONE || it == Delivery.DASH }
         }
 
         /** [of] for a manifest as it was read, with what an Eclipse-family one says about downloads. */

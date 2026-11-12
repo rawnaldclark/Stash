@@ -60,12 +60,12 @@ class AddonScreensTest {
     }
 
     @Test fun `the sheet says where it runs, what its server sees and what it never gets`() {
-        showSheet(setOf(AddonSees.SEARCHES, AddonSees.PLAYS, AddonSees.SAVES))
+        showSheet(setOf(AddonSees.PLAYS, AddonSees.NEXT_UP, AddonSees.SAVES))
         rule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)).assertExists()
         rule.onNodeWithText("Not made by Stash").assertExists()
         rule.onNodeWithText("Hi-Fi Relay runs on relay.example.org. Stash doesn't run it or check it.").assertExists()
         rule.onNodeWithText("Its server will see").assertExists()
-        rule.onNodeWithText("What you search for, the songs you play and save, and your internet address.").assertExists()
+        rule.onNodeWithText("The name, artist, album and length of each song you play, of the next song in your queue and of each song you save, and your internet address.").assertExists()
         rule.onNodeWithText("It never gets").assertExists()
         rule.onNodeWithText("Your accounts, your passwords, or anything from your other add-ons.").assertExists()
         rule.onNodeWithText("Only add add-ons from people you trust.").assertExists()
@@ -73,29 +73,33 @@ class AddonScreensTest {
         rule.onNodeWithText("Cancel").assertExists()
     }
 
-    @Test fun `the will-see line is built from what the add-on lists, and never says more`() {
+    @Test fun `the will-see line says what Stash sends and about which songs, and never says more`() {
         // Every set has its own whole sentence; the internet address is in all of them.
         val lines = mapOf(
-            setOf(AddonSees.SEARCHES, AddonSees.PLAYS, AddonSees.SAVES) to "What you search for, the songs you play and save, and your internet address.",
-            setOf(AddonSees.SEARCHES, AddonSees.PLAYS) to "What you search for, the songs you play, and your internet address.",
-            setOf(AddonSees.SEARCHES, AddonSees.SAVES) to "What you search for, the songs you save, and your internet address.",
-            setOf(AddonSees.PLAYS, AddonSees.SAVES) to "The songs you play and save, and your internet address.",
-            setOf(AddonSees.SEARCHES) to "What you search for, and your internet address.",
-            setOf(AddonSees.PLAYS) to "The songs you play, and your internet address.",
-            setOf(AddonSees.SAVES) to "The songs you save, and your internet address.",
+            setOf(AddonSees.PLAYS, AddonSees.NEXT_UP, AddonSees.SAVES) to "The name, artist, album and length of each song you play, of the next song in your queue and of each song you save, and your internet address.",
+            setOf(AddonSees.PLAYS, AddonSees.NEXT_UP) to "The name, artist, album and length of each song you play and of the next song in your queue, and your internet address.",
+            setOf(AddonSees.PLAYS, AddonSees.SAVES) to "The name, artist, album and length of each song you play and of each song you save, and your internet address.",
+            setOf(AddonSees.PLAYS) to "The name, artist, album and length of each song you play, and your internet address.",
+            setOf(AddonSees.SAVES) to "The name, artist, album and length of each song you save, and your internet address.",
             emptySet<AddonSees>() to "Your internet address.",
         )
         val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
         for ((sees, line) in lines) assertThat(context.getString(seesText(sees))).isEqualTo(line)
-        // All eight sets are covered: none falls back to another's words.
-        assertThat(lines.values.toSet()).hasSize(8)
+        // All six sets are covered: none falls back to another's words.
+        assertThat(lines.values.toSet()).hasSize(6)
+        // Nothing typed in Search is sent to an add-on, so no sentence says it is.
+        for (line in lines.values) assertThat(line.lowercase()).doesNotContain("search")
+        // Every set an add-on can come to has one of these sentences (the next song up is never seen without the one playing).
+        for (sees in listOf(setOf(AddonSees.NEXT_UP), setOf(AddonSees.NEXT_UP, AddonSees.SAVES))) {
+            assertThat(context.getString(seesText(sees))).contains("the next song in your queue")
+        }
     }
 
     @Test fun `only its buttons act - Add anyway confirms, Cancel dismisses`() {
         var confirmed = 0
         var dismissed = 0
         showSheet(setOf(AddonSees.PLAYS), onConfirm = { confirmed++ }, onDismiss = { dismissed++ })
-        rule.onNodeWithText("The songs you play, and your internet address.").assertExists()
+        rule.onNodeWithText("The name, artist, album and length of each song you play, and your internet address.").assertExists()
         assertThat(confirmed).isEqualTo(0)
         rule.onNodeWithText("Cancel").performClick()
         assertThat(dismissed).isEqualTo(1)
@@ -105,7 +109,7 @@ class AddonScreensTest {
     }
 
     @Test fun `asking again because it wants more says so, with Allow`() {
-        showSheet(setOf(AddonSees.SEARCHES, AddonSees.PLAYS, AddonSees.SAVES), more = true)
+        showSheet(setOf(AddonSees.PLAYS, AddonSees.NEXT_UP, AddonSees.SAVES), more = true)
         rule.onNodeWithText("Wants to see more").assertExists()
         rule.onNodeWithText("Hi-Fi Relay, on relay.example.org, now asks for more than you agreed to. Stash doesn't run it or check it.").assertExists()
         rule.onNodeWithText("Allow").assertExists()
@@ -317,7 +321,7 @@ class AddonScreensTest {
             relay.copy(
                 version = "1.2.0",
                 uses = listOf(AddonLinks.Use.PLAYS_SONGS, AddonLinks.Use.LOSSLESS),
-                sees = setOf(AddonSees.SEARCHES, AddonSees.PLAYS),
+                sees = setOf(AddonSees.PLAYS, AddonSees.NEXT_UP),
             ),
         )
         rule.onNodeWithText("Version 1.2.0").assertExists()
@@ -327,7 +331,7 @@ class AddonScreensTest {
         rule.onNodeWithText("Plays songs").assertExists()
         rule.onNodeWithText("Lossless").assertExists()
         rule.onNodeWithText("Its server will see").assertExists()
-        rule.onNodeWithText("What you search for, the songs you play, and your internet address.").assertExists()
+        rule.onNodeWithText("The name, artist, album and length of each song you play and of the next song in your queue, and your internet address.").assertExists()
         rule.onNodeWithText("It never gets").assertExists()
         rule.onNodeWithText("Your accounts, your passwords, or anything from your other add-ons.").assertExists()
         rule.onNodeWithContentDescription("Use Hi-Fi Relay").assertIsOn().performClick()
@@ -448,7 +452,7 @@ class AddonScreensTest {
     }
 
     @Test fun `an add-on that wants to see more is reviewed on the sheet, and only Allow agrees`() {
-        showPage(relay.copy(status = AddonOverview.Status.WANTS_MORE, sees = setOf(AddonSees.SEARCHES, AddonSees.PLAYS, AddonSees.SAVES)))
+        showPage(relay.copy(status = AddonOverview.Status.WANTS_MORE, sees = setOf(AddonSees.PLAYS, AddonSees.NEXT_UP, AddonSees.SAVES)))
         rule.onNodeWithText("Review").performClick()
         assertThat(pageAgreed).isEqualTo(0)
         rule.onNodeWithText("Hi-Fi Relay, on relay.example.org, now asks for more than you agreed to. Stash doesn't run it or check it.").assertExists()
@@ -498,7 +502,7 @@ class AddonScreensTest {
     private fun preview(trust: Trust = Trust.UNOFFICIAL, needsToken: Boolean = false) = AddonLinks.Preview(
         manifestUrl = "https://relay.example.org/v1/s3cret-tok/manifest.json", id = "hifi", name = "Hi-Fi Relay", version = "1.2.0",
         description = null, host = "relay.example.org", uses = listOf(AddonLinks.Use.PLAYS_SONGS, AddonLinks.Use.LOSSLESS),
-        needsToken = needsToken, trust = trust, sees = setOf(AddonSees.SEARCHES, AddonSees.PLAYS),
+        needsToken = needsToken, trust = trust, sees = setOf(AddonSees.PLAYS, AddonSees.NEXT_UP),
         needsConsent = trust == Trust.UNOFFICIAL, playsSongs = true,
     )
 
@@ -547,7 +551,7 @@ class AddonScreensTest {
         // The tap opened the sheet; nothing was added.
         assertThat(added).isEmpty()
         rule.onNodeWithText("Its server will see").assertExists()
-        rule.onNodeWithText("What you search for, the songs you play, and your internet address.").assertExists()
+        rule.onNodeWithText("The name, artist, album and length of each song you play and of the next song in your queue, and your internet address.").assertExists()
         // The button's own click, wherever the sheet has slid to in a test window.
         rule.onNodeWithText("Add anyway").performSemanticsAction(SemanticsActions.OnClick)
         assertThat(added).containsExactly(Triple("hifi", null, true))

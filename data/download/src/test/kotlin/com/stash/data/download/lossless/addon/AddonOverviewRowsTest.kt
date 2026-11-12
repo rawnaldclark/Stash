@@ -34,7 +34,7 @@ class AddonOverviewRowsTest {
     private fun link(id: String) = "https://$id.example.org/v1/s3cret-tok/manifest.json"
 
     private fun user(id: String, enabled: Boolean = true, name: String? = null) =
-        UserAddonEntry(link(id), enabled = enabled, id = id, name = name ?: id, consent = setOf("SEARCHES", "PLAYS"))
+        UserAddonEntry(link(id), enabled = enabled, id = id, name = name ?: id, consent = setOf("PLAYS", "NEXT_UP"))
 
     private fun entry(
         id: String,
@@ -106,8 +106,9 @@ class AddonOverviewRowsTest {
         val words = state.others.single()
         assertThat(words.playsSongs).isFalse()
         assertThat(words.uses).containsExactly(AddonLinks.Use.LYRICS)
-        // Its server still sees the songs being played: lyrics are asked for by title and artist.
-        assertThat(words.sees).containsExactly(AddonSees.PLAYS)
+        // Its server still sees the song that is playing, and a song once it is downloaded: lyrics are
+        // asked for both, by name and artist. Never the next one in the queue.
+        assertThat(words.sees).containsExactly(AddonSees.PLAYS, AddonSees.SAVES)
     }
 
     // ------------------------------------------------------------------------------------------ the Tidal row
@@ -150,7 +151,7 @@ class AddonOverviewRowsTest {
         assertThat(row.toString()).doesNotContain("s3cret-tok")
         assertThat(row.version).isEqualTo("1.2.0")
         assertThat(row.uses).containsExactly(AddonLinks.Use.PLAYS_SONGS, AddonLinks.Use.LOSSLESS, AddonLinks.Use.DOWNLOADS).inOrder()
-        assertThat(row.sees).containsExactly(AddonSees.SEARCHES, AddonSees.PLAYS, AddonSees.SAVES)
+        assertThat(row.sees).containsExactly(AddonSees.PLAYS, AddonSees.NEXT_UP, AddonSees.SAVES)
         assertThat(row.canRemove).isTrue()
         // Before the registry has read it, the address still comes from the link itself.
         val early = build(users = listOf(user("mine", name = "Hi-Fi Relay")))

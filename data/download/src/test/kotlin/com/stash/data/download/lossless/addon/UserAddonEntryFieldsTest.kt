@@ -38,7 +38,7 @@ class UserAddonEntryFieldsTest {
 
     private val first = UserAddonEntry(
         "https://relay.example.org/v1/tok/manifest.json", id = "hifi", name = "Hi-Fi Relay",
-        consent = setOf(AddonSees.SEARCHES.name, AddonSees.PLAYS.name), addedAt = 1_794_355_200_000L,
+        consent = setOf(AddonSees.PLAYS.name, AddonSees.NEXT_UP.name), addedAt = 1_794_355_200_000L,
     )
     private val second = UserAddonEntry("https://two.example/manifest.json", id = "two", name = "Two")
 
@@ -56,9 +56,9 @@ class UserAddonEntryFieldsTest {
         val users = EncryptedUserAddons(store, Scramble)
         users.put(first)
         users.put(second)
-        users.setConsent(first.manifestUrl, setOf(AddonSees.SEARCHES.name, AddonSees.PLAYS.name, AddonSees.SAVES.name))
+        users.setConsent(first.manifestUrl, setOf(AddonSees.PLAYS.name, AddonSees.NEXT_UP.name, AddonSees.SAVES.name))
         val now = EncryptedUserAddons(store, Scramble).loadedEntries()
-        assertThat(now.first().consent).containsExactly("SEARCHES", "PLAYS", "SAVES")
+        assertThat(now.first().consent).containsExactly("PLAYS", "NEXT_UP", "SAVES")
         assertThat(now.last()).isEqualTo(second)
     }
 

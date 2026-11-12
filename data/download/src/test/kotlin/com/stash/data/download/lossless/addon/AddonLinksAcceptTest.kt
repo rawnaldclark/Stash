@@ -42,9 +42,10 @@ class AddonLinksAcceptTest {
         assertThat(AddonLinks.uses(manifest(listOf("lyrics")))).containsExactly(AddonLinks.Use.LYRICS)
     }
 
-    @Test fun `Downloads is shown exactly when the server is said to see what you save`() {
+    @Test fun `the server is said to see what you save exactly when Downloads or Lyrics is shown`() {
         // One condition for the "Downloads" use, the sheet's "and save" and the page's: seen apart on a phone
-        // (a page without "save" for an add-on whose page showed Downloads).
+        // (a page without "save" for an add-on whose page showed Downloads). Lyrics say "save" too: they
+        // are fetched for a song once it is downloaded.
         val shapes = listOf(
             manifest(listOf("search", "stream")),
             manifest(listOf("resolve", "stream"), tiers = listOf("lossless")),
@@ -55,13 +56,14 @@ class AddonLinksAcceptTest {
             manifest(listOf("stream")),
             manifest(listOf("download")),
             manifest(listOf("lyrics")),
+            manifest(listOf("lyrics", "search", "stream"), tiers = listOf("high")),
             manifest(listOf("search", "stream")).copy(stream = StreamCapabilities(cors = false, manifests = listOf("hls"))),
             manifest(listOf("search", "stream")).copy(stream = null),
         )
         for (m in shapes) for (allowed in listOf(true, false)) {
-            val downloads = AddonLinks.Use.DOWNLOADS in AddonLinks.uses(m, allowsDownloads = allowed)
+            val uses = AddonLinks.uses(m, allowsDownloads = allowed)
             val saves = com.stash.core.addons.AddonSees.SAVES in com.stash.core.addons.AddonSees.of(m, allowsDownloads = allowed)
-            assertThat(saves).isEqualTo(downloads)
+            assertThat(saves).isEqualTo(AddonLinks.Use.DOWNLOADS in uses || AddonLinks.Use.LYRICS in uses)
         }
         // And both are on for the add-on seen on the phone: search, resolve and stream, no download route.
         val seen = manifest(listOf("search", "resolve", "stream"))

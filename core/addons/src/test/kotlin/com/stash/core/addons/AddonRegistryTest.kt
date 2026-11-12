@@ -589,18 +589,17 @@ class AddonRegistryTest {
     }
 
     @Test fun `an add-on that wants to see more than was agreed waits, and one that sees no more does not`() = runBlocking<Unit> {
-        // Agreed to: its lyrics route sees the songs played. Now it lists search too.
+        // Agreed to: lyrics, for the songs played and saved. Now it also streams: it is asked about the next song up too.
         serve("m", manifestJson("mine", resources = "\"lyrics\",\"search\",\"stream\"", extra = ""","stream":{"cors":false}"""))
-        val users = Users(listOf(UserAddonEntry(url("m"), id = "mine", consent = setOf(AddonSees.PLAYS.name))))
+        val users = Users(listOf(UserAddonEntry(url("m"), id = "mine", consent = setOf(AddonSees.PLAYS.name, AddonSees.SAVES.name))))
         val registry = registry(users = users)
         registry.refresh()
         assertThat(registry.addons.value).isEmpty()
         assertThat(registry.entries.value.single().hold).isEqualTo(AddonHold.WANTS_MORE)
 
         // The user agrees to what it lists now: it is on.
-        // (It finds songs and streams them, so Stash would take downloads from it too: it sees what is saved.)
         users.flow.value = listOf(
-            UserAddonEntry(url("m"), id = "mine", consent = setOf(AddonSees.PLAYS.name, AddonSees.SEARCHES.name, AddonSees.SAVES.name)),
+            UserAddonEntry(url("m"), id = "mine", consent = setOf(AddonSees.PLAYS.name, AddonSees.NEXT_UP.name, AddonSees.SAVES.name)),
         )
         registry.refresh()
         assertThat(registry.addons.value.map { it.id }).containsExactly("mine")

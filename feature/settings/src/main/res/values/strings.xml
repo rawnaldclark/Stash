@@ -1492,13 +1492,11 @@
     <!-- The "Not made by Stash" sheet. %1$s is the add-on's name, %2$s the address its server runs on. -->
     <string name="settings_addons_sheet_runs_on">%1$s runs on %2$s. Stash doesn\'t run it or check it.</string>
     <string name="settings_addons_sheet_sees_label">Its server will see</string>
-    <string name="settings_addons_sees_search_play_save">What you search for, the songs you play and save, and your internet address.</string>
-    <string name="settings_addons_sees_search_play">What you search for, the songs you play, and your internet address.</string>
-    <string name="settings_addons_sees_search_save">What you search for, the songs you save, and your internet address.</string>
-    <string name="settings_addons_sees_play_save">The songs you play and save, and your internet address.</string>
-    <string name="settings_addons_sees_search">What you search for, and your internet address.</string>
-    <string name="settings_addons_sees_play">The songs you play, and your internet address.</string>
-    <string name="settings_addons_sees_save">The songs you save, and your internet address.</string>
+    <string name="settings_addons_sees_play_next_save">The name, artist, album and length of each song you play, of the next song in your queue and of each song you save, and your internet address.</string>
+    <string name="settings_addons_sees_play_next">The name, artist, album and length of each song you play and of the next song in your queue, and your internet address.</string>
+    <string name="settings_addons_sees_play_save">The name, artist, album and length of each song you play and of each song you save, and your internet address.</string>
+    <string name="settings_addons_sees_play">The name, artist, album and length of each song you play, and your internet address.</string>
+    <string name="settings_addons_sees_save">The name, artist, album and length of each song you save, and your internet address.</string>
     <string name="settings_addons_sees_address">Your internet address.</string>
     <string name="settings_addons_sheet_never_label">It never gets</string>
     <string name="settings_addons_sheet_never">Your accounts, your passwords, or anything from your other add-ons.</string>

@@ -69,18 +69,20 @@ internal fun blockedText(reason: BlockReason?): Int = when (reason) {
     BlockReason.OTHER, null -> R.string.settings_addons_blocked
 }
 
-/** "Its server will see" (§2.7), one whole sentence for each set so each can be translated as one. */
+/**
+ * "Its server will see" (§2.7), one whole sentence for each set so each can be translated as one.
+ * It says what Stash sends and about which songs, never "what you search for": nothing typed in
+ * Search goes to an add-on. The same sentence on the sheet and on the add-on's page.
+ */
 @StringRes
 internal fun seesText(sees: Set<AddonSees>): Int {
-    val search = AddonSees.SEARCHES in sees
-    val play = AddonSees.PLAYS in sees
+    val next = AddonSees.NEXT_UP in sees
+    val play = AddonSees.PLAYS in sees || next
     val save = AddonSees.SAVES in sees
     return when {
-        search && play && save -> R.string.settings_addons_sees_search_play_save
-        search && play -> R.string.settings_addons_sees_search_play
-        search && save -> R.string.settings_addons_sees_search_save
+        next && save -> R.string.settings_addons_sees_play_next_save
+        next -> R.string.settings_addons_sees_play_next
         play && save -> R.string.settings_addons_sees_play_save
-        search -> R.string.settings_addons_sees_search
         play -> R.string.settings_addons_sees_play
         save -> R.string.settings_addons_sees_save
         else -> R.string.settings_addons_sees_address
