@@ -291,8 +291,11 @@ class AddonLinks @Inject constructor(
     suspend fun remove(key: String): Boolean = saving("removed") {
         val entry = entry(key) ?: return@saving
         val id = entry.id ?: registry.entries.value.firstOrNull { it.key == key }?.manifest?.manifest?.id
+        // Another add-on that is on has this id (one of Stash's own replaced this copy): the refs, the
+        // place and the pause under that id are that add-on's now, and stay.
+        val othersNow = registry.entries.value.any { it.key != key && it.hold == null && it.manifest?.manifest?.id == id }
         users.remove(entry.manifestUrl)
-        if (id != null) {
+        if (id != null && !othersNow) {
             // Its refs go with it, so a later add-on with the same id never inherits them (§2.4).
             refs.forget(id)
             playOrder.forget(PlayOrder.addonKey(id))

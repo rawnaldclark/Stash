@@ -11,6 +11,7 @@ import com.stash.core.addons.NoAddonCatalog
 import com.stash.core.addons.NoDefaultAddons
 import com.stash.core.addons.NoManifestStore
 import com.stash.core.addons.StrictAddonHost
+import com.stash.core.data.db.entity.AddonRefEntity
 import com.stash.data.download.lossless.PlayOrder
 import com.stash.data.download.lossless.addon.AddonLinks.Refusal
 import com.stash.data.download.lossless.tidal.FakeAddonRefDao
@@ -258,6 +259,25 @@ class AddonLinksTest {
         assertThat(users.loadedEntries().map { it.manifestUrl to it.enabled }).containsExactly(link("a") to false, link("b") to true).inOrder()
         assertThat(links.remove(keyOf("a"))).isTrue()
         assertThat(users.loadedEntries().map { it.manifestUrl }).containsExactly(link("b"))
+    }
+
+    @Test fun `removing a copy that one of Stash's own add-ons replaced leaves that add-on's place and what it found alone`() = runBlocking<Unit> {
+        val kit = kit()
+        serve("mine", manifestJson(id = "radio"))
+        kit.links.add(ready(kit.links, "mine"), null, agreed = true)
+        // Later the signed config turns on Stash's own add-on by that id: it is the one in use.
+        serve("stash-radio", manifestJson(id = "radio"))
+        defaults.value = listOf(DefaultAddonEntry(link("stash-radio"), firstParty = true))
+        kit.registry.refresh(force = true)
+        assertThat(kit.registry.addons.value.single().firstParty).isTrue()
+        savedOrder.value = listOf("addon:radio", "qobuz", "tidal")
+        refDao.upsert(AddonRefEntity(addonId = "radio", songKey = "isrc:AA0000000001", remoteId = "1", resolvedAt = 1L))
+
+        assertThat(kit.links.remove(keyOf("mine"))).isTrue()
+        assertThat(users.loadedEntries()).isEmpty()
+        // The id is the other add-on's now: its place in the play order and what it found stay.
+        assertThat(savedOrder.value).containsExactly("addon:radio", "qobuz", "tidal").inOrder()
+        assertThat(refDao.rows.values.map { it.addonId }).containsExactly("radio")
     }
 
     /** review-882 J2: a save that fails must come back as an answer, never as a throw into `viewModelScope.launch`. */

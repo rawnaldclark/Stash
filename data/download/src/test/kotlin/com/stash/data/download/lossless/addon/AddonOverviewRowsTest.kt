@@ -182,7 +182,7 @@ class AddonOverviewRowsTest {
                 users = listOf(user("mine")),
                 entries = listOf(entry("mine", hold = hold, needsNewer = needsNewer, blockReason = block, trust = if (hold == AddonHold.BLOCKED) Trust.BLOCKED else Trust.UNOFFICIAL)),
                 unauthorized = unauthorized, reading = reading,
-            ).row("addon:mine")!!
+            ).let { s -> (s.order + s.others).single { it.kind == AddonOverview.Kind.ADDON } }
 
         assertThat(statusOf(null).status).isEqualTo(AddonOverview.Status.WORKING)
         val blocked = statusOf(AddonHold.BLOCKED, block = BlockReason.HARMFUL)
@@ -218,6 +218,44 @@ class AddonOverviewRowsTest {
         assertThat(row.name).isEqualTo("Hi-Fi Relay")
         assertThat(row.key).isEqualTo("addon:mine")
         assertThat(row.status).isEqualTo(AddonOverview.Status.CHANGED)
+    }
+
+    @Test fun `a copy that one of Stash's own add-ons replaced keeps a row of its own, beside the one in use`() {
+        // The user added "radio" from a link; later the signed config turned on Stash's own add-on by that id.
+        val stash = AddonEntryState(
+            key = InTreeAddonRegistry.keyOf("https://stash.example.org/radio/manifest.json"), userAdded = false, firstParty = true,
+            host = "stash.example.org", trust = Trust.FIRST_PARTY, blockReason = null, manifest = manifest("radio", name = "Radio"), hold = null,
+        )
+        val state = build(
+            users = listOf(user("radio", name = "Radio")),
+            entries = listOf(entry("radio", hold = AddonHold.REPLACED, manifest = manifest("radio", name = "Radio")), stash),
+            saved = listOf("addon:radio", PlayOrder.QOBUZ, PlayOrder.TIDAL),
+        )
+        // The one in use has the place in the play order, its switch, and no Remove.
+        val inUse = state.row("addon:radio")!!
+        assertThat(state.order.map { it.key }).containsExactly("addon:radio", PlayOrder.QOBUZ, PlayOrder.TIDAL).inOrder()
+        assertThat(inUse.mark).isEqualTo(AddonOverview.Mark.OFFICIAL)
+        assertThat(inUse.status).isEqualTo(AddonOverview.Status.WORKING)
+        assertThat(inUse.canSwitch).isTrue()
+        assertThat(inUse.canRemove).isFalse()
+        // The copy says it isn't used, has no place and no switch, and can be removed.
+        val copy = state.others.single()
+        assertThat(copy.key).isEqualTo("entry:" + InTreeAddonRegistry.keyOf(link("radio")))
+        assertThat(copy.status).isEqualTo(AddonOverview.Status.REPLACED)
+        assertThat(copy.mark).isEqualTo(AddonOverview.Mark.NOT_MADE_BY_STASH)
+        assertThat(copy.canSwitch).isFalse()
+        assertThat(copy.canRemove).isTrue()
+        assertThat(state.row(copy.key)).isEqualTo(copy)
+
+        // The other way round (the user's own add-on stands in for a default that isn't Stash's own): one row, the user's.
+        val userWins = build(
+            users = listOf(user("radio")),
+            entries = listOf(entry("radio"), stash.copy(firstParty = false, trust = Trust.OFFICIAL, hold = AddonHold.REPLACED)),
+        )
+        val only = (userWins.order + userWins.others).single { it.kind == AddonOverview.Kind.ADDON }
+        assertThat(only.key).isEqualTo("addon:radio")
+        assertThat(only.userAdded).isTrue()
+        assertThat(only.status).isEqualTo(AddonOverview.Status.WORKING)
     }
 
     @Test fun `a default has a switch and no Remove`() {

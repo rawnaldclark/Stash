@@ -258,8 +258,10 @@ class AddonOverview @Inject constructor(
                 addonRow(byKey[handle], e, handle, reading, unauthorized, described)
             }
             // The first-party Tidal add-on is the Tidal row's; one of Stash's own that hasn't been read has no name to show yet.
+            // A default the user's own add-on by the same id stands in for has no row: the user's is the one in use, and has one.
             val defaultRows = entries
-                .filter { !it.userAdded && !(it.firstParty && (it.manifest == null || it.manifest?.manifest?.id == NamedRungAddons.TIDAL)) }
+                .filter { !it.userAdded && it.hold != AddonHold.REPLACED }
+                .filter { !(it.firstParty && (it.manifest == null || it.manifest?.manifest?.id == NamedRungAddons.TIDAL)) }
                 .map { addonRow(it, null, it.key, reading, unauthorized, described) }
             val addonRows = (userRows + defaultRows).distinctBy { it.key }
             val inOrder = addonRows.filter { it.playsSongs }
@@ -310,7 +312,9 @@ class AddonOverview @Inject constructor(
             }
             val official = trust == Trust.FIRST_PARTY || trust == Trust.OFFICIAL
             return Row(
-                key = id?.let(PlayOrder::addonKey) ?: "entry:$handle",
+                // A copy that one of Stash's own add-ons replaced is not that add-on: it keeps a row of its
+                // own (to say so, and to be removed), and never stands in the other's row or place.
+                key = id?.takeUnless { status == Status.REPLACED }?.let(PlayOrder::addonKey) ?: "entry:$handle",
                 kind = Kind.ADDON,
                 name = manifest?.name ?: e?.name ?: s?.host.orEmpty(),
                 // Always, for an add-on Stash doesn't run: its name is its own word, its address is not.
