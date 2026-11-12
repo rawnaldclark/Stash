@@ -1,8 +1,6 @@
-package com.stash.data.download.lossless.bitchord
+package com.stash.data.download.lossless.tidal
 
 import com.google.common.truth.Truth.assertThat
-import com.stash.core.data.db.dao.TidalMatchDao
-import com.stash.core.data.db.entity.TidalMatchEntity
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.quota.LosslessQuota
@@ -34,24 +32,18 @@ import org.junit.Test
  * spent a lossless lookup on the owner's relay makes no request; the relay's cap answer is
  * neither a miss nor a busy pool; and an AAC answer on a spent day is not a lossless miss.
  */
-class BitchordClientQuotaTest {
+class TidalClientQuotaTest {
 
-    private class FakeDao : TidalMatchDao {
-        val rows = ConcurrentHashMap<String, TidalMatchEntity>()
-        override suspend fun get(key: String) = rows[key]
-        override suspend fun upsert(entity: TidalMatchEntity) { rows[entity.key] = entity }
-        override suspend fun deleteOlderThan(before: Long) = 0
-    }
 
     private val server = MockWebServer()
-    private val dao = FakeDao()
+    private val dao = FakeAddonRefDao()
     private var now = 1_792_238_400_000L
     private val resetsAt get() = now / 1000 + 3600
     private val quota = LosslessQuota.inMemory { now }
     private val streams = AtomicInteger()
     private var userEndpoint: String? = null
     @Volatile private var streamReply: (RecordedRequest) -> MockResponse = { ok(FLAC) }
-    private lateinit var client: BitchordClient
+    private lateinit var client: TidalClient
 
     private val query = TrackQuery(artist = "Daft Punk", title = "Get Lucky", isrc = "USQX91300108", durationMs = 248_000)
 
@@ -75,7 +67,7 @@ class BitchordClientQuotaTest {
             every { tidalRelay } returns MutableStateFlow(TidalRelay(base, null))
             every { relayKey } returns MutableStateFlow(null)
         }
-        client = BitchordClient(OkHttpClient(), prefs, config, dao, RelaySigner(config, supporter(), appVersionProvider()), quota)
+        client = tidalClient(OkHttpClient(), prefs, config, dao, RelaySigner(config, supporter(), appVersionProvider()), quota)
         client.nowMs = { now }
     }
 
@@ -215,7 +207,7 @@ class BitchordClientQuotaTest {
     @Test fun `Stash's relay giving no answer is not paused like a user's own server`() = runBlocking {
         // The match is cached first, so only /stream is asked below.
         assertThat(client.lookup(query)).isInstanceOf(TidalLookup.Found::class.java)
-        client.httpClient = OkHttpClient.Builder().readTimeout(250, TimeUnit.MILLISECONDS).build()
+        client.legacyWire.httpClient = OkHttpClient.Builder().readTimeout(250, TimeUnit.MILLISECONDS).build()
         streamReply = { MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE) }
 
         assertThat(client.lookup(query)).isEqualTo(TidalLookup.Failed)

@@ -1,8 +1,6 @@
-package com.stash.data.download.lossless.bitchord
+package com.stash.data.download.lossless.tidal
 
 import com.google.common.truth.Truth.assertThat
-import com.stash.core.data.db.dao.TidalMatchDao
-import com.stash.core.data.db.entity.TidalMatchEntity
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.quota.LosslessQuota
@@ -34,26 +32,20 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * The relay-budget behaviour of [BitchordClient]: per-song cache (hit, miss, TTL), the
+ * The relay-budget behaviour of [TidalClient]: per-song cache (hit, miss, TTL), the
  * pool-busy circuit (503 / 429), and in-flight dedupe. Every assertion is on how many
  * requests reached the (mock) relay.
  */
-class BitchordClientCacheTest {
+class TidalClientCacheTest {
 
-    private class FakeDao : TidalMatchDao {
-        val rows = ConcurrentHashMap<String, TidalMatchEntity>()
-        override suspend fun get(key: String) = rows[key]
-        override suspend fun upsert(entity: TidalMatchEntity) { rows[entity.key] = entity }
-        override suspend fun deleteOlderThan(before: Long) = 0
-    }
 
     private val server = MockWebServer()
-    private val dao = FakeDao()
+    private val dao = FakeAddonRefDao()
     private var now = 1_000_000_000_000L
     private val quota = LosslessQuota.inMemory { now }
     private val searches = AtomicInteger()
     private val streams = AtomicInteger()
-    private lateinit var client: BitchordClient
+    private lateinit var client: TidalClient
 
     /** What the mock relay answers; tests swap these. */
     @Volatile private var searchReply: () -> MockResponse = { ok(SEARCH_HIT) }
@@ -79,7 +71,7 @@ class BitchordClientCacheTest {
         val config: LosslessConfigFetcher = mockk {
             every { tidalRelay } returns MutableStateFlow<TidalRelay?>(null)
         }
-        client = BitchordClient(OkHttpClient(), prefs, config, dao, RelaySigner(config, supporter(), appVersionProvider()), quota)
+        client = tidalClient(OkHttpClient(), prefs, config, dao, RelaySigner(config, supporter(), appVersionProvider()), quota)
         client.nowMs = { now }
     }
 
@@ -122,7 +114,7 @@ class BitchordClientCacheTest {
         assertThat(server.takeRequest().path).startsWith("/search")
         assertThat(server.takeRequest().path).contains("aac=only")
         // An aac=only answer says nothing about lossless: streaming's FLAC lookup still goes out.
-        assertThat(dao.rows.values.single { it.tidalId != null }.losslessMissAt).isNull()
+        assertThat(dao.rows.values.single { it.remoteId != null }.losslessMissAt).isNull()
         assertThat(client.lookup(query)).isInstanceOf(TidalLookup.Found::class.java)
         assertThat(streams.get()).isEqualTo(2)
     }
@@ -168,13 +160,13 @@ class BitchordClientCacheTest {
         assertThat(streams.get()).isEqualTo(1)
 
         // Streaming's own stamps are untouched, and its lookup still goes out.
-        val song = dao.rows.values.single { it.tidalId != null }
+        val song = dao.rows.values.single { it.remoteId != null }
         assertThat(song.aacMissAt).isNull()
         assertThat(song.losslessMissAt).isNull()
         assertThat(client.lookup(query, allowAac = true)).isInstanceOf(TidalLookup.Found::class.java)
 
         // After the stamp's three days, AAC mode asks again.
-        now += BitchordClient.AAC_ONLY_MISS_TTL_MS
+        now += TidalClient.AAC_ONLY_MISS_TTL_MS
         streamReply = { ok(AAC) }
         assertThat(client.lookup(query, allowAac = true, aacOnly = true)).isInstanceOf(TidalLookup.Found::class.java)
     }
@@ -182,7 +174,7 @@ class BitchordClientCacheTest {
     @Test fun `a lossless_unavailable 404 is trusted the full 14 days`() = runBlocking {
         streamReply = { MockResponse().setResponseCode(404).setBody("""{"error":"lossless_unavailable"}""") }
         assertThat(client.lookup(query)).isEqualTo(TidalLookup.NoMatch)
-        now += BitchordClient.MISS_TTL_MS - 1
+        now += TidalClient.MISS_TTL_MS - 1
         assertThat(client.lookup(query)).isEqualTo(TidalLookup.NoMatch)
         assertThat(streams.get()).isEqualTo(1)
         now += 1
@@ -194,7 +186,7 @@ class BitchordClientCacheTest {
     @Test fun `a not_available 404 is only a 6-hour miss`() = runBlocking {
         streamReply = { MockResponse().setResponseCode(404).setBody("""{"error":"not_available"}""") }
         assertThat(client.lookup(query)).isEqualTo(TidalLookup.NoMatch)
-        now += BitchordClient.SHORT_MISS_TTL_MS - 1
+        now += TidalClient.SHORT_MISS_TTL_MS - 1
         assertThat(client.lookup(query)).isEqualTo(TidalLookup.NoMatch) // still cached
         assertThat(streams.get()).isEqualTo(1)
         now += 1
@@ -214,7 +206,7 @@ class BitchordClientCacheTest {
         assertThat(streams.get()).isEqualTo(2)
 
         // Past the short miss, the lossless one still holds: no lossless request.
-        now += BitchordClient.SHORT_MISS_TTL_MS
+        now += TidalClient.SHORT_MISS_TTL_MS
         assertThat(client.lookup(query)).isEqualTo(TidalLookup.NoMatch)
         assertThat(streams.get()).isEqualTo(2)
         // The AAC miss has expired: AAC asks again.
@@ -228,11 +220,11 @@ class BitchordClientCacheTest {
         assertThat(client.lookup(query, allowAac = true)).isEqualTo(TidalLookup.NoMatch)
         assertThat(client.lookup(query)).isEqualTo(TidalLookup.NoMatch) // AAC's 404 also stamps lossless
         assertThat(streams.get()).isEqualTo(1)
-        now += BitchordClient.SHORT_MISS_TTL_MS
+        now += TidalClient.SHORT_MISS_TTL_MS
         streamReply = { MockResponse().setResponseCode(404).setBody("""{"error":"something_new"}""") }
         assertThat(client.lookup(query)).isEqualTo(TidalLookup.NoMatch)
         assertThat(streams.get()).isEqualTo(2)
-        now += BitchordClient.SHORT_MISS_TTL_MS
+        now += TidalClient.SHORT_MISS_TTL_MS
         streamReply = { ok(FLAC) }
         assertThat(client.lookup(query)).isInstanceOf(TidalLookup.Found::class.java)
     }
@@ -245,7 +237,7 @@ class BitchordClientCacheTest {
     @Test fun `a miss expires after 14 days and a match after 30`() = runBlocking {
         searchReply = { ok("""{"tracks":[]}""") }
         client.lookup(query)
-        now += BitchordClient.MISS_TTL_MS - 1
+        now += TidalClient.MISS_TTL_MS - 1
         client.lookup(query)
         assertThat(searches.get()).isEqualTo(1)
         now += 2
@@ -253,7 +245,7 @@ class BitchordClientCacheTest {
         assertThat(client.lookup(query)).isInstanceOf(TidalLookup.Found::class.java)
         assertThat(searches.get()).isEqualTo(2)
 
-        now += BitchordClient.MATCH_TTL_MS - 1
+        now += TidalClient.MATCH_TTL_MS - 1
         client.lookup(query)
         assertThat(searches.get()).isEqualTo(2)
         now += 2
@@ -269,7 +261,7 @@ class BitchordClientCacheTest {
         assertThat(client.lookup(query.copy(isrc = "OTHER"))).isInstanceOf(TidalLookup.Busy::class.java)
         assertThat(searches.get()).isEqualTo(1)
 
-        now += BitchordClient.BUSY_BACKOFF_MS
+        now += TidalClient.BUSY_BACKOFF_MS
         searchReply = { ok(SEARCH_HIT) }
         assertThat(client.lookup(query)).isInstanceOf(TidalLookup.Found::class.java)
         assertThat(searches.get()).isEqualTo(2)
@@ -290,12 +282,12 @@ class BitchordClientCacheTest {
     @Test fun `503 Retry-After is clamped to between 15 s and 15 min`() = runBlocking {
         searchReply = { MockResponse().setResponseCode(503).setHeader("Retry-After", "1").setBody("""{"error":"busy"}""") }
         val short = client.lookup(query) as TidalLookup.Busy
-        assertThat(short.untilMs - now).isEqualTo(BitchordClient.BUSY_MIN_RETRY_AFTER_MS)
+        assertThat(short.untilMs - now).isEqualTo(TidalClient.BUSY_MIN_RETRY_AFTER_MS)
 
         now = short.untilMs
         searchReply = { MockResponse().setResponseCode(503).setHeader("Retry-After", "86400").setBody("""{"error":"tidal_relay_paused"}""") }
         val long = client.lookup(query) as TidalLookup.Busy
-        assertThat(long.untilMs - now).isEqualTo(BitchordClient.BUSY_MAX_RETRY_AFTER_MS)
+        assertThat(long.untilMs - now).isEqualTo(TidalClient.BUSY_MAX_RETRY_AFTER_MS)
     }
 
     @Test fun `429 network_daily_cap on search honours an hour-long Retry-After`() = runBlocking {
@@ -330,7 +322,7 @@ class BitchordClientCacheTest {
         streamReply = { MockResponse().setResponseCode(502).setBody("""{"error":"upstream_error"}""") }
         assertThat(client.lookup(query)).isEqualTo(TidalLookup.Failed)
         assertThat(client.lookup(query, allowAac = true)).isEqualTo(TidalLookup.Failed)
-        val row = dao.rows[BitchordClient.cacheKey(query)]!!
+        val row = dao.rows[TidalClient.cacheKey(query)]!!
         assertThat(row.losslessMissAt).isNull()
         assertThat(row.aacMissAt).isNull()
         // Asked again straight away: nothing was remembered against the song.
@@ -342,18 +334,18 @@ class BitchordClientCacheTest {
         val tenMin = now / 1000 + 600
         streamReply = { ok("""{"url":"https://cdn.example/a.flac","codec":"flac","manifest":"none","expiresAt":$tenMin}""") }
         val soon = client.lookup(query) as TidalLookup.Found
-        assertThat(soon.stream.expiresAtMs).isEqualTo(tenMin * 1000 - BitchordClient.EXPIRY_MARGIN_MS)
+        assertThat(soon.stream.expiresAtMs).isEqualTo(tenMin * 1000 - TidalClient.EXPIRY_MARGIN_MS)
 
         // Later than the cap: the cap still wins.
         val days = now / 1000 + 86_400
         streamReply = { ok("""{"url":"https://cdn.example/a.flac","codec":"flac","manifest":"none","expiresAt":$days}""") }
         val late = client.lookup(query) as TidalLookup.Found
-        assertThat(late.stream.expiresAtMs).isEqualTo(now + BitchordClient.MAX_TTL_MS)
+        assertThat(late.stream.expiresAtMs).isEqualTo(now + TidalClient.MAX_TTL_MS)
     }
 
     @Test fun `no expiresAt keeps the signed exp or the cap`() = runBlocking {
         val plain = client.lookup(query) as TidalLookup.Found
-        assertThat(plain.stream.expiresAtMs).isEqualTo(now + BitchordClient.MAX_TTL_MS)
+        assertThat(plain.stream.expiresAtMs).isEqualTo(now + TidalClient.MAX_TTL_MS)
 
         val exp = now / 1000 + 300
         streamReply = { ok("""{"url":"https://relay.example/dash/td/1.mpd?exp=$exp&sig=x","codec":"flac","manifest":"dash"}""") }
@@ -377,26 +369,26 @@ class BitchordClientCacheTest {
     @Test fun `title key buckets duration and ignores case and spacing`() {
         val a = TrackQuery(artist = "Daft  Punk", title = "Get Lucky ", durationMs = 248_000)
         val b = TrackQuery(artist = "daft punk", title = "get lucky", durationMs = 251_000)
-        assertThat(BitchordClient.cacheKey(a)).isEqualTo(BitchordClient.cacheKey(b))
-        assertThat(BitchordClient.cacheKey(query)).isEqualTo("isrc:USQX91300108|explicit")
+        assertThat(TidalClient.cacheKey(a)).isEqualTo(TidalClient.cacheKey(b))
+        assertThat(TidalClient.cacheKey(query)).isEqualTo("isrc:USQX91300108|explicit")
     }
 
     @Test fun `the key carries the twin the pick prefers, unknown reading as explicit`() {
         val song = TrackQuery(artist = "Daft Punk", title = "Get Lucky", durationMs = 248_000)
-        assertThat(BitchordClient.cacheKey(song)).isEqualTo("t:daft punk|get lucky|25|explicit")
-        assertThat(BitchordClient.cacheKey(song.copy(explicit = true))).isEqualTo(BitchordClient.cacheKey(song))
-        assertThat(BitchordClient.cacheKey(song.copy(explicit = false))).isEqualTo("t:daft punk|get lucky|25|clean")
-        assertThat(BitchordClient.cacheKey(query.copy(explicit = false))).isEqualTo("isrc:USQX91300108|clean")
+        assertThat(TidalClient.cacheKey(song)).isEqualTo("t:daft punk|get lucky|25|explicit")
+        assertThat(TidalClient.cacheKey(song.copy(explicit = true))).isEqualTo(TidalClient.cacheKey(song))
+        assertThat(TidalClient.cacheKey(song.copy(explicit = false))).isEqualTo("t:daft punk|get lucky|25|clean")
+        assertThat(TidalClient.cacheKey(query.copy(explicit = false))).isEqualTo("isrc:USQX91300108|clean")
     }
 
     @Test fun `a length that is only a hint keys apart from the same length taken as exact`() {
         // Shook Ones from Search: the top card is the 4:25 music video. Taken as exact, the
         // pick was the 4:49 compilation edit; that answer must not serve the hinted lookup.
         val video = TrackQuery(artist = "Mobb Deep", title = "Shook Ones, Pt. II", durationMs = 265_000)
-        assertThat(BitchordClient.cacheKey(video)).isEqualTo("t:mobb deep|shook ones, pt. ii|27|explicit")
-        assertThat(BitchordClient.cacheKey(video.copy(durationReliable = false)))
+        assertThat(TidalClient.cacheKey(video)).isEqualTo("t:mobb deep|shook ones, pt. ii|27|explicit")
+        assertThat(TidalClient.cacheKey(video.copy(durationReliable = false)))
             .isEqualTo("t:mobb deep|shook ones, pt. ii|~27|explicit")
-        assertThat(BitchordClient.cacheKey(video.copy(durationMs = null, durationReliable = false)))
+        assertThat(TidalClient.cacheKey(video.copy(durationMs = null, durationReliable = false)))
             .isEqualTo("t:mobb deep|shook ones, pt. ii|?|explicit")
     }
 
@@ -428,7 +420,7 @@ class BitchordClientCacheTest {
 
     @Test fun `a match cached before the explicit tie-break is not served`() = runBlocking {
         // The old key had no preference suffix; its pick was by search order alone.
-        dao.rows["isrc:USQX91300108"] = TidalMatchEntity(key = "isrc:USQX91300108", tidalId = "td:9", searchedAt = now)
+        dao.rows["isrc:USQX91300108"] = tidalRef(key = "isrc:USQX91300108", remoteId = "td:9", resolvedAt = now)
 
         val found = client.lookup(query) as TidalLookup.Found
 
@@ -440,13 +432,13 @@ class BitchordClientCacheTest {
 
     /** The server stops answering: each request gives up after a quarter second instead of 10 s. */
     private fun serverHangs() {
-        client.httpClient = OkHttpClient.Builder().readTimeout(250, TimeUnit.MILLISECONDS).build()
+        client.legacyWire.httpClient = OkHttpClient.Builder().readTimeout(250, TimeUnit.MILLISECONDS).build()
         searchReply = { MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE) }
         streamReply = { MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE) }
     }
 
     private fun serverAnswers() {
-        client.httpClient = OkHttpClient()
+        client.legacyWire.httpClient = OkHttpClient()
         searchReply = { ok(SEARCH_HIT) }
         streamReply = { ok(FLAC) }
     }
@@ -463,7 +455,7 @@ class BitchordClientCacheTest {
         // Not remembered against the song: an outage is not a miss.
         assertThat(dao.rows).isEmpty()
 
-        now += BitchordClient.OWN_SERVER_PAUSE_MS
+        now += TidalClient.OWN_SERVER_PAUSE_MS
         serverAnswers()
         assertThat(client.lookup(query)).isInstanceOf(TidalLookup.Found::class.java)
         assertThat(searches.get()).isEqualTo(2)
@@ -483,7 +475,7 @@ class BitchordClientCacheTest {
         serverHangs()
         assertThat(client.lookup(query)).isEqualTo(TidalLookup.Failed)
         val busy = client.lookup(query) as TidalLookup.Busy
-        assertThat(busy.untilMs - now).isEqualTo(BitchordClient.OWN_SERVER_PAUSE_MS)
+        assertThat(busy.untilMs - now).isEqualTo(TidalClient.OWN_SERVER_PAUSE_MS)
     }
 
     private companion object {

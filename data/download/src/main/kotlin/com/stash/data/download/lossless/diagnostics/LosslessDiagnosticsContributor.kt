@@ -9,6 +9,7 @@ import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.RoutingRow
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
+import com.stash.data.download.lossless.tidal.TidalWires
 import com.stash.data.download.prefs.StreamingQualityPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
@@ -54,6 +55,7 @@ class LosslessDiagnosticsContributor @Inject constructor(
     private val losslessPrefs: LosslessSourcePreferences,
     private val streamingQuality: StreamingQualityPreferences,
     private val streamingPreference: StreamingPreference,
+    private val tidalWires: TidalWires,
 ) : DiagnosticsContributor {
 
     override val title: String = "Lossless"
@@ -100,12 +102,15 @@ class LosslessDiagnosticsContributor @Inject constructor(
     private fun safeDetail(row: RoutingRow): String =
         if (row.id == "qobuz") row.state.name.lowercase().replace('_', ' ') else row.detail
 
-    private fun configBlock(): String {
+    private suspend fun configBlock(): String {
         val updatedAt = config.updatedAt.value
         val tidal = config.tidalRelay.value
+        val wire = tidalWires.describe()
         return buildString {
             appendLine("Lossless config:    " + if (updatedAt > 0) "updated_at=${iso(updatedAt * 1000)}" else "none loaded")
-            append("Tidal relay:        " + if (tidal == null) "not in the config" else "configured (${host(tidal.base)})")
+            appendLine("Tidal relay:        " + if (tidal == null) "not in the config" else "configured (${host(tidal.base)})")
+            // Add-ons phase 2 §5.4: which wire the Tidal rung uses. Never a base or a token.
+            append("Tidal:              $wire")
         }
     }
 

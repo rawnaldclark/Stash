@@ -227,6 +227,51 @@ class DatabaseBackupExportScopeTest {
         }
     }
 
+    /**
+     * review-881 M9: the signed config's cache names the servers the app trusts with the install
+     * signature and the supporter token. A backup file must never be able to replace it.
+     */
+    @Test fun `a settings restore never writes the signed config's cache, with or without one on the phone`() = runTest {
+        val zipFile = File(context.cacheDir, "crafted-settings-${System.nanoTime()}.zip")
+        ZipOutputStream(FileOutputStream(zipFile)).use { zip ->
+            zip.putNextEntry(ZipEntry("manifest.json"))
+            zip.write("""{"dbSchemaVersion":1,"exportTimestamp":1,"scope":"SETTINGS_ONLY"}""".toByteArray())
+            zip.closeEntry()
+            for (name in listOf("theme_preferences.preferences_pb", "lossless_relay_config.preferences_pb", "lossless_relay_config.preferences_pb.tmp")) {
+                zip.putNextEntry(ZipEntry("datastore/$name"))
+                zip.write("from the archive: $name".toByteArray())
+                zip.closeEntry()
+            }
+        }
+        val theme = context.preferencesDataStoreFile("theme_preferences")
+        val config = context.preferencesDataStoreFile("lossless_relay_config")
+        val leftover = File(config.path + ".tmp")
+        theme.parentFile?.mkdirs()
+        theme.delete()
+        try {
+            // A phone that has its own cache keeps it, byte for byte.
+            config.writeText("this phone's own")
+            leftover.delete()
+            val kept = manager.importDatabase(Uri.fromFile(zipFile), BackupImportScope.SETTINGS_REPLACE)
+            assertTrue("restore failed: ${kept.exceptionOrNull()}", kept.isSuccess)
+            assertEquals("the other settings are restored", "from the archive: theme_preferences.preferences_pb", theme.readText())
+            assertEquals("this phone's own", config.readText())
+            assertFalse("nor its leftover copy", leftover.exists())
+
+            // A phone with none gets none from the archive: it fetches its own.
+            config.delete()
+            val fresh = manager.importDatabase(Uri.fromFile(zipFile), BackupImportScope.SETTINGS_REPLACE)
+            assertTrue("restore failed: ${fresh.exceptionOrNull()}", fresh.isSuccess)
+            assertFalse("the archive's config cache is not installed", config.exists())
+            assertFalse(leftover.exists())
+        } finally {
+            theme.delete()
+            config.delete()
+            leftover.delete()
+            zipFile.delete()
+        }
+    }
+
     @Test fun `a settings restore ignores a supporter token in an older archive`() = runTest {
         val zipFile = File(context.cacheDir, "old-settings-${System.nanoTime()}.zip")
         ZipOutputStream(FileOutputStream(zipFile)).use { zip ->

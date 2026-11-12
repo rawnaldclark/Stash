@@ -9,6 +9,9 @@
  *   node scripts/publish-config.mjs verify [<key.pem>]               fetch the live pair and report (verifies when the key is given)
  *
  * input.json: {"relays":[],"relay_key":"<RELAY_KEY>","tidal_relay_url":"https://stash-tidal-relay.rawnaldclark.workers.dev","tidal_relay_token":"<ACCESS_TOKEN>"}
+ * Optional "default_addons": [{"manifest":"https://<add-on>/v1/<ACCESS_TOKEN>/manifest.json","enabled":true,"first_party":true}]
+ * turns the app's Tidal v1 wire on (decision D9); leave it out (or []) and every app stays on the legacy wire. Only each
+ * entry's origin is ever printed: the path carries the token.
  * relay_key is stash-tidal-relay's RELAY_KEY secret (the app signs its install headers with it). Leaving out relay_key or
  * tidal_relay_url switches Tidal off in every installed app. `relays: []` is the kill switch for the Qobuz relay list.
  * Keep key.pem and input.json OUTSIDE the repo. See ../README.md.
@@ -20,7 +23,7 @@ import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { buildConfig } from "../src/config.js";
+import { buildConfig, describeDefaultAddons } from "../src/config.js";
 
 export const CONFIG_URL = "https://stash-tipjar.rawnaldclark.workers.dev/lossless.json";
 /** STASH_KV: the id committed in infra/tipjar-worker/wrangler.toml. */
@@ -50,7 +53,7 @@ async function report(pem) {
     const sigOk = pem
         ? verify("sha256", current.bytes, createPublicKey(createPrivateKey(readFileSync(pem))), Buffer.from(current.sig, "base64"))
         : "(no key given)";
-    console.log(`live: updated_at=${cfg.updated_at} relays=${cfg.relays.map((r) => r.base).join(",") || "(none)"} relay_key=${cfg.relay_key ? "present" : "absent"} signature=${sigOk}`);
+    console.log(`live: updated_at=${cfg.updated_at} relays=${cfg.relays.map((r) => r.base).join(",") || "(none)"} relay_key=${cfg.relay_key ? "present" : "absent"} default_addons=${describeDefaultAddons(cfg.default_addons)} signature=${sigOk}`);
 }
 
 switch (cmd) {
@@ -77,7 +80,7 @@ switch (cmd) {
         writeFileSync(join(dir, "lossless.json"), bytes);
         writeFileSync(join(dir, "lossless.json.sig"), sign("sha256", bytes, priv).toString("base64"));
         const preview = JSON.parse(text);
-        console.log(`publishing: updated_at=${preview.updated_at} relays=${preview.relays.map((r) => r.base).join(",") || "(none)"} tidal_relay_url=${preview.tidal_relay_url || "(unset)"} tidal_relay_token=${preview.tidal_relay_token ? "(present; redacted)" : "(unset)"}`);
+        console.log(`publishing: updated_at=${preview.updated_at} relays=${preview.relays.map((r) => r.base).join(",") || "(none)"} tidal_relay_url=${preview.tidal_relay_url || "(unset)"} tidal_relay_token=${preview.tidal_relay_token ? "(present; redacted)" : "(unset)"} default_addons=${describeDefaultAddons(preview.default_addons)}`);
         kvPut(KV_JSON, join(dir, "lossless.json"));
         kvPut(KV_SIG, join(dir, "lossless.json.sig"));
         console.log("uploaded. KV propagates within ~60 s; reading the live copy now (re-run `verify` if it is still the old one):");

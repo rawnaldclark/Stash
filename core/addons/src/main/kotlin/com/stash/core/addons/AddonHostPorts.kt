@@ -75,3 +75,38 @@ object UnsignedAddons : AddonInstallSigner {
     override suspend fun sign(builder: Request.Builder, payload: String) = false
     override fun adoptServerTime(response: Response) = false
 }
+
+/** Host-wide choices the client follows, bound by the app (`:data:download` `AddonHostModule`). */
+interface AddonHostOptions {
+    /**
+     * SPEC.md 1.1's development exception: `http:` on 127.0.0.1, localhost and [::1]. Debug builds
+     * only, for an add-on under `wrangler dev` reached over `adb reverse`; never in a release build.
+     */
+    val allowLocalHttp: Boolean
+}
+
+/** The release rule: https only. */
+object StrictAddonHost : AddonHostOptions {
+    override val allowLocalHttp: Boolean = false
+}
+
+/**
+ * Where the registry keeps each add-on's last good manifest across restarts, so an offline cold
+ * start keeps the add-ons it had (plan §5.3: with Tidal as the main lossless source, losing its
+ * manifest would lose FLAC). [key] is a hash of the manifest URL, never the URL (it can carry a
+ * token), and the JSON is the add-on's own manifest, which holds no secret of ours.
+ */
+interface AddonManifestStore {
+    suspend fun read(key: String): String?
+    suspend fun write(key: String, json: String)
+
+    /** Forgets every manifest whose key is not in [keys]. */
+    suspend fun retain(keys: Set<String>)
+}
+
+/** Keeps nothing: for hand-built registries in tests. */
+object NoManifestStore : AddonManifestStore {
+    override suspend fun read(key: String): String? = null
+    override suspend fun write(key: String, json: String) = Unit
+    override suspend fun retain(keys: Set<String>) = Unit
+}

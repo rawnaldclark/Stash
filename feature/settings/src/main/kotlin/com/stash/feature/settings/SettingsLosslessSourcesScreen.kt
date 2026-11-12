@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -27,23 +26,18 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -57,7 +51,8 @@ import com.stash.feature.settings.components.SettingsScaffold
  * Settings > Audio & Quality > Lossless sources: where FLAC comes from, kept
  * off the main quality screen so it stays short. The routing rows, today's
  * free allowance, the supporter unlock, the listener's own Qobuz account,
- * and (collapsed) Advanced: the listener's own BitChord (Tidal) server.
+ * and (collapsed) Advanced: Add from a link (the user's own add-ons), the listener's own Tidal
+ * server read-only when one is set, and the debug-build Tidal wire instruments.
  */
 @Composable
 fun SettingsLosslessSourcesScreen(
@@ -72,9 +67,6 @@ fun SettingsLosslessSourcesScreen(
     val losslessRouting by viewModel.losslessRouting.collectAsStateWithLifecycle()
     val qobuzConnecting by viewModel.qobuzConnecting.collectAsStateWithLifecycle()
     val qobuzConnectError by viewModel.qobuzConnectError.collectAsStateWithLifecycle()
-    val bitchordEndpoint by viewModel.bitchordEndpoint.collectAsStateWithLifecycle()
-    val bitchordEndpointError by viewModel.bitchordEndpointError.collectAsStateWithLifecycle()
-    val bitchordHasToken by viewModel.bitchordHasToken.collectAsStateWithLifecycle()
     val quotaViewModel: LosslessQuotaViewModel = hiltViewModel()
     val losslessToday by quotaViewModel.line.collectAsStateWithLifecycle()
 
@@ -240,89 +232,13 @@ fun SettingsLosslessSourcesScreen(
                     exit = shrinkVertically() + fadeOut(),
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        // -- Tidal via the user's own BitChord server -----
-                        // Replaces Stash's Tidal relay when set. Committed
-                        // on Done / focus loss, never per keystroke: a
-                        // half-typed base must never be stored.
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = stringResource(R.string.settings_bitchord_desc),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        var bitchordDraft by rememberSaveable(bitchordEndpoint) {
-                            mutableStateOf(bitchordEndpoint.orEmpty())
-                        }
-                        LaunchedEffect(Unit) { viewModel.onBitchordEndpointEdited() }
-                        var bitchordWasFocused by remember { mutableStateOf(false) }
-                        val focusManager = LocalFocusManager.current
-                        val commitBitchord = {
-                            val draft = bitchordDraft.trim()
-                            if (draft != bitchordEndpoint.orEmpty()) {
-                                viewModel.onBitchordEndpointCommitted(draft)
-                            }
-                        }
-                        OutlinedTextField(
-                            value = bitchordDraft,
-                            onValueChange = {
-                                bitchordDraft = it
-                                viewModel.onBitchordEndpointEdited()
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .onFocusChanged { state ->
-                                    if (bitchordWasFocused && !state.isFocused) commitBitchord()
-                                    bitchordWasFocused = state.isFocused
-                                },
-                            label = { Text(stringResource(R.string.settings_bitchord_server_label)) },
-                            singleLine = true,
-                            isError = bitchordEndpointError != null,
-                            placeholder = { Text(stringResource(R.string.settings_url_placeholder)) },
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Uri,
-                                imeAction = ImeAction.Done,
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onDone = {
-                                    commitBitchord()
-                                    focusManager.clearFocus()
-                                },
-                            ),
-                        )
-                        bitchordEndpointError?.let { err ->
-                            Text(
-                                text = err,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        // Write-only: a stored token is never shown back,
-                        // only that one is set. Blank + Done clears it.
-                        var tokenDraft by remember { mutableStateOf("") }
-                        OutlinedTextField(
-                            value = tokenDraft,
-                            onValueChange = { tokenDraft = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text(stringResource(R.string.settings_access_token_label)) },
-                            supportingText = {
-                                Text(stringResource(if (bitchordHasToken) R.string.settings_bitchord_token_saved else R.string.settings_bitchord_token_hint))
-                            },
-                            singleLine = true,
-                            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Password,
-                                imeAction = ImeAction.Done,
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onDone = {
-                                    viewModel.onBitchordTokenCommitted(tokenDraft)
-                                    tokenDraft = ""
-                                    focusManager.clearFocus()
-                                },
-                            ),
-                        )
+                        // -- Add-ons phase 2 (plan §5.4, §5.5) -------------
+                        // The old Custom Tidal server field: hidden when empty, read-only
+                        // with Remove when set (removed in the next release). Then "Add
+                        // from a link", and the Tidal wire instruments on debug builds.
+                        OwnTidalServerRow()
+                        AddonLinksSection()
+                        TidalWireDebugRows()
                     }
                 }
             }

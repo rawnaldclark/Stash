@@ -1,4 +1,4 @@
-// Vendored from stash-addon-spec types/kotlin at 5238551 (Stash Add-ons v1, draft 1). Edit the spec, then copy it here again.
+// Vendored from stash-addon-spec types/kotlin at 6de2370 (Stash Add-ons v1; these files last changed there in 43a5acc). Edit the spec, then copy it here again.
 package com.stash.addons.contract
 
 import kotlinx.serialization.Serializable
@@ -31,10 +31,13 @@ public enum class ErrorCode(public val wire: String, public val status: Int, pub
 
     public companion object {
         /**
-         * The code a host acts on: the body's code when it knows it, else by HTTP status
-         * (404 not_found, 429 rate_limited, 451 region_unavailable, other 4xx bad_request, 5xx unavailable).
+         * The code a host acts on (SPEC 7). A 5xx other than 503 is `unavailable` whatever its
+         * body says. Otherwise the body's code when the host knows it, else by HTTP status
+         * (401 unauthorized, 404 not_found, 429 rate_limited, 451 region_unavailable,
+         * other 4xx bad_request, 5xx unavailable).
          */
         public fun of(status: Int, bodyCode: String?): ErrorCode {
+            if (status in 500..599 && status != 503) return UNAVAILABLE
             entries.firstOrNull { it.wire == bodyCode }?.let { return it }
             return when {
                 status == 404 -> NOT_FOUND

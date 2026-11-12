@@ -182,6 +182,69 @@ class LosslessConfigFetcherTest {
         assertThat(server.requestCount).isEqualTo(1) // the .sig is never fetched
     }
 
+    // ---------------------------------------------------------------- the cache is checked again (review-881 M9)
+
+    private val evil = """{"v":1,"updated_at":4102444800,"tidal_relay_url":"https://evil.example","default_addons":[{"manifest":"https://evil.example/v1/x/manifest.json","first_party":true}]}"""
+
+    @Test fun `a fetch keeps the signature beside the cache, and a cold start checks it`() = runTest {
+        server.enqueue(MockResponse().setBody(body)); server.enqueue(MockResponse().setBody(sign(body.toByteArray())))
+        assertThat(fetcher().refresh()).isTrue()
+
+        // The cache as fetched: applied.
+        val cold = fetcher()
+        cold.loadCached()
+        assertThat(cold.tidalRelay.value?.base).isEqualTo("https://t.example")
+
+        // The same cache with other content under the old signature (a crafted settings backup,
+        // before restores stopped writing this file): nothing of it is applied.
+        fetcher().writeCacheForTest(evil, sign(body.toByteArray()))
+        val tampered = fetcher()
+        tampered.loadCached()
+        assertThat(tampered.tidalRelay.value).isNull()
+        assertThat(tampered.defaultAddons.value).isEmpty()
+        assertThat(tampered.relayKey.value).isNull()
+        assertThat(tampered.updatedAt.value).isEqualTo(0L)
+    }
+
+    @Test fun `a foreign cache with a far-future date does not hold the rollback floor`() = runTest {
+        fetcher().writeCacheForTest(evil, sign(body.toByteArray()))
+        server.enqueue(MockResponse().setBody(body)); server.enqueue(MockResponse().setBody(sign(body.toByteArray())))
+        val f = fetcher()
+        // updated_at 1 against the foreign cache's year 2100: applied all the same, and the cache is replaced.
+        assertThat(f.refresh()).isTrue()
+        assertThat(f.tidalRelay.value?.base).isEqualTo("https://t.example")
+        val cold = fetcher()
+        cold.loadCached()
+        assertThat(cold.tidalRelay.value?.base).isEqualTo("https://t.example")
+    }
+
+    @Test fun `a cache an older build wrote, with no signature beside it, is honoured until a fetch rewrites both`() = runTest {
+        // An install that updates and then starts offline must still have its Tidal relay.
+        fetcher().writeCacheForTest(body, sig = null)
+        val offline = fetcher()
+        offline.loadCached()
+        assertThat(offline.tidalRelay.value).isEqualTo(TidalRelay("https://t.example", "tok"))
+
+        // It still is the rollback floor, as it was.
+        val older = """{"v":1,"updated_at":0,"tidal_relay_url":"https://d.example"}"""
+        server.enqueue(MockResponse().setBody(older)); server.enqueue(MockResponse().setBody(sign(older.toByteArray())))
+        assertThat(offline.refresh()).isFalse()
+
+        // The first successful fetch writes cache and signature together...
+        val newer = """{"v":1,"updated_at":2,"tidal_relay_url":"https://c.example"}"""
+        server.enqueue(MockResponse().setBody(newer)); server.enqueue(MockResponse().setBody(sign(newer.toByteArray())))
+        assertThat(offline.refresh()).isTrue()
+        val cold = fetcher()
+        cold.loadCached()
+        assertThat(cold.tidalRelay.value?.base).isEqualTo("https://c.example")
+
+        // ...and from then on the cache is held to it: other content under that signature is ignored.
+        fetcher().writeCacheForTest(evil, sign(newer.toByteArray()))
+        val tampered = fetcher()
+        tampered.loadCached()
+        assertThat(tampered.tidalRelay.value).isNull()
+    }
+
     @Test fun `an older validly-signed config is rejected`() = runTest {
         val newer = """{"v":1,"updated_at":2,"tidal_relay_url":"https://c.example"}"""
         server.enqueue(MockResponse().setBody(newer)); server.enqueue(MockResponse().setBody(sign(newer.toByteArray())))

@@ -1387,4 +1387,17 @@
         <item quantity="one">%d track</item>
         <item quantity="other">%d tracks</item>
     </plurals>
+    <!-- Add-ons phase 2: Add from a link (Settings › Lossless sources › Advanced). -->
+    <string name="settings_addons_link_title">Add from a link</string>
+    <string name="settings_addons_link_desc">Paste the link of a Stash add-on to add it. You can remove it here at any time.</string>
+    <string name="settings_addons_link_label">Add-on link</string>
+    <string name="settings_addons_link_check">Check link</string>
+    <string name="settings_addons_link_checking">Reading the add-on…</string>
+    <string name="settings_addons_link_added">Added. Stash asks it for songs from now on.</string>
+    <string name="settings_addons_offers">Offers: %1$s</string>
+    <string name="settings_addons_privacy">Its server sees what you search and the songs you play.</string>
+    <string name="settings_addons_add">Add</string>
+    <string name="settings_addons_cancel">Cancel</string>
+    <string name="settings_addons_remove">Remove</string>
+    <string name="settings_addons_not_loaded">Not reachable right now</string>
 </resources>

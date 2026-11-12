@@ -11,7 +11,7 @@ import java.io.File
 
 /**
  * The spec's fixtures (stash-addon-spec `fixtures/`, copied to `src/test/resources/addon-fixtures`
- * at 5238551) through [AddonValidator]: every valid one passes, and every invalid one is rejected
+ * at 8ca8e83, draft 2) through [AddonValidator]: every valid one passes, and every invalid one is rejected
  * at the JSON pointer `invalid/expect.json` names, except the two whose only fault is text over
  * its cap, which a host cuts (SPEC.md 1.1 rule 2) rather than rejects.
  *

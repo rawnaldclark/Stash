@@ -2,15 +2,17 @@ package com.stash.core.media.streaming
 
 import android.util.Log
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.TrackQuery
-import com.stash.data.download.lossless.bitchord.BitchordClient
 import com.stash.data.download.lossless.forLibrarySource
+import com.stash.data.download.lossless.tidal.TidalClient
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Stream-URL resolver for Tidal lossless via a BitChord Lossless Relay
- * ([BitchordClient]): the user's self-hosted one, or Stash's. The second lossless
+ * Stream-URL resolver for Tidal lossless through [TidalClient]: the user's self-hosted
+ * server, or Stash's (its legacy relay or its v1 Tidal add-on, whichever wire the signed
+ * config switches on; the answers are the same either way). The second lossless
  * rung: after qbdlx (Qobuz), before the lossy JioSaavn / YouTube rungs. The user's
  * own server, with none of their own Qobuz set up, leads instead ([resolveLossless]).
  *
@@ -19,7 +21,7 @@ import javax.inject.Singleton
  * rate itself and re-signs it inside the MPD, so the client plays the MPD as-is
  * through a DASH media source — see [StashMediaSourceFactory].
  *
- * Expiry: the server's signed `exp`, capped below an hour ([BitchordClient]),
+ * Expiry: the server's signed `exp`, capped below an hour ([TidalClient]),
  * which is what [StreamUrlCache] counts down.
  *
  * Returns null when no server is configured, there is no confident match, or the
@@ -27,10 +29,11 @@ import javax.inject.Singleton
  */
 @Singleton
 class TidalStreamResolver @Inject constructor(
-    private val client: BitchordClient,
+    private val client: TidalClient,
     private val losslessPrefs: com.stash.data.download.lossless.LosslessSourcePreferences,
+    private val quality: StreamQualityPolicy,
 ) {
-    /** A server is configured (non-blocking; see [BitchordClient.configured]). */
+    /** A server is configured (non-blocking; see [TidalClient.configured]). */
     fun enabledHint(): Boolean = client.configured.value
 
     /**
@@ -40,7 +43,7 @@ class TidalStreamResolver @Inject constructor(
      */
     suspend fun needsRelay(track: TrackEntity): Boolean =
         client.lookup(track.toQuery(), allowAac = losslessPrefs.tidalAacFallbackNow(), cacheOnly = true) ==
-            com.stash.data.download.lossless.bitchord.TidalLookup.NeedsRelay
+            com.stash.data.download.lossless.tidal.TidalLookup.NeedsRelay
 
     /**
      * [needsRelay] for the "Prefer Tidal AAC while streaming" rung ([resolveAacOnly]): true
@@ -48,14 +51,14 @@ class TidalStreamResolver @Inject constructor(
      */
     suspend fun needsRelayAacOnly(track: TrackEntity): Boolean =
         client.lookup(track.toQuery(), allowAac = true, cacheOnly = true, aacOnly = true) ==
-            com.stash.data.download.lossless.bitchord.TidalLookup.NeedsRelay
+            com.stash.data.download.lossless.tidal.TidalLookup.NeedsRelay
 
     /**
      * Tidal's 320 kbps AAC for [track] even when Tidal has it in FLAC: the opt-in
      * "Prefer Tidal AAC while streaming" rung, which runs ahead of Qobuz to save data.
      *
      * The same request the AAC 320 download mode makes (`?aac=only&hires=0`, see
-     * [BitchordClient.lookup]'s `aacOnly`), with its own in-flight key and its own miss stamp,
+     * [TidalClient.lookup]'s `aacOnly`), with its own in-flight key and its own miss stamp,
      * so an AAC-only miss never hides the FLAC lookup the Tidal lossless rung makes, nor the
      * other way round. It counts toward the daily allowance like any Tidal lookup; a spent
      * day, a busy pool, a miss or an error return null at once and the chain goes on.
@@ -66,7 +69,7 @@ class TidalStreamResolver @Inject constructor(
     suspend fun resolveAacOnly(track: TrackEntity): StreamUrl? {
         if (!client.isConfigured()) return null
         val lookup = client.lookup(track.toQuery(), allowAac = true, aacOnly = true)
-        val s = (lookup as? com.stash.data.download.lossless.bitchord.TidalLookup.Found)?.stream ?: run {
+        val s = (lookup as? com.stash.data.download.lossless.tidal.TidalLookup.Found)?.stream ?: run {
             Log.d(TAG, "aac_only no_result id=${track.id} (${lookup.javaClass.simpleName})")
             return null
         }
@@ -94,7 +97,7 @@ class TidalStreamResolver @Inject constructor(
         album = album.takeIf { it.isNotBlank() },
         isrc = isrc?.takeIf { it.isNotBlank() },
         durationMs = durationMs,
-        // In the Tidal cache key too (BitchordClient.cacheKey): the download's query passes it,
+        // In the Tidal cache key too (TidalClient.cacheKey): the download's query passes it,
         // so the stream and the download keep reading one cached match.
         explicit = explicit,
     ).forLibrarySource(source, musicVideoType, hasVideoId = !youtubeId.isNullOrBlank())
@@ -116,7 +119,11 @@ class TidalStreamResolver @Inject constructor(
         // falling through to the lossy rungs below (JioSaavn / YouTube) — unless
         // the user switched "Tidal AAC when no FLAC" off (Tidal = FLAC only).
         val allowAac = !losslessOnly && losslessPrefs.tidalAacFallbackNow()
-        val s = client.resolve(query, allowAac = allowAac) ?: run {
+        // "CD means CD" (decision D15): at the CD streaming tier of the network the phone is on,
+        // Stash's Tidal add-on is asked for CD FLAC and no higher. The legacy relay, and so the
+        // user's own server, cannot be asked that and answers what Tidal gives ([TidalClient.lookup]).
+        val cdOnly = quality.streamingTier() == LosslessQualityTier.CD
+        val s = client.resolve(query, allowAac = allowAac, cdOnly = cdOnly) ?: run {
             Log.d(TAG, "no_result id=${track.id}")
             return null
         }

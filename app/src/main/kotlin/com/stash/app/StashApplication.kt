@@ -235,6 +235,14 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var losslessQuotaRefresher: com.stash.data.download.lossless.quota.LosslessQuotaRefresher
 
     /**
+     * The add-ons the signed config turns on (`default_addons`) and the user's own: their kept
+     * manifests at once (an offline cold start keeps the Tidal add-on), then a read whenever
+     * either list changes and on every fresh config, at most every 10 minutes then.
+     */
+    @Inject
+    lateinit var addonRegistry: com.stash.core.addons.InTreeAddonRegistry
+
+    /**
      * Android's Battery Saver (D19). A cold start while it is on skips the warm-ups and catch-up
      * passes below; they run at the next start without it, and the periodic jobs are left to Android.
      */
@@ -416,6 +424,7 @@ class StashApplication : Application(), Configuration.Provider {
         val saverAtStart = batterySaver.isOn.value
         if (saverAtStart) Log.i("StashStartup", "Battery Saver on: cold-start warm-ups skipped")
         startLosslessConfig()
+        addonRegistry.start(applicationScope, losslessConfigFetcher.refreshedAt)
         losslessQuotaRefresher.start(applicationScope)
         // A restore whose user picked a different library folder than the
         // backup's: it could not be written before the restart (the live

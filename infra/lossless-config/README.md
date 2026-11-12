@@ -14,6 +14,13 @@ What it carries:
   It must equal `stash-tidal-relay`'s `RELAY_KEY` secret: with `REQUIRE_INSTALL="1"` the relay answers a bad
   signature on the app's `/stream` with a 401.
 - `relays`: the Qobuz relay list (`{"base","priority"}`). The Qobuz pool is retired: publish `[]`.
+- `default_addons` (optional; add-ons phase 2): the add-ons every install turns on, in play order, each
+  `{"manifest", "enabled", "first_party"}`. The manifest is an https URL ending in `/manifest.json` with no query or
+  fragment; it can carry the add-on's token in its path (`/v1/<ACCESS_TOKEN>/manifest.json`), so the script prints only
+  its origin. An enabled `first_party` entry whose manifest id is `tidal` is the app's switch to the Tidal v1 wire
+  (decision D9): publish it to turn the wire on, publish without it to turn it off again. Released apps before
+  phase 2 ignore the key. Keep `tidal_relay_url`, `tidal_relay_token` and `relay_key` in every publish anyway: they are
+  what those apps, and the legacy wire, use.
 - `v: 1` and `updated_at` (set by the script: max(now, live + 1), never by hand).
 
 **Leaving out `tidal_relay_url` or `relay_key` switches Tidal off in every installed app.** Always

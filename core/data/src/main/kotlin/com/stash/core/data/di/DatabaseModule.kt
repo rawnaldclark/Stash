@@ -125,8 +125,8 @@ object DatabaseModule {
         db.spotifyResolutionDao()
 
     @Provides
-    fun provideTidalMatchDao(db: StashDatabase): com.stash.core.data.db.dao.TidalMatchDao =
-        db.tidalMatchDao()
+    fun provideAddonRefDao(db: StashDatabase): com.stash.core.data.db.dao.AddonRefDao =
+        db.addonRefDao()
 
     @Provides
     fun provideFlacUpgradeQueueDao(db: StashDatabase): com.stash.core.data.db.dao.FlacUpgradeQueueDao =
