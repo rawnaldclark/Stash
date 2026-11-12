@@ -591,7 +591,10 @@ test("readIndex: a known field that breaks a rule refuses the whole index", () =
         [(o) => { o.addons[0].default = false; }, /default must be true/],
         [(o) => { delete o.addons[0].default; }, /exactly one of/],
         [(o) => { o.addons[1].min_build = 0; }, /min_build/],
-        [(o) => { o.addons[1].platforms = ["ios"]; }, /platforms/],
+        [(o) => { o.addons[1].platforms = [5]; }, /platforms/],
+        [(o) => { o.addons[1].platforms = []; }, /platforms/],
+        [(o) => { o.addons[1].platforms = ["android", "android"]; }, /platforms/],
+        [(o) => { o.addons[1].platforms = "android"; }, /platforms/],
         [(o) => { o.addons = Array.from({ length: 65 }, (_, i) => ({ ...TIDAL, id: `a${i}` })); }, /addons holds at most 64/],
         [(o) => { o.blocked[0].origin = "https://bad.example/"; }, /origin must be written exactly/],
         [(o) => { o.blocked[0].origin = "http://bad.example"; }, /origin must be https/],
@@ -606,6 +609,19 @@ test("readIndex: a known field that breaks a rule refuses the whole index", () =
         [(o) => { o.blocked = Array.from({ length: 257 }, (_, i) => ({ origin: `https://b${i}.example`, reason: "broken" })); }, /blocked holds at most 256/],
     ];
     for (const [change, message] of bad) assert.throws(() => readIndex(edited(change)), message, String(change));
+});
+
+test("readIndex: a platform word it does not know is dropped; the entry, the index and its blocks stay", () => {
+    // A list from a later publisher must never make an older reader miss its blocks (review-885 M14).
+    const some = readIndex(edited((o) => { o.addons[1].platforms = ["android", "ios"]; }));
+    assert.deepEqual(some.addons[1].platforms, ["android"]);
+    const none = readIndex(edited((o) => { o.addons[1].platforms = ["ios", "tv"]; }));
+    assert.deepEqual(none.addons[1].platforms, [], "for no platform this reader knows");
+    assert.deepEqual(none.blocked, JSON.parse(PUBLISHED).blocked, "the blocks are all there");
+    assert.equal(none.addons.length, JSON.parse(PUBLISHED).addons.length, "the entry is kept");
+    assert.equal(JSON.stringify(none).includes("ios"), false, "the word from the file is not passed on");
+    // The publisher still writes only what it knows.
+    assert.throws(() => buildIndex(JSON.parse(edited((o) => { o.addons[1].platforms = ["android", "ios"]; })), 0, NOW), /platforms must be a non-empty list of distinct values from: android, web/);
 });
 
 test("readIndex: a block whose reason it does not know is still a block, and the reason reads as unknown", () => {

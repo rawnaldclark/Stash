@@ -114,8 +114,10 @@ function writeIndex({ updated_at, addons, blocked }) {
 /**
  * Reads published index bytes (a Buffer, or a string taken as UTF-8) the way a phone does: the size cap, UTF-8,
  * JSON, `type`, `v`, `updated_at`, both lists and every entry rule. Unknown fields are ignored (plan 1.3); a known
- * field that breaks a rule refuses the whole index, with one exception: a block's `reason` may be any word, and a
- * word that is not one of BLOCK_REASONS reads as UNKNOWN_REASON (the add-on is blocked all the same). Returns the
+ * field that breaks a rule refuses the whole index, with two exceptions, both words a later publisher may add: a
+ * block's `reason` may be any word, and one that is not in BLOCK_REASONS reads as UNKNOWN_REASON (the add-on is
+ * blocked all the same); and a word in an add-on's `platforms` that is not in PLATFORMS is dropped from that list
+ * (the entry is then for the platforms left, or for none this reader knows: an empty list). Returns the
  * index with only the fields this version knows, in the written order; throws on any break. The signature is
  * checked separately (verifyIndexSignature), so a caller can say which of the two failed.
  */
@@ -205,10 +207,15 @@ function checkAddons(raw, strict) {
         }
         if (e.platforms !== undefined) {
             const p = e.platforms;
-            if (!Array.isArray(p) || !p.length || p.some((x) => !PLATFORMS.includes(x)) || new Set(p).size !== p.length) {
+            // The publisher writes only the platforms it knows: any other word in a source is a typo and fails here.
+            const shaped = Array.isArray(p) && p.length > 0 && p.every((x) => typeof x === "string") && new Set(p).size === p.length;
+            if (!shaped || (strict && p.some((x) => !PLATFORMS.includes(x)))) {
                 throw new Error(`${at}.platforms must be a non-empty list of distinct values from: ${PLATFORMS.join(", ")}`);
             }
-            out.platforms = [...p];
+            // A reader drops a word it does not know (one a later publisher added) and keeps the entry: the add-on is
+            // then for the platforms that are left, and for none this reader knows when the list comes out empty. The
+            // index is never refused for it: a newer list must never make an older reader miss its blocks.
+            out.platforms = p.filter((x) => PLATFORMS.includes(x));
         }
         return out;
     });

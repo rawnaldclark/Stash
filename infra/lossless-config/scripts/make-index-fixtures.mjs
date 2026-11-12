@@ -106,6 +106,18 @@ const cases = [
         what: "An index from a later publisher: two blocks, the second with the reason `spam`, a word no reader knows. A reader accepts the index and blocks both add-ons; the second one's reason reads as unknown and gets a generic fixed sentence. A newer list must never make an older reader drop its blocks. This publisher never writes it, and refuses it as a source.",
     },
     {
+        dir: "valid-unknown-platform", expect: "accept", signature: "valid", canonical: false, addon_platforms: [null, ["android"], []],
+        bytes: handMade(envelope({
+            addons: [
+                LAUNCH.addons[0],
+                { id: "example-radio", name: "Example Radio", summary: "Live stations from example.org", manifest: "https://addons.example.org/radio/manifest.json", platforms: ["android", "ios"] },
+                { id: "example-tv", name: "Example TV", summary: "For another kind of device", manifest: "https://addons.example.org/tv/manifest.json", platforms: ["ios"] },
+            ],
+            blocked: [{ origin: "https://bad.example", reason: "harmful" }],
+        })),
+        what: "An index from a later publisher: two add-ons whose `platforms` hold `ios`, a word no reader knows. A reader accepts the index and keeps its block. It drops the unknown word: the first entry reads as `[\"android\"]`, the second as an empty list, which means it is for no platform this reader knows (not shown, not Official here). A newer list must never make an older reader miss its blocks. This publisher never writes it, and refuses it as a source.",
+    },
+    {
         dir: "refuse-lossless-json", expect: "refuse", refused_by: "type", signature: "valid", bytes: config,
         what: "A lossless.json signed with the same key, served as the index. The signature is good; it has no `type`.",
     },
@@ -163,6 +175,8 @@ for (const c of cases) {
         Object.assign(entry, { canonical: c.canonical, updated_at: index.updated_at, addons: index.addons.length, blocked: index.blocked.length });
         // Only where it is the point of the case: what a reader reports as each block's reason, in order.
         if (c.blocked_reasons) entry.blocked_reasons = c.blocked_reasons;
+        // And what a reader reports as each add-on's platforms, in order: null where the entry has none.
+        if (c.addon_platforms) entry.addon_platforms = c.addon_platforms;
     }
     entry.bytes = c.bytes.length;
     entry.what = c.what;

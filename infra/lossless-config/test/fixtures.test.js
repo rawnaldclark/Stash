@@ -51,7 +51,7 @@ test("every case's signature is as cases.json says, checked the way the device c
 
 test("accept cases: read as an index, with the counts and updated_at cases.json gives", () => {
     const accept = cases.filter((c) => c.expect === "accept");
-    assert.deepEqual(accept.map((c) => c.dir).sort(), ["valid", "valid-launch", "valid-older", "valid-unknown-fields", "valid-unknown-reason"]);
+    assert.deepEqual(accept.map((c) => c.dir).sort(), ["valid", "valid-launch", "valid-older", "valid-unknown-fields", "valid-unknown-platform", "valid-unknown-reason"]);
     for (const c of accept) {
         assert.equal(c.signature, "valid", c.dir);
         const index = readIndex(bytesOf(c.dir));
@@ -61,8 +61,25 @@ test("accept cases: read as an index, with the counts and updated_at cases.json 
         assert.equal(index.blocked.length, c.blocked, c.dir);
         assert.equal(isCanonical(bytesOf(c.dir)), c.canonical, c.dir);
         if (c.blocked_reasons) assert.deepEqual(index.blocked.map((b) => b.reason), c.blocked_reasons, c.dir);
+        if (c.addon_platforms) assert.deepEqual(index.addons.map((a) => a.platforms ?? null), c.addon_platforms, c.dir);
     }
+    assert.deepEqual(accept.filter((c) => c.addon_platforms).map((c) => c.dir), ["valid-unknown-platform"]);
     assert.deepEqual(accept.filter((c) => c.blocked_reasons).map((c) => c.dir), ["valid-unknown-reason"]);
+});
+
+test("valid-unknown-platform: the index is accepted, its block stands, and the unknown word is dropped from each entry", () => {
+    const c = byDir["valid-unknown-platform"];
+    assert.equal(c.expect, "accept");
+    assert.equal(verifyIndexSignature(bytesOf(c.dir), sigOf(c.dir), PUBKEY), true);
+    const raw = JSON.parse(bytesOf(c.dir).toString("utf8"));
+    assert.deepEqual(raw.addons.map((a) => a.platforms ?? null), [null, ["android", "ios"], ["ios"]]);
+    const index = readIndex(bytesOf(c.dir));
+    assert.deepEqual(index.addons.map((a) => a.id), ["tidal", "example-radio", "example-tv"], "every entry is kept");
+    assert.deepEqual(index.addons.map((a) => a.platforms ?? null), [null, ["android"], []]);
+    assert.deepEqual(c.addon_platforms, [null, ["android"], []]);
+    assert.deepEqual(index.blocked, [{ origin: "https://bad.example", reason: "harmful" }], "the block is not lost");
+    assert.equal(isCanonical(bytesOf(c.dir)), false, "this publisher never writes it");
+    assert.throws(() => buildIndex(raw, 0, 1), /platforms must be a non-empty list of distinct values from: android, web/);
 });
 
 test("valid-unknown-reason: the index is accepted, both add-ons are blocked, and the unknown reason reads as unknown", () => {
