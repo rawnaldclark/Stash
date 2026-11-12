@@ -314,6 +314,33 @@ class StreamSourceRegistryPlayOrderTest {
         assertThat(served!!.origin).isEqualTo("addon:builtin")
     }
 
+    // ------------------------------------------------------------------------------------------ cover art, by trust
+
+    @Test fun `an add-on of the official list keeps its cover art though the user added it, one Stash doesn't run gives none`() = runTest {
+        // review-882 B1 and M7 keep an add-on's art out of the library unless Stash vouches for it. Vouching
+        // is the trust level, not who added it: an add-on of the signed index, added by the user, is Official.
+        val art = "https://cdn.example/art/1.jpg"
+        val withArt: HttpAddonClient = mockk {
+            coEvery { resolve(any(), any(), any()) } returns AddonResult.Ok(
+                Track(id = "x1", title = "Title", artist = "Artist", artwork = listOf(com.stash.addons.contract.Artwork(art))),
+            )
+            coEvery { stream(any(), any(), any(), any()) } returns AddonResult.Ok(flac)
+        }
+        reset()
+        val listed = addon("listed", userAdded = true).copy(trust = Trust.OFFICIAL)
+        val fromListed = registry(listOf(listed), saved = listOf("addon:listed", "qobuz", "tidal"), client = withArt)
+            .resolve(track(), allowYouTube = false, allowYtDlp = true)
+        assertThat(fromListed!!.origin).isEqualTo("addon:listed")
+        assertThat(fromListed.coverArtUrl).isEqualTo(art)
+
+        val mine = addon("mine", userAdded = true)
+        assertThat(mine.trust).isEqualTo(Trust.UNOFFICIAL)
+        val fromMine = registry(listOf(mine), saved = listOf("addon:mine", "qobuz", "tidal"), client = withArt)
+            .resolve(track(), allowYouTube = false, allowYtDlp = true)
+        assertThat(fromMine!!.origin).isEqualTo("addon:mine")
+        assertThat(fromMine.coverArtUrl).isNull()
+    }
+
     private fun reset() {
         lossless = true; dataSaver = false; preferTidalAac = false; ownTidalFirst = false; ownTidalServer = false
         tidalAacFallback = false; tidalUncached = false; hitAt = null
