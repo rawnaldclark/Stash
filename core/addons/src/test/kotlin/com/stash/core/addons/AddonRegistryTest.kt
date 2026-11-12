@@ -31,6 +31,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 class AddonRegistryTest {
 
@@ -395,6 +396,57 @@ class AddonRegistryTest {
             withTimeout(5_000) { while ("m2" !in asked) delay(20) }
             delay(300)
             assertThat(asked).containsExactly("m", "d", "m2")
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test fun `a block that lands between a pass judging an add-on and publishing it is not published away`() = runBlocking<Unit> {
+        // review-885 M7. A new index can land at any moment. Here it lands right after the pass has
+        // judged the add-on (the first time the catalog is asked about it) and before the pass publishes.
+        serve("m", manifestJson("mine"))
+        val users = Users(listOf(UserAddonEntry(url("m"), id = "mine")))
+        registry(users = users).refresh() // an earlier run kept its manifest
+        asked.clear()
+        val judged = AtomicInteger(0)
+        val catalog = object : AddonCatalog {
+            override fun trustOf(base: String, id: String?) = if (judged.getAndIncrement() == 0) Trust.UNOFFICIAL else Trust.BLOCKED
+            override fun blockReason(base: String, id: String?) = BlockReason.HARMFUL
+            override val official: StateFlow<List<OfficialEntry>> = MutableStateFlow(emptyList())
+            override val changes: Flow<Any?> = emptyFlow()
+        }
+        val restarted = registry(users = users, catalog = catalog)
+        restarted.refresh(force = false)
+        // Never published from its kept manifest, and never asked.
+        assertThat(restarted.addons.value).isEmpty()
+        assertThat(asked).isEmpty()
+        assertThat(restarted.entries.value.single().hold).isEqualTo(AddonHold.BLOCKED)
+    }
+
+    @Test fun `a user's switch and Remove take effect at once, while a pass is still reading`() = runBlocking<Unit> {
+        // review-885 M5. A pass holds its lock for as long as its slowest manifest. The user's own
+        // switch and Remove must not queue behind it: the add-on that hangs is the one they want gone.
+        serve("hangs", manifestJson("hangs"))
+        serve("fine", manifestJson("fine"))
+        val users = Users(listOf(UserAddonEntry(url("hangs"), id = "hangs"), UserAddonEntry(url("fine"), id = "fine")))
+        val registry = registry(users = users)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            registry.start(scope, emptyFlow())
+            withTimeout(5_000) { registry.addons.first { it.size == 2 } }
+            // Now it hangs, and a pass is reading it (Settings › Add-ons opened, a config was applied).
+            answers["hangs"] = { MockResponse().setBody(manifestJson("hangs")).setHeadersDelay(4, TimeUnit.SECONDS) }
+            val reading = scope.launch { registry.refresh(force = true) }
+            withTimeout(5_000) { registry.reading.first { it } }
+            // Switched off: the chains stop asking it now, not when the read gives up.
+            users.flow.value = listOf(UserAddonEntry(url("hangs"), id = "hangs", enabled = false), UserAddonEntry(url("fine"), id = "fine"))
+            withTimeout(1_500) { registry.addons.first { list -> list.map { it.id } == listOf("fine") } }
+            assertThat(registry.entries.value.first().hold).isEqualTo(AddonHold.OFF)
+            // Removed: its entry is gone at once too.
+            users.flow.value = listOf(UserAddonEntry(url("fine"), id = "fine"))
+            withTimeout(1_500) { registry.entries.first { it.size == 1 } }
+            assertThat(registry.addons.value.map { it.id }).containsExactly("fine")
+            reading.cancel()
         } finally {
             scope.cancel()
         }

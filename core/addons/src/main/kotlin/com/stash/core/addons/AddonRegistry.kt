@@ -364,7 +364,15 @@ class InTreeAddonRegistry @Inject constructor(
      * An entry and where it stands: its manifest when one is known, why it is held when it is, and
      * what its last read was refused for ([refused]), when it was one of the refusals a host acts on.
      */
-    private class Slot(val w: Wanted, val read: AddonManifest?, val trust: Trust, val hold: AddonHold?, val refused: AddonFailure.InvalidResponse.Code?) {
+    private class Slot(
+        val w: Wanted,
+        val read: AddonManifest?,
+        val trust: Trust,
+        val hold: AddonHold?,
+        val refused: AddonFailure.InvalidResponse.Code?,
+        /** Its link's last answer was another add-on's manifest: held as [AddonHold.CHANGED] however often it is settled again. */
+        val changed: Boolean = false,
+    ) {
         val id: String? get() = read?.manifest?.id ?: w.id
     }
 
@@ -465,7 +473,38 @@ class InTreeAddonRegistry @Inject constructor(
      * (one read per add-on, as SPEC.md 3 has it). A new or re-linked entry has never answered, so it is
      * read at once. The retries of entries that didn't answer start over, as the list is a new one.
      */
-    private suspend fun listChanged() = withContext(Dispatchers.IO) { pass(force = false, restartRetries = true) }
+    private suspend fun listChanged() = withContext(Dispatchers.IO) {
+        publishKnown()
+        pass(force = false, restartRetries = true)
+    }
+
+    /** Bumped, under [applyLock], each time [publishKnown] publishes: a pass that started before it must not publish its older list over it. */
+    @Volatile private var listsVersion = 0
+
+    /**
+     * The lists as they are now, published from what is already known, asking nothing and waiting for
+     * no read (review-885 M5). A pass holds [refreshLock] for as long as its slowest manifest, so a
+     * user's switch or Remove that waited for a pass kept an add-on that hangs in the chains for as
+     * long as it hung. This takes [applyLock] only: off, removed or re-linked applies at once, and the
+     * pass that follows reads what is new.
+     */
+    private suspend fun publishKnown() {
+        catalog.awaitLoaded()
+        val wanted = wanted()
+        val known = slots.associateBy { it.w.key }
+        // Entries not seen before start from their kept manifest, read before the lock is taken.
+        val fresh = wanted.filter { it.key !in known }.associate { it.key to kept(it, null) }
+        applyLock.withLock {
+            val now = slots.associateBy { it.w.key }
+            listsVersion++
+            publish(
+                wanted.map { w ->
+                    now[w.key]?.let { Slot(w, it.read, it.trust, it.hold, it.refused, it.changed) } ?: fresh[w.key] ?: Slot(w, null, Trust.UNOFFICIAL, AddonHold.NOT_LOADED, null)
+                },
+                defaultsOff(),
+            )
+        }
+    }
 
     private suspend fun pass(force: Boolean, restartRetries: Boolean = force) = refreshLock.withLock {
         // The kept index first, as in [loadPersisted]: whichever pass runs first at a cold start, an
@@ -474,13 +513,20 @@ class InTreeAddonRegistry @Inject constructor(
         val wanted = wanted()
         val now = nowMs()
         answeredAt.keys.retainAll(wanted.map { it.key }.toSet())
+        val version = listsVersion
         // By entry, never by base: two manifests in one folder (`a.json`, `b.json`) share a base.
         val before = slots.associateBy { it.w.key }
         val kept = wanted.map { w -> kept(w, before[w.key]) }
-        applyLock.withLock { publish(kept, defaultsOff()) }
-        kept.filter { it.hold == AddonHold.BLOCKED }.forEach { Log.i(TAG, "blocked add-on not loaded: ${it.id ?: "(no id known)"}") }
-        val due = kept.filter { s ->
-            s.w.enabled && s.hold != AddonHold.BLOCKED &&
+        // What stands after the publish, settled again under the lock ([publish]): a block that landed
+        // since `kept` was built is in it. If the lists changed meanwhile ([publishKnown]), theirs stands.
+        val standing = applyLock.withLock {
+            if (listsVersion == version) publish(kept, defaultsOff())
+            slots
+        }
+        val mine = wanted.toSet()
+        standing.filter { it.w in mine && it.hold == AddonHold.BLOCKED }.forEach { Log.i(TAG, "blocked add-on not loaded: ${it.id ?: "(no id known)"}") }
+        val due = standing.filter { s ->
+            s.w in mine && s.w.enabled && s.hold != AddonHold.BLOCKED &&
                 (force || answeredAt[s.w.key].let { it == null || now - it !in 0 until MIN_REFRESH_MS })
         }
         if (restartRetries) {
@@ -541,14 +587,14 @@ class InTreeAddonRegistry @Inject constructor(
                     runCatchingStore { store.write(w.key, NO_MANIFEST) }
                     Slot(w, s.read, s.trust, AddonHold.ONLY_BITCHORD, fetched.refused)
                 }
-                fetched.read == null -> settle(w, s.read, fetched.refused)
+                fetched.read == null -> settle(w, s.read, fetched.refused, s.changed)
                 // The add-on the user approved is the one with the id they saw (add-ons plan phase 4
                 // §2.7): a link that starts serving another add-on's manifest is not used, and its
                 // manifest is not kept in place of the approved one's.
                 idChanged(w, fetched.read) -> {
                     answeredAt[w.key] = nowMs()
                     Log.w(TAG, "an add-on's link now serves a different add-on: not used (${w.id})")
-                    Slot(w, s.read?.takeUnless { idChanged(w, it) }, s.trust, AddonHold.CHANGED, refused = null)
+                    Slot(w, s.read?.takeUnless { idChanged(w, it) }, s.trust, AddonHold.CHANGED, refused = null, changed = true)
                 }
                 else -> {
                     answeredAt[w.key] = nowMs()
@@ -572,7 +618,7 @@ class InTreeAddonRegistry @Inject constructor(
 
     /** [w] from what is already known, asking nothing: the manifest it had this run ([before]), else the kept one. */
     private suspend fun kept(w: Wanted, before: Slot?): Slot = try {
-        settle(w, before?.read ?: persisted(w), before?.refused)
+        settle(w, before?.read ?: persisted(w), before?.refused, before?.changed == true)
     } catch (e: CancellationException) {
         throw e
     } catch (t: Throwable) {
@@ -606,7 +652,7 @@ class InTreeAddonRegistry @Inject constructor(
     private suspend fun recheck() {
         val lifted = applyLock.withLock {
             val before = slots
-            val settled = before.map { settle(it.w, it.read, it.refused) }
+            val settled = before.map { settle(it.w, it.read, it.refused, it.changed) }
             before.zip(settled).forEach { (a, b) ->
                 if (a.hold != AddonHold.BLOCKED && b.hold == AddonHold.BLOCKED) Log.i(TAG, "blocked add-on not loaded: ${b.id ?: "(no id known)"}")
             }
@@ -619,7 +665,7 @@ class InTreeAddonRegistry @Inject constructor(
 
     /** A default was switched on or off: publish again from what is known, asking nothing. */
     private suspend fun republish() = applyLock.withLock {
-        publish(slots.map { settle(it.w, it.read, it.refused) }, defaultsOff())
+        publish(slots, defaultsOff())
     }
 
     private suspend fun defaultsOff(): Set<String> = runCatchingStore { switches.defaultsOff.first() }.orEmpty()
@@ -632,7 +678,7 @@ class InTreeAddonRegistry @Inject constructor(
      * whether it is held. A block is checked against the id the manifest gives and the id the
      * entry was added with, so changing one never slips past a block of the other.
      */
-    private fun settle(w: Wanted, read: AddonManifest?, refused: AddonFailure.InvalidResponse.Code?): Slot {
+    private fun settle(w: Wanted, read: AddonManifest?, refused: AddonFailure.InvalidResponse.Code?, changed: Boolean = false): Slot {
         val trust = when {
             w.firstParty -> Trust.FIRST_PARTY
             !w.userAdded -> Trust.OFFICIAL
@@ -646,14 +692,15 @@ class InTreeAddonRegistry @Inject constructor(
             trust == Trust.BLOCKED -> AddonHold.BLOCKED
             !w.enabled -> AddonHold.OFF
             // BitChord only: by its manifest at the last read, or by its own answer to a call.
-            w.userAdded && (refused == AddonFailure.InvalidResponse.Code.ONLY_BITCHORD || (read?.manifest?.id ?: w.id) in client.onlyBitChord.value) ->
+            refused == AddonFailure.InvalidResponse.Code.ONLY_BITCHORD || (w.userAdded && (read?.manifest?.id ?: w.id) in client.onlyBitChord.value) ->
                 AddonHold.ONLY_BITCHORD
+            changed -> AddonHold.CHANGED
             read == null || read.manifest.kind != AddonKind.SERVER -> AddonHold.NOT_LOADED
             idChanged(w, read) -> AddonHold.CHANGED
             trust == Trust.UNOFFICIAL && w.consent != null && !w.consent.containsAll(AddonSees.namesOf(read)) -> AddonHold.WANTS_MORE
             else -> null
         }
-        return Slot(w, read, trust, hold, refused)
+        return Slot(w, read, trust, hold, refused, changed)
     }
 
     /** What asking for [Wanted]'s manifest came to. [read] null: it didn't read; [refused]: for one of the reasons a host acts on. */
@@ -667,7 +714,16 @@ class InTreeAddonRegistry @Inject constructor(
         }
 
     /** Publishes [all]: the add-ons that are on to [addons], every entry to [entries]. Call with [applyLock] held. */
-    private fun publish(all: List<Slot>, off: Set<String>) {
+    private fun publish(given: List<Slot>, off: Set<String>) {
+        // Settled again here, under the lock, whatever the caller settled outside it (review-885 M7): a
+        // block the index brought between a settle and this publish must never be published away.
+        val all = given.map { s ->
+            try {
+                settle(s.w, s.read, s.refused, s.changed)
+            } catch (t: Throwable) {
+                s // one entry that can't be judged again keeps what it was given; it never costs the others
+            }
+        }
         slots = all
         val built = all.map { s -> if (s.hold == null && s.read != null) install(s.w, s.read, s.trust) else null }
         // One add-on per id: a first-party default first, then the user's own.
