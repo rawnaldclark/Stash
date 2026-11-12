@@ -6,6 +6,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -28,6 +29,7 @@ import org.junit.Test
 import java.net.InetAddress
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class AddonRegistryTest {
@@ -357,6 +359,33 @@ class AddonRegistryTest {
         } finally {
             second.cancel()
         }
+    }
+
+    @Test fun `a pass asked for from the screen does its reading on another thread`() {
+        // Settings › Add-ons asks for a pass as it opens, from the main thread.
+        serve("m", manifestJson("mine"))
+        val threads = CopyOnWriteArrayList<String>()
+        val watching = object : AddonManifestStore {
+            override suspend fun read(key: String): String? {
+                threads += Thread.currentThread().name
+                return null
+            }
+            override suspend fun write(key: String, json: String) {
+                threads += Thread.currentThread().name
+            }
+            override suspend fun retain(keys: Set<String>) = Unit
+        }
+        val registry = InTreeAddonRegistry(NoDefaultAddons, Users(listOf(UserAddonEntry(url("m")))), client, watching)
+        val screen = Executors.newSingleThreadExecutor { r -> Thread(r, "the-screen") }
+        try {
+            runBlocking(screen.asCoroutineDispatcher()) { registry.refresh(force = false) }
+        } finally {
+            screen.shutdownNow()
+        }
+        assertThat(registry.addons.value.map { it.id }).containsExactly("mine")
+        // The kept copy was looked for and the fresh manifest kept: neither on the thread that asked.
+        assertThat(threads).hasSize(2)
+        assertThat(threads).doesNotContain("the-screen")
     }
 
     @Test fun `two add-ons whose manifests sit in one folder each keep their own`() = runBlocking<Unit> {

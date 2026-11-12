@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -449,8 +450,12 @@ class InTreeAddonRegistry @Inject constructor(
      *    only: it keeps its last good manifest.
      *  - **Asked again.** An entry that didn't answer has no stamp: the next pass asks it again, and
      *    [start]'s scope retries it by itself after [RETRY_DELAYS_MS].
+     *  - **Off the caller's thread.** Settings › Add-ons asks for a pass from the main thread as it
+     *    opens; a manifest's JSON (up to 64 KiB of someone else's) is read on an IO thread whoever asks.
      */
-    suspend fun refresh(force: Boolean = true) = refreshLock.withLock {
+    suspend fun refresh(force: Boolean = true) = withContext(Dispatchers.IO) { pass(force) }
+
+    private suspend fun pass(force: Boolean) = refreshLock.withLock {
         // The kept index first, as in [loadPersisted]: whichever pass runs first at a cold start, an
         // add-on Stash turned off is never published from its kept copy, and never asked.
         catalog.awaitLoaded()
