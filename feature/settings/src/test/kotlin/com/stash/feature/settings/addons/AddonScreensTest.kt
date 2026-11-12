@@ -581,6 +581,25 @@ class AddonScreensTest {
         rule.onAllNodesWithText("Add anyway").assertCountEquals0()
     }
 
+    @Test fun `Couldn't save is said once for each failure, and not again when the screen comes back`() {
+        // review-885 N8: the count lives in the view model, so every return to the screen said it again.
+        org.robolectric.shadows.ShadowToast.reset()
+        var failures by mutableStateOf(1)
+        val screen = androidx.compose.ui.test.junit4.StateRestorationTester(rule)
+        screen.setContent { SaveFailedToast(failures) }
+        rule.waitForIdle()
+        assertThat(org.robolectric.shadows.ShadowToast.shownToastCount()).isEqualTo(1)
+        assertThat(org.robolectric.shadows.ShadowToast.getTextOfLatestToast()).isEqualTo("Couldn't save. Try again.")
+        // The phone is turned, or the screen is left and come back to: the same view model, the same count.
+        screen.emulateSavedInstanceStateRestore()
+        rule.waitForIdle()
+        assertThat(org.robolectric.shadows.ShadowToast.shownToastCount()).isEqualTo(1)
+        // Another change that could not be saved is said.
+        failures = 2
+        rule.waitForIdle()
+        assertThat(org.robolectric.shadows.ShadowToast.shownToastCount()).isEqualTo(2)
+    }
+
     @Test fun `after a refusal the same link can be read again`() {
         // review-885 M9: "Couldn't reach that add-on" on a shared link had no button left to try again.
         showAdd(AddFromLinkViewModel.Step.Refused(AddonLinks.Refusal.UNREACHABLE), link = "https://relay.example.org/")

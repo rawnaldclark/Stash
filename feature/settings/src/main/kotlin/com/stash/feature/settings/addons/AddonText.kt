@@ -17,6 +17,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -147,12 +151,21 @@ internal fun AddonAvatar(name: String, size: Dp = 36.dp) {
     }
 }
 
-/** "Couldn't save. Try again.", once for each change that could not be saved ([failures] counts them). */
+/**
+ * "Couldn't save. Try again.", once for each change that could not be saved ([failures] counts them).
+ *
+ * The count lives in the view model, which outlives the screen: how many of them were already said
+ * is kept with the screen's own saved state, so coming back to the screen or turning the phone says
+ * nothing again (review-885 N8).
+ */
 @Composable
 internal fun SaveFailedToast(failures: Int) {
     val context = LocalContext.current
+    var said by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(failures) {
-        if (failures > 0) Toast.makeText(context, R.string.settings_addons_could_not_save, Toast.LENGTH_LONG).show()
+        if (failures > said) Toast.makeText(context, R.string.settings_addons_could_not_save, Toast.LENGTH_LONG).show()
+        // Also when the count started over (a new view model after the app was closed): never above it.
+        said = failures
     }
 }
 
