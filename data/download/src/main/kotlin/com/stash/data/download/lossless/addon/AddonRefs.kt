@@ -74,8 +74,12 @@ class AddonRefs @Inject constructor(
         LOSSY(Tier.LOW),
     }
 
-    /** The add-on's own item for a song: [remoteId] is what `/stream` takes. */
-    data class Ref(val remoteId: String, val artwork: String?, val isrc: String?, val confidence: Float) {
+    /**
+     * The add-on's own item for a song: [remoteId] is what `/stream` takes. [durationMs]: the
+     * item's own length, when this lookup made the match and the item states one (a ref read back
+     * from the table has none: there is no column for it).
+     */
+    data class Ref(val remoteId: String, val artwork: String?, val isrc: String?, val confidence: Float, val durationMs: Long? = null) {
         override fun toString(): String = "Ref(confidence=$confidence)"
     }
 
@@ -332,7 +336,7 @@ class AddonRefs @Inject constructor(
                 ),
             )
         }
-        return Ref(item.id, art, item.isrc, confidence)
+        return Ref(item.id, art, item.isrc, confidence, item.durationMs?.takeIf { it > 0 })
     }
 
     /**

@@ -142,7 +142,7 @@ class AddonLosslessSource internal constructor(
             // Null for an add-on Stash doesn't vouch for ([AddonRefs.keepsArtwork]).
             coverArtUrl = ref.artwork,
             isDash = info.manifest == Delivery.DASH,
-            maxBytes = ceilingBytes(query.durationMs?.takeIf { query.durationReliable }, info),
+            maxBytes = ceilingBytes(ceilingLengthMs(query.durationMs, query.durationReliable, ref.durationMs), info),
         )
     }
 
@@ -162,19 +162,43 @@ class AddonLosslessSource internal constructor(
         /**
          * The most bytes a file for a song of [durationMs] can be (review-882 M11): the stated
          * format's own PCM size (nothing lossless is larger than the samples it holds), a quarter
-         * more for a container and a tail, and 8 MiB of slack. With no format stated: 24-bit /
-         * 192 kHz, the largest the app asks for. With no length known: an hour. A 4-minute CD FLAC
-         * may be 61 MB (it is about 28); the same song at 24/192 may be 354 MB (about 140).
+         * more for a container and a tail, and 8 MiB of slack. The stated format is held to what
+         * Stash asks for at most, 24-bit / 192 kHz, which is also what an answer that states none
+         * is taken for: an add-on that says "32-bit / 384 kHz" does not raise its own ceiling
+         * (round 2, F2). With no length known: an hour. A 4-minute CD FLAC may be 61 MB (it is
+         * about 28); the same song at 24/192 may be 354 MB (about 140).
          */
         fun ceilingBytes(durationMs: Long?, info: StreamInfo): Long {
             val seconds = ((durationMs?.takeIf { it > 0 } ?: UNKNOWN_LENGTH_MS) + 999) / 1000
-            val bits = (info.bitDepth?.takeIf { it > 0 } ?: 24).coerceIn(16, 32)
-            val rate = (info.sampleRate?.takeIf { it > 0 } ?: 192_000).coerceIn(44_100, 384_000)
+            val bits = (info.bitDepth?.takeIf { it > 0 } ?: MAX_BITS).coerceIn(16, MAX_BITS)
+            val rate = (info.sampleRate?.takeIf { it > 0 } ?: MAX_RATE_HZ).coerceIn(44_100, MAX_RATE_HZ)
             val pcmBytesPerSecond = bits.toLong() / 8 * rate * 2
             return seconds * pcmBytesPerSecond * 5 / 4 + 8L * 1024 * 1024
         }
 
-        private const val UNKNOWN_LENGTH_MS = 60 * 60_000L
+        /**
+         * The length a download's ceiling is computed for (round 2, F2), in this order:
+         *  1. the song's own length, when it can be trusted ([TrackQuery.durationReliable]);
+         *  2. otherwise the smaller of: the matched row's own length and a quarter ([rowMs], known
+         *     when this lookup made the match, not for a ref kept earlier: the table has no column
+         *     for it), and twice the song's untrusted length (a video's: the matcher took nothing
+         *     more than 40 % off it);
+         *  3. with neither, an hour ([UNKNOWN_LENGTH_MS]), which is also the most 2 can come to.
+         * Before, every song without a trusted length (most YouTube rows) had an hour's ceiling.
+         */
+        fun ceilingLengthMs(songMs: Long?, songReliable: Boolean, rowMs: Long?): Long {
+            val song = songMs?.takeIf { it > 0 }
+            if (song != null && songReliable) return song
+            val fromRow = rowMs?.takeIf { it > 0 }?.let { it + it / 4 }
+            val fromSong = song?.let { it * 2 }
+            return (listOfNotNull(fromRow, fromSong).minOrNull() ?: UNKNOWN_LENGTH_MS).coerceAtMost(UNKNOWN_LENGTH_MS)
+        }
+
+        /** The length assumed for a song when nothing says how long it is. */
+        const val UNKNOWN_LENGTH_MS = 60 * 60_000L
+
+        private const val MAX_BITS = 24
+        private const val MAX_RATE_HZ = 192_000
 
         internal fun format(info: StreamInfo): AudioFormat {
             val codec = when (info.codec) {

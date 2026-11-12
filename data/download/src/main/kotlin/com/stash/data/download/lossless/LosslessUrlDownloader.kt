@@ -15,6 +15,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import com.stash.core.addons.HttpAddonClient
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okio.buffer
@@ -100,9 +101,30 @@ class LosslessUrlDownloader @Inject constructor(
         destination: File,
         onProgress: (bytesRead: Long, totalBytes: Long) -> Unit = { _, _ -> },
     ): Result<File> = withContext(Dispatchers.IO) {
+        // An add-on's fetch has a time limit as well as a size ceiling (review-882 round 2, F2).
+        // The stall window alone let a server that sends a byte every 89 s hold a download slot
+        // for as long as it liked, and with a few songs the whole sync. The limit covers the whole
+        // fetch, a DASH answer's manifest and every segment included. Stash's own sources have none.
+        val limitMs = source.maxBytes?.takeIf { isAddonSource(source.sourceId) }?.let(timeLimitMs)
+            ?: return@withContext fetch(source, destination, onProgress)
+        withTimeoutOrNull(limitMs) { fetch(source, destination, onProgress) } ?: run {
+            Log.w(TAG, "fetch ${source.sourceId}: took longer than a file of its size may (${limitMs / 1000} s); not kept")
+            runCatching { if (destination.exists()) destination.delete() }
+            Result.failure(TookTooLongException())
+        }
+    }
+
+    /** Tests: the time an add-on's fetch may take for a ceiling of so many bytes ([timeLimitFor]). */
+    internal var timeLimitMs: (Long) -> Long = { timeLimitFor(it) }
+
+    private suspend fun fetch(
+        source: SourceResult,
+        destination: File,
+        onProgress: (bytesRead: Long, totalBytes: Long) -> Unit,
+    ): Result<File> {
         // A DASH manifest (Tidal) is not the file: fetch its segments and remux.
         if (source.isDash) {
-            return@withContext dashDownloader.download(
+            return dashDownloader.download(
                 client = clientFor(source),
                 mpdUrl = source.downloadUrl,
                 headers = source.downloadHeaders,
@@ -111,7 +133,7 @@ class LosslessUrlDownloader @Inject constructor(
                 maxBytes = source.maxBytes,
             ).asStated(source)
         }
-        fetchFile(source, destination, onProgress).asStated(source)
+        return fetchFile(source, destination, onProgress).asStated(source)
     }
 
     /**
@@ -234,6 +256,9 @@ class LosslessUrlDownloader @Inject constructor(
     /** A fetched file is not the format its source said it is ([asStated]). Names the format, never the URL. */
     class NotTheStatedFormatException(val stated: String) : java.io.IOException("the file is not $stated")
 
+    /** An add-on's fetch ran past its time limit ([timeLimitFor]). */
+    class TookTooLongException : java.io.IOException("the fetch took longer than a file of its size may")
+
     companion object {
         private const val TAG = "LosslessUrlDownloader"
 
@@ -275,6 +300,17 @@ class LosslessUrlDownloader @Inject constructor(
 
         /** A source whose URL an add-on chose (`AddonLosslessSource.sourceId`): fetched on the guarded client only. */
         fun isAddonSource(sourceId: String): Boolean = sourceId.startsWith("addon:")
+
+        /**
+         * How long an add-on's fetch may take for a ceiling of [maxBytes]: the time that many
+         * bytes need at [FLOOR_BYTES_PER_SECOND], and a minute to get going. A 4-minute CD FLAC
+         * (ceiling 61 MB) gets about 17 minutes; the slowest connection it allows still plays the
+         * same file in real time.
+         */
+        fun timeLimitFor(maxBytes: Long): Long = maxBytes.coerceAtLeast(0L) / FLOOR_BYTES_PER_SECOND * 1_000L + 60_000L
+
+        /** The slowest an add-on's fetch may run, on average, before it is given up. */
+        const val FLOOR_BYTES_PER_SECOND = 64L * 1024
 
         /** Text a server chose, as a log line can carry it: short, no control characters. */
         fun loggable(s: String): String = s.take(60).map { if (it < ' ' || it in '\u007f'..'\u009f') ' ' else it }.joinToString("")

@@ -174,6 +174,23 @@ class AddonDownloadSeamTest {
         coVerify(exactly = 1) { client.search(any(), any(), any(), any(), any()) }
     }
 
+    /** round 2, F2: without a length that can be trusted, the ceiling used to be an hour of audio for every such song. */
+    @Test fun `a download's ceiling follows the song's trusted length, else the matched item's own with a margin`() = runTest {
+        val client: HttpAddonClient = mockk {
+            coEvery { resolve(any(), any(), any()) } returns AddonResult.Ok(Track(id = "td:7", title = "B", artist = "A", durationMs = 240_000L))
+            coEvery { download(any(), "td:7", any(), any()) } returns AddonResult.Ok(flac)
+        }
+        val source = AddonDownloadSources(Registry(listOf(addon())), refs(client), AggregatorRateLimiter(), prefs).sources().single()
+
+        // A video's length (33 minutes of it): the item's own four minutes and a quarter decide.
+        val video = source.resolve(TrackQuery(artist = "A", title = "B", durationMs = 2_000_000L, durationReliable = false))!!
+        assertThat(video.maxBytes).isEqualTo(AddonLosslessSource.ceilingBytes(300_000L, flac))
+
+        // A length that can be trusted is used as it is.
+        val trusted = source.resolve(TrackQuery(artist = "A", title = "Another", durationMs = 200_000L))!!
+        assertThat(trusted.maxBytes).isEqualTo(AddonLosslessSource.ceilingBytes(200_000L, flac))
+    }
+
     /** review-882 B1 and M7: the downloader saves `coverArtUrl` as the song's art, where it would outlive the add-on. */
     @Test fun `a download from an add-on the user added carries no cover art, a default add-on's does`() = runTest {
         val art = "https://addon.example/tok/art/7.jpg"

@@ -251,9 +251,70 @@ class AddonFetchWiringTest {
         // No length the app can trust: an hour of it, never "no ceiling".
         assertThat(AddonLosslessSource.ceilingBytes(null, cd)).isEqualTo(AddonLosslessSource.ceilingBytes(3_600_000L, cd))
         assertThat(AddonLosslessSource.ceilingBytes(0L, cd)).isEqualTo(AddonLosslessSource.ceilingBytes(null, cd))
-        // Absurd stated formats are held to what exists.
-        val absurd = cd.copy(bitDepth = 64, sampleRate = 1_000_000)
-        assertThat(AddonLosslessSource.ceilingBytes(240_000L, absurd)).isEqualTo(AddonLosslessSource.ceilingBytes(240_000L, cd.copy(bitDepth = 32, sampleRate = 384_000)))
+        // The stated format is held to what Stash asks for at most (round 2, F2): saying
+        // "32-bit / 384 kHz" does not raise an add-on's own ceiling past 24 / 192.
+        val most = AddonLosslessSource.ceilingBytes(240_000L, cd.copy(bitDepth = 24, sampleRate = 192_000))
+        assertThat(AddonLosslessSource.ceilingBytes(240_000L, cd.copy(bitDepth = 32, sampleRate = 384_000))).isEqualTo(most)
+        assertThat(AddonLosslessSource.ceilingBytes(240_000L, cd.copy(bitDepth = 64, sampleRate = 1_000_000))).isEqualTo(most)
+        assertThat(AddonLosslessSource.ceilingBytes(240_000L, unstated)).isEqualTo(most)
+    }
+
+    @Test fun `the ceiling's length - the song's own when trusted, else the matched row's with a margin, else an hour`() {
+        val hour = AddonLosslessSource.UNKNOWN_LENGTH_MS
+        // A trusted length is the length, whatever the row says.
+        assertThat(AddonLosslessSource.ceilingLengthMs(240_000L, songReliable = true, rowMs = 900_000L)).isEqualTo(240_000L)
+        // A video's length is not: the row's own and a quarter, or twice the video's, whichever is less.
+        assertThat(AddonLosslessSource.ceilingLengthMs(300_000L, songReliable = false, rowMs = 240_000L)).isEqualTo(300_000L)
+        assertThat(AddonLosslessSource.ceilingLengthMs(200_000L, songReliable = false, rowMs = 3_000_000L)).isEqualTo(400_000L)
+        // A ref kept earlier has no row length: twice the video's. No length at all: the row's.
+        assertThat(AddonLosslessSource.ceilingLengthMs(200_000L, songReliable = false, rowMs = null)).isEqualTo(400_000L)
+        assertThat(AddonLosslessSource.ceilingLengthMs(null, songReliable = true, rowMs = 240_000L)).isEqualTo(300_000L)
+        // Nothing known: an hour, which is also the most an untrusted length can come to.
+        assertThat(AddonLosslessSource.ceilingLengthMs(null, songReliable = false, rowMs = null)).isEqualTo(hour)
+        assertThat(AddonLosslessSource.ceilingLengthMs(0L, songReliable = true, rowMs = 0L)).isEqualTo(hour)
+        assertThat(AddonLosslessSource.ceilingLengthMs(null, songReliable = false, rowMs = 36_000_000L)).isEqualTo(hour)
+    }
+
+    // ------------------------------------------------------------------------------------------ the time limit (round 2, F2)
+
+    @Test fun `the time an add-on's fetch may take follows its ceiling`() {
+        // A minute to get going, then the ceiling at the floor speed.
+        assertThat(LosslessUrlDownloader.timeLimitFor(0)).isEqualTo(60_000L)
+        assertThat(LosslessUrlDownloader.timeLimitFor(LosslessUrlDownloader.FLOOR_BYTES_PER_SECOND * 600)).isEqualTo(660_000L)
+    }
+
+    /** A server that trickles: a few bytes now and then, never long enough apart to trip the stall window. */
+    private fun trickle(bytes: Int) = MockResponse().setBody("fLaC" + "x".repeat(bytes - 4)).throttleBody(8, 200, java.util.concurrent.TimeUnit.MILLISECONDS)
+
+    @Test fun `an add-on's fetch that outlasts its time limit is given up, and nothing is kept`() = runBlocking<Unit> {
+        downloader.timeLimitMs = { 400L }
+        server.enqueue(trickle(80)) // two seconds at this pace
+        val dest = dest()
+        val started = System.nanoTime()
+
+        val result = downloader.download(source("/a.flac", maxBytes = 1_000_000), dest)
+
+        assertThat(result.exceptionOrNull()).isInstanceOf(LosslessUrlDownloader.TookTooLongException::class.java)
+        assertThat(dest.exists()).isFalse()
+        assertThat(java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)).isLessThan(1_500L)
+    }
+
+    @Test fun `an add-on's DASH fetch is under the same limit, manifest and segments together`() = runBlocking<Unit> {
+        downloader.timeLimitMs = { 400L }
+        server.enqueue(MockResponse().setBody(mpd(at("/init.mp4"), at("/seg/") + "\$Number\$.mp4")))
+        server.enqueue(trickle(80))
+        val dest = dest()
+
+        val result = downloader.download(source("/m.mpd", dash = true, maxBytes = 1_000_000), dest)
+
+        assertThat(result.exceptionOrNull()).isInstanceOf(LosslessUrlDownloader.TookTooLongException::class.java)
+        assertThat(dest.parentFile!!.listFiles()!!.toList()).isEmpty()
+    }
+
+    @Test fun `Stash's own sources have no time limit`() = runBlocking<Unit> {
+        downloader.timeLimitMs = { 100L }
+        server.enqueue(trickle(32)) // 0.8 s: eight times the limit an add-on would get here
+        assertThat(downloader.download(source("/a.flac", sourceId = "qbdlx_qobuz"), dest()).isSuccess).isTrue()
     }
 
     // ------------------------------------------------------------------------------------------ the format it was said to be (M9)
