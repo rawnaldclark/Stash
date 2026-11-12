@@ -58,51 +58,64 @@ internal fun NotMadeByStashSheet(
         containerColor = StashTheme.extendedColors.elevatedSurface,
         properties = sheetBarsFollow(StashTheme.extendedColors.elevatedSurface),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = stringResource(if (more) R.string.settings_addons_sheet_more_title else R.string.settings_addons_not_made),
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.semantics { heading() },
-            )
-            // The address in bold: it is the one thing here that says who the user is trusting.
-            val intro = stringResource(if (more) R.string.settings_addons_sheet_more_intro else R.string.settings_addons_sheet_runs_on, name, host)
-            Text(
-                text = buildAnnotatedString {
-                    val at = intro.indexOf(host)
-                    if (at < 0 || host.isEmpty()) {
-                        append(intro)
-                    } else {
-                        append(intro.substring(0, at))
-                        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(host) }
-                        append(intro.substring(at + host.length))
-                    }
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Fact(label = stringResource(R.string.settings_addons_sheet_sees_label), text = stringResource(seesText(sees)))
-            Fact(label = stringResource(R.string.settings_addons_sheet_never_label), text = stringResource(R.string.settings_addons_sheet_never))
-            Text(
-                text = stringResource(R.string.settings_addons_sheet_trust),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onConfirm, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text(stringResource(if (more) R.string.settings_addons_sheet_allow else R.string.settings_addons_sheet_add))
+        NotMadeByStashContent(name, host, sees, onConfirm, onDismiss, more)
+    }
+}
+
+/** What the sheet says, without the sheet around it (so a test can read every line). */
+@Composable
+internal fun NotMadeByStashContent(
+    name: String,
+    host: String,
+    sees: Set<AddonSees>,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    more: Boolean = false,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = stringResource(if (more) R.string.settings_addons_sheet_more_title else R.string.settings_addons_not_made),
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.semantics { heading() },
+        )
+        // The address in bold: it is the one thing here that says who the user is trusting.
+        val intro = stringResource(if (more) R.string.settings_addons_sheet_more_intro else R.string.settings_addons_sheet_runs_on, name, host)
+        Text(
+            text = buildAnnotatedString {
+                val at = intro.indexOf(host)
+                if (at < 0 || host.isEmpty()) {
+                    append(intro)
+                } else {
+                    append(intro.substring(0, at))
+                    withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(host) }
+                    append(intro.substring(at + host.length))
                 }
-                TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text(stringResource(R.string.settings_addons_cancel))
-                }
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Fact(label = stringResource(R.string.settings_addons_sheet_sees_label), text = stringResource(seesText(sees)))
+        Fact(label = stringResource(R.string.settings_addons_sheet_never_label), text = stringResource(R.string.settings_addons_sheet_never))
+        Text(
+            text = stringResource(R.string.settings_addons_sheet_trust),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onConfirm, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(stringResource(if (more) R.string.settings_addons_sheet_allow else R.string.settings_addons_sheet_add))
+            }
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(stringResource(R.string.settings_addons_cancel))
             }
         }
     }

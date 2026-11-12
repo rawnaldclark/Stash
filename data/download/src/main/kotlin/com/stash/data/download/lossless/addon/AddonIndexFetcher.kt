@@ -83,8 +83,8 @@ class AddonIndexFetcher internal constructor(
     /** The index in use: the last one verified, this run or an earlier one; null with none. */
     val index: StateFlow<AddonIndex?> = state.asStateFlow()
 
-    /** The address the signed config names; set by [start]. */
-    @Volatile private var configUrl: String? = null
+    /** The address the signed config names (`addon_index`); [start] keeps it current. Also a test seam. */
+    @Volatile var configUrl: String? = null
 
     private val lock = Mutex()
     @Volatile private var cacheRead = false

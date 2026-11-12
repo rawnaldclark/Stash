@@ -1,0 +1,50 @@
+{
+  "type": "stash-addon-index",
+  "v": 1,
+  "updated_at": 1794268800,
+  "addons": [
+    {
+      "id": "tidal",
+      "name": "Tidal",
+      "summary": "Lossless and Hi-Res",
+      "default": true
+    },
+    {
+      "id": "example-radio",
+      "name": "Example Radio",
+      "summary": "Live stations from example.org",
+      "icon": "https://addons.example.org/radio/icon.png",
+      "manifest": "https://addons.example.org/radio/manifest.json",
+      "min_build": 160,
+      "platforms": [
+        "android",
+        "web"
+      ]
+    },
+    {
+      "id": "org.example.sixty",
+      "name": "Sixty éèü ♪ 🎵-012345678901234567890123456789012345678901234",
+      "summary": "A summary of exactly sixty characters-0123456789012345678901",
+      "manifest": "https://sixty.example.org:8443/manifest.json",
+      "platforms": [
+        "android"
+      ]
+    }
+  ],
+  "blocked": [
+    {
+      "origin": "https://bad.example",
+      "id": "bad-addon",
+      "reason": "harmful"
+    },
+    {
+      "origin": "https://broken.example:8443",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://fake-stash.example",
+      "id": "tidal",
+      "reason": "impersonation"
+    }
+  ]
+}

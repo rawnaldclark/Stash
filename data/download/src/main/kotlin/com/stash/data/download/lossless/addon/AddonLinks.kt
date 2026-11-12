@@ -336,42 +336,8 @@ class AddonLinks @Inject constructor(
         data class No(val reason: Refusal) : Normalised
     }
 
-    /**
-     * The manifest URL behind what the user pasted, shared or scanned (§2.2), or why there is none:
-     *  - the add-on's root, with or without a final `/`, means `<root>/manifest.json`;
-     *  - a `/manifest.json`, or any other `*.json` (BitChord-style links), is taken as it is;
-     *  - a final `/manifest` is dropped (LastWave writes its bases that way);
-     *  - the path is kept, so a token in it survives;
-     *  - `https://` is added when no scheme was typed;
-     *  - a query string or a fragment is refused: a token belongs in the path (SPEC.md 6);
-     *  - then the URL rule and the base rules (§2.6).
-     */
-    fun normalise(link: String): Normalised {
-        var u = link.trim()
-        if (u.isEmpty() || u.any { it.isWhitespace() }) return Normalised.No(Refusal.NOT_AN_ADDON)
-        if ("://" !in u) u = "https://$u"
-        if ('?' in u || '#' in u) return Normalised.No(Refusal.NOT_AN_ADDON)
-        val scheme = u.substringBefore("://").lowercase()
-        val rest = u.substringAfter("://")
-        val file = rest.substringAfterLast('/', missingDelimiterValue = "")
-        val url = if (file.length > ".json".length && file.endsWith(".json")) {
-            "$scheme://$rest"
-        } else {
-            // Only a path's last part is ever dropped: the host is never touched.
-            val root = rest.trimEnd('/').let { if ('/' in it) it.removeSuffix("/manifest") else it }
-            "$scheme://$root/${HttpAddonClient.MANIFEST_FILE}"
-        }
-        val options = linkOptions()
-        return when {
-            AddonValidator.isAllowedUrl(url, options) -> Normalised.Url(url)
-            AddonValidator.isLocalAddressUrl(url, options) -> Normalised.No(Refusal.LOCAL_ADDRESS)
-            url.startsWith("http://") -> Normalised.No(Refusal.NOT_HTTPS)
-            else -> Normalised.No(Refusal.NOT_AN_ADDON)
-        }
-    }
-
-    /** The rules a link the user adds follows: https, and the base rules (phase 4 §2.6). */
-    private fun linkOptions() = AddonValidator.Options(allowLocalHttp = host.allowLocalHttp, publicOnly = true)
+    /** [normalise] under this build's rules (a debug build also takes its own local test servers). */
+    fun normalise(link: String): Normalised = normalise(link, host.allowLocalHttp)
 
     private fun refusalOf(f: AddonFailure): Refusal = when (f) {
         // By code, never by the words of the reason.
@@ -408,6 +374,41 @@ class AddonLinks @Inject constructor(
             BlockReason.HARMFUL -> Refusal.BLOCKED_HARMFUL
             BlockReason.BROKEN -> Refusal.BLOCKED_BROKEN
             BlockReason.IMPERSONATION -> Refusal.BLOCKED_IMPERSONATION
+        }
+
+        /**
+         * The manifest URL behind what the user pasted, shared or scanned (§2.2), or why there is none:
+         *  - the add-on's root, with or without a final `/`, means `<root>/manifest.json`;
+         *  - a `/manifest.json`, or any other `*.json` (BitChord-style links), is taken as it is;
+         *  - a final `/manifest` is dropped (LastWave writes its bases that way);
+         *  - the path is kept, so a token in it survives;
+         *  - `https://` is added when no scheme was typed;
+         *  - a query string or a fragment is refused: a token belongs in the path (SPEC.md 6);
+         *  - then the URL rule and the base rules (§2.6).
+         */
+        fun normalise(link: String, allowLocalHttp: Boolean): Normalised {
+            var u = link.trim()
+            if (u.isEmpty() || u.any { it.isWhitespace() }) return Normalised.No(Refusal.NOT_AN_ADDON)
+            if ("://" !in u) u = "https://$u"
+            if ('?' in u || '#' in u) return Normalised.No(Refusal.NOT_AN_ADDON)
+            val scheme = u.substringBefore("://").lowercase()
+            val rest = u.substringAfter("://")
+            val file = rest.substringAfterLast('/', missingDelimiterValue = "")
+            val url = if (file.length > ".json".length && file.endsWith(".json")) {
+                "$scheme://$rest"
+            } else {
+                // Only a path's last part is ever dropped: the host is never touched.
+                val root = rest.trimEnd('/').let { if ('/' in it) it.removeSuffix("/manifest") else it }
+                "$scheme://$root/${HttpAddonClient.MANIFEST_FILE}"
+            }
+            // The rules a link the user adds follows: https, and the base rules (phase 4 §2.6).
+            val options = AddonValidator.Options(allowLocalHttp = allowLocalHttp, publicOnly = true)
+            return when {
+                AddonValidator.isAllowedUrl(url, options) -> Normalised.Url(url)
+                AddonValidator.isLocalAddressUrl(url, options) -> Normalised.No(Refusal.LOCAL_ADDRESS)
+                url.startsWith("http://") -> Normalised.No(Refusal.NOT_HTTPS)
+                else -> Normalised.No(Refusal.NOT_AN_ADDON)
+            }
         }
 
         /**

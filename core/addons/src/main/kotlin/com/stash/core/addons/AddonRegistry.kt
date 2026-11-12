@@ -646,8 +646,7 @@ class InTreeAddonRegistry @Inject constructor(
         val keep = built.filterNotNull().sortedByDescending { it.firstParty }.distinctBy { it.id }.toSet()
         fun switchedOff(a: InstalledAddon) = !a.userAdded && a.id in off && !NamedRungAddons.owns(a)
         val on = built.filterNotNull().filter { it in keep && !switchedOff(it) }
-        // User-added first, then the defaults: the order the play order starts from.
-        state.value = on.filter { it.userAdded } + on.filterNot { it.userAdded }
+        // The entries first: by the time an add-on is seen to have gone off, why is already there to read.
         entryState.value = all.mapIndexed { i, s ->
             val a = built[i]
             AddonEntryState(
@@ -667,6 +666,8 @@ class InTreeAddonRegistry @Inject constructor(
                 needsNewerStash = s.refused == AddonFailure.InvalidResponse.Code.NEEDS_NEWER_STASH,
             )
         }
+        // User-added first, then the defaults: the order the play order starts from.
+        state.value = on.filter { it.userAdded } + on.filterNot { it.userAdded }
     }
 
     private fun blockReason(s: Slot): BlockReason? =

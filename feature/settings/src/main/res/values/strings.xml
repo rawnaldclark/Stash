@@ -1464,7 +1464,7 @@
     <string name="settings_addons_scan">Scan</string>
     <string name="settings_addons_link_check">Read link</string>
     <string name="settings_addons_link_checking">Reading the add-on…</string>
-    <string name="settings_addons_preview_uses">Stash will use: %1$s</string>
+    <string name="settings_addons_preview_uses">Stash will use</string>
     <string name="settings_addons_preview_after_tidal">Stash asks it for songs Tidal doesn\'t have. Drag it up to ask it first.</string>
     <string name="settings_addons_preview_after_others">Stash asks it after your other sources. Drag it up to ask it first.</string>
     <string name="settings_addons_password_label">Password</string>

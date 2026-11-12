@@ -288,7 +288,7 @@ private fun PreviewCard(
                     }
                     if (preview.uses.isNotEmpty()) {
                         Text(
-                            text = stringResource(R.string.settings_addons_preview_uses, ""),
+                            text = stringResource(R.string.settings_addons_preview_uses),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurface,
                         )

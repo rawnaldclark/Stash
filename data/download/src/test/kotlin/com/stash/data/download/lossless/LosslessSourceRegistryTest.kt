@@ -69,8 +69,20 @@ class LosslessSourceRegistryTest {
         prefs = prefs,
     )
 
+    /** The saved play order; null (nothing was ever dragged) is the automatic one. */
+    private val savedOrder = MutableStateFlow<List<String>?>(null)
+
+    /** The play order over [savedOrder]. No add-on is on in the registry: an add-on's source below is named by its id alone. */
+    private val playOrder = PlayOrder(
+        savedOrder,
+        { savedOrder.value = it },
+        object : com.stash.core.addons.AddonRegistry {
+            override val addons = MutableStateFlow(emptyList<com.stash.core.addons.InstalledAddon>())
+        },
+    )
+
     private fun registry(sources: Set<LosslessSource>) =
-        LosslessSourceRegistry(sources, prefs, healthGate, streamingPreference, availability, noAddons)
+        LosslessSourceRegistry(sources, prefs, healthGate, streamingPreference, availability, noAddons, playOrder)
 
     private fun flacResult(srcId: String) = SourceResult(
         sourceId = srcId,
@@ -91,7 +103,6 @@ class LosslessSourceRegistryTest {
         }
 
     private fun acceptAnyQuality() {
-        coEvery { prefs.priorityOrderNow() } returns emptyList()
         coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
     }
 
@@ -105,7 +116,7 @@ class LosslessSourceRegistryTest {
         coEvery { healthGate.isDegraded("qbdlx_qobuz") } returns true
         coEvery { healthGate.isDegraded("lucida") } returns false
 
-        // priorityOrder empty → registration order; ensure qbdlx is tried first.
+        // Qobuz is the play order's first; a source it doesn't name goes after.
         val registry = registry(linkedSetOf(qbdlx, lucida))
         val result = registry.resolve(query)
 
@@ -116,8 +127,6 @@ class LosslessSourceRegistryTest {
 
     @Test
     fun `qbdlx is tried ahead of lower-priority sources in the normal chain`() = runTest {
-        coEvery { prefs.priorityOrderNow() } returns
-            LosslessSourcePreferences.DEFAULT_PRIORITY
         coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
         coEvery { healthGate.isDegraded(any()) } returns false
 
@@ -150,10 +159,9 @@ class LosslessSourceRegistryTest {
     }
 
     @Test
-    fun `the priority list, not registration order, drives ranking`() = runTest {
-        coEvery { prefs.priorityOrderNow() } returns LosslessSourcePreferences.DEFAULT_PRIORITY
+    fun `the play order, not registration order, drives ranking`() = runTest {
 
-        // Register sources out of order; an id missing from the list goes last.
+        // Register sources out of order; one the play order doesn't name goes last.
         val lucida = fakeSource("lucida", flacResult("lucida"))
         val qbdlx = fakeSource("qbdlx_qobuz", flacResult("qbdlx_qobuz"))
         val tidal = fakeSource("tidal_bitchord", flacResult("tidal_bitchord"))
@@ -220,7 +228,6 @@ class LosslessSourceRegistryTest {
 
     @Test
     fun `debug skip-Qobuz sends a download to Tidal and never asks Qobuz`() = runTest {
-        coEvery { prefs.priorityOrderNow() } returns LosslessSourcePreferences.DEFAULT_PRIORITY
         coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
         coEvery { healthGate.isDegraded(any()) } returns false
         coEvery { streamingPreference.isSkipQobuz() } returns true
@@ -238,7 +245,6 @@ class LosslessSourceRegistryTest {
 
     @Test
     fun `skip-Qobuz off keeps Qobuz ahead of Tidal for downloads`() = runTest {
-        coEvery { prefs.priorityOrderNow() } returns LosslessSourcePreferences.DEFAULT_PRIORITY
         coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
         coEvery { healthGate.isDegraded(any()) } returns false
 
@@ -255,7 +261,6 @@ class LosslessSourceRegistryTest {
     // -- The user's own Tidal server ([LosslessAvailability.ownTidalFirst]) --
 
     private fun defaultOrderAnyQuality() {
-        coEvery { prefs.priorityOrderNow() } returns LosslessSourcePreferences.DEFAULT_PRIORITY
         coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
         coEvery { healthGate.isDegraded(any()) } returns false
     }
@@ -334,6 +339,79 @@ class LosslessSourceRegistryTest {
 
         assertThat(registry(linkedSetOf(qbdlx, tidal)).resolve(query)).isEqualTo(tidalResult)
         coVerify(exactly = 0) { qbdlx.resolve(any()) }
+    }
+
+    // -- The play order (add-ons plan phase 4 §2.8): one order for downloads and streaming --
+
+    @Test
+    fun `with nothing saved an add-on is asked after Qobuz and Tidal - where streaming asks it too`() = runTest {
+        defaultOrderAnyQuality()
+        // Owner decision Q3. An add-on's download source is `addon:<id>`, the same key its stream rung has.
+        val sources = linkedSetOf(
+            fakeSource("addon:mine", null),
+            fakeSource("tidal_bitchord", null),
+            fakeSource("qbdlx_qobuz", null),
+        )
+        val registry = registry(sources)
+        assertThat(registry.resolve(query)).isNull()
+        val (addon, tidal, qbdlx) = sources.toList()
+        coVerifyOrder {
+            qbdlx.resolve(any())
+            tidal.resolve(any())
+            addon.resolve(any())
+        }
+        // The same keys, in the same order, the stream chain walks.
+        assertThat(registry.orderedSources().map { PlayOrder.keyOfSource(it.id) })
+            .containsExactlyElementsIn(PlayOrder.effective(null, listOf("addon:mine")).keys).inOrder()
+    }
+
+    @Test
+    fun `downloads follow the saved play order`() = runTest {
+        defaultOrderAnyQuality()
+        savedOrder.value = listOf("addon:mine", "tidal", "qobuz")
+        val sources = linkedSetOf(
+            fakeSource("qbdlx_qobuz", null),
+            fakeSource("tidal_bitchord", null),
+            fakeSource("addon:mine", null),
+            fakeSource("addon:new", null), // came on after the drag: last
+        )
+        val registry = registry(sources)
+        assertThat(registry.resolve(query)).isNull()
+        val (qbdlx, tidal, mine, new) = sources.toList()
+        coVerifyOrder {
+            mine.resolve(any())
+            tidal.resolve(any())
+            qbdlx.resolve(any())
+            new.resolve(any())
+        }
+        assertThat(registry.orderedSources().map { it.id }).containsExactly("addon:mine", "tidal_bitchord", "qbdlx_qobuz", "addon:new").inOrder()
+    }
+
+    @Test
+    fun `the add-on dragged first serves the download`() = runTest {
+        defaultOrderAnyQuality()
+        savedOrder.value = listOf("addon:mine", "qobuz", "tidal")
+        val mineResult = flacResult("addon:mine")
+        val qbdlx = fakeSource("qbdlx_qobuz", flacResult("qbdlx_qobuz"))
+        val mine = fakeSource("addon:mine", mineResult)
+
+        assertThat(registry(linkedSetOf(qbdlx, mine)).resolve(query)).isEqualTo(mineResult)
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
+    }
+
+    @Test
+    fun `once the order is saved the own-server rule no longer moves Tidal`() = runTest {
+        defaultOrderAnyQuality()
+        ownTidalServer.value = "https://tidal.mine.example"
+        savedOrder.value = listOf("qobuz", "tidal")
+        val qbdlx = fakeSource("qbdlx_qobuz", null)
+        val tidal = fakeSource("tidal_bitchord", null)
+
+        assertThat(registry(linkedSetOf(tidal, qbdlx)).resolve(query)).isNull()
+        coVerifyOrder {
+            qbdlx.resolve(any())
+            tidal.resolve(any())
+        }
     }
 
     @Test
