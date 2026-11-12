@@ -455,6 +455,18 @@ class AddFromLinkFlowTest {
         assertThat(server.requestCount).isEqualTo(0)
     }
 
+    @Test fun `an add-on that runs on the phone, or in a frame, is never added from a link`() = runBlocking<Unit> {
+        // Owner decision: an add-on Stash doesn't run is a server, never code on the phone. Both of
+        // these are valid manifests, and the second lists everything a server would need to be added.
+        manifests["phone/manifest.json"] = """{"stash":1,"id":"onphone","name":"On the phone","version":"1.0.0","kind":"phone","resources":["search"],
+            "phone":{"bundle":{"path":"main.js","sha256":"a3f1c2d4e5b6978877665544332211ffeeddccbbaa99887766554433221100aa"},"domains":["api.example.org"]}}"""
+        manifests["frame/manifest.json"] = """{"stash":1,"id":"inframe","name":"In a frame","version":"1.0.0","kind":"frame",
+            "frame":"https://frames.example.org/frame.html","resources":["search","resolve","stream"],"stream":{"cors":true}}"""
+        assertThat(refused(url("phone"))).isEqualTo(AddonLinks.Refusal.RUNS_ON_PHONE)
+        assertThat(refused(url("frame"))).isEqualTo(AddonLinks.Refusal.RUNS_ON_PHONE)
+        assertThat(users.loadedEntries()).isEmpty()
+    }
+
     @Test fun `whatever reading a link throws is an answer on the screen, never a crash`() = runBlocking<Unit> {
         serve("x", "hifi")
         catalog.blocked = { _, _ -> throw IllegalStateException("https://relay.example.org/s3cret/") }
