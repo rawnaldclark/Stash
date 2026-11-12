@@ -5,6 +5,7 @@ import android.content.pm.ApplicationInfo
 import com.stash.core.addons.AddonHostOptions
 import com.stash.core.addons.AddonInstallSigner
 import com.stash.core.addons.AddonManifestStore
+import com.stash.core.addons.AddonMediaRefusals
 import com.stash.core.addons.AddonRateGate
 import com.stash.core.addons.AddonTrust
 import com.stash.core.addons.DefaultAddonEntry
@@ -27,6 +28,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import okhttp3.Response
@@ -61,6 +64,33 @@ abstract class AddonHostModule {
 
     @Binds @Singleton
     abstract fun bindHostOptions(impl: BuildAddonHostOptions): AddonHostOptions
+
+    @Binds @Singleton
+    abstract fun bindMediaRefusals(impl: RefsMediaRefusals): AddonMediaRefusals
+}
+
+/**
+ * [AddonMediaRefusals] on [AddonRefs] (review-882 round 2, F7): a stream the media client's guard
+ * refused to fetch loses its ref, and its song is left to the next source
+ * ([AddonRefs.refusedOnTheWire]).
+ *
+ * Done on the fetching thread and waited for, briefly: the fetch's failure reaches the player
+ * only after this returns, so the player's retry of the song already finds the ref gone. That
+ * thread is OkHttp's or the downloader's, never the main thread. [refs] is lazy because the
+ * add-on client is built with this and [AddonRefs] with the client.
+ */
+@Singleton
+class RefsMediaRefusals @Inject constructor(
+    private val refs: dagger.Lazy<AddonRefs>,
+) : AddonMediaRefusals {
+    override fun refused(streamUrl: String) {
+        runBlocking { withTimeoutOrNull(WRITE_TIMEOUT_MS) { refs.get().refusedOnTheWire(streamUrl) } }
+    }
+
+    private companion object {
+        /** A row's write: milliseconds. The limit only keeps a stuck database from holding the fetching thread. */
+        const val WRITE_TIMEOUT_MS = 2_000L
+    }
 }
 
 /**

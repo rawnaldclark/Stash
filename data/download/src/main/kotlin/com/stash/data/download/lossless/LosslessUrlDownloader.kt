@@ -312,6 +312,17 @@ class LosslessUrlDownloader @Inject constructor(
         /** The slowest an add-on's fetch may run, on average, before it is given up. */
         const val FLOOR_BYTES_PER_SECOND = 64L * 1024
 
+        /**
+         * True when the add-on media client's guard refused the fetch [e] came from: it pointed at
+         * the user's own network (a private address, a name that resolves there) or broke the URL
+         * rule. Looked for down the causes: a DASH segment's refusal arrives wrapped.
+         */
+        fun isGuardRefusal(e: Throwable): Boolean = generateSequence(e) { it.cause }.take(8).any {
+            it is com.stash.core.addons.PrivateAddressException ||
+                it is com.stash.core.addons.RefusedAddonUrlException ||
+                it is com.stash.core.addons.NoPublicAddressException
+        }
+
         /** Text a server chose, as a log line can carry it: short, no control characters. */
         fun loggable(s: String): String = s.take(60).map { if (it < ' ' || it in '\u007f'..'\u009f') ' ' else it }.joinToString("")
 

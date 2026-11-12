@@ -96,6 +96,35 @@ interface AddonHostOptions {
     }
 }
 
+/**
+ * Told when the add-on media client refused to fetch a stream an add-on answered: the fetch
+ * pointed at the user's own network (a private address in a redirect or a segment, a name that
+ * resolves there) or broke the URL rule (review-882 round 2, F7). A stream that cannot be
+ * fetched for that reason will not fetch the next time either, so the host stops offering it for
+ * the song and lets the next source have it.
+ *
+ * Called on the fetching thread, before the refusal reaches the caller of the fetch.
+ */
+fun interface AddonMediaRefusals {
+    /**
+     * [streamUrl]: the URL the add-on answered for the stream (the refused fetch's own first URL,
+     * or the manifest a refused segment belongs to, [AddonStreamTag]). Never to be logged.
+     */
+    fun refused(streamUrl: String)
+}
+
+/** Nobody is told: for hand-built clients in tests. */
+object NoMediaRefusals : AddonMediaRefusals {
+    override fun refused(streamUrl: String) = Unit
+}
+
+/**
+ * A request tag (`Request.tag(AddonStreamTag::class.java)`): the stream a media request belongs
+ * to, for a request that is not the stream's own URL (a DASH segment, tagged with its manifest's
+ * URL). The media client's guard reports a refusal under it.
+ */
+class AddonStreamTag(val streamUrl: String)
+
 /** The release rule: https only. */
 object StrictAddonHost : AddonHostOptions {
     override val allowLocalHttp: Boolean = false

@@ -200,6 +200,89 @@ class AddonFetchWiringTest {
         assertThat(appInterceptorSaw).isEmpty()
     }
 
+    // ------------------------------------------------------------------------------------------ a refusal counts against the add-on for that song (round 2, F7)
+
+    private fun json(body: String) = MockResponse().setHeader("Content-Type", "application/json").setBody(body)
+
+    /**
+     * The real pieces end to end: the add-on client, built with the port the app binds
+     * ([RefsMediaRefusals]); [AddonRefs] matching a song on an Eclipse-shaped add-on; the
+     * downloader fetching what the add-on answered. Only Hilt's own binding of the port is not
+     * exercised here, and the app does not build without it (the client's constructor asks for it).
+     */
+    private class EndToEnd(shared: OkHttpClient, host: AddonHostOptions, ffmpeg: FFmpegBridge, base: String) {
+        val dao = com.stash.data.download.lossless.tidal.FakeAddonRefDao()
+        lateinit var refs: AddonRefs
+        val client = HttpAddonClient(shared, OpenAddonRateGate, NoFirstPartyAddons, UnsignedAddons, host, RefsMediaRefusals(dagger.Lazy { refs }))
+        val downloader = LosslessUrlDownloader(shared, DashFlacDownloader(ffmpeg), client)
+        val addon: com.stash.core.addons.InstalledAddon
+
+        init {
+            refs = AddonRefs(client, dao)
+            val read = com.stash.core.addons.AddonValidator.readManifest(
+                kotlinx.serialization.json.Json.parseToJsonElement("""{"id":"com.example.plain","name":"Plain","version":"1","resources":["search","stream"]}"""),
+                client.optionsFor(publicOnly = true),
+            )
+            addon = com.stash.core.addons.InstalledAddon(base = base, manifest = read.manifest, userAdded = true, dialect = read.dialect, eclipse = read.eclipse)
+        }
+    }
+
+    private val song = com.stash.data.download.lossless.TrackQuery(artist = "A", title = "B", durationMs = 200_000L)
+    private val losslessAsk = AddonLosslessSource.lossless(com.stash.data.download.lossless.LosslessQualityTier.HI_RES)
+
+    @Test fun `a file the guard refuses costs the add-on its ref for the song, and the song is not offered there again`() = runBlocking<Unit> {
+        val e = EndToEnd(shared, host, ffmpeg, at("/addon/"))
+        // A play matches the song on the add-on and is answered a stream.
+        server.enqueue(json("""{"tracks":[{"id":"7","title":"B","artist":"A","duration":200}]}"""))
+        server.enqueue(json("""{"url":"${at("/media/a.flac")}","codec":"flac"}"""))
+        val streamed = e.refs.stream(e.addon, song, AddonRefs.Pass.LOSSLESS, losslessAsk) as AddonRefs.Streamed.Ok
+        assertThat(e.dao.rows.values.single().remoteId).isEqualTo("7")
+
+        // The file it answered redirects to the user's own network.
+        server.enqueue(redirect("https://192.168.1.1/a.flac"))
+        val result = e.downloader.download(source("/media/a.flac").copy(downloadUrl = streamed.info.url), dest())
+
+        assertThat(LosslessUrlDownloader.isGuardRefusal(result.exceptionOrNull()!!)).isTrue()
+        assertThat(wire.offLoopback).isEmpty()
+        // The ref is gone, and neither pass asks that add-on for the song again.
+        val asked = server.requestCount
+        assertThat(e.dao.rows.values.single().remoteId).isNull()
+        assertThat(e.refs.find(e.addon, song, AddonRefs.Pass.LOSSLESS)).isEqualTo(AddonRefs.Found.Miss)
+        assertThat(e.refs.find(e.addon, song, AddonRefs.Pass.LOSSY)).isEqualTo(AddonRefs.Found.Miss)
+        assertThat(server.requestCount).isEqualTo(asked)
+    }
+
+    @Test fun `a DASH answer with a segment on the user's own network costs the add-on its ref too`() = runBlocking<Unit> {
+        val e = EndToEnd(shared, host, ffmpeg, at("/addon/"))
+        server.enqueue(json("""{"tracks":[{"id":"7","title":"B","artist":"A","duration":200}]}"""))
+        server.enqueue(json("""{"url":"${at("/media/m.mpd")}","codec":"flac","manifest":"dash"}"""))
+        val streamed = e.refs.stream(e.addon, song, AddonRefs.Pass.LOSSLESS, losslessAsk) as AddonRefs.Streamed.Ok
+
+        // The manifest and its init segment are the add-on's own; the media segments are not.
+        server.enqueue(MockResponse().setBody(mpd(at("/init.mp4"), "https://10.0.0.5/seg-\$Number\$.m4s")))
+        server.enqueue(MockResponse().setBody("fLaC"))
+        val result = e.downloader.download(source("/media/m.mpd", dash = true).copy(downloadUrl = streamed.info.url), dest())
+
+        assertThat(LosslessUrlDownloader.isGuardRefusal(result.exceptionOrNull()!!)).isTrue()
+        // Reported under the manifest the segment belongs to, which is the stream the add-on answered.
+        assertThat(e.dao.rows.values.single().remoteId).isNull()
+        assertThat(e.refs.find(e.addon, song, AddonRefs.Pass.LOSSLESS)).isEqualTo(AddonRefs.Found.Miss)
+    }
+
+    @Test fun `an ordinary failed fetch leaves the ref alone`() = runBlocking<Unit> {
+        val e = EndToEnd(shared, host, ffmpeg, at("/addon/"))
+        server.enqueue(json("""{"tracks":[{"id":"7","title":"B","artist":"A","duration":200}]}"""))
+        server.enqueue(json("""{"url":"${at("/media/a.flac")}","codec":"flac"}"""))
+        val streamed = e.refs.stream(e.addon, song, AddonRefs.Pass.LOSSLESS, losslessAsk) as AddonRefs.Streamed.Ok
+
+        server.enqueue(MockResponse().setResponseCode(503))
+        val result = e.downloader.download(source("/media/a.flac").copy(downloadUrl = streamed.info.url), dest())
+
+        assertThat(result.isFailure).isTrue()
+        assertThat(LosslessUrlDownloader.isGuardRefusal(result.exceptionOrNull()!!)).isFalse()
+        assertThat(e.dao.rows.values.single().remoteId).isEqualTo("7")
+    }
+
     // ------------------------------------------------------------------------------------------ the size ceiling (M11)
 
     @Test fun `a file larger than the song can be is refused by its Content-Length, before a byte is kept`() = runBlocking<Unit> {

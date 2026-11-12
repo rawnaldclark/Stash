@@ -13,6 +13,7 @@ import okhttp3.Request
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
+import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
 import java.io.IOException
@@ -63,6 +64,8 @@ class AddonMediaClientTest {
     private val resolver = object : Dns {
         override fun lookup(hostname: String): List<InetAddress> = when (hostname) {
             "media.attacker.example", "api.attacker.example" -> listOf(InetAddress.getByAddress(hostname, byteArrayOf(192.toByte(), 168.toByte(), 1, 1)))
+            // A name that does not resolve at all: an ordinary failure, not the filter's refusal.
+            "gone.attacker.example" -> throw UnknownHostException("no such host")
             "cgnat.attacker.example" -> listOf(InetAddress.getByAddress(hostname, byteArrayOf(100, 64, 0, 7)))
             else -> Dns.SYSTEM.lookup(hostname)
         }
@@ -88,9 +91,12 @@ class AddonMediaClientTest {
     @Before fun setUp() {
         a.start(InetAddress.getByName("127.0.0.1"), 0)
         b.start(InetAddress.getByName("127.0.0.1"), 0)
-        client = HttpAddonClient(shared, OpenAddonRateGate, NoFirstPartyAddons, UnsignedAddons, host)
+        client = HttpAddonClient(shared, OpenAddonRateGate, NoFirstPartyAddons, UnsignedAddons, host, AddonMediaRefusals { refusedStreams += it })
         media = client.mediaClient
     }
+
+    /** What the media client's guard reported as refused ([AddonMediaRefusals]). */
+    private val refusedStreams = CopyOnWriteArrayList<String>()
 
     @After fun tearDown() {
         a.shutdown()
@@ -204,6 +210,49 @@ class AddonMediaClientTest {
         a.enqueue(MockResponse().setBody("FLAC"))
         get(at(a, "/song.flac"), shared).close()
         assertThat(appInterceptorSaw).containsExactly("app")
+    }
+
+    // ------------------------------------------------------------------------------------------ refusals are reported (review-882 round 2, F7)
+
+    @Test fun `the guard's own refusals are reported, each under the stream's first URL`() {
+        failure("https://192.168.1.1/a.flac")
+        failure("https://media.attacker.example/a.flac")
+        a.enqueue(redirect("https://10.0.0.5/x.flac"))
+        failure(at(a, "/one.flac"))
+        a.enqueue(redirect("https://media.attacker.example/x.flac"))
+        failure(at(a, "/two.flac"))
+        failure("http://cdn.example.org/a.flac")
+
+        assertThat(refusedStreams).containsExactly(
+            "https://192.168.1.1/a.flac",
+            "https://media.attacker.example/a.flac",
+            at(a, "/one.flac"),
+            at(a, "/two.flac"),
+            "http://cdn.example.org/a.flac",
+        ).inOrder()
+    }
+
+    @Test fun `a refused request that says which stream it belongs to is reported under that stream`() {
+        // A DASH segment on the user's own network, tagged with its manifest's URL.
+        val segment = Request.Builder().url("https://10.0.0.5/seg-1.m4s")
+            .tag(AddonStreamTag::class.java, AddonStreamTag("https://media.example.org/m.mpd")).build()
+        assertThrows(PrivateAddressException::class.java) { media.newCall(segment).execute().close() }
+        assertThat(refusedStreams).containsExactly("https://media.example.org/m.mpd")
+    }
+
+    @Test fun `an ordinary failed fetch is not a refusal`() {
+        a.enqueue(MockResponse().setResponseCode(404))
+        get(at(a, "/gone.flac")).close()
+        a.enqueue(MockResponse().setBody("FLAC"))
+        get(at(a, "/here.flac")).close()
+        repeat(AddonMediaGuard.MAX_REDIRECTS + 1) { a.enqueue(redirect(at(a, "/again"))) }
+        assertThat(failure(at(a, "/loop.flac"))).isInstanceOf(ProtocolException::class.java)
+        // A name that does not resolve at all is the network's failure, not the filter's.
+        val unknown = failure("https://gone.attacker.example/a.flac")
+        assertThat(unknown).isInstanceOf(UnknownHostException::class.java)
+        assertThat(unknown).isNotInstanceOf(NoPublicAddressException::class.java)
+
+        assertThat(refusedStreams).isEmpty()
     }
 
     // ------------------------------------------------------------------------------------------ behind a proxy

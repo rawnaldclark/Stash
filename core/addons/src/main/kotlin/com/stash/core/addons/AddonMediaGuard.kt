@@ -42,9 +42,21 @@ class AddonMediaGuard(
     private val proxy: Proxy?,
     private val proxySelector: ProxySelector?,
     private val userAgent: String,
+    /**
+     * Told the stream a refused fetch belongs to ([AddonMediaRefusals]): the request's
+     * [AddonStreamTag] when it carries one (a DASH segment), else its own first URL. Called on the
+     * fetching thread, before the refusal is thrown. Only for the guard's own refusals (the URL
+     * rule, a host with no public address, a private peer), never for an ordinary failed fetch.
+     */
+    private val onRefused: (String) -> Unit = {},
 ) : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
+        val stream = chain.request().tag(AddonStreamTag::class.java)?.streamUrl ?: chain.request().url.toString()
+        fun refused() {
+            // The sink's own trouble must not change what the fetch comes to.
+            runCatching { onRefused(stream) }
+        }
         var request = chain.request().newBuilder().header("User-Agent", userAgent).build()
         var hops = 0
         while (true) {
@@ -53,6 +65,7 @@ class AddonMediaGuard(
                 val ownNetwork = isLocalAddress(url)
                 // Never the URL: it can carry a signature or a token. What kind of refusal, and on which hop.
                 Log.w(TAG, "${if (hops == 0) "media URL" else "redirect hop $hops"} refused (${if (ownNetwork) "private address" else "not an https URL on a public host"})")
+                refused()
                 throw if (ownNetwork) PrivateAddressException() else RefusedAddonUrlException()
             }
             if (viaProxy(url, proxy, proxySelector)) {
@@ -60,10 +73,21 @@ class AddonMediaGuard(
                     publicDns.lookup(url.host)
                 } catch (e: java.net.UnknownHostException) {
                     Log.w(TAG, "${if (hops == 0) "media URL" else "redirect hop $hops"} refused behind a proxy (no public address for its host)")
+                    if (e is NoPublicAddressException) refused()
                     throw e
                 }
             }
-            val response = chain.proceed(request)
+            val response = try {
+                chain.proceed(request)
+            } catch (e: NoPublicAddressException) {
+                // The DNS filter, on a direct connection.
+                refused()
+                throw e
+            } catch (e: PrivateAddressException) {
+                // The connection guard: the peer itself was private.
+                refused()
+                throw e
+            }
             if (!response.isRedirect || (request.method != "GET" && request.method != "HEAD")) return response
             val next = response.header("Location")?.let { url.resolve(it) } ?: return response
             response.close()

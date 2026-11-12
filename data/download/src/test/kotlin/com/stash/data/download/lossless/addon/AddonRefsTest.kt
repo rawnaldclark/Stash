@@ -211,6 +211,44 @@ class AddonRefsTest {
         coVerify(exactly = 3) { client.search(any(), any(), any(), any()) }
     }
 
+    // ------------------------------------------------------------------------------------------ refused on the wire (review-882 round 2, F7)
+
+    @Test fun `a stream the media client refused to fetch loses its ref, and the song is left to the next source`() = runTest {
+        val client = searching(exact)
+        val refs = refs(client)
+        val served = refs.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq) as AddonRefs.Streamed.Ok
+
+        // Its file redirected to the user's own network: the guard reports the stream's URL.
+        refs.refusedOnTheWire(served.info.url)
+
+        val row = dao.rows["bc" to key]!!
+        assertThat(row.remoteId).isNull()
+        assertThat(row.losslessMissAt).isEqualTo(now)
+        assertThat(row.aacMissAt).isEqualTo(now)
+        // Neither pass offers that add-on's stream for the song again, and nothing is asked.
+        assertThat(refs.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq)).isEqualTo(AddonRefs.Streamed.Miss)
+        assertThat(refs.stream(addon(), song, AddonRefs.Pass.LOSSY, highReq)).isEqualTo(AddonRefs.Streamed.Miss)
+        coVerify(exactly = 1) { client.search(any(), any(), any(), any()) }
+        coVerify(exactly = 1) { client.stream(any(), any(), any(), any()) }
+        // For 14 days, as any miss.
+        now += TidalClient.MISS_TTL_MS
+        refs.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq)
+        coVerify(exactly = 2) { client.search(any(), any(), any(), any()) }
+    }
+
+    @Test fun `a refusal for a URL this add-on never answered changes nothing, and one is counted once`() = runTest {
+        val refs = refs(searching(exact))
+        val served = refs.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq) as AddonRefs.Streamed.Ok
+        refs.refusedOnTheWire("https://elsewhere.example/other.flac")
+        assertThat(dao.rows["bc" to key]!!.remoteId).isEqualTo("42")
+
+        refs.refusedOnTheWire(served.info.url)
+        val stamped = dao.rows["bc" to key]!!
+        now += 60_000L
+        refs.refusedOnTheWire(served.info.url)
+        assertThat(dao.rows["bc" to key]).isEqualTo(stamped)
+    }
+
     // ------------------------------------------------------------------------------------------ failures that are not misses (review-882 M3)
 
     @Test fun `a search that answers 404 is not a miss - nothing is remembered against the song`() = runTest {

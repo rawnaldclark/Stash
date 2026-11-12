@@ -1,6 +1,7 @@
 package com.stash.data.download.lossless
 
 import android.util.Log
+import com.stash.core.addons.AddonStreamTag
 import com.stash.core.data.audio.FFmpegBridge
 import java.io.File
 import java.io.IOException
@@ -64,7 +65,7 @@ class DashFlacDownloader @Inject constructor(
             // The MPD comes from our own Worker and may carry headers (token); the
             // segment URLs are Tidal-signed and get none — never leak them to the CDN.
             val manifestLimit = if (maxBytes != null) MAX_ADDON_MANIFEST_BYTES else MAX_SEGMENT_BYTES
-            val mpd = fetchBytes(client, mpdUrl, headers, manifestLimit).toString(Charsets.UTF_8)
+            val mpd = fetchBytes(client, mpdUrl, headers, manifestLimit, stream = mpdUrl).toString(Charsets.UTF_8)
             val plan = DashManifestParser.parse(mpd, mpdUrl)
             val urls = listOf(plan.initUrl) + plan.mediaUrls
             val total = urls.size.toLong()
@@ -79,6 +80,7 @@ class DashFlacDownloader @Inject constructor(
                     if (left <= 0) throw TooLargeException()
                     written += fetchWithRetry(
                         client, url, sink, label = if (i == 0) "init" else "segment $i/${total - 1}", limit = minOf(left, MAX_SEGMENT_BYTES),
+                        stream = mpdUrl,
                     )
                     if (maxBytes != null && written > maxBytes) throw TooLargeException()
                     onProgress(i + 1L, total)
@@ -119,18 +121,18 @@ class DashFlacDownloader @Inject constructor(
      * segment in memory first (Tidal's are ~0.5–2 MB) so a mid-body failure never
      * leaves half a segment appended to the file.
      */
-    private suspend fun fetchWithRetry(client: OkHttpClient, url: String, sink: BufferedSink, label: String, limit: Long): Long {
+    private suspend fun fetchWithRetry(client: OkHttpClient, url: String, sink: BufferedSink, label: String, limit: Long, stream: String): Long {
         var attempt = 0
         while (true) {
             try {
-                val bytes = fetchBytes(client, url, emptyMap(), limit)
+                val bytes = fetchBytes(client, url, emptyMap(), limit, stream)
                 sink.write(bytes)
                 return bytes.size.toLong()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: IOException) {
                 // A URL the add-on guard refused stays refused: asking again only asks the add-on's host again.
-                val refused = e is com.stash.core.addons.PrivateAddressException || e is com.stash.core.addons.RefusedAddonUrlException
+                val refused = LosslessUrlDownloader.isGuardRefusal(e)
                 // Nor is one that was too large any smaller the next time: asking again fetched it all again.
                 val retryable = !refused && e !is TooLargeException && (e !is HttpStatusException || e.code >= 500)
                 if (!retryable || attempt >= MAX_RETRIES) throw IOException("$label failed: ${e.message}", e)
@@ -140,9 +142,13 @@ class DashFlacDownloader @Inject constructor(
         }
     }
 
-    /** The body at [url], read no further than [limit] bytes ([TooLargeException] past it). */
-    private suspend fun fetchBytes(client: OkHttpClient, url: String, headers: Map<String, String>, limit: Long): ByteArray {
-        val req = Request.Builder().url(url).get().apply {
+    /**
+     * The body at [url], read no further than [limit] bytes ([TooLargeException] past it).
+     * [stream]: the manifest's URL, the stream every request here belongs to. The add-on media
+     * client's guard reports a refused segment under it ([AddonStreamTag]); no other client reads it.
+     */
+    private suspend fun fetchBytes(client: OkHttpClient, url: String, headers: Map<String, String>, limit: Long, stream: String): ByteArray {
+        val req = Request.Builder().url(url).get().tag(AddonStreamTag::class.java, AddonStreamTag(stream)).apply {
             for ((k, v) in headers) header(k, v)
         }.build()
         val call = client.newCall(req)

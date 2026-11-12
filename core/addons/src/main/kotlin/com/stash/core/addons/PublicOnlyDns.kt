@@ -30,7 +30,7 @@ class PublicOnlyDns(
         // Never the name in the message: a log of it would be harmless, but nothing here needs it.
         if (kept.isEmpty()) {
             android.util.Log.w(TAG, "an add-on host resolved to no public address (${all.size} private): refused")
-            throw UnknownHostException("no public address for an add-on host")
+            throw NoPublicAddressException()
         }
         return kept
     }
@@ -118,6 +118,13 @@ class PublicOnlyDns(
         }
     }
 }
+
+/**
+ * A name an add-on handed over resolved, and to the user's own network only: this filter's own
+ * refusal, as an [UnknownHostException] so a caller sees a plain network failure. Its own class
+ * so the refusal can be told from a name that simply does not resolve. Never names the host.
+ */
+class NoPublicAddressException : UnknownHostException("no public address for an add-on host")
 
 /** An add-on's media was on the user's own network: refused (add-ons plan phase 4 §2.6). Never names the address. */
 class PrivateAddressException : IOException("an add-on stream on a private address was refused")

@@ -890,7 +890,13 @@ class DownloadManager @Inject constructor(
             // The file was not the format its add-on said it was (a lossy file under "lossless",
             // review-882 M9): cooled down like a source that served a sample, and the next
             // lossless source gets its turn.
-            if (e is LosslessUrlDownloader.NotTheStatedFormatException) {
+            // The same for a fetch the add-on media client refused (it pointed at the user's own
+            // network: asking again asks for the same refusal) and for one that outlasted its
+            // time limit (round 2, F7 and F2).
+            if (e is LosslessUrlDownloader.NotTheStatedFormatException ||
+                e is LosslessUrlDownloader.TookTooLongException ||
+                LosslessUrlDownloader.isGuardRefusal(e)
+            ) {
                 losslessHealthGate.recordDegraded(match.sourceId)
                 return@repeat
             }

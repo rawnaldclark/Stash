@@ -83,6 +83,8 @@ class HttpAddonClient @Inject constructor(
     private val trust: AddonTrust,
     private val signer: AddonInstallSigner,
     hostOptions: AddonHostOptions = StrictAddonHost,
+    /** Told when [mediaClient]'s guard refuses a stream's fetch ([AddonMediaRefusals]). */
+    private val refusals: AddonMediaRefusals = NoMediaRefusals,
 ) {
     /**
      * The URL rule's development exception (SPEC.md 1.1): `http:` on localhost, for debug builds
@@ -160,6 +162,7 @@ class HttpAddonClient @Inject constructor(
                     proxy = sharedClient.proxy,
                     proxySelector = sharedClient.proxySelector,
                     userAgent = userAgent,
+                    onRefused = { refusals.refused(it) },
                 ),
             )
             .addNetworkInterceptor(PublicOnlyDns.connectionGuard(allowLoopback = hostOptions.allowLocalHttp))

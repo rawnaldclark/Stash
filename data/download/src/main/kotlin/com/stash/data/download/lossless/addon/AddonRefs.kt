@@ -164,6 +164,7 @@ class AddonRefs @Inject constructor(
             held.take(rid, key, nowMs())?.let { (info, ref) ->
                 if (HttpAddonClient.answers(addon.dialect, request, info)) {
                     Log.i(TAG, "held answer used ${addon.id}")
+                    answered(info.url, addon.id, rid, key)
                     return Streamed.Ok(info, ref)
                 }
             }
@@ -180,7 +181,10 @@ class AddonRefs @Inject constructor(
             client.stream(addon, ref.remoteId, request, paced)
         }
         return when (answer) {
-            is AddonResult.Ok -> Streamed.Ok(answer.value, ref)
+            is AddonResult.Ok -> {
+                answered(answer.value.url, addon.id, rid, key)
+                Streamed.Ok(answer.value, ref)
+            }
             is AddonResult.Failed -> {
                 val f = answer.failure
                 when {
@@ -218,6 +222,41 @@ class AddonRefs @Inject constructor(
                     else -> Streamed.Unavailable
                 }
             }
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------- refused on the wire
+
+    /** A stream an add-on answered, by its URL: whose it is, for [refusedOnTheWire]. Memory only. */
+    private data class Answered(val addonId: String, val rid: String, val key: String, val atMs: Long)
+
+    private val answeredStreams = ConcurrentHashMap<String, Answered>()
+
+    private fun answered(url: String, addonId: String, rid: String, key: String) {
+        val now = nowMs()
+        if (answeredStreams.size >= MAX_ANSWERED) {
+            answeredStreams.entries.removeIf { now - it.value.atMs > ANSWERED_TTL_MS }
+            if (answeredStreams.size >= MAX_ANSWERED) answeredStreams.clear()
+        }
+        answeredStreams[url] = Answered(addonId, rid, key, now)
+    }
+
+    /**
+     * The add-on media client refused to fetch the stream at [streamUrl] (review-882 round 2, F7):
+     * it pointed at the user's own network, through a redirect, a name that resolves there or a
+     * DASH segment, or it broke the URL rule. The refusal comes after the rung has "served", so
+     * without this the song failed on every play for the 30 days its ref lives, though a later
+     * source could play it. The ref is dropped and both passes are stamped: the refusal is about
+     * where the add-on keeps the song, not about a quality. A URL this class did not hand out
+     * (or handed out too long ago to remember) changes nothing.
+     */
+    suspend fun refusedOnTheWire(streamUrl: String) {
+        val stream = answeredStreams.remove(streamUrl) ?: return
+        Log.i(TAG, "media refused on the wire ${stream.addonId}: its ref is dropped and the song is left to the next source")
+        held.forgetSong(stream.rid, stream.key)
+        val now = nowMs()
+        write(stream.rid) {
+            refs.upsert(AddonRefEntity(stream.rid, stream.key, remoteId = null, resolvedAt = 0L, losslessMissAt = now, aacMissAt = now))
         }
     }
 
@@ -427,6 +466,10 @@ class AddonRefs @Inject constructor(
         fun forget(addonId: String) {
             map.keys.removeIf { it.startsWith("$addonId|") }
         }
+
+        fun forgetSong(addonId: String, key: String) {
+            map.remove("$addonId|$key")
+        }
     }
 
     companion object {
@@ -466,6 +509,10 @@ class AddonRefs @Inject constructor(
 
         /** Rows a search asks for: enough for a song's versions, small enough for a phone. */
         const val SEARCH_LIMIT = 20
+
+        /** How many answered streams are remembered for [refusedOnTheWire], and for how long (a stream's URL lives an hour at most). */
+        private const val MAX_ANSWERED = 512
+        private const val ANSWERED_TTL_MS = 60 * 60_000L
 
         /** How long a held answer waits for the lossy pass: the same play only. */
         const val HELD_TTL_MS = 2 * 60_000L
