@@ -488,9 +488,12 @@ class InTreeAddonRegistry @Inject constructor(
      * manifest that pass is about to need (it is what keeps Tidal's add-on on, offline). So:
      *  - an entry that was wanted earlier in this run and no longer is (the user removed it, the
      *    last one too) is forgotten at once;
-     *  - once the config's defaults are here (the list is not empty), everything not wanted is stale.
+     *  - once the config's defaults are here (the list is not empty), everything not wanted is stale;
+     *  - and nothing is forgotten while the user's own list could not be read ([UserAddons.unreadable]).
      */
     private suspend fun forgetRemoved(wanted: List<Wanted>) {
+        // The user's list didn't open this run: their add-ons are not known, which is not "removed".
+        if (users.unreadable.value) return
         val keys = wanted.map { it.key }.toSet()
         val removed = seen - keys
         seen += keys

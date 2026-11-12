@@ -155,8 +155,11 @@ internal fun AddonsContent(
                         // All the rows in one of the card's rows, each drawing its own hairline above it, so the
                         // hairlines move with the rows as they slide.
                         Column(modifier = Modifier.fillMaxWidth().reorderableColumn(reorder)) {
-                            reorder.rows.forEachIndexed { i, rowKey ->
-                                val row = rows[rowKey] ?: return@forEachIndexed
+                            // The rows as shown, a drag's moves included. A key the list no longer has (it changed
+                            // while a row was held) draws nothing.
+                            val shown = reorder.rows.filter { it in rows }
+                            shown.forEachIndexed { i, rowKey ->
+                                val row = rows.getValue(rowKey)
                                 key(rowKey) {
                                     val held = reorder.isDragging(rowKey)
                                     Column(
@@ -179,7 +182,7 @@ internal fun AddonsContent(
                                             onSwitched = { onSwitched(row, it) },
                                             held = held,
                                             canMoveUp = i > 0 && !reorder.isDragging,
-                                            canMoveDown = i < reorder.rows.lastIndex && !reorder.isDragging,
+                                            canMoveDown = i < shown.lastIndex && !reorder.isDragging,
                                             onMoveUp = { onNudged(rowKey, true) },
                                             onMoveDown = { onNudged(rowKey, false) },
                                             handleModifier = Modifier.reorderHandle(reorder, rowKey),

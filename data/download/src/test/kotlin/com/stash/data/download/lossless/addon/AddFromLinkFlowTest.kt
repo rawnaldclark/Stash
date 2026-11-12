@@ -250,9 +250,12 @@ class AddFromLinkFlowTest {
     }
 
     @Test fun `a replacement that sees more asks again`() = runBlocking<Unit> {
-        serve("a", "hifi")
+        // A v1 add-on, where `download` is a route of its own (an Eclipse-family manifest has none).
+        fun v1(resources: String) =
+            """{"stash":1,"id":"hifi","name":"Hi-Fi Relay","version":"1.0.0","kind":"server","resources":[$resources],"stream":{"cors":false}}"""
+        manifests["a/manifest.json"] = v1("\"search\",\"stream\"")
         links.add(ready(url("a")), token = null, agreed = true)
-        serve("b", "hifi", resources = "\"search\",\"stream\",\"download\"")
+        manifests["b/manifest.json"] = v1("\"search\",\"stream\",\"download\"")
         val p = ready(url("b"), replacing = InTreeAddonRegistry.keyOf(url("a")))
         assertThat(p.needsConsent).isTrue()
         assertThat(links.add(p, token = null)).isEqualTo(AddonLinks.Outcome.Refused(AddonLinks.Refusal.NOT_AGREED))
