@@ -1,0 +1,1036 @@
+{
+  "type": "stash-addon-index",
+  "v": 1,
+  "updated_at": 1794355200,
+  "addons": [],
+  "blocked": [
+    {
+      "origin": "https://blocked-0.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-1.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-2.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-3.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-4.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-5.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-6.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-7.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-8.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-9.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-10.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-11.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-12.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-13.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-14.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-15.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-16.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-17.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-18.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-19.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-20.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-21.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-22.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-23.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-24.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-25.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-26.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-27.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-28.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-29.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-30.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-31.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-32.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-33.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-34.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-35.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-36.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-37.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-38.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-39.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-40.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-41.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-42.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-43.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-44.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-45.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-46.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-47.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-48.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-49.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-50.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-51.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-52.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-53.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-54.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-55.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-56.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-57.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-58.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-59.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-60.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-61.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-62.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-63.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-64.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-65.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-66.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-67.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-68.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-69.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-70.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-71.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-72.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-73.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-74.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-75.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-76.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-77.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-78.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-79.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-80.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-81.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-82.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-83.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-84.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-85.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-86.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-87.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-88.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-89.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-90.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-91.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-92.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-93.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-94.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-95.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-96.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-97.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-98.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-99.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-100.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-101.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-102.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-103.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-104.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-105.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-106.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-107.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-108.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-109.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-110.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-111.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-112.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-113.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-114.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-115.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-116.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-117.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-118.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-119.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-120.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-121.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-122.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-123.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-124.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-125.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-126.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-127.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-128.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-129.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-130.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-131.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-132.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-133.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-134.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-135.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-136.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-137.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-138.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-139.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-140.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-141.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-142.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-143.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-144.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-145.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-146.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-147.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-148.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-149.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-150.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-151.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-152.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-153.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-154.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-155.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-156.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-157.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-158.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-159.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-160.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-161.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-162.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-163.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-164.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-165.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-166.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-167.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-168.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-169.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-170.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-171.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-172.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-173.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-174.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-175.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-176.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-177.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-178.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-179.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-180.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-181.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-182.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-183.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-184.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-185.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-186.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-187.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-188.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-189.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-190.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-191.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-192.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-193.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-194.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-195.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-196.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-197.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-198.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-199.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-200.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-201.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-202.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-203.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-204.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-205.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-206.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-207.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-208.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-209.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-210.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-211.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-212.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-213.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-214.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-215.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-216.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-217.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-218.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-219.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-220.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-221.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-222.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-223.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-224.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-225.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-226.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-227.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-228.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-229.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-230.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-231.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-232.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-233.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-234.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-235.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-236.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-237.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-238.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-239.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-240.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-241.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-242.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-243.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-244.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-245.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-246.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-247.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-248.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-249.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-250.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-251.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-252.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-253.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-254.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-255.example",
+      "reason": "broken"
+    },
+    {
+      "origin": "https://blocked-256.example",
+      "reason": "broken"
+    }
+  ]
+}
