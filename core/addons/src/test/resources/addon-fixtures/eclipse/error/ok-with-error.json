@@ -1,0 +1,7 @@
+{
+  "status": 200,
+  "route": "stream",
+  "body": {
+    "error": "Track not found"
+  }
+}

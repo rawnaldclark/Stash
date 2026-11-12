@@ -376,11 +376,7 @@ class HttpAddonClient @Inject constructor(
      * `quality` select, else `LOSSLESS` for a lossless range, `HIGH` for a high one, `LOW` below.
      */
     private fun qualityParam(addon: InstalledAddon, request: StreamRequest): String =
-        addon.eclipse?.qualityOption ?: when {
-            request.minTier.isLossless -> "LOSSLESS"
-            request.tier >= Tier.HIGH -> "HIGH"
-            else -> "LOW"
-        }
+        eclipseQuality(addon.eclipse?.qualityOption, request)
 
     /** `GET /lyrics` by the add-on's own [id], else by [d] (SPEC.md 4.6). No lyrics is `not_found`. */
     suspend fun lyrics(addon: InstalledAddon, d: Descriptor?, id: String? = null, paced: Boolean = false): AddonResult<Lyrics> {
@@ -735,6 +731,17 @@ class HttpAddonClient @Inject constructor(
 
         /** How long a foreground play waits for a song still being prepared, once: min(Retry-After, this). */
         const val PREPARING_WAIT_MS = 3_000L
+
+        /**
+         * The `quality` an Eclipse-family add-on is sent for [request] (the spec's `eclipseQuality`):
+         * [qualityOption], the first option of its own `quality` select, when it declares one; else
+         * `LOSSLESS` for a lossless range, `HIGH` for a high one, `LOW` below.
+         */
+        internal fun eclipseQuality(qualityOption: String?, request: StreamRequest): String = qualityOption ?: when {
+            request.minTier.isLossless -> "LOSSLESS"
+            request.tier >= Tier.HIGH -> "HIGH"
+            else -> "LOW"
+        }
 
         /** After this many wasted waits in a row, "still preparing" is read as plain `unavailable` (see `wastedWaits`). */
         const val PREPARING_WASTED_WAITS = 2

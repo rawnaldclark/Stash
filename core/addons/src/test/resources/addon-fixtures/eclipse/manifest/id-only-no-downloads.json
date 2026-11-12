@@ -1,0 +1,8 @@
+{
+  "id": "example.stream",
+  "resources": [
+    "search",
+    "stream"
+  ],
+  "allowDownloads": 0
+}

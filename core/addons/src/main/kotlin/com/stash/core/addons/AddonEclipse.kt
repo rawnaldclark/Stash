@@ -1,6 +1,8 @@
 package com.stash.core.addons
 
 import com.stash.addons.contract.AddonKind
+import com.stash.addons.contract.AlbumSummary
+import com.stash.addons.contract.ArtistSummary
 import com.stash.addons.contract.Artwork
 import com.stash.addons.contract.CatalogInfo
 import com.stash.addons.contract.Codec
@@ -11,7 +13,6 @@ import com.stash.addons.contract.ErrorCode
 import com.stash.addons.contract.Limits
 import com.stash.addons.contract.Manifest
 import com.stash.addons.contract.SearchResponse
-import com.stash.addons.contract.SettingType
 import com.stash.addons.contract.StreamCapabilities
 import com.stash.addons.contract.StreamInfo
 import com.stash.addons.contract.Tier
@@ -57,6 +58,18 @@ object AddonEclipse {
     private fun num(v: JsonElement?): Double? {
         val p = v as? JsonPrimitive ?: return null
         return p.content.toDoubleOrNull()?.takeIf { it.isFinite() }
+    }
+
+    /**
+     * A marker that makes a stream one a host cannot play (`encrypted`, `drm`, `hybrid`, `video`):
+     * given, and anything but the boolean `false` (SPEC.md 10.2, plan phase 4 §2.3). `0`, `"false"`
+     * and `""` are not `false`: an add-on that writes its flags loosely is not given the benefit
+     * of the doubt on whether a stream needs a key.
+     */
+    private fun marked(o: JsonObject, key: String): Boolean {
+        val v = o[key]
+        if (v == null || v is JsonNull) return false
+        return !(v is JsonPrimitive && !v.isString && v.content == "false")
     }
 
     /** True for a flag that is set: `true`, a non-zero number, or a non-empty string other than "false"/"0". */
@@ -144,13 +157,12 @@ object AddonEclipse {
         if ("catalog" in res && catalogs.isNotEmpty()) out += "catalog"
         val settings = (o["settings"] as? JsonArray)?.mapIndexedNotNull { i, s -> AddonValidator.settingOrNull(s, "/settings/$i") }
             ?.distinctBy { it.key }?.take(Limits.SETTINGS)
-        val quality = settings?.firstOrNull { it.key.equals("quality", ignoreCase = true) && it.type == SettingType.SELECT }
-            ?.options?.firstOrNull()?.value
         val manifest = Manifest(
             stash = 1,
             id = id,
             name = text(o["name"], Limits.SHORT_TEXT) ?: id.take(Limits.SHORT_TEXT),
-            version = text(o["version"], Limits.VERSION) ?: "",
+            // As the spec's reader fills it in: an add-on that states no version is at "0.0.0".
+            version = text(o["version"], Limits.VERSION) ?: NO_VERSION,
             kind = AddonKind.SERVER,
             description = text(o["description"], Limits.DESCRIPTION),
             icon = str(o["icon"])?.takeIf { AddonValidator.isAllowedUrl(it, options) },
@@ -162,9 +174,28 @@ object AddonEclipse {
         val traits = EclipseTraits(
             resolveViaIsrc = viaIsrc,
             allowDownloads = !(o.given("allowDownloads") && !truthy(o["allowDownloads"])),
-            qualityOption = quality,
+            qualityOption = qualityOption(o),
         )
         return AddonManifest(manifest, AddonDialect.ECLIPSE, traits)
+    }
+
+    /** The version of an add-on whose manifest states none (the spec's `eclipseManifest`). */
+    const val NO_VERSION = "0.0.0"
+
+    /**
+     * What an add-on's own `quality` select is sent as (phase 4 §2.3): the first option with a
+     * text value, of the first setting with the key `quality` and the type `select`. Read from the
+     * manifest as it is, as the spec's `eclipseQuality` reads it, whether or not the setting
+     * passes v1's rules for one Stash would draw: many written for other apps have no `label`,
+     * and their add-ons still read the parameter. The value is held to v1's own rule for an
+     * option value (1 to 100 characters); one outside it is as if no select were declared.
+     */
+    private fun qualityOption(o: JsonObject): String? {
+        val select = (o["settings"] as? JsonArray)?.firstOrNull { s ->
+            s is JsonObject && str(s["key"]) == "quality" && str(s["type"]) == "select"
+        } as? JsonObject ?: return null
+        return (select["options"] as? JsonArray)?.firstNotNullOfOrNull { opt -> (opt as? JsonObject)?.let { str(it["value"]) } }
+            ?.takeIf { it.length in 1..100 }
     }
 
     // ---------------------------------------------------------------------------------------------- tracks
@@ -177,9 +208,7 @@ object AddonEclipse {
         val artist = text(o["artist"], Limits.TITLE) ?: return null
         val durationMs = (num(o["durationMs"])?.roundToLong() ?: num(o["duration"])?.let { (it * 1000).roundToLong() })
             ?.takeIf { it in 1..AddonValidator.MAX_DURATION_MS }
-        val art = listOf("artworkURL", "artworkUrl", "albumArtworkURL").firstNotNullOfOrNull { k ->
-            str(o[k])?.takeIf { AddonValidator.isAllowedUrl(it, options) }
-        }
+        val art = artworkOf(o, options)
         return Track(
             id = id,
             title = title,
@@ -194,19 +223,52 @@ object AddonEclipse {
                     else -> null
                 }
             },
-            artwork = art?.let { listOf(Artwork(it)) },
+            artwork = art,
         )
     }
 
-    /** `GET /search`: `{tracks, albums, artists, playlists}`; only `tracks` is used. Rows that can't be read are dropped. */
+    /** A row's picture, under any of the three names the family uses; one that breaks the URL rule is dropped. */
+    private fun artworkOf(o: JsonObject, options: AddonValidator.Options): List<Artwork>? =
+        ARTWORK_KEYS.firstNotNullOfOrNull { k -> str(o[k])?.takeIf { AddonValidator.isAllowedUrl(it, options) } }?.let { listOf(Artwork(it)) }
+
+    private val ARTWORK_KEYS = listOf("artworkURL", "artworkUrl", "albumArtworkURL")
+
+    private fun artist(v: JsonElement?, options: AddonValidator.Options): ArtistSummary? {
+        val o = v as? JsonObject ?: return null
+        val id = idOf(o["id"]) ?: return null
+        val name = text(o["name"], Limits.TITLE) ?: return null
+        return ArtistSummary(id, name, artworkOf(o, options))
+    }
+
+    private fun album(v: JsonElement?, options: AddonValidator.Options): AlbumSummary? {
+        val o = v as? JsonObject ?: return null
+        val id = idOf(o["id"]) ?: return null
+        val title = text(o["title"], Limits.TITLE) ?: return null
+        val artist = text(o["artist"], Limits.TITLE) ?: return null
+        // A number, or four digits as text ("2024").
+        val year = num(o["year"])?.takeIf { it == Math.floor(it) && it in 1.0..9999.0 }?.toInt()
+        return AlbumSummary(id, title, artist, year, artworkOf(o, options))
+    }
+
+    /**
+     * `GET /search`: `{tracks, albums, artists, playlists}` as v1's [SearchResponse]; playlists are
+     * dropped. Rows that can't be read are dropped, never the answer. The client keeps `artists`
+     * and `albums` only for an add-on whose manifest has pages for them ([HttpAddonClient.gateSearch]).
+     */
     fun searchResponse(v: JsonElement?, options: AddonValidator.Options = AddonValidator.Options()): SearchResponse {
         val o = v as? JsonObject ?: fail("", "expected an object")
         val rows = o["tracks"] as? JsonArray
             // No `tracks`. Beside another result list it is a search that found no songs. On its
             // own (`{"error":"upstream timeout"}`, `{}`) it is no search answer at all: the add-on
             // could not answer, which must never be remembered as "no such song" (review-882 M3).
-            ?: if (OTHER_RESULTS.any { o[it] is JsonArray }) return SearchResponse(tracks = emptyList()) else throw AddonRefusalException(ErrorCode.UNAVAILABLE)
-        return SearchResponse(tracks = rows.asSequence().mapNotNull { track(it, options) }.distinctBy { it.id }.take(Limits.TRACKS).toList())
+            ?: if (OTHER_RESULTS.any { o[it] is JsonArray }) JsonArray(emptyList()) else throw AddonRefusalException(ErrorCode.UNAVAILABLE)
+        return SearchResponse(
+            tracks = rows.asSequence().mapNotNull { track(it, options) }.distinctBy { it.id }.take(Limits.TRACKS).toList(),
+            artists = (o["artists"] as? JsonArray)?.asSequence()?.mapNotNull { artist(it, options) }
+                ?.distinctBy { it.id }?.take(Limits.SEARCH_ARTISTS)?.toList(),
+            albums = (o["albums"] as? JsonArray)?.asSequence()?.mapNotNull { album(it, options) }
+                ?.distinctBy { it.id }?.take(Limits.SEARCH_ALBUMS)?.toList(),
+        )
     }
 
     /**
@@ -248,13 +310,11 @@ object AddonEclipse {
             fail("/url", if (AddonValidator.isLocalAddressUrl(url, options)) PRIVATE_ADDRESS else "URL must be https, with a host and no credentials")
         }
         // v1 defines no keys: LastWave's hybrid CENC plan carries its key in the JSON, and Stash never takes one.
-        val encrypted = o.given("encrypted") && truthy(o["encrypted"])
-        if (encrypted || (o.given("drm") && truthy(o["drm"])) || truthy(o["hybrid"]) || truthy(o["video"])) {
-            throw AddonRefusalException(ErrorCode.QUALITY_UNAVAILABLE)
-        }
+        if (NOT_PLAYABLE.any { marked(o, it) }) throw AddonRefusalException(ErrorCode.QUALITY_UNAVAILABLE)
         val format = str(o["format"])?.trim()?.lowercase()
         val codec = str(o["codec"])?.let(::codecOf) ?: format?.takeIf { it in FORMAT_CODECS }?.let(::codecOf)
-        val delivery = when (val m = str(o["manifest"])?.trim()?.lowercase()) {
+        // An empty `manifest` says nothing: the delivery is then read from `format`, as with none.
+        val delivery = when (val m = str(o["manifest"])?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }) {
             null -> if (format == "dash") Delivery.DASH else if (format == "hls") Delivery.HLS else Delivery.NONE
             else -> Delivery.fromWire(m) ?: fail("/manifest", "unknown delivery")
         }
@@ -285,6 +345,9 @@ object AddonEclipse {
     const val PRIVATE_ADDRESS = "refused (private address)"
 
     private val FORMAT_CODECS = setOf("mp3", "flac", "aac", "m4a")
+
+    /** The markers of a stream a host cannot play ([marked]). */
+    private val NOT_PLAYABLE = listOf("encrypted", "drm", "hybrid", "video")
 
     /** A codec word as v1's [Codec]; null when unknown. */
     internal fun codecOf(s: String): Codec? {
