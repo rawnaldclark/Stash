@@ -38,11 +38,15 @@ import javax.inject.Singleton
  * tier), the first two rows ask `tier=lossless` instead of `tier=hires`: the add-on then answers
  * Tidal's CD FLAC (16-bit/44.1 kHz) even for a track Tidal also has in Hi-Res. On this wire only:
  * the legacy relay has no such lane, and plays what Tidal gives at every setting, as it always did.
- * The add-on must run its CD lane (`V1_LOSSLESS_TIER_CD_ONLY = "1"`, as deployed): without it a
- * Hi-Res track asked at `tier=lossless` is refused as `quality_unavailable`, a 14-day miss here.
+ * The add-on must run its CD lane (`V1_LOSSLESS_TIER_CD_ONLY = "1"`, as deployed, and its deploy
+ * script refuses anything else): without it a Hi-Res track asked at `tier=lossless` is refused as
+ * `quality_unavailable`. A phone cannot tell that from a track with no lossless at all, and the
+ * miss stamp is shared with the Hi-Res setting and the legacy wire, so a `quality_unavailable`
+ * answer to a CD ask is kept as a short miss (6 hours), never the 14 days (review-881 R2-m1).
  *
  * Errors read as the relay's did (plan §4.4): `quality_unavailable` is a definitive miss
- * (`lossless_unavailable`), `not_found` and `region_unavailable` short ones (`not_available`);
+ * (`lossless_unavailable`; a short one when the ask was CD only, above), `not_found` and
+ * `region_unavailable` short ones (`not_available`);
  * `rate_limited` and a 503 with `retryAfter` are busy for that long; `quota_exceeded` is the spent
  * day, recorded in [LosslessQuota] like the relay's cap body; anything else is a transient error.
  * A track Tidal refuses (the relay's 502) arrives as HTTP 502 `unavailable` with `retryAfter` 15
@@ -76,6 +80,13 @@ class AddonV1Wire @Inject constructor(
     val broken: Boolean
         get() = searchHardFailures.get() >= HARD_FAILURE_LIMIT || streamHardFailures.get() >= HARD_FAILURE_LIMIT
 
+    /**
+     * When the latest hard failure was heard, on the lookup's clock (the phone's); 0 before any.
+     * [TidalWires] reads it to tell failures from before an applied config from ones after it.
+     */
+    @Volatile var lastHardFailureAtMs: Long = 0L
+        private set
+
     /** Starts both counts over: [TidalWires] gives the wire another go after an applied config. */
     fun forgive() {
         searchHardFailures.set(0)
@@ -83,20 +94,27 @@ class AddonV1Wire @Inject constructor(
     }
 
     /**
-     * What [failure] (null: a good answer) says about the face on one route. A good answer, a miss
-     * and a busy or spent answer are all the face reading our call: the count starts over. A 401, a
-     * 400 and an invalid answer count. No answer at all, or a 5xx, says nothing either way.
+     * What [failure] (null: a good answer) says about the face on one route, heard at [now]. A good
+     * answer, a miss and a busy or spent answer are all the face reading our call: the count starts
+     * over. A 401, a 400 and an invalid answer count. No answer at all, or a 5xx, says nothing
+     * either way.
      */
-    private fun heard(count: AtomicInteger, failure: AddonFailure?) {
-        when (failure) {
-            null -> count.set(0)
-            is AddonFailure.InvalidResponse -> count.incrementAndGet()
+    private fun heard(count: AtomicInteger, failure: AddonFailure?, now: Long) {
+        val hard = when (failure) {
+            null -> false
+            is AddonFailure.InvalidResponse -> true
             is AddonFailure.Refused -> when (failure.code) {
-                ErrorCode.UNAUTHORIZED, ErrorCode.BAD_REQUEST -> count.incrementAndGet()
-                ErrorCode.UNAVAILABLE -> Unit
-                else -> count.set(0)
+                ErrorCode.UNAUTHORIZED, ErrorCode.BAD_REQUEST -> true
+                ErrorCode.UNAVAILABLE -> return
+                else -> false
             }
-            else -> Unit
+            else -> return
+        }
+        if (hard) {
+            lastHardFailureAtMs = now
+            count.incrementAndGet()
+        } else {
+            count.set(0)
         }
     }
 
@@ -110,7 +128,7 @@ class AddonV1Wire @Inject constructor(
 
         override suspend fun search(q: String): WireReply<List<TidalCandidate>> {
             val r = client.search(addon, q, limit = SEARCH_LIMIT, paced = false, circuit = false)
-            heard(searchHardFailures, (r as? AddonResult.Failed)?.failure)
+            heard(searchHardFailures, (r as? AddonResult.Failed)?.failure, clock())
             return when (r) {
                 is AddonResult.Ok -> WireReply.Ok(r.value.tracks.map { it.toCandidate() })
                 is AddonResult.Failed -> failure(r.failure)
@@ -121,29 +139,33 @@ class AddonV1Wire @Inject constructor(
             id: String, mode: TidalStreamMode, title: String, artist: String, cdOnly: Boolean,
         ): WireReply<TidalWireStream> {
             val r = client.stream(addon, id, request(mode, cdOnly), paced = false, circuit = false)
-            heard(streamHardFailures, (r as? AddonResult.Failed)?.failure)
+            heard(streamHardFailures, (r as? AddonResult.Failed)?.failure, clock())
             return when (r) {
                 is AddonResult.Ok -> {
                     val info = r.value
                     if (owner) info.quota?.let { quota.onQuota(it.used, it.limit, it.resetsAt) }
                     WireReply.Ok(info.toWireStream())
                 }
-                is AddonResult.Failed -> failure(r.failure)
+                is AddonResult.Failed -> failure(r.failure, cdAsk = cdOnly && mode != TidalStreamMode.AAC_ONLY)
             }
         }
 
-        private fun failure(f: AddonFailure): WireReply<Nothing> = when (f) {
-            is AddonFailure.Refused -> refused(f)
+        /** [cdAsk]: the refused call asked `tier=lossless` for the CD setting (the class doc's "CD means CD"). */
+        private fun failure(f: AddonFailure, cdAsk: Boolean = false): WireReply<Nothing> = when (f) {
+            is AddonFailure.Refused -> refused(f, cdAsk)
             AddonFailure.Timeout, AddonFailure.Network -> WireReply.Unreachable
             is AddonFailure.InvalidResponse -> WireReply.Error(0)
             AddonFailure.Paused, AddonFailure.NotOffered -> WireReply.Error(0)
         }
 
-        private fun refused(f: AddonFailure.Refused): WireReply<Nothing> {
+        private fun refused(f: AddonFailure.Refused, cdAsk: Boolean): WireReply<Nothing> {
             val now = clock()
             val retryMs = f.retryAfterSec?.let { it * 1000L }
             return when (f.code) {
-                ErrorCode.QUALITY_UNAVAILABLE -> WireReply.NotFound(definitive = true)
+                // A real answer about the song, except to a CD ask: an add-on without its CD lane
+                // refuses every Hi-Res track that way, and the miss stamp is shared with the
+                // Hi-Res setting and the legacy wire. So that one is a short miss (review-881 R2-m1).
+                ErrorCode.QUALITY_UNAVAILABLE -> WireReply.NotFound(definitive = !cdAsk)
                 ErrorCode.NOT_FOUND, ErrorCode.REGION_UNAVAILABLE -> WireReply.NotFound(definitive = false)
                 ErrorCode.RATE_LIMITED ->
                     WireReply.Busy(now + (retryMs?.coerceIn(TidalClient.MIN_RETRY_AFTER_MS, TidalClient.MAX_RETRY_AFTER_MS) ?: TidalClient.BUSY_BACKOFF_MS))

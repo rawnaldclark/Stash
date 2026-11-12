@@ -80,7 +80,8 @@ sealed interface WireReply<out T> {
     /**
      * No stream of this track in the asked mode. [definitive]: a real answer about the song (relay
      * `lossless_unavailable`, v1 `quality_unavailable`), trusted 14 days; anything else (relay
-     * `not_available`, v1 `not_found` or `region_unavailable`) may be transient: 6 h.
+     * `not_available`, v1 `not_found` or `region_unavailable`, and v1 `quality_unavailable` when
+     * the ask was CD only) may be transient: 6 h.
      */
     data class NotFound(val definitive: Boolean) : WireReply<Nothing>
 
