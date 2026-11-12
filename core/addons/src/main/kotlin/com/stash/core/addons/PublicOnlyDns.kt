@@ -19,12 +19,47 @@ import java.net.UnknownHostException
  * Private answers are dropped and the public ones kept; a name with only private answers fails as
  * unknown, so the call is a plain network failure. [allowLoopback]: debug builds, where an add-on
  * under `wrangler dev` on `localhost` is reached over `adb reverse`.
+ *
+ * The one name that is not an add-on's: the user's own HTTP proxy ([throughProxies]).
  */
 class PublicOnlyDns(
     private val delegate: Dns = Dns.SYSTEM,
     private val allowLoopback: Boolean = false,
 ) : Dns {
+    /** The proxies the call running on this thread goes through, by name ([throughProxies]). */
+    private val proxyHosts = ThreadLocal<Set<String>>()
+
+    /**
+     * What OkHttp asks. Behind an HTTP proxy that is named by host (Java's and Android's proxy
+     * selectors hand out unresolved addresses) that is the PROXY's name, never the target's, and
+     * a work proxy on 10.x or a relay on localhost has only private answers: filtered, every call
+     * of an add-on the user added failed there (review-882 round 2, F1). The proxy is the user's
+     * own choice, so its name is resolved as it is; every other name is filtered ([lookupPublic]).
+     */
     override fun lookup(hostname: String): List<InetAddress> {
+        if (proxyHosts.get()?.contains(hostname.lowercase()) == true) return delegate.lookup(hostname)
+        return lookupPublic(hostname)
+    }
+
+    /**
+     * Runs [block], one call's `chain.proceed`, with [hosts] as the names of the HTTP proxies that
+     * call may go through: a [lookup] of one of them inside it is not filtered. Only the caller
+     * that has already checked the call's target says so ([AddonMediaGuard]); for the thread only,
+     * which is where OkHttp 4 selects a call's route and resolves its names.
+     */
+    fun <T> throughProxies(hosts: Set<String>, block: () -> T): T {
+        if (hosts.isEmpty()) return block()
+        val before = proxyHosts.get()
+        proxyHosts.set(hosts)
+        try {
+            return block()
+        } finally {
+            if (before == null) proxyHosts.remove() else proxyHosts.set(before)
+        }
+    }
+
+    /** [hostname]'s public addresses, whatever proxy is in use: the filter itself. */
+    fun lookupPublic(hostname: String): List<InetAddress> {
         val all = delegate.lookup(hostname)
         val kept = all.filter { isPublic(it) || (allowLoopback && it.isLoopbackAddress) }
         // Never the name in the message: a log of it would be harmless, but nothing here needs it.

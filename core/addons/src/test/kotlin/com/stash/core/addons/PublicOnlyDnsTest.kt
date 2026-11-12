@@ -3,9 +3,16 @@ package com.stash.core.addons
 import com.google.common.truth.Truth.assertThat
 import com.google.common.truth.Truth.assertWithMessage
 import okhttp3.Dns
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import java.io.IOException
 import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.ProxySelector
+import java.net.SocketAddress
+import java.net.URI
 import java.net.UnknownHostException
 
 /** The base rules' DNS half (add-ons plan phase 4 §2.6): private answers are dropped. */
@@ -32,6 +39,56 @@ class PublicOnlyDnsTest {
     @Test fun `debug builds may reach loopback, nothing else private`() {
         val dns = PublicOnlyDns(answering("127.0.0.1", "192.168.1.1"), allowLoopback = true)
         assertThat(dns.lookup("localhost").map { it.hostAddress }).containsExactly("127.0.0.1")
+    }
+
+    /** review-882 round 2, F1: the user's own proxy is not an add-on's host. */
+    @Test fun `a proxy's own name is resolved as it is, for the call that goes through it and nothing else`() {
+        val asked = mutableListOf<String>()
+        val dns = PublicOnlyDns(
+            object : Dns {
+                override fun lookup(hostname: String): List<InetAddress> {
+                    asked += hostname
+                    return listOf(ip("10.0.0.8"))
+                }
+            },
+        )
+        // Outside a call through it, the proxy's name is a name like any other.
+        assertThrows(NoPublicAddressException::class.java) { dns.lookup("proxy.corp.example") }
+
+        val through = dns.throughProxies(setOf("proxy.corp.example")) {
+            // Any other name is still filtered inside it, and so is the target, always.
+            assertThrows(NoPublicAddressException::class.java) { dns.lookup("media.attacker.example") }
+            assertThrows(NoPublicAddressException::class.java) { dns.lookupPublic("proxy.corp.example") }
+            dns.lookup("Proxy.Corp.Example")
+        }
+        assertThat(through.map { it.hostAddress }).containsExactly("10.0.0.8")
+
+        // Over when the call is, and never on another thread.
+        assertThrows(NoPublicAddressException::class.java) { dns.lookup("proxy.corp.example") }
+        var other: Throwable? = null
+        dns.throughProxies(setOf("proxy.corp.example")) {
+            Thread { other = runCatching { dns.lookup("proxy.corp.example") }.exceptionOrNull() }.apply { start(); join() }
+        }
+        assertThat(other).isInstanceOf(NoPublicAddressException::class.java)
+        // A failed call leaves nothing behind either.
+        runCatching { dns.throughProxies(setOf("proxy.corp.example")) { error("the call failed") } }
+        assertThrows(NoPublicAddressException::class.java) { dns.lookup("proxy.corp.example") }
+    }
+
+    @Test fun `the proxies of a call are its HTTP proxies by name, never the call's own host`() {
+        val url = "https://media.public.example/a.flac".toHttpUrl()
+        val named = Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved("Proxy.Corp.Example", 8080))
+        val socks = Proxy(Proxy.Type.SOCKS, InetSocketAddress.createUnresolved("socks.corp.example", 1080))
+        val selector = object : ProxySelector() {
+            override fun select(uri: URI?): List<Proxy> = listOf(named, socks, Proxy.NO_PROXY)
+            override fun connectFailed(uri: URI?, sa: SocketAddress?, ioe: IOException?) = Unit
+        }
+        assertThat(AddonMediaGuard.proxyHosts(url, named, null)).containsExactly("proxy.corp.example")
+        assertThat(AddonMediaGuard.proxyHosts(url, null, selector)).containsExactly("proxy.corp.example")
+        assertThat(AddonMediaGuard.proxyHosts(url, Proxy.NO_PROXY, selector)).isEmpty()
+        assertThat(AddonMediaGuard.proxyHosts(url, null, null)).isEmpty()
+        // An add-on that names the proxy's host as its own: that name stays filtered for the call.
+        assertThat(AddonMediaGuard.proxyHosts("https://proxy.corp.example/a.flac".toHttpUrl(), named, null)).isEmpty()
     }
 
     @Test fun `what counts as private`() {
