@@ -77,6 +77,39 @@ class DashFlacDownloaderTest {
         assertThat(dest.parentFile!!.listFiles()!!.toList()).isEmpty()
     }
 
+    /**
+     * Stash's own Tidal downloads come through here. A segment whose body ends cleanly short of
+     * its `Content-Length` (HTTP/2 does not check that itself) is not the segment: it is asked
+     * again, and never appended as it is (review-882 round 2, n1).
+     */
+    @Test fun `a segment shorter than its Content-Length is never appended - the download fails`() = runTest {
+        server.enqueue(MockResponse().setBody(mpd(1)))
+        server.enqueue(MockResponse().setBody("I"))
+        repeat(DashFlacDownloader.MAX_RETRIES + 1) { server.enqueue(MockResponse().setBody("1")) }
+        // The wire says ten bytes and gives four, then ends without an error.
+        val cutShort = OkHttpClient.Builder().addInterceptor { chain ->
+            val response = chain.proceed(chain.request())
+            if (!chain.request().url.encodedPath.endsWith("/1.mp4")) return@addInterceptor response
+            response.body?.close()
+            response.newBuilder().body(
+                object : okhttp3.ResponseBody() {
+                    override fun contentType(): okhttp3.MediaType? = null
+                    override fun contentLength(): Long = 10L
+                    override fun source(): okio.BufferedSource = okio.Buffer().writeUtf8("1234")
+                },
+            ).build()
+        }.build()
+        val dest = dest()
+
+        val r = DashFlacDownloader(ffmpeg).download(cutShort, server.url("/m.mpd").toString(), emptyMap(), dest)
+
+        assertThat(r.isFailure).isTrue()
+        assertThat(remuxInput).isNull()
+        assertThat(dest.parentFile!!.listFiles()!!.toList()).isEmpty()
+        // Asked again each time, as any other failed read of a segment is.
+        assertThat(server.requestCount).isEqualTo(2 + DashFlacDownloader.MAX_RETRIES + 1)
+    }
+
     @Test fun `remux failure is a failure, not an mp4 named flac`() = runTest {
         remuxFails = true
         server.enqueue(MockResponse().setBody(mpd(1)))

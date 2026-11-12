@@ -147,7 +147,13 @@ class DashFlacDownloader @Inject constructor(
                     // No Content-Length is no promise: read no further than the ceiling.
                     val source = body.source()
                     if (source.request(MAX_SEGMENT_BYTES + 1)) throw IOException("segment too large")
-                    source.buffer.readByteArray()
+                    val bytes = source.buffer.readByteArray()
+                    // A body that ends cleanly short of its stated length is not the segment
+                    // (`ResponseBody.bytes()` checked this; over HTTP/2 nothing else does). Appended
+                    // as it was, it left a hole in the file (review-882 round 2, n1).
+                    val stated = body.contentLength()
+                    if (stated != -1L && stated != bytes.size.toLong()) throw IOException("Content-Length and stream length disagree")
+                    bytes
                 }
             } finally {
                 watcher.cancel()
