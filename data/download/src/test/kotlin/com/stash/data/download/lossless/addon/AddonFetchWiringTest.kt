@@ -1,6 +1,9 @@
 package com.stash.data.download.lossless.addon
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.addons.contract.Delivery
+import com.stash.addons.contract.StreamInfo
+import com.stash.addons.contract.Tier
 import com.stash.core.addons.AddonHostOptions
 import com.stash.core.addons.HttpAddonClient
 import com.stash.core.addons.NoFirstPartyAddons
@@ -124,10 +127,10 @@ class AddonFetchWiringTest {
     private fun dest() = File(tmp.newFolder(), "t.flac")
 
     @Test fun `an add-on's file is fetched on the add-on client - Stash's User-Agent, none of the app's interceptors`() = runBlocking<Unit> {
-        server.enqueue(MockResponse().setBody("FLAC_BYTES"))
+        server.enqueue(MockResponse().setBody("fLaC_BYTES_OF_A_FLAC"))
         val dest = dest()
         assertThat(downloader.download(source("/a.flac"), dest).isSuccess).isTrue()
-        assertThat(dest.readText()).isEqualTo("FLAC_BYTES")
+        assertThat(dest.readText()).isEqualTo("fLaC_BYTES_OF_A_FLAC")
         assertThat(server.takeRequest().getHeader("User-Agent")).isEqualTo("Stash/9.9.9-test")
         assertThat(appInterceptorSaw).isEmpty()
 
@@ -187,10 +190,12 @@ class AddonFetchWiringTest {
 
     @Test fun `DASH - an add-on's manifest and segments are fetched on the add-on client`() = runBlocking<Unit> {
         server.enqueue(MockResponse().setBody(mpd(at("/init.mp4"), at("/seg/") + "\$Number\$.mp4")))
-        repeat(4) { server.enqueue(MockResponse().setBody("x")) }
+        // The fake remux copies the segments through, so the "FLAC" starts with the init segment.
+        server.enqueue(MockResponse().setBody("fLaC_INIT_BYTES_"))
+        repeat(3) { server.enqueue(MockResponse().setBody("x")) }
         val dest = dest()
         assertThat(downloader.download(source("/m.mpd", dash = true), dest).isSuccess).isTrue()
-        assertThat(dest.readText()).isEqualTo("xxxx")
+        assertThat(dest.readText()).isEqualTo("fLaC_INIT_BYTES_xxx")
         repeat(5) { assertThat(server.takeRequest().getHeader("User-Agent")).isEqualTo("Stash/9.9.9-test") }
         assertThat(appInterceptorSaw).isEmpty()
     }
@@ -227,9 +232,73 @@ class AddonFetchWiringTest {
     }
 
     @Test fun `within the ceiling the file is kept`() = runBlocking<Unit> {
-        server.enqueue(MockResponse().setBody("x".repeat(900)))
+        server.enqueue(MockResponse().setBody("fLaC" + "x".repeat(896)))
         val dest = dest()
         assertThat(downloader.download(source("/a.flac", maxBytes = 1_000), dest).isSuccess).isTrue()
         assertThat(dest.length()).isEqualTo(900L)
+    }
+
+    @Test fun `the ceiling for a song is its own PCM size and a margin, and an hour's when the length is unknown`() {
+        val cd = StreamInfo(url = "https://cdn.example/a.flac", manifest = Delivery.NONE, tier = Tier.LOSSLESS, cors = false, bitDepth = 16, sampleRate = 44_100)
+        val fourMinutes = AddonLosslessSource.ceilingBytes(240_000L, cd)
+        // 240 s of 16-bit/44.1 kHz stereo is 42.3 MB of samples: a real FLAC of it is about 28 MB.
+        assertThat(fourMinutes).isGreaterThan(42_336_000L)
+        assertThat(fourMinutes).isLessThan(70_000_000L)
+        // No format stated: the largest the app asks for, 24-bit/192 kHz.
+        val unstated = StreamInfo(url = "https://cdn.example/a.flac", manifest = Delivery.NONE, tier = Tier.LOSSLESS, cors = false)
+        assertThat(AddonLosslessSource.ceilingBytes(240_000L, unstated)).isGreaterThan(276_480_000L)
+        assertThat(AddonLosslessSource.ceilingBytes(240_000L, unstated)).isLessThan(400_000_000L)
+        // No length the app can trust: an hour of it, never "no ceiling".
+        assertThat(AddonLosslessSource.ceilingBytes(null, cd)).isEqualTo(AddonLosslessSource.ceilingBytes(3_600_000L, cd))
+        assertThat(AddonLosslessSource.ceilingBytes(0L, cd)).isEqualTo(AddonLosslessSource.ceilingBytes(null, cd))
+        // Absurd stated formats are held to what exists.
+        val absurd = cd.copy(bitDepth = 64, sampleRate = 1_000_000)
+        assertThat(AddonLosslessSource.ceilingBytes(240_000L, absurd)).isEqualTo(AddonLosslessSource.ceilingBytes(240_000L, cd.copy(bitDepth = 32, sampleRate = 384_000)))
+    }
+
+    // ------------------------------------------------------------------------------------------ the format it was said to be (M9)
+
+    private fun bytes(vararg parts: Any): okio.Buffer = okio.Buffer().apply {
+        for (p in parts) when (p) {
+            is String -> writeUtf8(p)
+            is ByteArray -> write(p)
+            else -> error("unsupported part")
+        }
+    }
+
+    /** An ID3v2.3 tag of [length] bytes of padding: "ID3", version, flags, the length in four 7-bit bytes. */
+    private fun id3(length: Int) = byteArrayOf(
+        'I'.code.toByte(), 'D'.code.toByte(), '3'.code.toByte(), 3, 0, 0,
+        ((length shr 21) and 0x7f).toByte(), ((length shr 14) and 0x7f).toByte(), ((length shr 7) and 0x7f).toByte(), (length and 0x7f).toByte(),
+    ) + ByteArray(length)
+
+    @Test fun `an add-on's lossy file under a FLAC label is not kept`() = runBlocking<Unit> {
+        val mp3Frame = byteArrayOf(0xFF.toByte(), 0xFB.toByte(), 0x90.toByte(), 0x64) + ByteArray(400)
+        val bodies = listOf(
+            bytes(id3(300), mp3Frame), // an MP3 with its tag in front
+            bytes(mp3Frame), // a bare MP3
+            bytes(ByteArray(4), "ftypM4A ", ByteArray(400)), // AAC in MP4
+            bytes("<html>not found</html>".padEnd(64)),
+            bytes("fLa"), // too short to be anything
+        )
+        for (body in bodies) {
+            server.enqueue(MockResponse().setBody(body))
+            val dest = dest()
+            val result = downloader.download(source("/a.flac"), dest)
+            assertThat(result.exceptionOrNull()).isInstanceOf(LosslessUrlDownloader.NotTheStatedFormatException::class.java)
+            assertThat(dest.exists()).isFalse()
+        }
+    }
+
+    @Test fun `a FLAC is kept, with or without an ID3 tag in front`() = runBlocking<Unit> {
+        for (body in listOf(bytes("fLaC", ByteArray(400)), bytes(id3(300), "fLaC", ByteArray(400)))) {
+            server.enqueue(MockResponse().setBody(body))
+            assertThat(downloader.download(source("/a.flac"), dest()).isSuccess).isTrue()
+        }
+    }
+
+    @Test fun `Stash's own sources are not judged by this check`() = runBlocking<Unit> {
+        server.enqueue(MockResponse().setBody("x".repeat(64)))
+        assertThat(downloader.download(source("/a.flac", sourceId = "qbdlx_qobuz"), dest()).isSuccess).isTrue()
     }
 }

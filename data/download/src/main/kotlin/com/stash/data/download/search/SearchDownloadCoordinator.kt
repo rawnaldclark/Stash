@@ -535,7 +535,8 @@ class SearchDownloadCoordinator @Inject constructor(
                 if (error is CancellationException) throw error
                 runCatching { tempFile.delete() }
                 return SourceFinalizeAttempt.BeforeCommitFailure(
-                    "${match.sourceId} fetch failed: ${error.message}",
+                    // An add-on's failure by class only: its message can name the media host.
+                    "${match.sourceId} fetch failed: ${if (fromAddon) error.javaClass.simpleName else error.message}",
                     transient = true,
                 )
             }

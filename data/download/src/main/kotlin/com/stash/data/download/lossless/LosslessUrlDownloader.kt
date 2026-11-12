@@ -109,8 +109,33 @@ class LosslessUrlDownloader @Inject constructor(
                 destination = destination,
                 onProgress = onProgress,
                 maxBytes = source.maxBytes,
-            )
+            ).asStated(source)
         }
+        fetchFile(source, destination, onProgress).asStated(source)
+    }
+
+    /**
+     * A file an add-on answered is kept only when it starts as the format the add-on said it is
+     * (review-882 M9). "Lossless" is the add-on's own word: one that serves an MP3 or AAC file
+     * under it had that file saved as `.flac` in the library. Stash's own sources are not judged
+     * here: their files are what their catalogs say, and the checks after this one (length,
+     * codec probe) are theirs.
+     */
+    private fun Result<File>.asStated(source: SourceResult): Result<File> {
+        val file = getOrNull() ?: return this
+        if (!isAddonSource(source.sourceId)) return this
+        val extension = source.format.fileExtension.ifBlank { source.format.codec }
+        if (startsAs(file, extension)) return this
+        Log.w(TAG, "fetch ${source.sourceId}: the file is not the ${extension.lowercase()} it was said to be; not kept")
+        runCatching { file.delete() }
+        return Result.failure(NotTheStatedFormatException(extension.lowercase()))
+    }
+
+    private suspend fun fetchFile(
+        source: SourceResult,
+        destination: File,
+        onProgress: (bytesRead: Long, totalBytes: Long) -> Unit,
+    ): Result<File> {
         val maxBytes = source.maxBytes
         val requestBuilder = Request.Builder().url(source.downloadUrl).get()
         for ((name, value) in source.downloadHeaders) {
@@ -118,7 +143,7 @@ class LosslessUrlDownloader @Inject constructor(
         }
         val request = requestBuilder.build()
 
-        try {
+        return try {
             val call = clientFor(source).newCall(request)
             coroutineScope {
                 // A blocking response-body read does not observe coroutine
@@ -206,8 +231,47 @@ class LosslessUrlDownloader @Inject constructor(
         }
     }
 
+    /** A fetched file is not the format its source said it is ([asStated]). Names the format, never the URL. */
+    class NotTheStatedFormatException(val stated: String) : java.io.IOException("the file is not $stated")
+
     companion object {
         private const val TAG = "LosslessUrlDownloader"
+
+        /**
+         * Whether [file] begins as a file of [extension] does. Judged: `flac` (the `fLaC` marker,
+         * after an ID3v2 tag when the file carries one in front, as some do) and `wav` (`RIFF` …
+         * `WAVE`). Any other extension is not judged here: an `.m4a` starts the same whether it
+         * holds ALAC or AAC. A file that cannot be read is not what it was said to be.
+         */
+        internal fun startsAs(file: File, extension: String): Boolean {
+            val ext = extension.lowercase()
+            if (ext != "flac" && ext != "wav") return true
+            return try {
+                java.io.RandomAccessFile(file, "r").use { f ->
+                    val head = ByteArray(12)
+                    if (f.read(head) < head.size) {
+                        false
+                    } else if (ext == "wav") {
+                        head.hasAt(0, "RIFF") && head.hasAt(8, "WAVE")
+                    } else if (head.hasAt(0, "ID3")) {
+                        // "ID3", two version bytes, flags, then the tag's length in four 7-bit bytes.
+                        val length = ((head[6].toInt() and 0x7f) shl 21) or ((head[7].toInt() and 0x7f) shl 14) or
+                            ((head[8].toInt() and 0x7f) shl 7) or (head[9].toInt() and 0x7f)
+                        val footer = if ((head[5].toInt() and 0x10) != 0) 10 else 0
+                        f.seek(10L + length + footer)
+                        val marker = ByteArray(4)
+                        f.read(marker) == marker.size && marker.hasAt(0, "fLaC")
+                    } else {
+                        head.hasAt(0, "fLaC")
+                    }
+                }
+            } catch (e: java.io.IOException) {
+                false
+            }
+        }
+
+        private fun ByteArray.hasAt(offset: Int, text: String): Boolean =
+            size >= offset + text.length && text.indices.all { this[offset + it] == text[it].code.toByte() }
 
         /** A source whose URL an add-on chose (`AddonLosslessSource.sourceId`): fetched on the guarded client only. */
         fun isAddonSource(sourceId: String): Boolean = sourceId.startsWith("addon:")
