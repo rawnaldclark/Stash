@@ -1502,6 +1502,7 @@
     <string name="settings_addons_sheet_never">Your accounts, your passwords, or anything from your other add-ons.</string>
     <string name="settings_addons_sheet_trust">Only add add-ons from people you trust.</string>
     <string name="settings_addons_sheet_add">Add anyway</string>
+    <string name="settings_addons_sheet_replace">Replace anyway</string>
     <string name="settings_addons_sheet_more_title">Wants to see more</string>
     <string name="settings_addons_sheet_more_intro">%1$s, on %2$s, now asks for more than you agreed to. Stash doesn\'t run it or check it.</string>
     <string name="settings_addons_sheet_allow">Allow</string>

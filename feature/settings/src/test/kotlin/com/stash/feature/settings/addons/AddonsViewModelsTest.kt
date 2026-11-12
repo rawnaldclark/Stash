@@ -158,15 +158,54 @@ class AddonsViewModelsTest {
         assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Refused(AddonLinks.Refusal.DIFFERENT_ADDON))
     }
 
-    @Test fun `Add carries the password and the agreement, and a refusal stays on the screen`() {
-        coEvery { links.add(preview, null, false) } returns AddonLinks.Outcome.Refused(AddonLinks.Refusal.NOT_AGREED)
+    @Test fun `Add carries the password and the agreement, and a refusal leaves the preview on screen with its reason`() {
+        coEvery { links.preview(any(), any()) } returns AddonLinks.Outcome.Ready(preview)
+        coEvery { links.add(preview, null, true) } returns AddonLinks.Outcome.Refused(AddonLinks.Refusal.NEEDS_PASSWORD)
         coEvery { links.add(preview, "s3cret", true) } returns AddonLinks.Outcome.Added("k1")
         val vm = AddFromLinkViewModel(links, overview)
-        // Without the sheet's "Add anyway": refused, and said.
-        vm.add(preview, null, agreed = false)
-        assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Refused(AddonLinks.Refusal.NOT_AGREED))
+        vm.read("https://relay.example.org/", null)
+        // review-885 M9: the card stays and says why, so nothing is read or agreed to a second time.
+        vm.add(preview, null, agreed = true)
+        assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Ready(preview, refused = AddonLinks.Refusal.NEEDS_PASSWORD))
         vm.add(preview, "s3cret", agreed = true)
         assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Added)
+    }
+
+    @Test fun `an add-on that stopped being Official since it was read gets the sheet after all`() {
+        // review-885 M3: Add reads where the add-on stands at the tap. The card then says who runs it, and its Add opens the sheet.
+        val official = preview.copy(trust = Trust.OFFICIAL, needsConsent = false)
+        coEvery { links.preview(any(), any()) } returns AddonLinks.Outcome.Ready(official)
+        coEvery { links.add(official, null, false) } returns AddonLinks.Outcome.Refused(AddonLinks.Refusal.NOT_AGREED)
+        val vm = AddFromLinkViewModel(links, overview)
+        vm.read("https://relay.example.org/", null)
+        vm.add(official, null, agreed = false)
+        assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Ready(official.copy(trust = Trust.UNOFFICIAL, needsConsent = true)))
+    }
+
+    @Test fun `a second tap on Add while the first is being saved adds nothing twice`() {
+        // review-885 N13: the second one was told "You already have this add-on", though it had just been added.
+        val saving = CompletableDeferred<AddonLinks.Outcome>()
+        coEvery { links.preview(any(), any()) } returns AddonLinks.Outcome.Ready(preview)
+        coEvery { links.add(any(), any(), any()) } coAnswers { saving.await() }
+        val vm = AddFromLinkViewModel(links, overview)
+        vm.read("https://relay.example.org/", null)
+        vm.add(preview, null, agreed = true)
+        vm.add(preview, null, agreed = true)
+        coVerify(exactly = 1) { links.add(any(), any(), any()) }
+        saving.complete(AddonLinks.Outcome.Added("k1"))
+        assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Added)
+    }
+
+    @Test fun `a refusal for a link the field no longer holds is not shown`() {
+        val saving = CompletableDeferred<AddonLinks.Outcome>()
+        coEvery { links.preview(any(), any()) } returns AddonLinks.Outcome.Ready(preview)
+        coEvery { links.add(any(), any(), any()) } coAnswers { saving.await() }
+        val vm = AddFromLinkViewModel(links, overview)
+        vm.read("https://relay.example.org/", null)
+        vm.add(preview, null, agreed = true)
+        vm.reset() // the field was edited while it saved
+        saving.complete(AddonLinks.Outcome.Refused(AddonLinks.Refusal.COULD_NOT_SAVE))
+        assertThat(vm.step.value).isEqualTo(AddFromLinkViewModel.Step.Idle)
     }
 
     @Test fun `where a new add-on lands is said from the sources that are on`() = runTest {

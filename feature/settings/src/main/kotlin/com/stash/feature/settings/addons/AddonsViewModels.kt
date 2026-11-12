@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.addons.contract.Quota
+import com.stash.core.addons.Trust
 import com.stash.data.download.lossless.addon.AddonLinks
 import com.stash.data.download.lossless.addon.AddonOverview
 import com.stash.data.download.lossless.tidal.OwnTidalServer
@@ -161,7 +162,8 @@ class AddFromLinkViewModel @Inject constructor(
     sealed interface Step {
         data object Idle : Step
         data object Reading : Step
-        data class Ready(val preview: AddonLinks.Preview) : Step
+        /** [refused]: why the last Add was refused. Said under the preview, which stays (review-885 M9). */
+        data class Ready(val preview: AddonLinks.Preview, val refused: AddonLinks.Refusal? = null) : Step
         data class Refused(val reason: AddonLinks.Refusal) : Step
         data object Added : Step
     }
@@ -222,12 +224,35 @@ class AddFromLinkViewModel @Inject constructor(
         }
     }
 
-    /** Add (or Replace). [agreed]: "Add anyway" on the "Not made by Stash" sheet. */
+    /** The Add that is being saved. Touched on the main thread only. */
+    private var adding: Job? = null
+
+    /**
+     * Add (or Replace). [agreed]: "Add anyway" on the "Not made by Stash" sheet.
+     *
+     * One at a time (review-885 N13): a second tap while the first is being saved was told "You
+     * already have this add-on", though it had just been added. A refusal leaves the preview where it
+     * is, with the reason under it (M9): a missing password or a save that failed is put right on the
+     * card, without the link being read and agreed to a second time.
+     */
     fun add(preview: AddonLinks.Preview, token: String?, agreed: Boolean) {
-        viewModelScope.launch {
-            stepState.value = when (val o = links.add(preview, token, agreed)) {
-                is AddonLinks.Outcome.Refused -> Step.Refused(o.reason)
-                else -> Step.Added
+        if (adding?.isActive == true) return
+        adding = viewModelScope.launch {
+            val o = links.add(preview, token, agreed)
+            if (o !is AddonLinks.Outcome.Refused) {
+                stepState.value = Step.Added
+                return@launch
+            }
+            // Not the preview on screen any more: the field has moved on, and the refusal is about a
+            // link that is no longer in it.
+            val shown = stepState.value as? Step.Ready
+            if (shown == null || shown.preview != preview) return@launch
+            stepState.value = if (o.reason == AddonLinks.Refusal.NOT_AGREED && !agreed) {
+                // It was Official when it was read and is not any more (M3): the card now says who
+                // runs it, and its Add opens the sheet.
+                Step.Ready(preview.copy(trust = Trust.UNOFFICIAL, needsConsent = true))
+            } else {
+                shown.copy(refused = o.reason)
             }
         }
     }

@@ -27,6 +27,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextInput
 import com.google.common.truth.Truth.assertThat
 import com.stash.addons.contract.Quota
 import com.stash.core.addons.AddonSees
@@ -498,6 +499,7 @@ class AddonScreensTest {
     // ------------------------------------------------------------------------------------------ Add from a link
 
     private val added = mutableListOf<Triple<String, String?, Boolean>>()
+    private var reads = 0
 
     private fun preview(trust: Trust = Trust.UNOFFICIAL, needsToken: Boolean = false) = AddonLinks.Preview(
         manifestUrl = "https://relay.example.org/v1/s3cret-tok/manifest.json", id = "hifi", name = "Hi-Fi Relay", version = "1.2.0",
@@ -514,7 +516,7 @@ class AddonScreensTest {
         MaterialTheme {
             AddFromLinkContent(
                 step = step, link = link, replacing = false, lands = lands, clipboardEmpty = false,
-                onBack = {}, onLinkChange = {}, onRead = {}, onPaste = {}, onScan = {},
+                onBack = {}, onLinkChange = {}, onRead = { reads++ }, onPaste = {}, onScan = {},
                 onAdd = { p, token, agreed -> added += Triple(p.id, token, agreed) },
                 onCancel = {},
             )
@@ -563,6 +565,40 @@ class AddonScreensTest {
         rule.onNodeWithText("Add").performScrollTo().performClick()
         assertThat(added).containsExactly(Triple("hifi", null, false))
         rule.onAllNodesWithText("Add anyway").assertCountEquals0()
+    }
+
+    @Test fun `after a refusal the same link can be read again`() {
+        // review-885 M9: "Couldn't reach that add-on" on a shared link had no button left to try again.
+        showAdd(AddFromLinkViewModel.Step.Refused(AddonLinks.Refusal.UNREACHABLE), link = "https://relay.example.org/")
+        rule.onNodeWithText("Couldn't reach that add-on. Check the link and your connection.").assertExists()
+        rule.onNodeWithText("Read link").assertIsEnabled().performClick()
+        assertThat(reads).isEqualTo(1)
+    }
+
+    @Test fun `Add waits for the password an add-on asks for`() {
+        // review-885 M9: Add with no password could only be refused, after the sheet had been agreed to.
+        showAdd(AddFromLinkViewModel.Step.Ready(preview(trust = Trust.OFFICIAL, needsToken = true)))
+        rule.onNodeWithText("Add").performScrollTo().assertIsNotEnabled()
+        rule.onNodeWithTag(ADDON_PASSWORD_FIELD_TAG).performScrollTo().performTextInput("s3cret")
+        rule.onNodeWithText("Add").performScrollTo().assertIsEnabled().performClick()
+        assertThat(added).containsExactly(Triple("hifi", "s3cret", false))
+    }
+
+    @Test fun `a refusal that comes from Add is said on the preview, which stays`() {
+        showAdd(AddFromLinkViewModel.Step.Ready(preview(), refused = AddonLinks.Refusal.COULD_NOT_SAVE))
+        rule.onNodeWithText("Couldn't save. Try again.").assertExists()
+        rule.onNodeWithText("Hi-Fi Relay").assertExists()
+        rule.onNodeWithText("Add").performScrollTo().assertIsEnabled()
+    }
+
+    @Test fun `on Replace link the sheet's button says Replace anyway`() {
+        // review-885 N13.
+        showAdd(AddFromLinkViewModel.Step.Ready(preview().copy(replacesKey = "k1")))
+        rule.onNodeWithText("Replace").performScrollTo().performClick()
+        assertThat(added).isEmpty()
+        rule.onAllNodesWithText("Add anyway").assertCountEquals0()
+        rule.onNodeWithText("Replace anyway").performSemanticsAction(SemanticsActions.OnClick)
+        assertThat(added).containsExactly(Triple("hifi", null, true))
     }
 
     @Test fun `every refusal has its own plain sentence`() {

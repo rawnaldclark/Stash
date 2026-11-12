@@ -38,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -231,11 +232,17 @@ internal fun AddFromLinkContent(
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
                             }
-                            is AddFromLinkViewModel.Step.Refused -> Text(
-                                text = stringResource(refusalText(step.reason)),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.error,
-                            )
+                            is AddFromLinkViewModel.Step.Refused -> {
+                                Text(
+                                    text = stringResource(refusalText(step.reason)),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                                // The same link can be tried again ("Couldn't reach that add-on") without editing it first.
+                                Button(onClick = onRead, enabled = link.isNotBlank(), modifier = Modifier.heightIn(min = 48.dp)) {
+                                    Text(stringResource(R.string.settings_addons_link_check))
+                                }
+                            }
                             is AddFromLinkViewModel.Step.Ready -> Unit
                         }
                     }
@@ -243,11 +250,14 @@ internal fun AddFromLinkContent(
             ),
         )
         if (step is AddFromLinkViewModel.Step.Ready) {
-            PreviewCard(preview = step.preview, lands = lands, onAdd = onAdd, onCancel = onCancel)
+            PreviewCard(preview = step.preview, refused = step.refused, lands = lands, onAdd = onAdd, onCancel = onCancel)
         }
         PageEndSpace()
     }
 }
+
+/** The preview's password field. */
+internal const val ADDON_PASSWORD_FIELD_TAG = "addon-password-field"
 
 /**
  * What Add would add (§2.1): the add-on's name and version, its mark and the address it runs on,
@@ -258,6 +268,8 @@ internal fun AddFromLinkContent(
 @Composable
 private fun PreviewCard(
     preview: AddonLinks.Preview,
+    /** Why the last Add was refused, said above the buttons. */
+    refused: AddonLinks.Refusal?,
     lands: AddFromLinkViewModel.Lands,
     onAdd: (AddonLinks.Preview, String?, Boolean) -> Unit,
     onCancel: () -> Unit,
@@ -317,12 +329,19 @@ private fun PreviewCard(
                         OutlinedTextField(
                             value = token,
                             onValueChange = { token = it },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().testTag(ADDON_PASSWORD_FIELD_TAG),
                             label = { Text(stringResource(R.string.settings_addons_password_label)) },
                             supportingText = { Text(stringResource(R.string.settings_addons_password_desc)) },
                             singleLine = true,
                             visualTransformation = PasswordVisualTransformation(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                        )
+                    }
+                    if (refused != null) {
+                        Text(
+                            text = stringResource(refusalText(refused)),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -331,6 +350,8 @@ private fun PreviewCard(
                                 // An add-on Stash doesn't run: the sheet first, and only "Add anyway" adds.
                                 if (preview.needsConsent) sheet = true else onAdd(preview, token.takeIf { it.isNotBlank() }, false)
                             },
+                            // A password it asks for is typed first: Add without one could only be refused.
+                            enabled = !preview.needsToken || token.isNotBlank(),
                             modifier = Modifier.heightIn(min = 48.dp),
                         ) {
                             Text(stringResource(if (preview.replacesKey != null) R.string.settings_addons_replace else R.string.settings_addons_add))
@@ -353,6 +374,7 @@ private fun PreviewCard(
                 onAdd(preview, token.takeIf { it.isNotBlank() }, true)
             },
             onDismiss = { sheet = false },
+            replacing = preview.replacesKey != null,
         )
     }
 }

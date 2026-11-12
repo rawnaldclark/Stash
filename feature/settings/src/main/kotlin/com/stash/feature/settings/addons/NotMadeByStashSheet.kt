@@ -51,6 +51,8 @@ internal fun NotMadeByStashSheet(
     onDismiss: () -> Unit,
     /** The add-on is already added and now asks for more: the same facts, with "Allow". */
     more: Boolean = false,
+    /** Replace link: the button says "Replace anyway", as the card's says "Replace". */
+    replacing: Boolean = false,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -58,7 +60,7 @@ internal fun NotMadeByStashSheet(
         containerColor = StashTheme.extendedColors.elevatedSurface,
         properties = sheetBarsFollow(StashTheme.extendedColors.elevatedSurface),
     ) {
-        NotMadeByStashContent(name, host, sees, onConfirm, onDismiss, more)
+        NotMadeByStashContent(name, host, sees, onConfirm, onDismiss, more, replacing)
     }
 }
 
@@ -71,6 +73,7 @@ internal fun NotMadeByStashContent(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
     more: Boolean = false,
+    replacing: Boolean = false,
 ) {
     Column(
         modifier = Modifier
@@ -112,7 +115,15 @@ internal fun NotMadeByStashContent(
         Spacer(modifier = Modifier.height(4.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onConfirm, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text(stringResource(if (more) R.string.settings_addons_sheet_allow else R.string.settings_addons_sheet_add))
+                Text(
+                    stringResource(
+                        when {
+                            more -> R.string.settings_addons_sheet_allow
+                            replacing -> R.string.settings_addons_sheet_replace
+                            else -> R.string.settings_addons_sheet_add
+                        },
+                    ),
+                )
             }
             TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
                 Text(stringResource(R.string.settings_addons_cancel))
