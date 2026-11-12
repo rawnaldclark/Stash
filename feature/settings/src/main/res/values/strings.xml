@@ -1404,7 +1404,6 @@
     <string name="settings_addons_move_down">Move %1$s down</string>
     <string name="settings_addons_switch_desc">Use %1$s</string>
     <string name="settings_addons_remove_desc">Remove %1$s</string>
-    <string name="settings_addons_open_desc">Open %1$s</string>
     <!-- How an add-on is doing, in plain words. -->
     <string name="settings_addons_status_working">Working</string>
     <string name="settings_addons_status_off">Switched off</string>
