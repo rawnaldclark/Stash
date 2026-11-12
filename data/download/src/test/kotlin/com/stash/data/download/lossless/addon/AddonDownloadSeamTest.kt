@@ -144,6 +144,36 @@ class AddonDownloadSeamTest {
         assertThat(r.confidence).isAtLeast(0.7f)
     }
 
+    /**
+     * review-882 J3, the one line that does it (round 2, F4): [AddonLosslessSource] tells
+     * [AddonRefs] that a download may not match by search for an add-on the user added. The same
+     * add-on as the test above, but the user's: nothing is asked, and the source has no answer.
+     */
+    @Test fun `a download never searches an add-on the user added - the source asks nothing and answers null`() = runTest {
+        val client: HttpAddonClient = mockk {
+            coEvery { search(any(), any(), any(), any(), any()) } returns AddonResult.Ok(
+                com.stash.addons.contract.SearchResponse(tracks = listOf(Track(id = "9", title = "Digital Love", artist = "Daft Punk", durationMs = 301_000L))),
+            )
+            coEvery { stream(any(), "9", any(), any(), any()) } returns AddonResult.Ok(flac)
+        }
+        val mine = addon(resources = listOf("search", "stream")).copy(userAdded = true)
+        val refs = refs(client)
+        val source = AddonDownloadSources(Registry(listOf(mine)), refs, AggregatorRateLimiter(), prefs).sources().single()
+        val song = TrackQuery(artist = "Daft Punk", title = "Digital Love", durationMs = 301_000L)
+
+        // A sync or sweep download (paced), and one that is not paced: neither searches.
+        assertThat(source.resolve(song)).isNull()
+        assertThat(source.resolve(song, bypassRateLimit = true)).isNull()
+        coVerify(exactly = 0) { client.search(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { client.stream(any(), any(), any(), any(), any()) }
+
+        // Once a play has matched the song there, the download uses that ref: still no search of its own.
+        assertThat(refs.stream(mine, song, AddonRefs.Pass.LOSSLESS, AddonLosslessSource.lossless(LosslessQualityTier.HI_RES)))
+            .isInstanceOf(AddonRefs.Streamed.Ok::class.java)
+        assertThat(source.resolve(song)!!.sourceTrackId).isEqualTo("9")
+        coVerify(exactly = 1) { client.search(any(), any(), any(), any(), any()) }
+    }
+
     /** review-882 B1 and M7: the downloader saves `coverArtUrl` as the song's art, where it would outlive the add-on. */
     @Test fun `a download from an add-on the user added carries no cover art, a default add-on's does`() = runTest {
         val art = "https://addon.example/tok/art/7.jpg"
