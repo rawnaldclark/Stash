@@ -1,0 +1,38 @@
+{
+  "type": "stash-addon-index",
+  "v": 1,
+  "updated_at": 1794355200,
+  "addons": [
+    {
+      "id": "tidal",
+      "name": "Tidal",
+      "summary": "Lossless and Hi-Res",
+      "default": true
+    },
+    {
+      "id": "example-radio",
+      "name": "Example Radio",
+      "summary": "Live stations from example.org",
+      "manifest": "https://addons.example.org/radio/manifest.json",
+      "platforms": [
+        "android",
+        "ios"
+      ]
+    },
+    {
+      "id": "example-tv",
+      "name": "Example TV",
+      "summary": "For another kind of device",
+      "manifest": "https://addons.example.org/tv/manifest.json",
+      "platforms": [
+        "ios"
+      ]
+    }
+  ],
+  "blocked": [
+    {
+      "origin": "https://bad.example",
+      "reason": "harmful"
+    }
+  ]
+}

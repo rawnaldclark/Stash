@@ -56,8 +56,11 @@ class SignedIndexAddonCatalog internal constructor(
         if (isDefault(base)) return Trust.OFFICIAL
         val index = fetcher.index.value ?: return Trust.UNOFFICIAL
         if (blockIn(index, base, id) != null) return Trust.BLOCKED
+        // Listed for this phone: an entry for the web player only, for a platform this app doesn't
+        // know, or for a newer build is not Official here, as it is not offered here (review-885 N5).
         val listed = index.addons.any { e ->
-            e.manifest != null && HttpAddonClient.baseOf(e.manifest)?.let { SignedConfigAddonTrust.sameBase(it, base) } == true
+            e.manifest != null && e.offeredTo(build) &&
+                HttpAddonClient.baseOf(e.manifest)?.let { SignedConfigAddonTrust.sameBase(it, base) } == true
         }
         return if (listed) Trust.OFFICIAL else Trust.UNOFFICIAL
     }

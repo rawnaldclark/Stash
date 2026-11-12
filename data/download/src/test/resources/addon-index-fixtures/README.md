@@ -15,7 +15,7 @@ converting line endings (`* -text`). If you copy these files elsewhere in the re
 | File | What it is |
 |---|---|
 | `pubkey.b64` | The fixture key's public half: base64 of the SubjectPublicKeyInfo DER, on one line with no line break. This is the form `LOSSLESS_CONFIG_PUBKEY` (`lossless.configPubKey`) holds, so a test sets it as the verifier's key. |
-| `cases.json` | The list below for a program: per case `dir`, `expect` (`accept` or `refuse`), `refused_by`, `signature` (`valid` or `invalid` against `pubkey.b64`), `bytes`, and for accept cases `canonical`, `updated_at` and the entry counts. `valid-unknown-reason` also has `blocked_reasons`: what a reader reports as each block's reason, in order. |
+| `cases.json` | The list below for a program: per case `dir`, `expect` (`accept` or `refuse`), `refused_by`, `signature` (`valid` or `invalid` against `pubkey.b64`), `bytes`, and for accept cases `canonical`, `updated_at` and the entry counts. `valid-unknown-reason` also has `blocked_reasons`: what a reader reports as each block's reason, in order. `valid-unknown-platform` also has `addon_platforms`: what a reader reports as each add-on's `platforms`, in order (`null` where the entry has none). |
 | `<case>/index.json` | The body as served. |
 | `<case>/index.json.sig` | The signature as served: base64 of a DER ECDSA signature (SHA-256, P-256) over the exact bytes of `index.json`, one line, no line break. A reader trims it before decoding. |
 
@@ -28,6 +28,7 @@ converting line endings (`* -text`). If you copy these files elsewhere in the re
 | `valid-launch` | The shape of the first real index: the one default entry, nothing blocked. |
 | `valid-unknown-fields` | An index from a later publisher, with a field no reader knows at the top level, in an add-on and in a block. Unknown fields are ignored, so it is accepted and reads as one add-on and one block. This publisher never writes such a file and refuses it as a source. |
 | `valid-unknown-reason` | An index from a later publisher, with two blocks: `https://bad.example` for `harmful`, and `https://spam.example` for `spam`, a word no reader knows. **A reader accepts the index and blocks both add-ons.** The second one's reason reads as unknown, and the app shows a generic fixed sentence for it, never the word from the file. A newer list must never make an older reader drop its blocks. This publisher never writes such a file and refuses it as a source. (Until this rule was settled the same two files were named `refuse-bad-reason`; their bytes have not changed.) |
+| `valid-unknown-platform` | An index from a later publisher, with two add-ons whose `platforms` hold `ios`, a word no reader knows, and one block. **A reader accepts the index, keeps the block, and drops the unknown word:** the entry listing `android` and `ios` reads as `["android"]`; the entry listing only `ios` reads as an empty list, which means it is for no platform this reader knows (the app does not show it and does not call it Official). A newer list must never make an older reader miss its blocks. This publisher never writes such a file and refuses it as a source. |
 
 `valid`, `valid-older` and `valid-launch` are byte for byte what the publisher writes (`canonical` in `cases.json`).
 

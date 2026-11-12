@@ -284,7 +284,10 @@ class AddonOverview @Inject constructor(
                 summary = described(NamedRungAddons.TIDAL)?.summary.takeIf { named.ownHost == null },
                 ownServer = named.ownHost != null,
             ).takeIf { named.tidalKnown }
-            val taken = addonRows.mapNotNull { PlayOrder.addonIdOf(it.key) }.toSet()
+            // The official add-ons the user already has. Only a row that is Official counts: an add-on
+            // Stash doesn't run that calls itself by an official one's id must not take that one out of
+            // "Get add-ons" (review-885 N5).
+            val taken = addonRows.filter { it.mark == Mark.OFFICIAL }.mapNotNull { PlayOrder.addonIdOf(it.key) }.toSet()
             return State(
                 order = order.sorted(listOfNotNull(qobuz, tidal) + inOrder) { it.key },
                 others = addonRows.filterNot { it.playsSongs },

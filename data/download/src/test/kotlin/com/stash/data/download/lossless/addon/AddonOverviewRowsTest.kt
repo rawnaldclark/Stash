@@ -177,6 +177,20 @@ class AddonOverviewRowsTest {
         assertThat(state.official.map { it.id }).containsExactly("more")
     }
 
+    @Test fun `an add-on Stash doesn't run that takes an official add-on's id does not take it out of Get add-ons`() {
+        // review-885 N5: the official "radio" lives at another address; this one only calls itself that.
+        val state = build(
+            users = listOf(user("radio")),
+            entries = listOf(entry("radio", trust = Trust.UNOFFICIAL)),
+            official = listOf(OfficialEntry("radio", "Example Radio", "Live stations", manifestUrl = "https://addons.example.org/radio/manifest.json")),
+            described = { id -> OfficialEntry(id, "Example Radio", "Live stations").takeIf { id == "radio" } },
+        )
+        val row = state.row("addon:radio")!!
+        assertThat(row.mark).isEqualTo(AddonOverview.Mark.NOT_MADE_BY_STASH)
+        assertThat(row.summary).isNull()
+        assertThat(state.official.map { it.id }).containsExactly("radio")
+    }
+
     @Test fun `each thing that can be wrong has its own status, and the ones Stash won't use have no switch`() {
         fun statusOf(hold: AddonHold?, unauthorized: Set<String> = emptySet(), needsNewer: Boolean = false, reading: Boolean = false, block: BlockReason? = null) =
             build(

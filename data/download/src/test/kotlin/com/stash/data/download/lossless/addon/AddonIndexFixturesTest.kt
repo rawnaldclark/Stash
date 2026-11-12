@@ -5,6 +5,7 @@ import com.google.common.truth.Truth.assertWithMessage
 import com.stash.core.addons.BlockReason
 import com.stash.data.download.lossless.relay.SignedJson
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -33,7 +34,7 @@ class AddonIndexFixturesTest {
     private fun signatureOf(dir: String) = String(bytes("$dir/index.json.sig")).trim()
 
     @Test fun `every fixture is read the way cases json says a reader must`() {
-        assertThat(cases).hasSize(13)
+        assertThat(cases).hasSize(14)
         for (case in cases) {
             val dir = case.getValue("dir").jsonPrimitive.content
             val body = bytes("$dir/index.json")
@@ -53,6 +54,12 @@ class AddonIndexFixturesTest {
                     case["blocked_reasons"]?.jsonArray?.map { it.jsonPrimitive.content }?.let { reasons ->
                         assertWithMessage("$dir: blocked_reasons").that(index.blocked.map { it.reason.wire ?: "unknown" })
                             .containsExactlyElementsIn(reasons).inOrder()
+                    }
+                    // Where the case says how each add-on's `platforms` reads: a word a reader doesn't know
+                    // drops out (null: the entry names none; an empty list: none this reader knows).
+                    case["addon_platforms"]?.jsonArray?.let { expected ->
+                        val want = expected.map { e -> if (e is JsonNull) null else e.jsonArray.map { it.jsonPrimitive.content } }
+                        assertWithMessage("$dir: addon_platforms").that(index.addons.map { it.platforms }).isEqualTo(want)
                     }
                 }
                 "refuse" -> when (val by = case.getValue("refused_by").jsonPrimitive.content) {
@@ -154,10 +161,30 @@ class AddonIndexFixturesTest {
             """{"id":"b","name":"A","summary":"S","default":true,"min_build":0}""",
             """{"id":"b","name":"A","summary":"S","default":true,"min_build":1.5}""",
             """{"id":"b","name":"A","summary":"S","default":true,"platforms":[]}""",
-            """{"id":"b","name":"A","summary":"S","default":true,"platforms":["ios"]}""",
+            """{"id":"b","name":"A","summary":"S","default":true,"platforms":"android"}""",
+            """{"id":"b","name":"A","summary":"S","default":true,"platforms":[1]}""",
+            """{"id":"b","name":"A","summary":"S","default":true,"platforms":["android","android"]}""",
             """{"id":"a","name":"A","summary":"S","default":true}""", // the id twice
         )
         for (entry in bad) assertWithMessage(entry).that(refusedRule(index(addons = "[$good,$entry]"))).startsWith("addons[1]")
+    }
+
+    @Test fun `a platform word this app does not know drops out of its entry and never refuses the index`() {
+        // review-885 M14: the day a later list says "ios", an older app must still take that list's blocks.
+        val read = AddonIndex.parse(
+            index(
+                addons = """[
+                    {"id":"a","name":"A","summary":"S","default":true},
+                    {"id":"b","name":"B","summary":"S","manifest":"https://b.example/manifest.json","platforms":["ios","android"]},
+                    {"id":"c","name":"C","summary":"S","manifest":"https://c.example/manifest.json","platforms":["ios"]}
+                ]""",
+                blocked = """[{"origin":"https://bad.example","reason":"harmful"}]""",
+            ),
+        )
+        assertThat(read.blocked).hasSize(1)
+        assertThat(read.addons.map { it.platforms }).containsExactly(null, listOf("android"), emptyList<String>()).inOrder()
+        // No platform named: everywhere. One this app knows among them: here. None it knows: not here.
+        assertThat(read.addons.map { it.offeredTo(160) }).containsExactly(true, true, false).inOrder()
     }
 
     @Test fun `a blocked origin is written one way only`() {

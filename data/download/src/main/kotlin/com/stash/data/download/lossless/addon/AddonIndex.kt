@@ -47,7 +47,10 @@ data class AddonIndex(
         val manifest: String? = null,
         /** The lowest app build (versionCode) it is offered to. */
         val minBuild: Int? = null,
-        /** `android`, `web`; null: everywhere. */
+        /**
+         * `android`, `web`; null: everywhere. Empty: for no platform this app knows (a later list
+         * named one, and the word was dropped): not offered here, and not Official here.
+         */
         val platforms: List<String>? = null,
     ) {
         val isDefault: Boolean get() = manifest == null
@@ -144,8 +147,11 @@ data class AddonIndex(
                 }
                 val platforms = if ("platforms" in o) {
                     val list = (o["platforms"] as? JsonArray)?.map { string(it) ?: refuse("$at.platforms") } ?: refuse("$at.platforms")
-                    if (list.isEmpty() || list.any { it !in PLATFORMS } || list.toSet().size != list.size) refuse("$at.platforms")
-                    list
+                    if (list.isEmpty() || list.toSet().size != list.size) refuse("$at.platforms")
+                    // A word this app doesn't know (a later list's, "ios" say) drops out of the entry and
+                    // never refuses the index: a newer list must never make an older app miss its
+                    // blocks (review-885 M14). The publisher's reader does the same (`index.js`).
+                    list.filter { it in PLATFORMS }
                 } else {
                     null
                 }

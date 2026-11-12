@@ -147,6 +147,27 @@ class SignedIndexAddonCatalogTest {
         assertThat(c.described("tidal")).isNull()
     }
 
+    @Test fun `a platform word this app does not know never costs the index its blocks, and is never this phone`() = runBlocking<Unit> {
+        // review-885 M14, over the publisher's `valid-unknown-platform`: a later list names "ios".
+        val c = catalog(case = "valid-unknown-platform")
+        // The index was applied: its block holds.
+        assertThat(c.trustOf("https://bad.example/x/", null)).isEqualTo(Trust.BLOCKED)
+        assertThat(c.blockReason("https://bad.example/x/", "anything")).isEqualTo(BlockReason.HARMFUL)
+        // "android" and "ios": for this phone. "ios" only: for no platform this app knows.
+        val offered = withTimeout(5_000) { c.official.first { it.isNotEmpty() } }
+        assertThat(offered.map { it.id }).containsExactly("example-radio")
+        assertThat(c.trustOf("https://addons.example.org/radio/", "example-radio")).isEqualTo(Trust.OFFICIAL)
+        assertThat(c.trustOf("https://addons.example.org/tv/", "example-tv")).isEqualTo(Trust.UNOFFICIAL)
+    }
+
+    @Test fun `official by the index is official on this phone only - its build and its platform count`() {
+        // review-885 N5. `example-radio` needs build 160.
+        assertThat(catalog(build = 160).trustOf("https://addons.example.org/radio/", "example-radio")).isEqualTo(Trust.OFFICIAL)
+        assertThat(catalog(build = 159).trustOf("https://addons.example.org/radio/", "example-radio")).isEqualTo(Trust.UNOFFICIAL)
+        // One with no `min_build` is official on any build.
+        assertThat(catalog(build = 1).trustOf("https://sixty.example.org:8443/", null)).isEqualTo(Trust.OFFICIAL)
+    }
+
     @Test fun `the official list - what a user can add on this phone, and what the index says of a default`() = runBlocking<Unit> {
         val current = catalog(build = 160)
         val offered = withTimeout(5_000) { current.official.first { it.isNotEmpty() } }
