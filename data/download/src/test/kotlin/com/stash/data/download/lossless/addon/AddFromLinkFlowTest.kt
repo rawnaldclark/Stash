@@ -89,10 +89,10 @@ class AddFromLinkFlowTest {
     private class Scramble : EncryptedUserAddons.Sealer {
         @Volatile var failing = false
 
-        /** The threads a save sealed the list on. */
-        val threads = CopyOnWriteArrayList<String>()
+        /** The threads a save sealed the list on. The threads themselves: a test run renames them while a coroutine is on them. */
+        val threads = CopyOnWriteArrayList<Thread>()
         override fun seal(plain: ByteArray): ByteArray {
-            threads += Thread.currentThread().name
+            threads += Thread.currentThread()
             if (failing) throw java.security.GeneralSecurityException("keystore")
             return plain.map { (it.toInt() xor 0x5A).toByte() }.toByteArray()
         }
@@ -107,14 +107,14 @@ class AddFromLinkFlowTest {
         @Volatile var loading: CompletableDeferred<Unit>? = null
 
         /** The threads a link was checked on. */
-        val threads = CopyOnWriteArrayList<String>()
+        val threads = CopyOnWriteArrayList<Thread>()
         override fun trustOf(base: String, id: String?) = when {
             blocked(base, id) != null -> Trust.BLOCKED
             base in officialBases -> Trust.OFFICIAL
             else -> Trust.UNOFFICIAL
         }
         override fun blockReason(base: String, id: String?): BlockReason? {
-            threads += Thread.currentThread().name
+            threads += Thread.currentThread()
             return blocked(base, id)
         }
         override val official: StateFlow<List<OfficialEntry>> = MutableStateFlow(emptyList())
@@ -421,24 +421,27 @@ class AddFromLinkFlowTest {
     @Test fun `reading a link and saving the list never run on the thread that asked`() {
         // The screen asks from the main thread. A manifest's JSON and the Keystore's seal are work for another one.
         serve("x", "hifi")
-        val asking = Executors.newSingleThreadExecutor { r -> Thread(r, "the-screen") }
+        // The asking thread itself, not its name: a test run renames a thread while a coroutine is on it.
+        var screen: Thread? = null
+        val asking = Executors.newSingleThreadExecutor { r -> Thread(r, "the-screen").also { screen = it } }
         try {
             runBlocking(asking.asCoroutineDispatcher()) {
-                assertThat(Thread.currentThread().name).isEqualTo("the-screen")
+                assertThat(Thread.currentThread()).isSameInstanceAs(screen)
                 val p = ready(url("x"))
                 val key = InTreeAddonRegistry.keyOf(url("x"))
                 assertThat(links.add(p, token = null, agreed = true)).isInstanceOf(AddonLinks.Outcome.Added::class.java)
                 assertThat(links.setEnabled(key, false)).isTrue()
                 assertThat(links.remove(key)).isTrue()
-                assertThat(Thread.currentThread().name).isEqualTo("the-screen")
+                assertThat(Thread.currentThread()).isSameInstanceAs(screen)
             }
         } finally {
             asking.shutdownNow()
         }
+        assertThat(screen).isNotNull()
         // The link was checked before and after its manifest was read and again at Add; the list was sealed three times.
         assertThat(catalog.threads.size).isAtLeast(3)
         assertThat(sealer.threads).hasSize(3)
-        assertThat(catalog.threads + sealer.threads).doesNotContain("the-screen")
+        assertThat(catalog.threads + sealer.threads).doesNotContain(screen)
     }
 
     @Test fun `a link read in the app's first second waits for the kept blocklist, and a blocked add-on is asked nothing`() = runBlocking<Unit> {
