@@ -94,7 +94,8 @@ class AddonRefs @Inject constructor(
             if (row.remoteId != null && now - row.resolvedAt < TidalClient.MATCH_TTL_MS) {
                 if (missFresh(row, pass, now)) return Found.Miss
                 Log.i(TAG, "ref hit ${addon.id}")
-                return Found.Hit(Ref(row.remoteId!!, row.artwork, null, row.confidence))
+                // A row kept before cover art stopped being taken from such add-ons may still hold one.
+                return Found.Hit(Ref(row.remoteId!!, row.artwork.takeIf { keepsArtwork(addon) }, null, row.confidence))
             }
             // No match at all (a search found none): every pass, for 14 days.
             if (row.remoteId == null && row.resolvedAt > 0 && now - row.resolvedAt < TidalClient.MISS_TTL_MS) return Found.Miss
@@ -206,7 +207,7 @@ class AddonRefs @Inject constructor(
                     Found.Miss
                 } else {
                     val conf = if (!query.isrc.isNullOrBlank() && item.isrc.equals(query.isrc, ignoreCase = true)) 1f else RESOLVE_CONFIDENCE
-                    Found.Hit(keep(rid, key, item, conf))
+                    Found.Hit(keep(addon, rid, key, item, conf))
                 }
             }
             is AddonResult.Failed -> if (r.failure.isMiss) {
@@ -239,7 +240,7 @@ class AddonRefs @Inject constructor(
         }
         val (item, conf) = best
         Log.i(TAG, "matched by search ${addon.id} conf=$conf")
-        return Found.Hit(keep(rid, key, item, conf))
+        return Found.Hit(keep(addon, rid, key, item, conf))
     }
 
     private suspend fun noMatch(addonId: String, key: String): Found {
@@ -247,8 +248,8 @@ class AddonRefs @Inject constructor(
         return Found.Miss
     }
 
-    private suspend fun keep(addonId: String, key: String, item: Track, confidence: Float): Ref {
-        val art = item.artwork?.maxByOrNull { it.width ?: 0 }?.url
+    private suspend fun keep(addon: InstalledAddon, addonId: String, key: String, item: Track, confidence: Float): Ref {
+        val art = item.artwork?.maxByOrNull { it.width ?: 0 }?.url?.takeIf { keepsArtwork(addon) }
         write(addonId) {
             refs.upsert(
                 AddonRefEntity(
@@ -354,6 +355,20 @@ class AddonRefs @Inject constructor(
          */
         internal fun rowId(addonId: String): String =
             if (addonId == TidalClient.REFS_ADDON_ID) "addon:$addonId" else addonId
+
+        /**
+         * Whether [addon]'s cover art is used at all (review-882 B1 and M7). Art is an image URL
+         * the add-on chose, fetched by the image loader on the app's ordinary client (none of the
+         * base rules) and written to the song's row, where it would outlive the add-on: a tracker
+         * on every later showing of the song, and, when the add-on serves art under its own
+         * tokenised base, the user's token in the library database and every backup of it.
+         *
+         * So art is taken only from add-ons Stash vouches for: the signed config's defaults. An
+         * add-on the user added from a link gives none; the song keeps the art it has. (Part 2 of
+         * phase 4 gives add-ons a trust level: this is then "not `Trust.UNOFFICIAL`".) The Tidal
+         * rung and the user's own Tidal server never come through here and keep theirs.
+         */
+        fun keepsArtwork(addon: InstalledAddon): Boolean = !addon.userAdded
 
         /** `/resolve` answers the exact recording or nothing (SPEC.md 4.3): as sure as a matched search. */
         const val RESOLVE_CONFIDENCE = 0.9f

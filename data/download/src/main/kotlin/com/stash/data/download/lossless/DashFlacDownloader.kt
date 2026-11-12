@@ -41,6 +41,10 @@ class DashFlacDownloader @Inject constructor(
 ) {
     /**
      * @param client      The caller's fetch client (LosslessUrlDownloader's, with its stall timeouts).
+     *   For an add-on's answer it is the add-on media client: the manifest AND every segment URL it
+     *   names are then held to the base rules by that client's guard (review-882 B1), so a segment
+     *   on the user's own network is refused before any connection is opened.
+     * @param maxBytes    The most the segments may add up to (`SourceResult.maxBytes`); null = no ceiling.
      * @param onProgress  (segmentsDone, totalSegments) — the init counts as one.
      */
     suspend fun download(
@@ -48,6 +52,7 @@ class DashFlacDownloader @Inject constructor(
         mpdUrl: String,
         headers: Map<String, String>,
         destination: File,
+        maxBytes: Long? = null,
         onProgress: (done: Long, total: Long) -> Unit = { _, _ -> },
     ): Result<File> = withContext(Dispatchers.IO) {
         val temp = File(destination.parentFile, "${destination.nameWithoutExtension}.dash.mp4")
@@ -60,10 +65,12 @@ class DashFlacDownloader @Inject constructor(
             val total = urls.size.toLong()
 
             destination.parentFile?.mkdirs()
+            var written = 0L
             temp.sink().buffer().use { sink ->
                 urls.forEachIndexed { i, url ->
                     currentCoroutineContext().ensureActive()
-                    fetchWithRetry(client, url, sink, label = if (i == 0) "init" else "segment $i/${total - 1}")
+                    written += fetchWithRetry(client, url, sink, label = if (i == 0) "init" else "segment $i/${total - 1}")
+                    if (maxBytes != null && written > maxBytes) throw IOException("the segments add up to more than this song can be")
                     onProgress(i + 1L, total)
                 }
                 sink.flush()
@@ -102,16 +109,19 @@ class DashFlacDownloader @Inject constructor(
      * segment in memory first (Tidal's are ~0.5–2 MB) so a mid-body failure never
      * leaves half a segment appended to the file.
      */
-    private suspend fun fetchWithRetry(client: OkHttpClient, url: String, sink: BufferedSink, label: String) {
+    private suspend fun fetchWithRetry(client: OkHttpClient, url: String, sink: BufferedSink, label: String): Long {
         var attempt = 0
         while (true) {
             try {
-                sink.write(fetchBytes(client, url, emptyMap()))
-                return
+                val bytes = fetchBytes(client, url, emptyMap())
+                sink.write(bytes)
+                return bytes.size.toLong()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: IOException) {
-                val retryable = e !is HttpStatusException || e.code >= 500
+                // A URL the add-on guard refused stays refused: asking again only asks the add-on's host again.
+                val refused = e is com.stash.core.addons.PrivateAddressException || e is com.stash.core.addons.RefusedAddonUrlException
+                val retryable = !refused && (e !is HttpStatusException || e.code >= 500)
                 if (!retryable || attempt >= MAX_RETRIES) throw IOException("$label failed: ${e.message}", e)
                 attempt++
                 Log.d(TAG, "$label attempt $attempt failed (${e.javaClass.simpleName}); retrying")
@@ -134,7 +144,10 @@ class DashFlacDownloader @Inject constructor(
                     if (!r.isSuccessful) throw HttpStatusException(r.code)
                     val body = r.body ?: throw IOException("empty body")
                     if (body.contentLength() > MAX_SEGMENT_BYTES) throw IOException("segment too large")
-                    body.bytes()
+                    // No Content-Length is no promise: read no further than the ceiling.
+                    val source = body.source()
+                    if (source.request(MAX_SEGMENT_BYTES + 1)) throw IOException("segment too large")
+                    source.buffer.readByteArray()
                 }
             } finally {
                 watcher.cancel()

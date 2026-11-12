@@ -10,6 +10,7 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import com.stash.core.data.prefs.DataSaver
 import com.stash.core.model.TrackItem
+import com.stash.data.download.lossless.LosslessUrlDownloader
 import com.stash.data.download.preview.PreviewUrlExtractor
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -50,7 +51,10 @@ class SearchPreviewMediaSource @Inject constructor(
                 cacheKey = "ytdlp-low:${track.videoId}",
             )
         }
-        val match = prefetcher.lookup(track)
+        // The lookup asks no add-on (NoAddonSources). Should an add-on's match reach here all the
+        // same, it is not played: this cached HTTP source has none of the add-on base rules
+        // (review-882 B1), so the preview falls to YouTube.
+        val match = prefetcher.lookup(track)?.takeUnless { LosslessUrlDownloader.isAddonSource(it.sourceId) }
         // A DASH match (Tidal) is a manifest this progressive cached source cannot play.
         return if (match != null && !match.isDash && match.confidence >= MIN_SEARCH_CONFIDENCE) {
             Log.d(

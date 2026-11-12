@@ -72,7 +72,7 @@ class StashMediaSourceFactory(
     /**
      * Add-on streams (`addon:` origins): the add-on media client's HTTP source, whose DNS and
      * connection guard refuse the user's own network (add-ons plan phase 4 §2.6). Null in tests;
-     * such a stream then plays on the default path.
+     * such a stream is then refused, never played on the default path (review-882 B1).
      */
     addonDataSourceFactory: DataSource.Factory? = null,
     /** An item whose stream an add-on answered (its origin extra starts `addon:`). */
@@ -194,7 +194,8 @@ class StashMediaSourceFactory(
         }
         streamingTrackId(mediaItem)?.let { return streamingFactory.createUncachedDataSourceFactory(it) }
         if (isJioSaavnOrigin(mediaItem)) return jioSaavnDataSourceFactory
-        if (addonSourceFactory != null && isAddonOrigin(mediaItem)) return addonSourceFactory
+        // An add-on's URL on the add-on media client, or refused: never on the default source.
+        if (isAddonOrigin(mediaItem)) return addonSourceFactory ?: refusedDataSourceFactory
         return localDataSourceFactory
     }
 
@@ -243,8 +244,13 @@ class StashMediaSourceFactory(
                         if (resolved?.isHls == true) {
                             streamingFactory.createHlsMediaSource(item, resolved)
                         } else if (resolved?.isDash == true) {
-                            val addon = addonSourceFactory?.takeIf { resolved.origin?.startsWith(AddonStreamRung.ORIGIN_PREFIX) == true }
-                            streamingFactory.createDashMediaSource(item, resolved.url, addon)
+                            if (AddonPlayback.isAddonOrigin(resolved.origin)) {
+                                // An add-on's manifest and segments on the add-on media client, or refused.
+                                addonSourceFactory?.let { streamingFactory.createDashMediaSource(item, resolved.url, it) }
+                                    ?: refusedFactory.createMediaSource(item)
+                            } else {
+                                streamingFactory.createDashMediaSource(item, resolved.url, null)
+                            }
                         } else {
                             lazyFactory.createMediaSource(item)
                         }
@@ -257,7 +263,12 @@ class StashMediaSourceFactory(
         // Keyed on the path, not an extra: the session strips local configuration,
         // and upstream serves every MPD at `/dash/td/<id>.mpd`.
         if ((uri?.scheme == "https" || uri?.scheme == "http") && uri.path?.endsWith(".mpd") == true) {
-            return streamingFactory.createDashMediaSource(mediaItem, uri.toString(), addonSourceFactory?.takeIf { isAddonOrigin(mediaItem) })
+            if (isAddonOrigin(mediaItem)) {
+                // An add-on's manifest and segments on the add-on media client, or refused.
+                return addonSourceFactory?.let { streamingFactory.createDashMediaSource(mediaItem, uri.toString(), it) }
+                    ?: refusedFactory.createMediaSource(mediaItem)
+            }
+            return streamingFactory.createDashMediaSource(mediaItem, uri.toString(), null)
         }
         // Order matches existing precedence: YouTube-trackId refresh chain first,
         // then JioSaavn authed-HTTP, then local/default.
@@ -267,7 +278,8 @@ class StashMediaSourceFactory(
         if (isJioSaavnOrigin(mediaItem)) {
             return jioSaavnFactory.createMediaSource(mediaItem)
         }
-        if (addonFactory != null && isAddonOrigin(mediaItem)) return addonFactory.createMediaSource(mediaItem)
+        // An add-on's URL on the add-on media client, or refused: never on the default source.
+        if (isAddonOrigin(mediaItem)) return (addonFactory ?: refusedFactory).createMediaSource(mediaItem)
         return localFactory.createMediaSource(mediaItem)
     }
 }

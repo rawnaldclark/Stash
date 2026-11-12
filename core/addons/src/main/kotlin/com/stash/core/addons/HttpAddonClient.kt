@@ -121,24 +121,48 @@ class HttpAddonClient @Inject constructor(
      * OkHttp pools connections per address, and an address includes its DNS, so a connection one
      * client made is never handed to the other.
      */
-    private val publicHttp: OkHttpClient = http.newBuilder()
-        .dns(PublicOnlyDns(sharedClient.dns, allowLoopback = hostOptions.allowLocalHttp))
-        .build()
+    private val publicHttp: OkHttpClient = PublicOnlyDns(sharedClient.dns, allowLoopback = hostOptions.allowLocalHttp).let { dns ->
+        http.newBuilder()
+            .dns(dns)
+            // Behind a proxy the DNS above is never asked for the add-on's name: ask it here (review-882 M2).
+            .addInterceptor(AddonMediaGuard.proxyGuard(dns, sharedClient.proxy, sharedClient.proxySelector))
+            .build()
+    }
 
     /**
-     * What the player fetches add-on streams with (`addon:` origins, add-ons plan phase 4 §2.6): the
-     * app's shared client without its interceptors (their debug logging prints URLs, and a stream
-     * URL can carry a signature), following redirects as a player must, with [PublicOnlyDns] and
-     * a connection guard ([PublicOnlyDns.connectionGuard]) for an IP literal in a redirect, so no
-     * add-on can make the player fetch from the user's own network.
+     * What EVERY fetch of a URL an add-on handed over goes through (`addon:` origins and sources,
+     * add-ons plan phase 4 §2.6; review-882 B1): the player's streams, the downloader's files and
+     * the DASH downloader's manifests and segments. The app's shared client without its
+     * interceptors (their debug logging prints URLs, and a stream URL can carry a signature), and:
+     *  - [AddonMediaGuard]: the URL rule on the first URL and on every redirect hop, which it
+     *    follows by hand, so an address on the user's own network is refused before any
+     *    connection is opened; `User-Agent: Stash/<version>` on every hop;
+     *  - [PublicOnlyDns]: a name that resolves to the user's own network is refused;
+     *  - [PublicOnlyDns.connectionGuard]: the last check, on the connection's peer.
+     *
+     * A consumer that fetched an add-on's URL on any other client would have none of this: the
+     * wiring tests (`AddonMediaClientTest`, `AddonFetchWiringTest`) hold each one to it.
      */
     val mediaClient: OkHttpClient by lazy {
+        val dns = PublicOnlyDns(sharedClient.dns, allowLoopback = hostOptions.allowLocalHttp)
         sharedClient.newBuilder()
             .apply {
                 interceptors().clear()
                 networkInterceptors().clear()
             }
-            .dns(PublicOnlyDns(sharedClient.dns, allowLoopback = hostOptions.allowLocalHttp))
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .dns(dns)
+            .addInterceptor(
+                AddonMediaGuard(
+                    allowed = { AddonValidator.isAllowedUrl(it.toString(), optionsFor(publicOnly = true), Limits.STREAM_URL) },
+                    isLocalAddress = { AddonValidator.isLocalAddressUrl(it.toString(), optionsFor(publicOnly = true)) },
+                    publicDns = dns,
+                    proxy = sharedClient.proxy,
+                    proxySelector = sharedClient.proxySelector,
+                    userAgent = userAgent,
+                ),
+            )
             .addNetworkInterceptor(PublicOnlyDns.connectionGuard(allowLoopback = hostOptions.allowLocalHttp))
             .apply { if (hostOptions.allowLocalHttp) connectionSpecs(listOf(ConnectionSpec.MODERN_TLS, ConnectionSpec.CLEARTEXT)) }
             .build()

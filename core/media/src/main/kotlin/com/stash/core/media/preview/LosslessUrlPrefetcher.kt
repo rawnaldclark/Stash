@@ -7,6 +7,7 @@ import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.LosslessSourceRegistry
 import com.stash.data.download.lossless.SourceResult
 import com.stash.data.download.lossless.TrackQuery
+import com.stash.data.download.lossless.addon.NoAddonSources
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -86,7 +87,10 @@ class LosslessUrlPrefetcher internal constructor(
         cache[key]?.deferred?.cancel()
         // The cache only grows below, so pruning here bounds it.
         cancelStale()
-        val fast = scope.async {
+        // No add-on is asked (review-882 B1): the preview plays its match on a plain cached HTTP
+        // source, with none of the add-on base rules, and a taste of a song is no reason to spend
+        // a call on a server Stash doesn't run.
+        val fast = scope.async(NoAddonSources) {
             runCatching { registry.resolve(track.toQuery(), bypassRateLimit = true) }
                 .onFailure { e ->
                     if (e is CancellationException) throw e
