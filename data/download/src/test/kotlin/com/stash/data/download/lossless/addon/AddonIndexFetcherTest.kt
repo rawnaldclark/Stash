@@ -3,6 +3,8 @@ package com.stash.data.download.lossless.addon
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.addons.BlockReason
 import kotlinx.coroutines.CoroutineScope
@@ -177,6 +179,26 @@ class AddonIndexFetcherTest {
         assertThat(server.requestCount).isEqualTo(3)
         assertThat(f.refresh()).isFalse()
         assertThat(server.requestCount).isEqualTo(3)
+    }
+
+    @Test fun `a kept copy that no longer reads is fetched whole on the next run, never asked for with its ETag`() = runBlocking<Unit> {
+        // review-885 N1: with no index in memory, a 304 left the run (and every later one) with no
+        // blocklist until the file upstream changed.
+        serve("valid", etag = "\"abc123\"")
+        assertThat(fetcher().refresh()).isTrue()
+        server.takeRequest()
+        server.takeRequest()
+        // The kept text is damaged, or a later version reads it by a rule it breaks.
+        store.edit { it[stringPreferencesKey("index_json")] = "{not an index" }
+        val next = fetcher()
+        next.loadCached()
+        assertThat(next.index.value).isNull()
+
+        // The same address, minutes after the last fetch: asked all the same, with no ETag, and applied.
+        serve("valid", etag = "\"abc123\"")
+        assertThat(next.refresh()).isTrue()
+        assertThat(server.takeRequest().getHeader("If-None-Match")).isNull()
+        assertThat(next.index.value!!.blocked).hasSize(3)
     }
 
     @Test fun `reading the kept copy never waits for a fetch in flight`() = runBlocking<Unit> {

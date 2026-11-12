@@ -150,10 +150,15 @@ class AddonIndexFetcher internal constructor(
             val sameSource = prefs[SOURCE] == url
             val now = nowMs()
             val sinceLast = now - (prefs[FETCHED_AT] ?: 0L)
+            // An index in memory is what "nothing new" may be answered against. With none (the kept
+            // copy could not be read, or no longer reads), neither the six hours nor the ETag apply:
+            // a 304 would leave this run, and every later one, with no blocklist until the file
+            // upstream changes (review-885 N1).
+            val have = state.value != null
             // A clock set back (a negative gap) fetches.
-            if (!force && sameSource && sinceLast in 0 until MIN_FETCH_INTERVAL_MS) return@withLock false
+            if (!force && have && sameSource && sinceLast in 0 until MIN_FETCH_INTERVAL_MS) return@withLock false
             val client = url.toHttpUrlOrNull()?.let { TidalDebugSettings.clientFor(httpClient, it) } ?: return@withLock false
-            val etag = prefs[ETAG]?.takeIf { cachedText != null && sameSource }
+            val etag = prefs[ETAG]?.takeIf { have && cachedText != null && sameSource }
             val got = ioCatching("fetch") { SignedJson.get(client, url, MAX_INDEX_BYTES, etag) } ?: return@withLock false
             if (got !is SignedJson.Fetched.Body) {
                 ioCatching("cache write") { store.edit { it[FETCHED_AT] = now } }
