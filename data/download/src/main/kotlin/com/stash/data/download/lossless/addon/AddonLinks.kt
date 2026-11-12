@@ -155,7 +155,18 @@ class AddonLinks @Inject constructor(
      */
     suspend fun preview(link: String, replacingKey: String? = null): Outcome =
         // Off the main thread: reading and checking a manifest is work (up to 64 KiB of someone else's JSON).
-        withContext(Dispatchers.Default) { read(link, replacingKey) }
+        withContext(Dispatchers.Default) {
+            try {
+                read(link, replacingKey)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A link can arrive by a share or a scanned code: whatever reading it throws is an
+                // answer on the screen, never a crash. Only the class: a message could quote the link.
+                Log.w(TAG, "an add-on link could not be read: ${e.javaClass.simpleName}")
+                Outcome.Refused(Refusal.UNREACHABLE)
+            }
+        }
 
     private suspend fun read(link: String, replacingKey: String?): Outcome {
         val url = when (val n = normalise(link)) {
@@ -163,6 +174,9 @@ class AddonLinks @Inject constructor(
             is Normalised.No -> return Outcome.Refused(n.reason)
         }
         val base = HttpAddonClient.baseOf(url) ?: return Outcome.Refused(Refusal.NOT_AN_ADDON)
+        // A link shared to Stash can be read in the app's first second: the blocklist kept from the
+        // last run is waited for (a file read), so a blocked add-on is refused then too, unasked.
+        catalog.awaitLoaded()
         val mine = users.loadedEntries().filter { it.kind == UserAddonKind.MANIFEST }
         val target = replacingKey?.let { k -> mine.firstOrNull { InTreeAddonRegistry.keyOf(it.manifestUrl) == k } }
         if (replacingKey != null && target == null) return Outcome.Refused(Refusal.DIFFERENT_ADDON)
@@ -236,6 +250,7 @@ class AddonLinks @Inject constructor(
         if (preview.needsConsent && !agreed) return Outcome.Refused(Refusal.NOT_AGREED)
         val base = HttpAddonClient.baseOf(preview.manifestUrl) ?: return Outcome.Refused(Refusal.NOT_AN_ADDON)
         // The index may have changed since the preview.
+        catalog.awaitLoaded()
         catalog.blockReason(base, preview.id)?.let { return Outcome.Refused(blocked(it)) }
         val mine = users.loadedEntries().filter { it.kind == UserAddonKind.MANIFEST }
         val target = preview.replacesKey?.let { k -> mine.firstOrNull { InTreeAddonRegistry.keyOf(it.manifestUrl) == k } }

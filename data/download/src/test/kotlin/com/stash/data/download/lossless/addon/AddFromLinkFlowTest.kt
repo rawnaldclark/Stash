@@ -3,6 +3,10 @@ package com.stash.data.download.lossless.addon
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.addons.AddonCatalog
+import com.stash.core.addons.AddonFailure
+import com.stash.core.addons.AddonHold
+import com.stash.core.addons.AddonRateGate
+import com.stash.core.addons.AddonResult
 import com.stash.core.addons.AddonSees
 import com.stash.core.addons.BlockReason
 import com.stash.core.addons.HttpAddonClient
@@ -11,16 +15,20 @@ import com.stash.core.addons.NoDefaultAddons
 import com.stash.core.addons.NoFirstPartyAddons
 import com.stash.core.addons.NoManifestStore
 import com.stash.core.addons.OfficialEntry
-import com.stash.core.addons.OpenAddonRateGate
 import com.stash.core.addons.Trust
 import com.stash.core.addons.UnsignedAddons
+import com.stash.core.data.db.entity.AddonRefEntity
 import com.stash.data.download.lossless.PlayOrder
 import com.stash.data.download.lossless.tidal.FakeAddonRefDao
 import com.stash.data.download.lossless.tidal.LocalHttp
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +46,8 @@ import java.io.File
 import java.net.InetAddress
 import java.nio.file.Files
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
 
 /**
  * Add from a link, end to end below the screen (add-ons plan phase 4 §1.9, §2.1, §2.7, §2.9): a link in,
@@ -50,6 +60,9 @@ class AddFromLinkFlowTest {
 
     private lateinit var server: MockWebServer
     private val manifests = ConcurrentHashMap<String, String>()
+
+    /** Paths (with their query) the server refuses, and the status it refuses them with. */
+    private val refusals = ConcurrentHashMap<String, Int>()
     private val dir: File = Files.createTempDirectory("add-from-link").toFile()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -58,6 +71,7 @@ class AddFromLinkFlowTest {
             dispatcher = object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     val path = request.path.orEmpty().removePrefix("/")
+                    refusals[path]?.let { return MockResponse().setResponseCode(it).setBody("{}") }
                     return manifests[path]?.let { MockResponse().setBody(it) } ?: MockResponse().setResponseCode(404)
                 }
             }
@@ -74,7 +88,11 @@ class AddFromLinkFlowTest {
     /** Not encryption: a reversible scramble standing in for the Keystore. [failing] makes every seal throw, as a Keystore's bad moment does. */
     private class Scramble : EncryptedUserAddons.Sealer {
         @Volatile var failing = false
+
+        /** The threads a save sealed the list on. */
+        val threads = CopyOnWriteArrayList<String>()
         override fun seal(plain: ByteArray): ByteArray {
+            threads += Thread.currentThread().name
             if (failing) throw java.security.GeneralSecurityException("keystore")
             return plain.map { (it.toInt() xor 0x5A).toByte() }.toByteArray()
         }
@@ -84,23 +102,46 @@ class AddFromLinkFlowTest {
     private class Catalog : AddonCatalog {
         @Volatile var blocked: (base: String, id: String?) -> BlockReason? = { _, _ -> null }
         @Volatile var officialBases: Set<String> = emptySet()
+
+        /** Set: the copy kept from the last run is still being read, until this completes. */
+        @Volatile var loading: CompletableDeferred<Unit>? = null
+
+        /** The threads a link was checked on. */
+        val threads = CopyOnWriteArrayList<String>()
         override fun trustOf(base: String, id: String?) = when {
             blocked(base, id) != null -> Trust.BLOCKED
             base in officialBases -> Trust.OFFICIAL
             else -> Trust.UNOFFICIAL
         }
-        override fun blockReason(base: String, id: String?) = blocked(base, id)
+        override fun blockReason(base: String, id: String?): BlockReason? {
+            threads += Thread.currentThread().name
+            return blocked(base, id)
+        }
         override val official: StateFlow<List<OfficialEntry>> = MutableStateFlow(emptyList())
         override val changes: Flow<Any?> = emptyFlow()
+        override suspend fun awaitLoaded() {
+            loading?.await()
+        }
+    }
+
+    /** Never pauses anything; remembers which pauses were ended. */
+    private class Gate : AddonRateGate {
+        val resets = CopyOnWriteArrayList<String>()
+        override suspend fun admit(key: String, paced: Boolean) = true
+        override suspend fun onAnswer(key: String) = Unit
+        override suspend fun onRateLimited(key: String, retryAfterMs: Long?) = Unit
+        override suspend fun onFailure(key: String) = Unit
+        override suspend fun reset(key: String) { resets += key }
     }
 
     private val sealer = Scramble()
     private val catalog = Catalog()
+    private val gate = Gate()
     private val savedOrder = MutableStateFlow<List<String>?>(null)
     private val refDao = FakeAddonRefDao()
 
     private val users by lazy { EncryptedUserAddons(PreferenceDataStoreFactory.create(scope = scope) { File(dir, "u.preferences_pb") }, sealer) }
-    private val client by lazy { HttpAddonClient(OkHttpClient(), OpenAddonRateGate, NoFirstPartyAddons, UnsignedAddons, LocalHttp) }
+    private val client by lazy { HttpAddonClient(OkHttpClient(), gate, NoFirstPartyAddons, UnsignedAddons, LocalHttp) }
     private val registry by lazy { InTreeAddonRegistry(NoDefaultAddons, users, client, NoManifestStore, catalog) }
     private val links by lazy {
         AddonLinks(client, users, registry, LocalHttp, AddonRefs(client, refDao), catalog, PlayOrder(savedOrder, { savedOrder.value = it }, registry))
@@ -300,5 +341,124 @@ class AddFromLinkFlowTest {
         assertThat(links.add(p, token = "pässword", agreed = true)).isEqualTo(AddonLinks.Outcome.Refused(AddonLinks.Refusal.BAD_PASSWORD))
         assertThat(links.add(p, token = "s3cret", agreed = true)).isInstanceOf(AddonLinks.Outcome.Added::class.java)
         assertThat(users.loadedEntries().single().token).isEqualTo("s3cret")
+    }
+
+    // ------------------------------------------------------------------------------------------ what the reviews found only said (881 N10; 882 M5, N3), and §2.7, §2.9
+
+    @Test fun `Remove forgets what the add-on said about songs, switched off and never read this run`() = runBlocking<Unit> {
+        serve("x", "hifi")
+        serve("y", "other", name = "Other")
+        links.add(ready(url("x")), token = null, agreed = true)
+        links.add(ready(url("y")), token = null, agreed = true)
+        refDao.upsert(AddonRefEntity(addonId = "hifi", songKey = "isrc:AA0000000001", remoteId = "1", resolvedAt = 1L))
+        refDao.upsert(AddonRefEntity(addonId = "other", songKey = "isrc:AA0000000002", remoteId = "2", resolvedAt = 1L))
+        val key = InTreeAddonRegistry.keyOf(url("x"))
+        assertThat(links.setEnabled(key, false)).isTrue()
+        // The registry has read nothing this run: only the id kept at Add can name its refs.
+        assertThat(registry.addons.value).isEmpty()
+        assertThat(registry.entries.value).isEmpty()
+        assertThat(links.remove(key)).isTrue()
+        assertThat(refDao.rows.values.map { it.addonId }).containsExactly("other")
+    }
+
+    @Test fun `agreeing to what an add-on now wants to see is recorded, and it is used again`() = runBlocking<Unit> {
+        fun v1(resources: String) =
+            """{"stash":1,"id":"hifi","name":"Hi-Fi Relay","version":"1.0.0","kind":"server","resources":[$resources],"stream":{"cors":false}}"""
+        manifests["a/manifest.json"] = v1("\"search\",\"stream\"")
+        links.add(ready(url("a")), token = null, agreed = true)
+        registry.refresh()
+        assertThat(registry.addons.value.map { it.id }).containsExactly("hifi")
+
+        // Its server now lists downloads too: more than was agreed. It waits.
+        manifests["a/manifest.json"] = v1("\"search\",\"stream\",\"download\"")
+        registry.refresh()
+        assertThat(registry.addons.value).isEmpty()
+        assertThat(registry.entries.value.single().hold).isEqualTo(AddonHold.WANTS_MORE)
+
+        val key = InTreeAddonRegistry.keyOf(url("a"))
+        assertThat(links.agree(key)).isTrue()
+        assertThat(users.loadedEntries().single().consent).containsExactly("SEARCHES", "PLAYS", "SAVES")
+        registry.refresh()
+        assertThat(registry.addons.value.map { it.id }).containsExactly("hifi")
+        assertThat(registry.entries.value.single().hold).isNull()
+    }
+
+    @Test fun `a link that stopped working says Needs a new link, and replacing it ends the pause`() = runBlocking<Unit> {
+        serve("old-tok", "hifi")
+        links.add(ready(url("old-tok")), token = null, agreed = true)
+        registry.refresh()
+        val addon = registry.addons.value.single()
+
+        /** The add-on's row as Settings › Add-ons builds it, from the same registry and client. */
+        fun status() = AddonOverview.build(
+            userEntries = users.entries.value,
+            entries = registry.entries.value,
+            reading = false,
+            named = AddonOverview.Named(hasQobuz = false, tidalKnown = true, ownHost = null, off = emptySet()),
+            saved = null,
+            official = emptyList(),
+            unauthorized = client.unauthorized.value,
+        ).row("addon:hifi")!!.status
+        assertThat(status()).isEqualTo(AddonOverview.Status.WORKING)
+
+        // The token in its link stopped working: a plain 401 on a call.
+        refusals["old-tok/search?q=x"] = 401
+        val refused = (client.search(addon, "x") as AddonResult.Failed).failure as AddonFailure.Refused
+        assertThat(refused.status).isEqualTo(401)
+        assertThat(status()).isEqualTo(AddonOverview.Status.NEEDS_NEW_LINK)
+
+        // Replace link, from its page: the same add-on under a new token.
+        gate.resets.clear()
+        serve("new-tok", "hifi")
+        val key = InTreeAddonRegistry.keyOf(url("old-tok"))
+        assertThat(links.add(ready(url("new-tok"), replacing = key), token = null)).isInstanceOf(AddonLinks.Outcome.Added::class.java)
+        registry.refresh()
+        assertThat(status()).isEqualTo(AddonOverview.Status.WORKING)
+        // And the hour's pause the 401 started is over.
+        assertThat(gate.resets).contains(HttpAddonClient.rateKey("hifi"))
+    }
+
+    @Test fun `reading a link and saving the list never run on the thread that asked`() {
+        // The screen asks from the main thread. A manifest's JSON and the Keystore's seal are work for another one.
+        serve("x", "hifi")
+        val asking = Executors.newSingleThreadExecutor { r -> Thread(r, "the-screen") }
+        try {
+            runBlocking(asking.asCoroutineDispatcher()) {
+                assertThat(Thread.currentThread().name).isEqualTo("the-screen")
+                val p = ready(url("x"))
+                val key = InTreeAddonRegistry.keyOf(url("x"))
+                assertThat(links.add(p, token = null, agreed = true)).isInstanceOf(AddonLinks.Outcome.Added::class.java)
+                assertThat(links.setEnabled(key, false)).isTrue()
+                assertThat(links.remove(key)).isTrue()
+                assertThat(Thread.currentThread().name).isEqualTo("the-screen")
+            }
+        } finally {
+            asking.shutdownNow()
+        }
+        // The link was checked before and after its manifest was read and again at Add; the list was sealed three times.
+        assertThat(catalog.threads.size).isAtLeast(3)
+        assertThat(sealer.threads).hasSize(3)
+        assertThat(catalog.threads + sealer.threads).doesNotContain("the-screen")
+    }
+
+    @Test fun `a link read in the app's first second waits for the kept blocklist, and a blocked add-on is asked nothing`() = runBlocking<Unit> {
+        serve("x", "hifi")
+        val loading = CompletableDeferred<Unit>()
+        catalog.loading = loading
+        val reading = async(Dispatchers.IO) { links.preview(url("x")) }
+        delay(400)
+        assertThat(server.requestCount).isEqualTo(0)
+        // The copy kept from the last run is read: it blocks this add-on.
+        catalog.blocked = { _, _ -> BlockReason.HARMFUL }
+        loading.complete(Unit)
+        assertThat(reading.await()).isEqualTo(AddonLinks.Outcome.Refused(AddonLinks.Refusal.BLOCKED_HARMFUL))
+        assertThat(server.requestCount).isEqualTo(0)
+    }
+
+    @Test fun `whatever reading a link throws is an answer on the screen, never a crash`() = runBlocking<Unit> {
+        serve("x", "hifi")
+        catalog.blocked = { _, _ -> throw IllegalStateException("https://relay.example.org/s3cret/") }
+        assertThat(refused(url("x"))).isEqualTo(AddonLinks.Refusal.UNREACHABLE)
+        assertThat(users.loadedEntries()).isEmpty()
     }
 }
