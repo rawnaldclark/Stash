@@ -124,7 +124,8 @@ class AddonOverviewPageCallsTest {
             lateinit var after: Thread
             // Where the add-on is asked is where its answer is read: the client reads on the thread that calls it.
             val clientThreads = CopyOnWriteArrayList<Thread>()
-            val client: HttpAddonClient = mockk {
+            // Relaxed: the overview also reads the client's own lists as it is built.
+            val client: HttpAddonClient = mockk(relaxed = true) {
                 coEvery { quota(any(), circuit = false) } coAnswers {
                     clientThreads += Thread.currentThread()
                     AddonResult.Ok(Quota(used = 3, limit = 10, resetsAt = 1_893_456_000L))

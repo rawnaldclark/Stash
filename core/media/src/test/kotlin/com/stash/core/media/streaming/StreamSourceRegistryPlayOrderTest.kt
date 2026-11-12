@@ -276,11 +276,11 @@ class StreamSourceRegistryPlayOrderTest {
     }
 
     @Test fun `with Tidal switched off, a song only a DASH add-on has plays from it, resolved before the player picks its source`() = runTest {
-        // review-882 F9, from this branch's side. Switched off in Settings › Add-ons, Stash's Tidal has
-        // no route: its rung answers nothing, and "a Tidal server is configured" is false
-        // (`TidalSwitchTest`). The player resolved a placeholder before picking its source only while
-        // one was configured, so an add-on's DASH answer went to the progressive source and the song
-        // was skipped. The switch makes that the everyday case.
+        // review-882 F9, from this branch's side. Switched off in Settings › Add-ons, Stash's Tidal is
+        // out of the chain, and "a Tidal server is configured" is false (`TidalSwitchTest`). The
+        // player resolved a placeholder before picking its source only while one was configured, so
+        // an add-on's DASH answer went to the progressive source and the song was skipped. The
+        // switch makes that the everyday case.
         reset(); hitAt = "addon:mine"
         val manifest = StreamInfo(url = "https://cdn.example/a.mpd", manifest = Delivery.DASH, tier = Tier.LOSSLESS, cors = false, bitDepth = 16, sampleRate = 44_100)
         val client = client().also {
@@ -288,9 +288,10 @@ class StreamSourceRegistryPlayOrderTest {
         }
         val mine = addon("mine", userAdded = true)
         calls.clear()
-        val played = registry(listOf(mine), saved = null, client = client).resolve(track(), allowYouTube = true, allowYtDlp = true)
-        // Tidal's rung was passed (it has nothing to say while it is off) and the add-on's manifest is the answer.
-        assertThat(asked()).containsExactly("qbdlx", "tidal", "addon:mine").inOrder()
+        val played = registry(listOf(mine), saved = null, client = client, off = setOf(PlayOrder.TIDAL))
+            .resolve(track(), allowYouTube = true, allowYtDlp = true)
+        // Tidal is not asked while it is off, and the add-on's manifest is the answer.
+        assertThat(asked()).containsExactly("qbdlx", "addon:mine").inOrder()
         assertThat(played!!.origin).isEqualTo("addon:mine")
         assertThat(played.isDash).isTrue()
         assertThat(played.url).isEqualTo("https://cdn.example/a.mpd")
