@@ -4,6 +4,8 @@ import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -20,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -150,6 +153,19 @@ internal fun SaveFailedToast(failures: Int) {
         if (failures > 0) Toast.makeText(context, R.string.settings_addons_could_not_save, Toast.LENGTH_LONG).show()
     }
 }
+
+/**
+ * The space under a page's last card. A page in `SettingsScaffold` ends exactly where the glass mini
+ * player begins, which left the add-on page's last card (Replace link, Remove) hard against it on a
+ * phone; the Settings hub keeps 16 dp there. Put last in the scaffold's column, this earns the
+ * column's own gap between cards ([SettingsGroupGap]) as that space, so it needs no height itself.
+ */
+@Composable
+internal fun PageEndSpace() {
+    Spacer(modifier = Modifier.height(0.dp).testTag(PAGE_END_SPACE_TAG))
+}
+
+internal const val PAGE_END_SPACE_TAG = "addons-page-end"
 
 /** A small pill naming one thing Stash uses from an add-on ("Plays songs", "Lossless"). */
 @Composable

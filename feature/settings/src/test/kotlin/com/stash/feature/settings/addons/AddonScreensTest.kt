@@ -12,6 +12,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -21,6 +22,7 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -175,6 +177,10 @@ class AddonScreensTest {
         assertThat(rule.onAllNodesWithTag(ADDON_DRAG_HANDLE_TAG).fetchSemanticsNodes()).hasSize(3)
         rule.onNodeWithText("Add from a link").assertExists()
         rule.onNodeWithText("Paste · Scan").assertExists()
+        // And the list ends with space under its last card, as its pages do.
+        val last = rule.onNodeWithText("Paste · Scan").getUnclippedBoundsInRoot()
+        val end = rule.onNodeWithTag(PAGE_END_SPACE_TAG).getUnclippedBoundsInRoot()
+        assertThat((end.top - last.bottom).value).isAtLeast(16f)
         // Your Qobuz account has no switch; the other two have one, on.
         rule.onNodeWithContentDescription("Use Tidal").assertIsOn()
         rule.onNodeWithContentDescription("Use Hi-Fi Relay").assertIsOn()
@@ -458,6 +464,15 @@ class AddonScreensTest {
         rule.onNodeWithText("Move down").assertIsNotEnabled()
         rule.onNodeWithText("Move up").assertIsEnabled().performScrollTo().performClick()
         assertThat(pageNudged).containsExactly(true)
+    }
+
+    @Test fun `the last card of each page keeps clear of what lies under it`() {
+        // Seen on a phone: the page's last card (Replace link, Remove) ended hard against the mini player.
+        showPage(relay)
+        val remove = rule.onNodeWithText("Remove").getUnclippedBoundsInRoot()
+        val end = rule.onNodeWithTag(PAGE_END_SPACE_TAG).getUnclippedBoundsInRoot()
+        // The Settings hub keeps 16 dp there.
+        assertThat((end.top - remove.bottom).value).isAtLeast(16f)
     }
 
     @Test fun `alone in the play order, the page has no place to state and no moves to offer`() {

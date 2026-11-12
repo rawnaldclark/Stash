@@ -298,6 +298,7 @@ internal fun AddonPageContent(
             Spacer(modifier = Modifier.size(2.dp))
             SettingsGroupCard(rows = actions)
         }
+        PageEndSpace()
     }
 
     if (confirmRemove) {

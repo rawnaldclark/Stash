@@ -251,6 +251,7 @@ internal fun AddonsContent(
                 },
             ) + state.official.map { entry -> { OfficialRow(entry, onAdd = { onAddFromLink(entry.manifestUrl) }) } },
         )
+        PageEndSpace()
     }
 
     val toRemove = removing?.let { key -> (state.order + state.others).firstOrNull { it.key == key } }

@@ -245,6 +245,7 @@ internal fun AddFromLinkContent(
         if (step is AddFromLinkViewModel.Step.Ready) {
             PreviewCard(preview = step.preview, lands = lands, onAdd = onAdd, onCancel = onCancel)
         }
+        PageEndSpace()
     }
 }
 
