@@ -637,7 +637,7 @@ class InTreeAddonRegistry @Inject constructor(
                 AddonHold.ONLY_BITCHORD
             read == null || read.manifest.kind != AddonKind.SERVER -> AddonHold.NOT_LOADED
             idChanged(w, read) -> AddonHold.CHANGED
-            trust == Trust.UNOFFICIAL && w.consent != null && !w.consent.containsAll(AddonSees.namesOf(read.manifest)) -> AddonHold.WANTS_MORE
+            trust == Trust.UNOFFICIAL && w.consent != null && !w.consent.containsAll(AddonSees.namesOf(read)) -> AddonHold.WANTS_MORE
             else -> null
         }
         return Slot(w, read, trust, hold, refused)

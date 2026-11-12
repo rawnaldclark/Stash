@@ -328,7 +328,7 @@ class AddonOverview @Inject constructor(
                 playsSongs = manifest != null && id != null && PlayOrder.playsSongs(manifest) && status != Status.REPLACED,
                 version = manifest?.version,
                 uses = manifest?.let { AddonLinks.uses(it, allowsDownloads = s?.manifest?.eclipse?.allowDownloads != false) }.orEmpty(),
-                sees = manifest?.let(AddonSees::of).orEmpty(),
+                sees = manifest?.let { AddonSees.of(it, allowsDownloads = s?.manifest?.eclipse?.allowDownloads != false) }.orEmpty(),
                 summary = id?.let(described)?.summary?.takeIf { official },
                 entryKey = handle,
                 userAdded = e != null,

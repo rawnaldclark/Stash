@@ -3,6 +3,7 @@ package com.stash.core.addons
 import com.google.common.truth.Truth.assertThat
 import com.stash.addons.contract.AddonKind
 import com.stash.addons.contract.Manifest
+import com.stash.addons.contract.StreamCapabilities
 import org.junit.Test
 
 /**
@@ -38,6 +39,31 @@ class ManifestLinkTest {
         assertThat(AddonSees.of(manifest("lyrics"))).containsExactly(AddonSees.PLAYS)
         assertThat(AddonSees.of(manifest("album", "artist"))).isEmpty()
         assertThat(AddonSees.namesOf(manifest("search", "download"))).containsExactly("SEARCHES", "SAVES")
+    }
+
+    /** [manifest] with what it says about its streams: the tiers it has (null: it doesn't say) and the deliveries it gives. */
+    private fun streaming(vararg resources: String, tiers: List<String>? = null, deliveries: List<String> = listOf("none")) =
+        manifest(*resources).copy(stream = StreamCapabilities(cors = false, manifests = deliveries, tiers = tiers))
+
+    @Test fun `a server Stash would take downloads from sees what you save, with or without a download route`() {
+        // review-882 J3: a download from an add-on with no `/download` goes through its `/resolve` and
+        // `/stream`, so it learns of songs you save and never played. The sheet must say "and save".
+        val plays = AddonSees.PLAYS
+        val saves = AddonSees.SAVES
+        assertThat(AddonSees.of(streaming("resolve", "stream", tiers = listOf("lossless")))).containsExactly(plays, saves)
+        assertThat(AddonSees.of(streaming("search", "stream"))).containsExactly(AddonSees.SEARCHES, plays, saves)
+        assertThat(AddonSees.of(streaming("resolve", "stream", deliveries = listOf("none", "dash")))).containsExactly(plays, saves)
+        // Never a download source, so nothing is saved from it: lossy only, a delivery the downloader
+        // doesn't take, no way to find a song, or an Eclipse-family manifest that says `allowDownloads: 0`.
+        assertThat(AddonSees.of(streaming("resolve", "stream", tiers = listOf("high")))).containsExactly(plays)
+        assertThat(AddonSees.of(streaming("resolve", "stream", deliveries = listOf("hls")))).containsExactly(plays)
+        assertThat(AddonSees.of(streaming("stream"))).containsExactly(plays)
+        assertThat(AddonSees.of(streaming("search", "stream"), allowsDownloads = false)).containsExactly(AddonSees.SEARCHES, plays)
+        assertThat(AddonSees.of(AddonManifest(streaming("search", "stream"), AddonDialect.ECLIPSE, EclipseTraits(allowDownloads = false))))
+            .containsExactly(AddonSees.SEARCHES, plays)
+        assertThat(AddonSees.namesOf(AddonManifest(streaming("search", "stream")))).containsExactly("SEARCHES", "PLAYS", "SAVES")
+        // Listing `download` is seeing what you save, whatever else it says.
+        assertThat(AddonSees.of(streaming("resolve", "download", tiers = listOf("high")))).containsExactly(plays, saves)
     }
 
     @Test fun `the refusals a host acts on are codes, and only an exact reason is one`() {

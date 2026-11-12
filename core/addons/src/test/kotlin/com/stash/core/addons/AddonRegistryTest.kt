@@ -559,7 +559,10 @@ class AddonRegistryTest {
         assertThat(registry.entries.value.single().hold).isEqualTo(AddonHold.WANTS_MORE)
 
         // The user agrees to what it lists now: it is on.
-        users.flow.value = listOf(UserAddonEntry(url("m"), id = "mine", consent = setOf(AddonSees.PLAYS.name, AddonSees.SEARCHES.name)))
+        // (It finds songs and streams them, so Stash would take downloads from it too: it sees what is saved.)
+        users.flow.value = listOf(
+            UserAddonEntry(url("m"), id = "mine", consent = setOf(AddonSees.PLAYS.name, AddonSees.SEARCHES.name, AddonSees.SAVES.name)),
+        )
         registry.refresh()
         assertThat(registry.addons.value.map { it.id }).containsExactly("mine")
         // A new version alone never asks again.

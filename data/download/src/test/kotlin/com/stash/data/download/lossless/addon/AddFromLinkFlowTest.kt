@@ -171,7 +171,8 @@ class AddFromLinkFlowTest {
         assertThat(p.host).doesNotContain("s3cret")
         assertThat(p.trust).isEqualTo(Trust.UNOFFICIAL)
         assertThat(p.needsConsent).isTrue()
-        assertThat(p.sees).containsExactly(AddonSees.SEARCHES, AddonSees.PLAYS)
+        // It has no download route, and Stash would still take downloads from its stream: it sees what is saved too.
+        assertThat(p.sees).containsExactly(AddonSees.SEARCHES, AddonSees.PLAYS, AddonSees.SAVES)
         assertThat(p.uses).containsExactly(AddonLinks.Use.PLAYS_SONGS, AddonLinks.Use.DOWNLOADS).inOrder()
         assertThat(p.playsSongs).isTrue()
         // Reading it added nothing.
@@ -231,7 +232,7 @@ class AddFromLinkFlowTest {
         val entry = users.loadedEntries().single()
         assertThat(entry.id).isEqualTo("hifi")
         assertThat(entry.name).isEqualTo("Hi-Fi Relay")
-        assertThat(entry.consent).containsExactly("SEARCHES", "PLAYS")
+        assertThat(entry.consent).containsExactly("SEARCHES", "PLAYS", "SAVES")
         assertThat(entry.addedAt).isNotNull()
         assertThat(links.lastAdded.value).isEqualTo((added as AddonLinks.Outcome.Added).key)
     }
@@ -291,9 +292,10 @@ class AddFromLinkFlowTest {
     }
 
     @Test fun `a replacement that sees more asks again`() = runBlocking<Unit> {
-        // A v1 add-on, where `download` is a route of its own (an Eclipse-family manifest has none).
+        // A v1 add-on with lossy streams only: Stash takes no download from those, so at first it sees
+        // nothing that is saved. Then it lists `download`, a route of its own.
         fun v1(resources: String) =
-            """{"stash":1,"id":"hifi","name":"Hi-Fi Relay","version":"1.0.0","kind":"server","resources":[$resources],"stream":{"cors":false}}"""
+            """{"stash":1,"id":"hifi","name":"Hi-Fi Relay","version":"1.0.0","kind":"server","resources":[$resources],"stream":{"cors":false,"tiers":["high"]}}"""
         manifests["a/manifest.json"] = v1("\"search\",\"stream\"")
         links.add(ready(url("a")), token = null, agreed = true)
         manifests["b/manifest.json"] = v1("\"search\",\"stream\",\"download\"")
@@ -362,8 +364,9 @@ class AddFromLinkFlowTest {
     }
 
     @Test fun `agreeing to what an add-on now wants to see is recorded, and it is used again`() = runBlocking<Unit> {
+        // Lossy streams only, so nothing is saved from it until it lists `download`.
         fun v1(resources: String) =
-            """{"stash":1,"id":"hifi","name":"Hi-Fi Relay","version":"1.0.0","kind":"server","resources":[$resources],"stream":{"cors":false}}"""
+            """{"stash":1,"id":"hifi","name":"Hi-Fi Relay","version":"1.0.0","kind":"server","resources":[$resources],"stream":{"cors":false,"tiers":["high"]}}"""
         manifests["a/manifest.json"] = v1("\"search\",\"stream\"")
         links.add(ready(url("a")), token = null, agreed = true)
         registry.refresh()

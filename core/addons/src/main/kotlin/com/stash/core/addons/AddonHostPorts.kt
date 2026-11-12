@@ -1,5 +1,6 @@
 package com.stash.core.addons
 
+import com.stash.addons.contract.Delivery
 import com.stash.addons.contract.Manifest
 import com.stash.addons.contract.Resource
 import kotlinx.coroutines.flow.Flow
@@ -246,18 +247,45 @@ enum class AddonSees {
     /** "the songs you play": it lists `stream`, `resolve` or `lyrics`. */
     PLAYS,
 
-    /** "and save": it lists `download`. */
+    /**
+     * "and save": it lists `download`, or Stash would take a song to keep from it without one
+     * ([keeps]). A download from an add-on with no `/download` route goes through its `/resolve`
+     * and `/stream`, so its server learns of songs the user saves and never played (review-882 J3).
+     */
     SAVES;
 
     companion object {
-        fun of(m: Manifest): Set<AddonSees> = buildSet {
+        /** [allowsDownloads]: false for an Eclipse-family manifest that says `allowDownloads: 0`. */
+        fun of(m: Manifest, allowsDownloads: Boolean = true): Set<AddonSees> = buildSet {
             if (m.offers(Resource.SEARCH)) add(SEARCHES)
             // Lyrics are asked for the song that is playing, by its title and artist: the same thing seen.
             if (m.offers(Resource.STREAM) || m.offers(Resource.RESOLVE) || m.offers(Resource.LYRICS)) add(PLAYS)
-            if (m.offers(Resource.DOWNLOAD)) add(SAVES)
+            if (m.offers(Resource.DOWNLOAD) || keeps(m, allowsDownloads)) add(SAVES)
         }
 
+        /** [of] for a manifest as it was read, with what an Eclipse-family one says about downloads. */
+        fun of(read: AddonManifest): Set<AddonSees> = of(read.manifest, read.eclipse?.allowDownloads != false)
+
         /** The names kept in a sealed entry. */
-        fun namesOf(m: Manifest): Set<String> = of(m).map { it.name }.toSet()
+        fun namesOf(m: Manifest, allowsDownloads: Boolean = true): Set<String> = of(m, allowsDownloads).map { it.name }.toSet()
+
+        fun namesOf(read: AddonManifest): Set<String> = of(read).map { it.name }.toSet()
+
+        /**
+         * Stash would ask this add-on for a song to keep: it finds songs, has a stream or a download
+         * to give, allows downloads, and can answer a lossless tier (or doesn't say which it has)
+         * in a delivery the downloader takes. The download seam's own rule
+         * (`:data:download` `AddonDownloadSources.canDownloadLossless`), kept here so what the
+         * user is told an add-on sees is what Stash will ask it.
+         */
+        fun keeps(m: Manifest, allowsDownloads: Boolean = true): Boolean {
+            if (!allowsDownloads) return false
+            if (!m.offers(Resource.RESOLVE) && !m.offers(Resource.SEARCH)) return false
+            if (!m.offers(Resource.DOWNLOAD) && !m.offers(Resource.STREAM)) return false
+            val caps = m.stream ?: return false
+            val tiers = caps.knownTiers
+            if (tiers.isNotEmpty() && tiers.none { it.isLossless }) return false
+            return caps.knownManifests.any { it == Delivery.NONE || it == Delivery.DASH }
+        }
     }
 }

@@ -150,7 +150,7 @@ class AddonOverviewRowsTest {
         assertThat(row.toString()).doesNotContain("s3cret-tok")
         assertThat(row.version).isEqualTo("1.2.0")
         assertThat(row.uses).containsExactly(AddonLinks.Use.PLAYS_SONGS, AddonLinks.Use.LOSSLESS, AddonLinks.Use.DOWNLOADS).inOrder()
-        assertThat(row.sees).containsExactly(AddonSees.SEARCHES, AddonSees.PLAYS)
+        assertThat(row.sees).containsExactly(AddonSees.SEARCHES, AddonSees.PLAYS, AddonSees.SAVES)
         assertThat(row.canRemove).isTrue()
         // Before the registry has read it, the address still comes from the link itself.
         val early = build(users = listOf(user("mine", name = "Hi-Fi Relay")))

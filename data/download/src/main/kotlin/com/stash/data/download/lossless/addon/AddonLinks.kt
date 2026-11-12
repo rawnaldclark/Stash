@@ -216,8 +216,8 @@ class AddonLinks @Inject constructor(
                 uses = uses(manifest, allowsDownloads = read.eclipse?.allowDownloads != false),
                 needsToken = manifest.auth?.token == TokenPlacement.HEADER,
                 trust = trust,
-                sees = AddonSees.of(manifest),
-                needsConsent = trust == Trust.UNOFFICIAL && (agreed == null || !agreed.containsAll(AddonSees.namesOf(manifest))),
+                sees = AddonSees.of(read),
+                needsConsent = trust == Trust.UNOFFICIAL && (agreed == null || !agreed.containsAll(AddonSees.namesOf(read))),
                 playsSongs = PlayOrder.playsSongs(manifest),
                 replacesKey = replacingKey,
             ),
@@ -319,9 +319,9 @@ class AddonLinks @Inject constructor(
      */
     suspend fun agree(key: String): Boolean = saving("agreed to") {
         val entry = entry(key) ?: return@saving
-        val manifest = registry.entries.value.firstOrNull { it.key == key }?.manifest?.manifest ?: return@saving
-        users.setConsent(entry.manifestUrl, AddonSees.namesOf(manifest))
-        Log.i(TAG, "the user agreed to what an add-on sees now: ${manifest.id}")
+        val read = registry.entries.value.firstOrNull { it.key == key }?.manifest ?: return@saving
+        users.setConsent(entry.manifestUrl, AddonSees.namesOf(read))
+        Log.i(TAG, "the user agreed to what an add-on sees now: ${read.manifest.id}")
     }
 
     /**
