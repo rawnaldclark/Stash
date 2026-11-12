@@ -171,10 +171,10 @@ class AddonRefs @Inject constructor(
         }
     }
 
-    /** Forgets every ref of [addonId], so a later add-on with the same id never inherits them (phase 4 §2.4). */
     /** A play stopped waiting for [addon]: counted against it like a timeout ([HttpAddonClient.reportTooSlow]). */
     suspend fun tooSlow(addon: InstalledAddon) = client.reportTooSlow(addon.id)
 
+    /** Forgets every ref of [addonId], so a later add-on with the same id never inherits them (phase 4 §2.4). */
     suspend fun forget(addonId: String) {
         val rid = rowId(addonId)
         held.forget(rid)
