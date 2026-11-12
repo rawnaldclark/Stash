@@ -28,11 +28,16 @@ class PublicOnlyDns(
         val all = delegate.lookup(hostname)
         val kept = all.filter { isPublic(it) || (allowLoopback && it.isLoopbackAddress) }
         // Never the name in the message: a log of it would be harmless, but nothing here needs it.
-        if (kept.isEmpty()) throw UnknownHostException("no public address for an add-on host")
+        if (kept.isEmpty()) {
+            android.util.Log.w(TAG, "an add-on host resolved to no public address (${all.size} private): refused")
+            throw UnknownHostException("no public address for an add-on host")
+        }
         return kept
     }
 
     companion object {
+        private const val TAG = "AddonDns"
+
         /**
          * True for an address on the public internet. False for: unspecified, loopback,
          * link-local, RFC 1918 and IPv6 site-local, CGNAT (100.64/10, Tailscale's range), ULA

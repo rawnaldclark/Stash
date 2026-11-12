@@ -1,5 +1,6 @@
 package com.stash.core.addons
 
+import android.util.Log
 import com.stash.addons.contract.Auth
 import okhttp3.Dns
 import okhttp3.HttpUrl
@@ -48,9 +49,20 @@ class AddonMediaGuard(
         var hops = 0
         while (true) {
             val url = request.url
-            if (!allowed(url)) throw if (isLocalAddress(url)) PrivateAddressException() else RefusedAddonUrlException()
-            // Throws UnknownHostException when the name has no public address.
-            if (viaProxy(url, proxy, proxySelector)) publicDns.lookup(url.host)
+            if (!allowed(url)) {
+                val private = isLocalAddress(url)
+                // Never the URL: it can carry a signature or a token. What kind of refusal, and on which hop.
+                Log.w(TAG, "${if (hops == 0) "media URL" else "redirect hop $hops"} refused (${if (private) "private address" else "not an https URL on a public host"})")
+                throw if (private) PrivateAddressException() else RefusedAddonUrlException()
+            }
+            if (viaProxy(url, proxy, proxySelector)) {
+                try {
+                    publicDns.lookup(url.host)
+                } catch (e: java.net.UnknownHostException) {
+                    Log.w(TAG, "${if (hops == 0) "media URL" else "redirect hop $hops"} refused behind a proxy (no public address for its host)")
+                    throw e
+                }
+            }
             val response = chain.proceed(request)
             if (!response.isRedirect || (request.method != "GET" && request.method != "HEAD")) return response
             val next = response.header("Location")?.let { url.resolve(it) } ?: return response
@@ -68,6 +80,8 @@ class AddonMediaGuard(
     }
 
     companion object {
+        private const val TAG = "AddonMedia"
+
         /** As many hops as a CDN needs; OkHttp's own limit is 20. */
         const val MAX_REDIRECTS = 5
 

@@ -324,6 +324,9 @@ class HttpAddonClient @Inject constructor(
                 if (!answers(dialect, request, info)) {
                     throw AddonRefusalException(ErrorCode.QUALITY_UNAVAILABLE, held = info)
                 }
+                if (dialect == AddonDialect.ECLIPSE && AddonEclipse.tierIsDefault(info)) {
+                    debug("${addon.id} ${route.name.lowercase()}: an answer that states no quality, taken at the 320 setting")
+                }
                 info
             }
         }

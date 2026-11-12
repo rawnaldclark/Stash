@@ -131,7 +131,12 @@ class AddonRefs @Inject constructor(
             val found = viaResolve(addon, rid, query, key, pass, paced, row, stampMisses = !(isrcOnly && searches))
             if (!(isrcOnly && found == Found.Miss && searches)) return found
         }
-        return if (searches && bySearch) viaSearch(addon, rid, query, key, pass, paced, row) else Found.Unavailable
+        if (searches && !bySearch) {
+            // A download, and an add-on the user added: its search is for plays only (review-882 J3).
+            Log.d(TAG, "not searched ${addon.id}: a download asks an add-on the user added by /resolve or a kept ref only")
+            return Found.Unavailable
+        }
+        return if (searches) viaSearch(addon, rid, query, key, pass, paced, row) else Found.Unavailable
     }
 
     /**
