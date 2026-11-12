@@ -100,7 +100,7 @@ The rules (`src/index.js`; a bad entry is refused, never repaired, and an unknow
 | `blocked` | At most 256. |
 | `origin` | Exactly `https://host` or `https://host:port`: lower case, no default port, no path, no trailing slash. |
 | `id` (in `blocked`) | Optional. Without it the whole origin is blocked. |
-| `reason` | `harmful`, `broken` or `impersonation`. The app shows its own fixed sentence for each; no text from the file is ever shown. |
+| `reason` | `harmful`, `broken` or `impersonation`. The app shows its own fixed sentence for each; no text from the file is ever shown. The publisher refuses any other word. A reader does not: if a later publisher adds a reason, an older app still blocks that add-on, with a generic sentence (`readIndex` reports the reason as `unknown`). A newer list must never make an older app drop a block. |
 
 Things worth knowing:
 

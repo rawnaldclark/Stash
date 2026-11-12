@@ -11,7 +11,7 @@ import { buildConfig } from "../src/config.js";
 import {
     buildIndex, readIndex, isCanonical, looksLikeToken, checkOrigin, describeIndex, sigUrlOf, isP256, publicKeyBase64,
     signIndex, verifyIndexSignature, INDEX_TYPE, INDEX_URL, MAX_ADDONS, MAX_BLOCKED, MAX_INDEX_BYTES, MAX_NAME,
-    MAX_SUMMARY, MAX_URL, MAX_BUILD, BLOCK_REASONS, PLATFORMS, ID_RULE, UNSAFE_TEXT_RANGES,
+    MAX_SUMMARY, MAX_URL, MAX_BUILD, BLOCK_REASONS, UNKNOWN_REASON, PLATFORMS, ID_RULE, UNSAFE_TEXT_RANGES,
 } from "../src/index.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -464,7 +464,7 @@ test("blocked: a message about a bad origin names the origin at most, never a pa
     });
 });
 
-test("blocked: id is optional and follows the id rule; reason is one of the three fixed words", () => {
+test("blocked: id is optional and follows the id rule; a source's reason is one of the three fixed words", () => {
     assert.equal("id" in parsed(withBlock({})).blocked[0], false);
     assert.equal(parsed(withBlock({ id: "bad-addon" })).blocked[0].id, "bad-addon");
     for (const id of ["", "Bad", "-bad", "bad addon", "a".repeat(65), 5, null]) {
@@ -472,7 +472,9 @@ test("blocked: id is optional and follows the id rule; reason is one of the thre
     }
     assert.deepEqual(BLOCK_REASONS, ["harmful", "broken", "impersonation"]);
     for (const reason of BLOCK_REASONS) assert.equal(parsed(withBlock({ reason })).blocked[0].reason, reason);
-    for (const reason of [undefined, null, "", "spam", "Harmful", "harmful ", "piracy", "copyright", "dmca", 1, ["harmful"], "toString", "length"]) {
+    // Any other word in a source is a typo and fails at build time, the reader's own word for "unknown" included.
+    assert.equal(UNKNOWN_REASON, "unknown");
+    for (const reason of [undefined, null, "", "spam", "Harmful", "harmful ", "piracy", "copyright", "dmca", 1, ["harmful"], "toString", "length", UNKNOWN_REASON]) {
         assert.throws(() => build(withBlock({ reason })), /blocked\[0\]\.reason must be one of: harmful, broken, impersonation/, String(reason));
     }
 });
@@ -593,14 +595,45 @@ test("readIndex: a known field that breaks a rule refuses the whole index", () =
         [(o) => { o.addons = Array.from({ length: 65 }, (_, i) => ({ ...TIDAL, id: `a${i}` })); }, /addons holds at most 64/],
         [(o) => { o.blocked[0].origin = "https://bad.example/"; }, /origin must be written exactly/],
         [(o) => { o.blocked[0].origin = "http://bad.example"; }, /origin must be https/],
-        [(o) => { o.blocked[0].reason = "spam"; }, /reason must be one of/],
-        [(o) => { delete o.blocked[0].reason; }, /reason must be one of/],
+        [(o) => { delete o.blocked[0].reason; }, /blocked\[0\]\.reason must be a word/],
+        [(o) => { o.blocked[0].reason = null; }, /blocked\[0\]\.reason must be a word/],
+        [(o) => { o.blocked[0].reason = 5; }, /blocked\[0\]\.reason must be a word/],
+        [(o) => { o.blocked[0].reason = ["harmful"]; }, /blocked\[0\]\.reason must be a word/],
+        [(o) => { o.blocked[0].reason = { code: "harmful" }; }, /blocked\[0\]\.reason must be a word/],
         [(o) => { o.blocked[0].id = "Bad Addon"; }, /blocked\[0\]\.id must match/],
         [(o) => { o.blocked.push({ ...o.blocked[0] }); }, /repeats/],
         [(o) => { o.blocked.push({ origin: "https://addons.example.org", reason: "harmful" }); }, /also blocks/],
         [(o) => { o.blocked = Array.from({ length: 257 }, (_, i) => ({ origin: `https://b${i}.example`, reason: "broken" })); }, /blocked holds at most 256/],
     ];
     for (const [change, message] of bad) assert.throws(() => readIndex(edited(change)), message, String(change));
+});
+
+test("readIndex: a block whose reason it does not know is still a block, and the reason reads as unknown", () => {
+    // A list from a later publisher must never make an older reader drop its blocks.
+    const words = ["spam", "Harmful", "HARMFUL", "harmful ", " broken", "", "malware-2", "a later publisher's reason", "toString", "x".repeat(500), `fraud${cp(0x202e)}`, UNKNOWN_REASON];
+    for (const word of words) {
+        const index = readIndex(edited((o) => { o.blocked[0].reason = word; }));
+        assert.deepEqual(index.blocked, [{ origin: "https://bad.example", id: "bad-addon", reason: UNKNOWN_REASON }], JSON.stringify(word));
+        assert.deepEqual(index.addons, JSON.parse(PUBLISHED).addons, "the rest of the index applies as written");
+    }
+    // The three known words stay as they are, beside an unknown one.
+    const mixed = readIndex(edited((o) => {
+        o.blocked = [{ origin: "https://a.example", reason: "harmful" }, { origin: "https://b.example", reason: "spam" }, { origin: "https://c.example", reason: "broken" }, { origin: "https://d.example", id: "tidal", reason: "impersonation" }];
+    }));
+    assert.deepEqual(mixed.blocked.map((b) => b.reason), ["harmful", UNKNOWN_REASON, "broken", "impersonation"]);
+    assert.deepEqual(mixed.blocked.map((b) => b.origin), ["https://a.example", "https://b.example", "https://c.example", "https://d.example"]);
+    // The word from the file is never kept, so it is never printed either.
+    const secretive = readIndex(edited((o) => { o.blocked[0].reason = "text-from-the-file"; }));
+    assert.equal(JSON.stringify(secretive).includes("text-from-the-file"), false);
+    assert.equal(describeIndex(secretive).endsWith("blocked=https://bad.example [bad-addon] unknown"), true);
+    // Everything else about a block is still checked: an unknown reason excuses nothing.
+    assert.throws(() => readIndex(edited((o) => { o.blocked[0] = { origin: "https://bad.example/", reason: "spam" }; })), /origin must be written exactly/);
+    assert.throws(() => readIndex(edited((o) => { o.blocked[0] = { origin: "https://bad.example", id: "Bad", reason: "spam" }; })), /id must match/);
+    assert.throws(() => readIndex(edited((o) => { o.blocked.push({ origin: "https://addons.example.org", reason: "spam" }); })), /also blocks/, "an official add-on cannot be blocked, whatever the reason");
+    // And the publisher still refuses to build it.
+    for (const word of words) {
+        assert.throws(() => buildIndex(JSON.parse(edited((o) => { o.blocked[0].reason = word; })), 0, NOW), /blocked\[0\]\.reason must be one of: harmful, broken, impersonation/, JSON.stringify(word));
+    }
 });
 
 test("readIndex: the size cap is on the bytes as fetched", () => {
@@ -623,6 +656,8 @@ test("isCanonical: only the publisher's own bytes", () => {
         "a leading space": ` ${PUBLISHED}`,
         "keys in another order": `${JSON.stringify({ v: 1, type: INDEX_TYPE, updated_at: o.updated_at, addons: o.addons, blocked: o.blocked }, null, 2)}\n`,
         "an unknown field": `${JSON.stringify({ ...o, notes: "x" }, null, 2)}\n`,
+        "an unknown reason": PUBLISHED.replace('"reason": "harmful"', '"reason": "spam"'),
+        "the reader's word for an unknown reason": PUBLISHED.replace('"reason": "harmful"', '"reason": "unknown"'),
         "escaped text": PUBLISHED.replace("Tidal", "\\u0054idal"),
         "not an index": "{}\n",
         "not JSON": "index",

@@ -7,7 +7,7 @@ import { createPublicKey } from "node:crypto";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildIndex, readIndex, isCanonical, isP256, verifyIndexSignature, INDEX_TYPE, MAX_ADDONS, MAX_BLOCKED, MAX_INDEX_BYTES, MAX_NAME, MAX_SUMMARY, BLOCK_REASONS } from "../src/index.js";
+import { buildIndex, readIndex, isCanonical, isP256, verifyIndexSignature, INDEX_TYPE, MAX_ADDONS, MAX_BLOCKED, MAX_INDEX_BYTES, MAX_NAME, MAX_SUMMARY, BLOCK_REASONS, UNKNOWN_REASON } from "../src/index.js";
 
 const DIR = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 const file = (...p) => readFileSync(join(DIR, ...p));
@@ -51,7 +51,7 @@ test("every case's signature is as cases.json says, checked the way the device c
 
 test("accept cases: read as an index, with the counts and updated_at cases.json gives", () => {
     const accept = cases.filter((c) => c.expect === "accept");
-    assert.deepEqual(accept.map((c) => c.dir).sort(), ["valid", "valid-launch", "valid-older", "valid-unknown-fields"]);
+    assert.deepEqual(accept.map((c) => c.dir).sort(), ["valid", "valid-launch", "valid-older", "valid-unknown-fields", "valid-unknown-reason"]);
     for (const c of accept) {
         assert.equal(c.signature, "valid", c.dir);
         const index = readIndex(bytesOf(c.dir));
@@ -60,7 +60,32 @@ test("accept cases: read as an index, with the counts and updated_at cases.json 
         assert.equal(index.addons.length, c.addons, c.dir);
         assert.equal(index.blocked.length, c.blocked, c.dir);
         assert.equal(isCanonical(bytesOf(c.dir)), c.canonical, c.dir);
+        if (c.blocked_reasons) assert.deepEqual(index.blocked.map((b) => b.reason), c.blocked_reasons, c.dir);
     }
+    assert.deepEqual(accept.filter((c) => c.blocked_reasons).map((c) => c.dir), ["valid-unknown-reason"]);
+});
+
+test("valid-unknown-reason: the index is accepted, both add-ons are blocked, and the unknown reason reads as unknown", () => {
+    const c = byDir["valid-unknown-reason"];
+    assert.equal(c.expect, "accept");
+    assert.equal(c.signature, "valid");
+    assert.equal(verifyIndexSignature(bytesOf(c.dir), sigOf(c.dir), PUBKEY), true);
+    const raw = JSON.parse(bytesOf(c.dir).toString("utf8"));
+    assert.deepEqual(raw.blocked, [{ origin: "https://bad.example", reason: "harmful" }, { origin: "https://spam.example", reason: "spam" }]);
+    assert.equal(BLOCK_REASONS.includes("spam"), false, "a word no reader knows");
+    // A reader: the whole index applies, and the entry with the unknown word is a block like the other.
+    const index = readIndex(bytesOf(c.dir));
+    assert.deepEqual(index.blocked, [{ origin: "https://bad.example", reason: "harmful" }, { origin: "https://spam.example", reason: UNKNOWN_REASON }]);
+    assert.equal(UNKNOWN_REASON, "unknown");
+    assert.deepEqual(c.blocked_reasons, ["harmful", "unknown"]);
+    assert.equal(JSON.stringify(index).includes("spam.example"), true, "the add-on is still named as blocked");
+    assert.equal(JSON.stringify(index.blocked.map((b) => b.reason)).includes("spam"), false, "the word from the file is not passed on");
+    // The publisher: never writes it, and refuses to build it.
+    assert.throws(() => buildIndex(raw, 0, 1), /blocked\[1\]\.reason must be one of: harmful, broken, impersonation/);
+    assert.equal(isCanonical(bytesOf(c.dir)), false);
+    // Only the reason sets it apart: with a known word in its place, it is the publisher's own output.
+    const known = `${JSON.stringify({ ...raw, blocked: [raw.blocked[0], { ...raw.blocked[1], reason: "broken" }] }, null, 2)}\n`;
+    assert.equal(isCanonical(known), true);
 });
 
 test("canonical cases are byte for byte what the publisher emits for their content", () => {
@@ -153,7 +178,7 @@ test("refuse-tampered: one byte of `valid` changed, under valid's own signature"
     assert.equal(readIndex(a).blocked[0].origin, "https://bad.example");
 });
 
-test("refuse-too-many-addons, refuse-too-many-blocked, refuse-bad-reason: one rule broken, the rest fine", () => {
+test("refuse-too-many-addons, refuse-too-many-blocked: one rule broken, the rest fine", () => {
     const addons = JSON.parse(bytesOf("refuse-too-many-addons").toString("utf8"));
     assert.equal(addons.addons.length, MAX_ADDONS + 1);
     assert.throws(() => readIndex(bytesOf("refuse-too-many-addons")), /addons holds at most 64/);
@@ -164,12 +189,7 @@ test("refuse-too-many-addons, refuse-too-many-blocked, refuse-bad-reason: one ru
     assert.throws(() => readIndex(bytesOf("refuse-too-many-blocked")), /blocked holds at most 256/);
     assert.doesNotThrow(() => readIndex(JSON.stringify({ ...blocked, blocked: blocked.blocked.slice(1) })));
 
-    const reason = JSON.parse(bytesOf("refuse-bad-reason").toString("utf8"));
-    assert.equal(reason.blocked[1].reason, "spam");
-    assert.throws(() => readIndex(bytesOf("refuse-bad-reason")), /blocked\[1\]\.reason must be one of: harmful, broken, impersonation/);
-    assert.doesNotThrow(() => readIndex(JSON.stringify({ ...reason, blocked: reason.blocked.slice(0, 1) })));
-
-    for (const dir of ["refuse-too-many-addons", "refuse-too-many-blocked", "refuse-bad-reason"]) {
+    for (const dir of ["refuse-too-many-addons", "refuse-too-many-blocked"]) {
         assert.ok(bytesOf(dir).length <= MAX_INDEX_BYTES, `${dir} is under the size cap, so the size is not what refuses it`);
     }
 });

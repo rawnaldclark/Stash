@@ -357,6 +357,38 @@ test("verify --dir: a checkout's pair, with and without a key", async () => {
     assert.match(empty.err, /holds no index\.json/);
 });
 
+test("an index from a later publisher, with a reason this one does not know: read, never written", async () => {
+    const key = keyFile();
+    // Signed by the same key, as a later version of this script would: two blocks, one for a reason unknown here.
+    const later = Buffer.from(`${JSON.stringify({ type: "stash-addon-index", v: 1, updated_at: NOW + 50, addons: [], blocked: [{ origin: "https://bad.example", reason: "harmful" }, { origin: "https://spam.example", reason: "spam" }] }, null, 2)}\n`, "utf8");
+    const pair = { bytes: later, sig: signIndex(later, key.privateKey) };
+    const dir = folder("registry");
+    writeFileSync(join(dir, "index.json"), pair.bytes);
+    writeFileSync(join(dir, "index.json.sig"), pair.sig);
+
+    // verify: it reads, both add-ons are blocked, and the unknown word is reported as unknown, not repeated.
+    for (const r of [await cli(["verify", key.path, "--dir", dir]), await cli(["verify", key.path], { fetch: host(pair) })]) {
+        assert.equal(r.code, 0, r.err);
+        assert.match(r.out, /blocked=https:\/\/bad\.example harmful, https:\/\/spam\.example unknown bytes=\d+ written_by_this_publisher=false signature=true$/);
+        assert.equal(r.out.includes(" spam"), false);
+    }
+
+    // publish: such a copy still counts toward the floor, in the checkout and live.
+    const over = await cli(["publish", key.path, sourceFile(), dir], { fetch: host({ bytes: pair.bytes, sig: pair.sig }) });
+    assert.equal(over.code, 0, over.err);
+    assert.match(over.out, /^checkout: updated_at=\d+ addons=\(none\) blocked=https:\/\/bad\.example harmful, https:\/\/spam\.example unknown$/m);
+    assert.equal(readIndex(pairIn(dir).bytes).updated_at, NOW + 51);
+
+    // And this publisher does not write one: the same list as a source is refused, by check and by publish.
+    const src = sourceFile({ blocked: JSON.parse(later.toString("utf8")).blocked });
+    const empty = folder("registry");
+    for (const r of [await cli(["check", src]), await cli(["publish", key.path, src, empty, "--offline"])]) {
+        assert.equal(r.code, 1);
+        assert.match(r.err, /blocked\[1\]\.reason must be one of: harmful, broken, impersonation/);
+    }
+    assert.deepEqual(readdirSync(empty), []);
+});
+
 test("verify: the live pair", async () => {
     const key = keyFile();
     const pair = signedPair(key, SOURCE, NOW);

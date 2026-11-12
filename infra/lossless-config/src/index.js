@@ -12,7 +12,8 @@
  *  - buildIndex (the publisher's source) is STRICT: an unknown key, a bad entry or a near-miss is refused, never
  *    repaired, so a typo fails here and never reaches a phone.
  *  - readIndex (published bytes) reads the way a phone does: every rule again, but unknown fields are ignored, so an
- *    index written by a later publisher still reads.
+ *    index written by a later publisher still reads; and a block whose `reason` is a word it does not know is
+ *    still a block (its reason reads as UNKNOWN_REASON), so a newer list never makes an older reader drop a block.
  *
  * No error message repeats a manifest URL: an official manifest must not carry a token, but if one slips into the
  * source, the message must not print it. Only ids, origins and reasons are ever printed.
@@ -37,6 +38,11 @@ export const MAX_NAME = 60;
 export const MAX_SUMMARY = 60;
 /** The app shows a fixed sentence for each reason, never text from the file. */
 export const BLOCK_REASONS = Object.freeze(["harmful", "broken", "impersonation"]);
+/**
+ * How a reader reports a block whose `reason` is a word it does not know (one a later publisher added): the
+ * add-on is still blocked, with a generic fixed sentence. The publisher itself never writes it.
+ */
+export const UNKNOWN_REASON = "unknown";
 export const PLATFORMS = Object.freeze(["android", "web"]);
 /** SPEC.md 2: the manifest `id` rule. */
 export const ID_RULE = /^[a-z0-9][a-z0-9.-]{0,63}$/;
@@ -108,9 +114,10 @@ function writeIndex({ updated_at, addons, blocked }) {
 /**
  * Reads published index bytes (a Buffer, or a string taken as UTF-8) the way a phone does: the size cap, UTF-8,
  * JSON, `type`, `v`, `updated_at`, both lists and every entry rule. Unknown fields are ignored (plan 1.3); a known
- * field that breaks a rule refuses the whole index. Returns the index with only the fields this version knows, in
- * the written order; throws on any break. The signature is checked separately (verifyIndexSignature), so a caller
- * can say which of the two failed.
+ * field that breaks a rule refuses the whole index, with one exception: a block's `reason` may be any word, and a
+ * word that is not one of BLOCK_REASONS reads as UNKNOWN_REASON (the add-on is blocked all the same). Returns the
+ * index with only the fields this version knows, in the written order; throws on any break. The signature is
+ * checked separately (verifyIndexSignature), so a caller can say which of the two failed.
  */
 export function readIndex(bytes) {
     const buf = toBuffer(bytes);
@@ -135,7 +142,9 @@ export function readIndex(bytes) {
 export function isCanonical(bytes) {
     try {
         const buf = toBuffer(bytes);
-        return Buffer.from(writeIndex(readIndex(buf)), "utf8").equals(buf);
+        const index = readIndex(buf);
+        // Built again as a source, strictly: an unknown field or an unknown reason is not something this publisher writes.
+        return Buffer.from(buildIndex(JSON.parse(buf.toString("utf8")), index.updated_at - 1, 1), "utf8").equals(buf);
     } catch {
         return false;
     }
@@ -219,8 +228,13 @@ function checkBlocked(raw, strict) {
             if (typeof e.id !== "string" || !ID_RULE.test(e.id)) throw new Error(`${at}.id must match ${ID_RULE} (SPEC.md 2)`);
             entry.id = e.id;
         }
-        if (typeof e.reason !== "string" || !BLOCK_REASONS.includes(e.reason)) throw new Error(`${at}.reason must be one of: ${BLOCK_REASONS.join(", ")}`);
-        entry.reason = e.reason;
+        const known = typeof e.reason === "string" && BLOCK_REASONS.includes(e.reason);
+        // The publisher writes only the three reasons: any other word in a source is a typo and fails here.
+        if (strict && !known) throw new Error(`${at}.reason must be one of: ${BLOCK_REASONS.join(", ")}`);
+        // A reader keeps the block: a list from a later publisher must never make an older reader drop its blocks.
+        // The word itself is not kept, so nothing from the file is ever shown or printed in its place.
+        if (typeof e.reason !== "string") throw new Error(`${at}.reason must be a word`);
+        entry.reason = known ? e.reason : UNKNOWN_REASON;
         return entry;
     });
     // One entry per (origin, id); an entry without an id already covers every id on its origin.

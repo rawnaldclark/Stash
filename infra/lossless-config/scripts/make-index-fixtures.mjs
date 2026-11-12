@@ -3,11 +3,13 @@
  * Writes the add-on index fixtures in ../test/fixtures: signed sample indexes for this folder's tests and for the
  * app's reader (AddonIndexFetcher), which must accept exactly the bytes this publisher emits and refuse the rest.
  *
- *   node scripts/make-index-fixtures.mjs
+ *   node scripts/make-index-fixtures.mjs [folder]
  *
  * Every run makes two NEW throwaway P-256 keys in memory and never writes a private key anywhere, so every
  * signature and pubkey.b64 change on each run. Run it only when the index format changes, commit the whole folder,
  * and tell whoever keeps a copy of these files. test/fixtures.test.js proves the files are what cases.json says.
+ * With a folder, it writes there instead: every index.json and cases.json come out the same on every run, so a
+ * run into a scratch folder shows what the script would write without touching the committed signatures.
  */
 import { generateKeyPairSync } from "node:crypto";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -16,7 +18,9 @@ import { fileURLToPath } from "node:url";
 import { buildConfig } from "../src/config.js";
 import { buildIndex, publicKeyBase64, signIndex, INDEX_TYPE, INDEX_URL, MAX_ADDONS, MAX_BLOCKED, MAX_INDEX_BYTES, MAX_NAME, MAX_SUMMARY } from "../src/index.js";
 
-const OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "test", "fixtures");
+// The folder to write: test/fixtures, or another one given on the command line (to look at a run without re-keying
+// the committed files).
+const OUT = process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), "..", "test", "fixtures");
 const NOW = 1794355200; // 2026-11-11T00:00:00Z
 const DAY = 86400;
 
@@ -97,6 +101,11 @@ const cases = [
         what: "An index from a later publisher: an unknown field at the top, in an add-on and in a block. Unknown fields are ignored (plan 1.3), so a reader accepts it. This publisher never writes it, and refuses it as a source.",
     },
     {
+        dir: "valid-unknown-reason", expect: "accept", signature: "valid", canonical: false, blocked_reasons: ["harmful", "unknown"],
+        bytes: handMade(envelope({ addons: [], blocked: [{ origin: "https://bad.example", reason: "harmful" }, { origin: "https://spam.example", reason: "spam" }] })),
+        what: "An index from a later publisher: two blocks, the second with the reason `spam`, a word no reader knows. A reader accepts the index and blocks both add-ons; the second one's reason reads as unknown and gets a generic fixed sentence. A newer list must never make an older reader drop its blocks. This publisher never writes it, and refuses it as a source.",
+    },
+    {
         dir: "refuse-lossless-json", expect: "refuse", refused_by: "type", signature: "valid", bytes: config,
         what: "A lossless.json signed with the same key, served as the index. The signature is good; it has no `type`.",
     },
@@ -132,11 +141,6 @@ const cases = [
         dir: "refuse-oversize", expect: "refuse", refused_by: "size", signature: "valid", bytes: oversize,
         what: `A body over the ${MAX_INDEX_BYTES}-byte cap: ${MAX_BLOCKED} blocks (within the count cap) on long host names.`,
     },
-    {
-        dir: "refuse-bad-reason", expect: "refuse", refused_by: "rule", signature: "valid",
-        bytes: handMade(envelope({ addons: [], blocked: [{ origin: "https://bad.example", reason: "harmful" }, { origin: "https://spam.example", reason: "spam" }] })),
-        what: "A block whose `reason` is not one of harmful, broken, impersonation.",
-    },
 ];
 
 // Start clean, but keep README.md: it is written by hand.
@@ -157,10 +161,12 @@ for (const c of cases) {
     if (c.expect === "accept") {
         const index = JSON.parse(c.bytes.toString("utf8"));
         Object.assign(entry, { canonical: c.canonical, updated_at: index.updated_at, addons: index.addons.length, blocked: index.blocked.length });
+        // Only where it is the point of the case: what a reader reports as each block's reason, in order.
+        if (c.blocked_reasons) entry.blocked_reasons = c.blocked_reasons;
     }
     entry.bytes = c.bytes.length;
     entry.what = c.what;
     listed.push(entry);
 }
 writeFileSync(join(OUT, "cases.json"), `${JSON.stringify({ public_key: "pubkey.b64", cases: listed }, null, 2)}\n`);
-console.log(`wrote ${cases.length} cases, cases.json, pubkey.b64 and .gitattributes to test/fixtures (README.md is written by hand and was left alone)`);
+console.log(`wrote ${cases.length} cases, cases.json, pubkey.b64 and .gitattributes to the fixtures folder (README.md is written by hand and was left alone)`);
