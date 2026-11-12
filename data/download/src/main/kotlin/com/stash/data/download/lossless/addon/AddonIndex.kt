@@ -105,7 +105,7 @@ data class AddonIndex(
                 refuse("not UTF-8")
             }
             // A byte order mark is not JSON.
-            if (text.startsWith('﻿')) refuse("not JSON")
+            if (text.startsWith('\uFEFF')) refuse("not JSON")
             val root = (runCatching { json.parseToJsonElement(text) }.getOrNull() ?: refuse("not JSON")) as? JsonObject
                 ?: refuse("not a JSON object")
             if (string(root["type"]) != TYPE) refuse("type")
