@@ -155,6 +155,13 @@ class LosslessConfigFetcher @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true }
     private val jsonKey = stringPreferencesKey("config_json")
 
+    /**
+     * The detached signature the cached config arrived with (base64, as fetched), kept beside it
+     * so the cache can be checked again before it is trusted ([trustedCache]). Absent beside a
+     * cache written by a build from before 2026-11-11.
+     */
+    private val sigKey = stringPreferencesKey("config_sig")
+
     private val _relayKey = MutableStateFlow<String?>(null)
     /** The current relay access key from the applied config; null when unsigned. */
     val relayKey: StateFlow<String?> = _relayKey.asStateFlow()
@@ -202,13 +209,35 @@ class LosslessConfigFetcher @Inject constructor(
     val enabled: Boolean get() = configUrl.isNotBlank() && publicKeyB64.isNotBlank()
 
     /**
-     * Populate [tidalRelay] and [relayKey] from the cached JSON, if any. Cheap; call before the first resolve.
-     * The cache is not re-verified: it is only ever written from bytes that passed [verify],
-     * into app-private storage (`allowBackup=false`).
+     * Populate [tidalRelay], [relayKey] and [defaultAddons] from the cached JSON, if it may be
+     * trusted ([trustedCache]). Cheap; call before the first resolve.
      */
     suspend fun loadCached() {
-        val cached = readCache() ?: return
+        val cached = trustedCache() ?: return
         parse(cached)?.let { apply(it) }
+    }
+
+    /**
+     * The cached config, when it may be used (review-881 M9). The first-party trust rule rests on
+     * this file: its relay and its `first_party` add-ons get the install signature and the
+     * supporter token, so a cache someone else wrote must never be applied.
+     *  - **With its signature beside it** (every cache this build writes): only while that
+     *    signature still verifies over the cached text against the baked-in key. One that does not
+     *    is ignored, as if there were no cache: nothing is applied until a fetch succeeds.
+     *  - **With no signature beside it**: a cache written by an older build, which kept none. It
+     *    is used as it always was, so an install that updates and then starts offline still has
+     *    its Tidal relay. The first successful fetch rewrites cache and signature together.
+     *
+     * A settings restore no longer writes this file at all (`DatabaseBackupManager`), which was
+     * the one way a foreign cache got here; this check is the second lock on the same door.
+     */
+    private suspend fun trustedCache(): String? {
+        val prefs = ioCatching("cache read") { context.losslessRelayConfigDataStore.data.first() } ?: return null
+        val text = prefs[jsonKey] ?: return null
+        val sig = prefs[sigKey] ?: return text
+        if (verify(text.toByteArray(Charsets.UTF_8), sig)) return text
+        Log.w(TAG, "the cached lossless config does not match its signature: ignored")
+        return null
     }
 
     /** Fetch + verify + apply. Returns true only when a fresh, valid config was applied. Never throws. */
@@ -224,15 +253,29 @@ class LosslessConfigFetcher @Inject constructor(
         val text = String(body)
         val fresh = parse(text) ?: return@withContext false
         // Rollback floor: a valid signature does not stop whoever serves the URL replaying an old file.
-        // A FAILED cache read (missing, unreadable, unparseable) yields floor 0 on
-        // purpose — fail open: a corrupt cache must not pin the device to a stale config.
-        val cachedUpdatedAt = readCache()?.let { parse(it)?.updatedAt } ?: 0L
+        // A FAILED cache read (missing, unreadable, unparseable, or not matching its signature)
+        // yields floor 0 on purpose — fail open: a corrupt or foreign cache must not pin the
+        // device to a stale config (a far-future `updated_at` would otherwise reject every real one).
+        val cachedUpdatedAt = trustedCache()?.let { parse(it)?.updatedAt } ?: 0L
         if (fresh.updatedAt < cachedUpdatedAt) {
             Log.w(TAG, "lossless config older than the cached copy (${fresh.updatedAt} < $cachedUpdatedAt) — rejected")
             return@withContext false
         }
         apply(fresh)
-        ioCatching("cache write") { context.losslessRelayConfigDataStore.edit { it[jsonKey] = text } }
+        // The cache and its signature go in together, in one edit. The signature is over the bytes
+        // as fetched; the cache keeps text. They are the same bytes for any UTF-8 body, which is
+        // all the publisher writes; a body that isn't would never verify from the cache, so it is
+        // applied for this run and not cached.
+        if (text.toByteArray(Charsets.UTF_8).contentEquals(body)) {
+            ioCatching("cache write") {
+                context.losslessRelayConfigDataStore.edit {
+                    it[jsonKey] = text
+                    it[sigKey] = sig
+                }
+            }
+        } else {
+            Log.w(TAG, "lossless config is not UTF-8 text: applied, not cached")
+        }
         Log.i(
             TAG,
             "lossless config applied (Tidal relay: ${if (fresh.tidalRelayUrl != null) "yes" else "no"}, " +
@@ -295,8 +338,6 @@ class LosslessConfigFetcher @Inject constructor(
         Signature.getInstance("SHA256withECDSA").run { initVerify(pub); update(bytes); verify(Base64.getDecoder().decode(sigB64)) }
     }.getOrDefault(false)
 
-    private suspend fun readCache(): String? =
-        ioCatching("cache read") { context.losslessRelayConfigDataStore.data.first()[jsonKey] }
 
     /** The config with its Tidal relay URL already normalised; null when the JSON is unusable. */
     private fun parse(text: String): LosslessConfig? = runCatching {
@@ -332,6 +373,17 @@ class LosslessConfigFetcher @Inject constructor(
         } ?: e.javaClass.simpleName
         Log.w(TAG, "lossless config $label failed: $detail")
         null
+    }
+
+    /**
+     * TESTS ONLY (public, not internal, so no test ever calls a mangled name): the cache as a
+     * build wrote it. [sig] null is an older build's cache, which kept no signature.
+     */
+    suspend fun writeCacheForTest(configJson: String, sig: String?) {
+        context.losslessRelayConfigDataStore.edit {
+            it[jsonKey] = configJson
+            if (sig == null) it.remove(sigKey) else it[sigKey] = sig
+        }
     }
 
     internal suspend fun clearForTest() {

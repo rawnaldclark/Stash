@@ -69,6 +69,21 @@ private val NEVER_BACKED_UP = listOf(
 private fun neverBackedUp(fileName: String): Boolean = NEVER_BACKED_UP.any { fileName.startsWith(it) }
 
 /**
+ * A DataStore file a restore never writes although a backup carries it: the signed lossless
+ * config's cache (`:data:download` `LosslessConfigFetcher`, `lossless_relay_config`). The app
+ * trusts what that cache names: its Tidal relay and its `first_party` add-ons are sent the install
+ * signature and, when the user has one, the supporter token. A crafted "settings backup" could
+ * put any server there, and with a far-future `updated_at` keep the real config out for good
+ * (review-881 M9). The phone keeps its own copy, and fetches a fresh one at its next start anyway.
+ *
+ * The file also holds the install id, which so far rode along: after a restore this phone now
+ * keeps the id it has. Matched by prefix, like the others, for DataStore's leftover `.tmp` copy.
+ */
+private const val SIGNED_CONFIG_CACHE_FILE = "lossless_relay_config.preferences_pb"
+
+private fun neverRestored(fileName: String): Boolean = neverBackedUp(fileName) || fileName.startsWith(SIGNED_CONFIG_CACHE_FILE)
+
+/**
  * What the user chose to restore from a backup ZIP (issue #235). The classic
  * full overwrite is [EVERYTHING_REPLACE]; the three new scopes exist so users
  * can take just their library or just their settings from a backup, and so a
@@ -630,8 +645,8 @@ class DatabaseBackupManager @Inject constructor(
                                 }
 
                                 val finalFile = resolved.toFile()
-                                if (neverBackedUp(finalFile.name)) {
-                                    null // an archive from before these were left out: this phone keeps its own
+                                if (neverRestored(finalFile.name)) {
+                                    null // an archive from before these were left out, or the signed config's cache: this phone keeps its own
                                 } else {
                                     val tmp = File(finalFile.path + ".import-tmp")
                                     stagedDatastore.add(tmp to finalFile)
