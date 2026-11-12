@@ -126,6 +126,9 @@ class PlayerRepositoryImpl @Inject constructor(
     // Remote v2 (spec 2026-11-03 §2.3): while a linked browser plays the queue, this phone resolves nothing it won't play.
     // Null in hand-built tests (never a browser).
     private val browserOutputs: com.stash.core.media.cast.BrowserOutputs? = null,
+    // The add-ons that are on. When one leaves (removed, switched off, turned off by Stash), the link it handed out
+    // for the next song is dropped. Null in hand-built tests (nothing is watched).
+    private val addonRegistry: com.stash.core.addons.AddonRegistry? = null,
 ) : PlayerRepository {
 
     /**
@@ -234,6 +237,8 @@ class PlayerRepositoryImpl @Inject constructor(
             ensureController()
             seedGhostFromPersistedSession()
         }
+
+        addonRegistry?.let { registry -> scope.launch { dropNextStreamWhenAnAddonLeaves(registry.addons) } }
 
         // Idle-stop handshake. The service flips this false just before it
         // stops itself: release the controller so OUR binding doesn't keep
@@ -1379,6 +1384,37 @@ class PlayerRepositoryImpl @Inject constructor(
      * song plays, still under the new setting. Either resolve also drops every other cached
      * URL ([com.stash.core.media.streaming.StreamQualityPolicy] sees the change).
      */
+    /**
+     * An add-on that leaves [addons] (removed, switched off, turned off by Stash) is not asked again.
+     * The look-ahead may already have put a link it handed out into the next song's slot: that slot
+     * is resolved again, without the add-on, the way a quality change does it ([reresolveNextStream]).
+     * Only a slot whose link came from the add-on that left; the song playing plays to its end.
+     */
+    internal suspend fun dropNextStreamWhenAnAddonLeaves(addons: kotlinx.coroutines.flow.Flow<List<com.stash.core.addons.InstalledAddon>>) {
+        var on = emptySet<String>()
+        addons.collect { list ->
+            val now = list.mapTo(HashSet()) { it.id }
+            val left = on - now
+            on = now
+            if (left.isEmpty()) return@collect
+            try {
+                val controller = controllerDeferred ?: return@collect
+                val index = controller.nextMediaItemIndex
+                if (index !in 0 until controller.mediaItemCount) return@collect
+                val origin = controller.getMediaItemAt(index).mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN) ?: return@collect
+                val prefix = com.stash.core.media.streaming.AddonStreamRung.ORIGIN_PREFIX
+                if (origin.startsWith(prefix) && origin.removePrefix(prefix) in left) {
+                    Log.i(TAG, "the next song's link came from an add-on that is no longer on: resolving it again")
+                    reresolveNextStream()
+                }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
+                Log.w(TAG, "the next song was not resolved again after an add-on left: ${e.javaClass.simpleName}")
+            }
+        }
+    }
+
     override suspend fun reresolveNextStream() {
         if (listenTogetherOwnsQueue) return
         if (playsOnBrowser) return // nothing streams on this phone while a browser plays
