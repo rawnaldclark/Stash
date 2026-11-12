@@ -1,12 +1,21 @@
 package com.stash.feature.settings.addons
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -16,6 +25,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import com.google.common.truth.Truth.assertThat
+import com.stash.addons.contract.Quota
 import com.stash.core.addons.AddonSees
 import com.stash.core.addons.BlockReason
 import com.stash.core.addons.OfficialEntry
@@ -241,6 +251,206 @@ class AddonScreensTest {
         rule.onNodeWithText("Official · Live stations").assertExists()
         rule.onNodeWithText("Example Radio").performScrollTo().performClick()
         assertThat(addFromLink).containsExactly("https://addons.example.org/radio/manifest.json")
+    }
+
+    // ------------------------------------------------------------------------------------------ an add-on's page
+
+    private var pageRow by mutableStateOf(relay)
+    private var pageLive by mutableStateOf(AddonPageViewModel.Live())
+    private val pageRemoved = mutableListOf<String>()
+    private val pageNudged = mutableListOf<Boolean>()
+    private val pageSwitched = mutableListOf<Boolean>()
+    private var pageAgreed = 0
+    private var pageReplaced = 0
+
+    /** The page of [row]. [place]: where it is asked, from 0; negative for a row with no place in the play order. */
+    private fun showPage(
+        row: AddonOverview.Row,
+        place: Int = -1,
+        places: Int = 0,
+        live: AddonPageViewModel.Live = AddonPageViewModel.Live(),
+        tidalToday: String? = null,
+    ) {
+        pageRow = row
+        pageLive = live
+        rule.setContent {
+            MaterialTheme {
+                AddonPageContent(
+                    row = pageRow, place = place, places = places, live = pageLive, tidalToday = tidalToday,
+                    onBack = {},
+                    onSwitched = { pageSwitched += it },
+                    onNudged = { pageNudged += it },
+                    onReplaceLink = { pageReplaced++ },
+                    onRemove = { pageRemoved += pageRow.key },
+                    onAgreed = { pageAgreed++ },
+                )
+            }
+        }
+    }
+
+    /** The button named [text] inside the dialog that is open, not the row under it with the same word. */
+    private fun dialogButton(text: String) = rule.onNode(hasText(text) and hasClickAction() and hasAnyAncestor(isDialog()))
+
+    @Test fun `an add-on's page says who made it, where it runs, how it is doing, what Stash uses and what its server sees`() {
+        showPage(
+            relay.copy(
+                version = "1.2.0",
+                uses = listOf(AddonLinks.Use.PLAYS_SONGS, AddonLinks.Use.LOSSLESS),
+                sees = setOf(AddonSees.SEARCHES, AddonSees.PLAYS),
+            ),
+        )
+        rule.onNodeWithText("Version 1.2.0").assertExists()
+        // The address is beside the mark here too, and the rest of the link is nowhere.
+        rule.onNodeWithText("Not made by Stash · relay.example.org").assertExists()
+        rule.onNodeWithText("Working").assertExists()
+        rule.onNodeWithText("Plays songs").assertExists()
+        rule.onNodeWithText("Lossless").assertExists()
+        rule.onNodeWithText("Its server will see").assertExists()
+        rule.onNodeWithText("What you search for, the songs you play, and your internet address.").assertExists()
+        rule.onNodeWithText("It never gets").assertExists()
+        rule.onNodeWithText("Your accounts, your passwords, or anything from your other add-ons.").assertExists()
+        rule.onNodeWithContentDescription("Use Hi-Fi Relay").assertIsOn().performClick()
+        assertThat(pageSwitched).containsExactly(false)
+        rule.onNodeWithText("Replace link").performScrollTo().performClick()
+        assertThat(pageReplaced).isEqualTo(1)
+    }
+
+    @Test fun `the page says what is wrong in plain words, and what to do about it`() {
+        showPage(relay.copy(status = AddonOverview.Status.OFF, on = false))
+        rule.onNodeWithText("Switched off").assertExists()
+        rule.onNodeWithContentDescription("Use Hi-Fi Relay").assertIsOff()
+
+        val said = listOf(
+            AddonOverview.Status.NEEDS_NEW_LINK to listOf(
+                "Needs a new link",
+                "The link you added stopped working. Ask whoever runs this add-on for a new one, then replace it here.",
+            ),
+            AddonOverview.Status.NEEDS_NEWER_STASH to listOf(
+                "Needs a newer Stash",
+                "Its newest version needs a newer Stash than this one. Update Stash to keep using it.",
+            ),
+            AddonOverview.Status.WANTS_MORE to listOf(
+                "Wants to see more: review",
+                "It now asks for more than you agreed to. Stash won't use it until you review it.",
+            ),
+            AddonOverview.Status.NOT_REACHABLE to listOf("Not reachable right now", "Stash couldn't reach it. It will try again by itself."),
+        )
+        for ((status, lines) in said) {
+            pageRow = relay.copy(status = status)
+            rule.waitForIdle()
+            for (line in lines) rule.onNodeWithText(line).assertExists()
+        }
+
+        // The ones Stash won't use: no switch to flip, and Remove is there.
+        val notUsed = listOf(
+            AddonOverview.Status.ONLY_BITCHORD to listOf("This add-on only works in BitChord.", "Stash stopped using it. You can remove it."),
+            AddonOverview.Status.CHANGED to listOf(
+                "No longer the add-on you added",
+                "Its link now leads to a different add-on, so Stash stopped using it. Remove it, and add it again only if you trust where it comes from.",
+            ),
+            AddonOverview.Status.REPLACED to listOf(
+                "Stash has this one built in",
+                "Stash now has its own add-on by this name and uses that one. This copy isn't used; you can remove it.",
+            ),
+            AddonOverview.Status.TURNED_OFF_BY_STASH to listOf("Stash turned this add-on off. It was reported as a fake."),
+        )
+        for ((status, lines) in notUsed) {
+            pageRow = relay.copy(status = status, blockReason = BlockReason.IMPERSONATION, on = false, canSwitch = false)
+            rule.waitForIdle()
+            for (line in lines) rule.onNodeWithText(line).assertExists()
+            rule.onAllNodesWithContentDescription("Use Hi-Fi Relay").assertCountEquals0()
+            rule.onNodeWithText("Remove").assertExists()
+        }
+
+        // On, with nothing wrong with it, but not being asked right now.
+        pageRow = relay
+        pageLive = AddonPageViewModel.Live(paused = true)
+        rule.waitForIdle()
+        rule.onNodeWithText("Paused for now").assertExists()
+        rule.onNodeWithText("It asked Stash to wait, or it failed a few times in a row. Stash will try it again shortly.").assertExists()
+    }
+
+    @Test fun `Remove on the page asks first, and says what goes and what stays`() {
+        showPage(relay)
+        rule.onNodeWithText("Remove").performScrollTo().performClick()
+        // The tap asked; nothing was removed.
+        assertThat(pageRemoved).isEmpty()
+        rule.onNodeWithText("Remove Hi-Fi Relay?").assertExists()
+        rule.onNodeWithText("Stash stops asking it for songs and forgets what it found there. Songs you already downloaded stay.").assertExists()
+        dialogButton("Cancel").performSemanticsAction(SemanticsActions.OnClick)
+        assertThat(pageRemoved).isEmpty()
+        rule.onAllNodesWithText("Remove Hi-Fi Relay?").assertCountEquals0()
+
+        rule.onNodeWithText("Remove").performScrollTo().performClick()
+        dialogButton("Remove").performSemanticsAction(SemanticsActions.OnClick)
+        assertThat(pageRemoved).containsExactly("addon:hifi")
+    }
+
+    @Test fun `the user's own Tidal server shows its address, and giving it up asks first and says it may not come back`() {
+        val own = tidal.copy(host = "tidal.example.org", mark = AddonOverview.Mark.NONE, canRemove = true, ownServer = true)
+        showPage(own, live = AddonPageViewModel.Live(ownTokenSaved = true))
+        rule.onNodeWithText("Tidal plays through your own server instead of Stash's.").assertExists()
+        rule.onNodeWithText("Server").assertExists()
+        // Under the name, and again beside "Server": the address, and only the address.
+        assertThat(rule.onAllNodesWithText("tidal.example.org").fetchSemanticsNodes()).hasSize(2)
+        rule.onNodeWithText("Token saved").assertExists()
+        // It has no add-on link to replace, and no "Official" mark: it is the user's own.
+        rule.onAllNodesWithText("Replace link").assertCountEquals0()
+        rule.onAllNodesWithText("Official").assertCountEquals0()
+
+        rule.onNodeWithText("Use Stash's Tidal instead").performScrollTo().performClick()
+        assertThat(pageRemoved).isEmpty()
+        rule.onNodeWithText("Use Stash's Tidal instead?").assertExists()
+        rule.onNodeWithText(
+            "Stash forgets your server and its token, and Tidal goes back to Stash's own. To use your server again you would add it " +
+                "from its add-on link. A server that has no add-on link can't be added back in this version.",
+        ).assertExists()
+        dialogButton("Cancel").performSemanticsAction(SemanticsActions.OnClick)
+        assertThat(pageRemoved).isEmpty()
+
+        rule.onNodeWithText("Use Stash's Tidal instead").performScrollTo().performClick()
+        dialogButton("Use Stash's Tidal instead").performSemanticsAction(SemanticsActions.OnClick)
+        assertThat(pageRemoved).containsExactly("tidal")
+    }
+
+    @Test fun `Stash's own Tidal has its allowance and a switch, and nothing to remove`() {
+        showPage(tidal, tidalToday = "12 of 300 songs today")
+        rule.onNodeWithText("Official").assertExists()
+        rule.onNodeWithText("Stash's own Tidal source. Lossless and Hi-Res for everyone, with a daily allowance.").assertExists()
+        rule.onNodeWithText("12 of 300 songs today").assertExists()
+        rule.onNodeWithContentDescription("Use Tidal").assertIsOn()
+        rule.onAllNodesWithText("Remove").assertCountEquals0()
+        rule.onAllNodesWithText("Use Stash's Tidal instead").assertCountEquals0()
+        rule.onAllNodesWithText("Replace link").assertCountEquals0()
+        // It is not an add-on someone else runs: nothing about what "its server" sees.
+        rule.onAllNodesWithText("Its server will see").assertCountEquals0()
+    }
+
+    @Test fun `an add-on that wants to see more is reviewed on the sheet, and only Allow agrees`() {
+        showPage(relay.copy(status = AddonOverview.Status.WANTS_MORE, sees = setOf(AddonSees.SEARCHES, AddonSees.PLAYS, AddonSees.SAVES)))
+        rule.onNodeWithText("Review").performClick()
+        assertThat(pageAgreed).isEqualTo(0)
+        rule.onNodeWithText("Hi-Fi Relay, on relay.example.org, now asks for more than you agreed to. Stash doesn't run it or check it.").assertExists()
+        // The button's own click, wherever the sheet has slid to in a test window.
+        rule.onNodeWithText("Allow").performSemanticsAction(SemanticsActions.OnClick)
+        assertThat(pageAgreed).isEqualTo(1)
+    }
+
+    @Test fun `the page says where the add-on is asked, and moves it one place at a time`() {
+        showPage(relay, place = 2, places = 3)
+        rule.onNodeWithText("Asked 3rd of 3").assertExists()
+        // The last one can only go up.
+        rule.onNodeWithText("Move down").assertIsNotEnabled()
+        rule.onNodeWithText("Move up").assertIsEnabled().performScrollTo().performClick()
+        assertThat(pageNudged).containsExactly(true)
+    }
+
+    @Test fun `a metered add-on says how much of its allowance is used`() {
+        showPage(relay, live = AddonPageViewModel.Live(quota = Quota(used = 12, limit = 300, resetsAt = 0L)))
+        rule.onNodeWithText("12 of 300 used today").assertExists()
+        pageLive = AddonPageViewModel.Live(quota = Quota(used = 7, limit = null, resetsAt = 0L))
+        rule.waitForIdle()
+        rule.onNodeWithText("7 used today").assertExists()
     }
 
     // ------------------------------------------------------------------------------------------ Add from a link
