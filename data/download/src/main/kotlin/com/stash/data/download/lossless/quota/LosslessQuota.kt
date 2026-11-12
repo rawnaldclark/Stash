@@ -237,10 +237,15 @@ class LosslessQuota internal constructor(
      * A Stash Add-ons v1 `quota` (SPEC.md 4.8: `/quota`, or a stream answer's own after counting
      * itself): [limit] null is no limit (a supporter). The v1 wire's view of the relay's
      * `X-Stash-Lossless` headers and `/quota` body.
+     *
+     * A limit of zero or less is junk, as it is in the headers ([parseCount]): the answer is
+     * ignored. It used to read as "no limit", which lifted a free listener's cap on a server's
+     * slip (review-881 N3).
      */
     fun onQuota(used: Int, limit: Int?, resetsAtSec: Long) {
         if (used < 0 || resetsAtSec <= 0) return
-        record(LosslessAllowance(used, limit?.takeIf { it > 0 }, resetsAtSec))
+        if (limit != null && limit <= 0) return
+        record(LosslessAllowance(used, limit, resetsAtSec))
     }
 
     /**

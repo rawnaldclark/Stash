@@ -1,6 +1,7 @@
 package com.stash.data.download.lossless.tidal
 
 import com.stash.addons.contract.Resource
+import android.util.Log
 import com.stash.core.addons.AddonRegistry
 import com.stash.core.addons.InstalledAddon
 import com.stash.core.addons.NamedRungAddons
@@ -28,6 +29,15 @@ import javax.inject.Singleton
  *     publish it to turn the v1 wire on, publish without it to turn it off. No other flag.
  *  3. **The signed config's `tidal_relay_url`**: the legacy wire, exactly as today.
  *  4. Nothing: the rung is off.
+ *
+ * **A v1 face that stops reading our calls is set aside** (review-881 M7). After
+ * [AddonV1Wire.HARD_FAILURE_LIMIT] hard failures in a row (a 401, a 400, an answer that breaks the
+ * contract; [AddonV1Wire.broken]) step 2 is skipped and lookups go to the signed config's relay,
+ * which answers on the same server, until the next applied config ([LosslessConfigFetcher.refreshedAt]
+ * moves: every 6 hours and at each cold start). Then the v1 wire gets another go. Without it, a
+ * broken face (a wrong token in the published entry, a refused User-Agent) failed every Tidal
+ * lookup until a publish without the entry reached the phone. Only when there is a relay to fall
+ * back to, and never on a forced wire.
  *
  * Debug builds only ([TidalDebugSettings]): force either wire, and stand an origin in for the
  * signed config's relay and Tidal add-on. A forced v1 with no add-on loaded is off, so a test never
@@ -67,9 +77,33 @@ class TidalWires @Inject constructor(
         if (ownServer && forced != TidalDebugSettings.Wire.V1) {
             own.now()?.let { return Route.Relay(TidalRelay(it.base, it.token, userOwned = true)) }
         }
-        if (forced != TidalDebugSettings.Wire.LEGACY) tidalAddon()?.let { return Route.Addon(it) }
+        val relay = ownerRelay()
+        val setAside = forced == TidalDebugSettings.Wire.AUTO && relay != null && v1SetAside()
+        if (forced != TidalDebugSettings.Wire.LEGACY && !setAside) tidalAddon()?.let { return Route.Addon(it) }
         if (forced == TidalDebugSettings.Wire.V1) return null
-        return ownerRelay()?.let { Route.Relay(it) }
+        return relay?.let { Route.Relay(it) }
+    }
+
+    /** [LosslessConfigFetcher.refreshedAt] when the v1 wire was set aside; null while it is in use. */
+    @Volatile private var setAsideAtRefresh: Long? = null
+
+    /**
+     * True while the v1 wire is set aside (the class doc). A config applied since it was set aside
+     * ends that and starts its failure counts over.
+     */
+    private fun v1SetAside(): Boolean {
+        val at = setAsideAtRefresh
+        if (at != null) {
+            if (config.refreshedAt.value == at) return true
+            setAsideAtRefresh = null
+            v1.forgive()
+            Log.i(TAG, "a config was applied: the v1 add-on is asked again")
+            return false
+        }
+        if (!v1.broken) return false
+        setAsideAtRefresh = config.refreshedAt.value
+        Log.w(TAG, "the v1 add-on failed ${AddonV1Wire.HARD_FAILURE_LIMIT} calls in a row; using the legacy relay until the next applied config")
+        return true
     }
 
     /** The wire for a lookup, bound to its server; null = the rung is off. */
@@ -81,16 +115,19 @@ class TidalWires @Inject constructor(
 
     /**
      * The diagnostics line (plan §5.4): `v1 add-on`, `legacy relay`, `legacy relay (your own
-     * server)` or `off`, never a base or a token. Debug overrides are named so a bundle shows them.
+     * server)` or `off`, never a base or a token. Debug overrides are named so a bundle shows them,
+     * and so is a v1 wire set aside after failures.
      */
     suspend fun describe(): String {
         val d = debug.state.value
-        val what = when (val r = route()) {
+        val r = route()
+        val what = when (r) {
             is Route.Addon -> TidalWire.Kind.V1.label
             is Route.Relay -> TidalWire.Kind.LEGACY.label + if (r.relay.userOwned) " (your own server)" else ""
             null -> "off"
         }
         val notes = listOfNotNull(
+            "v1 add-on set aside after failures".takeIf { setAsideAtRefresh != null && r is Route.Relay && !r.relay.userOwned },
             "forced".takeIf { d.wire != TidalDebugSettings.Wire.AUTO },
             "debug server override".takeIf { d.origin != null },
         )
@@ -109,4 +146,8 @@ class TidalWires @Inject constructor(
                 TidalDebugSettings.Wire.AUTO -> own != null || tidalAddon() != null || debug.relay(signed) != null
             }
         }.stateIn(CoroutineScope(SupervisorJob() + Dispatchers.IO), SharingStarted.Eagerly, false)
+
+    private companion object {
+        const val TAG = "TidalWires"
+    }
 }

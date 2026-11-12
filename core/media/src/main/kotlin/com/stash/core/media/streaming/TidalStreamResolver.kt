@@ -2,6 +2,7 @@ package com.stash.core.media.streaming
 
 import android.util.Log
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.forLibrarySource
 import com.stash.data.download.lossless.tidal.TidalClient
@@ -30,6 +31,7 @@ import javax.inject.Singleton
 class TidalStreamResolver @Inject constructor(
     private val client: TidalClient,
     private val losslessPrefs: com.stash.data.download.lossless.LosslessSourcePreferences,
+    private val quality: StreamQualityPolicy,
 ) {
     /** A server is configured (non-blocking; see [TidalClient.configured]). */
     fun enabledHint(): Boolean = client.configured.value
@@ -117,7 +119,11 @@ class TidalStreamResolver @Inject constructor(
         // falling through to the lossy rungs below (JioSaavn / YouTube) — unless
         // the user switched "Tidal AAC when no FLAC" off (Tidal = FLAC only).
         val allowAac = !losslessOnly && losslessPrefs.tidalAacFallbackNow()
-        val s = client.resolve(query, allowAac = allowAac) ?: run {
+        // "CD means CD" (decision D15): at the CD streaming tier of the network the phone is on,
+        // Stash's Tidal add-on is asked for CD FLAC and no higher. The legacy relay, and so the
+        // user's own server, cannot be asked that and answers what Tidal gives ([TidalClient.lookup]).
+        val cdOnly = quality.streamingTier() == LosslessQualityTier.CD
+        val s = client.resolve(query, allowAac = allowAac, cdOnly = cdOnly) ?: run {
             Log.d(TAG, "no_result id=${track.id}")
             return null
         }

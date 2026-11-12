@@ -195,11 +195,16 @@ class HttpAddonClient @Inject constructor(
     /**
      * [readManifest], with the checked answer as JSON text too, for a host that keeps the last good
      * manifest across restarts ([AddonManifestStore]). The text holds no URL or token of ours.
+     *
+     * The text is the answer as it arrived, never the parsed tree written out again: the validator
+     * ignores keys it doesn't know, so a valid manifest can carry a value nested tens of thousands
+     * deep, and `JsonElement.toString()` recurses once per level (a `StackOverflowError`, which no
+     * `catch (e: Exception)` above this call stops). A manifest is at most [MANIFEST_BYTES].
      */
     suspend fun manifestWithJson(base: String, publicOnly: Boolean = true): AddonResult<Pair<AddonManifest, String>> {
         val opts = optionsFor(publicOnly)
-        return exchange(null, base, Route.MANIFEST, listOf("manifest.json"), emptyList(), signPayload = null, opts) {
-            AddonValidator.readManifest(it, opts) to it.toString()
+        return exchange(null, base, Route.MANIFEST, listOf("manifest.json"), emptyList(), signPayload = null, opts) { element, text ->
+            AddonValidator.readManifest(element, opts) to text
         }
     }
 
@@ -388,7 +393,7 @@ class HttpAddonClient @Inject constructor(
         }
         val path = if (segments.isEmpty()) listOf(route.name.lowercase().replace('_', '-')) else segments
         val withSettings = params + addon.settings.map { (k, v) -> k to v }
-        val result = exchange(addon, addon.base, route, path, withSettings, signPayload, optionsFor(addon), parse)
+        val result = exchange(addon, addon.base, route, path, withSettings, signPayload, optionsFor(addon)) { element, _ -> parse(element) }
         if (circuit) report(addon.id, result)
         return result
     }
@@ -421,6 +426,7 @@ class HttpAddonClient @Inject constructor(
         }
     }
 
+    /** [parse] gets the answer as a tree and as the text it arrived as. */
     private suspend fun <T> exchange(
         addon: InstalledAddon?,
         base: String,
@@ -429,7 +435,7 @@ class HttpAddonClient @Inject constructor(
         params: List<Pair<String, String>>,
         signPayload: String?,
         opts: AddonValidator.Options,
-        parse: (JsonElement) -> T,
+        parse: (JsonElement, String) -> T,
     ): AddonResult<T> {
         val tag = "${addon?.id ?: "manifest"} ${route.name.lowercase()}"
         val baseUrl = base.takeIf { AddonValidator.isAllowedUrl(it, opts) }?.toHttpUrlOrNull()
@@ -442,6 +448,7 @@ class HttpAddonClient @Inject constructor(
             params.forEach { (k, v) -> addQueryParameter(k, v) }
         }.build()
         val deadline = nowMs() + route.timeoutMs
+        val maxBytes = if (route == Route.MANIFEST) MANIFEST_BYTES else Limits.BODY_BYTES
         val firstParty = signPayload != null && trust.isFirstParty(base)
         val client = if (opts.publicOnly) publicHttp else http
         val eclipse = addon?.dialect == AddonDialect.ECLIPSE
@@ -464,7 +471,7 @@ class HttpAddonClient @Inject constructor(
                 if (remaining <= 0) return AddonResult.Failed(AddonFailure.Timeout)
                 // The call timeout only starts once OkHttp's dispatcher runs the call: this also
                 // bounds the wait for a connection slot.
-                val reply = withTimeoutOrNull(remaining) { execute(client, builder.build(), remaining, adoptServerTime = signed) }
+                val reply = withTimeoutOrNull(remaining) { execute(client, builder.build(), remaining, adoptServerTime = signed, maxBytes = maxBytes) }
                     ?: run {
                         debug("$tag: timed out")
                         return AddonResult.Failed(AddonFailure.Timeout)
@@ -482,8 +489,13 @@ class HttpAddonClient @Inject constructor(
                     mayResign = false
                     continue
                 }
-                if (reply.tooLarge) return AddonResult.Failed(AddonFailure.InvalidResponse("", "body over 2 MiB"))
-                val element = reply.body?.let { runCatching { json.parseToJsonElement(it) }.getOrNull() }
+                if (reply.tooLarge) {
+                    return AddonResult.Failed(
+                        AddonFailure.InvalidResponse("", if (route == Route.MANIFEST) "manifest over 64 KiB" else "body over 2 MiB"),
+                    )
+                }
+                val text = reply.body
+                val element = text?.let { runCatching { json.parseToJsonElement(it) }.getOrNull() }
                 if (reply.code !in 200..299) {
                     debug("$tag: HTTP ${reply.code}")
                     // A first-party 401 that names the server's clock is a skewed signature, not a
@@ -498,15 +510,25 @@ class HttpAddonClient @Inject constructor(
                         if (eclipse && (route == Route.STREAM || route == Route.DOWNLOAD) && refused.isPreparing()) refused.copy(preparing = true) else refused,
                     )
                 }
-                element ?: return AddonResult.Failed(AddonFailure.InvalidResponse("", "not JSON"))
+                if (element == null || text == null) return AddonResult.Failed(AddonFailure.InvalidResponse("", "not JSON"))
                 return try {
-                    AddonResult.Ok(parse(element))
+                    AddonResult.Ok(parse(element, text))
                 } catch (e: AddonRefusalException) {
                     debug("$tag: ${e.code.wire}")
                     AddonResult.Failed(AddonFailure.Refused(e.code, reply.code, null, null, held = e.held?.let(::HeldStream)))
                 } catch (e: AddonContractException) {
                     warn("$tag: invalid answer at ${loggable(e.path.ifEmpty { "/" })}: ${loggable(e.reason)}")
                     AddonResult.Failed(AddonFailure.InvalidResponse(e.path, e.reason))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    // Reading an answer is not suspending and touches nothing but the answer, so
+                    // whatever it throws is about the answer: a StackOverflowError on a value
+                    // nested too deep, a number no rule expected. An Error is caught on purpose;
+                    // it would otherwise pass every `catch (e: Exception)` between here and the
+                    // caller's coroutine scope. Class name only: the message can quote the answer.
+                    warn("$tag: the answer could not be read (${e.javaClass.simpleName})")
+                    AddonResult.Failed(AddonFailure.InvalidResponse("", "unreadable"))
                 }
             }
         } catch (e: CancellationException) {
@@ -576,8 +598,10 @@ class HttpAddonClient @Inject constructor(
         val wwwAuthenticate: String? = null,
     )
 
-    /** Runs [request] with a call timeout of [timeoutMs]; cancelling the coroutine cancels the call. */
-    private suspend fun execute(client: OkHttpClient, request: Request, timeoutMs: Long, adoptServerTime: Boolean): Reply = suspendCancellableCoroutine { cont ->
+    /** Runs [request] on [client] with a call timeout of [timeoutMs]; cancelling the coroutine cancels the call. At most [maxBytes] of body are read. */
+    private suspend fun execute(
+        client: OkHttpClient, request: Request, timeoutMs: Long, adoptServerTime: Boolean, maxBytes: Long,
+    ): Reply = suspendCancellableCoroutine { cont ->
         val call = client.newCall(request)
         call.timeout().timeout(timeoutMs, TimeUnit.MILLISECONDS)
         cont.invokeOnCancellation { call.cancel() }
@@ -588,7 +612,7 @@ class HttpAddonClient @Inject constructor(
 
             override fun onResponse(call: Call, response: Response) {
                 val reply = try {
-                    response.use { readReply(it, adoptServerTime) }
+                    response.use { readReply(it, adoptServerTime, maxBytes) }
                 } catch (e: IOException) {
                     if (cont.isActive) cont.resumeWithException(e)
                     return
@@ -599,13 +623,13 @@ class HttpAddonClient @Inject constructor(
     }
 
     /** [adoptServerTime]: only a signed request's 401 may move the signing clock; no other add-on gets to. */
-    private fun readReply(r: Response, adoptServerTime: Boolean): Reply {
+    private fun readReply(r: Response, adoptServerTime: Boolean, maxBytes: Long): Reply {
         val adopted = adoptServerTime && r.code == 401 && signer.adoptServerTime(r)
         val named = r.code == 401 && r.header(SERVER_TIME_HEADER) != null
         val www = if (r.code == 401) r.header("WWW-Authenticate") else null
         if (r.code in 300..399) return Reply(r.code, r.header("Location"), null, false, null, false)
         val source = r.body?.source() ?: return Reply(r.code, null, r.header("Retry-After"), adopted, null, false, named, www)
-        if (source.request(Limits.BODY_BYTES + 1)) return Reply(r.code, null, r.header("Retry-After"), adopted, null, true, named, www)
+        if (source.request(maxBytes + 1)) return Reply(r.code, null, r.header("Retry-After"), adopted, null, true, named, www)
         val text = source.buffer.readUtf8()
         return Reply(r.code, null, r.header("Retry-After"), adopted, text, false, named, www)
     }
@@ -630,6 +654,13 @@ class HttpAddonClient @Inject constructor(
     companion object {
         private const val TAG = "HttpAddonClient"
         private const val MAX_REDIRECTS = 3
+
+        /**
+         * The most a `manifest.json` may weigh: SPEC.md A.1's cap for a phone add-on's manifest,
+         * held to every manifest here. A real one is a few hundred bytes; the registry keeps each
+         * one on disk and reads them all at every cold start.
+         */
+        const val MANIFEST_BYTES = 64L * 1024
 
         /** The first-party skew answer's header (SPEC.md 6, informative): the server's clock, epoch seconds. */
         const val SERVER_TIME_HEADER = "X-Stash-Server-Time"

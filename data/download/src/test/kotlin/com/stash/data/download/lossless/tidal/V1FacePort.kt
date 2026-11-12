@@ -21,10 +21,20 @@ import okhttp3.mockwebserver.MockResponse
 import kotlin.math.roundToLong
 
 /**
- * The v1 face of `stash-addon-tidal` (`src/faces/v1.js` at the phase 2 cut: `toTrack`, `relayAsk`,
- * `streamRange`, `toStreamInfo`, `fromRelay`), ported line for line so the parity test can serve
- * the relay's own answers through it. The face's counting and its `quota` come from the relay's
- * `X-Stash-Lossless` headers here (the Worker reads the same count from D1).
+ * The v1 face of `stash-addon-tidal`, ported by hand so the parity test can serve the relay's own
+ * answers through it: `src/faces/v1.js` at commit `40ab038` ("v1: a track Tidal refuses keeps
+ * status 502"), its `toTrack`, `relayAsk`, `streamRange`, `toStreamInfo` and `fromRelay`. Nothing
+ * ties this file to that one but a reader: when the face changes, port the change and move the
+ * commit named here (review-881 N11).
+ *
+ * What stands in for the Worker's own state:
+ *  - the face's counting and its `quota` come from the relay's `X-Stash-Lossless` headers (the
+ *    Worker reads the same count from D1);
+ *  - the relay's internal answer tag (`rights`, `install_skew`, `install_missing`, any other
+ *    install refusal) is [RelayAnswer.tag];
+ *  - the CD-only lane (`V1_LOSSLESS_TIER_CD_ONLY = "1"`, as deployed) reaches a scenario's relay
+ *    as the extra ask parameter [CD_LANE], which is never on the real wire: the Worker passes it
+ *    in-process.
  */
 internal object V1FacePort {
 
@@ -32,6 +42,9 @@ internal object V1FacePort {
         "description":"Lossless and Hi-Res from Tidal","resources":["search","resolve","stream","download","quota"],
         "stream":{"cors":false,"manifests":["none","dash"],"tiers":["high","lossless","hires"],"headers":false},
         "auth":{"token":"path"}}"""
+
+    /** Marks a relay ask the face routed to the CD-only lane (decision D15). */
+    const val CD_LANE = "cd"
 
     private val TIERS = listOf("low", "high", "lossless", "hires")
     private fun rank(t: String) = TIERS.indexOf(t)
@@ -67,7 +80,8 @@ internal object V1FacePort {
 
     private data class Range(val tier: String, val minTier: String, val manifests: List<String>)
 
-    fun stream(url: HttpUrl, relay: (Map<String, String>) -> RelayAnswer): MockResponse {
+    /** [cdOnly]: the Worker's `V1_LOSSLESS_TIER_CD_ONLY === "1"`. */
+    fun stream(url: HttpUrl, relay: (Map<String, String>) -> RelayAnswer, cdOnly: Boolean = true): MockResponse {
         val rawId = url.pathSegments.last()
         if (!Regex("^(?:td:)?([1-9]\\d{0,11})$").matches(rawId)) return failure("not_found", 404)
         val tier = url.queryParameter("tier") ?: "hires"
@@ -76,8 +90,8 @@ internal object V1FacePort {
         val manifests = (url.queryParameter("manifest") ?: "none").split(",").map { it.trim() }.filter { it in setOf("none", "dash", "hls") }
         if (manifests.isEmpty()) return failure("bad_request", 400)
         val range = Range(tier, minTier, manifests)
-        val ask = relayAsk(range) ?: return failure("quality_unavailable", 404)
-        val answer = relay(ask)
+        val ask = relayAsk(range, cdOnly) ?: return failure("quality_unavailable", 404)
+        val answer = relay(if (ask.cd) ask.params + (CD_LANE to "1") else ask.params)
         if (answer.status != 200) return fromRelay(answer)
         val info = toStreamInfo(Json.parseToJsonElement(answer.body).jsonObject) ?: return failure("unavailable", 503)
         val infoTier = (info["tier"] as JsonPrimitive).content
@@ -105,14 +119,17 @@ internal object V1FacePort {
         return json(200, withQuota.toString())
     }
 
-    private fun relayAsk(r: Range): Map<String, String>? {
+    private data class Ask(val params: Map<String, String>, val cd: Boolean)
+
+    private fun relayAsk(r: Range, cdOnly: Boolean): Ask? {
         if (rank(r.tier) < rank("high")) return null
         val dash = "dash" in r.manifests
         val none = "none" in r.manifests
         if (!dash && !none) return null
-        if (r.tier == "high") return if (none) mapOf("aac" to "only", "hires" to "0") else null
-        if (rank(r.minTier) <= rank("high")) return if (dash) mapOf("aac" to "1") else mapOf("aac" to "only", "hires" to "0")
-        return emptyMap()
+        if (r.tier == "high") return if (none) Ask(mapOf("aac" to "only", "hires" to "0"), cd = false) else null
+        val cd = r.tier == "lossless" && cdOnly
+        if (rank(r.minTier) <= rank("high")) return if (dash) Ask(mapOf("aac" to "1"), cd) else Ask(mapOf("aac" to "only", "hires" to "0"), cd = false)
+        return Ask(emptyMap(), cd)
     }
 
     private fun toStreamInfo(b: JsonObject): JsonObject? {
@@ -150,7 +167,15 @@ internal object V1FacePort {
         val retryAfter = r.headers["Retry-After"]?.toIntOrNull()?.takeIf { it >= 1 }
         val keep = { names: List<String> -> names.mapNotNull { n -> r.headers[n]?.let { n to it } }.toMap() }
         return when (r.status) {
-            401 -> failure("unauthorized", 401)
+            // SPEC.md 7: 401 means "stop calling; ask the user", which only a wrong path token is.
+            // A skewed clock stays 401 with the server's time (the host signs once more); any
+            // other install-signature refusal is this call's problem only: 400.
+            401 -> when {
+                r.tag == "install_skew" -> failure("unauthorized", 401, extra = keep(listOf("X-Stash-Server-Time")))
+                r.tag == "install_missing" -> failure("bad_request", 400)
+                r.tag != null || r.headers["X-Stash-Server-Time"] != null -> failure("bad_request", 400)
+                else -> failure("unauthorized", 401)
+            }
             404 -> when {
                 cause in QUALITY_MISSES -> failure("quality_unavailable", 404)
                 cause == "not_available" && r.tag == "rights" -> failure("region_unavailable", 451)
@@ -171,7 +196,10 @@ internal object V1FacePort {
                 failure("rate_limited", 429, retryAfter ?: 60)
             }
             503 -> failure("unavailable", 503, retryAfter)
-            502 -> failure("unavailable", 503, retryAfter ?: 15)
+            // Tidal refused this one request. The status stays 502 so the app can tell it from a
+            // busy pool (a 503 with retryAfter): one refused track fails that song, as on the
+            // legacy routes, and does not pause Tidal on the whole phone (review-881 M3).
+            502 -> failure("unavailable", 502, retryAfter ?: 15)
             else -> if (r.status >= 500) failure("unavailable", 503) else failure("bad_request", 400)
         }
     }

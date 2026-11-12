@@ -67,16 +67,27 @@ export function buildDefaultAddons(raw) {
     });
 }
 
+/**
+ * The app's URL rule (SPEC.md 1.1; `AddonValidator.HTTPS_URL` in the app): https, a host of ASCII letters, digits, dots
+ * and hyphens, an optional port, then a path with no white space, control characters or backslashes. The URL parser
+ * takes more than that (a host with `_`, an IPv6 literal, an IDN), and the app's add-on client refuses to call what
+ * this rule refuses: such an entry would be published, signed, and then never load on any phone, with nothing said
+ * anywhere (review-881 N4). The same rule on both sides, so it fails here instead.
+ */
+const APP_URL = /^https:\/\/[A-Za-z0-9.\-]+(:[0-9]{1,5})?([/?#][^\u0000- \u007f-\u009f\\]*)?$/;
+
 /** An add-on manifest URL as the app takes it (SPEC.md 1.1 and 3), or null. */
 export function normaliseManifestUrl(raw) {
     if (typeof raw !== "string") return null;
     const text = raw.trim();
     if (!text || text.length > 2048 || /[\s\\]/.test(text)) return null;
+    if (!APP_URL.test(text)) return null;
     let u;
     try { u = new URL(text); } catch { return null; }
     if (u.protocol !== "https:" || !u.hostname || u.username || u.password || u.search || u.hash || text.includes("?") || text.includes("#")) return null;
     if (!u.pathname.endsWith("/manifest.json")) return null;
-    return u.href;
+    // What is published is the parser's spelling of it (a lower-case host): that must pass the app's rule too.
+    return APP_URL.test(u.href) && u.href.length <= 2048 ? u.href : null;
 }
 
 /** What may be printed about `default_addons`: a count, and each entry's origin and flags (never its path). */

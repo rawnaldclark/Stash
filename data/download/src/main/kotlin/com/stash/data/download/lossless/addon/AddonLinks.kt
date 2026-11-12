@@ -15,6 +15,7 @@ import com.stash.core.addons.HttpAddonClient
 import com.stash.core.addons.InstalledAddon
 import com.stash.core.addons.UserAddonEntry
 import com.stash.core.addons.UserAddonKind
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import javax.inject.Inject
@@ -124,21 +125,43 @@ class AddonLinks @Inject constructor(
         if (registry.addons.value.any { it.id == preview.id }) return Outcome.Refused("Stash already has an add-on with this id (${preview.id}).")
         // Nothing an earlier add-on with this id said about a song carries over (phase 4 §2.4).
         refs.forget(preview.id)
-        users.put(UserAddonEntry(preview.manifestUrl, token = t.takeIf { preview.needsToken }, enabled = true))
+        if (!saved { users.put(UserAddonEntry(preview.manifestUrl, token = t.takeIf { preview.needsToken }, enabled = true)) }) {
+            return Outcome.Refused(NOT_SAVED)
+        }
         Log.i(TAG, "add-on added from a link: ${preview.id}")
         return Outcome.Added
     }
 
-    suspend fun remove(manifestUrl: String) {
+    /** Removes the add-on added from [manifestUrl]. False when the list could not be saved ([NOT_SAVED]): nothing changed. */
+    suspend fun remove(manifestUrl: String): Boolean {
         val base = HttpAddonClient.baseOf(manifestUrl)
         val id = registry.addons.value.firstOrNull { it.userAdded && it.base == base }?.id
-        users.remove(manifestUrl)
+        if (!saved { users.remove(manifestUrl) }) return false
         // Its refs go with it, so a later add-on with the same id never inherits them (phase 4 §2.4).
         id?.let { refs.forget(it) }
         Log.i(TAG, "a user add-on was removed")
+        return true
     }
 
-    suspend fun setEnabled(manifestUrl: String, enabled: Boolean) = users.setEnabled(manifestUrl, enabled)
+    /** Switches the add-on added from [manifestUrl] on or off. False when the list could not be saved ([NOT_SAVED]): nothing changed. */
+    suspend fun setEnabled(manifestUrl: String, enabled: Boolean): Boolean = saved { users.setEnabled(manifestUrl, enabled) }
+
+    /**
+     * Runs a write to the sealed list. The Keystore fails for a moment now and then: the seal
+     * throws, or the stored list has not opened and the store refuses to write over it
+     * ([EncryptedUserAddons.UnreadableException]). Neither may reach a `viewModelScope.launch`
+     * with no handler (a crash on Add or Remove, review-882 J2): false, and nothing was changed.
+     */
+    private suspend fun saved(write: suspend () -> Unit): Boolean = try {
+        write()
+        true
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        // Class only: a message could quote the link or the token.
+        Log.w(TAG, "the add-on list could not be saved: ${e.javaClass.simpleName}")
+        false
+    }
 
     /** The link as kept: a manifest URL the client may call, else null. A base (ending in `/`) gets `manifest.json`. */
     internal fun normalise(link: String): String? {
@@ -205,6 +228,8 @@ class AddonLinks @Inject constructor(
 
         /** A BitChord-only add-on (`bitchordAuth`, or a 401 naming BitChord): Stash respects that. */
         const val ONLY_BITCHORD_TEXT = "This add-on only works in BitChord."
+        /** What to show when Add, Remove or the switch could not be saved; nothing was changed. */
+        const val NOT_SAVED = "Couldn't save. Try again."
 
         /** The privacy line the sheet shows above Add (plan §5.5). */
         const val PRIVACY_NOTE = "Its server sees what you search and the songs you play."
