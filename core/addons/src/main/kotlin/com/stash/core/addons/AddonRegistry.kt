@@ -408,7 +408,15 @@ class InTreeAddonRegistry @Inject constructor(
                 .distinctUntilChanged()
                 .collectLatest { guarded { listChanged() } }
         }
-        scope.launch(Dispatchers.IO) { configApplied.collect { guarded { refresh(force = false) } } }
+        scope.launch(Dispatchers.IO) {
+            configApplied.collect { tick ->
+                // A fresh, verified config was applied in this run (the app's flow starts at 0 and
+                // holds the time of the last one): its list of defaults is the whole truth now,
+                // an empty one too.
+                if (tick != null && tick != 0L) defaultsKnown = true
+                guarded { refresh(force = false) }
+            }
+        }
         // A new index: a block applies at once, with nothing asked; a lifted one needs its manifest read.
         scope.launch(Dispatchers.IO) { catalog.changes.collect { guarded { recheck() } } }
         // The first value is the one every pass already read.
@@ -481,6 +489,9 @@ class InTreeAddonRegistry @Inject constructor(
     /** Bumped, under [applyLock], each time [publishKnown] publishes: a pass that started before it must not publish its older list over it. */
     @Volatile private var listsVersion = 0
 
+    /** A fresh config was applied in this run: the defaults' list, empty or not, is all there is ([forgetRemoved]). */
+    @Volatile private var defaultsKnown = false
+
     /**
      * The lists as they are now, published from what is already known, asking nothing and waiting for
      * no read (review-885 M5). A pass holds [refreshLock] for as long as its slowest manifest, so a
@@ -494,6 +505,11 @@ class InTreeAddonRegistry @Inject constructor(
         val known = slots.associateBy { it.w.key }
         // Entries not seen before start from their kept manifest, read before the lock is taken.
         val fresh = wanted.filter { it.key !in known }.associate { it.key to kept(it, null) }
+        // An entry that was here a moment ago and is gone was removed: its kept manifest goes now,
+        // not at the end of a pass that may wait for one that is reading (N7). The pass forgets it
+        // again, in case a read under way wrote it back.
+        val gone = known.keys - wanted.map { it.key }.toSet()
+        if (gone.isNotEmpty() && !users.unreadable.value) runCatchingStore { store.forget(gone) }
         applyLock.withLock {
             val now = slots.associateBy { it.w.key }
             listsVersion++
@@ -558,7 +574,10 @@ class InTreeAddonRegistry @Inject constructor(
      * manifest that pass is about to need (it is what keeps Tidal's add-on on, offline). So:
      *  - an entry that was wanted earlier in this run and no longer is (the user removed it, the
      *    last one too) is forgotten at once;
-     *  - once the config's defaults are here (the list is not empty), everything not wanted is stale;
+     *  - once the config's defaults are here (the list is not empty, or a fresh config was applied
+     *    in this run and names none), everything not wanted is stale. That is what clears a manifest
+     *    nobody owns any more (an add-on removed just before the app was closed, review-885 N7) on a
+     *    phone whose config has no default add-on;
      *  - and nothing is forgotten while the user's own list could not be read ([UserAddons.unreadable]).
      */
     private suspend fun forgetRemoved(wanted: List<Wanted>) {
@@ -568,7 +587,7 @@ class InTreeAddonRegistry @Inject constructor(
         val removed = seen - keys
         seen += keys
         runCatchingStore {
-            if (wanted.any { !it.userAdded }) store.retain(keys) else if (removed.isNotEmpty()) store.forget(removed)
+            if (wanted.any { !it.userAdded } || defaultsKnown) store.retain(keys) else if (removed.isNotEmpty()) store.forget(removed)
         }
         seen.retainAll(keys)
     }
@@ -725,6 +744,11 @@ class InTreeAddonRegistry @Inject constructor(
             } catch (t: Throwable) {
                 s // one entry that can't be judged again keeps what it was given; it never costs the others
             }
+        }
+        // Said once, when it starts to wait (and once at each start while it still does): the id only.
+        val waiting = slots.filter { it.hold == AddonHold.WANTS_MORE }.mapTo(HashSet()) { it.w.key }
+        all.filter { it.hold == AddonHold.WANTS_MORE && it.w.key !in waiting }.forEach {
+            Log.i(TAG, "add-on not used until the user reviews it (it would see more than they agreed to): ${it.id ?: "(no id known)"}")
         }
         slots = all
         val built = all.map { s -> if (s.hold == null && s.read != null) install(s.w, s.read, s.trust) else null }

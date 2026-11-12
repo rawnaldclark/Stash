@@ -559,6 +559,52 @@ class AddonRegistryTest {
         assertThat(store.rows).isEmpty()
     }
 
+    @Test fun `a kept manifest nobody owns is cleared once a fresh config is here, with no add-on at all - and never before`() = runBlocking<Unit> {
+        // review-885 N7, and seen on a phone: an add-on removed just before the app was closed left its
+        // manifest behind, and with no default add-on in the config nothing ever cleared it.
+        store.rows["nobody-owns-this"] = manifestJson("gone")
+        val registry = registry()
+        val config = MutableStateFlow(0L) // the app's "a config was applied at…": 0 until one is
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            registry.start(scope, config)
+            // The start's own pass: the config's defaults may simply not be here yet. Nothing is cleared.
+            registry.refresh()
+            assertThat(store.rows.keys).containsExactly("nobody-owns-this")
+            // A fresh config is applied. It names no default add-on: what is kept belongs to nobody.
+            config.value = 1_800_000_000_000L
+            withTimeout(5_000) { while (store.rows.isNotEmpty()) delay(20) }
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test fun `a removed add-on's kept manifest goes at once, not when a pass that is reading ends`() = runBlocking<Unit> {
+        // review-885 N7.
+        serve("hangs", manifestJson("hangs"))
+        serve("gone", manifestJson("gone"))
+        val users = Users(listOf(agreed(url("hangs"), id = "hangs"), agreed(url("gone"), id = "gone")))
+        val registry = registry(users = users)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            registry.start(scope, emptyFlow())
+            withTimeout(5_000) { registry.addons.first { it.size == 2 } }
+            withTimeout(5_000) { while (store.rows.size < 2) delay(20) }
+            // A pass is reading an add-on that hangs. (The other one does not answer in that pass, so
+            // the pass itself writes nothing back for it.)
+            answers["hangs"] = { MockResponse().setBody(manifestJson("hangs")).setHeadersDelay(4, TimeUnit.SECONDS) }
+            answers.remove("gone")
+            val reading = scope.launch { registry.refresh(force = true) }
+            withTimeout(5_000) { registry.reading.first { it } }
+            users.flow.value = listOf(agreed(url("hangs"), id = "hangs"))
+            withTimeout(1_500) { while (InTreeAddonRegistry.keyOf(url("gone")) in store.rows.keys) delay(20) }
+            assertThat(store.rows.keys).containsExactly(InTreeAddonRegistry.keyOf(url("hangs")))
+            reading.cancel()
+        } finally {
+            scope.cancel()
+        }
+    }
+
     // ------------------------------------------------------------------------------------------ the blocklist (plan §1.9)
 
     @Test fun `a blocked user add-on is not published and not even asked, and lifting the block brings it back`() = runBlocking<Unit> {
