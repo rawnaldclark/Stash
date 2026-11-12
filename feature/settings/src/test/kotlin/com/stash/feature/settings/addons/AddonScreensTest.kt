@@ -66,7 +66,7 @@ class AddonScreensTest {
         rule.onNodeWithText("Not made by Stash").assertExists()
         rule.onNodeWithText("Hi-Fi Relay runs on relay.example.org. Stash doesn't run it or check it.").assertExists()
         rule.onNodeWithText("Its server will see").assertExists()
-        rule.onNodeWithText("The name, artist, album and length of each song you play, of the next song in your queue and of each song you save, and your internet address.").assertExists()
+        rule.onNodeWithText("The name, artist, album, length and recording code of each song you play, of the next song in your queue and of each song you save, and your internet address.").assertExists()
         rule.onNodeWithText("It never gets").assertExists()
         rule.onNodeWithText("Your accounts, your passwords, or anything from your other add-ons.").assertExists()
         rule.onNodeWithText("Only add add-ons from people you trust.").assertExists()
@@ -77,11 +77,11 @@ class AddonScreensTest {
     @Test fun `the will-see line says what Stash sends and about which songs, and never says more`() {
         // Every set has its own whole sentence; the internet address is in all of them.
         val lines = mapOf(
-            setOf(AddonSees.PLAYS, AddonSees.NEXT_UP, AddonSees.SAVES) to "The name, artist, album and length of each song you play, of the next song in your queue and of each song you save, and your internet address.",
-            setOf(AddonSees.PLAYS, AddonSees.NEXT_UP) to "The name, artist, album and length of each song you play and of the next song in your queue, and your internet address.",
-            setOf(AddonSees.PLAYS, AddonSees.SAVES) to "The name, artist, album and length of each song you play and of each song you save, and your internet address.",
-            setOf(AddonSees.PLAYS) to "The name, artist, album and length of each song you play, and your internet address.",
-            setOf(AddonSees.SAVES) to "The name, artist, album and length of each song you save, and your internet address.",
+            setOf(AddonSees.PLAYS, AddonSees.NEXT_UP, AddonSees.SAVES) to "The name, artist, album, length and recording code of each song you play, of the next song in your queue and of each song you save, and your internet address.",
+            setOf(AddonSees.PLAYS, AddonSees.NEXT_UP) to "The name, artist, album, length and recording code of each song you play and of the next song in your queue, and your internet address.",
+            setOf(AddonSees.PLAYS, AddonSees.SAVES) to "The name, artist, album, length and recording code of each song you play and of each song you save, and your internet address.",
+            setOf(AddonSees.PLAYS) to "The name, artist, album, length and recording code of each song you play, and your internet address.",
+            setOf(AddonSees.SAVES) to "The name, artist, album, length and recording code of each song you save, and your internet address.",
             emptySet<AddonSees>() to "Your internet address.",
         )
         val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
@@ -100,7 +100,7 @@ class AddonScreensTest {
         var confirmed = 0
         var dismissed = 0
         showSheet(setOf(AddonSees.PLAYS), onConfirm = { confirmed++ }, onDismiss = { dismissed++ })
-        rule.onNodeWithText("The name, artist, album and length of each song you play, and your internet address.").assertExists()
+        rule.onNodeWithText("The name, artist, album, length and recording code of each song you play, and your internet address.").assertExists()
         assertThat(confirmed).isEqualTo(0)
         rule.onNodeWithText("Cancel").performClick()
         assertThat(dismissed).isEqualTo(1)
@@ -346,7 +346,7 @@ class AddonScreensTest {
         rule.onNodeWithText("Plays songs").assertExists()
         rule.onNodeWithText("Lossless").assertExists()
         rule.onNodeWithText("Its server will see").assertExists()
-        rule.onNodeWithText("The name, artist, album and length of each song you play and of the next song in your queue, and your internet address.").assertExists()
+        rule.onNodeWithText("The name, artist, album, length and recording code of each song you play and of the next song in your queue, and your internet address.").assertExists()
         rule.onNodeWithText("It never gets").assertExists()
         rule.onNodeWithText("Your accounts, your passwords, or anything from your other add-ons.").assertExists()
         rule.onNodeWithContentDescription("Use Hi-Fi Relay").assertIsOn().performClick()
@@ -567,7 +567,7 @@ class AddonScreensTest {
         // The tap opened the sheet; nothing was added.
         assertThat(added).isEmpty()
         rule.onNodeWithText("Its server will see").assertExists()
-        rule.onNodeWithText("The name, artist, album and length of each song you play and of the next song in your queue, and your internet address.").assertExists()
+        rule.onNodeWithText("The name, artist, album, length and recording code of each song you play and of the next song in your queue, and your internet address.").assertExists()
         // The button's own click, wherever the sheet has slid to in a test window.
         rule.onNodeWithText("Add anyway").performSemanticsAction(SemanticsActions.OnClick)
         assertThat(added).containsExactly(Triple("hifi", null, true))

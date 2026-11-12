@@ -2,8 +2,11 @@ package com.stash.core.addons
 
 import com.google.common.truth.Truth.assertThat
 import com.stash.addons.contract.AddonKind
+import com.stash.addons.contract.Descriptor
 import com.stash.addons.contract.Manifest
+import com.stash.addons.contract.ResolveQuery
 import com.stash.addons.contract.StreamCapabilities
+import com.stash.addons.contract.Tier
 import org.junit.Test
 
 /**
@@ -34,6 +37,21 @@ class ManifestLinkTest {
     /** [manifest] with what it says about its streams: the tiers it has (null: it doesn't say) and the deliveries it gives. */
     private fun streaming(vararg resources: String, tiers: List<String>? = null, deliveries: List<String> = listOf("none")) =
         manifest(*resources).copy(stream = StreamCapabilities(cors = false, manifests = deliveries, tiers = tiers))
+
+    @Test fun `what a lookup tells a server about a song is what the sheet names - no other fact`() {
+        // review-885 M8. The six "Its server will see" sentences (`:feature:settings`) say "the name,
+        // artist, album, length and recording code". The recording code (ISRC) was sent and not said.
+        // If a lookup ever carries another fact about a song, this fails: the sentences come first.
+        val song = Descriptor(title = "Title", artist = "Artist", album = "Album", durationMs = 200_000L, isrc = "GBAAA0000001", explicit = true)
+        val sent = ResolveQuery(song, minTier = Tier.LOSSLESS).queryParameters().map { it.first }
+        val saidOfTheSong = listOf("title", "artist", "album", "durationMs", "isrc")
+        // Sent besides, and about the request, not the listener: which version to match (clean or
+        // explicit) and the lowest quality wanted.
+        assertThat(sent).containsExactlyElementsIn(saidOfTheSong + listOf("explicit", "minTier")).inOrder()
+        // Nothing else is known about a song to send.
+        val known = Descriptor::class.java.declaredFields.map { it.name }.filterNot { it.startsWith("$") || it == "Companion" }
+        assertThat(known).containsExactlyElementsIn(saidOfTheSong + "explicit")
+    }
 
     @Test fun `what a server is said to see is what Stash will ask it`() {
         val plays = AddonSees.PLAYS
