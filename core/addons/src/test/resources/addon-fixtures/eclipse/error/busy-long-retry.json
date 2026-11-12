@@ -1,0 +1,7 @@
+{
+  "status": 503,
+  "route": "stream",
+  "headers": {
+    "Retry-After": "120"
+  }
+}

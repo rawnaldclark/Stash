@@ -195,7 +195,8 @@ class AddonOverview @Inject constructor(
      * to Stash's). False when it could not be saved.
      */
     suspend fun remove(row: Row): Boolean = when {
-        row.kind == Kind.TIDAL && row.ownServer -> saved { own.remove() }
+        // It says itself whether it was saved (and never throws); off the main thread, as the seal is the Keystore's work.
+        row.kind == Kind.TIDAL && row.ownServer -> withContext(Dispatchers.Default) { own.remove() }
         row.userAdded -> row.entryKey?.let { links.remove(it) } ?: true
         else -> true
     }

@@ -157,6 +157,140 @@ class HttpAddonClientEclipseTest {
         assertThat(gate.events.none { it.startsWith("rateLimited") }).isTrue()
     }
 
+    private fun preparing() = json("""{"error":"preparing"}""", 503).setHeader("Retry-After", "5")
+    private val flacAnswer = """{"url":"https://cdn.example.org/a.flac","codec":"flac"}"""
+
+    /**
+     * review-882 M4. A server that is simply overloaded answers 503 with a short Retry-After for
+     * every song. Read as "still preparing" each time, it cost every play a wait (twice, with the
+     * lossy pass) and was never paused.
+     */
+    @Test fun `after two wasted waits in a row, still preparing is read as unavailable and pauses the add-on`() = runBlocking<Unit> {
+        client.preparingWaitCapMs = 30
+        val addon = eclipse(plain)
+        fun waited() = gate.events.count { it.startsWith("rateLimited") }
+
+        // Two plays whose wait did not help: asked, waited, asked again, still preparing.
+        for (song in listOf("1", "2")) {
+            server.enqueue(preparing())
+            server.enqueue(preparing())
+            val r = (client.stream(addon, song, lossless) as AddonResult.Failed).failure as AddonFailure.Refused
+            assertThat(r.preparing).isTrue()
+        }
+        assertThat(server.requestCount).isEqualTo(4)
+        assertThat(waited()).isEqualTo(0)
+
+        // The third: one request, no wait, and the add-on is paused for its Retry-After like any other 503.
+        server.enqueue(preparing())
+        val third = (client.stream(addon, "3", lossless) as AddonResult.Failed).failure as AddonFailure.Refused
+        assertThat(third.preparing).isFalse()
+        assertThat(third.code).isEqualTo(ErrorCode.UNAVAILABLE)
+        assertThat(server.requestCount).isEqualTo(5)
+        assertThat(gate.events.last()).isEqualTo("rateLimited ${HttpAddonClient.rateKey("com.example.plain")} 5000")
+
+        // The first stream it answers ends that: the next "preparing" is waited for again.
+        server.enqueue(json(flacAnswer))
+        assertThat(client.stream(addon, "4", lossless)).isInstanceOf(AddonResult.Ok::class.java)
+        server.enqueue(preparing())
+        server.enqueue(json(flacAnswer))
+        assertThat(client.stream(addon, "5", lossless)).isInstanceOf(AddonResult.Ok::class.java)
+        assertThat(server.requestCount).isEqualTo(8)
+        assertThat(waited()).isEqualTo(1)
+    }
+
+    @Test fun `the lossy pass of a play whose lossless pass waited does not wait again`() = runBlocking<Unit> {
+        // A long cap: a second wait would show.
+        client.preparingWaitCapMs = 400
+        val addon = eclipse(plain)
+        server.enqueue(preparing().setHeader("Retry-After", "1"))
+        server.enqueue(preparing())
+        server.enqueue(preparing())
+        client.stream(addon, "1", lossless)
+        val started = System.nanoTime()
+        val lossy = (client.stream(addon, "1", StreamRequest(Tier.HIGH, Tier.HIGH)) as AddonResult.Failed).failure as AddonFailure.Refused
+        assertThat(lossy.preparing).isTrue()
+        assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)).isLessThan(300L)
+        // Asked once, not twice.
+        assertThat(server.requestCount).isEqualTo(3)
+        // Another song is another wait.
+        server.enqueue(preparing())
+        server.enqueue(json(flacAnswer))
+        assertThat(client.stream(addon, "2", lossless)).isInstanceOf(AddonResult.Ok::class.java)
+        assertThat(server.requestCount).isEqualTo(5)
+    }
+
+    // ------------------------------------------------------------------------------------------ an answer that does not say what it is (review-882 J5)
+
+    private val high = StreamRequest(Tier.HIGH, Tier.HIGH)
+    private val low = StreamRequest(Tier.LOW, Tier.LOW)
+
+    @Test fun `a lossy answer that states no quality is taken at the 320 setting and refused under Data saver`() = runBlocking<Unit> {
+        val addon = eclipse(plain)
+        for (bare in listOf("""{"url":"https://cdn.example.org/a"}""", """{"url":"https://cdn.example.org/a.mp3","format":"mp3"}""")) {
+            server.enqueue(json(bare))
+            assertThat(client.stream(addon, "1", high)).isInstanceOf(AddonResult.Ok::class.java)
+
+            server.enqueue(json(bare))
+            val saver = (client.stream(addon, "1", low) as AddonResult.Failed).failure as AddonFailure.Refused
+            assertThat(saver.code).isEqualTo(ErrorCode.QUALITY_UNAVAILABLE)
+
+            // On the lossless pass it is held, and the lossy pass of the same play may use it.
+            server.enqueue(json(bare))
+            val held = (client.stream(addon, "1", lossless) as AddonResult.Failed).failure as AddonFailure.Refused
+            assertThat(held.code).isEqualTo(ErrorCode.QUALITY_UNAVAILABLE)
+            assertThat(HttpAddonClient.answers(AddonDialect.ECLIPSE, high, held.held!!.info)).isTrue()
+            assertThat(HttpAddonClient.answers(AddonDialect.ECLIPSE, low, held.held!!.info)).isFalse()
+        }
+    }
+
+    @Test fun `a lossy answer that says it is under 256 kbps keeps its low both ways`() = runBlocking<Unit> {
+        val addon = eclipse(plain)
+        for (stated in listOf(
+            """{"url":"https://cdn.example.org/a.mp3","format":"mp3","quality":"128kbps"}""",
+            """{"url":"https://cdn.example.org/a.mp3","format":"mp3","bitrate":128}""",
+            """{"url":"https://cdn.example.org/a.mp3","format":"mp3","quality":"LOW"}""",
+        )) {
+            server.enqueue(json(stated))
+            val refused = (client.stream(addon, "1", high) as AddonResult.Failed).failure as AddonFailure.Refused
+            assertThat(refused.code).isEqualTo(ErrorCode.QUALITY_UNAVAILABLE)
+            server.enqueue(json(stated))
+            assertThat(client.stream(addon, "1", low)).isInstanceOf(AddonResult.Ok::class.java)
+        }
+    }
+
+    @Test fun `only an Eclipse-family answer gets that reading - a v1 answer says its tier itself`() {
+        val bare = AddonEclipse.streamInfo(Json.parseToJsonElement("""{"url":"https://cdn.example.org/a"}"""))
+        assertThat(bare.tier).isEqualTo(Tier.LOW)
+        assertThat(AddonEclipse.tierIsDefault(bare)).isTrue()
+        assertThat(HttpAddonClient.answers(AddonDialect.V1, high, bare)).isFalse()
+        assertThat(HttpAddonClient.answers(AddonDialect.V1, low, bare)).isTrue()
+        // A delivery that was not asked for is refused whatever the tier.
+        assertThat(HttpAddonClient.answers(AddonDialect.ECLIPSE, StreamRequest(Tier.HIGH, Tier.HIGH, listOf(Delivery.DASH)), bare)).isFalse()
+        // Lossless is never "unlabelled": its codec says what it is.
+        val flac = AddonEclipse.streamInfo(Json.parseToJsonElement(flacAnswer))
+        assertThat(AddonEclipse.tierIsDefault(flac)).isFalse()
+        assertThat(HttpAddonClient.answers(AddonDialect.ECLIPSE, high, flac)).isFalse()
+    }
+
+    // ------------------------------------------------------------------------------------------ a search that did not answer (review-882 M3)
+
+    @Test fun `a 200 search answer with no result list at all is the add-on failing, not an empty result`() = runBlocking<Unit> {
+        val addon = eclipse(plain)
+        server.enqueue(json("""{"error":"upstream timeout"}"""))
+        val failed = (client.search(addon, "x") as AddonResult.Failed).failure
+        assertThat((failed as AddonFailure.Refused).code).isEqualTo(ErrorCode.UNAVAILABLE)
+        assertThat(failed.isMiss).isFalse()
+        assertThat(failed.isOutage).isTrue()
+        // It counts toward the breaker, as an add-on that cannot answer should.
+        assertThat(gate.events.last()).startsWith("failure")
+
+        // A search that found no songs is still an answer.
+        server.enqueue(json("""{"tracks":[]}"""))
+        server.enqueue(json("""{"albums":[],"artists":[]}"""))
+        assertThat((client.search(addon, "x") as AddonResult.Ok).value.tracks).isEmpty()
+        assertThat((client.search(addon, "x") as AddonResult.Ok).value.tracks).isEmpty()
+    }
+
     @Test fun `a 503 with a long Retry-After, or a 429, pauses it`() = runBlocking<Unit> {
         server.enqueue(json("{}", 503).setHeader("Retry-After", "120"))
         client.stream(eclipse(plain), "1", lossless)
@@ -183,11 +317,34 @@ class HttpAddonClientEclipseTest {
         assertThat(gate.events.count { it.startsWith("failure") }).isEqualTo(1)
     }
 
+    /**
+     * A failed call and one request prove nothing by themselves: had the hop been followed, a
+     * machine with no route to 192.168.1.1 fails the connect at once, which is also `Network` and
+     * one request (review-882 M1). So: the client's own log line says why, and a second server
+     * that an allowed hop would have reached is never asked. (`AddonMediaClientTest` measures the
+     * same from the socket side: no connection attempt at all.)
+     */
     @Test fun `a redirect hop to the user's own network is refused for an add-on the user added`() = runBlocking<Unit> {
+        val logged = mutableListOf<String>()
+        client.logHook = { logged += it }
         server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "https://192.168.1.1/search?q=x"))
         val r = client.search(eclipse(plain), "x")
         assertThat((r as AddonResult.Failed).failure).isEqualTo(AddonFailure.Network)
         assertThat(server.requestCount).isEqualTo(1)
+        assertThat(logged).contains("com.example.plain search: redirect refused (private address)")
+    }
+
+    @Test fun `a redirect hop the rules allow is followed - the refusal above is the rule's, not a dead route`() = runBlocking<Unit> {
+        val other = MockWebServer().apply { start(InetAddress.getByName("127.0.0.1"), 0) }
+        try {
+            server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "http://127.0.0.1:${other.port}/elsewhere/search?q=x"))
+            other.enqueue(json("""{"tracks":[{"id":"7","title":"T","artist":"A"}]}"""))
+            val r = client.search(eclipse(plain), "x")
+            assertThat((r as AddonResult.Ok).value.tracks.single().id).isEqualTo("7")
+            assertThat(other.requestCount).isEqualTo(1)
+        } finally {
+            other.shutdown()
+        }
     }
 
     @Test fun `an add-on's stream on a private address is refused`() = runBlocking<Unit> {

@@ -1,0 +1,53 @@
+{
+  "tracks": [
+    {
+      "id": "track_123",
+      "title": "Song Title",
+      "artist": "Artist Name",
+      "album": "Album Name",
+      "duration": 240.5,
+      "isrc": "USRC12345678",
+      "explicit": false,
+      "format": "mp3",
+      "artworkURL": "https://art.example.org/a.jpg",
+      "streamURL": "https://media.example.org/stream/track_123.mp3"
+    },
+    {
+      "id": "track_124",
+      "title": "Other Song",
+      "artist": "Artist Name",
+      "durationMs": 199999,
+      "artworkUrl": "https://art.example.org/b.jpg"
+    },
+    {
+      "id": "track_125",
+      "title": "Third Song",
+      "artist": "Artist Name",
+      "duration": 180,
+      "albumArtworkURL": "https://art.example.org/c.jpg"
+    }
+  ],
+  "albums": [
+    {
+      "id": "album_1",
+      "title": "Album Name",
+      "artist": "Artist Name",
+      "year": "2024",
+      "artworkURL": "https://art.example.org/a.jpg"
+    }
+  ],
+  "artists": [
+    {
+      "id": "artist_1",
+      "name": "Artist Name",
+      "artworkURL": "https://art.example.org/p.jpg"
+    }
+  ],
+  "playlists": [
+    {
+      "id": "pl_1",
+      "title": "A playlist"
+    }
+  ],
+  "notice": "Shown by some apps; ignored"
+}

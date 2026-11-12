@@ -1,0 +1,10 @@
+{
+  "id": "com.example.private",
+  "name": "Private",
+  "version": "1.0.0",
+  "resources": [
+    "search",
+    "stream"
+  ],
+  "bitchordAuth": true
+}

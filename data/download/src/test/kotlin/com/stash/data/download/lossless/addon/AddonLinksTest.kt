@@ -280,6 +280,28 @@ class AddonLinksTest {
         assertThat(refDao.rows.values.map { it.addonId }).containsExactly("radio")
     }
 
+    /**
+     * review-882 M1: "Remove clears the add-on's refs" was only ever tested on [AddonRefs.forget],
+     * never on Remove. This is Remove, for an add-on that is loaded. (One that is switched off and was
+     * never read this run: `AddFromLinkFlowTest`, review-882 M5.)
+     */
+    @Test fun `Remove forgets what a loaded add-on said about songs, and nothing of any other add-on`() = runBlocking<Unit> {
+        val kit = kit()
+        serve("a", manifestJson(id = "a"))
+        serve("b", manifestJson(id = "b"))
+        kit.links.add(ready(kit.links, "a"), null, agreed = true)
+        kit.links.add(ready(kit.links, "b"), null, agreed = true)
+        // The registry has loaded both, and plays have kept refs for each.
+        kit.registry.refresh(force = true)
+        assertThat(kit.registry.addons.value.map { it.id }).containsExactly("a", "b").inOrder()
+        refDao.upsert(AddonRefEntity("a", "song-1", remoteId = "11", resolvedAt = 1L))
+        refDao.upsert(AddonRefEntity("b", "song-2", remoteId = "22", resolvedAt = 1L))
+
+        assertThat(kit.links.remove(keyOf("a"))).isTrue()
+
+        assertThat(refDao.rows.values.map { it.addonId }).containsExactly("b")
+    }
+
     /** review-882 J2: a save that fails must come back as an answer, never as a throw into `viewModelScope.launch`. */
     @Test fun `a save that fails is reported, throws nothing, and changes nothing`() = runBlocking<Unit> {
         val links = links()

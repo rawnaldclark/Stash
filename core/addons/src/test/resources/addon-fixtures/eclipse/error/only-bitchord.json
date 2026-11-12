@@ -1,0 +1,7 @@
+{
+  "status": 401,
+  "route": "stream",
+  "headers": {
+    "WWW-Authenticate": "BitChord realm=\"addon\""
+  }
+}

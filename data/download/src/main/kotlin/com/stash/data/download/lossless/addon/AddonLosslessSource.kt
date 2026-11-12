@@ -64,6 +64,10 @@ class AddonDownloadSources @Inject constructor(
          * Finds songs (resolve, or search matched on the phone, phase 4 §2.4), gives a stream or a
          * download, allows downloads (BitChord's `allowDownloads: 0` says no), and can answer a
          * lossless tier.
+         *
+         * An add-on the user added that can only search is still a source, but a quiet one: a
+         * download never searches it ([AddonRefs.matchesBySearch]), so it is asked only for a song
+         * a play already matched there.
          */
         fun canDownloadLossless(addon: InstalledAddon): Boolean {
             val m = addon.manifest
@@ -116,8 +120,12 @@ class AddonLosslessSource internal constructor(
 
     private suspend fun lookup(query: TrackQuery, paced: Boolean): SourceResult? {
         val request = lossless(prefs.qualityTierNow())
-        val streamed = refs.stream(addon, query, AddonRefs.Pass.LOSSLESS, request, paced = paced, download = true)
-            as? AddonRefs.Streamed.Ok ?: return null
+        // A download from an add-on the user added never matches by search: only its /resolve, or
+        // a ref a play already made (review-882 J3).
+        val streamed = refs.stream(
+            addon, query, AddonRefs.Pass.LOSSLESS, request,
+            paced = paced, download = true, bySearch = AddonRefs.matchesBySearch(addon, download = true),
+        ) as? AddonRefs.Streamed.Ok ?: return null
         val info = streamed.info
         val ref = streamed.ref
         if (!info.headers.isNullOrEmpty()) {

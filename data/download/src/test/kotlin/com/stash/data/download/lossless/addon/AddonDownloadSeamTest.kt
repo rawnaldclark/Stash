@@ -144,6 +144,25 @@ class AddonDownloadSeamTest {
         assertThat(r.confidence).isAtLeast(0.7f)
     }
 
+    /** review-882 B1 and M7: the downloader saves `coverArtUrl` as the song's art, where it would outlive the add-on. */
+    @Test fun `a download from an add-on the user added carries no cover art, a default add-on's does`() = runTest {
+        val art = "https://addon.example/tok/art/7.jpg"
+        fun client(): HttpAddonClient = mockk {
+            coEvery { resolve(any(), any(), any()) } returns AddonResult.Ok(
+                Track(id = "td:7", title = "B", artist = "A", artwork = listOf(com.stash.addons.contract.Artwork(art))),
+            )
+            coEvery { download(any(), "td:7", any(), any()) } returns AddonResult.Ok(flac)
+        }
+        fun sourceFor(addon: InstalledAddon) = AddonDownloadSources(Registry(listOf(addon)), refs(client()), AggregatorRateLimiter(), prefs).sources().single()
+
+        val mine = sourceFor(addon().copy(userAdded = true)).resolve(TrackQuery(artist = "A", title = "B"))!!
+        assertThat(mine.downloadUrl).isEqualTo(flac.url)
+        assertThat(mine.coverArtUrl).isNull()
+
+        val official = sourceFor(addon()).resolve(TrackQuery(artist = "A", title = "B"))!!
+        assertThat(official.coverArtUrl).isEqualTo(art)
+    }
+
     // ------------------------------------------------------------------------------------------ host ports
 
     @Test fun `a Retry-After pauses for exactly that long, and null keeps the configured backoff`() = runTest {

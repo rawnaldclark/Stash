@@ -1,0 +1,424 @@
+{
+  "manifest/search-stream.json": {
+    "value": {
+      "stash": 1,
+      "id": "com.example.music",
+      "name": "Example Music",
+      "version": "1.2.0",
+      "kind": "server",
+      "description": "An example catalog",
+      "icon": "https://addon.example.org/icon.png",
+      "resources": [
+        "search",
+        "stream"
+      ],
+      "stream": {
+        "cors": false,
+        "manifests": [
+          "none",
+          "dash",
+          "hls"
+        ]
+      }
+    },
+    "viaIsrc": false,
+    "allowDownloads": true,
+    "quality": {
+      "lossless": "LOSSLESS",
+      "high": "HIGH",
+      "low": "LOW"
+    }
+  },
+  "manifest/isrc-catalog-quality.json": {
+    "value": {
+      "stash": 1,
+      "id": "com.example.full",
+      "name": "Full",
+      "version": "2.0.0",
+      "kind": "server",
+      "resources": [
+        "search",
+        "stream",
+        "resolve",
+        "album",
+        "artist",
+        "catalog"
+      ],
+      "settings": [
+        {
+          "key": "quality",
+          "type": "select",
+          "label": "Quality",
+          "options": [
+            {
+              "value": "hi_res",
+              "label": "Hi-Res"
+            },
+            {
+              "value": "cd",
+              "label": "CD"
+            }
+          ]
+        }
+      ],
+      "catalogs": [
+        {
+          "id": "new",
+          "title": "New albums",
+          "kind": "album"
+        }
+      ],
+      "stream": {
+        "cors": false,
+        "manifests": [
+          "none",
+          "dash",
+          "hls"
+        ]
+      }
+    },
+    "viaIsrc": true,
+    "allowDownloads": true,
+    "quality": {
+      "lossless": "hi_res",
+      "high": "hi_res",
+      "low": "hi_res"
+    }
+  },
+  "manifest/id-only-no-downloads.json": {
+    "value": {
+      "stash": 1,
+      "id": "example.stream",
+      "name": "example.stream",
+      "version": "0.0.0",
+      "kind": "server",
+      "resources": [
+        "search",
+        "stream"
+      ],
+      "stream": {
+        "cors": false,
+        "manifests": [
+          "none",
+          "dash",
+          "hls"
+        ]
+      }
+    },
+    "viaIsrc": false,
+    "allowDownloads": false,
+    "quality": {
+      "lossless": "LOSSLESS",
+      "high": "HIGH",
+      "low": "LOW"
+    }
+  },
+  "manifest/bitchord-auth.json": {
+    "refused": "only-bitchord"
+  },
+  "manifest/search-only-rows-stream.json": {
+    "value": {
+      "stash": 1,
+      "id": "com.example.rows",
+      "name": "Rows",
+      "version": "1.0.0",
+      "kind": "server",
+      "resources": [
+        "search"
+      ]
+    },
+    "viaIsrc": false,
+    "allowDownloads": true,
+    "quality": {
+      "lossless": "LOSSLESS",
+      "high": "HIGH",
+      "low": "LOW"
+    }
+  },
+  "search/tracks.json": {
+    "value": {
+      "tracks": [
+        {
+          "id": "track_123",
+          "title": "Song Title",
+          "artist": "Artist Name",
+          "album": "Album Name",
+          "durationMs": 240500,
+          "isrc": "USRC12345678",
+          "explicit": false,
+          "artwork": [
+            {
+              "url": "https://art.example.org/a.jpg"
+            }
+          ]
+        },
+        {
+          "id": "track_124",
+          "title": "Other Song",
+          "artist": "Artist Name",
+          "durationMs": 199999,
+          "artwork": [
+            {
+              "url": "https://art.example.org/b.jpg"
+            }
+          ]
+        },
+        {
+          "id": "track_125",
+          "title": "Third Song",
+          "artist": "Artist Name",
+          "durationMs": 180000,
+          "artwork": [
+            {
+              "url": "https://art.example.org/c.jpg"
+            }
+          ]
+        }
+      ],
+      "artists": [
+        {
+          "id": "artist_1",
+          "name": "Artist Name",
+          "artwork": [
+            {
+              "url": "https://art.example.org/p.jpg"
+            }
+          ]
+        }
+      ],
+      "albums": [
+        {
+          "id": "album_1",
+          "title": "Album Name",
+          "artist": "Artist Name",
+          "year": 2024,
+          "artwork": [
+            {
+              "url": "https://art.example.org/a.jpg"
+            }
+          ]
+        }
+      ]
+    },
+    "rowStream": {
+      "manifest": "manifest/search-only-rows-stream.json",
+      "row": 0,
+      "value": {
+        "url": "https://media.example.org/stream/track_123.mp3",
+        "manifest": "none",
+        "codec": "mp3",
+        "cors": false,
+        "tier": "low"
+      }
+    },
+    "rowStreamWithStreamRoute": {
+      "manifest": "manifest/search-stream.json",
+      "row": 0,
+      "value": null
+    }
+  },
+  "resolve/hit.json": {
+    "asked": {
+      "title": "Song Title",
+      "artist": "Artist Name"
+    },
+    "value": {
+      "item": {
+        "id": "track_123",
+        "title": "Song Title",
+        "artist": "Artist Name",
+        "durationMs": 240000
+      }
+    }
+  },
+  "resolve/miss.json": {
+    "asked": {
+      "title": "Song Title",
+      "artist": "Artist Name"
+    },
+    "value": {
+      "item": null
+    }
+  },
+  "resolve/isrc-track-id.json": {
+    "asked": {
+      "title": "Song Title",
+      "artist": "Artist Name",
+      "isrc": "USRC12345678"
+    },
+    "value": {
+      "item": {
+        "id": "track_123",
+        "title": "Song Title",
+        "artist": "Artist Name",
+        "isrc": "USRC12345678"
+      }
+    }
+  },
+  "resolve/isrc-id.json": {
+    "asked": {
+      "title": "Song Title",
+      "artist": "Artist Name",
+      "isrc": "USRC12345678"
+    },
+    "value": {
+      "item": {
+        "id": "track_123",
+        "title": "Song Title",
+        "artist": "Artist Name",
+        "isrc": "USRC12345678"
+      }
+    }
+  },
+  "resolve/isrc-null.json": {
+    "asked": {
+      "title": "Song Title",
+      "artist": "Artist Name",
+      "isrc": "USRC12345678"
+    },
+    "value": {
+      "item": null
+    }
+  },
+  "stream/progressive-mp3.json": {
+    "value": {
+      "url": "https://media.example.org/a/track_123.mp3",
+      "manifest": "none",
+      "codec": "mp3",
+      "quality": "320kbps",
+      "cors": false,
+      "tier": "high"
+    }
+  },
+  "stream/m4a-bitrate-kbps.json": {
+    "value": {
+      "url": "https://media.example.org/a/track_123.m4a",
+      "manifest": "none",
+      "codec": "aac",
+      "bitrate": 256000,
+      "cors": false,
+      "tier": "high"
+    }
+  },
+  "stream/dash-format-flac-codec.json": {
+    "value": {
+      "url": "https://media.example.org/dash/track_123.mpd",
+      "manifest": "dash",
+      "codec": "flac",
+      "container": "fmp4",
+      "sampleRate": 96000,
+      "bitDepth": 24,
+      "expiresAt": 1893456000,
+      "cors": false,
+      "tier": "hires"
+    }
+  },
+  "stream/hls-flac-cd.json": {
+    "value": {
+      "url": "https://media.example.org/hls/track_123.m3u8",
+      "manifest": "hls",
+      "codec": "flac",
+      "container": "fmp4",
+      "sampleRate": 44100,
+      "bitDepth": 16,
+      "bitrate": 1411000,
+      "quality": "lossless",
+      "cors": false,
+      "tier": "lossless"
+    }
+  },
+  "stream/encrypted.json": {
+    "playable": false
+  },
+  "stream/encrypted-scheme.json": {
+    "playable": false
+  },
+  "stream/drm.json": {
+    "playable": false
+  },
+  "stream/hybrid.json": {
+    "playable": false
+  },
+  "stream/video.json": {
+    "playable": false
+  },
+  "stream/error-200.json": {
+    "miss": true
+  },
+  "error/not-found.json": {
+    "value": {
+      "code": "not_found",
+      "miss": true,
+      "pause": false
+    }
+  },
+  "error/preparing.json": {
+    "value": {
+      "code": "unavailable",
+      "miss": false,
+      "pause": false,
+      "preparing": true,
+      "retryAfter": 10
+    }
+  },
+  "error/busy-long-retry.json": {
+    "value": {
+      "code": "unavailable",
+      "miss": false,
+      "pause": true,
+      "retryAfter": 120
+    }
+  },
+  "error/busy-search.json": {
+    "value": {
+      "code": "unavailable",
+      "miss": false,
+      "pause": true,
+      "retryAfter": 10
+    }
+  },
+  "error/rate-limited.json": {
+    "value": {
+      "code": "rate_limited",
+      "miss": false,
+      "pause": true,
+      "retryAfter": 30
+    }
+  },
+  "error/server-error.json": {
+    "value": {
+      "code": "unavailable",
+      "miss": false,
+      "pause": true
+    }
+  },
+  "error/unauthorized.json": {
+    "value": {
+      "code": "unauthorized",
+      "miss": false,
+      "pause": true
+    }
+  },
+  "error/only-bitchord.json": {
+    "value": {
+      "code": "unauthorized",
+      "miss": false,
+      "pause": true,
+      "onlyBitChord": true
+    }
+  },
+  "error/bad-request.json": {
+    "value": {
+      "code": "bad_request",
+      "miss": false,
+      "pause": false
+    }
+  },
+  "error/ok-with-error.json": {
+    "value": {
+      "code": "not_found",
+      "miss": true,
+      "pause": false
+    }
+  }
+}
