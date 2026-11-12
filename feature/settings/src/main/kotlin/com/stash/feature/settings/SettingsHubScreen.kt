@@ -40,7 +40,7 @@ import com.stash.feature.settings.addons.title
  * This is the hub of the hub-and-spoke Settings redesign: a pinned Support
  * banner, a cross-settings search pill, and seven category rows. Each row shows a
  * current-state subtitle (derived purely by [settingsHubSummaries]) plus a thin
- * leading icon and a trailing chevron, and navigates to one of the six category
+ * leading icon and a trailing chevron, and navigates to one of the seven category
  * "spoke" screens (built in later tasks) via the `onOpen*` callbacks.
  *
  * Pure host: it owns no navigation itself — the caller wires every `onOpen*`
