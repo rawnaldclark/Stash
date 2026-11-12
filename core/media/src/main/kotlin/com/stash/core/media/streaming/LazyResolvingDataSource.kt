@@ -127,9 +127,9 @@ class LazyResolvingDataSource(
     /** False in Download mode: nothing is resolved, the open fails and the song is skipped. */
     private val streamAllowed: () -> Boolean = { true },
     /**
-     * Opens an add-on's stream (`addon:` origins) on the add-on media client, whose DNS and
-     * connection guard refuse the user's own network (add-ons plan phase 4 §2.6). Null in tests:
-     * such a stream then opens on [httpDelegate].
+     * Opens an add-on's stream (`addon:` origins) on the add-on media client, whose guard, DNS
+     * filter and connection check refuse the user's own network (add-ons plan phase 4 §2.6).
+     * Null in tests: such a stream is then refused, never opened on [httpDelegate] (review-882 B1).
      */
     private val addonDelegate: (() -> DataSource)? = null,
 ) : DataSource {
