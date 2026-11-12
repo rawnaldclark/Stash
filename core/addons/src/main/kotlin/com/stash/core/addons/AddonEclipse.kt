@@ -45,6 +45,9 @@ object AddonEclipse {
     private val ISRC = Regex("^[A-Za-z0-9]{12}$")
     private val KBPS = Regex("(\\d+)\\s*kbps", RegexOption.IGNORE_CASE)
 
+    /** The result lists of a search answer other than `tracks`. */
+    private val OTHER_RESULTS = listOf("albums", "artists", "playlists")
+
     private fun fail(path: String, reason: String): Nothing = throw AddonContractException(path, reason)
 
     private fun JsonObject.given(key: String) = this[key].let { it != null && it !is JsonNull }
@@ -64,11 +67,27 @@ object AddonEclipse {
         return c.isNotEmpty() && c != "false" && c != "0" && c != "null"
     }
 
-    /** An id the add-on chose: text, or a whole number written as one. */
+    /** A JSON number written as plain digits: `42`, `-7`, `12345678901234567890`. */
+    private fun isWholeNumber(s: String): Boolean = s.removePrefix("-").let { d -> d.isNotEmpty() && d.all { it in '0'..'9' } }
+
+    /** 2^53: up to here every whole number is a `Double` exactly. */
+    private const val EXACT_DOUBLE = 9_007_199_254_740_992.0
+
+    /**
+     * An id the add-on chose: text, or a whole number written as one. A number keeps its own
+     * digits: read through a `Double`, an id past 2^53 (17 digits or more) came out rounded, and
+     * `/stream/{id}` then asked for another song's id (review-882 N9). A number written another
+     * way (`12.0`, `1e3`) is taken only while a `Double` holds it exactly.
+     */
     private fun idOf(v: JsonElement?): String? {
         val p = v as? JsonPrimitive ?: return null
         if (p is JsonNull) return null
-        val raw = if (p.isString) p.content else p.content.toDoubleOrNull()?.takeIf { it == Math.floor(it) && it.isFinite() }?.toLong()?.toString()
+        val raw = when {
+            p.isString -> p.content
+            isWholeNumber(p.content) -> p.content
+            else -> p.content.toDoubleOrNull()
+                ?.takeIf { it.isFinite() && it == Math.floor(it) && Math.abs(it) < EXACT_DOUBLE }?.toLong()?.toString()
+        }
         return raw?.let { AddonValidator.cleanText(it, Limits.ID) }?.takeIf { it.isNotEmpty() }
     }
 
@@ -182,7 +201,11 @@ object AddonEclipse {
     /** `GET /search`: `{tracks, albums, artists, playlists}`; only `tracks` is used. Rows that can't be read are dropped. */
     fun searchResponse(v: JsonElement?, options: AddonValidator.Options = AddonValidator.Options()): SearchResponse {
         val o = v as? JsonObject ?: fail("", "expected an object")
-        val rows = o["tracks"] as? JsonArray ?: return SearchResponse(tracks = emptyList())
+        val rows = o["tracks"] as? JsonArray
+            // No `tracks`. Beside another result list it is a search that found no songs. On its
+            // own (`{"error":"upstream timeout"}`, `{}`) it is no search answer at all: the add-on
+            // could not answer, which must never be remembered as "no such song" (review-882 M3).
+            ?: if (OTHER_RESULTS.any { o[it] is JsonArray }) return SearchResponse(tracks = emptyList()) else throw AddonRefusalException(ErrorCode.UNAVAILABLE)
         return SearchResponse(tracks = rows.asSequence().mapNotNull { track(it, options) }.distinctBy { it.id }.take(Limits.TRACKS).toList())
     }
 
@@ -300,14 +323,28 @@ object AddonEclipse {
         if (codec != null && codec.lossless) {
             return if ((bitDepth ?: 0) >= 24 || (sampleRate ?: 0) > 48_000) Tier.HIRES else Tier.LOSSLESS
         }
-        if (quality != null) {
-            val q = quality.trim()
-            if (codec == null && q.contains("lossless", ignoreCase = true)) return Tier.LOSSLESS
-            KBPS.find(q)?.let { return if (it.groupValues[1].toInt() >= 256) Tier.HIGH else Tier.LOW }
-            if (q.equals("high", ignoreCase = true)) return Tier.HIGH
-            if (q.equals("low", ignoreCase = true)) return Tier.LOW
-        }
+        tierOfQuality(codec, quality)?.let { return it }
         if (bitrate != null) return if (bitrate >= 256_000) Tier.HIGH else Tier.LOW
         return Tier.LOW
     }
+
+    /** The tier [quality] states, or null when it states none this reader knows. */
+    private fun tierOfQuality(codec: Codec?, quality: String?): Tier? {
+        val q = quality?.trim() ?: return null
+        if (codec == null && q.contains("lossless", ignoreCase = true)) return Tier.LOSSLESS
+        // A number too long to be a bit rate (the text is cut at 40 characters, so up to 40 digits) states none.
+        KBPS.find(q)?.groupValues?.get(1)?.toIntOrNull()?.let { return if (it >= 256) Tier.HIGH else Tier.LOW }
+        if (q.equals("high", ignoreCase = true)) return Tier.HIGH
+        if (q.equals("low", ignoreCase = true)) return Tier.LOW
+        return null
+    }
+
+    /**
+     * True when [info]'s tier is only [deriveTier]'s last resort: a stream that is not lossless and
+     * states neither a bit rate nor a quality this reader knows (`{"url": …}`, or `{"url": …,
+     * "format": "mp3"}`). Its `low` says nothing about its size either way (review-882 J5); what a
+     * host makes of such an answer is the host's own rule ([HttpAddonClient.answers]).
+     */
+    fun tierIsDefault(info: StreamInfo): Boolean =
+        info.codec?.lossless != true && info.bitrate == null && tierOfQuality(info.codec, info.quality) == null
 }

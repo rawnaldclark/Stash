@@ -97,6 +97,9 @@ class HttpAddonClient @Inject constructor(
     /** Tests: sees every line this client logs, to prove none carries a secret. */
     internal var logHook: ((String) -> Unit)? = null
 
+    /** Tests: the longest a foreground play waits for a song still being prepared ([PREPARING_WAIT_MS]). */
+    internal var preparingWaitCapMs: Long = PREPARING_WAIT_MS
+
     /** `Stash/<versionName>` on every add-on request (add-ons plan phase 4 §2.3). */
     private val userAgent: String = hostOptions.userAgent
 
@@ -318,23 +321,55 @@ class HttpAddonClient @Inject constructor(
                     }
                 }
                 // SPEC.md 10.1 and phase 4 §2.3: an answer out of range is a quality miss, never a broken answer.
-                if (info.tier !in request.minTier..request.tier || info.manifest !in request.manifest) {
+                if (!answers(dialect, request, info)) {
                     throw AddonRefusalException(ErrorCode.QUALITY_UNAVAILABLE, held = info)
                 }
                 info
             }
         }
         val first = ask()
+        if (first.isStreamAnswer()) wastedWaits.remove(addon.id)
         // Eclipse's per-song "still preparing": a foreground play waits once, briefly, then moves on.
         val preparing = ((first as? AddonResult.Failed)?.failure as? AddonFailure.Refused)?.takeIf { it.preparing }
         if (preparing != null && !paced) {
-            val waitMs = ((preparing.retryAfterSec ?: 1) * 1000L).coerceIn(0L, PREPARING_WAIT_MS)
+            // The lossy pass of a play whose lossless pass just waited for this song asks once and moves on.
+            val waited = waitedFor[addon.id]
+            if (waited != null && waited.first == id && nowMs() - waited.second in 0 until PREPARING_SAME_PLAY_MS) return first
+            val waitMs = ((preparing.retryAfterSec ?: 1) * 1000L).coerceIn(0L, preparingWaitCapMs)
             debug("${addon.id} ${route.name.lowercase()}: still preparing; asking once more in ${waitMs} ms")
             delay(waitMs)
-            return ask()
+            waitedFor[addon.id] = id to nowMs()
+            val second = ask()
+            when {
+                second.isStreamAnswer() -> wastedWaits.remove(addon.id)
+                ((second as? AddonResult.Failed)?.failure as? AddonFailure.Refused)?.preparing == true ->
+                    wastedWaits.merge(addon.id, 1) { a, b -> a + b }
+            }
+            return second
         }
         return first
     }
+
+    /**
+     * How many foreground waits in a row an add-on's "still preparing" has wasted (the song was
+     * still not ready after the wait), with no stream answered between (review-882 M4). A server
+     * that is simply overloaded answers `503` with a short `Retry-After` for every song; read as
+     * "preparing" each time, it cost every play a 3 s wait and was never paused. From
+     * [PREPARING_WASTED_WAITS] on, such an answer is what SPEC.md 7 makes of any other `503`:
+     * `unavailable`, pausing the add-on for its `Retry-After`. The first stream it answers ends that.
+     * Memory only: a restart starts again.
+     */
+    private val wastedWaits = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+    /** Per add-on: the song a foreground play last waited for, and when ([nowMs]). */
+    private val waitedFor = java.util.concurrent.ConcurrentHashMap<String, Pair<String, Long>>()
+
+    /** The add-on answered with a stream: in range, or held as out of range. */
+    private fun AddonResult<StreamInfo>.isStreamAnswer(): Boolean =
+        this is AddonResult.Ok || ((this as? AddonResult.Failed)?.failure as? AddonFailure.Refused)?.held != null
+
+    private fun readsAsPreparing(addon: InstalledAddon?): Boolean =
+        addon != null && (wastedWaits[addon.id] ?: 0) < PREPARING_WASTED_WAITS
 
     /**
      * The `quality` an Eclipse-family add-on is sent (phase 4 §2.3): the first option of its own
@@ -530,9 +565,9 @@ class HttpAddonClient @Inject constructor(
                     }
                     val refused = refusal(reply, element, eclipse)
                     if (refused.onlyBitChord) warn("$tag: ${AddonEclipse.ONLY_BITCHORD}")
-                    return AddonResult.Failed(
-                        if (eclipse && (route == Route.STREAM || route == Route.DOWNLOAD) && refused.isPreparing()) refused.copy(preparing = true) else refused,
-                    )
+                    val preparing = eclipse && (route == Route.STREAM || route == Route.DOWNLOAD) && refused.isPreparing()
+                    if (preparing && !readsAsPreparing(addon)) debug("$tag: still preparing after ${PREPARING_WASTED_WAITS} wasted waits; read as unavailable")
+                    return AddonResult.Failed(if (preparing && readsAsPreparing(addon)) refused.copy(preparing = true) else refused)
                 }
                 if (element == null || text == null) return AddonResult.Failed(AddonFailure.InvalidResponse("", "not JSON"))
                 return try {
@@ -700,6 +735,31 @@ class HttpAddonClient @Inject constructor(
 
         /** How long a foreground play waits for a song still being prepared, once: min(Retry-After, this). */
         const val PREPARING_WAIT_MS = 3_000L
+
+        /** After this many wasted waits in a row, "still preparing" is read as plain `unavailable` (see `wastedWaits`). */
+        const val PREPARING_WASTED_WAITS = 2
+
+        /** How long after a wait the same song's next ask (the lossy pass of the same play) does not wait again. */
+        const val PREPARING_SAME_PLAY_MS = 2 * 60_000L
+
+        /**
+         * Whether [info] answers [request] for an add-on of [dialect]: its tier within the asked
+         * range and its delivery among the asked ones (SPEC.md 5.2).
+         *
+         * One exception (review-882 J5). An Eclipse-family answer that is not lossless and does not
+         * say what it is ([AddonEclipse.tierIsDefault]: `{"url": …}`, or with only `format: "mp3"`)
+         * reads as `low` for want of anything better. Asked for `high` (the 320 setting; the add-on
+         * was sent `quality=HIGH`) it is taken: an unlabelled lossy file from a source the user
+         * chose is no worse than the YouTube fallback, and refusing it made every add-on that
+         * answers a bare URL one that is added and then never plays. Asked for `low` only (Data
+         * saver) it is refused: nothing says it is small. One that states it is under 256 kbps
+         * keeps its `low` both ways.
+         */
+        fun answers(dialect: AddonDialect, request: StreamRequest, info: StreamInfo): Boolean {
+            if (info.manifest !in request.manifest) return false
+            if (dialect == AddonDialect.ECLIPSE && AddonEclipse.tierIsDefault(info)) return Tier.HIGH in request.minTier..request.tier
+            return info.tier in request.minTier..request.tier
+        }
 
         /** The [AddonRateGate] key of add-on [addonId]: its own bucket and breaker. */
         fun rateKey(addonId: String): String = "addon_$addonId"
