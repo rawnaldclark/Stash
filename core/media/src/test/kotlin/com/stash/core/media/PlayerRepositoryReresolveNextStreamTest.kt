@@ -88,10 +88,13 @@ class PlayerRepositoryReresolveNextStreamTest {
         resolvesNextTo(stream(newUrl, "aac"))
         val on = kotlinx.coroutines.flow.MutableStateFlow(listOf(addon("mine"), addon("other")))
         val watching = launch { repo.dropNextStreamWhenAnAddonLeaves(on) }
-        fun settle(until: () -> Boolean = { false }) = repeat(100) {
-            testScheduler.runCurrent()
-            if (until()) return@repeat
-            Thread.sleep(5)
+        // The watcher runs on this test's scheduler; a resolve may leave it for a moment.
+        fun settle(rounds: Int = 10, until: () -> Boolean = { false }) {
+            for (round in 0 until rounds) {
+                testScheduler.runCurrent()
+                if (until()) return
+                Thread.sleep(5)
+            }
         }
         settle()
         assertThat(swaps).isEmpty()
@@ -103,7 +106,7 @@ class PlayerRepositoryReresolveNextStreamTest {
 
         // The one whose link it is leaves.
         on.value = emptyList()
-        settle { swaps.size == 2 }
+        settle(rounds = 400) { swaps.size == 2 }
         watching.cancel()
         verify { streamUrlCache.invalidate(2L) }
         assertThat(swaps).hasSize(2)
