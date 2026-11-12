@@ -117,6 +117,8 @@ class AddonLinksAcceptTest {
     @Test fun `every block reason has its own refusal`() {
         assertThat(com.stash.core.addons.BlockReason.entries.map(AddonLinks::blocked)).containsExactly(
             AddonLinks.Refusal.BLOCKED_HARMFUL, AddonLinks.Refusal.BLOCKED_BROKEN, AddonLinks.Refusal.BLOCKED_IMPERSONATION,
+            // A reason from a later list: refused all the same, said without one.
+            AddonLinks.Refusal.BLOCKED,
         ).inOrder()
     }
 }

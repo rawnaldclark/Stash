@@ -22,7 +22,8 @@ import java.nio.charset.CodingErrorAction
  *
  * **Refused, never repaired.** A known field that breaks a rule refuses the whole index (the copy
  * kept from before stays in use); a field this version doesn't know is ignored, so an index from a
- * later publisher still reads.
+ * later publisher still reads. One thing is read forward on purpose: a block whose `reason` is a
+ * word this version doesn't know is still a block ([BlockReason.OTHER]).
  *
  * **`type` is the first rule.** The index is signed with the key that signs `lossless.json`, so a
  * good signature alone says nothing about which file it is. Without `"type": "stash-addon-index"`
@@ -159,7 +160,9 @@ data class AddonIndex(
                 val o = e as? JsonObject ?: refuse(at)
                 val origin = origin(o["origin"]) ?: refuse("$at.origin")
                 val id = if ("id" in o) string(o["id"])?.takeIf(ID_RULE::matches) ?: refuse("$at.id") else null
-                val reason = string(o["reason"])?.let { r -> BlockReason.entries.firstOrNull { it.wire == r } } ?: refuse("$at.reason")
+                // A reason this version doesn't know still blocks (as BlockReason.OTHER): a newer list
+                // must never make an older app drop a block. Only a block with no reason at all is broken.
+                val reason = string(o["reason"])?.let(BlockReason::of) ?: refuse("$at.reason")
                 Block(origin, id, reason)
             }
             // One entry per (origin, id); an entry without an id already covers every id on its origin.

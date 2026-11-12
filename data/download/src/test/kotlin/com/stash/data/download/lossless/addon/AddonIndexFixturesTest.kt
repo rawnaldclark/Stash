@@ -33,9 +33,14 @@ class AddonIndexFixturesTest {
     private fun signatureOf(dir: String) = String(bytes("$dir/index.json.sig")).trim()
 
     @Test fun `every fixture is read the way cases json says a reader must`() {
-        assertThat(cases).hasSize(13)
+        assertThat(cases.size).isAtLeast(12)
         for (case in cases) {
             val dir = case.getValue("dir").jsonPrimitive.content
+            // Decided after these bytes were made: a block whose reason this app doesn't know is ACCEPTED and
+            // still blocks (a newer list must never make an older app drop its blocks). The publisher is
+            // replacing this refuse case with `valid-unknown-reason`; until that copy lands, the decision
+            // is pinned by `a block whose reason this app doesn't know still blocks` below.
+            if (dir == "refuse-bad-reason") continue
             val body = bytes("$dir/index.json")
             assertWithMessage("$dir: the bytes are the publisher's").that(body.size).isEqualTo(case.getValue("bytes").jsonPrimitive.int)
             val signed = SignedJson.verify(body, signatureOf(dir), publicKey)
@@ -167,6 +172,24 @@ class AddonIndexFixturesTest {
         assertThat(refusedRule(index(blocked = twice))).startsWith("blocked[1]")
         val overlap = """[{"origin":"https://bad.example","id":"x","reason":"harmful"},{"origin":"https://bad.example","reason":"broken"}]"""
         assertThat(refusedRule(index(blocked = overlap))).startsWith("blocked[1]")
+    }
+
+    @Test fun `a block whose reason this app doesn't know still blocks, with no reason to give`() {
+        val body = index(blocked = """[{"origin":"https://bad.example","reason":"harmful"},{"origin":"https://spam.example","id":"spammer","reason":"spam"}]""")
+        val index = AddonIndex.parse(body)
+        assertThat(index.blocked).containsExactly(
+            AddonIndex.Block("https://bad.example", null, BlockReason.HARMFUL),
+            AddonIndex.Block("https://spam.example", "spammer", BlockReason.OTHER),
+        ).inOrder()
+        assertThat(index.blockOf("https://spam.example", "spammer")!!.reason).isEqualTo(BlockReason.OTHER)
+        // The fixture the publisher made before the decision reads the same way.
+        val old = javaClass.classLoader!!.getResourceAsStream("addon-index-fixtures/refuse-bad-reason/index.json")?.use { it.readBytes() }
+        if (old != null) assertThat(AddonIndex.parse(old).blocked.map { it.reason }).containsExactly(BlockReason.HARMFUL, BlockReason.OTHER).inOrder()
+        // A block with no reason at all, or one that isn't text, is still a broken entry.
+        assertThat(refusedRule(index(blocked = """[{"origin":"https://bad.example"}]"""))).isEqualTo("blocked[0].reason")
+        assertThat(refusedRule(index(blocked = """[{"origin":"https://bad.example","reason":3}]"""))).isEqualTo("blocked[0].reason")
+        assertThat(BlockReason.of("harmful")).isEqualTo(BlockReason.HARMFUL)
+        assertThat(BlockReason.of("anything-else")).isEqualTo(BlockReason.OTHER)
     }
 
     @Test fun `an add-on that is listed and blocked at once refuses the index`() {

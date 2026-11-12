@@ -274,6 +274,9 @@ class AddonScreensTest {
         assertThat(said[AddonLinks.Refusal.ONLY_BITCHORD]).isEqualTo("This add-on only works in BitChord.")
         assertThat(said[AddonLinks.Refusal.NEEDS_NEWER_STASH]).isEqualTo("This add-on needs a newer Stash.")
         assertThat(said[AddonLinks.Refusal.BLOCKED_HARMFUL]).isEqualTo("Stash turned this add-on off. It was reported as harmful.")
+        // A reason from a later list than this app knows: still refused, with the plain sentence.
+        assertThat(said[AddonLinks.Refusal.BLOCKED]).isEqualTo("Stash turned this add-on off.")
+        assertThat(context.getString(blockedText(BlockReason.OTHER))).isEqualTo("Stash turned this add-on off.")
         assertThat(said[AddonLinks.Refusal.UNREACHABLE]).isEqualTo("Couldn't reach that add-on. Check the link and your connection.")
         assertThat(said[AddonLinks.Refusal.NOTHING_TO_PLAY]).isEqualTo("This add-on offers nothing Stash can play yet.")
         assertThat(said[AddonLinks.Refusal.NOT_HTTPS]).isEqualTo("Add-on links must start with https://.")

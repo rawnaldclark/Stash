@@ -74,6 +74,9 @@ class AddonLinks @Inject constructor(
         BLOCKED_BROKEN,
         BLOCKED_IMPERSONATION,
 
+        /** Turned off for a reason this version doesn't know (a later list's): said without one. */
+        BLOCKED,
+
         /** No answer: no connection, a timeout, or the server refused. */
         UNREACHABLE,
 
@@ -374,6 +377,7 @@ class AddonLinks @Inject constructor(
             BlockReason.HARMFUL -> Refusal.BLOCKED_HARMFUL
             BlockReason.BROKEN -> Refusal.BLOCKED_BROKEN
             BlockReason.IMPERSONATION -> Refusal.BLOCKED_IMPERSONATION
+            BlockReason.OTHER -> Refusal.BLOCKED
         }
 
         /**

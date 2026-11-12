@@ -156,11 +156,23 @@ enum class Trust {
     BLOCKED,
 }
 
-/** Why the signed index turned an add-on off. The app shows its own sentence for each, never text from the file. */
-enum class BlockReason(val wire: String) {
+/**
+ * Why the signed index turned an add-on off. The app shows its own sentence for each, never text
+ * from the file. A reason this version doesn't know is [OTHER]: the add-on is blocked all the same,
+ * with a sentence that gives no reason. A newer list must never make an older app drop its blocks.
+ */
+enum class BlockReason(val wire: String?) {
     HARMFUL("harmful"),
     BROKEN("broken"),
     IMPERSONATION("impersonation"),
+
+    /** A reason from a later list. */
+    OTHER(null);
+
+    companion object {
+        /** The reason an index wrote as [wire]; any word this version doesn't know is [OTHER]. */
+        fun of(wire: String): BlockReason = entries.firstOrNull { it.wire == wire } ?: OTHER
+    }
 }
 
 /**

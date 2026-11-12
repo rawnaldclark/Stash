@@ -132,7 +132,7 @@ class AddonIndexFetcherTest {
         serve("refuse-lossless-json")
         assertThat(f.refresh(force = true)).isFalse()
         assertThat(f.index.value!!.addons.single().id).isEqualTo("tidal")
-        for (bad in listOf("refuse-wrong-type", "refuse-wrong-v", "refuse-bad-reason", "refuse-too-many-addons", "refuse-too-many-blocked")) {
+        for (bad in listOf("refuse-wrong-type", "refuse-wrong-v", "refuse-too-many-addons", "refuse-too-many-blocked")) {
             serve(bad)
             assertThat(f.refresh(force = true)).isFalse()
         }

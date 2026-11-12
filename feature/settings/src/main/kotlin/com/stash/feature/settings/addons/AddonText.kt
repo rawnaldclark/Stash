@@ -42,6 +42,7 @@ internal fun refusalText(reason: AddonLinks.Refusal): Int = when (reason) {
     AddonLinks.Refusal.BLOCKED_HARMFUL -> R.string.settings_addons_blocked_harmful
     AddonLinks.Refusal.BLOCKED_BROKEN -> R.string.settings_addons_blocked_broken
     AddonLinks.Refusal.BLOCKED_IMPERSONATION -> R.string.settings_addons_blocked_impersonation
+    AddonLinks.Refusal.BLOCKED -> R.string.settings_addons_blocked
     AddonLinks.Refusal.UNREACHABLE -> R.string.settings_addons_refused_unreachable
     AddonLinks.Refusal.NOTHING_TO_PLAY -> R.string.settings_addons_refused_nothing
     AddonLinks.Refusal.RUNS_ON_PHONE -> R.string.settings_addons_refused_phone
@@ -57,7 +58,9 @@ internal fun refusalText(reason: AddonLinks.Refusal): Int = when (reason) {
 internal fun blockedText(reason: BlockReason?): Int = when (reason) {
     BlockReason.BROKEN -> R.string.settings_addons_blocked_broken
     BlockReason.IMPERSONATION -> R.string.settings_addons_blocked_impersonation
-    BlockReason.HARMFUL, null -> R.string.settings_addons_blocked_harmful
+    BlockReason.HARMFUL -> R.string.settings_addons_blocked_harmful
+    // A reason from a later list, or none known: the plain sentence.
+    BlockReason.OTHER, null -> R.string.settings_addons_blocked
 }
 
 /** "Its server will see" (§2.7), one whole sentence for each set so each can be translated as one. */

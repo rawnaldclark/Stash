@@ -1423,6 +1423,7 @@
     <string name="settings_addons_status_paused">Paused for now</string>
     <string name="settings_addons_status_paused_detail">It asked Stash to wait, or it failed a few times in a row. Stash will try it again shortly.</string>
     <string name="settings_addons_status_unreachable_detail">Stash couldn\'t reach it. It will try again by itself.</string>
+    <string name="settings_addons_blocked">Stash turned this add-on off.</string>
     <string name="settings_addons_blocked_harmful">Stash turned this add-on off. It was reported as harmful.</string>
     <string name="settings_addons_blocked_broken">Stash turned this add-on off. It was reported as not working.</string>
     <string name="settings_addons_blocked_impersonation">Stash turned this add-on off. It was reported as a fake.</string>
