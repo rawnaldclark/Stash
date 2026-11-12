@@ -1392,7 +1392,7 @@
     <string name="settings_addons_link_checking">Reading the add-on…</string>
     <string name="settings_addons_link_added">Added. Stash asks it for songs from now on.</string>
     <string name="settings_addons_offers">Offers: %1$s</string>
-    <string name="settings_addons_privacy">Its server sees what you search and the songs you play.</string>
+    <string name="settings_addons_privacy">Its server sees what you search, and the songs you play and download.</string>
     <string name="settings_addons_add">Add</string>
     <string name="settings_addons_cancel">Cancel</string>
     <string name="settings_addons_remove">Remove</string>

@@ -23,7 +23,7 @@ import javax.inject.Singleton
 
 /**
  * "Add from a link", minimal (add-ons plan phase 2 §5.5): paste a manifest URL, see the add-on's
- * name and what it offers, with "its server sees what you search and the songs you play", then
+ * name and what it offers, with [PRIVACY_NOTE], then
  * Add. v1, v0 and Eclipse-family manifests read ([AddonValidator.readManifest], add-ons plan phase 4 §2.3),
  * under the base rules (phase 4 §2.6): no address on the user's own network.
  *
@@ -231,7 +231,16 @@ class AddonLinks @Inject constructor(
         /** What to show when Add, Remove or the switch could not be saved; nothing was changed. */
         const val NOT_SAVED = "Couldn't save. Try again."
 
-        /** The privacy line the sheet shows above Add (plan §5.5). */
-        const val PRIVACY_NOTE = "Its server sees what you search and the songs you play."
+        /**
+         * The privacy line the sheet shows above Add (plan §5.5); the screen's own copy is the
+         * string `settings_addons_privacy`. What is behind each part (review-882 J3):
+         *  - **"what you search"**: the artist and title of a song Stash looks for there
+         *    (`/search`), which it does for a song you play, never for one it downloads;
+         *  - **"the songs you play"**: its `/resolve` and `/stream` for a song you play;
+         *  - **"and download"**: a download asks an add-on you added only through its `/resolve`
+         *    (an add-on that has one learns of songs you save and never played), or for a song a
+         *    play already matched there ([AddonRefs.matchesBySearch]).
+         */
+        const val PRIVACY_NOTE = "Its server sees what you search, and the songs you play and download."
     }
 }
