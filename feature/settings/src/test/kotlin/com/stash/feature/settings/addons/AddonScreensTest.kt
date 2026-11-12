@@ -119,6 +119,7 @@ class AddonScreensTest {
     private val nudged = mutableListOf<Pair<String, Boolean>>()
     private val switched = mutableListOf<Pair<String, Boolean>>()
     private val addFromLink = mutableListOf<String?>()
+    private val removed = mutableListOf<String>()
 
     private fun showList(state: AddonOverview.State, highlighted: String? = null) = rule.setContent {
         MaterialTheme {
@@ -131,6 +132,7 @@ class AddonScreensTest {
                 onDropped = { _, _ -> },
                 onNudged = { key, up -> nudged += key to up },
                 onSwitched = { row, on -> switched += row.key to on },
+                onRemove = { removed += it.key },
             )
         }
     }
@@ -198,6 +200,30 @@ class AddonScreensTest {
         rule.onNodeWithText("Wants to see more: review").assertExists()
         rule.onNodeWithText("Needs a new link").assertExists()
         rule.onNodeWithContentDescription("Use Off one").assertIsOff()
+    }
+
+    @Test fun `an add-on Stash turned off has Remove on its row, and Remove asks first`() {
+        val blocked = relay.copy(status = AddonOverview.Status.TURNED_OFF_BY_STASH, blockReason = BlockReason.BROKEN, on = false, canSwitch = false)
+        showList(state(tidal, blocked))
+        rule.onNodeWithText("Stash turned this add-on off. It was reported as not working.").assertExists()
+        // Only that row has one: Tidal, and an add-on that is merely off, are switched, not removed, here.
+        rule.onAllNodesWithContentDescription("Remove Tidal").assertCountEquals0()
+        rule.onNodeWithContentDescription("Remove Hi-Fi Relay").performClick()
+        // The tap asked; nothing was removed.
+        assertThat(removed).isEmpty()
+        rule.onNodeWithText("Remove Hi-Fi Relay?").assertExists()
+        rule.onNodeWithText("Stash stops asking it for songs and forgets what it found there. Songs you already downloaded stay.").assertExists()
+        rule.onNodeWithText("Cancel").performSemanticsAction(SemanticsActions.OnClick)
+        assertThat(removed).isEmpty()
+        rule.onAllNodesWithText("Remove Hi-Fi Relay?").assertCountEquals0()
+
+        rule.onNodeWithContentDescription("Remove Hi-Fi Relay").performClick()
+        // The dialog's own Remove: the one with no row name on it.
+        rule.onNode(
+            androidx.compose.ui.test.hasText("Remove") and androidx.compose.ui.test.hasClickAction() and
+                !androidx.compose.ui.test.hasContentDescription("Remove Hi-Fi Relay"),
+        ).performSemanticsAction(SemanticsActions.OnClick)
+        assertThat(removed).containsExactly("addon:hifi")
     }
 
     @Test fun `add-ons that couldn't be read are said to be unread, not missing`() {

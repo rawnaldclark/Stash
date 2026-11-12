@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -302,37 +301,14 @@ internal fun AddonPageContent(
     }
 
     if (confirmRemove) {
-        AlertDialog(
-            onDismissRequest = { confirmRemove = false },
-            containerColor = MaterialTheme.colorScheme.surface,
-            shape = MaterialTheme.shapes.large,
-            title = {
-                Text(
-                    text = if (row.ownServer) stringResource(R.string.settings_addons_tidal_use_stash_title) else stringResource(R.string.settings_addons_remove_title, title),
-                    style = MaterialTheme.typography.titleLarge,
-                )
+        RemoveAddonDialog(
+            row = row,
+            title = title,
+            onConfirm = {
+                confirmRemove = false
+                onRemove()
             },
-            text = {
-                Text(
-                    text = stringResource(if (row.ownServer) R.string.settings_addons_tidal_use_stash_body else R.string.settings_addons_remove_body),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        confirmRemove = false
-                        onRemove()
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) {
-                    Text(stringResource(if (row.ownServer) R.string.settings_addons_tidal_use_stash else R.string.settings_addons_remove))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmRemove = false }) { Text(stringResource(R.string.settings_addons_cancel)) }
-            },
+            onDismiss = { confirmRemove = false },
         )
     }
 

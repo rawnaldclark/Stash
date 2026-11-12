@@ -68,6 +68,11 @@ class AddonsViewModel @Inject constructor(
         viewModelScope.launch { if (!overview.setOn(row, on)) saveFailures.value++ }
     }
 
+    /** Remove on a row Stash turned off, after the user confirmed it. */
+    fun onRemove(row: AddonOverview.Row) {
+        viewModelScope.launch { if (!overview.remove(row)) saveFailures.value++ }
+    }
+
     fun onHighlightShown() = links.highlightShown()
 
     private companion object {

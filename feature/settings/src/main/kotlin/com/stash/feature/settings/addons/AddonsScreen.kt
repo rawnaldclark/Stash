@@ -18,12 +18,17 @@ import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -94,6 +99,7 @@ fun AddonsScreen(
         onDropped = viewModel::onDropped,
         onNudged = viewModel::onNudged,
         onSwitched = viewModel::onSwitched,
+        onRemove = viewModel::onRemove,
         modifier = modifier,
     )
 }
@@ -109,10 +115,14 @@ internal fun AddonsContent(
     onDropped: (key: String, to: Int) -> Unit,
     onNudged: (key: String, up: Boolean) -> Unit,
     onSwitched: (AddonOverview.Row, Boolean) -> Unit,
+    /** Remove on a row Stash turned off, after the user confirmed it. */
+    onRemove: (AddonOverview.Row) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // The page's own scroll, so holding a dragged row near the top or bottom can scroll it.
     val scrollState = rememberScrollState()
+    // The row whose Remove was tapped: it asks first.
+    var removing by rememberSaveable { mutableStateOf<String?>(null) }
     SettingsScaffold(
         title = stringResource(R.string.settings_addons_title),
         onBack = onBack,
@@ -180,6 +190,7 @@ internal fun AddonsContent(
                                             highlighted = row.entryKey != null && row.entryKey == highlightedEntry,
                                             onOpen = { onOpen(row) },
                                             onSwitched = { onSwitched(row, it) },
+                                            onRemove = { removing = row.key },
                                             held = held,
                                             canMoveUp = i > 0 && !reorder.isDragging,
                                             canMoveDown = i < shown.lastIndex && !reorder.isDragging,
@@ -214,6 +225,7 @@ internal fun AddonsContent(
                             highlighted = row.entryKey != null && row.entryKey == highlightedEntry,
                             onOpen = { onOpen(row) },
                             onSwitched = { onSwitched(row, it) },
+                            onRemove = { removing = row.key },
                         )
                     }
                 },
@@ -234,6 +246,19 @@ internal fun AddonsContent(
             ) + state.official.map { entry -> { OfficialRow(entry, onAdd = { onAddFromLink(entry.manifestUrl) }) } },
         )
     }
+
+    val toRemove = removing?.let { key -> (state.order + state.others).firstOrNull { it.key == key } }
+    if (toRemove != null) {
+        RemoveAddonDialog(
+            row = toRemove,
+            title = toRemove.title(),
+            onConfirm = {
+                removing = null
+                onRemove(toRemove)
+            },
+            onDismiss = { removing = null },
+        )
+    }
 }
 
 /**
@@ -241,6 +266,9 @@ internal fun AddonsContent(
  * switch, and in the play order the queue's drag handle at the end ([handleModifier] makes it drag
  * the row). Tapping the text opens its page. The drag is touch only, so TalkBack and switch access
  * move the row with its Move up / Move down actions, one place at a time.
+ *
+ * An add-on Stash turned off has no switch: its row says so in one fixed sentence and offers Remove
+ * (plan §1.6), which asks first.
  */
 @Composable
 private fun AddonRow(
@@ -248,6 +276,7 @@ private fun AddonRow(
     highlighted: Boolean,
     onOpen: () -> Unit,
     onSwitched: (Boolean) -> Unit,
+    onRemove: () -> Unit = {},
     held: Boolean = false,
     canMoveUp: Boolean = false,
     canMoveDown: Boolean = false,
@@ -262,6 +291,7 @@ private fun AddonRow(
     val moveUp = stringResource(R.string.settings_addons_move_up, title)
     val moveDown = stringResource(R.string.settings_addons_move_down, title)
     val switchDesc = stringResource(R.string.settings_addons_switch_desc, title)
+    val removeDesc = stringResource(R.string.settings_addons_remove_desc, title)
     val tint by animateColorAsState(
         targetValue = if (highlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else Color.Transparent,
         animationSpec = tween(400),
@@ -314,6 +344,14 @@ private fun AddonRow(
                 onCheckedChange = onSwitched,
                 modifier = Modifier.semantics { contentDescription = switchDesc },
             )
+        } else if (row.status == AddonOverview.Status.TURNED_OFF_BY_STASH && row.canRemove) {
+            TextButton(
+                onClick = onRemove,
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                modifier = Modifier.semantics { contentDescription = removeDesc },
+            ) {
+                Text(stringResource(R.string.settings_addons_remove))
+            }
         }
         if (handleModifier != null) {
             Box(modifier = Modifier.size(HandleSize).then(handleModifier), contentAlignment = Alignment.Center) {

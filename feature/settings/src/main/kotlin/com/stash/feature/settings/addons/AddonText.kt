@@ -8,8 +8,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -159,4 +162,41 @@ internal fun UsePill(text: String, color: Color = MaterialTheme.colorScheme.onSu
     ) {
         Text(text = text, style = MaterialTheme.typography.labelMedium, color = color)
     }
+}
+
+/**
+ * Remove asks first (review-881 M1): what goes with the add-on, and that downloads stay. For the
+ * user's own Tidal server it is "Use Stash's Tidal instead", and says a server with no add-on link
+ * can't be added back in this version. One dialog for the add-on's page and for the Remove on a row
+ * Stash turned off.
+ */
+@Composable
+internal fun RemoveAddonDialog(row: AddonOverview.Row, title: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    val action = stringResource(if (row.ownServer) R.string.settings_addons_tidal_use_stash else R.string.settings_addons_remove)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = MaterialTheme.shapes.large,
+        title = {
+            Text(
+                text = if (row.ownServer) stringResource(R.string.settings_addons_tidal_use_stash_title) else stringResource(R.string.settings_addons_remove_title, title),
+                style = MaterialTheme.typography.titleLarge,
+            )
+        },
+        text = {
+            Text(
+                text = stringResource(if (row.ownServer) R.string.settings_addons_tidal_use_stash_body else R.string.settings_addons_remove_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                Text(action)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_addons_cancel)) }
+        },
+    )
 }
