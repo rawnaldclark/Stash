@@ -1393,6 +1393,7 @@
     <string name="settings_addons_row_tidal">Tidal</string>
     <string name="settings_addons_row_tidal_own">Tidal · your own server</string>
     <string name="settings_addons_official">Official</string>
+    <string name="settings_addons_official_summary">Official · %1$s</string>
     <string name="settings_addons_not_made">Not made by Stash</string>
     <string name="settings_addons_not_made_host">Not made by Stash · %1$s</string>
     <string name="settings_addons_get_section">Get add-ons</string>

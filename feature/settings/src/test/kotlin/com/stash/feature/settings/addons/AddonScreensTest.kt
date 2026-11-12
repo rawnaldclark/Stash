@@ -237,6 +237,8 @@ class AddonScreensTest {
         // Section labels are drawn in capitals.
         rule.onNodeWithText("Other add-ons", ignoreCase = true).assertExists()
         rule.onNodeWithText("Words").assertExists()
+        // Marked Official before it is added, with the one line the signed list says about it.
+        rule.onNodeWithText("Official · Live stations").assertExists()
         rule.onNodeWithText("Example Radio").performScrollTo().performClick()
         assertThat(addFromLink).containsExactly("https://addons.example.org/radio/manifest.json")
     }

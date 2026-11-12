@@ -366,7 +366,7 @@ private fun AddonRow(
     }
 }
 
-/** An official add-on not added yet: its name, the one line the signed list says about it, and Add. */
+/** An official add-on not added yet: its name, its Official mark with the one line the signed list says about it, and Add. */
 @Composable
 private fun OfficialRow(entry: OfficialEntry, onAdd: () -> Unit) {
     Row(
@@ -380,7 +380,11 @@ private fun OfficialRow(entry: OfficialEntry, onAdd: () -> Unit) {
         Spacer(modifier = Modifier.size(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(text = entry.name, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-            Text(text = entry.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                text = stringResource(R.string.settings_addons_official_summary, entry.summary),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         Text(
             text = stringResource(R.string.settings_addons_add),
