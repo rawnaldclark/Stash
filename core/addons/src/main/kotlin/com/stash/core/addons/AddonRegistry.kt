@@ -323,6 +323,9 @@ class InTreeAddonRegistry @Inject constructor(
     /** Tests: the clock [MIN_REFRESH_MS] is measured on. */
     internal var nowMs: () -> Long = System::currentTimeMillis
 
+    /** Tests: the waits between retries of an entry that didn't answer ([RETRY_DELAYS_MS] in the app). */
+    internal var retryDelaysMs: List<Long> = RETRY_DELAYS_MS
+
     /** When each entry's manifest last read, by [keyOf] of its URL. An entry that didn't answer has no stamp, so it is asked again. */
     private val answeredAt = ConcurrentHashMap<String, Long>()
 
@@ -448,11 +451,15 @@ class InTreeAddonRegistry @Inject constructor(
      *    [start]'s scope retries it by itself after [RETRY_DELAYS_MS].
      */
     suspend fun refresh(force: Boolean = true) = refreshLock.withLock {
+        // The kept index first, as in [loadPersisted]: whichever pass runs first at a cold start, an
+        // add-on Stash turned off is never published from its kept copy, and never asked.
+        catalog.awaitLoaded()
         val wanted = wanted()
         val now = nowMs()
         answeredAt.keys.retainAll(wanted.map { it.key }.toSet())
-        val before = slots.associateBy { it.w.base }
-        val kept = wanted.map { w -> kept(w, before[w.base]) }
+        // By entry, never by base: two manifests in one folder (`a.json`, `b.json`) share a base.
+        val before = slots.associateBy { it.w.key }
+        val kept = wanted.map { w -> kept(w, before[w.key]) }
         applyLock.withLock { publish(kept, defaultsOff()) }
         kept.filter { it.hold == AddonHold.BLOCKED }.forEach { Log.i(TAG, "blocked add-on not loaded: ${it.id ?: "(no id known)"}") }
         val due = kept.filter { s ->
@@ -568,7 +575,7 @@ class InTreeAddonRegistry @Inject constructor(
             return
         }
         val scope = scope ?: return
-        val delayMs = RETRY_DELAYS_MS.getOrNull(retries) ?: return
+        val delayMs = retryDelaysMs.getOrNull(retries) ?: return
         retries++
         val round = retryRound.get()
         scope.launch(Dispatchers.IO) {

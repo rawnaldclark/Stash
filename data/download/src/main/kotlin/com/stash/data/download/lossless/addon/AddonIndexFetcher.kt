@@ -86,16 +86,27 @@ class AddonIndexFetcher internal constructor(
     /** The address the signed config names (`addon_index`); [start] keeps it current. Also a test seam. */
     @Volatile var configUrl: String? = null
 
+    /** One fetch at a time. Held for a whole fetch, which can take as long as the network does. */
     private val lock = Mutex()
+
+    /** The first read of the kept copy. Held for that read only, and never while waiting for [lock]. */
+    private val cacheLock = Mutex()
     @Volatile private var cacheRead = false
 
     /**
      * Loads the kept copy, once. Not verified again: it is only ever written from bytes that passed
      * the signature, into app-private storage that no backup carries.
+     *
+     * Never waits for a fetch in flight: the add-on registry waits on this before it publishes the
+     * add-ons kept from the last run (so one Stash turned off is never among them), and that must
+     * not take as long as the network does.
      */
-    suspend fun loadCached() = lock.withLock { loadCachedLocked() }
+    suspend fun loadCached() {
+        if (cacheRead) return
+        cacheLock.withLock { readKept() }
+    }
 
-    private suspend fun loadCachedLocked() {
+    private suspend fun readKept() {
         if (cacheRead) return
         val text = ioCatching("cache read") { store.data.first()[JSON] }
         val cached = text?.let { runCatching { AddonIndex.parse(it.toByteArray()) }.getOrNull() }
@@ -130,7 +141,7 @@ class AddonIndexFetcher internal constructor(
      */
     suspend fun refresh(force: Boolean = false): Boolean = withContext(Dispatchers.IO) {
         lock.withLock {
-            loadCachedLocked()
+            loadCached()
             val prefs = ioCatching("cache read") { store.data.first() } ?: emptyPreferences()
             val debug = debugSource(prefs)
             val url = debug?.first ?: configUrl ?: return@withLock false
@@ -197,21 +208,24 @@ class AddonIndexFetcher internal constructor(
         val k = publicKeyB64?.trim()?.takeIf { it.isNotEmpty() }
         if (u != null && (k == null || !debugUrlAllowed(u))) return false
         lock.withLock {
-            store.edit {
-                it.remove(JSON)
-                it.remove(ETAG)
-                it.remove(FETCHED_AT)
-                it.remove(SOURCE)
-                if (u == null) {
-                    it.remove(DEBUG_URL)
-                    it.remove(DEBUG_KEY)
-                } else {
-                    it[DEBUG_URL] = u
-                    it[DEBUG_KEY] = k!!
+            // With the kept copy's own lock too: a first read in flight must not put back what this clears.
+            cacheLock.withLock {
+                store.edit {
+                    it.remove(JSON)
+                    it.remove(ETAG)
+                    it.remove(FETCHED_AT)
+                    it.remove(SOURCE)
+                    if (u == null) {
+                        it.remove(DEBUG_URL)
+                        it.remove(DEBUG_KEY)
+                    } else {
+                        it[DEBUG_URL] = u
+                        it[DEBUG_KEY] = k!!
+                    }
                 }
+                state.value = null
+                cacheRead = true
             }
-            state.value = null
-            cacheRead = true
         }
         Log.i(TAG, if (u == null) "staging source cleared (debug build)" else "staging source set (debug build)")
         return true

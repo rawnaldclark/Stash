@@ -8,8 +8,11 @@ import com.stash.core.addons.BlockReason
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -23,6 +26,7 @@ import java.security.KeyPairGenerator
 import java.security.Signature
 import java.security.spec.ECGenParameterSpec
 import java.util.Base64
+import java.util.concurrent.TimeUnit
 
 /**
  * Fetching the signed add-on index (add-ons plan phase 4 §1.5, §1.9): what is applied, what is
@@ -173,6 +177,25 @@ class AddonIndexFetcherTest {
         assertThat(server.requestCount).isEqualTo(3)
         assertThat(f.refresh()).isFalse()
         assertThat(server.requestCount).isEqualTo(3)
+    }
+
+    @Test fun `reading the kept copy never waits for a fetch in flight`() = runBlocking<Unit> {
+        // The add-on registry waits for the kept copy before it publishes the add-ons kept from the
+        // last run: that may take as long as reading a file, never as long as the network.
+        serve("valid-launch")
+        assertThat(fetcher().refresh()).isTrue()
+
+        // The next run: the server takes its time over the index.
+        server.enqueue(MockResponse().setBody(Buffer().write(fixture("valid/index.json"))).setHeadersDelay(3, TimeUnit.SECONDS))
+        server.enqueue(MockResponse().setBody(Buffer().write(fixture("valid/index.json.sig"))))
+        val cold = fetcher()
+        val fetch = async(Dispatchers.IO) { cold.refresh(force = true) }
+        withTimeout(5_000) { while (server.requestCount < 3) delay(20) }
+        // The fetch is on its way, and the kept copy is there at once.
+        withTimeout(1_500) { cold.loadCached() }
+        assertThat(cold.index.value!!.addons).hasSize(1)
+        assertThat(fetch.await()).isTrue()
+        assertThat(cold.index.value!!.addons).hasSize(3)
     }
 
     @Test fun `at most one fetch in six hours, a clock set back fetches, and a failed fetch is not a fetch`() = runBlocking<Unit> {
