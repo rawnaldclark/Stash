@@ -77,21 +77,24 @@ class LosslessAvailability(
 
     /**
      * Some lossless path is set up: the user's own Qobuz account, the user's own Tidal
-     * server, or Stash's Tidal relay from the signed config. Configuration, not liveness.
+     * server, or Stash's Tidal relay from the signed config (unless Tidal is switched off in
+     * Settings › Add-ons). Configuration, not liveness.
      */
     val anySourceConfigured: Flow<Boolean> =
-        combine(credentialStore.hasLogin, own.endpoint, config.tidalRelay) { login, ownTidal, stashTidal ->
-            login || ownTidal != null || stashTidal != null
+        combine(credentialStore.hasLogin, own.endpoint, config.tidalRelay, switchedOff) { login, ownTidal, stashTidal, off ->
+            // Tidal switched off in Settings › Add-ons is no Tidal: neither server is asked.
+            login || ((ownTidal != null || stashTidal != null) && PlayOrder.TIDAL !in off)
         }
 
     /**
      * Stash's Tidal relay is this listener's Tidal: it is in the signed config and they have no
-     * Tidal server of their own (whose answers never touch Stash's relay). Only then do the daily
-     * allowance and the supporter unlock mean anything to them.
+     * Tidal server of their own (whose answers never touch Stash's relay), and Tidal is not
+     * switched off in Settings › Add-ons. Only then do the daily allowance and the supporter unlock
+     * mean anything to them.
      */
     val stashTidalRelayInUse: Flow<Boolean> =
-        combine(config.tidalRelay, own.endpoint) { stashTidal, ownTidal ->
-            stashTidal != null && ownTidal == null
+        combine(config.tidalRelay, own.endpoint, switchedOff) { stashTidal, ownTidal, off ->
+            stashTidal != null && ownTidal == null && PlayOrder.TIDAL !in off
         }
 
     val anyUserOwned: Flow<Boolean> = credentialStore.hasLogin

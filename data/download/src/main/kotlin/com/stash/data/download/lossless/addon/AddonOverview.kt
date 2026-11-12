@@ -145,7 +145,8 @@ class AddonOverview @Inject constructor(
         fun row(key: String): Row? = order.firstOrNull { it.key == key } ?: others.firstOrNull { it.key == key }
     }
 
-    private data class Named(val hasQobuz: Boolean, val tidalKnown: Boolean, val ownHost: String?, val off: Set<String>)
+    /** What the two named rows need: is a Qobuz account connected, is a Tidal server known, the user's own server's host, and the rows switched off. */
+    data class Named(val hasQobuz: Boolean, val tidalKnown: Boolean, val ownHost: String?, val off: Set<String>)
 
     private val named: Flow<Named> =
         combine(availability.qbdlxEnabled, wires.known, own.endpoint, switches.off) { qobuz, tidal, ownBase, off ->
@@ -160,97 +161,10 @@ class AddonOverview @Inject constructor(
         prefs.playOrder,
         combine(index.index, catalog.official, client.unauthorized) { _, official, unauthorized -> official to unauthorized },
     ) { read, named, saved, (official, unauthorized) ->
-        build(read.users, read.entries, read.reading, named, saved, official, unauthorized).copy(unreadable = read.unreadable)
+        build(read.users, read.entries, read.reading, named, saved, official, unauthorized, catalog::described).copy(unreadable = read.unreadable)
     }.distinctUntilChanged()
 
     private data class Read(val users: List<UserAddonEntry>, val entries: List<AddonEntryState>, val reading: Boolean, val unreadable: Boolean)
-
-    private fun build(
-        userEntries: List<UserAddonEntry>,
-        entries: List<AddonEntryState>,
-        reading: Boolean,
-        named: Named,
-        saved: List<String>?,
-        official: List<OfficialEntry>,
-        unauthorized: Set<String>,
-    ): State {
-        val byKey = entries.associateBy { it.key }
-        val userRows = userEntries.filter { it.kind == UserAddonKind.MANIFEST }.map { e ->
-            val handle = InTreeAddonRegistry.keyOf(e.manifestUrl)
-            addonRow(byKey[handle], e, handle, reading, unauthorized)
-        }
-        // The first-party Tidal add-on is the Tidal row's; one of Stash's own that hasn't been read has no name to show yet.
-        val defaultRows = entries
-            .filter { !it.userAdded && !(it.firstParty && (it.manifest == null || it.manifest?.manifest?.id == NamedRungAddons.TIDAL)) }
-            .map { addonRow(it, null, it.key, reading, unauthorized) }
-        val addonRows = (userRows + defaultRows).distinctBy { it.key }
-        val inOrder = addonRows.filter { it.playsSongs }
-        val order = PlayOrder.effective(saved, inOrder.map { it.key })
-        val qobuz = Row(
-            key = PlayOrder.QOBUZ, kind = Kind.QOBUZ, name = null, host = null, mark = Mark.NONE, status = Status.WORKING,
-            on = true, canSwitch = false, canRemove = false, playsSongs = true,
-        ).takeIf { named.hasQobuz }
-        val tidalOff = PlayOrder.TIDAL in named.off
-        val tidal = Row(
-            key = PlayOrder.TIDAL, kind = Kind.TIDAL, name = null, host = named.ownHost,
-            mark = if (named.ownHost != null) Mark.NONE else Mark.OFFICIAL,
-            status = if (tidalOff) Status.OFF else Status.WORKING,
-            on = !tidalOff, canSwitch = true, canRemove = named.ownHost != null, playsSongs = true,
-            summary = catalog.described(NamedRungAddons.TIDAL)?.summary.takeIf { named.ownHost == null },
-            ownServer = named.ownHost != null,
-        ).takeIf { named.tidalKnown }
-        val taken = addonRows.mapNotNull { PlayOrder.addonIdOf(it.key) }.toSet()
-        return State(
-            order = order.sorted(listOfNotNull(qobuz, tidal) + inOrder) { it.key },
-            others = addonRows.filterNot { it.playsSongs },
-            official = official.filterNot { it.id in taken },
-            automatic = order.automatic,
-            keys = order.keys,
-            loaded = true,
-        )
-    }
-
-    private fun addonRow(s: AddonEntryState?, e: UserAddonEntry?, handle: String, reading: Boolean, unauthorized: Set<String>): Row {
-        // The add-on the user approved: a manifest under another id is not it, and none of its words are shown.
-        val manifest = s?.manifest?.manifest?.takeUnless { e?.id != null && it.id != e.id }
-        val id = manifest?.id ?: e?.id
-        val trust = s?.trust ?: Trust.UNOFFICIAL
-        val status = when {
-            s?.hold == AddonHold.BLOCKED -> Status.TURNED_OFF_BY_STASH
-            e?.enabled == false || s?.hold == AddonHold.OFF -> Status.OFF
-            s?.hold == AddonHold.ONLY_BITCHORD -> Status.ONLY_BITCHORD
-            s?.hold == AddonHold.CHANGED -> Status.CHANGED
-            s?.hold == AddonHold.REPLACED -> Status.REPLACED
-            s?.hold == AddonHold.WANTS_MORE -> Status.WANTS_MORE
-            id != null && id in unauthorized -> Status.NEEDS_NEW_LINK
-            s?.needsNewerStash == true -> Status.NEEDS_NEWER_STASH
-            // Not read yet (just added, or the app just started): no verdict until it has been.
-            s != null && s.hold == AddonHold.NOT_LOADED && !reading -> Status.NOT_REACHABLE
-            else -> Status.WORKING
-        }
-        val official = trust == Trust.FIRST_PARTY || trust == Trust.OFFICIAL
-        return Row(
-            key = id?.let(PlayOrder::addonKey) ?: "entry:$handle",
-            kind = Kind.ADDON,
-            name = manifest?.name ?: e?.name ?: s?.host.orEmpty(),
-            // Always, for an add-on Stash doesn't run: its name is its own word, its address is not.
-            host = (s?.host ?: e?.manifestUrl?.let(HttpAddonClient::baseOf)?.let(InTreeAddonRegistry::hostOf))?.takeIf { !official && it.isNotEmpty() },
-            mark = if (official) Mark.OFFICIAL else Mark.NOT_MADE_BY_STASH,
-            status = status,
-            blockReason = s?.blockReason,
-            on = status !in NOT_ON,
-            canSwitch = status !in NO_SWITCH,
-            canRemove = e != null,
-            playsSongs = manifest != null && id != null && PlayOrder.playsSongs(manifest) && status != Status.REPLACED,
-            version = manifest?.version,
-            uses = manifest?.let { AddonLinks.uses(it, allowsDownloads = s?.manifest?.eclipse?.allowDownloads != false) }.orEmpty(),
-            sees = manifest?.let(AddonSees::of).orEmpty(),
-            summary = id?.let(catalog::described)?.summary?.takeIf { official },
-            entryKey = handle,
-            userAdded = e != null,
-            metered = manifest?.offers(Resource.QUOTA) == true,
-        )
-    }
 
     /**
      * The row [key] of the list on screen ([shown], the state the screen drew) was dropped at index
@@ -315,14 +229,108 @@ class AddonOverview @Inject constructor(
         return client.quota(addon).valueOrNull()
     }
 
-    private companion object {
-        const val TAG = "AddonOverview"
+    companion object {
+        private const val TAG = "AddonOverview"
 
         /** Rows whose switch shows off. */
-        val NOT_ON = setOf(Status.OFF, Status.TURNED_OFF_BY_STASH, Status.CHANGED, Status.REPLACED, Status.ONLY_BITCHORD)
+        private val NOT_ON = setOf(Status.OFF, Status.TURNED_OFF_BY_STASH, Status.CHANGED, Status.REPLACED, Status.ONLY_BITCHORD)
 
         /** Rows with no switch: switching them on would do nothing. */
-        val NO_SWITCH = setOf(Status.TURNED_OFF_BY_STASH, Status.CHANGED, Status.REPLACED, Status.ONLY_BITCHORD)
+        private val NO_SWITCH = setOf(Status.TURNED_OFF_BY_STASH, Status.CHANGED, Status.REPLACED, Status.ONLY_BITCHORD)
+
+        /**
+         * The page's state from plain values, so every row's words can be checked without the app around it.
+         * [described]: what the signed index says about the add-on with an id (its one line), if anything.
+         */
+        fun build(
+            userEntries: List<UserAddonEntry>,
+            entries: List<AddonEntryState>,
+            reading: Boolean,
+            named: Named,
+            saved: List<String>?,
+            official: List<OfficialEntry>,
+            unauthorized: Set<String>,
+            described: (String) -> OfficialEntry? = { null },
+        ): State {
+            val byKey = entries.associateBy { it.key }
+            val userRows = userEntries.filter { it.kind == UserAddonKind.MANIFEST }.map { e ->
+                val handle = InTreeAddonRegistry.keyOf(e.manifestUrl)
+                addonRow(byKey[handle], e, handle, reading, unauthorized, described)
+            }
+            // The first-party Tidal add-on is the Tidal row's; one of Stash's own that hasn't been read has no name to show yet.
+            val defaultRows = entries
+                .filter { !it.userAdded && !(it.firstParty && (it.manifest == null || it.manifest?.manifest?.id == NamedRungAddons.TIDAL)) }
+                .map { addonRow(it, null, it.key, reading, unauthorized, described) }
+            val addonRows = (userRows + defaultRows).distinctBy { it.key }
+            val inOrder = addonRows.filter { it.playsSongs }
+            val order = PlayOrder.effective(saved, inOrder.map { it.key })
+            val qobuz = Row(
+                key = PlayOrder.QOBUZ, kind = Kind.QOBUZ, name = null, host = null, mark = Mark.NONE, status = Status.WORKING,
+                on = true, canSwitch = false, canRemove = false, playsSongs = true,
+            ).takeIf { named.hasQobuz }
+            val tidalOff = PlayOrder.TIDAL in named.off
+            val tidal = Row(
+                key = PlayOrder.TIDAL, kind = Kind.TIDAL, name = null, host = named.ownHost,
+                mark = if (named.ownHost != null) Mark.NONE else Mark.OFFICIAL,
+                status = if (tidalOff) Status.OFF else Status.WORKING,
+                on = !tidalOff, canSwitch = true, canRemove = named.ownHost != null, playsSongs = true,
+                summary = described(NamedRungAddons.TIDAL)?.summary.takeIf { named.ownHost == null },
+                ownServer = named.ownHost != null,
+            ).takeIf { named.tidalKnown }
+            val taken = addonRows.mapNotNull { PlayOrder.addonIdOf(it.key) }.toSet()
+            return State(
+                order = order.sorted(listOfNotNull(qobuz, tidal) + inOrder) { it.key },
+                others = addonRows.filterNot { it.playsSongs },
+                official = official.filterNot { it.id in taken },
+                automatic = order.automatic,
+                keys = order.keys,
+                loaded = true,
+            )
+        }
+
+        private fun addonRow(
+            s: AddonEntryState?, e: UserAddonEntry?, handle: String, reading: Boolean, unauthorized: Set<String>, described: (String) -> OfficialEntry?,
+        ): Row {
+            // The add-on the user approved: a manifest under another id is not it, and none of its words are shown.
+            val manifest = s?.manifest?.manifest?.takeUnless { e?.id != null && it.id != e.id }
+            val id = manifest?.id ?: e?.id
+            val trust = s?.trust ?: Trust.UNOFFICIAL
+            val status = when {
+                s?.hold == AddonHold.BLOCKED -> Status.TURNED_OFF_BY_STASH
+                e?.enabled == false || s?.hold == AddonHold.OFF -> Status.OFF
+                s?.hold == AddonHold.ONLY_BITCHORD -> Status.ONLY_BITCHORD
+                s?.hold == AddonHold.CHANGED -> Status.CHANGED
+                s?.hold == AddonHold.REPLACED -> Status.REPLACED
+                s?.hold == AddonHold.WANTS_MORE -> Status.WANTS_MORE
+                id != null && id in unauthorized -> Status.NEEDS_NEW_LINK
+                s?.needsNewerStash == true -> Status.NEEDS_NEWER_STASH
+                // Not read yet (just added, or the app just started): no verdict until it has been.
+                s != null && s.hold == AddonHold.NOT_LOADED && !reading -> Status.NOT_REACHABLE
+                else -> Status.WORKING
+            }
+            val official = trust == Trust.FIRST_PARTY || trust == Trust.OFFICIAL
+            return Row(
+                key = id?.let(PlayOrder::addonKey) ?: "entry:$handle",
+                kind = Kind.ADDON,
+                name = manifest?.name ?: e?.name ?: s?.host.orEmpty(),
+                // Always, for an add-on Stash doesn't run: its name is its own word, its address is not.
+                host = (s?.host ?: e?.manifestUrl?.let(HttpAddonClient::baseOf)?.let(InTreeAddonRegistry::hostOf))?.takeIf { !official && it.isNotEmpty() },
+                mark = if (official) Mark.OFFICIAL else Mark.NOT_MADE_BY_STASH,
+                status = status,
+                blockReason = s?.blockReason,
+                on = status !in NOT_ON,
+                canSwitch = status !in NO_SWITCH,
+                canRemove = e != null,
+                playsSongs = manifest != null && id != null && PlayOrder.playsSongs(manifest) && status != Status.REPLACED,
+                version = manifest?.version,
+                uses = manifest?.let { AddonLinks.uses(it, allowsDownloads = s?.manifest?.eclipse?.allowDownloads != false) }.orEmpty(),
+                sees = manifest?.let(AddonSees::of).orEmpty(),
+                summary = id?.let(described)?.summary?.takeIf { official },
+                entryKey = handle,
+                userAdded = e != null,
+                metered = manifest?.offers(Resource.QUOTA) == true,
+            )
+        }
     }
 
     /** Reads the index and the manifests again when they are stale: called as Settings › Add-ons opens (§1.5). */
