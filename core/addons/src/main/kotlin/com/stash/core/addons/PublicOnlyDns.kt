@@ -37,8 +37,12 @@ class PublicOnlyDns(
          * True for an address on the public internet. False for: unspecified, loopback,
          * link-local, RFC 1918 and IPv6 site-local, CGNAT (100.64/10, Tailscale's range), ULA
          * (fc00::/7), multicast, `0.0.0.0/8`, the IETF block 192.0.0.0/24, benchmarking
-         * 198.18/15, reserved 240/4 and broadcast; and the IPv4 inside an IPv4-mapped or NAT64
-         * (64:ff9b::/96) IPv6 address is checked as itself.
+         * 198.18/15, the documentation blocks (192.0.2/24, 198.51.100/24, 203.0.113/24,
+         * 2001:db8::/32), reserved 240/4 and broadcast; and the IPv4 inside an IPv4-mapped, NAT64
+         * (64:ff9b::/96) or 6to4 (2002::/16) IPv6 address is checked as itself.
+         *
+         * What no address rule can tell: a device on the user's own network that has a global
+         * IPv6 address is "public" by every one of these.
          */
         fun isPublic(a: InetAddress): Boolean {
             if (a.isAnyLocalAddress || a.isLoopbackAddress || a.isLinkLocalAddress || a.isSiteLocalAddress || a.isMulticastAddress) {
@@ -63,7 +67,10 @@ class PublicOnlyDns(
                 o0 == 172 && o1 in 16..31 -> false
                 o0 == 192 && o1 == 168 -> false
                 o0 == 192 && o1 == 0 && o2 == 0 -> false // IETF protocol assignments
+                o0 == 192 && o1 == 0 && o2 == 2 -> false // documentation (TEST-NET-1)
                 o0 == 198 && (o1 == 18 || o1 == 19) -> false // benchmarking
+                o0 == 198 && o1 == 51 && o2 == 100 -> false // documentation (TEST-NET-2)
+                o0 == 203 && o1 == 0 && o2 == 113 -> false // documentation (TEST-NET-3)
                 o0 >= 224 -> false // multicast, reserved, broadcast
                 else -> true
             }
@@ -78,16 +85,21 @@ class PublicOnlyDns(
             val nat64 = (b[0].toInt() and 0xff) == 0x00 && (b[1].toInt() and 0xff) == 0x64 &&
                 (b[2].toInt() and 0xff) == 0xff && (b[3].toInt() and 0xff) == 0x9b && (4..11).all { b[it].toInt() == 0 }
             if (mapped || nat64) return isPublicV4(b.copyOfRange(12, 16))
+            // 6to4 (2002:AABB:CCDD::/48) carries the IPv4 AA.BB.CC.DD: a private one inside is private.
+            if (first == 0x20 && (b[1].toInt() and 0xff) == 0x02) return isPublicV4(b.copyOfRange(2, 6))
+            // 2001:db8::/32, documentation.
+            if (first == 0x20 && (b[1].toInt() and 0xff) == 0x01 && (b[2].toInt() and 0xff) == 0x0d && (b[3].toInt() and 0xff) == 0xb8) return false
             // ::/96 (IPv4-compatible, deprecated) and anything else in ::/8 is not a real host.
             if (first == 0) return false
             return true
         }
 
         /**
-         * A network interceptor for a client that follows redirects on its own (the player's
-         * add-on media client): the connection's peer must be public. Catches what the [Dns]
-         * never sees, an IP literal in a redirect's `Location`. Only for direct connections: behind
-         * a proxy the peer is the proxy, which the user chose.
+         * A network interceptor for the add-on media client: the connection's peer must be
+         * public. The last of three checks, behind [AddonMediaGuard] (the URL rule on every URL
+         * and redirect hop, before any connection) and this class's own DNS filter: whatever got
+         * past both still never has a request sent to a private peer. Only for direct
+         * connections: behind a proxy the peer is the proxy, which the user chose.
          */
         fun connectionGuard(allowLoopback: Boolean): Interceptor = Interceptor { chain ->
             val route = chain.connection()?.route()

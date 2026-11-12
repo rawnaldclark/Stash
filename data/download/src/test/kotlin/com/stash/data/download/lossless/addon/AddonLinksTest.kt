@@ -7,6 +7,7 @@ import com.stash.addons.contract.Manifest
 import com.stash.core.addons.AddonHostOptions
 import com.stash.core.addons.HttpAddonClient
 import com.stash.core.addons.InstalledAddon
+import com.stash.core.data.db.entity.AddonRefEntity
 import com.stash.core.addons.StrictAddonHost
 import com.stash.core.addons.UserAddonEntry
 import com.stash.data.download.lossless.tidal.FakeAddonRefDao
@@ -255,6 +256,32 @@ class AddonLinksTest {
         assertThat(users.loadedEntries().map { it.manifestUrl to it.enabled }).containsExactly(link("a") to false, link("b") to true).inOrder()
         assertThat(links.remove(link("a"))).isTrue()
         assertThat(users.loadedEntries().map { it.manifestUrl }).containsExactly(link("b"))
+    }
+
+    /**
+     * review-882 M1: "Remove clears the add-on's refs" was only ever tested on [AddonRefs.forget],
+     * never on Remove. This is Remove, for an add-on that is loaded. (One that is switched off is
+     * not in the registry's list, so Remove cannot name its id: review-882 M5, the part 2 builder's.)
+     */
+    @Test fun `Remove forgets what a loaded add-on said about songs, and nothing of any other add-on`() = runBlocking<Unit> {
+        val links = links()
+        serve("a", manifestJson(id = "a"))
+        links.add((links.preview(link("a")) as AddonLinks.Outcome.Ready).preview, null)
+        // The registry has loaded it, and plays have kept refs for it and for another add-on.
+        registry.state.value = listOf(
+            InstalledAddon(
+                base = link("a").removeSuffix("manifest.json"),
+                manifest = Manifest(stash = 1, id = "a", name = "A", version = "1", kind = AddonKind.SERVER, resources = listOf("search", "stream")),
+                userAdded = true,
+            ),
+            installed("b", userAdded = true),
+        )
+        refDao.upsert(AddonRefEntity("a", "song-1", remoteId = "11", resolvedAt = 1L))
+        refDao.upsert(AddonRefEntity("b", "song-2", remoteId = "22", resolvedAt = 1L))
+
+        assertThat(links.remove(link("a"))).isTrue()
+
+        assertThat(refDao.rows.values.map { it.addonId }).containsExactly("b")
     }
 
     /** review-882 J2: a save that fails must come back as an answer, never as a throw into `viewModelScope.launch`. */

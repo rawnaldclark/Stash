@@ -122,6 +122,29 @@ class OwnTidalServerMigrationTest {
         assertThat(OwnTidalServer(up, prefs).now()).isEqualTo(OwnTidalServer.Server(base, token))
     }
 
+    /**
+     * review-882 M1 and J2: the test above is a failed write. This is a failed read: a sealed list
+     * is already there and does not open (the Keystore not answering at this start). The store
+     * refuses to write over it, so nothing moves, nothing is lost, and the next start does both.
+     */
+    @Test fun `a sealed list that does not open keeps the keys and the list, and the next start moves the server`() = runBlocking<Unit> {
+        store().put(UserAddonEntry("https://other.example/manifest.json"))
+        setOldField()
+        val keystoreSilent = store(object : EncryptedUserAddons.Sealer {
+            override fun seal(plain: ByteArray): ByteArray = throw java.security.GeneralSecurityException("keystore unavailable")
+            override fun open(sealed: ByteArray): ByteArray = throw java.security.GeneralSecurityException("keystore unavailable")
+        })
+        assertThat(migration(keystoreSilent).run()).isEqualTo(OwnTidalServerMigration.Outcome.KEPT_FOR_NEXT_START)
+        assertThat(prefs.bitchordEndpointNow()).isEqualTo(base)
+        assertThat(prefs.bitchordAccessTokenNow()).isEqualTo(token)
+        assertThat(OwnTidalServer(keystoreSilent, prefs).now()).isEqualTo(OwnTidalServer.Server(base, token))
+
+        val later = store()
+        assertThat(migration(later).run()).isEqualTo(OwnTidalServerMigration.Outcome.MOVED)
+        assertThat(later.loadedEntries().map { it.kind }).containsExactly(UserAddonKind.MANIFEST, UserAddonKind.OWN_TIDAL_SERVER)
+        assertThat(prefs.bitchordEndpointNow()).isNull()
+    }
+
     @Test fun `a token a request can't carry moves without it`() = runBlocking<Unit> {
         setOldField(accessToken = "bad\ntoken")
         val users = store()
