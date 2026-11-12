@@ -333,12 +333,13 @@ private fun AddonRow(
                 overflow = TextOverflow.Ellipsis,
             )
             if (mark != null) {
+                // The whole line, on as many lines as it needs (two, for a long address): never cut.
+                // An address's end is the part that says whose it is; its start is whatever its owner
+                // chose ("stashfm.app.login.example.net" must not read as "stashfm.app.login…").
                 Text(
                     text = mark,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
             if (problem != null) {

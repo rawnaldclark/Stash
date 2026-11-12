@@ -167,6 +167,20 @@ class AddonScreensTest {
         rule.runOnUiThread { action.action() }
     }
 
+    @Test fun `a long address on the list is never cut - its line wraps`() {
+        // review-885 M13: one line with an ellipsis at its end showed "stashfm.app.login…" for an
+        // address that ends in someone else's domain.
+        val long = relay.copy(host = "stashfm.app.login.accounts.secure.example-hosting.net")
+        showList(state(tidal, long))
+        val line = "Not made by Stash · stashfm.app.login.accounts.secure.example-hosting.net"
+        val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        rule.onNodeWithText(line, useUnmergedTree = true).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val input = layouts.single().layoutInput
+        assertThat(input.maxLines).isEqualTo(Int.MAX_VALUE)
+        assertThat(input.softWrap).isTrue()
+        assertThat(input.overflow).isNotEqualTo(androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+    }
+
     @Test fun `the play order names each row, its mark and where songs come from when none has one`() {
         showList(state(qobuz, tidal, relay))
         rule.onNodeWithText("Add-ons").assertExists()
