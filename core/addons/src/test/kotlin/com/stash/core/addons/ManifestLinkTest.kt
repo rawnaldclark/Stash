@@ -32,13 +32,13 @@ class ManifestLinkTest {
         Manifest(stash = 1, id = "x", name = "X", version = "1", kind = AddonKind.SERVER, resources = resources.toList())
 
     @Test fun `what a server sees is read from what its manifest lists`() {
-        assertThat(AddonSees.of(manifest("search", "stream", "download"))).containsExactly(AddonSees.SEARCHES, AddonSees.PLAYS, AddonSees.SAVES)
+        assertThat(AddonSees.of(streaming("search", "stream", "download"))).containsExactly(AddonSees.SEARCHES, AddonSees.PLAYS, AddonSees.SAVES)
         assertThat(AddonSees.of(manifest("resolve", "stream"))).containsExactly(AddonSees.PLAYS)
         assertThat(AddonSees.of(manifest("search"))).containsExactly(AddonSees.SEARCHES)
         // Lyrics are asked for the song that is playing: its server sees that too.
         assertThat(AddonSees.of(manifest("lyrics"))).containsExactly(AddonSees.PLAYS)
         assertThat(AddonSees.of(manifest("album", "artist"))).isEmpty()
-        assertThat(AddonSees.namesOf(manifest("search", "download"))).containsExactly("SEARCHES", "SAVES")
+        assertThat(AddonSees.namesOf(streaming("search", "download"))).containsExactly("SEARCHES", "SAVES")
     }
 
     /** [manifest] with what it says about its streams: the tiers it has (null: it doesn't say) and the deliveries it gives. */
@@ -62,8 +62,9 @@ class ManifestLinkTest {
         assertThat(AddonSees.of(AddonManifest(streaming("search", "stream"), AddonDialect.ECLIPSE, EclipseTraits(allowDownloads = false))))
             .containsExactly(AddonSees.SEARCHES, plays)
         assertThat(AddonSees.namesOf(AddonManifest(streaming("search", "stream")))).containsExactly("SEARCHES", "PLAYS", "SAVES")
-        // Listing `download` is seeing what you save, whatever else it says.
-        assertThat(AddonSees.of(streaming("resolve", "download", tiers = listOf("high")))).containsExactly(plays, saves)
+        // Listing `download` is not what decides: with lossy files only, Stash asks it for none to keep.
+        assertThat(AddonSees.of(streaming("resolve", "download", tiers = listOf("high")))).containsExactly(plays)
+        assertThat(AddonSees.of(streaming("resolve", "download", tiers = listOf("high", "lossless")))).containsExactly(plays, saves)
     }
 
     @Test fun `the refusals a host acts on are codes, and only an exact reason is one`() {

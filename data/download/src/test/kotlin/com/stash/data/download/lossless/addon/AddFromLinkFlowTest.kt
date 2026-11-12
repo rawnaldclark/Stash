@@ -293,12 +293,13 @@ class AddFromLinkFlowTest {
 
     @Test fun `a replacement that sees more asks again`() = runBlocking<Unit> {
         // A v1 add-on with lossy streams only: Stash takes no download from those, so at first it sees
-        // nothing that is saved. Then it lists `download`, a route of its own.
-        fun v1(resources: String) =
-            """{"stash":1,"id":"hifi","name":"Hi-Fi Relay","version":"1.0.0","kind":"server","resources":[$resources],"stream":{"cors":false,"tiers":["high"]}}"""
-        manifests["a/manifest.json"] = v1("\"search\",\"stream\"")
+        // nothing that is saved. Then it says it has lossless ones too, and Stash would keep songs from it.
+        fun v1(tiers: String) =
+            """{"stash":1,"id":"hifi","name":"Hi-Fi Relay","version":"1.0.0","kind":"server","resources":["search","stream"],"stream":{"cors":false,"tiers":[$tiers]}}"""
+        manifests["a/manifest.json"] = v1("\"high\"")
         links.add(ready(url("a")), token = null, agreed = true)
-        manifests["b/manifest.json"] = v1("\"search\",\"stream\",\"download\"")
+        assertThat(users.loadedEntries().single().consent).containsExactly("SEARCHES", "PLAYS")
+        manifests["b/manifest.json"] = v1("\"high\",\"lossless\"")
         val p = ready(url("b"), replacing = InTreeAddonRegistry.keyOf(url("a")))
         assertThat(p.needsConsent).isTrue()
         assertThat(links.add(p, token = null)).isEqualTo(AddonLinks.Outcome.Refused(AddonLinks.Refusal.NOT_AGREED))
@@ -364,16 +365,16 @@ class AddFromLinkFlowTest {
     }
 
     @Test fun `agreeing to what an add-on now wants to see is recorded, and it is used again`() = runBlocking<Unit> {
-        // Lossy streams only, so nothing is saved from it until it lists `download`.
-        fun v1(resources: String) =
-            """{"stash":1,"id":"hifi","name":"Hi-Fi Relay","version":"1.0.0","kind":"server","resources":[$resources],"stream":{"cors":false,"tiers":["high"]}}"""
-        manifests["a/manifest.json"] = v1("\"search\",\"stream\"")
+        // Lossy streams only, so nothing is saved from it until it says it has lossless ones.
+        fun v1(tiers: String) =
+            """{"stash":1,"id":"hifi","name":"Hi-Fi Relay","version":"1.0.0","kind":"server","resources":["search","stream"],"stream":{"cors":false,"tiers":[$tiers]}}"""
+        manifests["a/manifest.json"] = v1("\"high\"")
         links.add(ready(url("a")), token = null, agreed = true)
         registry.refresh()
         assertThat(registry.addons.value.map { it.id }).containsExactly("hifi")
 
-        // Its server now lists downloads too: more than was agreed. It waits.
-        manifests["a/manifest.json"] = v1("\"search\",\"stream\",\"download\"")
+        // Its server now has lossless files, so Stash would keep songs from it: more than was agreed. It waits.
+        manifests["a/manifest.json"] = v1("\"high\",\"lossless\"")
         registry.refresh()
         assertThat(registry.addons.value).isEmpty()
         assertThat(registry.entries.value.single().hold).isEqualTo(AddonHold.WANTS_MORE)
@@ -384,6 +385,30 @@ class AddFromLinkFlowTest {
         registry.refresh()
         assertThat(registry.addons.value.map { it.id }).containsExactly("hifi")
         assertThat(registry.entries.value.single().hold).isNull()
+    }
+
+    @Test fun `the sheet and the add-on's page say the same about what its server sees, and both match the Downloads use`() = runBlocking<Unit> {
+        // The add-on seen on the phone: search, resolve and stream, no download route. Its sheet said "and
+        // save"; its page, showing Downloads, did not.
+        manifests["p/manifest.json"] =
+            """{"stash":1,"id":"echo","name":"Echo","version":"1.0.0","kind":"server","resources":["search","resolve","stream"],"stream":{"cors":false}}"""
+        val p = ready(url("p"))
+        assertThat(p.uses).contains(AddonLinks.Use.DOWNLOADS)
+        assertThat(p.sees).containsExactly(AddonSees.SEARCHES, AddonSees.PLAYS, AddonSees.SAVES)
+        links.add(p, token = null, agreed = true)
+        registry.refresh()
+        val row = AddonOverview.build(
+            userEntries = users.entries.value,
+            entries = registry.entries.value,
+            reading = false,
+            named = AddonOverview.Named(hasQobuz = false, tidalKnown = false, ownHost = null, off = emptySet()),
+            saved = null,
+            official = emptyList(),
+            unauthorized = emptySet(),
+        ).row("addon:echo")!!
+        assertThat(row.status).isEqualTo(AddonOverview.Status.WORKING)
+        assertThat(row.sees).isEqualTo(p.sees)
+        assertThat(row.uses).isEqualTo(p.uses)
     }
 
     @Test fun `a link that stopped working says Needs a new link, and replacing it ends the pause`() = runBlocking<Unit> {

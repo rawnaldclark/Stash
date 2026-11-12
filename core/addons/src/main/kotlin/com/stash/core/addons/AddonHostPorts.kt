@@ -248,9 +248,10 @@ enum class AddonSees {
     PLAYS,
 
     /**
-     * "and save": it lists `download`, or Stash would take a song to keep from it without one
-     * ([keeps]). A download from an add-on with no `/download` route goes through its `/resolve`
-     * and `/stream`, so its server learns of songs the user saves and never played (review-882 J3).
+     * "and save": Stash would take a song to keep from it ([keeps]), which is exactly when its
+     * preview and its page show "Downloads". Through its `/download` when it lists one; without,
+     * a download goes through its `/resolve` and `/stream`, so its server learns of songs the
+     * user saves and never played (review-882 J3). Listing `download` is not what decides.
      */
     SAVES;
 
@@ -260,7 +261,7 @@ enum class AddonSees {
             if (m.offers(Resource.SEARCH)) add(SEARCHES)
             // Lyrics are asked for the song that is playing, by its title and artist: the same thing seen.
             if (m.offers(Resource.STREAM) || m.offers(Resource.RESOLVE) || m.offers(Resource.LYRICS)) add(PLAYS)
-            if (m.offers(Resource.DOWNLOAD) || keeps(m, allowsDownloads)) add(SAVES)
+            if (keeps(m, allowsDownloads)) add(SAVES)
         }
 
         /** [of] for a manifest as it was read, with what an Eclipse-family one says about downloads. */
@@ -276,7 +277,8 @@ enum class AddonSees {
          * to give, allows downloads, and can answer a lossless tier (or doesn't say which it has)
          * in a delivery the downloader takes. The download seam's own rule
          * (`:data:download` `AddonDownloadSources.canDownloadLossless`), kept here so what the
-         * user is told an add-on sees is what Stash will ask it.
+         * user is told an add-on sees is what Stash will ask it. One condition for three things:
+         * "and save" on the sheet, the same words on the add-on's page, and the "Downloads" use.
          */
         fun keeps(m: Manifest, allowsDownloads: Boolean = true): Boolean {
             if (!allowsDownloads) return false

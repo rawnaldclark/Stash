@@ -42,6 +42,33 @@ class AddonLinksAcceptTest {
         assertThat(AddonLinks.uses(manifest(listOf("lyrics")))).containsExactly(AddonLinks.Use.LYRICS)
     }
 
+    @Test fun `Downloads is shown exactly when the server is said to see what you save`() {
+        // One condition for the "Downloads" use, the sheet's "and save" and the page's: seen apart on a phone
+        // (a page without "save" for an add-on whose page showed Downloads).
+        val shapes = listOf(
+            manifest(listOf("search", "stream")),
+            manifest(listOf("resolve", "stream"), tiers = listOf("lossless")),
+            manifest(listOf("search", "resolve", "stream", "download"), tiers = listOf("high", "hires")),
+            manifest(listOf("search", "download")),
+            manifest(listOf("search", "stream"), tiers = listOf("high")),
+            manifest(listOf("resolve", "download"), tiers = listOf("low", "high")),
+            manifest(listOf("stream")),
+            manifest(listOf("download")),
+            manifest(listOf("lyrics")),
+            manifest(listOf("search", "stream")).copy(stream = StreamCapabilities(cors = false, manifests = listOf("hls"))),
+            manifest(listOf("search", "stream")).copy(stream = null),
+        )
+        for (m in shapes) for (allowed in listOf(true, false)) {
+            val downloads = AddonLinks.Use.DOWNLOADS in AddonLinks.uses(m, allowsDownloads = allowed)
+            val saves = com.stash.core.addons.AddonSees.SAVES in com.stash.core.addons.AddonSees.of(m, allowsDownloads = allowed)
+            assertThat(saves).isEqualTo(downloads)
+        }
+        // And both are on for the add-on seen on the phone: search, resolve and stream, no download route.
+        val seen = manifest(listOf("search", "resolve", "stream"))
+        assertThat(AddonLinks.uses(seen)).contains(AddonLinks.Use.DOWNLOADS)
+        assertThat(com.stash.core.addons.AddonSees.of(seen)).contains(com.stash.core.addons.AddonSees.SAVES)
+    }
+
     // ------------------------------------------------------------------------------------------ a link in (phase 4 §2.2)
 
     private fun url(link: String, local: Boolean = false) = (AddonLinks.normalise(link, allowLocalHttp = local) as? AddonLinks.Normalised.Url)?.url

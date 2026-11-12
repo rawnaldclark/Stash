@@ -454,7 +454,8 @@ class AddonLinks @Inject constructor(
             return listOfNotNull(
                 Use.PLAYS_SONGS.takeIf { plays },
                 Use.LOSSLESS.takeIf { gives && lossless },
-                Use.DOWNLOADS.takeIf { gives && allowsDownloads && (lossless || tiers.isEmpty()) },
+                // The condition "its server will see ... the songs you save" is said on: never one without the other.
+                Use.DOWNLOADS.takeIf { AddonSees.keeps(m, allowsDownloads) },
                 Use.LYRICS.takeIf { m.offers(Resource.LYRICS) },
             )
         }
