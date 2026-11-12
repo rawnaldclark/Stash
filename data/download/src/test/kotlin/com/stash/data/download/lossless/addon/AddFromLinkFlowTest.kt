@@ -247,6 +247,27 @@ class AddFromLinkFlowTest {
         assertThat(users.loadedEntries().single().consent).isNull()
     }
 
+    @Test fun `an add-on that stopped being Official between the preview and the tap needs the agreement after all`() = runBlocking<Unit> {
+        // review-885 M3: Add trusted where the add-on stood at the preview.
+        serve("official", "radio", name = "Example Radio")
+        catalog.officialBases = setOf(base("official"))
+        val p = ready(url("official"))
+        assertThat(p.needsConsent).isFalse()
+        catalog.officialBases = emptySet()
+        assertThat(links.add(p, token = null)).isEqualTo(AddonLinks.Outcome.Refused(AddonLinks.Refusal.NOT_AGREED))
+        assertThat(users.loadedEntries()).isEmpty()
+        assertThat(links.add(p, token = null, agreed = true)).isInstanceOf(AddonLinks.Outcome.Added::class.java)
+        assertThat(users.loadedEntries().single().consent).containsExactly("PLAYS", "NEXT_UP", "SAVES")
+    }
+
+    @Test fun `a new add-on starts last, whatever place its id had in a saved order`() = runBlocking<Unit> {
+        // review-885 M11: a restored settings backup carries the play order and never the add-ons.
+        savedOrder.value = listOf("addon:hifi", "qobuz", "tidal")
+        serve("x", "hifi")
+        links.add(ready(url("x")), token = null, agreed = true)
+        assertThat(savedOrder.value).containsExactly("qobuz", "tidal").inOrder()
+    }
+
     // ------------------------------------------------------------------------------------------ the same add-on twice
 
     @Test fun `the same link typed another way, or another link to the same id, is already added`() = runBlocking<Unit> {

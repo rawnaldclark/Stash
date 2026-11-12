@@ -697,7 +697,9 @@ class InTreeAddonRegistry @Inject constructor(
             changed -> AddonHold.CHANGED
             read == null || read.manifest.kind != AddonKind.SERVER -> AddonHold.NOT_LOADED
             idChanged(w, read) -> AddonHold.CHANGED
-            trust == Trust.UNOFFICIAL && w.consent != null && !w.consent.containsAll(AddonSees.namesOf(read)) -> AddonHold.WANTS_MORE
+            // No agreement on record counts as none given (review-885 M3): an add-on that was Official
+            // when it was added, and no longer is, waits for the sheet like one that wants more.
+            trust == Trust.UNOFFICIAL && (w.consent == null || !w.consent.containsAll(AddonSees.namesOf(read))) -> AddonHold.WANTS_MORE
             else -> null
         }
         return Slot(w, read, trust, hold, refused, changed)

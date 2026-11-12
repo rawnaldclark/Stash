@@ -256,8 +256,14 @@ class AddonLinks @Inject constructor(
         val target = preview.replacesKey?.let { k -> mine.firstOrNull { InTreeAddonRegistry.keyOf(it.manifestUrl) == k } }
         if (preview.replacesKey != null && target == null) return Outcome.Refused(Refusal.DIFFERENT_ADDON)
         if (target == null && idTaken(preview.id, mine)) return Outcome.Refused(Refusal.ALREADY_ADDED)
+        // Where it stands now, not at the preview (review-885 M3): one that was Official a moment ago
+        // and no longer is needs the user's agreement like any other add-on Stash doesn't run.
+        val trust = catalog.trustOf(base, preview.id)
+        val sees = preview.sees.map { it.name }.toSet()
+        val covered = target?.consent?.containsAll(sees) == true
+        if (trust == Trust.UNOFFICIAL && !covered && !agreed) return Outcome.Refused(Refusal.NOT_AGREED)
         // What the user agreed its server may see. An add-on Stash runs is never asked about.
-        val consent = if (preview.trust == Trust.UNOFFICIAL) preview.sees.map { it.name }.toSet() else target?.consent
+        val consent = if (trust == Trust.UNOFFICIAL) sees else target?.consent
         val entry = UserAddonEntry(
             manifestUrl = preview.manifestUrl,
             token = t.takeIf { preview.needsToken },
@@ -273,8 +279,11 @@ class AddonLinks @Inject constructor(
             client.forgive(preview.id)
             Log.i(TAG, "an add-on's link was replaced: ${preview.id}")
         } else {
-            // Nothing an earlier add-on with this id said about a song carries over (§2.4).
+            // Nothing an earlier add-on with this id said about a song carries over (§2.4), and no
+            // place an earlier one had in a saved order: a restored settings backup carries the order
+            // and never the add-ons, and a new add-on always starts last (review-885 M11).
             refs.forget(preview.id)
+            playOrder.forget(PlayOrder.addonKey(preview.id))
             client.forgive(preview.id)
             users.put(entry)
             Log.i(TAG, "add-on added from a link: ${preview.id}")
