@@ -269,6 +269,35 @@ class StreamSourceRegistryPlayOrderTest {
         assertThat(calls).contains("youtube")
     }
 
+    @Test fun `with Tidal switched off, a song only a DASH add-on has plays from it, resolved before the player picks its source`() = runTest {
+        // review-882 F9, from this branch's side. Switched off in Settings › Add-ons, Stash's Tidal has
+        // no route: its rung answers nothing, and "a Tidal server is configured" is false
+        // (`TidalSwitchTest`). The player resolved a placeholder before picking its source only while
+        // one was configured, so an add-on's DASH answer went to the progressive source and the song
+        // was skipped. The switch makes that the everyday case.
+        reset(); hitAt = "addon:mine"
+        val manifest = StreamInfo(url = "https://cdn.example/a.mpd", manifest = Delivery.DASH, tier = Tier.LOSSLESS, cors = false, bitDepth = 16, sampleRate = 44_100)
+        val client = client().also {
+            coEvery { it.stream(any(), any(), match { r -> r.minTier.isLossless }, any()) } returns AddonResult.Ok(manifest)
+        }
+        val mine = addon("mine", userAdded = true)
+        calls.clear()
+        val played = registry(listOf(mine), saved = null, client = client).resolve(track(), allowYouTube = true, allowYtDlp = true)
+        // Tidal's rung was passed (it has nothing to say while it is off) and the add-on's manifest is the answer.
+        assertThat(asked()).containsExactly("qbdlx", "tidal", "addon:mine").inOrder()
+        assertThat(played!!.origin).isEqualTo("addon:mine")
+        assertThat(played.isDash).isTrue()
+        assertThat(played.url).isEqualTo("https://cdn.example/a.mpd")
+
+        // The player's rule, with no Tidal server configured: resolve first while such an add-on is on.
+        fun rungs(vararg on: InstalledAddon) = AddonStreamRungs(Registry(on.toList()), AddonRefs(client, RefDao()))
+        assertThat(AddonPlayback.resolveBeforeSourcePick(tidalConfigured = false, addons = rungs(mine))).isTrue()
+        // An add-on that only answers plain files changes nothing, and neither does none at all.
+        val plain = mine.copy(manifest = mine.manifest.copy(stream = mine.manifest.stream!!.copy(manifests = listOf("none"))))
+        assertThat(AddonPlayback.resolveBeforeSourcePick(tidalConfigured = false, addons = rungs(plain))).isFalse()
+        assertThat(AddonPlayback.resolveBeforeSourcePick(tidalConfigured = false, addons = rungs())).isFalse()
+    }
+
     @Test fun `a look-ahead stops at a metered add-on wherever it is saved`() = runTest {
         reset()
         assertThat(walk(listOf(addon("paid", userAdded = true, metered = true)), saved = listOf("qobuz", "addon:paid", "tidal"), speculative = true)).isNull()
