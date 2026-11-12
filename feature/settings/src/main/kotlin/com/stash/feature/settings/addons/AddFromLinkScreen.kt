@@ -79,17 +79,20 @@ fun AddFromLinkScreen(
     val step by viewModel.step.collectAsStateWithLifecycle()
     val landsAfterTidal by viewModel.landsAfterTidal.collectAsStateWithLifecycle()
     // The field's own text, written in the same frame as each key: never a value that waits on the view model.
-    var link by rememberSaveable { mutableStateOf(initialLink.orEmpty()) }
+    // Keyed by the link the screen was opened with: another link shared to Stash while this screen is
+    // open arrives as a new one, and takes the field over.
+    var link by rememberSaveable(initialLink) { mutableStateOf(initialLink.orEmpty()) }
     var scanning by rememberSaveable { mutableStateOf(false) }
     var clipboardEmpty by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     val focusManager = LocalFocusManager.current
 
-    // A shared link (or an official add-on's Add) goes straight to its preview, once.
-    var readInitial by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
+    // A shared link (or an official add-on's Add) goes straight to its preview, once for each link.
+    var readInitial by rememberSaveable(initialLink) { mutableStateOf(false) }
+    LaunchedEffect(initialLink) {
         if (!readInitial && !initialLink.isNullOrBlank()) {
             readInitial = true
+            viewModel.reset()
             viewModel.read(initialLink, replacingKey)
         }
     }
