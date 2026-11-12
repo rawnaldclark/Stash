@@ -107,7 +107,12 @@ class LosslessUrlDownloader @Inject constructor(
         // fetch, a DASH answer's manifest and every segment included. Stash's own sources have none.
         val limitMs = source.maxBytes?.takeIf { isAddonSource(source.sourceId) }?.let(timeLimitMs)
             ?: return@withContext fetch(source, destination, onProgress)
-        withTimeoutOrNull(limitMs) { fetch(source, destination, onProgress) } ?: run {
+        withTimeoutOrNull(limitMs) {
+            // A blocking read that the limit cut short comes back as an ordinary failure without
+            // the coroutine ever having suspended, and withTimeoutOrNull then hands that failure
+            // on as the block's own answer: ask whether the limit has passed.
+            fetch(source, destination, onProgress).also { ensureActive() }
+        } ?: run {
             Log.w(TAG, "fetch ${source.sourceId}: took longer than a file of its size may (${limitMs / 1000} s); not kept")
             runCatching { if (destination.exists()) destination.delete() }
             Result.failure(TookTooLongException())
