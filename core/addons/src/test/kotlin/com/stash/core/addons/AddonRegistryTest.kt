@@ -361,6 +361,45 @@ class AddonRegistryTest {
         }
     }
 
+    @Test fun `a cold start reads each add-on's manifest once, however the lists and the first config arrive`() = runBlocking<Unit> {
+        // Seen on a phone: two GETs of each manifest within the same second. The user's list, the
+        // signed config's defaults and the first applied config each start a pass, and a pass for a
+        // changed list read everything again.
+        serve("m", manifestJson("mine"))
+        serve("d", manifestJson("builtin"))
+        val users = Users(emptyList())
+        val defaults = Defaults(emptyList())
+        val registry = registry(defaults, users)
+        // Like the config fetcher's `refreshedAt`: it has a value from the start, and a new one for each applied config.
+        val applied = MutableStateFlow(0L)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            registry.start(scope, applied)
+            users.flow.value = listOf(UserAddonEntry(url("m"), id = "mine"))
+            withTimeout(5_000) { registry.addons.first { list -> list.any { it.id == "mine" } } }
+            defaults.flow.value = listOf(DefaultAddonEntry(url("d")))
+            withTimeout(5_000) { registry.addons.first { it.size == 2 } }
+            applied.value = 1L
+            // And a change that asks nothing of anyone: the user switches one off and on again.
+            users.flow.value = listOf(UserAddonEntry(url("m"), id = "mine", enabled = false))
+            withTimeout(5_000) { registry.addons.first { it.size == 1 } }
+            users.flow.value = listOf(UserAddonEntry(url("m"), id = "mine"))
+            withTimeout(5_000) { registry.addons.first { it.size == 2 } }
+            delay(400)
+            assertThat(asked.count { it == "m" }).isEqualTo(1)
+            assertThat(asked.count { it == "d" }).isEqualTo(1)
+
+            // A link replaced is an add-on that has never answered: it is read, and only it.
+            serve("m2", manifestJson("mine"))
+            users.flow.value = listOf(UserAddonEntry(url("m2"), id = "mine"))
+            withTimeout(5_000) { while ("m2" !in asked) delay(20) }
+            delay(300)
+            assertThat(asked).containsExactly("m", "d", "m2")
+        } finally {
+            scope.cancel()
+        }
+    }
+
     @Test fun `a pass asked for from the screen does its reading on another thread`() {
         // Settings › Add-ons asks for a pass as it opens, from the main thread.
         serve("m", manifestJson("mine"))

@@ -278,9 +278,11 @@ data class AddonEntryState(
  * add-ons are loaded here; phone add-ons are phase 3.
  *
  * **When it reads** ([start]): whenever either list changes, when the signed index lifts a block,
- * and on every applied config, at most every [MIN_REFRESH_MS] per add-on then (SPEC.md 3: hosts
- * re-read a manifest at most every 10 minutes). Every pass publishes the kept manifests first,
- * reads the add-ons side by side, and one add-on's failure never costs another ([refresh]).
+ * and on every applied config; each time only the add-ons that haven't answered in the last
+ * [MIN_REFRESH_MS] (SPEC.md 3: hosts re-read a manifest at most every 10 minutes), so a cold
+ * start, where all three happen within a second, reads each add-on once. Every pass publishes the
+ * kept manifests first, reads the add-ons side by side, and one add-on's failure never costs
+ * another ([refresh]).
  *
  * **Ids.** An id is on at most once. A first-party default beats a user add-on with the same id
  * (the Tidal rung's switch must not be turned off by adding a link); otherwise the user's own wins.
@@ -396,7 +398,7 @@ class InTreeAddonRegistry @Inject constructor(
             // every arrival is a pass, and every pass publishes the kept manifests before it asks anything.
             combine(defaults.entries, users.entries) { d, u -> d to u }
                 .distinctUntilChanged()
-                .collectLatest { guarded { refresh(force = true) } }
+                .collectLatest { guarded { listChanged() } }
         }
         scope.launch(Dispatchers.IO) { configApplied.collect { guarded { refresh(force = false) } } }
         // A new index: a block applies at once, with nothing asked; a lifted one needs its manifest read.
@@ -455,7 +457,17 @@ class InTreeAddonRegistry @Inject constructor(
      */
     suspend fun refresh(force: Boolean = true) = withContext(Dispatchers.IO) { pass(force) }
 
-    private suspend fun pass(force: Boolean) = refreshLock.withLock {
+    /**
+     * A list changed: the user added, removed or switched an add-on, their sealed list was read, or
+     * the signed config's defaults arrived. A pass that reads what is due, never one that reads
+     * everything: at a cold start those three and the first applied config each start a pass within
+     * the same second, and an add-on that answered a moment ago is not asked again for each of them
+     * (one read per add-on, as SPEC.md 3 has it). A new or re-linked entry has never answered, so it is
+     * read at once. The retries of entries that didn't answer start over, as the list is a new one.
+     */
+    private suspend fun listChanged() = withContext(Dispatchers.IO) { pass(force = false, restartRetries = true) }
+
+    private suspend fun pass(force: Boolean, restartRetries: Boolean = force) = refreshLock.withLock {
         // The kept index first, as in [loadPersisted]: whichever pass runs first at a cold start, an
         // add-on Stash turned off is never published from its kept copy, and never asked.
         catalog.awaitLoaded()
@@ -471,7 +483,7 @@ class InTreeAddonRegistry @Inject constructor(
             s.w.enabled && s.hold != AddonHold.BLOCKED &&
                 (force || answeredAt[s.w.key].let { it == null || now - it !in 0 until MIN_REFRESH_MS })
         }
-        if (force) {
+        if (restartRetries) {
             // The list changed (or the caller wants everything read): its own retries start over.
             retryRound.incrementAndGet()
             retries = 0
@@ -601,7 +613,8 @@ class InTreeAddonRegistry @Inject constructor(
             publish(settled, defaultsOff())
             before.zip(settled).any { (a, b) -> a.hold == AddonHold.BLOCKED && b.hold != AddonHold.BLOCKED }
         }
-        if (lifted) refresh(force = true)
+        // A lifted block reads what it kept from being read: an add-on that never answered is due.
+        if (lifted) refresh(force = false)
     }
 
     /** A default was switched on or off: publish again from what is known, asking nothing. */
