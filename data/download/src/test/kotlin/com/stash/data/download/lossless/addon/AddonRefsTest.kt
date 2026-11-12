@@ -337,12 +337,25 @@ class AddonRefsTest {
         assertThat((other as AddonRefs.Found.Hit).ref.remoteId).isEqualTo("41")
     }
 
-    @Test fun `with no length the app can trust, a row without one is still matched on its words`() = runTest {
-        // A YouTube row's length is the video's: the matcher never held such a song to it.
+    /** review-882 round 2, J4's last gap: words alone are not a match, whatever is known of the song's own length. */
+    @Test fun `a row that states no length is no match either for a song whose own length is not trusted, or not known`() = runTest {
+        // A YouTube row's length is the video's.
         val video = song.copy(isrc = null, durationReliable = false)
-        assertThat(refs(searching(noLength)).find(addon(), video, AddonRefs.Pass.LOSSLESS)).isInstanceOf(AddonRefs.Found.Hit::class.java)
+        assertThat(refs(searching(noLength)).find(addon(), video, AddonRefs.Pass.LOSSLESS)).isEqualTo(AddonRefs.Found.Miss)
         val unknown = TrackQuery(artist = "Daft Punk", title = "Digital Love")
-        assertThat(refs(searching(noLength)).find(addon("other"), unknown, AddonRefs.Pass.LOSSLESS)).isInstanceOf(AddonRefs.Found.Hit::class.java)
+        assertThat(refs(searching(noLength)).find(addon("other"), unknown, AddonRefs.Pass.LOSSLESS)).isEqualTo(AddonRefs.Found.Miss)
+        // One rule for every add-on that is matched by search, a default one included.
+        val default = addon("default").copy(userAdded = false)
+        assertThat(refs(searching(noLength)).find(default, video, AddonRefs.Pass.LOSSLESS)).isEqualTo(AddonRefs.Found.Miss)
+
+        // A row that states its length is matched as before, the video's own length held loosely against it.
+        val withLength = refs(searching(noLength, twin)).find(addon("third"), video, AddonRefs.Pass.LOSSLESS)
+        assertThat((withLength as AddonRefs.Found.Hit).ref.remoteId).isEqualTo("41")
+        val forUnknown = refs(searching(twin)).find(addon("fourth"), unknown, AddonRefs.Pass.LOSSLESS)
+        assertThat((forUnknown as AddonRefs.Found.Hit).ref.remoteId).isEqualTo("41")
+        // And the song's own ISRC still places a row without one.
+        val byIsrc = refs(searching(noLength.copy(isrc = "GBDUW0000059"))).find(addon("fifth"), song.copy(durationReliable = false), AddonRefs.Pass.LOSSLESS)
+        assertThat((byIsrc as AddonRefs.Found.Hit).ref.remoteId).isEqualTo("55")
     }
 
     private fun eclipseResolver(item: Track?): Pair<HttpAddonClient, InstalledAddon> {

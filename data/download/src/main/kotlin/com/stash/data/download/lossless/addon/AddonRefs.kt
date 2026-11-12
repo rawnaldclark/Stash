@@ -38,8 +38,8 @@ import javax.inject.Singleton
  *     matcher's own floor.
  *  3. **Matching on the phone**, for one that can only search (every BitChord-style add-on, most
  *     Eclipse ones): `/search "<artist> <title>"`, scored by the app's own [QobuzCandidateMatcher]
- *     as the Tidal rung scores its rows, rows with the song's ISRC first. When the song's own
- *     length is known, a row that states no length is no candidate ([statesLength]): the matcher
+ *     as the Tidal rung scores its rows, rows with the song's ISRC first. A row that states no
+ *     length is no candidate ([statesLength]), whatever is known of the song's own: the matcher
  *     was tuned on catalogs whose rows always carry one, and words alone pass too easily.
  *
  * **Matching by search is for plays only** when the user added the add-on (add-ons plan phase 4
@@ -379,15 +379,16 @@ class AddonRefs @Inject constructor(
     }
 
     /**
-     * Whether [t] may be matched to [query] at all (review-882 J4). With a song length that can be
-     * trusted, a row must state its own, so the matcher's length rule has something to judge: with
-     * none it scores the length as perfect, and title and artist words alone decide (a 30-second
-     * preview, a live take that doesn't say so, another artist's song of the same name). The one
+     * Whether [t] may be matched to [query] at all (review-882 J4). A row must state its own
+     * length, so the matcher's length rule has something to judge: with none it scores the length
+     * as perfect, and title and artist words alone decide (a 30-second preview, a live take that
+     * doesn't say so, another artist's song of the same name). That holds whatever is known of the
+     * song's own length (round 2): one that is not trusted, a video's, is still held loosely
+     * against the row's, and words alone are not a match for an add-on the user added. The one
      * thing that places a row without a length is the song's own ISRC.
      */
     private fun statesLength(query: TrackQuery, t: Track): Boolean {
-        val songKnown = query.durationReliable && (query.durationMs ?: 0L) > 0
-        if (!songKnown || (t.durationMs ?: 0L) > 0) return true
+        if ((t.durationMs ?: 0L) > 0) return true
         return !query.isrc.isNullOrBlank() && t.isrc.equals(query.isrc, ignoreCase = true)
     }
 
