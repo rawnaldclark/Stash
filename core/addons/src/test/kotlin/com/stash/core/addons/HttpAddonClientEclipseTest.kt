@@ -108,6 +108,20 @@ class HttpAddonClientEclipseTest {
         assertThat(sent.queryParameterNames).containsExactly("title", "artist", "isrc", "durationMs")
     }
 
+    /** review-882 round 2, F8: the length rule is v1's promise; here the host's matcher judges the item. */
+    @Test fun `a resolve item of another length is an answer for the host to judge, not a broken one`() = runBlocking<Unit> {
+        val addon = eclipse(plain)
+        val q = ResolveQuery(Descriptor("T", "A", durationMs = 240_000))
+        // Its top search hit, a 30-second preview: three in a row used to open the breaker.
+        repeat(3) {
+            server.enqueue(json("""{"item":{"id":"x1","title":"T","artist":"A","duration":30}}"""))
+            val item = (client.resolve(addon, q) as AddonResult.Ok).value!!
+            assertThat(item.id).isEqualTo("x1")
+            assertThat(item.durationMs).isEqualTo(30_000L)
+        }
+        assertThat(gate.events.none { it.startsWith("failure") }).isTrue()
+    }
+
     @Test fun `isrc without resolve asks resolve-isrc, and only with an ISRC`() = runBlocking<Unit> {
         val addon = eclipse("""{"id":"i.addon","name":"I","version":"1","resources":["search","stream","isrc"]}""")
         assertThat((client.resolve(addon, ResolveQuery(Descriptor("T", "A"))) as AddonResult.Ok).value).isNull()

@@ -87,6 +87,8 @@ class HttpAddonClient @Inject constructor(
     private val trust: AddonTrust,
     private val signer: AddonInstallSigner,
     hostOptions: AddonHostOptions = StrictAddonHost,
+    /** Told when [mediaClient]'s guard refuses a stream's fetch ([AddonMediaRefusals]). */
+    private val refusals: AddonMediaRefusals = NoMediaRefusals,
 ) {
     /**
      * The URL rule's development exception (SPEC.md 1.1): `http:` on localhost, for debug builds
@@ -164,6 +166,7 @@ class HttpAddonClient @Inject constructor(
                     proxy = sharedClient.proxy,
                     proxySelector = sharedClient.proxySelector,
                     userAgent = userAgent,
+                    onRefused = { refusals.refused(it) },
                 ),
             )
             .addNetworkInterceptor(PublicOnlyDns.connectionGuard(allowLoopback = hostOptions.allowLocalHttp))
@@ -319,9 +322,14 @@ class HttpAddonClient @Inject constructor(
                 song.isrc?.takeIf { it.isNotBlank() }?.let { add("isrc" to it) }
                 song.durationMs?.takeIf { it > 0 }?.let { add("durationMs" to it.toString()) }
             }
+            // No [AddonValidator.checkResolve] here: "the same song or null" is v1's promise. An
+            // Eclipse-family /resolve often answers its top search hit, and an item of another
+            // length is then an honest answer about another song, not a broken one: the host's
+            // matcher judges it like a search row (review-882 round 2, F8). Thrown out here it
+            // counted toward the breaker, and three in a row paused the add-on for 30 minutes.
+            // The dialect has no `maxTier`, so rule 7 has nothing to check either.
             return call(addon, Route.RESOLVE, emptyList(), params, paced = paced) {
                 val item = AddonEclipse.resolveResponse(it, opts) ?: return@call null
-                AddonValidator.checkResolve(item, query)
                 gateIds(addon.manifest, item)
             }
         }

@@ -207,6 +207,46 @@ class DownloadManagerDurationBackstopTest {
         coVerify(exactly = 2) { losslessRegistry.resolve(any()) }
     }
 
+    /**
+     * review-882 round 2, F7 and F2: a fetch the add-on media client refused (it pointed at the
+     * user's own network; a DASH segment's refusal arrives wrapped), and one that outlasted its
+     * time limit, are treated the same way: asking that add-on again asks for the same thing.
+     */
+    @Test
+    fun `a fetch the add-on media client refused, or one that ran out of time, cools the add-on down and the next source is asked`() = runTest {
+        val tempDir = File.createTempFile("tmp", "").apply { delete(); mkdirs() }
+        coEvery { fileOrganizer.getTempDir() } returns tempDir
+        val failures = mutableListOf<Throwable>(
+            com.stash.core.addons.PrivateAddressException(),
+            java.io.IOException("segment 1/3 failed", com.stash.core.addons.NoPublicAddressException()),
+            LosslessUrlDownloader.TookTooLongException(),
+        )
+        val rounds = failures.size
+        coEvery { losslessRegistry.resolve(any()) } returnsMany (1..rounds).flatMap { listOf(match("addon:stranger"), match("squid_qobuz")) }
+        coEvery { losslessUrlDownloader.download(any(), any(), any()) } answers {
+            if (firstArg<SourceResult>().sourceId == "addon:stranger") {
+                Result.failure(failures.removeAt(0))
+            } else {
+                val destination = secondArg<File>()
+                destination.parentFile?.mkdirs()
+                destination.writeText("fake-flac-bytes")
+                Result.success(destination)
+            }
+        }
+        every { audioDurationExtractor.extractMs(any()) } returns 240_000L
+        val committed = FileOrganizer.CommittedTrack(filePath = "/library/Sample Artist/Sample.flac", sizeBytes = 1234L)
+        coEvery { trackFinalizer.finalizeFile(any(), any(), any()) } returns
+            TrackFinalizer.FinalizeResult.Success(committed, meta = null)
+
+        repeat(rounds) {
+            val result = newSubject().tryLosslessDownload(stubTrack())
+            assertThat((result as TrackDownloadResult.Success).filePath).isEqualTo(committed.filePath)
+        }
+
+        coVerify(exactly = rounds) { losslessHealthGate.recordDegraded("addon:stranger") }
+        coVerify(exactly = rounds * 2) { losslessRegistry.resolve(any()) }
+    }
+
     /** Any other failed fetch is still what it was: no cooldown, no second lossless try. */
     @Test
     fun `an ordinary failed fetch of an add-on's file does not cool it down`() = runTest {

@@ -2,11 +2,11 @@ package com.stash.core.addons
 
 import android.util.Log
 import com.stash.addons.contract.Auth
-import okhttp3.Dns
 import okhttp3.HttpUrl
 import okhttp3.Interceptor
 import okhttp3.Response
 import java.io.IOException
+import java.net.InetSocketAddress
 import java.net.ProtocolException
 import java.net.Proxy
 import java.net.ProxySelector
@@ -25,9 +25,10 @@ import java.net.ProxySelector
  *     refused here, BEFORE any connection is opened, so not even a TCP or TLS hello reaches it.
  *     That goes for the first URL, a `Location`, and a segment URL an add-on's MPD names.
  *  2. **Behind a proxy, the name is resolved here first** ([viaProxy]). With a proxy OkHttp
- *     resolves the proxy's name, never the target's, so the client's [PublicOnlyDns] is not asked.
- *     A name whose own answers are all private is refused. What this cannot see: a proxy that
- *     resolves the name differently inside its own network. That one case is the proxy's.
+ *     resolves the proxy's name, never the target's, so the client's [PublicOnlyDns] is not asked
+ *     about the target. A name whose own answers are all private is refused. The proxy's own
+ *     name, the user's choice, is then resolved as it is ([proxyHosts]). What this cannot see: a
+ *     proxy that resolves the name differently inside its own network. That one case is the proxy's.
  *  3. Then the request goes on, with `User-Agent: Stash/<version>` on every hop.
  *
  * A name that resolves privately on a direct connection is [PublicOnlyDns]'s to refuse (the
@@ -38,13 +39,25 @@ class AddonMediaGuard(
     private val allowed: (HttpUrl) -> Boolean,
     /** [AddonValidator.isLocalAddressUrl]: the refusal was for an address on the user's own network. */
     private val isLocalAddress: (HttpUrl) -> Boolean,
-    private val publicDns: Dns,
+    private val publicDns: PublicOnlyDns,
     private val proxy: Proxy?,
     private val proxySelector: ProxySelector?,
     private val userAgent: String,
+    /**
+     * Told the stream a refused fetch belongs to ([AddonMediaRefusals]): the request's
+     * [AddonStreamTag] when it carries one (a DASH segment), else its own first URL. Called on the
+     * fetching thread, before the refusal is thrown. Only for the guard's own refusals (the URL
+     * rule, a host with no public address, a private peer), never for an ordinary failed fetch.
+     */
+    private val onRefused: (String) -> Unit = {},
 ) : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
+        val stream = chain.request().tag(AddonStreamTag::class.java)?.streamUrl ?: chain.request().url.toString()
+        fun refused() {
+            // The sink's own trouble must not change what the fetch comes to.
+            runCatching { onRefused(stream) }
+        }
         var request = chain.request().newBuilder().header("User-Agent", userAgent).build()
         var hops = 0
         while (true) {
@@ -53,17 +66,30 @@ class AddonMediaGuard(
                 val ownNetwork = isLocalAddress(url)
                 // Never the URL: it can carry a signature or a token. What kind of refusal, and on which hop.
                 Log.w(TAG, "${if (hops == 0) "media URL" else "redirect hop $hops"} refused (${if (ownNetwork) "private address" else "not an https URL on a public host"})")
+                refused()
                 throw if (ownNetwork) PrivateAddressException() else RefusedAddonUrlException()
             }
             if (viaProxy(url, proxy, proxySelector)) {
                 try {
-                    publicDns.lookup(url.host)
+                    publicDns.lookupPublic(url.host)
                 } catch (e: java.net.UnknownHostException) {
                     Log.w(TAG, "${if (hops == 0) "media URL" else "redirect hop $hops"} refused behind a proxy (no public address for its host)")
+                    if (e is NoPublicAddressException) refused()
                     throw e
                 }
             }
-            val response = chain.proceed(request)
+            val response = try {
+                // The proxy's own name is the user's, not an add-on's: resolved as it is (F1).
+                publicDns.throughProxies(proxyHosts(url, proxy, proxySelector)) { chain.proceed(request) }
+            } catch (e: NoPublicAddressException) {
+                // The DNS filter, on a direct connection.
+                refused()
+                throw e
+            } catch (e: PrivateAddressException) {
+                // The connection guard: the peer itself was private.
+                refused()
+                throw e
+            }
             if (!response.isRedirect || (request.method != "GET" && request.method != "HEAD")) return response
             val next = response.header("Location")?.let { url.resolve(it) } ?: return response
             response.close()
@@ -97,13 +123,39 @@ class AddonMediaGuard(
         }
 
         /**
-         * Step 2 alone, for a client that already checks every URL and hop itself (the add-on API
-         * client): behind a proxy the target's name is resolved through [publicDns] first.
+         * The names of the HTTP proxies a request for [url] may be handed to: what OkHttp will ask
+         * the client's DNS for instead of the target ([PublicOnlyDns.throughProxies]). Never the
+         * target's own name: an add-on that names the proxy's host as its own is held to the
+         * filter like any other, so a lookup of that name stays filtered for that call (a proxy
+         * with only private addresses is then not reached: failed closed). A SOCKS proxy is not
+         * listed: OkHttp does not ask its DNS for one.
          */
-        fun proxyGuard(publicDns: Dns, proxy: Proxy?, proxySelector: ProxySelector?): Interceptor = Interceptor { chain ->
+        fun proxyHosts(url: HttpUrl, proxy: Proxy?, proxySelector: ProxySelector?): Set<String> {
+            val proxies = when {
+                proxy != null -> listOf(proxy)
+                proxySelector != null -> try {
+                    proxySelector.select(url.toUri()).orEmpty()
+                } catch (e: Exception) {
+                    emptyList()
+                }
+                else -> emptyList()
+            }
+            return proxies.asSequence()
+                .filter { it.type() == Proxy.Type.HTTP }
+                .mapNotNull { (it.address() as? InetSocketAddress)?.hostString?.lowercase() }
+                .filter { it != url.host.lowercase() }
+                .toSet()
+        }
+
+        /**
+         * Step 2 alone, for a client that already checks every URL and hop itself (the add-on API
+         * client): behind a proxy the target's name is resolved through [publicDns] first, and
+         * the proxy's own name is then resolved as it is.
+         */
+        fun proxyGuard(publicDns: PublicOnlyDns, proxy: Proxy?, proxySelector: ProxySelector?): Interceptor = Interceptor { chain ->
             val url = chain.request().url
-            if (viaProxy(url, proxy, proxySelector)) publicDns.lookup(url.host)
-            chain.proceed(chain.request())
+            if (viaProxy(url, proxy, proxySelector)) publicDns.lookupPublic(url.host)
+            publicDns.throughProxies(proxyHosts(url, proxy, proxySelector)) { chain.proceed(chain.request()) }
         }
     }
 }

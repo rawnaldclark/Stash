@@ -211,6 +211,59 @@ class AddonRefsTest {
         coVerify(exactly = 3) { client.search(any(), any(), any(), any()) }
     }
 
+    // ------------------------------------------------------------------------------------------ refused on the wire (review-882 round 2, F7)
+
+    @Test fun `a stream the media client refused to fetch loses its ref, and the song is left to the next source`() = runTest {
+        val client = searching(exact)
+        val refs = refs(client)
+        val served = refs.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq) as AddonRefs.Streamed.Ok
+
+        // Its file redirected to the user's own network: the guard reports the stream's URL.
+        refs.refusedOnTheWire(served.info.url)
+
+        val row = dao.rows["bc" to key]!!
+        assertThat(row.remoteId).isNull()
+        assertThat(row.losslessMissAt).isEqualTo(now)
+        assertThat(row.aacMissAt).isEqualTo(now)
+        // Neither pass offers that add-on's stream for the song again, and nothing is asked.
+        assertThat(refs.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq)).isEqualTo(AddonRefs.Streamed.Miss)
+        assertThat(refs.stream(addon(), song, AddonRefs.Pass.LOSSY, highReq)).isEqualTo(AddonRefs.Streamed.Miss)
+        coVerify(exactly = 1) { client.search(any(), any(), any(), any()) }
+        coVerify(exactly = 1) { client.stream(any(), any(), any(), any()) }
+        // For 14 days, as any miss.
+        now += TidalClient.MISS_TTL_MS
+        refs.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq)
+        coVerify(exactly = 2) { client.search(any(), any(), any(), any()) }
+    }
+
+    @Test fun `a refusal for a URL this add-on never answered changes nothing, and one is counted once`() = runTest {
+        val refs = refs(searching(exact))
+        val served = refs.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq) as AddonRefs.Streamed.Ok
+        refs.refusedOnTheWire("https://elsewhere.example/other.flac")
+        assertThat(dao.rows["bc" to key]!!.remoteId).isEqualTo("42")
+
+        refs.refusedOnTheWire(served.info.url)
+        val stamped = dao.rows["bc" to key]!!
+        now += 60_000L
+        refs.refusedOnTheWire(served.info.url)
+        assertThat(dao.rows["bc" to key]).isEqualTo(stamped)
+    }
+
+    @Test fun `a refusal is matched to its stream in the media client's spelling of the URL`() = runTest {
+        val client: HttpAddonClient = mockk {
+            coEvery { search(any(), any(), any(), any()) } returns AddonResult.Ok(SearchResponse(tracks = listOf(exact)))
+            // As the add-on wrote it: the host in capitals, the default port spelled out.
+            coEvery { stream(any(), any(), any(), any()) } returns AddonResult.Ok(flac.copy(url = "https://CDN.Example:443/a.flac"))
+        }
+        val refs = refs(client)
+        assertThat(refs.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq)).isInstanceOf(AddonRefs.Streamed.Ok::class.java)
+
+        // As OkHttp names the request it refused.
+        refs.refusedOnTheWire("https://cdn.example/a.flac")
+
+        assertThat(dao.rows["bc" to key]!!.remoteId).isNull()
+    }
+
     // ------------------------------------------------------------------------------------------ failures that are not misses (review-882 M3)
 
     @Test fun `a search that answers 404 is not a miss - nothing is remembered against the song`() = runTest {
@@ -283,6 +336,35 @@ class AddonRefsTest {
         assertThat(refs.find(eclipse, song, AddonRefs.Pass.LOSSLESS)).isInstanceOf(AddonRefs.Found.Hit::class.java)
     }
 
+    /** review-882 round 2, n8: nothing may be stamped for such a miss, so every retry pass asked `/resolve-isrc` again. */
+    @Test fun `an ISRC-only resolver's miss on a download is remembered for downloads, in memory - a play still asks and searches`() = runTest {
+        val client: HttpAddonClient = mockk {
+            coEvery { resolve(any(), any(), any()) } returns AddonResult.Ok(null)
+            coEvery { search(any(), any(), any(), any()) } returns AddonResult.Ok(SearchResponse(tracks = listOf(exact)))
+        }
+        val refs = refs(client)
+        val eclipse = addon(resources = listOf("search", "resolve", "stream"), dialect = AddonDialect.ECLIPSE, eclipse = EclipseTraits(resolveViaIsrc = true))
+        suspend fun download() = refs.find(eclipse, song, AddonRefs.Pass.LOSSLESS, paced = true, bySearch = false)
+
+        // Three retry passes: asked once.
+        repeat(3) { assertThat(download()).isEqualTo(AddonRefs.Found.Unavailable) }
+        coVerify(exactly = 1) { client.resolve(any(), any(), any()) }
+        assertThat(dao.rows).isEmpty()
+        // As long as a miss lasts, and no longer.
+        now += TidalClient.MISS_TTL_MS
+        download()
+        coVerify(exactly = 2) { client.resolve(any(), any(), any()) }
+        // Gone with the add-on.
+        refs.forget(eclipse.id)
+        download()
+        coVerify(exactly = 3) { client.resolve(any(), any(), any()) }
+
+        // The play is closed by none of it: it asks, and its search finds the song.
+        assertThat(refs.find(eclipse, song, AddonRefs.Pass.LOSSLESS)).isInstanceOf(AddonRefs.Found.Hit::class.java)
+        coVerify(exactly = 4) { client.resolve(any(), any(), any()) }
+        coVerify(exactly = 1) { client.search(any(), any(), any(), any()) }
+    }
+
     // ------------------------------------------------------------------------------------------ no match on words alone (review-882 J4)
 
     private val noLength = Track(id = "55", title = "Digital Love", artist = "Daft Punk")
@@ -299,12 +381,25 @@ class AddonRefsTest {
         assertThat((other as AddonRefs.Found.Hit).ref.remoteId).isEqualTo("41")
     }
 
-    @Test fun `with no length the app can trust, a row without one is still matched on its words`() = runTest {
-        // A YouTube row's length is the video's: the matcher never held such a song to it.
+    /** review-882 round 2, J4's last gap: words alone are not a match, whatever is known of the song's own length. */
+    @Test fun `a row that states no length is no match either for a song whose own length is not trusted, or not known`() = runTest {
+        // A YouTube row's length is the video's.
         val video = song.copy(isrc = null, durationReliable = false)
-        assertThat(refs(searching(noLength)).find(addon(), video, AddonRefs.Pass.LOSSLESS)).isInstanceOf(AddonRefs.Found.Hit::class.java)
+        assertThat(refs(searching(noLength)).find(addon(), video, AddonRefs.Pass.LOSSLESS)).isEqualTo(AddonRefs.Found.Miss)
         val unknown = TrackQuery(artist = "Daft Punk", title = "Digital Love")
-        assertThat(refs(searching(noLength)).find(addon("other"), unknown, AddonRefs.Pass.LOSSLESS)).isInstanceOf(AddonRefs.Found.Hit::class.java)
+        assertThat(refs(searching(noLength)).find(addon("other"), unknown, AddonRefs.Pass.LOSSLESS)).isEqualTo(AddonRefs.Found.Miss)
+        // One rule for every add-on that is matched by search, a default one included.
+        val default = addon("default").copy(userAdded = false)
+        assertThat(refs(searching(noLength)).find(default, video, AddonRefs.Pass.LOSSLESS)).isEqualTo(AddonRefs.Found.Miss)
+
+        // A row that states its length is matched as before, the video's own length held loosely against it.
+        val withLength = refs(searching(noLength, twin)).find(addon("third"), video, AddonRefs.Pass.LOSSLESS)
+        assertThat((withLength as AddonRefs.Found.Hit).ref.remoteId).isEqualTo("41")
+        val forUnknown = refs(searching(twin)).find(addon("fourth"), unknown, AddonRefs.Pass.LOSSLESS)
+        assertThat((forUnknown as AddonRefs.Found.Hit).ref.remoteId).isEqualTo("41")
+        // And the song's own ISRC still places a row without one.
+        val byIsrc = refs(searching(noLength.copy(isrc = "GBDUW0000059"))).find(addon("fifth"), song.copy(durationReliable = false), AddonRefs.Pass.LOSSLESS)
+        assertThat((byIsrc as AddonRefs.Found.Hit).ref.remoteId).isEqualTo("55")
     }
 
     private fun eclipseResolver(item: Track?): Pair<HttpAddonClient, InstalledAddon> {

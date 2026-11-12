@@ -155,6 +155,7 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var okHttpClient: okhttp3.OkHttpClient
     /** The add-on client: its media client plays `addon:` streams under the base rules (add-ons plan phase 4 §2.6). */
     @Inject lateinit var addonClient: com.stash.core.addons.HttpAddonClient
+    @Inject lateinit var addonStreamRungs: com.stash.core.media.streaming.AddonStreamRungs
     @Inject lateinit var cloudLinkResolver: com.stash.data.cloud.playback.CloudLinkResolver
     @Inject lateinit var cloudCopyFinder: com.stash.core.media.streaming.CloudCopyFinder
     @Inject @field:com.stash.core.media.streaming.StreamCache
@@ -782,9 +783,11 @@ class StashPlaybackService : MediaLibraryService() {
             resolver = streamResolver,
             urlCache = streamUrlCache,
             trackDao = trackDao,
-            // Tidal may answer with a DASH MPD, so with a server set placeholders
-            // resolve before their media source is chosen.
-            resolveBeforeSourcePick = tidalStreamResolver::enabledHint,
+            // Tidal may answer with a DASH MPD, and so may an add-on: with a Tidal server set, or
+            // such an add-on on, placeholders resolve before their media source is chosen.
+            resolveBeforeSourcePick = {
+                com.stash.core.media.streaming.AddonPlayback.resolveBeforeSourcePick(tidalStreamResolver.enabledHint(), addonStreamRungs)
+            },
             // Download mode plays only files on the phone, whatever queued a stream.
             streamAllowed = ::streamAllowedNow,
             // The user's own cloud files: pre-authenticated links (Dropbox, OneDrive), or Google

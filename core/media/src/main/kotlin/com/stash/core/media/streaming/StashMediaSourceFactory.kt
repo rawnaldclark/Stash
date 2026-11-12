@@ -145,6 +145,10 @@ class StashMediaSourceFactory(
     private val refusedDataSourceFactory = DataSource.Factory { DownloadModeRefusal() }
     private val refusedFactory = DefaultMediaSourceFactory(refusedDataSourceFactory)
 
+    /** What an add-on's stream opens as with no add-on source wired: an error that says so. */
+    private val unwiredAddonDataSourceFactory = DataSource.Factory { DownloadModeRefusal(ADDON_NOT_WIRED) }
+    private val unwiredAddonFactory = DefaultMediaSourceFactory(unwiredAddonDataSourceFactory)
+
     private val cloudSourceFactory: DataSource.Factory = cloudDataSourceFactory
         ?.let { DownloadModeGate.gate(it, streamAllowed, alwaysNetwork = true) }
         ?: DataSource.Factory { throw java.io.IOException("cloud playback isn't wired") }
@@ -161,6 +165,7 @@ class StashMediaSourceFactory(
         localFactory.setDrmSessionManagerProvider(provider)
         addonFactory?.setDrmSessionManagerProvider(provider)
         refusedFactory.setDrmSessionManagerProvider(provider)
+        unwiredAddonFactory.setDrmSessionManagerProvider(provider)
         jioSaavnFactory.setDrmSessionManagerProvider(provider)
         lazyFactory.setDrmSessionManagerProvider(provider)
         cloudFactory.setDrmSessionManagerProvider(provider)
@@ -173,6 +178,7 @@ class StashMediaSourceFactory(
         localFactory.setLoadErrorHandlingPolicy(policy)
         addonFactory?.setLoadErrorHandlingPolicy(policy)
         refusedFactory.setLoadErrorHandlingPolicy(policy)
+        unwiredAddonFactory.setLoadErrorHandlingPolicy(policy)
         jioSaavnFactory.setLoadErrorHandlingPolicy(policy)
         lazyFactory.setLoadErrorHandlingPolicy(policy)
         cloudFactory.setLoadErrorHandlingPolicy(CloudLoadErrorPolicy(policy))
@@ -197,7 +203,7 @@ class StashMediaSourceFactory(
         streamingTrackId(mediaItem)?.let { return streamingFactory.createUncachedDataSourceFactory(it) }
         if (isJioSaavnOrigin(mediaItem)) return jioSaavnDataSourceFactory
         // An add-on's URL on the add-on media client, or refused: never on the default source.
-        if (isAddonOrigin(mediaItem)) return addonSourceFactory ?: refusedDataSourceFactory
+        if (isAddonOrigin(mediaItem)) return addonSourceFactory ?: unwiredAddonDataSourceFactory
         return localDataSourceFactory
     }
 
@@ -249,7 +255,7 @@ class StashMediaSourceFactory(
                             if (AddonPlayback.isAddonOrigin(resolved.origin)) {
                                 // An add-on's manifest and segments on the add-on media client, or refused.
                                 addonSourceFactory?.let { streamingFactory.createDashMediaSource(item, resolved.url, it) }
-                                    ?: refusedFactory.createMediaSource(item)
+                                    ?: unwiredAddonFactory.createMediaSource(item)
                             } else {
                                 streamingFactory.createDashMediaSource(item, resolved.url, null)
                             }
@@ -272,7 +278,7 @@ class StashMediaSourceFactory(
             if (isAddonOrigin(mediaItem)) {
                 // An add-on's manifest and segments on the add-on media client, or refused.
                 return addonSourceFactory?.let { streamingFactory.createDashMediaSource(mediaItem, uri.toString(), it) }
-                    ?: refusedFactory.createMediaSource(mediaItem)
+                    ?: unwiredAddonFactory.createMediaSource(mediaItem)
             }
             return streamingFactory.createDashMediaSource(mediaItem, uri.toString(), null)
         }
@@ -285,17 +291,23 @@ class StashMediaSourceFactory(
             return jioSaavnFactory.createMediaSource(mediaItem)
         }
         // An add-on's URL on the add-on media client, or refused: never on the default source.
-        if (isAddonOrigin(mediaItem)) return (addonFactory ?: refusedFactory).createMediaSource(mediaItem)
+        if (isAddonOrigin(mediaItem)) return (addonFactory ?: unwiredAddonFactory).createMediaSource(mediaItem)
         return localFactory.createMediaSource(mediaItem)
     }
 }
 
-/** A stream's source in Download mode: it never opens, so the player skips the song. */
+/** What [StashMediaSourceFactory] says when an add-on's stream reaches it with no add-on source to read it on. */
+internal const val ADDON_NOT_WIRED = "add-on playback isn't wired"
+
+/**
+ * A source that never opens, so the player skips the song: a stream in Download mode, or, with
+ * [reason], whatever else may not be read (an add-on's stream with no add-on source wired).
+ */
 @OptIn(UnstableApi::class)
-private class DownloadModeRefusal : DataSource {
+private class DownloadModeRefusal(private val reason: String? = null) : DataSource {
     override fun addTransferListener(transferListener: androidx.media3.datasource.TransferListener) = Unit
     override fun open(dataSpec: androidx.media3.datasource.DataSpec): Long =
-        throw java.io.IOException("Download mode: ${dataSpec.uri.scheme} streams don't play")
+        throw java.io.IOException(reason ?: "Download mode: ${dataSpec.uri.scheme} streams don't play")
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int = throw java.io.IOException("not open")
     override fun getUri(): android.net.Uri? = null
     override fun close() = Unit

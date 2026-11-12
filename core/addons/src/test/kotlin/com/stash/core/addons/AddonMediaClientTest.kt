@@ -13,6 +13,7 @@ import okhttp3.Request
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
+import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
 import java.io.IOException
@@ -20,8 +21,12 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ProtocolException
 import java.net.Proxy
+import java.net.ProxySelector
+import java.net.SocketAddress
+import java.net.URI
 import java.net.UnknownHostException
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
 
 /**
  * The add-on media client ([HttpAddonClient.mediaClient]) and the add-on API client held to the
@@ -63,7 +68,12 @@ class AddonMediaClientTest {
     private val resolver = object : Dns {
         override fun lookup(hostname: String): List<InetAddress> = when (hostname) {
             "media.attacker.example", "api.attacker.example" -> listOf(InetAddress.getByAddress(hostname, byteArrayOf(192.toByte(), 168.toByte(), 1, 1)))
+            // A name that does not resolve at all: an ordinary failure, not the filter's refusal.
+            "gone.attacker.example" -> throw UnknownHostException("no such host")
             "cgnat.attacker.example" -> listOf(InetAddress.getByAddress(hostname, byteArrayOf(100, 64, 0, 7)))
+            // The user's own proxy, on their own network (here: this machine), and two honest public hosts.
+            "proxy.corp.example" -> listOf(InetAddress.getByAddress(hostname, byteArrayOf(127, 0, 0, 1)))
+            "media.public.example", "api.public.example" -> listOf(InetAddress.getByAddress(hostname, byteArrayOf(93, 184.toByte(), 216.toByte(), 34)))
             else -> Dns.SYSTEM.lookup(hostname)
         }
     }
@@ -88,9 +98,12 @@ class AddonMediaClientTest {
     @Before fun setUp() {
         a.start(InetAddress.getByName("127.0.0.1"), 0)
         b.start(InetAddress.getByName("127.0.0.1"), 0)
-        client = HttpAddonClient(shared, OpenAddonRateGate, NoFirstPartyAddons, UnsignedAddons, host)
+        client = HttpAddonClient(shared, OpenAddonRateGate, NoFirstPartyAddons, UnsignedAddons, host, AddonMediaRefusals { refusedStreams += it })
         media = client.mediaClient
     }
+
+    /** What the media client's guard reported as refused ([AddonMediaRefusals]). */
+    private val refusedStreams = CopyOnWriteArrayList<String>()
 
     @After fun tearDown() {
         a.shutdown()
@@ -206,6 +219,49 @@ class AddonMediaClientTest {
         assertThat(appInterceptorSaw).containsExactly("app")
     }
 
+    // ------------------------------------------------------------------------------------------ refusals are reported (review-882 round 2, F7)
+
+    @Test fun `the guard's own refusals are reported, each under the stream's first URL`() {
+        failure("https://192.168.1.1/a.flac")
+        failure("https://media.attacker.example/a.flac")
+        a.enqueue(redirect("https://10.0.0.5/x.flac"))
+        failure(at(a, "/one.flac"))
+        a.enqueue(redirect("https://media.attacker.example/x.flac"))
+        failure(at(a, "/two.flac"))
+        failure("http://cdn.example.org/a.flac")
+
+        assertThat(refusedStreams).containsExactly(
+            "https://192.168.1.1/a.flac",
+            "https://media.attacker.example/a.flac",
+            at(a, "/one.flac"),
+            at(a, "/two.flac"),
+            "http://cdn.example.org/a.flac",
+        ).inOrder()
+    }
+
+    @Test fun `a refused request that says which stream it belongs to is reported under that stream`() {
+        // A DASH segment on the user's own network, tagged with its manifest's URL.
+        val segment = Request.Builder().url("https://10.0.0.5/seg-1.m4s")
+            .tag(AddonStreamTag::class.java, AddonStreamTag("https://media.example.org/m.mpd")).build()
+        assertThrows(PrivateAddressException::class.java) { media.newCall(segment).execute().close() }
+        assertThat(refusedStreams).containsExactly("https://media.example.org/m.mpd")
+    }
+
+    @Test fun `an ordinary failed fetch is not a refusal`() {
+        a.enqueue(MockResponse().setResponseCode(404))
+        get(at(a, "/gone.flac")).close()
+        a.enqueue(MockResponse().setBody("FLAC"))
+        get(at(a, "/here.flac")).close()
+        repeat(AddonMediaGuard.MAX_REDIRECTS + 1) { a.enqueue(redirect(at(a, "/again"))) }
+        assertThat(failure(at(a, "/loop.flac"))).isInstanceOf(ProtocolException::class.java)
+        // A name that does not resolve at all is the network's failure, not the filter's.
+        val unknown = failure("https://gone.attacker.example/a.flac")
+        assertThat(unknown).isInstanceOf(UnknownHostException::class.java)
+        assertThat(unknown).isNotInstanceOf(NoPublicAddressException::class.java)
+
+        assertThat(refusedStreams).isEmpty()
+    }
+
     // ------------------------------------------------------------------------------------------ behind a proxy
 
     /** Behind a proxy OkHttp resolves the proxy, never the target: the guard resolves the target itself first. */
@@ -229,6 +285,50 @@ class AddonMediaClientTest {
         get("http://127.0.0.1:${a.port}/song.flac", behindProxy.mediaClient).use { assertThat(it.body!!.string()).isEqualTo("VIA PROXY") }
         assertThat(b.requestCount).isEqualTo(1)
         assertThat(a.requestCount).isEqualTo(0)
+    }
+
+    /**
+     * review-882 round 2, F1. A proxy named by host (what Java's and Android's proxy selectors hand
+     * out) is resolved by OkHttp through the client's own DNS, which is the add-on filter: a work
+     * proxy on the user's own network has only private answers, so every call failed before the
+     * proxy heard of it. A strict (release) host here: on a debug host the proxy's loopback
+     * address would pass the filter anyway.
+     */
+    @Test fun `a proxy named by host is reached, and what is refused behind it is still refused`() = runBlocking<Unit> {
+        val named = Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved("proxy.corp.example", b.port))
+        val selector = object : ProxySelector() {
+            override fun select(uri: URI?): List<Proxy> = listOf(named)
+            override fun connectFailed(uri: URI?, sa: SocketAddress?, ioe: IOException?) = Unit
+        }
+        val clients = listOf(
+            HttpAddonClient(shared.newBuilder().proxy(named).build(), OpenAddonRateGate, NoFirstPartyAddons, UnsignedAddons),
+            HttpAddonClient(shared.newBuilder().proxySelector(selector).build(), OpenAddonRateGate, NoFirstPartyAddons, UnsignedAddons),
+        )
+        for (behindProxy in clients) {
+            val heard = b.requestCount
+            wire.lookups.clear()
+
+            // A public host: the proxy is asked for a tunnel to it (and says no, which ends the call here).
+            b.enqueue(MockResponse().setResponseCode(403))
+            failure("https://media.public.example/a.flac", behindProxy.mediaClient)
+            assertThat(b.takeRequest(5, TimeUnit.SECONDS)!!.requestLine).startsWith("CONNECT media.public.example:443")
+            // The same for an API call of an add-on the user added.
+            b.enqueue(MockResponse().setResponseCode(403))
+            assertThat((behindProxy.manifest("https://api.public.example/", publicOnly = true) as AddonResult.Failed).failure).isEqualTo(AddonFailure.Network)
+            assertThat(b.takeRequest(5, TimeUnit.SECONDS)!!.requestLine).startsWith("CONNECT api.public.example:443")
+            // OkHttp itself only ever asked for the proxy.
+            assertThat(wire.lookups.toSet()).containsExactly("proxy.corp.example")
+            assertThat(b.requestCount).isEqualTo(heard + 2)
+
+            // Still refused before the proxy hears: a name that resolves privately, and an add-on
+            // that names the proxy's own host as its media host.
+            assertThat(failure("https://media.attacker.example/a.flac", behindProxy.mediaClient)).isInstanceOf(NoPublicAddressException::class.java)
+            assertThat(failure("https://proxy.corp.example/a.flac", behindProxy.mediaClient)).isInstanceOf(NoPublicAddressException::class.java)
+            val api = behindProxy.manifest("https://proxy.corp.example/", publicOnly = true)
+            assertThat((api as AddonResult.Failed).failure).isEqualTo(AddonFailure.Network)
+            assertThat(b.requestCount).isEqualTo(heard + 2)
+        }
+        assertThat(wire.offLoopback).isEmpty()
     }
 
     // ------------------------------------------------------------------------------------------ the API client

@@ -111,8 +111,12 @@ class AddonPlaybackWiringTest {
 
     private fun redirect(location: String) = MockResponse().setResponseCode(302).setHeader("Location", location)
 
-    /** The player's factory as the service builds it; [wired] false leaves the add-on source out. */
-    private fun factory(wired: Boolean = true) = StashMediaSourceFactory(
+    /**
+     * The player's factory as the service builds it; [wired] false leaves the add-on source out.
+     * [resolveFirst]: placeholders resolve before their source is picked, as they do while a Tidal
+     * server is set or an add-on can answer DASH ([AddonPlayback.resolveBeforeSourcePick]).
+     */
+    private fun factory(wired: Boolean = true, resolveFirst: Boolean = false) = StashMediaSourceFactory(
         context = ApplicationProvider.getApplicationContext(),
         streamingFactory = streaming,
         streamingTrackId = { null },
@@ -121,6 +125,8 @@ class AddonPlaybackWiringTest {
         resolver = mockk(relaxed = true),
         urlCache = cache,
         trackDao = dao,
+        resolveBeforeSourcePick = { resolveFirst },
+        resolveDispatcher = kotlinx.coroutines.Dispatchers.Unconfined,
         addonDataSourceFactory = if (wired) AddonPlayback.dataSourceFactory(addons) else null,
         isAddonOrigin = { AddonPlayback.isAddonOrigin(it.mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN)) },
         isDashStream = { it.mediaMetadata.extras?.getBoolean(EXTRA_STREAM_DASH) == true },
@@ -201,7 +207,9 @@ class AddonPlaybackWiringTest {
     @Test fun `with no add-on source wired, a resolved add-on item is refused and nothing is fetched`() {
         server.enqueue(MockResponse().setBody("FLAC"))
         val url = at("/a.flac")
-        failure(factory(wired = false).dataSourceFactoryFor(item(url)).createDataSource(), url)
+        val e = failure(factory(wired = false).dataSourceFactoryFor(item(url)).createDataSource(), url)
+        // And it says why: it used to read "Download mode: https streams don't play".
+        assertThat(e.message).isEqualTo(ADDON_NOT_WIRED)
         assertThat(server.requestCount).isEqualTo(0)
         assertThat(wire.connections).isEmpty()
     }
@@ -251,6 +259,86 @@ class AddonPlaybackWiringTest {
         assertThat(e.causes().any { it is PrivateAddressException }).isTrue()
         assertThat(server.requestCount).isEqualTo(1)
         assertThat(wire.offLoopback).isEmpty()
+    }
+
+    // ------------------------------------------------------------------------------------------ a placeholder resolved first (review-882 round 2, F5 and F9)
+
+    /** Prepares [source] as the player does and lets its resolve run, so its child source is made. */
+    private fun prepared(source: androidx.media3.exoplayer.source.MediaSource): androidx.media3.exoplayer.source.MediaSource.MediaSourceCaller {
+        val caller = androidx.media3.exoplayer.source.MediaSource.MediaSourceCaller { _, _ -> }
+        source.prepareSource(caller, null, androidx.media3.exoplayer.analytics.PlayerId.UNSET)
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        return caller
+    }
+
+    private val placeholder: MediaItem = MediaItem.Builder().setMediaId("42").setUri("stash-resolve://track/42").build()
+
+    @Test fun `a placeholder resolved first to an add-on's DASH manifest gets its DASH source on the add-on client`() {
+        val mpd = at("/dash?id=1")
+        cache.put(42, addonStream(mpd).copy(isDash = true))
+        val http = slot<DataSource.Factory>()
+        val child = mockk<androidx.media3.exoplayer.source.MediaSource>(relaxed = true) {
+            io.mockk.every { mediaItem } returns placeholder.buildUpon().setUri(mpd).build()
+        }
+        io.mockk.every { streaming.createDashMediaSource(any(), mpd, capture(http)) } returns child
+
+        val source = factory(resolveFirst = true).createMediaSource(placeholder)
+        val caller = prepared(source)
+
+        verify(exactly = 1) { streaming.createDashMediaSource(any(), mpd, any()) }
+        // The factory the DASH child was given is the guarded one, not the default HTTP source.
+        server.enqueue(redirect("https://10.0.0.5/seg-1.m4s"))
+        val segment = at("/seg-1.m4s")
+        assertThat(failure(http.captured.createDataSource(), segment).causes().any { it is PrivateAddressException }).isTrue()
+        assertThat(server.takeRequest().getHeader("User-Agent")).isEqualTo("Stash/9.9.9-test")
+        assertThat(wire.offLoopback).isEmpty()
+        source.releaseSource(caller)
+    }
+
+    @Test fun `with no add-on source wired, a placeholder resolved first to an add-on's DASH manifest is refused`() {
+        val mpd = at("/dash?id=1")
+        cache.put(42, addonStream(mpd).copy(isDash = true))
+        val source = factory(wired = false, resolveFirst = true).createMediaSource(placeholder)
+        val caller = prepared(source)
+        // Never the default DASH source, which would fetch the manifest and its segments unguarded.
+        verify(exactly = 0) { streaming.createDashMediaSource(any(), any(), any()) }
+        assertThat(server.requestCount).isEqualTo(0)
+        source.releaseSource(caller)
+    }
+
+    /** review-882 round 2, F9: the resolve-first path must not depend on a Tidal server being set. */
+    @Test fun `placeholders resolve first while a Tidal server is set, or an add-on that is on can answer DASH`() {
+        fun rungs(vararg manifests: List<String>) = AddonStreamRungs(
+            object : com.stash.core.addons.AddonRegistry {
+                override val addons = kotlinx.coroutines.flow.MutableStateFlow(
+                    manifests.mapIndexed { i, m ->
+                        com.stash.core.addons.InstalledAddon(
+                            base = "https://addon$i.example/",
+                            manifest = com.stash.addons.contract.Manifest(
+                                stash = 1, id = "a$i", name = "A$i", version = "1", kind = com.stash.addons.contract.AddonKind.SERVER,
+                                resources = listOf("search", "stream"),
+                                stream = com.stash.addons.contract.StreamCapabilities(cors = false, manifests = m),
+                            ),
+                            userAdded = true,
+                        )
+                    },
+                )
+            },
+            // Strict: the question asks nothing of any add-on.
+            mockk(),
+        )
+        val none = rungs()
+        val filesOnly = rungs(listOf("none"))
+        val dash = rungs(listOf("none"), listOf("none", "dash", "hls"))
+        assertThat(none.mayAnswerDash()).isFalse()
+        assertThat(filesOnly.mayAnswerDash()).isFalse()
+        assertThat(dash.mayAnswerDash()).isTrue()
+        // No Tidal server: only an add-on that can answer a manifest makes placeholders resolve first.
+        assertThat(AddonPlayback.resolveBeforeSourcePick(tidalConfigured = false, addons = none)).isFalse()
+        assertThat(AddonPlayback.resolveBeforeSourcePick(tidalConfigured = false, addons = filesOnly)).isFalse()
+        assertThat(AddonPlayback.resolveBeforeSourcePick(tidalConfigured = false, addons = dash)).isTrue()
+        // With one, as before.
+        assertThat(AddonPlayback.resolveBeforeSourcePick(tidalConfigured = true, addons = none)).isTrue()
     }
 
     @Test fun `with no add-on source wired, an add-on's DASH manifest is refused, never handed to the default source`() {

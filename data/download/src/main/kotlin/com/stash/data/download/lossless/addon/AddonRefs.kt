@@ -22,6 +22,7 @@ import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.qobuz.QobuzCandidateMatcher
 import com.stash.data.download.lossless.tidal.TidalClient
 import kotlinx.coroutines.CancellationException
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -39,8 +40,8 @@ import javax.inject.Singleton
  *     matcher's own floor.
  *  3. **Matching on the phone**, for one that can only search (every BitChord-style add-on, most
  *     Eclipse ones): `/search "<artist> <title>"`, scored by the app's own [QobuzCandidateMatcher]
- *     as the Tidal rung scores its rows, rows with the song's ISRC first. When the song's own
- *     length is known, a row that states no length is no candidate ([statesLength]): the matcher
+ *     as the Tidal rung scores its rows, rows with the song's ISRC first. A row that states no
+ *     length is no candidate ([statesLength]), whatever is known of the song's own: the matcher
  *     was tuned on catalogs whose rows always carry one, and words alone pass too easily.
  *
  * **Matching by search is for plays only** when the user added the add-on (add-ons plan phase 4
@@ -75,8 +76,12 @@ class AddonRefs @Inject constructor(
         LOSSY(Tier.LOW),
     }
 
-    /** The add-on's own item for a song: [remoteId] is what `/stream` takes. */
-    data class Ref(val remoteId: String, val artwork: String?, val isrc: String?, val confidence: Float) {
+    /**
+     * The add-on's own item for a song: [remoteId] is what `/stream` takes. [durationMs]: the
+     * item's own length, when this lookup made the match and the item states one (a ref read back
+     * from the table has none: there is no column for it).
+     */
+    data class Ref(val remoteId: String, val artwork: String?, val isrc: String?, val confidence: Float, val durationMs: Long? = null) {
         override fun toString(): String = "Ref(confidence=$confidence)"
     }
 
@@ -129,7 +134,15 @@ class AddonRefs @Inject constructor(
             // An ISRC miss from an add-on that can also search is not the last word: its search
             // is. Nothing is stamped for it, or a download (which may not search) would close the
             // song to the play that could.
+            // A download that may not search remembers that miss here instead, in memory and for
+            // downloads only (round 2, n8): every retry pass asked `/resolve-isrc` again.
+            val downloadOnly = isrcOnly && searches && !bySearch
+            if (downloadOnly && isrcMisses["$rid|$key"]?.let { now - it < TidalClient.MISS_TTL_MS } == true) return Found.Unavailable
             val found = viaResolve(addon, rid, query, key, pass, paced, row, stampMisses = !(isrcOnly && searches))
+            if (downloadOnly && found == Found.Miss) {
+                if (isrcMisses.size >= MAX_ISRC_MISSES) isrcMisses.clear()
+                isrcMisses["$rid|$key"] = now
+            }
             if (!(isrcOnly && found == Found.Miss && searches)) return found
         }
         if (searches && !bySearch) {
@@ -161,6 +174,7 @@ class AddonRefs @Inject constructor(
             held.take(rid, key, nowMs())?.let { (info, ref) ->
                 if (HttpAddonClient.answers(addon.dialect, request, info)) {
                     Log.i(TAG, "held answer used ${addon.id}")
+                    answered(info.url, addon.id, rid, key)
                     return Streamed.Ok(info, ref)
                 }
             }
@@ -177,7 +191,10 @@ class AddonRefs @Inject constructor(
             client.stream(addon, ref.remoteId, request, paced)
         }
         return when (answer) {
-            is AddonResult.Ok -> Streamed.Ok(answer.value, ref)
+            is AddonResult.Ok -> {
+                answered(answer.value.url, addon.id, rid, key)
+                Streamed.Ok(answer.value, ref)
+            }
             is AddonResult.Failed -> {
                 val f = answer.failure
                 when {
@@ -221,12 +238,59 @@ class AddonRefs @Inject constructor(
     /** A play stopped waiting for [addon]: counted against it like a timeout ([HttpAddonClient.reportTooSlow]). */
     suspend fun tooSlow(addon: InstalledAddon) = client.reportTooSlow(addon.id)
 
+    // ---------------------------------------------------------------------------------------------- refused on the wire
+
+    /** A stream an add-on answered, by its URL: whose it is, for [refusedOnTheWire]. Memory only. */
+    private data class Answered(val addonId: String, val rid: String, val key: String, val atMs: Long)
+
+    private val answeredStreams = ConcurrentHashMap<String, Answered>()
+
+    private fun answered(url: String, addonId: String, rid: String, key: String) {
+        val now = nowMs()
+        if (answeredStreams.size >= MAX_ANSWERED) {
+            answeredStreams.entries.removeIf { now - it.value.atMs > ANSWERED_TTL_MS }
+            if (answeredStreams.size >= MAX_ANSWERED) answeredStreams.clear()
+        }
+        answeredStreams[streamKey(url)] = Answered(addonId, rid, key, now)
+    }
+
+    /**
+     * A stream's URL as the media client names it when it reports a refusal: OkHttp's own
+     * spelling of it (a default port dropped, the host in lower case), which is not always the
+     * text the add-on sent.
+     */
+    private fun streamKey(url: String): String = url.toHttpUrlOrNull()?.toString() ?: url
+
+    /**
+     * The add-on media client refused to fetch the stream at [streamUrl] (review-882 round 2, F7):
+     * it pointed at the user's own network, through a redirect, a name that resolves there or a
+     * DASH segment, or it broke the URL rule. The refusal comes after the rung has "served", so
+     * without this the song failed on every play for the 30 days its ref lives, though a later
+     * source could play it. The ref is dropped and both passes are stamped: the refusal is about
+     * where the add-on keeps the song, not about a quality. A URL this class did not hand out
+     * (or handed out too long ago to remember) changes nothing.
+     */
+    suspend fun refusedOnTheWire(streamUrl: String) {
+        val stream = answeredStreams.remove(streamKey(streamUrl)) ?: return
+        Log.i(TAG, "media refused on the wire ${stream.addonId}: its ref is dropped and the song is left to the next source")
+        held.forgetSong(stream.rid, stream.key)
+        val now = nowMs()
+        write(stream.rid) {
+            refs.upsert(AddonRefEntity(stream.rid, stream.key, remoteId = null, resolvedAt = 0L, losslessMissAt = now, aacMissAt = now))
+        }
+    }
+
     /** Forgets every ref of [addonId], so a later add-on with the same id never inherits them (phase 4 §2.4). */
     suspend fun forget(addonId: String) {
         val rid = rowId(addonId)
         held.forget(rid)
+        answeredStreams.values.removeIf { it.rid == rid }
+        isrcMisses.keys.removeIf { it.startsWith("$rid|") }
         write(rid) { refs.deleteFor(rid) }
     }
+
+    /** A download's `/resolve-isrc` miss from an add-on that can also search, by add-on and song: when ([find]). Memory only. */
+    private val isrcMisses = ConcurrentHashMap<String, Long>()
 
     // ---------------------------------------------------------------------------------------------- lookups
 
@@ -336,19 +400,20 @@ class AddonRefs @Inject constructor(
                 ),
             )
         }
-        return Ref(item.id, art, item.isrc, confidence)
+        return Ref(item.id, art, item.isrc, confidence, item.durationMs?.takeIf { it > 0 })
     }
 
     /**
-     * Whether [t] may be matched to [query] at all (review-882 J4). With a song length that can be
-     * trusted, a row must state its own, so the matcher's length rule has something to judge: with
-     * none it scores the length as perfect, and title and artist words alone decide (a 30-second
-     * preview, a live take that doesn't say so, another artist's song of the same name). The one
+     * Whether [t] may be matched to [query] at all (review-882 J4). A row must state its own
+     * length, so the matcher's length rule has something to judge: with none it scores the length
+     * as perfect, and title and artist words alone decide (a 30-second preview, a live take that
+     * doesn't say so, another artist's song of the same name). That holds whatever is known of the
+     * song's own length (round 2): one that is not trusted, a video's, is still held loosely
+     * against the row's, and words alone are not a match for an add-on the user added. The one
      * thing that places a row without a length is the song's own ISRC.
      */
     private fun statesLength(query: TrackQuery, t: Track): Boolean {
-        val songKnown = query.durationReliable && (query.durationMs ?: 0L) > 0
-        if (!songKnown || (t.durationMs ?: 0L) > 0) return true
+        if ((t.durationMs ?: 0L) > 0) return true
         return !query.isrc.isNullOrBlank() && t.isrc.equals(query.isrc, ignoreCase = true)
     }
 
@@ -427,6 +492,10 @@ class AddonRefs @Inject constructor(
         fun forget(addonId: String) {
             map.keys.removeIf { it.startsWith("$addonId|") }
         }
+
+        fun forgetSong(addonId: String, key: String) {
+            map.remove("$addonId|$key")
+        }
     }
 
     companion object {
@@ -466,6 +535,13 @@ class AddonRefs @Inject constructor(
 
         /** Rows a search asks for: enough for a song's versions, small enough for a phone. */
         const val SEARCH_LIMIT = 20
+
+        /** How many download misses of ISRC-only resolvers are remembered ([find]); past it the memory starts over. */
+        private const val MAX_ISRC_MISSES = 4_096
+
+        /** How many answered streams are remembered for [refusedOnTheWire], and for how long (a stream's URL lives an hour at most). */
+        private const val MAX_ANSWERED = 512
+        private const val ANSWERED_TTL_MS = 60 * 60_000L
 
         /** How long a held answer waits for the lossy pass: the same play only. */
         const val HELD_TTL_MS = 2 * 60_000L

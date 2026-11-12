@@ -47,6 +47,15 @@ class AddonStreamRungs @Inject constructor(
         return addons.filter(::canStreamLossless).map { AddonStreamRung(it, refs) }
     }
 
+    /**
+     * True when an add-on that is on can answer a stream as a DASH manifest. The player then
+     * resolves a placeholder before it picks its media source ([AddonPlayback.resolveBeforeSourcePick]):
+     * a manifest cannot be fed to the progressive source a placeholder otherwise gets. No request
+     * and no I/O: the registry's list as it stands.
+     */
+    fun mayAnswerDash(): Boolean =
+        registry.generic().any { canStream(it) && Delivery.DASH in it.manifest.stream!!.knownManifests }
+
     /** The lossy pass's rungs (phase 4 §2.4), in the registry's order. Empty, with no work done, when none are on. */
     fun lossyRungs(): List<AddonStreamRung> {
         val addons = registry.generic()
