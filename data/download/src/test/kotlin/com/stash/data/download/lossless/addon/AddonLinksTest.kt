@@ -65,10 +65,13 @@ class AddonLinksTest {
         dir.deleteRecursively()
     }
 
-    /** A reversible scramble standing in for the phone's key; [failSeals] makes every save fail. */
+    /**
+     * A reversible scramble standing in for the phone's key; [failSeals] makes every save fail,
+     * whatever its size: removing the only add-on seals an empty list, two bytes of text.
+     */
     private class Key(@Volatile var failSeals: Boolean = false) : EncryptedUserAddons.Sealer {
         override fun seal(plain: ByteArray): ByteArray {
-            if (failSeals && plain.size > 5) throw GeneralSecurityException("keystore busy")
+            if (failSeals) throw GeneralSecurityException("keystore busy")
             return plain.map { (it.toInt() xor 0x5A).toByte() }.toByteArray()
         }
         override fun open(sealed: ByteArray) = sealed.map { (it.toInt() xor 0x5A).toByte() }.toByteArray()

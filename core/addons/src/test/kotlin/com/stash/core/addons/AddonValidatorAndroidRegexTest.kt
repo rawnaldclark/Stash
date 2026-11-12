@@ -58,7 +58,10 @@ class AddonValidatorAndroidRegexTest {
         /** `Regex("...")`, `"...".toRegex()` and `Pattern.compile("...")` literals in main sources: (file, pattern as written). */
         fun regexLiterals(): List<Pair<String, String>> {
             // A double-quoted Kotlin string literal: its text between the quotes, escapes as written.
-            val literal = "\"((?:[^\"\\\\]|\\\\.)*)\""
+            // Runs of plain characters, then escape pairs, all possessive: java.util.regex walks
+            // `(?:a|b)*` one stack frame per character, and the `.toRegex(` form starts at every
+            // quote in a file, so a long stretch without a quote overflowed the stack on CI.
+            val literal = "\"([^\"\\\\]*+(?:\\\\.[^\"\\\\]*+)*+)\""
             val forms = listOf(
                 Regex("Regex\\(\\s*$literal"),
                 Regex("$literal\\s*\\.toRegex\\("),
