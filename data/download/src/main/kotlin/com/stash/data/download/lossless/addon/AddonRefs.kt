@@ -21,6 +21,7 @@ import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.qobuz.QobuzCandidateMatcher
 import com.stash.data.download.lossless.tidal.TidalClient
 import kotlinx.coroutines.CancellationException
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -246,8 +247,15 @@ class AddonRefs @Inject constructor(
             answeredStreams.entries.removeIf { now - it.value.atMs > ANSWERED_TTL_MS }
             if (answeredStreams.size >= MAX_ANSWERED) answeredStreams.clear()
         }
-        answeredStreams[url] = Answered(addonId, rid, key, now)
+        answeredStreams[streamKey(url)] = Answered(addonId, rid, key, now)
     }
+
+    /**
+     * A stream's URL as the media client names it when it reports a refusal: OkHttp's own
+     * spelling of it (a default port dropped, the host in lower case), which is not always the
+     * text the add-on sent.
+     */
+    private fun streamKey(url: String): String = url.toHttpUrlOrNull()?.toString() ?: url
 
     /**
      * The add-on media client refused to fetch the stream at [streamUrl] (review-882 round 2, F7):
@@ -259,7 +267,7 @@ class AddonRefs @Inject constructor(
      * (or handed out too long ago to remember) changes nothing.
      */
     suspend fun refusedOnTheWire(streamUrl: String) {
-        val stream = answeredStreams.remove(streamUrl) ?: return
+        val stream = answeredStreams.remove(streamKey(streamUrl)) ?: return
         Log.i(TAG, "media refused on the wire ${stream.addonId}: its ref is dropped and the song is left to the next source")
         held.forgetSong(stream.rid, stream.key)
         val now = nowMs()

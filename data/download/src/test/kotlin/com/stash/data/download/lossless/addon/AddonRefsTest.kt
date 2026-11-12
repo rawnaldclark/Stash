@@ -249,6 +249,21 @@ class AddonRefsTest {
         assertThat(dao.rows["bc" to key]).isEqualTo(stamped)
     }
 
+    @Test fun `a refusal is matched to its stream in the media client's spelling of the URL`() = runTest {
+        val client: HttpAddonClient = mockk {
+            coEvery { search(any(), any(), any(), any()) } returns AddonResult.Ok(SearchResponse(tracks = listOf(exact)))
+            // As the add-on wrote it: the host in capitals, the default port spelled out.
+            coEvery { stream(any(), any(), any(), any()) } returns AddonResult.Ok(flac.copy(url = "https://CDN.Example:443/a.flac"))
+        }
+        val refs = refs(client)
+        assertThat(refs.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq)).isInstanceOf(AddonRefs.Streamed.Ok::class.java)
+
+        // As OkHttp names the request it refused.
+        refs.refusedOnTheWire("https://cdn.example/a.flac")
+
+        assertThat(dao.rows["bc" to key]!!.remoteId).isNull()
+    }
+
     // ------------------------------------------------------------------------------------------ failures that are not misses (review-882 M3)
 
     @Test fun `a search that answers 404 is not a miss - nothing is remembered against the song`() = runTest {
