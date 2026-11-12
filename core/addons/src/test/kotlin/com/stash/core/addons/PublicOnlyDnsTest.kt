@@ -98,12 +98,16 @@ class PublicOnlyDnsTest {
             "255.255.255.255", "::", "::1", "fe80::1", "fc00::1", "fd12:3456::1", "::ffff:192.168.1.1", "64:ff9b::a00:1", "ff02::1",
             // review-882 M2: 6to4 of a private IPv4, and the documentation blocks.
             "2002:c0a8:101::1", "2002:a00:5::1", "192.0.2.7", "198.51.100.7", "203.0.113.7", "2001:db8::1",
+            // review-882 round 2, n7: Teredo (2001::/32), a tunnel to a host behind a NAT.
+            "2001:0:4136:e378:8000:63bf:3fff:fdd2", "2001::1",
         )
         for (a in private) assertWithMessage(a).that(PublicOnlyDns.isPublic(ip(a))).isFalse()
         val public = listOf(
             "1.1.1.1", "8.8.8.8", "100.63.255.255", "100.128.0.1", "172.32.0.1", "93.184.216.34", "2606:4700::1111", "64:ff9b::808:808",
             // 6to4 of a public IPv4 stays public; the blocks beside the documentation ones are ordinary.
             "2002:808:808::1", "192.0.3.1", "198.51.101.1", "203.0.114.1", "2001:db9::1",
+            // The Teredo rule is its /32 only: the rest of 2001::/16 is where much of the internet lives.
+            "2001:4860:4860::8888", "2001:200::1",
         )
         for (a in public) assertWithMessage(a).that(PublicOnlyDns.isPublic(ip(a))).isTrue()
     }

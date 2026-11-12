@@ -78,8 +78,8 @@ class PublicOnlyDns(
          * link-local, RFC 1918 and IPv6 site-local, CGNAT (100.64/10, Tailscale's range), ULA
          * (fc00::/7), multicast, `0.0.0.0/8`, the IETF block 192.0.0.0/24, benchmarking
          * 198.18/15, the documentation blocks (192.0.2/24, 198.51.100/24, 203.0.113/24,
-         * 2001:db8::/32), reserved 240/4 and broadcast; and the IPv4 inside an IPv4-mapped, NAT64
-         * (64:ff9b::/96) or 6to4 (2002::/16) IPv6 address is checked as itself.
+         * 2001:db8::/32), Teredo (2001::/32), reserved 240/4 and broadcast; and the IPv4 inside
+         * an IPv4-mapped, NAT64 (64:ff9b::/96) or 6to4 (2002::/16) IPv6 address is checked as itself.
          *
          * What no address rule can tell: a device on the user's own network that has a global
          * IPv6 address is "public" by every one of these.
@@ -129,6 +129,8 @@ class PublicOnlyDns(
             if (first == 0x20 && (b[1].toInt() and 0xff) == 0x02) return isPublicV4(b.copyOfRange(2, 6))
             // 2001:db8::/32, documentation.
             if (first == 0x20 && (b[1].toInt() and 0xff) == 0x01 && (b[2].toInt() and 0xff) == 0x0d && (b[3].toInt() and 0xff) == 0xb8) return false
+            // 2001::/32, Teredo: a tunnel address, of a host behind a NAT. No media host lives there.
+            if (first == 0x20 && (b[1].toInt() and 0xff) == 0x01 && b[2].toInt() == 0 && b[3].toInt() == 0) return false
             // ::/96 (IPv4-compatible, deprecated) and anything else in ::/8 is not a real host.
             if (first == 0) return false
             return true
