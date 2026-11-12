@@ -169,4 +169,24 @@ class TidalLosslessSourceTest {
         withContext(later) { source.resolve(query) }
         assertThat(later.pacedRetryAfterSec).isNull()
     }
+
+    /** "CD means CD" (decision D15, review-881 M5): the download quality reaches the lookup that asks the server. */
+    @Test fun `the download quality decides whether Tidal is asked for CD only`() = runTest {
+        state()
+        coEvery { client.isConfigured() } returns true
+        coEvery { rateLimiter.acquire(id) } returns true
+        coEvery { client.lookup(query, false, false, false, any()) } returns TidalLookup.Found(stream)
+        var cd = true
+        val source = TidalLosslessSource(client, rateLimiter, { cd }) { now }
+
+        assertThat(source.resolve(query)).isNotNull()
+        coVerify(exactly = 1) { client.lookup(query, cdOnly = true) }
+        coVerify(exactly = 0) { client.lookup(query, cdOnly = false) }
+
+        cd = false
+        assertThat(source.resolve(query)).isNotNull()
+        coVerify(exactly = 1) { client.lookup(query, cdOnly = false) }
+        // The free look at the cache asks no server, so it carries no quality.
+        coVerify(exactly = 2) { client.lookup(query, cacheOnly = true) }
+    }
 }
