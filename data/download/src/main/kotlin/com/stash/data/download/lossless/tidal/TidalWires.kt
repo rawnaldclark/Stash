@@ -89,19 +89,29 @@ class TidalWires @Inject constructor(
 
     /**
      * True while the v1 wire is set aside (the class doc). A config applied since it was set aside
-     * ends that and starts its failure counts over.
+     * ends that and starts its failure counts over. So does one applied after the last counted
+     * failure and before anyone looked: those failures say nothing about the face after it, and
+     * counting them set a mended face aside for one more config cycle (review-881 R2-n1). One
+     * caller at a time, so two lookups cannot each see half of a change.
      */
+    @Synchronized
     private fun v1SetAside(): Boolean {
         val at = setAsideAtRefresh
         if (at != null) {
             if (config.refreshedAt.value == at) return true
-            setAsideAtRefresh = null
             v1.forgive()
+            setAsideAtRefresh = null
             Log.i(TAG, "a config was applied: the v1 add-on is asked again")
             return false
         }
         if (!v1.broken) return false
-        setAsideAtRefresh = config.refreshedAt.value
+        val refreshed = config.refreshedAt.value
+        // Both are the phone's clock: [LosslessConfigFetcher.refreshedAt] is stamped with it.
+        if (v1.lastHardFailureAtMs < refreshed) {
+            v1.forgive()
+            return false
+        }
+        setAsideAtRefresh = refreshed
         Log.w(TAG, "the v1 add-on failed ${AddonV1Wire.HARD_FAILURE_LIMIT} calls in a row; using the legacy relay until the next applied config")
         return true
     }

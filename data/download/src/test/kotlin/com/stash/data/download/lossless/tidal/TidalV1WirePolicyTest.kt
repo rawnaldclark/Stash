@@ -56,6 +56,9 @@ class TidalV1WirePolicyTest {
     /** The relay's stream answer for an ask (its `aac` / `hires` parameters, and [V1FacePort.CD_LANE] from the face). */
     @Volatile private var relayStream: (Map<String, String>) -> RelayAnswer = { p -> if (p[V1FacePort.CD_LANE] == "1") cdFlac() else hiResDash() }
 
+    /** The add-on's `V1_LOSSLESS_TIER_CD_ONLY`: "1" as deployed; false is an add-on without its CD lane. */
+    @Volatile private var cdLane = true
+
     /** When set, the v1 host answers `/stream` (or `/search`) with this instead of the face's answer. */
     @Volatile private var v1StreamInstead: (() -> MockResponse)? = null
     @Volatile private var v1SearchInstead: (() -> MockResponse)? = null
@@ -117,7 +120,7 @@ class TidalV1WirePolicyTest {
                 return when {
                     route == "manifest.json" -> json(200, V1FacePort.MANIFEST)
                     route == "search" -> { v1Searches += url; v1SearchInstead?.invoke() ?: V1FacePort.search(searchHit, url.queryParameter("limit")) }
-                    route.startsWith("stream/") -> { v1Streams += url; v1StreamInstead?.invoke() ?: V1FacePort.stream(url, relayStream) }
+                    route.startsWith("stream/") -> { v1Streams += url; v1StreamInstead?.invoke() ?: V1FacePort.stream(url, relayStream, cdOnly = cdLane) }
                     else -> MockResponse().setResponseCode(404)
                 }
             }
@@ -224,6 +227,44 @@ class TidalV1WirePolicyTest {
         assertThat(v1Streams).isEmpty()
     }
 
+    /**
+     * review-881 R2-m1. An add-on without its CD lane refuses every Hi-Res track asked at the CD
+     * setting, and the miss stamp is shared with the Hi-Res setting and the legacy wire: kept for
+     * 14 days it would hide the song from all of them, with nothing the server could do about it.
+     */
+    @Test fun `an add-on without its CD lane costs a short miss at the CD setting, never the 14-day one`() {
+        cdLane = false
+        assertThat(lookup(cdOnly = true)).isEqualTo(TidalLookup.NoMatch)
+        val refused = v1Streams.single()
+        assertThat(refused.queryParameter("tier") to refused.queryParameter("minTier")).isEqualTo("lossless" to "lossless")
+
+        // Inside the short miss the song is not asked for again, at either setting.
+        now += 60 * 60_000L
+        assertThat(lookup(cdOnly = false)).isEqualTo(TidalLookup.NoMatch)
+        assertThat(lookup(cdOnly = true)).isEqualTo(TidalLookup.NoMatch)
+        assertThat(v1Streams).hasSize(1)
+
+        // Past it (6 hours), the Hi-Res setting asks again and plays. A 14-day stamp would still stand.
+        now += TidalClient.SHORT_MISS_TTL_MS
+        val found = lookup(cdOnly = false) as TidalLookup.Found
+        assertThat(v1Streams).hasSize(2)
+        assertThat(found.stream.bitDepth to found.stream.sampleRateHz).isEqualTo(24 to 96_000)
+        assertThat(legacyStreams).isEmpty()
+    }
+
+    @Test fun `no lossless at the Hi-Res setting is still a real answer about the song, kept 14 days`() {
+        relayStream = { RelayAnswer(404, """{"error":"lossless_unavailable"}""") }
+        assertThat(lookup(cdOnly = false)).isEqualTo(TidalLookup.NoMatch)
+        assertThat(v1Streams).hasSize(1)
+
+        relayStream = { hiResDash() }
+        now += TidalClient.SHORT_MISS_TTL_MS + 60 * 60_000L
+        assertThat(lookup(cdOnly = false)).isEqualTo(TidalLookup.NoMatch)
+        now += 12L * 24 * 60 * 60_000
+        assertThat(lookup(cdOnly = true)).isEqualTo(TidalLookup.NoMatch)
+        assertThat(v1Streams).hasSize(1)
+    }
+
     // ------------------------------------------------------------------------------- a broken face (M7)
 
     @Test fun `three hard failures in a row set the v1 wire aside for the legacy relay, until the next applied config`() = runBlocking<Unit> {
@@ -258,6 +299,40 @@ class TidalV1WirePolicyTest {
         assertThat(wires.route()).isInstanceOf(TidalWires.Route.Addon::class.java)
         lookup()
         assertThat(wires.route()).isInstanceOf(TidalWires.Route.Relay::class.java)
+    }
+
+    /**
+     * review-881 R2-n1. The counts are only looked at when a lookup picks its route. Failures from
+     * before a config was applied must not set the face aside after it: the config may be what
+     * mended it, and the wire would stay aside for a whole config cycle more.
+     */
+    @Test fun `failures from before an applied config do not set the wire aside after it`() = runBlocking<Unit> {
+        v1StreamInstead = { refused(401, "unauthorized") }
+        repeat(3) { assertThat(lookup()).isEqualTo(TidalLookup.Failed) }
+        // Nobody has asked for a route since the third failure. A config is applied, and the face is mended.
+        v1StreamInstead = null
+        now += 1_000
+        refreshedAt.value = now
+
+        assertThat(wires.route()).isInstanceOf(TidalWires.Route.Addon::class.java)
+        assertThat(wires.describe()).isEqualTo("v1 add-on")
+        assertThat(lookup()).isInstanceOf(TidalLookup.Found::class.java)
+        assertThat(v1Streams).hasSize(4)
+        assertThat(legacyStreams).isEmpty()
+    }
+
+    @Test fun `a face that fails again after the applied config is counted from there`() = runBlocking<Unit> {
+        v1StreamInstead = { refused(401, "unauthorized") }
+        repeat(3) { lookup() }
+        now += 1_000
+        refreshedAt.value = now
+        // The three old failures are let go at the next look, so it takes three new ones.
+        now += 1_000
+        repeat(2) { lookup() }
+        assertThat(wires.route()).isInstanceOf(TidalWires.Route.Addon::class.java)
+        lookup()
+        assertThat(wires.route()).isInstanceOf(TidalWires.Route.Relay::class.java)
+        assertThat(v1Streams).hasSize(6)
     }
 
     @Test fun `any good answer starts the count over`() = runBlocking<Unit> {
