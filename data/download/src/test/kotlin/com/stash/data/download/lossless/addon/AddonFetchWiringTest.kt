@@ -92,8 +92,12 @@ class AddonFetchWiringTest {
         override val userAgent = "Stash/9.9.9-test"
     }
 
+    /** How long the fake remux takes (nit 5). */
+    private var remuxMs = 0L
+
     private val ffmpeg = object : FFmpegBridge {
         override suspend fun runWithStderrCapture(args: List<String>): String {
+            if (remuxMs > 0) Thread.sleep(remuxMs)
             File(args[args.indexOf("-i") + 1]).copyTo(File(args.last()), overwrite = true)
             return ""
         }
@@ -269,6 +273,27 @@ class AddonFetchWiringTest {
         assertThat(e.refs.find(e.addon, song, AddonRefs.Pass.LOSSLESS)).isEqualTo(AddonRefs.Found.Miss)
     }
 
+    @Test fun `a file whose host has only private answers on this network costs the add-on the song for now, not for 14 days`() = runBlocking<Unit> {
+        val e = EndToEnd(shared, host, ffmpeg, at("/addon/"))
+        server.enqueue(json("""{"tracks":[{"id":"7","title":"B","artist":"A","duration":200}]}"""))
+        server.enqueue(json("""{"url":"${at("/media/a.flac")}","codec":"flac"}"""))
+        val streamed = e.refs.stream(e.addon, song, AddonRefs.Pass.LOSSLESS, losslessAsk) as AddonRefs.Streamed.Ok
+
+        // Its file redirects to a name this network's DNS answers only with a private address: a
+        // blocker, a work network's split DNS (review-882 round 3, R3).
+        server.enqueue(redirect("https://media.attacker.example/a.flac"))
+        val result = e.downloader.download(source("/media/a.flac").copy(downloadUrl = streamed.info.url), dest())
+
+        assertThat(result.exceptionOrNull()).isInstanceOf(com.stash.core.addons.NoPublicAddressException::class.java)
+        // The ref is gone and nothing is written for 14 days: the table has no row for the song.
+        assertThat(e.dao.rows).isEmpty()
+        // While the app runs, neither pass asks that add-on for the song again.
+        val asked = server.requestCount
+        assertThat(e.refs.find(e.addon, song, AddonRefs.Pass.LOSSLESS)).isEqualTo(AddonRefs.Found.Miss)
+        assertThat(e.refs.find(e.addon, song, AddonRefs.Pass.LOSSY)).isEqualTo(AddonRefs.Found.Miss)
+        assertThat(server.requestCount).isEqualTo(asked)
+    }
+
     @Test fun `an ordinary failed fetch leaves the ref alone`() = runBlocking<Unit> {
         val e = EndToEnd(shared, host, ffmpeg, at("/addon/"))
         server.enqueue(json("""{"tracks":[{"id":"7","title":"B","artist":"A","duration":200}]}"""))
@@ -376,7 +401,7 @@ class AddonFetchWiringTest {
 
     @Test fun `an add-on's fetch that outlasts its time limit is given up, and nothing is kept`() = runBlocking<Unit> {
         downloader.timeLimitMs = { 400L }
-        server.enqueue(trickle(80)) // two seconds at this pace
+        server.enqueue(trickle(2_400)) // a minute at this pace
         val dest = dest()
         val started = System.nanoTime()
 
@@ -384,7 +409,9 @@ class AddonFetchWiringTest {
 
         assertThat(result.exceptionOrNull()).isInstanceOf(LosslessUrlDownloader.TookTooLongException::class.java)
         assertThat(dest.exists()).isFalse()
-        assertThat(java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)).isLessThan(1_500L)
+        // Cut at the limit, not when the file ended: far from both, so no runner is slow enough
+        // to fail it (review-882 round 3, nit 8; it was under 1.5 s against a two-second file).
+        assertThat(java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)).isLessThan(30_000L)
     }
 
     @Test fun `an add-on's DASH fetch is under the same limit, manifest and segments together`() = runBlocking<Unit> {
@@ -402,7 +429,60 @@ class AddonFetchWiringTest {
     @Test fun `Stash's own sources have no time limit`() = runBlocking<Unit> {
         downloader.timeLimitMs = { 100L }
         server.enqueue(trickle(32)) // 0.8 s: eight times the limit an add-on would get here
-        assertThat(downloader.download(source("/a.flac", sourceId = "qbdlx_qobuz"), dest()).isSuccess).isTrue()
+        // With a ceiling, as an add-on's would have: only that it is not an add-on keeps it from
+        // a limit (review-882 round 3, nit 7: with no ceiling no source had one).
+        assertThat(downloader.download(source("/a.flac", sourceId = "qbdlx_qobuz", maxBytes = 1_000_000), dest()).isSuccess).isTrue()
+    }
+
+    /** What the two downloaders log while [block] runs, as `tag: message`. */
+    private fun <T> logged(block: suspend () -> T): Pair<T, List<String>> {
+        val lines = CopyOnWriteArrayList<String>()
+        fun note(tag: String, message: String): Int {
+            if (tag == "LosslessUrlDownloader" || tag == "DashFlacDownloader") lines += "$tag: $message"
+            return 0
+        }
+        io.mockk.mockkStatic(android.util.Log::class)
+        try {
+            io.mockk.every { android.util.Log.d(any(), any<String>()) } answers { note(firstArg(), secondArg()) }
+            io.mockk.every { android.util.Log.i(any(), any<String>()) } answers { note(firstArg(), secondArg()) }
+            io.mockk.every { android.util.Log.w(any(), any<String>()) } answers { note(firstArg(), secondArg()) }
+            return runBlocking { block() } to lines
+        } finally {
+            io.mockk.unmockkStatic(android.util.Log::class)
+        }
+    }
+
+    @Test fun `a cut is logged once, as the time limit`() {
+        downloader.timeLimitMs = { 400L }
+        server.enqueue(trickle(2_400))
+        val (file, fileLines) = logged { downloader.download(source("/a.flac", maxBytes = 1_000_000), dest()) }
+        assertThat(file.exceptionOrNull()).isInstanceOf(LosslessUrlDownloader.TookTooLongException::class.java)
+
+        server.enqueue(MockResponse().setBody(mpd(at("/init.mp4"), at("/seg/") + "\$Number\$.mp4")))
+        server.enqueue(trickle(2_400))
+        val (dash, dashLines) = logged { downloader.download(source("/m.mpd", dash = true, maxBytes = 1_000_000), dest()) }
+        assertThat(dash.exceptionOrNull()).isInstanceOf(LosslessUrlDownloader.TookTooLongException::class.java)
+
+        // One line each, the limit's: not the cut read's failure, its retries, nor "dash fetch
+        // failed" as well (review-882 round 3, nit 4).
+        for (lines in listOf(fileLines, dashLines)) {
+            assertThat(lines).hasSize(1)
+            assertThat(lines.single()).contains("took longer than a file of its size may")
+        }
+    }
+
+    @Test fun `the time limit covers the fetch, not the remux after it`() = runBlocking<Unit> {
+        downloader.timeLimitMs = { 400L }
+        remuxMs = 1_000L // the phone's own work, longer than the whole limit (review-882 round 3, nit 5)
+        server.enqueue(MockResponse().setBody(mpd(at("/init.mp4"), at("/seg/") + "\$Number\$.mp4")))
+        server.enqueue(MockResponse().setBody("fLaC_INIT_BYTES_"))
+        repeat(3) { server.enqueue(MockResponse().setBody("x")) }
+        val dest = dest()
+
+        val result = downloader.download(source("/m.mpd", dash = true, maxBytes = 1_000_000), dest)
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(dest.readText()).isEqualTo("fLaC_INIT_BYTES_xxx")
     }
 
     // ------------------------------------------------------------------------------------------ the format it was said to be (M9)

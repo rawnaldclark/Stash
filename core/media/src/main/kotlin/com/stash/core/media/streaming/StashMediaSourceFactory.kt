@@ -46,9 +46,11 @@ class StashMediaSourceFactory(
     urlCache: StreamUrlCache,
     trackDao: TrackDao,
     /**
-     * True while a Tidal (BitChord) server is configured: placeholders then
-     * resolve BEFORE choosing a media source ([ResolveFirstMediaSource]), since
-     * Tidal may answer with a DASH MPD. False keeps the lazy path exactly as it was.
+     * True while a Tidal (BitChord) server is configured or an add-on that is on can
+     * answer a DASH manifest ([AddonPlayback.resolveBeforeSourcePick]): placeholders then
+     * resolve BEFORE choosing a media source ([ResolveFirstMediaSource]), since either may
+     * answer with a DASH MPD. Read when an item's source is built. False keeps the lazy
+     * path exactly as it was.
      */
     private val resolveBeforeSourcePick: () -> Boolean = { false },
     /**

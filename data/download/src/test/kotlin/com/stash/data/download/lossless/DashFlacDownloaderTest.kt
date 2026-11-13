@@ -4,10 +4,15 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.audio.FFmpegBridge
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
+import okhttp3.ResponseBody.Companion.asResponseBody
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okio.Buffer
+import okio.ForwardingSource
+import okio.buffer
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -141,20 +146,81 @@ class DashFlacDownloaderTest {
         assertThat(dest.readText()).isEqualTo("I1")
     }
 
+    /** A client that counts the bytes read from the segments' bodies (`/seg/`), as they come off the wire. */
+    private fun countingClient(read: AtomicLong) = OkHttpClient.Builder().addInterceptor { chain ->
+        val response = chain.proceed(chain.request())
+        if (!chain.request().url.encodedPath.startsWith("/seg/")) return@addInterceptor response
+        val body = response.body!!
+        val counted = object : ForwardingSource(body.source()) {
+            override fun read(sink: Buffer, byteCount: Long): Long =
+                super.read(sink, byteCount).also { if (it > 0) read.addAndGet(it) }
+        }.buffer()
+        response.newBuilder().body(counted.asResponseBody(body.contentType(), body.contentLength())).build()
+    }.build()
+
     @Test fun `an add-on's segment is read no further than what is left of the song's ceiling, and is not asked again`() = runTest {
         server.enqueue(MockResponse().setBody(mpd(2)))
         server.enqueue(MockResponse().setBody("I".repeat(1_000)))
         // No Content-Length: only reading it shows how large it is. Far more than the 1,500 bytes left.
         server.enqueue(MockResponse().setChunkedBody("x".repeat(400_000), 8_192))
         val dest = dest()
+        val read = AtomicLong()
 
-        val r = DashFlacDownloader(ffmpeg).download(OkHttpClient(), server.url("/m.mpd").toString(), emptyMap(), dest, maxBytes = 2_500)
+        val r = DashFlacDownloader(ffmpeg).download(countingClient(read), server.url("/m.mpd").toString(), emptyMap(), dest, maxBytes = 2_500)
 
-        // Stopped at the ceiling while reading (before, the whole segment was in memory first and
-        // the sum was looked at after), and "too large" is not a reason to fetch it again.
+        // Stopped at the ceiling while reading: what came off the wire is what is left plus at most
+        // one read's worth, not the 400 kB (review-882 round 3, nit 7: the sum check after the
+        // segment throws the same exception, so the exception alone did not pin the early stop).
+        assertThat(r.exceptionOrNull()!!.causes().any { it is DashFlacDownloader.TooLargeException }).isTrue()
+        assertThat(read.get()).isAtMost(1_501L + 16_384)
+        // "Too large" is not a reason to fetch it again.
+        assertThat(server.requestCount).isEqualTo(3)
+        assertThat(dest.parentFile!!.listFiles()!!.toList()).isEmpty()
+    }
+
+    @Test fun `an add-on's segment is never more than 8 MiB, however much of the ceiling is left`() = runTest {
+        server.enqueue(MockResponse().setBody(mpd(1)))
+        server.enqueue(MockResponse().setBody("I"))
+        server.enqueue(MockResponse().setBody(Buffer().write(ByteArray(DashFlacDownloader.MAX_ADDON_SEGMENT_BYTES.toInt() + 1))))
+        val dest = dest()
+        val read = AtomicLong()
+
+        // A 24/192 song's ceiling: 354 MB left for its first segment (review-882 round 3, R2).
+        val r = DashFlacDownloader(ffmpeg).download(countingClient(read), server.url("/m.mpd").toString(), emptyMap(), dest, maxBytes = 354_000_000)
+
         assertThat(r.exceptionOrNull()!!.causes().any { it is DashFlacDownloader.TooLargeException }).isTrue()
         assertThat(server.requestCount).isEqualTo(3)
         assertThat(dest.parentFile!!.listFiles()!!.toList()).isEmpty()
+    }
+
+    @Test fun `Stash's own Tidal segment is not held to the add-on's 8 MiB`() = runTest {
+        val size = DashFlacDownloader.MAX_ADDON_SEGMENT_BYTES.toInt() + 1
+        server.enqueue(MockResponse().setBody(mpd(1)))
+        server.enqueue(MockResponse().setBody("I"))
+        server.enqueue(MockResponse().setBody(Buffer().write(ByteArray(size))))
+        val dest = dest()
+
+        val r = DashFlacDownloader(ffmpeg).download(OkHttpClient(), server.url("/m.mpd").toString(), emptyMap(), dest)
+
+        assertThat(r.isSuccess).isTrue()
+        assertThat(dest.length()).isEqualTo(1L + size)
+    }
+
+    @Test fun `an add-on's manifest whose segment URLs add up to too much is refused before a segment is asked for`() = runTest {
+        // 1 kB of URL over 10,000 segments: 10 M characters, over the add-on's 8 Mi.
+        val media = server.url("/seg/").toString() + "x".repeat(1_000) + "\$Number\$.mp4"
+        server.enqueue(
+            MockResponse().setBody(
+                """<MPD><SegmentTemplate initialization="${server.url("/init.mp4")}" media="$media"><SegmentTimeline><S d="1" r="9999"/></SegmentTimeline></SegmentTemplate></MPD>""",
+            ),
+        )
+        val dest = dest()
+
+        val r = DashFlacDownloader(ffmpeg).download(OkHttpClient(), server.url("/m.mpd").toString(), emptyMap(), dest, maxBytes = 354_000_000)
+
+        assertThat(r.exceptionOrNull()).isInstanceOf(DashManifestException::class.java)
+        assertThat(r.exceptionOrNull()).hasMessageThat().isEqualTo("segment URLs too long")
+        assertThat(server.requestCount).isEqualTo(1)
     }
 
     @Test fun `an add-on's segments within the ceiling are kept`() = runTest {

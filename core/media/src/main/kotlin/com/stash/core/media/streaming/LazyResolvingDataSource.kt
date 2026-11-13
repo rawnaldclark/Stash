@@ -196,11 +196,13 @@ class LazyResolvingDataSource(
             val next = (if (overridesRow(uri)) null else urlCache.get(trackId))
                 ?: resolveBlocking(trackId, uri)
                 ?: throw IOException("stream resolve failed for track $trackId")
-            // A DASH MPD (Tidal Hi-Res) cannot be byte-piped into the progressive
-            // extractor this source feeds. ResolveFirstMediaSource routes those to a
-            // DASH source up front; reaching here means it was bypassed (an override
-            // item, or a server configured after this item was built). The URL is
-            // cached, so the player's retry of this item builds the DASH source.
+            // A DASH MPD (Tidal Hi-Res, an add-on's) cannot be byte-piped into the
+            // progressive extractor this source feeds. ResolveFirstMediaSource routes
+            // those to a DASH source up front; reaching here means it was bypassed: an
+            // override item, or an item built before a Tidal server was set or a
+            // DASH-capable add-on was switched on. The player's retry evicts the cached
+            // answer and opens this same source again, which asks again and fails here
+            // the same way; the song is then skipped (review-882 round 3, nit 1).
             if (next.isDash || next.isHls) {
                 throw IOException("track $trackId resolved to a DASH manifest; needs a DASH media source")
             }

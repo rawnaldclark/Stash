@@ -121,13 +121,31 @@ fun interface AddonMediaRefusals {
     /**
      * [streamUrl]: the URL the add-on answered for the stream (the refused fetch's own first URL,
      * or the manifest a refused segment belongs to, [AddonStreamTag]). Never to be logged.
+     * [why]: what was refused, which says how long the refusal holds.
      */
-    fun refused(streamUrl: String)
+    fun refused(streamUrl: String, why: MediaRefusal)
+}
+
+/** What the add-on media client's guard refused ([AddonMediaRefusals]). */
+enum class MediaRefusal {
+    /**
+     * The URL itself, or a redirect's: an address on the user's own network written into it, or
+     * not an https URL on a public host. Also a private peer behind a public answer (the last
+     * check). True on any network.
+     */
+    URL,
+
+    /**
+     * The DNS filter ([NoPublicAddressException]): every answer for the host was private. That is
+     * what the resolver the phone asked said (a blocker answering `0.0.0.0`, a work network's
+     * split DNS), so it can be otherwise on another network (review-882 round 3, R3).
+     */
+    NO_PUBLIC_ADDRESS,
 }
 
 /** Nobody is told: for hand-built clients in tests. */
 object NoMediaRefusals : AddonMediaRefusals {
-    override fun refused(streamUrl: String) = Unit
+    override fun refused(streamUrl: String, why: MediaRefusal) = Unit
 }
 
 /**
