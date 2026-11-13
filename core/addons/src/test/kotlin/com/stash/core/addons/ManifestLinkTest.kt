@@ -7,7 +7,13 @@ import com.stash.addons.contract.Manifest
 import com.stash.addons.contract.ResolveQuery
 import com.stash.addons.contract.StreamCapabilities
 import com.stash.addons.contract.Tier
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.junit.Test
+import java.net.InetAddress
 
 /**
  * A manifest link's two halves (add-ons plan phase 4 §2.2): the base its routes live under, and the
@@ -38,16 +44,45 @@ class ManifestLinkTest {
     private fun streaming(vararg resources: String, tiers: List<String>? = null, deliveries: List<String> = listOf("none")) =
         manifest(*resources).copy(stream = StreamCapabilities(cors = false, manifests = deliveries, tiers = tiers))
 
-    @Test fun `what a lookup tells a server about a song is what the sheet names - no other fact`() {
+    @Test fun `what a lookup tells a server about a song is what the sheet names - no other fact`() = runBlocking<Unit> {
         // review-885 M8. The six "Its server will see" sentences (`:feature:settings`) say "the name,
         // artist, album, length and recording code". The recording code (ISRC) was sent and not said.
         // If a lookup ever carries another fact about a song, this fails: the sentences come first.
+        // The requests as HttpAddonClient sends them, to a server here (round 2, N7: the contract's
+        // own helper is not what the client builds its query from).
         val song = Descriptor(title = "Title", artist = "Artist", album = "Album", durationMs = 200_000L, isrc = "GBAAA0000001", explicit = true)
-        val sent = ResolveQuery(song, minTier = Tier.LOSSLESS).queryParameters().map { it.first }
         val saidOfTheSong = listOf("title", "artist", "album", "durationMs", "isrc")
-        // Sent besides, and about the request, not the listener: which version to match (clean or
-        // explicit) and the lowest quality wanted.
-        assertThat(sent).containsExactlyElementsIn(saidOfTheSong + listOf("explicit", "minTier")).inOrder()
+        val server = MockWebServer().apply { start(InetAddress.getByName("127.0.0.1"), 0) }
+        try {
+            val host = object : AddonHostOptions {
+                override val allowLocalHttp = true
+                override val userAgent = "Stash/9.9.9-test"
+            }
+            val client = HttpAddonClient(OkHttpClient(), OpenAddonRateGate, NoFirstPartyAddons, UnsignedAddons, host)
+            val base = "http://127.0.0.1:${server.port}/tok/"
+            fun nothingFound() = MockResponse().setHeader("Content-Type", "application/json").setBody("""{"item":null}""")
+
+            // A Stash add-on: sent besides, and about the request, not the listener, which version to
+            // match (clean or explicit) and the lowest quality wanted.
+            val v1 = InstalledAddon(base = base, manifest = manifest("resolve", "stream"))
+            server.enqueue(nothingFound())
+            client.resolve(v1, ResolveQuery(song, minTier = Tier.LOSSLESS))
+            assertThat(server.takeRequest().requestUrl!!.queryParameterNames).containsExactlyElementsIn(saidOfTheSong + listOf("explicit", "minTier"))
+
+            // An Eclipse-shaped add-on is sent no more of the song than that.
+            val read = AddonValidator.readManifest(
+                Json.parseToJsonElement("""{"id":"com.example.e","name":"E","version":"1","resources":["search","stream","resolve"]}"""),
+                client.optionsFor(publicOnly = true),
+            )
+            val eclipse = InstalledAddon(base = base, manifest = read.manifest, userAdded = true, dialect = read.dialect, eclipse = read.eclipse)
+            server.enqueue(nothingFound())
+            client.resolve(eclipse, ResolveQuery(song, minTier = Tier.LOSSLESS))
+            val eclipseSent = server.takeRequest().requestUrl!!.queryParameterNames
+            assertThat(eclipseSent).isNotEmpty()
+            assertThat(saidOfTheSong).containsAtLeastElementsIn(eclipseSent)
+        } finally {
+            server.shutdown()
+        }
         // Nothing else is known about a song to send.
         val known = Descriptor::class.java.declaredFields.map { it.name }.filterNot { it.startsWith("$") || it == "Companion" }
         assertThat(known).containsExactlyElementsIn(saidOfTheSong + "explicit")
