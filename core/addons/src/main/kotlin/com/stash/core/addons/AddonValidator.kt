@@ -68,8 +68,18 @@ class AddonContractException(val path: String, val reason: String) :
  */
 object AddonValidator {
 
-    /** [allowLocalHttp]: accept `http:` on 127.0.0.1, localhost and [::1] (SPEC.md 1.1, development only). */
-    data class Options(val allowLocalHttp: Boolean = false)
+    /**
+     * [allowLocalHttp]: accept `http:` and `https:` on 127.0.0.1, localhost and [::1] (SPEC.md 1.1,
+     * development only: debug builds and tests).
+     *
+     * [publicOnly]: the base rules for an add-on Stash doesn't vouch for (add-ons plan phase 4 §2.6,
+     * review N7). A URL's host must be a public DNS name ([isPublicHost]), so neither a link the
+     * user added nor any URL such an add-on hands back (stream, download, artwork, icon, a redirect
+     * hop) can point the phone at the home network: `https://192.168.1.1/…` is forgery against a
+     * router through a plain GET. The client pairs it with [PublicOnlyDns] for names that resolve
+     * there. Off for the signed config's defaults, which are the owner's own choices.
+     */
+    data class Options(val allowLocalHttp: Boolean = false, val publicOnly: Boolean = false)
 
     private val DEFAULT = Options()
 
@@ -119,14 +129,49 @@ object AddonValidator {
     }
 
     private const val URL_TAIL = "([/?#][^\\u0000-\\u0020\\u007f-\\u009f\\\\]*)?"
-    private val HTTPS_URL = Regex("^https://[A-Za-z0-9.\\-]+(:[0-9]{1,5})?$URL_TAIL$")
-    private val LOCAL_HTTP_URL = Regex("^http://(127\\.0\\.0\\.1|localhost|\\[::1])(:[0-9]{1,5})?$URL_TAIL$")
+    private val HTTPS_URL = Regex("^https://([A-Za-z0-9.\\-]+)(:[0-9]{1,5})?$URL_TAIL$")
+    private val LOCAL_URL = Regex("^https?://(127\\.0\\.0\\.1|localhost|\\[::1])(:[0-9]{1,5})?$URL_TAIL$")
 
-    /** The URL rule (SPEC.md 1.1): https with a host, no credentials, whitespace, controls or backslashes. */
+    /**
+     * The URL rule (SPEC.md 1.1): https with a host, no credentials, whitespace, controls or
+     * backslashes. With [Options.publicOnly] the host must also be a public DNS name
+     * ([isPublicHost]). With [Options.allowLocalHttp], http and https on 127.0.0.1, localhost and
+     * [::1] pass too (debug builds: an add-on under `wrangler dev` reached over `adb reverse`).
+     */
     fun isAllowedUrl(u: String, options: Options = DEFAULT, max: Int = Limits.URL): Boolean {
         if (u.isEmpty() || u.length > max) return false
-        if (HTTPS_URL.matches(u)) return true
-        return options.allowLocalHttp && LOCAL_HTTP_URL.matches(u)
+        if (options.allowLocalHttp && LOCAL_URL.matches(u)) return true
+        val host = HTTPS_URL.matchEntire(u)?.groupValues?.get(1) ?: return false
+        return !options.publicOnly || isPublicHost(host)
+    }
+
+    /**
+     * True when [u] fails the URL rule only on the base rules' host check: an address on the
+     * user's own network (an IP literal, `localhost`, a single-label or local name). For a refusal
+     * that says so in plain words.
+     */
+    fun isLocalAddressUrl(u: String, options: Options = DEFAULT): Boolean =
+        options.publicOnly && !isAllowedUrl(u, options) && isAllowedUrl(u, options.copy(publicOnly = false))
+
+    /** Names that only ever mean the user's own network: RFC 6761, RFC 8375, ICANN's `.internal`, home routers' `.lan`. */
+    private val LOCAL_SUFFIXES = listOf(".localhost", ".local", ".internal", ".home.arpa", ".lan")
+
+    /**
+     * The base rules' host check (add-ons plan phase 4 §2.6): a DNS name with a dot. Refused: IPv4
+     * and IPv6 literals (and any spelling a resolver might read as an address: a numeric or `0x`
+     * last label), `localhost` and `*.localhost`, single-label names, and `.local`, `.internal`,
+     * `.home.arpa` and `.lan`. A public name that resolves to a private address is
+     * [PublicOnlyDns]'s to refuse.
+     */
+    fun isPublicHost(host: String): Boolean {
+        val h = host.lowercase().trimEnd('.')
+        if (h.isEmpty() || h.startsWith("[") || ':' in h) return false
+        val labels = h.split('.')
+        if (labels.size < 2 || labels.any { it.isEmpty() }) return false
+        val last = labels.last()
+        if (last.all { it.isDigit() } || last.startsWith("0x")) return false
+        if (h == "localhost" || h == "home.arpa" || LOCAL_SUFFIXES.any { h.endsWith(it) }) return false
+        return HOSTNAME.matches(h)
     }
 
     // ---------------------------------------------------------------------------------------------- JSON helpers
@@ -216,7 +261,13 @@ object AddonValidator {
     private fun optUrl(o: JsonObject, key: String, path: String, options: Options, max: Int = Limits.URL): String? {
         if (!o.given(key)) return null
         val u = string(o, key, path)
-        if (!isAllowedUrl(u, options, max)) fail(child(path, key), "URL must be https, with a host and no credentials, at most $max characters")
+        if (!isAllowedUrl(u, options, max)) {
+            fail(
+                child(path, key),
+                if (isLocalAddressUrl(u, options)) AddonEclipse.PRIVATE_ADDRESS
+                else "URL must be https, with a host and no credentials, at most $max characters",
+            )
+        }
         return u
     }
 
@@ -578,17 +629,23 @@ object AddonValidator {
     private val HOSTNAME = Regex("^$LABEL(?:\\.$LABEL)+$")
     private val COOKIE_NAME = Regex("^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$")
 
+    /** [readManifest]'s v1 manifest, whatever the dialect. */
+    fun anyManifest(v: JsonElement?, options: Options = DEFAULT): Manifest = readManifest(v, options).manifest
+
     /**
-     * A manifest of a contract this host reads (SPEC.md 10): v1 itself, and v0 read as v1 through
-     * [AddonV0]. Anything else is refused: a newer `stash` ("needs a newer Stash"), and for now an
-     * Eclipse-family manifest without one (phase 4).
+     * A manifest of a contract this host reads (SPEC.md 10): v1 itself, v0 read as v1 through
+     * [AddonV0], and an Eclipse-family manifest (no `stash`) through [AddonEclipse] (add-ons plan
+     * phase 4 §2.3). Anything else is refused: a newer `stash` ("needs a newer Stash"), or no
+     * `stash` and nothing Eclipse-shaped ("not a Stash add-on").
      */
-    fun anyManifest(v: JsonElement?, options: Options = DEFAULT): Manifest {
-        val stash = ((v as? JsonObject)?.get("stash") as? JsonPrimitive)?.takeIf { !it.isString }?.content
-        return when (stash) {
-            "0" -> AddonV0.manifest(v, options)
-            "1" -> manifest(v, options)
-            null -> fail("/stash", "not a Stash add-on")
+    fun readManifest(v: JsonElement?, options: Options = DEFAULT): AddonManifest {
+        val raw = (v as? JsonObject)?.get("stash")
+        val stash = (raw as? JsonPrimitive)?.takeIf { it !is JsonNull && !it.isString }?.content
+        return when {
+            stash == "0" -> AddonManifest(AddonV0.manifest(v, options), AddonDialect.V0)
+            stash == "1" -> AddonManifest(manifest(v, options), AddonDialect.V1)
+            (raw == null || raw is JsonNull) && AddonEclipse.isEclipse(v) -> AddonEclipse.manifest(v, options)
+            raw == null || raw is JsonNull -> fail("/stash", "not a Stash add-on")
             else -> fail("/stash", "This add-on needs a newer Stash")
         }
     }
@@ -661,6 +718,14 @@ object AddonValidator {
         if (string(o, "kind", path) != "album") fail(child(path, "kind"), "must be album")
         return CatalogInfo(reqText(o, "id", path, Limits.ID), reqText(o, "title", path, Limits.SHORT_TEXT), "album", optBool(o, "genres", path))
     }
+
+    /** One setting as SPEC.md 2.2 has it, or null when it breaks a rule: the Eclipse reader drops such a setting, not the add-on. */
+    internal fun settingOrNull(v: JsonElement?, path: String): Setting? =
+        try {
+            setting(v, path)
+        } catch (e: AddonContractException) {
+            null
+        }
 
     private fun setting(v: JsonElement?, path: String): Setting {
         val o = obj(v, path)

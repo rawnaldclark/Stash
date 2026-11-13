@@ -177,13 +177,21 @@ class HttpAddonClientTest {
         assertThat(req.queryParameter("manifest")).isEqualTo("none,dash")
     }
 
-    @Test fun `a stream outside the asked range, or encrypted, is rejected`() = runBlocking<Unit> {
+    @Test fun `a stream outside the asked range is a quality miss holding the answer, and encrypted is rejected`() = runBlocking<Unit> {
+        // Phase 4 §2.3: out of range is `quality_unavailable` for that range in every dialect, never
+        // an invalid answer (which counts toward the breaker); the answer is held for a lower range.
         server.enqueue(json("""{"url":"https://cdn.example/a.m4a","manifest":"none","tier":"high","cors":false,"codec":"aac","bitrate":320000}"""))
         server.enqueue(json("""{"url":"https://cdn.example/a.mpd","manifest":"hls","tier":"lossless","cors":false}"""))
         server.enqueue(json(flacCd.dropLast(1) + ""","encrypted":true}"""))
-        assertThat(((client.stream(addon(), "1", lossless) as AddonResult.Failed).failure as AddonFailure.InvalidResponse).path).isEqualTo("/tier")
-        assertThat(((client.stream(addon(), "1", lossless) as AddonResult.Failed).failure as AddonFailure.InvalidResponse).path).isEqualTo("/manifest")
+        val high = (client.stream(addon(), "1", lossless) as AddonResult.Failed).failure as AddonFailure.Refused
+        assertThat(high.code).isEqualTo(ErrorCode.QUALITY_UNAVAILABLE)
+        assertThat(high.held!!.info.tier).isEqualTo(Tier.HIGH)
+        assertThat(high.toString()).doesNotContain("cdn.example")
+        val hls = (client.stream(addon(), "1", lossless) as AddonResult.Failed).failure as AddonFailure.Refused
+        assertThat(hls.code).isEqualTo(ErrorCode.QUALITY_UNAVAILABLE)
         assertThat(((client.stream(addon(), "1", lossless) as AddonResult.Failed).failure as AddonFailure.InvalidResponse).path).isEqualTo("/encrypted")
+        // Two answers were misses, not failures: the breaker heard answers.
+        assertThat(gate.events.count { it.startsWith("failure") }).isEqualTo(1)
     }
 
     @Test fun `an answer that breaks the contract is dropped whole`() = runBlocking<Unit> {

@@ -39,6 +39,7 @@ import com.stash.core.model.Track
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_BIT_DEPTH
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_BITRATE
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_CODEC
+import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_DASH
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_ORIGIN
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_SAMPLE_RATE
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_DURATION_MS
@@ -466,7 +467,7 @@ class PlayerRepositoryImpl @Inject constructor(
         val queued = currentQueueTracks.firstOrNull { it.id == nextId }
         if ((scheme == "https" || scheme == "http") && queued != null) {
             val extras = Bundle(item.mediaMetadata.extras ?: Bundle()).apply {
-                listOf(EXTRA_STREAM_CODEC, EXTRA_STREAM_BIT_DEPTH, EXTRA_STREAM_SAMPLE_RATE, EXTRA_STREAM_BITRATE, EXTRA_STREAM_ORIGIN)
+                listOf(EXTRA_STREAM_CODEC, EXTRA_STREAM_BIT_DEPTH, EXTRA_STREAM_SAMPLE_RATE, EXTRA_STREAM_BITRATE, EXTRA_STREAM_ORIGIN, EXTRA_STREAM_DASH)
                     .forEach(::remove)
             }
             val placeholder = item.buildUpon()
@@ -1434,6 +1435,8 @@ class PlayerRepositoryImpl @Inject constructor(
             resolved.sampleRateHz?.let { putInt(EXTRA_STREAM_SAMPLE_RATE, it) }
             resolved.bitrateKbps?.let { putInt(EXTRA_STREAM_BITRATE, it) }
             resolved.origin?.let { putString(EXTRA_STREAM_ORIGIN, it) }
+            // The slot's URL is a manifest, or no longer one (an earlier resolve's word must not stay).
+            if (resolved.isDash) putBoolean(EXTRA_STREAM_DASH, true) else remove(EXTRA_STREAM_DASH)
         }
         // #336 follow-up: upgrade artwork together with the stream metadata so
         // Now Playing cannot keep a stale video thumbnail after prefetch.
@@ -3298,6 +3301,7 @@ class PlayerRepositoryImpl @Inject constructor(
                             stream.sampleRateHz?.let { putInt(EXTRA_STREAM_SAMPLE_RATE, it) }
                             stream.bitrateKbps?.let { putInt(EXTRA_STREAM_BITRATE, it) }
                             stream.origin?.let { putString(EXTRA_STREAM_ORIGIN, it) }
+                            if (stream.isDash) putBoolean(EXTRA_STREAM_DASH, true)
                             if (stream.origin == "soundcloud") putBoolean(EXTRA_SOUNDCLOUD_PREVIEW, stream.isPreview)
                         })
                         .build()
@@ -3509,6 +3513,11 @@ class PlayerRepositoryImpl @Inject constructor(
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
+            controllerDeferred?.let { updateState(it) }
+        }
+
+        /** The extractor has read the stream: an add-on stream's badge now says what it found ([withPlayedFormat]). */
+        override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
             controllerDeferred?.let { updateState(it) }
         }
 
@@ -4070,6 +4079,25 @@ class PlayerRepositoryImpl @Inject constructor(
         )
     }
 
+    /**
+     * [track]'s quality tags from what the player is decoding, when an add-on answered its stream
+     * (review-882 M9; the rule is [com.stash.core.media.streaming.PlayedFormat]). An add-on's word
+     * for its own stream is only that: one that says "lossless" over an AAC file was shown as
+     * FLAC. Once the extractor has read the stream, the badge says what it found. Read from the
+     * controller on every refresh; [Player.Listener.onTracksChanged] asks for one when the
+     * tracks become known.
+     */
+    private fun withPlayedFormat(track: Track, controller: MediaController): Track {
+        if (!com.stash.core.media.streaming.AddonPlayback.isAddonOrigin(track.streamOrigin)) return track
+        val format = controller.currentTracks.groups
+            .firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.isSelected }
+            ?.let { group -> (0 until group.length).firstOrNull { group.isTrackSelected(it) }?.let { group.getTrackFormat(it) } }
+            ?: return track
+        return com.stash.core.media.streaming.PlayedFormat.applyTo(
+            track, format.sampleMimeType, format.sampleRate, format.pcmEncoding, format.bitrate,
+        )
+    }
+
     internal fun updateState(controller: MediaController) {
         // A ghost survives refreshes from an empty player (idle events, reconnects);
         // the first refresh that carries real items retires it.
@@ -4087,7 +4115,7 @@ class PlayerRepositoryImpl @Inject constructor(
 
         val currentItem = controller.currentMediaItem
         // Badge from the live resolve, not from extras that may not have stuck.
-        val track = currentItem?.toTrack()?.let { withLiveStreamQuality(it, currentItem) }
+        val track = currentItem?.toTrack()?.let { withLiveStreamQuality(it, currentItem) }?.let { withPlayedFormat(it, controller) }
         // Timeline snapshot rebuilt only when the timeline actually changes
         // (onTimelineChanged sets the dirty flag). updateState fires on every
         // player event, and with the full timeline holding the whole queue a
@@ -4279,7 +4307,7 @@ class PlayerRepositoryImpl @Inject constructor(
 
         /** The extras that describe the stream a slot plays, for Now Playing's quality line. */
         private val streamStampKeys = listOf(
-            EXTRA_STREAM_CODEC, EXTRA_STREAM_BIT_DEPTH, EXTRA_STREAM_SAMPLE_RATE, EXTRA_STREAM_BITRATE, EXTRA_STREAM_ORIGIN,
+            EXTRA_STREAM_CODEC, EXTRA_STREAM_BIT_DEPTH, EXTRA_STREAM_SAMPLE_RATE, EXTRA_STREAM_BITRATE, EXTRA_STREAM_ORIGIN, EXTRA_STREAM_DASH,
         )
 
         /**

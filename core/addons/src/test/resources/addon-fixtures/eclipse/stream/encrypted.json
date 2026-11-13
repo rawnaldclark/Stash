@@ -1,0 +1,5 @@
+{
+  "url": "https://media.example.org/a/track_123.mp4",
+  "codec": "flac",
+  "encrypted": true
+}

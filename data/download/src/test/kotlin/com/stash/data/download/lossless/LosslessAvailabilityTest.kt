@@ -25,7 +25,7 @@ class LosslessAvailabilityTest {
     private val prefs: LosslessSourcePreferences = mockk {
         every { bitchordEndpoint } returns tidalServer
     }
-    private val a = LosslessAvailability(store, config, prefs)
+    private val a = LosslessAvailability(store, config, com.stash.data.download.lossless.tidal.OwnTidalServer(com.stash.core.addons.NoUserAddons, prefs))
 
     private fun stubNow(loginLive: Boolean = false) {
         coEvery { store.loginLive() } returns loginLive

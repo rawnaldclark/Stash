@@ -153,6 +153,9 @@ class StashPlaybackService : MediaLibraryService() {
      * [androidx.media3.datasource.okhttp.OkHttpDataSource].
      */
     @Inject lateinit var okHttpClient: okhttp3.OkHttpClient
+    /** The add-on client: its media client plays `addon:` streams under the base rules (add-ons plan phase 4 §2.6). */
+    @Inject lateinit var addonClient: com.stash.core.addons.HttpAddonClient
+    @Inject lateinit var addonStreamRungs: com.stash.core.media.streaming.AddonStreamRungs
     @Inject lateinit var cloudLinkResolver: com.stash.data.cloud.playback.CloudLinkResolver
     @Inject lateinit var cloudCopyFinder: com.stash.core.media.streaming.CloudCopyFinder
     @Inject @field:com.stash.core.media.streaming.StreamCache
@@ -317,6 +320,12 @@ class StashPlaybackService : MediaLibraryService() {
          * has dropped from FLAC to YouTube-extracted audio.
          */
         const val EXTRA_STREAM_ORIGIN = "stash_stream_origin"
+        /**
+         * True when the item's URL is a DASH manifest, not a file. Tidal's manifests are known by
+         * their `.mpd` path; an add-on's can sit at any path (`/dash?id=1`), so its item says so
+         * (review-882 N4).
+         */
+        const val EXTRA_STREAM_DASH = "stash_stream_dash"
 
         private const val ROOT_ID = "ROOT"
         private const val PLAYLISTS_ID = "PLAYLISTS"
@@ -758,15 +767,27 @@ class StashPlaybackService : MediaLibraryService() {
                 (scheme == "http" || scheme == "https") &&
                     origin == com.stash.core.media.streaming.JioSaavnStreamResolver.ORIGIN
             },
+            // An add-on's stream plays on the add-on media client: no fetch from the user's own
+            // network, whatever the add-on answered (add-ons plan phase 4 §2.6).
+            addonDataSourceFactory = com.stash.core.media.streaming.AddonPlayback.dataSourceFactory(addonClient),
+            isAddonOrigin = { item ->
+                val scheme = item.localConfiguration?.uri?.scheme?.lowercase()
+                val origin = item.mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN)
+                (scheme == "http" || scheme == "https") &&
+                    com.stash.core.media.streaming.AddonPlayback.isAddonOrigin(origin)
+            },
+            isDashStream = { item -> item.mediaMetadata.extras?.getBoolean(EXTRA_STREAM_DASH) == true },
             httpClient = okHttpClient,
             // Full-timeline queue: stash-resolve:// placeholders resolve
             // just-in-time inside LazyResolvingDataSource at open().
             resolver = streamResolver,
             urlCache = streamUrlCache,
             trackDao = trackDao,
-            // Tidal may answer with a DASH MPD, so with a server set placeholders
-            // resolve before their media source is chosen.
-            resolveBeforeSourcePick = tidalStreamResolver::enabledHint,
+            // Tidal may answer with a DASH MPD, and so may an add-on: with a Tidal server set, or
+            // such an add-on on, placeholders resolve before their media source is chosen.
+            resolveBeforeSourcePick = {
+                com.stash.core.media.streaming.AddonPlayback.resolveBeforeSourcePick(tidalStreamResolver.enabledHint(), addonStreamRungs)
+            },
             // Download mode plays only files on the phone, whatever queued a stream.
             streamAllowed = ::streamAllowedNow,
             // The user's own cloud files: pre-authenticated links (Dropbox, OneDrive), or Google

@@ -37,6 +37,8 @@ import javax.inject.Singleton
  * @property firstParty A default the signed config marks `first_party`: Stash's own, which gets
  *   the install signature ([AddonTrust] decides that on its own, from the same list).
  * @property settings The add-on's setting values, sent as query parameters (SPEC.md 2.2).
+ * @property dialect The contract its manifest was written to: the client asks and reads each its own way.
+ * @property eclipse What an Eclipse-family manifest said that v1 has no field for; null otherwise.
  */
 data class InstalledAddon(
     val base: String,
@@ -45,6 +47,8 @@ data class InstalledAddon(
     val token: String? = null,
     val settings: Map<String, String> = emptyMap(),
     val firstParty: Boolean = false,
+    val dialect: AddonDialect = if (manifest.stash == 0) AddonDialect.V0 else AddonDialect.V1,
+    val eclipse: EclipseTraits? = null,
 ) {
     init {
         require(token == null || isHeaderSafe(token)) { "an add-on token must be printable ASCII" }
@@ -54,9 +58,13 @@ data class InstalledAddon(
 
     fun offers(resource: Resource): Boolean = manifest.offers(resource)
 
+    /** A download source only when the add-on allows it (BitChord's `allowDownloads: 0` says no). */
+    val allowsDownloads: Boolean get() = eclipse?.allowDownloads != false
+
     /** Never names [base] or [token]: logs and crash reports carry only the id. */
     override fun toString(): String =
-        "InstalledAddon(${manifest.id} ${manifest.version}${if (userAdded) ", user" else ""}${if (firstParty) ", first-party" else ""})"
+        "InstalledAddon(${manifest.id} ${manifest.version}${if (dialect != AddonDialect.V1) ", ${dialect.name.lowercase()}" else ""}" +
+            "${if (userAdded) ", user" else ""}${if (firstParty) ", first-party" else ""})"
 
     companion object {
         /**
@@ -132,13 +140,36 @@ object NoDefaultAddons : DefaultAddons {
  * One add-on the user added from a link. [manifestUrl] and [token] are secrets: kept encrypted
  * (SPEC.md 6), never logged, never in diagnostics or backups.
  */
-data class UserAddonEntry(val manifestUrl: String, val token: String? = null, val enabled: Boolean = true) {
-    override fun toString(): String = "UserAddonEntry(enabled=$enabled, token=${if (token != null) "set" else "none"})"
+data class UserAddonEntry(
+    val manifestUrl: String,
+    val token: String? = null,
+    val enabled: Boolean = true,
+    val kind: UserAddonKind = UserAddonKind.MANIFEST,
+) {
+    override fun toString(): String =
+        "UserAddonEntry(kind=$kind, enabled=$enabled, token=${if (token != null) "set" else "none"})"
+}
+
+/** What a [UserAddonEntry] is. */
+enum class UserAddonKind {
+    /** An add-on added from a link: [UserAddonEntry.manifestUrl] is its manifest. */
+    MANIFEST,
+
+    /**
+     * The user's own Tidal server, moved out of the old Custom Tidal server field (add-ons plan
+     * phase 4 §2.10): [UserAddonEntry.manifestUrl] is the server's base and the token its
+     * `X-Access-Token`. It serves no manifest; the Tidal rung plays it over the legacy wire, and the
+     * registry never loads it. At most one.
+     */
+    OWN_TIDAL_SERVER,
 }
 
 /** The user's own add-ons, in their order (`:data:download` `EncryptedUserAddons`). */
 interface UserAddons {
     val entries: StateFlow<List<UserAddonEntry>>
+
+    /** [entries] once the store has been read: [entries] holds an empty list until then. */
+    suspend fun loadedEntries(): List<UserAddonEntry> = entries.value
 }
 
 /** No user add-ons: for hand-built registries in tests. */
@@ -187,7 +218,7 @@ class InTreeAddonRegistry @Inject constructor(
     }
 
     private fun wanted(): List<Wanted> {
-        val user = users.entries.value.filter { it.enabled }.mapNotNull { e ->
+        val user = users.entries.value.filter { it.enabled && it.kind == UserAddonKind.MANIFEST }.mapNotNull { e ->
             HttpAddonClient.baseOf(e.manifestUrl)?.let { Wanted(e.manifestUrl, it, userAdded = true, token = e.token, firstParty = false) }
         }
         val defaults = defaults.entries.value.filter { it.enabled }.mapNotNull { e ->
@@ -248,7 +279,7 @@ class InTreeAddonRegistry @Inject constructor(
         val before = state.value.associateBy { it.base }
         val loaded = wanted.mapNotNull { w ->
             val fresh = try {
-                (client.manifestWithJson(w.base) as? AddonResult.Ok)?.value
+                (client.manifestWithJson(w.base, publicOnly = w.userAdded) as? AddonResult.Ok)?.value
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -256,30 +287,33 @@ class InTreeAddonRegistry @Inject constructor(
                 null
             }
             if (fresh != null) {
-                val (manifest, json) = fresh
-                if (manifest.kind == AddonKind.SERVER) runCatchingStore { store.write(keyOf(w.url), json) }
-                install(w, manifest)
+                val (read, json) = fresh
+                if (read.manifest.kind == AddonKind.SERVER) runCatchingStore { store.write(keyOf(w.url), json) }
+                install(w, read)
             } else {
-                before[w.base]?.let { install(w, it.manifest) } ?: persisted(w)?.let { install(w, it) }
+                before[w.base]?.let { install(w, AddonManifest(it.manifest, it.dialect, it.eclipse)) } ?: persisted(w)?.let { install(w, it) }
             }
         }
         state.value = order(loaded)
         runCatchingStore { store.retain(wanted.map { keyOf(it.url) }.toSet()) }
     }
 
-    private fun install(w: Wanted, manifest: Manifest): InstalledAddon? {
-        if (manifest.kind != AddonKind.SERVER) return null
+    private fun install(w: Wanted, read: AddonManifest): InstalledAddon? {
+        if (read.manifest.kind != AddonKind.SERVER) return null
         return try {
-            InstalledAddon(base = w.base, manifest = manifest, userAdded = w.userAdded, token = w.token, firstParty = w.firstParty)
+            InstalledAddon(
+                base = w.base, manifest = read.manifest, userAdded = w.userAdded, token = w.token, firstParty = w.firstParty,
+                dialect = read.dialect, eclipse = read.eclipse,
+            )
         } catch (e: IllegalArgumentException) {
             null // a token a header can't carry; the store refuses those, so this is only belt and braces
         }
     }
 
     /** The kept manifest of [w], checked again as if it had just arrived; null when none or no longer valid. */
-    private suspend fun persisted(w: Wanted): Manifest? {
+    private suspend fun persisted(w: Wanted): AddonManifest? {
         val json = runCatchingStore { store.read(keyOf(w.url)) } ?: return null
-        return runCatching { AddonValidator.anyManifest(Json.parseToJsonElement(json), client.options) }.getOrNull()
+        return runCatching { AddonValidator.readManifest(Json.parseToJsonElement(json), client.optionsFor(publicOnly = w.userAdded)) }.getOrNull()
     }
 
     private suspend fun <T> runCatchingStore(block: suspend () -> T): T? = try {

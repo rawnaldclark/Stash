@@ -6,6 +6,7 @@ import com.stash.addons.contract.StreamRequest
 import com.stash.addons.contract.Tier
 import com.stash.core.addons.AddonValidator
 import com.stash.core.addons.HttpAddonClient
+import com.stash.core.addons.NoUserAddons
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.bitchord.LegacyRelayWire
@@ -144,7 +145,7 @@ class TidalV1WirePolicyTest {
         val http = OkHttpClient()
         val addonClient = HttpAddonClient(http, TestAddonHost(), TestAddonHost(), TestAddonHost(), LocalHttp)
         val legacy = LegacyRelayWire(http, RelaySigner(config, supporter(), appVersionProvider()), quota)
-        wires = TidalWires(prefs, config, registry, legacy, AddonV1Wire(addonClient, quota), TidalDebugSettings.off())
+        wires = TidalWires(config, registry, legacy, AddonV1Wire(addonClient, quota), TidalDebugSettings.off(), OwnTidalServer(NoUserAddons, prefs))
         client = TidalClient(prefs, FakeAddonRefDao(), quota, wires).also { it.nowMs = { now } }
     }
 

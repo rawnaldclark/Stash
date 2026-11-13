@@ -12,6 +12,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.stash.core.addons.AddonManifestStore
 import com.stash.core.addons.InstalledAddon
 import com.stash.core.addons.UserAddonEntry
+import com.stash.core.addons.UserAddonKind
 import com.stash.core.addons.UserAddons
 import com.stash.core.auth.crypto.TinkEncryptionManager
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -120,8 +121,13 @@ class EncryptedUserAddons internal constructor(
         override fun open(sealed: ByteArray): ByteArray = tink.decrypt(sealed)
     }
 
+    /**
+     * One entry as sealed. [kind] is [UserAddonKind]'s name; absent (a list sealed before phase 4)
+     * is a manifest add-on. A kind this build doesn't know is kept, untouched, but not used, so a
+     * newer build's entry survives an older build's writes.
+     */
     @Serializable
-    private data class Stored(val manifest: String, val token: String? = null, val enabled: Boolean = true)
+    private data class Stored(val manifest: String, val token: String? = null, val enabled: Boolean = true, val kind: String? = null)
 
     private val state = MutableStateFlow<List<UserAddonEntry>>(emptyList())
     override val entries: StateFlow<List<UserAddonEntry>> = state.asStateFlow()
@@ -140,6 +146,18 @@ class EncryptedUserAddons internal constructor(
 
     @Volatile private var lastTryMs = 0L
 
+    /**
+     * Entries of a kind this build doesn't know, kept as read so a write here never drops them.
+     *
+     * Declared ABOVE the `init` block on purpose, like every field the first read writes. Kotlin
+     * runs initialisers in source order, and `init` launches the read on another thread: a field
+     * declared below it is set to its initial value AFTER the launch, so a read that finishes
+     * first has its result overwritten. This one sat below, and a fast first read lost the
+     * unknown-kind entries (the flaky `OwnTidalServerMigrationTest`, 2026-11-11): the next write
+     * then dropped them from the stored list.
+     */
+    @Volatile private var unknown: List<Stored> = emptyList()
+
     /** The stored list is there and has not opened this run: the user's add-ons are missing, not gone. */
     val unreadable: Boolean get() = loaded.isCompleted && !opened
 
@@ -154,26 +172,42 @@ class EncryptedUserAddons internal constructor(
     }
 
     /**
-     * [entries] once the stored list has been read. While it has not opened, the read is tried
-     * again here, at most every [RETRY_EVERY_MS]: the Keystore's bad moments pass.
+     * Adds [entry], or replaces the one of its kind with the same manifest URL. The user's own Tidal
+     * server replaces any other of that kind: there is at most one.
      */
-    suspend fun loadedEntries(): List<UserAddonEntry> {
+    suspend fun put(entry: UserAddonEntry) = update { list ->
+        require(entry.token == null || InstalledAddon.isHeaderSafe(entry.token!!)) { "token not header-safe" }
+        list.filterNot {
+            it.kind == entry.kind && (it.manifestUrl == entry.manifestUrl || entry.kind == UserAddonKind.OWN_TIDAL_SERVER)
+        } + entry
+    }
+
+    /** Removes the add-on added from [manifestUrl] (never the user's own Tidal server). */
+    suspend fun remove(manifestUrl: String) = update { list ->
+        list.filterNot { it.kind == UserAddonKind.MANIFEST && it.manifestUrl == manifestUrl }
+    }
+
+    /** Removes every entry of [kind]. */
+    suspend fun removeKind(kind: UserAddonKind) = update { list -> list.filterNot { it.kind == kind } }
+
+    suspend fun setEnabled(manifestUrl: String, enabled: Boolean) = update { list ->
+        list.map { if (it.kind == UserAddonKind.MANIFEST && it.manifestUrl == manifestUrl) it.copy(enabled = enabled) else it }
+    }
+
+    /**
+     * [entries] once the stored list has been read: the first load is something callers can
+     * await. While a stored list has not opened, the read is tried again here, at most every
+     * [RETRY_EVERY_MS]: the Keystore's bad moments pass.
+     */
+    override suspend fun loadedEntries(): List<UserAddonEntry> {
         loaded.await()
         if (!opened && nowMs() - lastTryMs >= RETRY_EVERY_MS) writeLock.withLock { if (!opened) tryOpen() }
         return state.value
     }
 
-    /** Adds [entry], or replaces the one with the same manifest URL. */
-    suspend fun put(entry: UserAddonEntry) = update { list ->
-        require(entry.token == null || InstalledAddon.isHeaderSafe(entry.token!!)) { "token not header-safe" }
-        list.filterNot { it.manifestUrl == entry.manifestUrl } + entry
-    }
-
-    suspend fun remove(manifestUrl: String) = update { list -> list.filterNot { it.manifestUrl == manifestUrl } }
-
-    suspend fun setEnabled(manifestUrl: String, enabled: Boolean) = update { list ->
-        list.map { if (it.manifestUrl == manifestUrl) it.copy(enabled = enabled) else it }
-    }
+    /** No kind: a manifest add-on (sealed before phase 4). A name this build doesn't know: null. */
+    private fun kindOf(s: Stored): UserAddonKind? =
+        if (s.kind == null) UserAddonKind.MANIFEST else UserAddonKind.entries.firstOrNull { it.name == s.kind }
 
     /**
      * Writes [change] applied to the stored list. Throws [UnreadableException], writing nothing,
@@ -186,9 +220,8 @@ class EncryptedUserAddons internal constructor(
             if (!opened) tryOpen()
             if (!opened) throw UnreadableException()
             val next = change(state.value)
-            val blob = Base64.getEncoder().encodeToString(
-                sealer.seal(json.encodeToString(LIST, next.map { Stored(it.manifestUrl, it.token, it.enabled) }).toByteArray()),
-            )
+            val stored = next.map { Stored(it.manifestUrl, it.token, it.enabled, it.kind.takeIf { k -> k != UserAddonKind.MANIFEST }?.name) } + unknown
+            val blob = Base64.getEncoder().encodeToString(sealer.seal(json.encodeToString(LIST, stored).toByteArray()))
             store.edit { it[KEY] = blob }
             state.value = next
         }
@@ -213,19 +246,22 @@ class EncryptedUserAddons internal constructor(
             opened = true
             return
         }
-        val list = decode(blob)
+        val all = decode(blob)
             // It did not open. That is final only when the key demonstrably works and the stored
             // list still does not open with it; a key that is not answering is tried again later.
             ?: if (keyWorks()) decode(blob) else return
-        if (list == null) Log.w(TAG, "user add-ons were sealed with a key this phone no longer has: they must be added again")
-        state.value = list.orEmpty()
+        if (all == null) Log.w(TAG, "user add-ons were sealed with a key this phone no longer has: they must be added again")
+        // Both in one go, before [opened]: a write must never see the entries without the
+        // unknown-kind ones it has to carry along.
+        unknown = all.orEmpty().filter { kindOf(it) == null }
+        state.value = all.orEmpty().mapNotNull { s -> kindOf(s)?.let { UserAddonEntry(s.manifest, s.token, s.enabled, it) } }
         opened = true
     }
 
-    /** The entries sealed in [blob], or null when it does not open or is not a list. */
-    private fun decode(blob: String): List<UserAddonEntry>? = try {
+    /** The entries sealed in [blob], as stored; null when it does not open or is not a list. */
+    private fun decode(blob: String): List<Stored>? = try {
         val plain = sealer.open(Base64.getDecoder().decode(blob))
-        json.decodeFromString(LIST, String(plain)).map { UserAddonEntry(it.manifest, it.token, it.enabled) }
+        json.decodeFromString(LIST, String(plain))
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

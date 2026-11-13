@@ -1,0 +1,30 @@
+{
+  "id": "Com.Example.Bit",
+  "resources": [
+    "search",
+    "stream"
+  ],
+  "allowDownloads": 0,
+  "settings": [
+    {
+      "key": "quality",
+      "type": "select",
+      "label": "Quality",
+      "options": [
+        {
+          "value": "LOSSLESS",
+          "label": "Lossless"
+        },
+        {
+          "value": "HIGH",
+          "label": "High"
+        }
+      ]
+    },
+    {
+      "key": "q",
+      "type": "text",
+      "label": "A reserved key, dropped"
+    }
+  ]
+}

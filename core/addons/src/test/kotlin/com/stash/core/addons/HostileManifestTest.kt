@@ -65,7 +65,7 @@ class HostileManifestTest {
         assertThat(body.length.toLong()).isLessThan(HttpAddonClient.MANIFEST_BYTES)
         server.enqueue(MockResponse().setBody(body))
         val (manifest, json) = (client.manifestWithJson(base("a")) as AddonResult.Ok).value
-        assertThat(manifest.id).isEqualTo("deep")
+        assertThat(manifest.manifest.id).isEqualTo("deep")
         assertThat(json).isEqualTo(body)
     }
 

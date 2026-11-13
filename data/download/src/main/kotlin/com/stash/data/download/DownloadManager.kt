@@ -883,8 +883,23 @@ class DownloadManager @Inject constructor(
                 emitProgress(track.id, 0.1f + frac * 0.7f, DownloadStatus.DOWNLOADING)
             },
         ).getOrElse { e ->
-            Log.w(TAG, "lossless fetch failed for '${track.artist} - ${track.title}': ${e.message}")
+            // An add-on's failure by class only: its message can name the media host.
+            val why = if (LosslessUrlDownloader.isAddonSource(match.sourceId)) e.javaClass.simpleName else e.message
+            Log.w(TAG, "lossless fetch failed for '${track.artist} - ${track.title}': $why")
             runCatching { tempFile.delete() }
+            // The file was not the format its add-on said it was (a lossy file under "lossless",
+            // review-882 M9): cooled down like a source that served a sample, and the next
+            // lossless source gets its turn.
+            // The same for a fetch the add-on media client refused (it pointed at the user's own
+            // network: asking again asks for the same refusal) and for one that outlasted its
+            // time limit (round 2, F7 and F2).
+            if (e is LosslessUrlDownloader.NotTheStatedFormatException ||
+                e is LosslessUrlDownloader.TookTooLongException ||
+                LosslessUrlDownloader.isGuardRefusal(e)
+            ) {
+                losslessHealthGate.recordDegraded(match.sourceId)
+                return@repeat
+            }
             return null
         }
         // A junk body probes as "unknown length", which the duration backstop

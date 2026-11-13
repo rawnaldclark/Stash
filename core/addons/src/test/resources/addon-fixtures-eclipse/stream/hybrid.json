@@ -1,0 +1,8 @@
+{
+  "url": "https://cdn.example.org/a.mp4",
+  "codec": "flac",
+  "hybrid": {
+    "kid": "00",
+    "key": "00"
+  }
+}

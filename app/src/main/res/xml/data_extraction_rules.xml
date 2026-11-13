@@ -4,6 +4,8 @@
     when targeting API 31+. Link Stash on the web's state (stash_sync.db, its sealed keys, the Tink keyset prefs that seal them,
     the handoff and inbox prefs, the mirror's state in no_backup/) must never move to another phone: its keys are bound to this phone's Keystore, so a copied link could
     neither be used nor cleanly removed (link-sync spec §4.4).
+    The user's own add-ons (user_addons: links, tokens and their own Tidal server) are sealed with the same keys and are
+    logins all the same: a new phone adds them again (add-ons phase 4 §2.10).
 -->
 <data-extraction-rules>
     <cloud-backup>
@@ -16,6 +18,7 @@
         <exclude domain="sharedpref" path="weblink_inbox.xml" />
         <exclude domain="sharedpref" path="weblink_mirror.xml" />
         <exclude domain="root" path="no_backup/stash_mirror.json.gz" />
+        <exclude domain="file" path="datastore/user_addons.preferences_pb" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="database" path="stash_sync.db" />
@@ -27,5 +30,6 @@
         <exclude domain="sharedpref" path="weblink_inbox.xml" />
         <exclude domain="sharedpref" path="weblink_mirror.xml" />
         <exclude domain="root" path="no_backup/stash_mirror.json.gz" />
+        <exclude domain="file" path="datastore/user_addons.preferences_pb" />
     </device-transfer>
 </data-extraction-rules>

@@ -504,18 +504,6 @@ class SettingsViewModel @Inject constructor(
         losslessAvailability.routingRows
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    // -- Tidal via a self-hosted BitChord server ------------------------------
-
-    /** The user's BitChord base (normalised), or null = the Tidal rung is off. */
-    val bitchordEndpoint: StateFlow<String?> =
-        losslessPrefs.bitchordEndpoint
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-
-    /** Whether an access token is stored. The token itself never reaches the UI. */
-    val bitchordHasToken: StateFlow<Boolean> =
-        losslessPrefs.bitchordAccessToken.map { it != null }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
-
     /** Tidal's 320 kbps AAC when a song has no FLAC (streaming + downloads). Default on. */
     val tidalAacFallback: StateFlow<Boolean> =
         losslessPrefs.tidalAacFallback
@@ -523,33 +511,6 @@ class SettingsViewModel @Inject constructor(
 
     fun onTidalAacFallbackChanged(value: Boolean) {
         viewModelScope.launch { losslessPrefs.setTidalAacFallback(value) }
-    }
-
-    private val _bitchordEndpointError = MutableStateFlow<String?>(null)
-    val bitchordEndpointError: StateFlow<String?> = _bitchordEndpointError
-
-    /**
-     * Commits the field on IME Done / focus loss (the screen never calls this per
-     * keystroke — `https://re` must never be persisted as a base). Blank means
-     * "clear it", which is a valid instruction and not an error; anything else
-     * that [LosslessSourcePreferences.normaliseEndpoint] rejects is.
-     */
-    fun onBitchordEndpointCommitted(raw: String) {
-        val trimmed = raw.trim()
-        val normalised = LosslessSourcePreferences.normaliseEndpoint(trimmed)
-        if (trimmed.isNotEmpty() && normalised == null) {
-            _bitchordEndpointError.value = "Must be an https:// URL"
-            return
-        }
-        _bitchordEndpointError.value = null
-        viewModelScope.launch { losslessPrefs.setBitchordEndpoint(normalised) }
-    }
-
-    fun onBitchordEndpointEdited() { _bitchordEndpointError.value = null }
-
-    /** Blank clears the stored token. */
-    fun onBitchordTokenCommitted(raw: String) {
-        viewModelScope.launch { losslessPrefs.setBitchordAccessToken(raw) }
     }
 
     /**

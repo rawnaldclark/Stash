@@ -1,0 +1,11 @@
+{
+  "status": 503,
+  "route": "stream",
+  "headers": {
+    "Retry-After": "10"
+  },
+  "body": {
+    "error": "preparing",
+    "notice": "Still preparing this song"
+  }
+}
