@@ -69,7 +69,7 @@ class AddonStreamCheckTest {
     }
 
     @Test fun `a manifest offering lossless audio with a lossy fallback beside it is honest - review-888 M2`() {
-        // A DASH or HLS add-on: FLAC or ALAC, plus AAC (or Atmos) for slow networks; the player picks the lossless one.
+        // A DASH or HLS add-on: FLAC or ALAC, plus AAC (or Atmos) for slow networks.
         assertThat(verdict(stated = true, listOf("audio/flac", "audio/mp4a-latm"), song)).isNull()
         assertThat(verdict(stated = true, listOf("audio/mp4a-latm", "audio/alac"), song)).isNull()
         assertThat(verdict(stated = true, listOf("audio/flac", "audio/eac3-joc"), song)).isNull()
@@ -77,6 +77,10 @@ class AddonStreamCheckTest {
         // Every audio format lossy is still a lie, however many there are.
         assertThat(verdict(stated = true, listOf("audio/mp4a-latm", "audio/eac3-joc"), song)).isEqualTo(Why.LOSSY)
         assertThat(verdict(stated = true, listOf("audio/mpeg", null, "audio/x-something-new"), song)).isEqualTo(Why.LOSSY)
+        // R2-n5: media3 names DTS-HD High Resolution (lossy) and Master Audio alike, so it is no proof of lossless
+        // beside a lossy format; alone it is not refused (it isn't named lossy either).
+        assertThat(verdict(stated = true, listOf("audio/mp4a-latm", "audio/vnd.dts.hd"), song)).isEqualTo(Why.LOSSY)
+        assertThat(verdict(stated = true, listOf("audio/vnd.dts.hd"), song)).isNull()
     }
 
     @Test fun `a video track is refused whatever the add-on called it`() {

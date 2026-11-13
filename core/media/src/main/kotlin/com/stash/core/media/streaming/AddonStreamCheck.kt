@@ -178,12 +178,13 @@ class AddonStreamCheck internal constructor(
         )
 
         /**
-         * Lossless audio, as media3 names a track's `sampleMimeType`: FLAC, ALAC, PCM (raw and WAV),
-         * Dolby TrueHD and DTS-HD (Master Audio). One of these in a stream is the lossless audio
-         * its add-on promised, whatever else the stream also offers.
+         * Lossless audio, as media3 names a track's `sampleMimeType`: FLAC, ALAC, PCM (raw and WAV)
+         * and Dolby TrueHD. One of these in a stream is the lossless audio its add-on promised,
+         * whatever else the stream also offers. Not `audio/vnd.dts.hd`: media3 names DTS-HD High
+         * Resolution (lossy) that way as well as Master Audio, so it proves nothing (review-888 R2-n5).
          */
         private val LOSSLESS_MIME_TYPES = setOf(
-            "audio/flac", "audio/alac", "audio/raw", "audio/wav", "audio/true-hd", "audio/vnd.dts.hd",
+            "audio/flac", "audio/alac", "audio/raw", "audio/wav", "audio/true-hd",
         )
 
         /**
