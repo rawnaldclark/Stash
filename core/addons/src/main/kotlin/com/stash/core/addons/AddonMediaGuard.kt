@@ -49,14 +49,14 @@ class AddonMediaGuard(
      * fetching thread, before the refusal is thrown. Only for the guard's own refusals (the URL
      * rule, a host with no public address, a private peer), never for an ordinary failed fetch.
      */
-    private val onRefused: (String) -> Unit = {},
+    private val onRefused: (String, MediaRefusal) -> Unit = { _, _ -> },
 ) : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val stream = chain.request().tag(AddonStreamTag::class.java)?.streamUrl ?: chain.request().url.toString()
-        fun refused() {
+        fun refused(why: MediaRefusal) {
             // The sink's own trouble must not change what the fetch comes to.
-            runCatching { onRefused(stream) }
+            runCatching { onRefused(stream, why) }
         }
         var request = chain.request().newBuilder().header("User-Agent", userAgent).build()
         var hops = 0
@@ -66,7 +66,7 @@ class AddonMediaGuard(
                 val ownNetwork = isLocalAddress(url)
                 // Never the URL: it can carry a signature or a token. What kind of refusal, and on which hop.
                 Log.w(TAG, "${if (hops == 0) "media URL" else "redirect hop $hops"} refused (${if (ownNetwork) "private address" else "not an https URL on a public host"})")
-                refused()
+                refused(MediaRefusal.URL)
                 throw if (ownNetwork) PrivateAddressException() else RefusedAddonUrlException()
             }
             if (viaProxy(url, proxy, proxySelector)) {
@@ -74,7 +74,7 @@ class AddonMediaGuard(
                     publicDns.lookupPublic(url.host)
                 } catch (e: java.net.UnknownHostException) {
                     Log.w(TAG, "${if (hops == 0) "media URL" else "redirect hop $hops"} refused behind a proxy (no public address for its host)")
-                    if (e is NoPublicAddressException) refused()
+                    if (e is NoPublicAddressException) refused(MediaRefusal.NO_PUBLIC_ADDRESS)
                     throw e
                 }
             }
@@ -83,11 +83,11 @@ class AddonMediaGuard(
                 publicDns.throughProxies(proxyHosts(url, proxy, proxySelector)) { chain.proceed(request) }
             } catch (e: NoPublicAddressException) {
                 // The DNS filter, on a direct connection.
-                refused()
+                refused(MediaRefusal.NO_PUBLIC_ADDRESS)
                 throw e
             } catch (e: PrivateAddressException) {
                 // The connection guard: the peer itself was private.
-                refused()
+                refused(MediaRefusal.URL)
                 throw e
             }
             if (!response.isRedirect || (request.method != "GET" && request.method != "HEAD")) return response

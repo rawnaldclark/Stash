@@ -6,6 +6,7 @@ import com.stash.core.addons.AddonHostOptions
 import com.stash.core.addons.AddonInstallSigner
 import com.stash.core.addons.AddonManifestStore
 import com.stash.core.addons.AddonMediaRefusals
+import com.stash.core.addons.MediaRefusal
 import com.stash.core.addons.AddonRateGate
 import com.stash.core.addons.AddonTrust
 import com.stash.core.addons.DefaultAddonEntry
@@ -83,8 +84,8 @@ abstract class AddonHostModule {
 class RefsMediaRefusals @Inject constructor(
     private val refs: dagger.Lazy<AddonRefs>,
 ) : AddonMediaRefusals {
-    override fun refused(streamUrl: String) {
-        runBlocking { withTimeoutOrNull(WRITE_TIMEOUT_MS) { refs.get().refusedOnTheWire(streamUrl) } }
+    override fun refused(streamUrl: String, why: MediaRefusal) {
+        runBlocking { withTimeoutOrNull(WRITE_TIMEOUT_MS) { refs.get().refusedOnTheWire(streamUrl, why) } }
     }
 
     private companion object {

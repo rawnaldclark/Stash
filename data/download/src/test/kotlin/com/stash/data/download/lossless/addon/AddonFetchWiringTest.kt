@@ -273,6 +273,27 @@ class AddonFetchWiringTest {
         assertThat(e.refs.find(e.addon, song, AddonRefs.Pass.LOSSLESS)).isEqualTo(AddonRefs.Found.Miss)
     }
 
+    @Test fun `a file whose host has only private answers on this network costs the add-on the song for now, not for 14 days`() = runBlocking<Unit> {
+        val e = EndToEnd(shared, host, ffmpeg, at("/addon/"))
+        server.enqueue(json("""{"tracks":[{"id":"7","title":"B","artist":"A","duration":200}]}"""))
+        server.enqueue(json("""{"url":"${at("/media/a.flac")}","codec":"flac"}"""))
+        val streamed = e.refs.stream(e.addon, song, AddonRefs.Pass.LOSSLESS, losslessAsk) as AddonRefs.Streamed.Ok
+
+        // Its file redirects to a name this network's DNS answers only with a private address: a
+        // blocker, a work network's split DNS (review-882 round 3, R3).
+        server.enqueue(redirect("https://media.attacker.example/a.flac"))
+        val result = e.downloader.download(source("/media/a.flac").copy(downloadUrl = streamed.info.url), dest())
+
+        assertThat(result.exceptionOrNull()).isInstanceOf(com.stash.core.addons.NoPublicAddressException::class.java)
+        // The ref is gone and nothing is written for 14 days: the table has no row for the song.
+        assertThat(e.dao.rows).isEmpty()
+        // While the app runs, neither pass asks that add-on for the song again.
+        val asked = server.requestCount
+        assertThat(e.refs.find(e.addon, song, AddonRefs.Pass.LOSSLESS)).isEqualTo(AddonRefs.Found.Miss)
+        assertThat(e.refs.find(e.addon, song, AddonRefs.Pass.LOSSY)).isEqualTo(AddonRefs.Found.Miss)
+        assertThat(server.requestCount).isEqualTo(asked)
+    }
+
     @Test fun `an ordinary failed fetch leaves the ref alone`() = runBlocking<Unit> {
         val e = EndToEnd(shared, host, ffmpeg, at("/addon/"))
         server.enqueue(json("""{"tracks":[{"id":"7","title":"B","artist":"A","duration":200}]}"""))

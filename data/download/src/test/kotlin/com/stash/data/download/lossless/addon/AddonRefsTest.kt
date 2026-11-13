@@ -19,6 +19,7 @@ import com.stash.core.addons.EclipseTraits
 import com.stash.core.addons.HeldStream
 import com.stash.core.addons.HttpAddonClient
 import com.stash.core.addons.InstalledAddon
+import com.stash.core.addons.MediaRefusal
 import com.stash.core.data.db.dao.AddonRefDao
 import com.stash.core.data.db.entity.AddonRefEntity
 import com.stash.data.download.lossless.TrackQuery
@@ -219,7 +220,7 @@ class AddonRefsTest {
         val served = refs.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq) as AddonRefs.Streamed.Ok
 
         // Its file redirected to the user's own network: the guard reports the stream's URL.
-        refs.refusedOnTheWire(served.info.url)
+        refs.refusedOnTheWire(served.info.url, MediaRefusal.URL)
 
         val row = dao.rows["bc" to key]!!
         assertThat(row.remoteId).isNull()
@@ -239,13 +240,13 @@ class AddonRefsTest {
     @Test fun `a refusal for a URL this add-on never answered changes nothing, and one is counted once`() = runTest {
         val refs = refs(searching(exact))
         val served = refs.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq) as AddonRefs.Streamed.Ok
-        refs.refusedOnTheWire("https://elsewhere.example/other.flac")
+        refs.refusedOnTheWire("https://elsewhere.example/other.flac", MediaRefusal.URL)
         assertThat(dao.rows["bc" to key]!!.remoteId).isEqualTo("42")
 
-        refs.refusedOnTheWire(served.info.url)
+        refs.refusedOnTheWire(served.info.url, MediaRefusal.URL)
         val stamped = dao.rows["bc" to key]!!
         now += 60_000L
-        refs.refusedOnTheWire(served.info.url)
+        refs.refusedOnTheWire(served.info.url, MediaRefusal.URL)
         assertThat(dao.rows["bc" to key]).isEqualTo(stamped)
     }
 
@@ -259,9 +260,58 @@ class AddonRefsTest {
         assertThat(refs.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq)).isInstanceOf(AddonRefs.Streamed.Ok::class.java)
 
         // As OkHttp names the request it refused.
-        refs.refusedOnTheWire("https://cdn.example/a.flac")
+        refs.refusedOnTheWire("https://cdn.example/a.flac", MediaRefusal.URL)
 
         assertThat(dao.rows["bc" to key]!!.remoteId).isNull()
+    }
+
+    // ------------------------------------------------------------------------------------------ refused by this network's DNS (review-882 round 3, R3)
+
+    @Test fun `a refusal by this network's DNS drops the ref and keeps the miss in memory only`() = runTest {
+        val client = searching(exact)
+        val refs = refs(client)
+        val served = refs.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq) as AddonRefs.Streamed.Ok
+
+        // Every answer for the media host was private: a DNS blocker, a work network's split DNS.
+        refs.refusedOnTheWire(served.info.url, MediaRefusal.NO_PUBLIC_ADDRESS)
+
+        // The ref is gone and nothing is written for 14 days.
+        assertThat(dao.rows).isEmpty()
+        // While the app runs, neither pass offers that add-on's stream for the song, and nothing is asked.
+        assertThat(refs.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq)).isEqualTo(AddonRefs.Streamed.Miss)
+        assertThat(refs.stream(addon(), song, AddonRefs.Pass.LOSSY, highReq)).isEqualTo(AddonRefs.Streamed.Miss)
+        coVerify(exactly = 1) { client.search(any(), any(), any(), any()) }
+        coVerify(exactly = 1) { client.stream(any(), any(), any(), any()) }
+        // The next start, perhaps on another network, asks the add-on again.
+        val nextStart = refs(client)
+        assertThat(nextStart.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq)).isInstanceOf(AddonRefs.Streamed.Ok::class.java)
+        coVerify(exactly = 2) { client.search(any(), any(), any(), any()) }
+    }
+
+    @Test fun `a refusal by this network's DNS leaves a miss the row already had`() = runTest {
+        val client = searching(exact)
+        // A ref the lossy pass uses while the lossless pass missed a day ago (N2).
+        dao.upsert(AddonRefEntity("bc", key, remoteId = "42", confidence = 0.9f, resolvedAt = now - 3_600_000L, losslessMissAt = now - 86_400_000L))
+        val refs = refs(client)
+        val served = refs.stream(addon(), song, AddonRefs.Pass.LOSSY, highReq) as AddonRefs.Streamed.Ok
+
+        refs.refusedOnTheWire(served.info.url, MediaRefusal.NO_PUBLIC_ADDRESS)
+
+        val row = dao.rows["bc" to key]!!
+        assertThat(row.remoteId).isNull()
+        assertThat(row.losslessMissAt).isEqualTo(now - 86_400_000L)
+        assertThat(row.aacMissAt).isNull()
+    }
+
+    @Test fun `forgetting an add-on forgets its songs refused by this network's DNS`() = runTest {
+        val client = searching(exact)
+        val refs = refs(client)
+        val served = refs.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq) as AddonRefs.Streamed.Ok
+        refs.refusedOnTheWire(served.info.url, MediaRefusal.NO_PUBLIC_ADDRESS)
+
+        refs.forget("bc")
+
+        assertThat(refs.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq)).isInstanceOf(AddonRefs.Streamed.Ok::class.java)
     }
 
     // ------------------------------------------------------------------------------------------ failures that are not misses (review-882 M3)

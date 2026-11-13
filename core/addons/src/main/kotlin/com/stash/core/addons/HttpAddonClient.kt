@@ -162,7 +162,7 @@ class HttpAddonClient @Inject constructor(
                     proxy = sharedClient.proxy,
                     proxySelector = sharedClient.proxySelector,
                     userAgent = userAgent,
-                    onRefused = { refusals.refused(it) },
+                    onRefused = { stream, why -> refusals.refused(stream, why) },
                 ),
             )
             .addNetworkInterceptor(PublicOnlyDns.connectionGuard(allowLoopback = hostOptions.allowLocalHttp))

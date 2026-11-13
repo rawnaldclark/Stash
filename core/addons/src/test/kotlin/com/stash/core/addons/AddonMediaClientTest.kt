@@ -98,12 +98,15 @@ class AddonMediaClientTest {
     @Before fun setUp() {
         a.start(InetAddress.getByName("127.0.0.1"), 0)
         b.start(InetAddress.getByName("127.0.0.1"), 0)
-        client = HttpAddonClient(shared, OpenAddonRateGate, NoFirstPartyAddons, UnsignedAddons, host, AddonMediaRefusals { refusedStreams += it })
+        client = HttpAddonClient(shared, OpenAddonRateGate, NoFirstPartyAddons, UnsignedAddons, host, AddonMediaRefusals { stream, why -> refusedStreams += stream; refusedWhy += why })
         media = client.mediaClient
     }
 
     /** What the media client's guard reported as refused ([AddonMediaRefusals]). */
     private val refusedStreams = CopyOnWriteArrayList<String>()
+
+    /** What each of those refusals was ([MediaRefusal]), in the same order. */
+    private val refusedWhy = CopyOnWriteArrayList<MediaRefusal>()
 
     @After fun tearDown() {
         a.shutdown()
@@ -237,6 +240,15 @@ class AddonMediaClientTest {
             at(a, "/two.flac"),
             "http://cdn.example.org/a.flac",
         ).inOrder()
+        // A URL refused for itself holds on any network; a name with only private answers is
+        // what this network's resolver said (review-882 round 3, R3).
+        assertThat(refusedWhy).containsExactly(
+            MediaRefusal.URL,
+            MediaRefusal.NO_PUBLIC_ADDRESS,
+            MediaRefusal.URL,
+            MediaRefusal.NO_PUBLIC_ADDRESS,
+            MediaRefusal.URL,
+        ).inOrder()
     }
 
     @Test fun `a refused request that says which stream it belongs to is reported under that stream`() {
@@ -245,6 +257,7 @@ class AddonMediaClientTest {
             .tag(AddonStreamTag::class.java, AddonStreamTag("https://media.example.org/m.mpd")).build()
         assertThrows(PrivateAddressException::class.java) { media.newCall(segment).execute().close() }
         assertThat(refusedStreams).containsExactly("https://media.example.org/m.mpd")
+        assertThat(refusedWhy).containsExactly(MediaRefusal.URL)
     }
 
     @Test fun `an ordinary failed fetch is not a refusal`() {

@@ -15,6 +15,7 @@ import com.stash.core.addons.AddonFailure
 import com.stash.core.addons.AddonResult
 import com.stash.core.addons.HttpAddonClient
 import com.stash.core.addons.InstalledAddon
+import com.stash.core.addons.MediaRefusal
 import com.stash.core.data.db.dao.AddonRefDao
 import com.stash.core.data.db.entity.AddonRefEntity
 import com.stash.data.download.lossless.TrackQuery
@@ -111,6 +112,8 @@ class AddonRefs @Inject constructor(
         val key = TidalClient.cacheKey(query)
         val rid = rowId(addon.id)
         val now = nowMs()
+        // Its stream was refused on this network's DNS a moment ago (round 3, R3): neither pass asks.
+        if (networkMisses["$rid|$key"]?.let { now - it < TidalClient.MISS_TTL_MS } == true) return Found.Miss
         val row = read(rid, key)
         if (row != null) {
             if (row.remoteId != null && now - row.resolvedAt < TidalClient.MATCH_TTL_MS) {
@@ -262,19 +265,49 @@ class AddonRefs @Inject constructor(
      * it pointed at the user's own network, through a redirect, a name that resolves there or a
      * DASH segment, or it broke the URL rule. The refusal comes after the rung has "served", so
      * without this the song failed on every play for the 30 days its ref lives, though a later
-     * source could play it. The ref is dropped and both passes are stamped: the refusal is about
-     * where the add-on keeps the song, not about a quality. A URL this class did not hand out
-     * (or handed out too long ago to remember) changes nothing.
+     * source could play it. The ref is dropped and both passes miss: the refusal is about where
+     * the add-on keeps the song, not about a quality. A URL this class did not hand out (or
+     * handed out too long ago to remember) changes nothing.
+     *
+     * How long the miss holds follows [why]. A refusal of the URL itself ([MediaRefusal.URL]) is
+     * true on any network: both passes are stamped in the table, for 14 days. A host whose every
+     * DNS answer was private ([MediaRefusal.NO_PUBLIC_ADDRESS]) is what this network's resolver
+     * said, and a blocker or a work network's DNS says it of a public CDN too: the miss is kept
+     * in memory only, as n8's is, and what the row said of either pass stays (round 3, R3).
      */
-    suspend fun refusedOnTheWire(streamUrl: String) {
+    suspend fun refusedOnTheWire(streamUrl: String, why: MediaRefusal) {
         val stream = answeredStreams.remove(streamKey(streamUrl)) ?: return
-        Log.i(TAG, "media refused on the wire ${stream.addonId}: its ref is dropped and the song is left to the next source")
+        Log.i(TAG, "media refused on the wire ${stream.addonId} (${why.name.lowercase()}): its ref is dropped and the song is left to the next source")
         held.forgetSong(stream.rid, stream.key)
         val now = nowMs()
-        write(stream.rid) {
-            refs.upsert(AddonRefEntity(stream.rid, stream.key, remoteId = null, resolvedAt = 0L, losslessMissAt = now, aacMissAt = now))
+        when (why) {
+            MediaRefusal.URL -> write(stream.rid) {
+                refs.upsert(AddonRefEntity(stream.rid, stream.key, remoteId = null, resolvedAt = 0L, losslessMissAt = now, aacMissAt = now))
+            }
+            MediaRefusal.NO_PUBLIC_ADDRESS -> {
+                if (networkMisses.size >= MAX_NETWORK_MISSES) networkMisses.clear()
+                networkMisses["${stream.rid}|${stream.key}"] = now
+                // The ref goes; a miss either pass had on record stays (as for `not_found`).
+                val stamps = read(stream.rid, stream.key)?.takeIf { it.losslessMissAt != null || it.aacMissAt != null }
+                write(stream.rid) {
+                    if (stamps == null) {
+                        refs.delete(stream.rid, stream.key)
+                    } else {
+                        refs.upsert(
+                            AddonRefEntity(stream.rid, stream.key, remoteId = null, resolvedAt = 0L, losslessMissAt = stamps.losslessMissAt, aacMissAt = stamps.aacMissAt),
+                        )
+                    }
+                }
+            }
         }
     }
+
+    /**
+     * A song whose stream from an add-on was refused because its host had no public DNS answer
+     * here ([refusedOnTheWire]), by add-on and song: when. Both passes miss while it holds. Memory
+     * only: the next start, perhaps on another network, asks the add-on again.
+     */
+    private val networkMisses = ConcurrentHashMap<String, Long>()
 
     /** Forgets every ref of [addonId], so a later add-on with the same id never inherits them (phase 4 §2.4). */
     suspend fun forget(addonId: String) {
@@ -282,6 +315,7 @@ class AddonRefs @Inject constructor(
         held.forget(rid)
         answeredStreams.values.removeIf { it.rid == rid }
         isrcMisses.keys.removeIf { it.startsWith("$rid|") }
+        networkMisses.keys.removeIf { it.startsWith("$rid|") }
         write(rid) { refs.deleteFor(rid) }
     }
 
@@ -534,6 +568,9 @@ class AddonRefs @Inject constructor(
 
         /** How many download misses of ISRC-only resolvers are remembered ([find]); past it the memory starts over. */
         private const val MAX_ISRC_MISSES = 4_096
+
+        /** How many songs a refusal by this network's DNS is remembered for ([refusedOnTheWire]). */
+        private const val MAX_NETWORK_MISSES = 4_096
 
         /** How many answered streams are remembered for [refusedOnTheWire], and for how long (a stream's URL lives an hour at most). */
         private const val MAX_ANSWERED = 512
