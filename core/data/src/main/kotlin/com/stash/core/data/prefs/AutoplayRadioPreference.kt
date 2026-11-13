@@ -6,11 +6,11 @@ import kotlinx.coroutines.flow.flowOf
 /**
  * "Autoplay radio": when the last queued track starts, seed a song radio from
  * it so the music never stops at the end of a one-off play (or an album).
- * Off by default. The DataStore-backed implementation is
+ * On by default. The DataStore-backed implementation is
  * [AutoplayRadioPreferencesManager], bound via Hilt.
  */
 interface AutoplayRadioPreference {
-    /** Emits whether autoplay radio is on, defaulting to `false`. */
+    /** Emits whether autoplay radio is on, defaulting to `true`. */
     val enabled: Flow<Boolean>
 
     /** Persists the toggle. */
