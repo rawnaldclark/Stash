@@ -231,6 +231,11 @@ jobs:
         env:
           LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
           LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+          # The signed lossless config (as release.yml passes it), so a CI debug APK has Tidal and
+          # the add-on defaults like a release. Without them LosslessConfigFetcher never starts and
+          # the app says "No lossless source set up yet". Empty on a fork's PR: the APK then has none.
+          LOSSLESS_CONFIG_URL: ${{ secrets.LOSSLESS_CONFIG_URL }}
+          LOSSLESS_CONFIG_PUBKEY: ${{ secrets.LOSSLESS_CONFIG_PUBKEY }}
         run: ./gradlew :app:assembleDebug --no-daemon
 
       - name: Locate debug APK
