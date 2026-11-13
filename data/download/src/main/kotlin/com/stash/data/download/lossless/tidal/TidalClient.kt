@@ -6,6 +6,7 @@ import com.stash.core.data.db.entity.AddonRefEntity
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.bitchord.LegacyRelayWire
+import com.stash.data.download.lossless.noteLosslessBusy
 import com.stash.data.download.lossless.qobuz.QobuzCandidateMatcher
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.relay.RelaySigner
@@ -104,9 +105,20 @@ class TidalClient @Inject constructor(
     /**
      * The stream for [query], or null on anything else (miss, busy, error, off). Kept for
      * the streaming rung, which only needs "play this or move on"; see [lookup].
+     *
+     * A busy answer is also told to the streaming walk this runs in ([noteLosslessBusy]): the
+     * lossy fallback that walk serves is then for this play only, and a look-ahead may wait out
+     * [TidalLookup.Busy.untilMs] and ask once more. Outside a walk (downloads) nothing changes.
      */
     suspend fun resolve(query: TrackQuery, allowAac: Boolean = false, cdOnly: Boolean = false): TidalStream? =
-        (lookup(query, allowAac, cdOnly = cdOnly) as? TidalLookup.Found)?.stream
+        when (val found = lookup(query, allowAac, cdOnly = cdOnly)) {
+            is TidalLookup.Found -> found.stream
+            is TidalLookup.Busy -> {
+                noteLosslessBusy(found.untilMs)
+                null
+            }
+            else -> null
+        }
 
     /**
      * Find [query] on Tidal, spending as little relay quota as possible:

@@ -114,7 +114,10 @@ class RefreshingDataSource(
             Log.w(TAG, "refresh for track $trackId returned a different file; failing the load")
             throw dead
         }
-        cache.put(trackId, fresh)
+        // The same play's fallback, refreshed: if it was kept only for this play (Tidal was busy), so is
+        // the new link, or a later play would reuse it and never ask the lossless sources again.
+        val busyUntil = cache.get(trackId)?.losslessBusyUntilMs
+        cache.put(trackId, if (busyUntil != null) fresh.copy(losslessBusyUntilMs = busyUntil) else fresh)
         return openRefreshed(spec, fresh.url)
     }
 

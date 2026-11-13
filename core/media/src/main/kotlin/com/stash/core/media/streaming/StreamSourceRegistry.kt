@@ -5,6 +5,7 @@ import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.media.diagnostics.PlaybackDiagnosticsLog
 import com.stash.data.download.lossless.LosslessAvailability
+import com.stash.data.download.lossless.LosslessBusyNote
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.PlayOrder
 import com.stash.data.download.lossless.quota.LosslessQuota
@@ -16,7 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -279,6 +280,19 @@ class StreamSourceRegistry internal constructor(
         youtube.resolve(track, allowYtDlp = true)
 
     /**
+     * The lossless sources alone, asked again for [track]: the chain as [resolve] builds it now
+     * (the play order, the Lossless switch, Data saver, the daily allowance all as they are at
+     * this moment), without JioSaavn, YouTube or an add-on's lossy pass, and without the hedged
+     * lanes. Null when none serves (still busy, no match, switched off).
+     *
+     * For a look-ahead that got a lossy fallback because Tidal was busy and waited out its
+     * Retry-After ([BusyLookAhead]): it already holds that fallback, and only a lossless answer
+     * would change what it plays.
+     */
+    suspend fun resolveLosslessOnly(track: TrackEntity): StreamUrl? =
+        resolve(track, allowYouTube = false, allowYtDlp = true)
+
+    /**
      * Shared scope for in-flight resolves. Mirrors
      * [com.stash.data.download.preview.PreviewUrlExtractor]'s `extractorScope`
      * deliberately: a resolve has to outlive any ONE caller's cancellation, or
@@ -507,8 +521,25 @@ class StreamSourceRegistry internal constructor(
         // For the diagnostics bundle's "Recent resolves": the rung that served, set at each
         // exit below. Still null when the walk ends means every rung missed.
         var servedBy: String? = null
+        // A lossless source that serves nothing because it is BUSY (Tidal's relay: 503 / 429 with a
+        // Retry-After) writes here (TidalClient.resolve). A lossy fallback this walk serves is then
+        // marked for this play only ([forThisPlay]); a genuine "no lossless version" leaves it empty
+        // and the fallback is kept as before.
+        val busyNote = LosslessBusyNote()
+
+        /** [result], served by [rung]: marked for this play only when it is lossy and a lossless source was busy. */
+        fun forThisPlay(result: StreamUrl, rung: String): StreamUrl {
+            if (!busyNote.heard || isLosslessRung(rung)) return result
+            Log.i(
+                TAG,
+                "$rung served ${track.id} only because a lossless source is busy " +
+                    "(for ${((busyNote.untilMs - System.currentTimeMillis()) / 1000).coerceAtLeast(0)} s more): for this play only",
+            )
+            return result.copy(losslessBusyUntilMs = busyNote.untilMs)
+        }
         return try {
-            coroutineScope {
+            // The note rides on the walk's context, so every rung below (and the hedged lanes) can write it.
+            withContext(busyNote) {
                 val jioLane = if (hedged && resolvers.any { it.first == "jiosaavn" }) {
                     async { quietly("jiosaavn", track) { jiosaavn.resolve(track) } }
                 } else {
@@ -529,12 +560,12 @@ class StreamSourceRegistry internal constructor(
                     if (name == TIDAL_DEFERRED) {
                         Log.i(TAG, "speculative resolve of ${track.id} stops before Tidal; the real play asks it")
                         servedBy = "none (speculative; Tidal waits for the play)"
-                        return@coroutineScope null
+                        return@withContext null
                     }
                     if (name == ADDON_DEFERRED || name == ADDON_LOSSY_DEFERRED) {
                         Log.i(TAG, "speculative resolve of ${track.id} stops before a metered add-on; the real play asks it")
                         servedBy = "none (speculative; an add-on waits for the play)"
-                        return@coroutineScope null
+                        return@withContext null
                     }
                     val result = quietly(name, track) { fn(track) }
                     // Feed the Home lossless-offline banner signal: a serve by any lossless rung
@@ -544,7 +575,9 @@ class StreamSourceRegistry internal constructor(
                     // skipped on purpose (no request), and lossless is not "offline".
                     if (isLosslessRung(name) && result != null) {
                         losslessSourceHealth.recordLosslessServed()
-                    } else if (index == lastLossless && result == null && losslessQuota?.isSpent() != true) {
+                    } else if (index == lastLossless && result == null && losslessQuota?.isSpent() != true && allowYouTube) {
+                        // allowYouTube: a lossless-only walk ([resolveLosslessOnly]) is the same song
+                        // asked again after a busy answer; the walk before it counted its miss.
                         losslessSourceHealth.recordLosslessMiss()
                     }
                     if (result != null) {
@@ -554,24 +587,25 @@ class StreamSourceRegistry internal constructor(
                         servedBy = name
                         jioLane?.cancel()
                         fastLane?.cancel()
-                        return@coroutineScope result
+                        return@withContext forThisPlay(result, name)
                     }
                 }
                 jioLane?.await()?.let {
                     Log.i(TAG, "jiosaavn served ${track.id} '${track.title}' (hedged)")
                     servedBy = "jiosaavn"
                     fastLane?.cancel()
-                    return@coroutineScope it
+                    return@withContext forThisPlay(it, "jiosaavn")
                 }
                 fastLane?.await()?.let {
                     Log.i(TAG, "youtube served ${track.id} '${track.title}' (fast lane, hedged)")
                     servedBy = "youtube (fast lane)"
-                    return@coroutineScope it
+                    return@withContext forThisPlay(it, "youtube")
                 }
                 if (hedged) {
-                    quietly("youtube", track) { youtube.resolve(track, allowYtDlp = true) }?.also {
+                    quietly("youtube", track) { youtube.resolve(track, allowYtDlp = true) }?.let {
                         Log.i(TAG, "youtube served ${track.id} '${track.title}'")
                         servedBy = "youtube"
+                        forThisPlay(it, "youtube")
                     }
                 } else {
                     null

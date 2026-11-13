@@ -95,7 +95,8 @@ class PrefetchOrchestrator @Inject constructor(
                 // reaches it (its own buffering asks, ahead of the transition); a skip costs nothing.
                 // Asked first: the policy re-takes its decision before the cache below is read.
                 if (qualityPolicy?.dataSaverApplies() == true) return@launch
-                if (streamUrlCache.get(nextTrackId) != null) return@launch
+                // A link an earlier play kept only for itself (a fallback while Tidal was busy) is not one.
+                if (streamUrlCache.get(nextTrackId)?.takeUnless { it.forThisPlayOnly } != null) return@launch
 
                 val track = trackDao.getById(nextTrackId) ?: return@launch
                 if (track.isDownloaded) return@launch
@@ -111,7 +112,10 @@ class PrefetchOrchestrator @Inject constructor(
 
                 // speculative: never makes the shared Tidal relay search for a look-ahead.
                 val resolved = streamResolver.resolve(track, speculative = true)
-                if (resolved != null) {
+                if (resolved?.forThisPlayOnly == true) {
+                    // A lossy fallback while Tidal was busy: not kept. The song's own look-ahead asks again.
+                    Log.d(TAG, "Prefetch for track $nextTrackId fell back while a lossless source is busy; not kept")
+                } else if (resolved != null) {
                     streamUrlCache.put(nextTrackId, resolved)
                     Log.d(TAG, "Prefetched stream URL for track $nextTrackId")
                 } else {
