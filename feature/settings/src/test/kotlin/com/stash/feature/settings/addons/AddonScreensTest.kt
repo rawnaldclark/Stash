@@ -96,6 +96,30 @@ class AddonScreensTest {
         }
     }
 
+    @Test fun `a page says its server sees nothing only of an add-on that is asked nothing`() {
+        // review-885 round 2, N5: the registry still reads the manifest of every entry that is not
+        // switched off by the user or turned off by Stash, so its server sees the phone's address.
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val nothing = "Stash isn't asking this add-on for anything now, so its server sees nothing."
+        val address = "Stash isn't asking this add-on for songs now. It still checks on the add-on now and then, so its server sees your internet address and nothing else."
+        val mine = AddonOverview.Row(
+            key = "addon:mine", kind = AddonOverview.Kind.ADDON, name = "Mine", host = "mine.example", mark = AddonOverview.Mark.NOT_MADE_BY_STASH,
+            status = AddonOverview.Status.WORKING, on = true, canSwitch = true, canRemove = true, playsSongs = true, userAdded = true,
+        )
+        fun says(row: AddonOverview.Row) = notAskedText(row)?.let(context::getString)
+        // In use: the page says what its server will see instead.
+        assertThat(says(mine)).isNull()
+        assertThat(says(mine.copy(status = AddonOverview.Status.OFF, on = false))).isEqualTo(nothing)
+        assertThat(says(mine.copy(status = AddonOverview.Status.TURNED_OFF_BY_STASH, on = false))).isEqualTo(nothing)
+        assertThat(says(mine.copy(status = AddonOverview.Status.TURNED_OFF_BY_STASH, on = false, userAdded = false))).isEqualTo(nothing)
+        for (held in listOf(AddonOverview.Status.WANTS_MORE, AddonOverview.Status.CHANGED, AddonOverview.Status.ONLY_BITCHORD, AddonOverview.Status.REPLACED)) {
+            assertThat(says(mine.copy(status = held, on = false))).isEqualTo(address)
+        }
+        assertThat(says(mine.copy(status = AddonOverview.Status.WANTS_MORE, on = true))).isEqualTo(address)
+        // A default switched off is still read: the switch only keeps it out of the play order.
+        assertThat(says(mine.copy(status = AddonOverview.Status.OFF, on = false, userAdded = false))).isEqualTo(address)
+    }
+
     @Test fun `only its buttons act - Add anyway confirms, Cancel dismisses`() {
         var confirmed = 0
         var dismissed = 0
@@ -370,7 +394,7 @@ class AddonScreensTest {
         rule.onNodeWithText("It never gets").assertExists()
     }
 
-    @Test fun `the page of an add-on Stash turned off, or one waiting for a review, says its server sees nothing`() {
+    @Test fun `the page of an add-on Stash turned off says its server sees nothing, and of one waiting for a review only the address`() {
         val sees = setOf(AddonSees.PLAYS, AddonSees.NEXT_UP)
         showPage(relay.copy(status = AddonOverview.Status.TURNED_OFF_BY_STASH, on = false, canSwitch = false, sees = sees, blockReason = BlockReason.HARMFUL))
         val nothing = "Stash isn't asking this add-on for anything now, so its server sees nothing."
@@ -379,10 +403,12 @@ class AddonScreensTest {
         rule.onAllNodesWithText("When it is on, its server will see").assertCountEquals0()
         rule.onAllNodesWithText("each song you play", substring = true).assertCountEquals0()
 
-        // Waiting for the user's review ("Wants to see more"): not used until they allow it.
+        // Waiting for the user's review ("Wants to see more"): not used until they allow it, but its
+        // manifest is still read, so its server sees the phone's address (round 2, N5).
         pageRow = relay.copy(status = AddonOverview.Status.WANTS_MORE, sees = sees)
         rule.waitForIdle()
-        rule.onNodeWithText(nothing).assertExists()
+        rule.onAllNodesWithText(nothing).assertCountEquals0()
+        rule.onNodeWithText("Stash isn't asking this add-on for songs now. It still checks on the add-on now and then, so its server sees your internet address and nothing else.").assertExists()
         rule.onAllNodesWithText("Its server will see").assertCountEquals0()
         rule.onAllNodesWithText("When it is on, its server will see").assertCountEquals0()
 

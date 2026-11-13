@@ -1438,6 +1438,7 @@
     <string name="settings_addons_page_does">What it does</string>
     <string name="settings_addons_page_sees">What it can see</string>
     <string name="settings_addons_page_sees_nothing_now">Stash isn\'t asking this add-on for anything now, so its server sees nothing.</string>
+    <string name="settings_addons_page_sees_address_only">Stash isn\'t asking this add-on for songs now. It still checks on the add-on now and then, so its server sees your internet address and nothing else.</string>
     <string name="settings_addons_page_sees_when_on_label">When it is on, its server will see</string>
     <string name="settings_addons_page_order">Play order</string>
     <!-- ICU message: {0} is the row's place (1, 2, 3…), {1} how many rows there are. -->

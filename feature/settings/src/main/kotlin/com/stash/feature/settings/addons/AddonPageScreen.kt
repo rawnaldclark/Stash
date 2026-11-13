@@ -203,14 +203,15 @@ internal fun AddonPageContent(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = SettingsRowPadH, vertical = SettingsRowPadV),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            // "Its server will see" is true only while Stash asks it. Switched off,
-                            // turned off by Stash, or waiting for the user's review, it is asked
-                            // nothing, and the page says that (review-885 N11). One the user can
-                            // switch back on also says what it will see then.
-                            val unused = !row.on || row.status == AddonOverview.Status.WANTS_MORE
-                            if (unused) {
+                            // "Its server will see" is true only while Stash asks it. Not used, the page
+                            // says what its server sees now ([notAskedText]: nothing, or only the
+                            // address; review-885 N11, round 2 N5). One the user can switch back on
+                            // also says what it will see then.
+                            val notAsked = notAskedText(row)
+                            val unused = notAsked != null
+                            if (notAsked != null) {
                                 Text(
-                                    text = stringResource(R.string.settings_addons_page_sees_nothing_now),
+                                    text = stringResource(notAsked),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

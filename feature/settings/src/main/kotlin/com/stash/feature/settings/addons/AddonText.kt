@@ -93,6 +93,22 @@ internal fun seesText(sees: Set<AddonSees>): Int {
     }
 }
 
+/**
+ * What an add-on's page says first under "What it can see" while Stash is not using it; null while
+ * it is, and the page says what its server will see. "Its server sees nothing" is true only of an
+ * add-on that is asked nothing at all: one of the user's switched off, or one Stash turned off. Any
+ * other that is not used (waiting for the user's review, its link now another add-on's, BitChord
+ * only, replaced by Stash's own) and a default the user switched off still have their manifest read
+ * now and then, so their server sees the phone's internet address (review-885 round 2, N5).
+ */
+@StringRes
+internal fun notAskedText(row: AddonOverview.Row): Int? {
+    if (row.on && row.status != AddonOverview.Status.WANTS_MORE) return null
+    val askedNothing = row.status == AddonOverview.Status.TURNED_OFF_BY_STASH ||
+        (row.status == AddonOverview.Status.OFF && row.userAdded)
+    return if (askedNothing) R.string.settings_addons_page_sees_nothing_now else R.string.settings_addons_page_sees_address_only
+}
+
 @StringRes
 internal fun useText(use: AddonLinks.Use): Int = when (use) {
     AddonLinks.Use.PLAYS_SONGS -> R.string.settings_addons_use_plays
