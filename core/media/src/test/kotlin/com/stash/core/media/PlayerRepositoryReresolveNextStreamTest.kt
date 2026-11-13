@@ -87,7 +87,7 @@ class PlayerRepositoryReresolveNextStreamTest {
         every { controller.getMediaItemAt(1) } returns slotFrom("mine")
         resolvesNextTo(stream(newUrl, "aac"))
         val on = kotlinx.coroutines.flow.MutableStateFlow(listOf(addon("mine"), addon("other")))
-        val watching = launch { repo.dropNextStreamWhenAnAddonLeaves(on) }
+        val watching = launch { repo.resolveAgainWhenAnAddonLeaves(on) }
         // The watcher runs on this test's scheduler; a resolve may leave it for a moment.
         fun settle(rounds: Int = 10, until: () -> Boolean = { false }) {
             for (round in 0 until rounds) {
@@ -136,7 +136,7 @@ class PlayerRepositoryReresolveNextStreamTest {
             }
         }
         val on = kotlinx.coroutines.flow.MutableStateFlow(listOf(addon("mine")))
-        val watching = launch { repo.dropNextStreamWhenAnAddonLeaves(on) }
+        val watching = launch { repo.resolveAgainWhenAnAddonLeaves(on) }
         testScheduler.runCurrent()
         val lookAhead = launch { repo.prefetchNextTrack() }
         started.await()
@@ -157,7 +157,7 @@ class PlayerRepositoryReresolveNextStreamTest {
         // The slot in setUp holds a link with no add-on origin.
         resolvesNextTo(stream(newUrl, "aac"))
         val on = kotlinx.coroutines.flow.MutableStateFlow(listOf(addon("mine")))
-        val watching = launch { repo.dropNextStreamWhenAnAddonLeaves(on) }
+        val watching = launch { repo.resolveAgainWhenAnAddonLeaves(on) }
         testScheduler.runCurrent()
         on.value = emptyList()
         repeat(20) { testScheduler.runCurrent(); Thread.sleep(5) }
@@ -212,6 +212,7 @@ class PlayerRepositoryReresolveNextStreamTest {
         every { controller.getMediaItemAt(1) } returns slot(2L, oldUrl, "flac")
         every { controller.replaceMediaItem(1, capture(swaps)) } returns Unit
         every { streamUrlCache.get(any()) } returns null
+        every { streamUrlCache.invalidateOrigin(any()) } returns emptySet()
         coEvery { trackDao.getById(any()) } returns null
         repo.currentQueueTracks = listOf(playing, next)
     }

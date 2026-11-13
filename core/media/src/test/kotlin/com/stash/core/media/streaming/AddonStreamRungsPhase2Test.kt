@@ -39,6 +39,19 @@ class AddonStreamRungsPhase2Test {
         assertThat(rungs.map { it.addon.id }).containsExactly("tidal")
     }
 
+    @Test fun `an add-on set aside for a wrong file is no rung in either pass until its cooldown ends`() {
+        // The player refused its stream (AddonStreamCheck), or a download its file: the next resolve
+        // must not ask it again, or the song it was refused for would be handed the same file.
+        var now = 0L
+        val gate = com.stash.data.download.lossless.LosslessSourceHealthGate { now }
+        val rungs = AddonStreamRungs(Registry(listOf(addon("liar", firstParty = false), addon("honest", firstParty = false))), mockk(), gate)
+        gate.recordWrongFile("addon:liar")
+        assertThat(rungs.rungs().map { it.addon.id }).containsExactly("honest")
+        assertThat(rungs.lossyRungs().map { it.addon.id }).containsExactly("honest")
+        now += com.stash.data.download.lossless.LosslessSourceHealthGate.COOLDOWN_MS
+        assertThat(rungs.rungs().map { it.addon.id }).containsExactly("liar", "honest").inOrder()
+    }
+
     @Test fun `lossy codecs keep their names`() {
         assertThat(AddonStreamRung.codecName(Codec.AAC)).isEqualTo("aac")
         assertThat(AddonStreamRung.codecName(Codec.HE_AAC)).isEqualTo("aac")

@@ -242,6 +242,47 @@ class StreamUrlCacheTest {
         assertThat(cache.get(4L)).isEqualTo(mine)
     }
 
+    /**
+     * The player refused one of an add-on's streams (AddonStreamCheck): it is set aside, and no link
+     * it handed out is served while it is, nor one a resolve already under way puts here after.
+     */
+    @Test
+    fun get_servesNoLinkOfAnAddonThatIsSetAside() {
+        var now = 0L
+        val gate = com.stash.data.download.lossless.LosslessSourceHealthGate { now }
+        val guarded = StreamUrlCache(DataSaver.Off, NoAddonGate, gate).apply {
+            nowMsProvider = { wall }
+            elapsedMsProvider = { mono }
+        }
+        val liar = StreamUrl("https://cdn.liar.example/a.flac", expiresAtMs = 1_000_000L, codec = "flac", origin = "addon:liar")
+        val tidal = StreamUrl("https://cdn/c.flac", expiresAtMs = 1_000_000L, codec = "flac", origin = "tidal")
+        guarded.put(1L, liar)
+        guarded.put(2L, tidal)
+        gate.recordWrongFile("addon:liar")
+        assertThat(guarded.get(1L)).isNull()
+        assertThat(guarded.get(2L)).isEqualTo(tidal)
+        guarded.put(3L, liar) // a resolve that was already under way
+        assertThat(guarded.get(3L)).isNull()
+        // Its cooldown over, it is asked again, and what it hands out is served.
+        now += com.stash.data.download.lossless.LosslessSourceHealthGate.COOLDOWN_MS
+        guarded.put(4L, liar)
+        assertThat(guarded.get(4L)).isEqualTo(liar)
+    }
+
+    @Test
+    fun invalidateOrigin_dropsEveryLinkThatOriginHandedOut_andSaysWhose() {
+        val mine = StreamUrl("https://cdn.mine.example/a.flac", expiresAtMs = 1_000_000L, codec = "flac", origin = "addon:mine")
+        val tidal = StreamUrl("https://cdn/c.flac", expiresAtMs = 1_000_000L, codec = "flac", origin = "tidal")
+        cache.put(1L, mine)
+        cache.put(2L, mine.copy(url = "https://cdn.mine.example/b.flac"))
+        cache.put(3L, tidal)
+        assertThat(cache.invalidateOrigin("addon:mine")).containsExactly(1L, 2L)
+        assertThat(cache.get(1L)).isNull()
+        assertThat(cache.get(2L)).isNull()
+        assertThat(cache.get(3L)).isEqualTo(tidal)
+        assertThat(cache.invalidateOrigin("addon:mine")).isEmpty()
+    }
+
     @Test
     fun get_servesLosslessLinksWhenDataSaverIsOff() {
         val unguarded = StreamUrlCache(DataSaver(switchOn = { false }, metered = { true })).apply {

@@ -1,0 +1,285 @@
+package com.stash.core.media
+
+import android.os.Bundle
+import android.os.Looper
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
+import androidx.media3.session.MediaController
+import androidx.test.core.app.ApplicationProvider
+import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.prefs.StreamingPreference
+import com.stash.core.data.repository.MusicRepository
+import com.stash.core.data.sync.TrackIdentityEvents
+import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_CODEC
+import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_ORIGIN
+import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_ID
+import com.stash.core.media.streaming.AddonStreamCheck
+import com.stash.core.media.streaming.AddonStreamRefusedException
+import com.stash.core.media.streaming.ConnectivityMonitor
+import com.stash.core.media.streaming.STASH_RESOLVE_SCHEME
+import com.stash.core.media.streaming.StreamSourceRegistry
+import com.stash.core.media.streaming.StreamUrl
+import com.stash.core.media.streaming.StreamUrlCache
+import com.stash.core.media.streaming.stashResolveUri
+import com.stash.core.model.Track
+import com.stash.data.download.lossless.LosslessSourceHealthGate
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runTest
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+
+/**
+ * Every queued song whose link came from an add-on that must not play any more is resolved again:
+ * one that left (removed, switched off, turned off by Stash) and one the player's stream check set
+ * aside. One path serves both ([PlayerRepositoryImpl.resolveAgainLinksFrom]).
+ *
+ * #885 item 281 (Pixel 5, 2026-11-13): an add-on removed during a song, and the next TWO songs,
+ * which the autoplay radio had queued as placeholders and the player had already read ahead from
+ * the add-on, still played it. Only the next slot was looked at, and only for an origin a
+ * placeholder never has.
+ */
+@RunWith(RobolectricTestRunner::class)
+class PlayerRepositoryAddonLinksTest {
+
+    private val playbackStateStore: PlaybackStateStore = mockk(relaxed = true)
+    private val musicRepository: MusicRepository = mockk { every { trackDeletions } returns MutableSharedFlow() }
+    private val streamingPreference: StreamingPreference = mockk(relaxed = true) { coEvery { current() } returns true }
+    private val streamResolver: StreamSourceRegistry = mockk()
+    private val trackDao: TrackDao = mockk(relaxed = true)
+    private val controller: MediaController = mockk(relaxed = true)
+    private val trackIdentityEvents: TrackIdentityEvents = mockk { every { changes } returns MutableSharedFlow() }
+    private val gate = LosslessSourceHealthGate()
+    private val check = AddonStreamCheck(gate).apply { log = {} }
+    private val cache = StreamUrlCache()
+    private lateinit var repo: PlayerRepositoryImpl
+
+    private val playing = Track(id = 1L, title = "Playing", artist = "Artist")
+    private val second = Track(id = 2L, title = "Radio two", artist = "Artist", durationMs = 200_000L, isStreamable = true)
+    private val third = Track(id = 3L, title = "Radio three", artist = "Artist", durationMs = 210_000L, isStreamable = true)
+    private val newUrl = "https://cdn.example/two.flac"
+
+    /** The player's queue: index 0 plays, 1 is next, 2 after it. Every replace lands here, in order in [swaps]. */
+    private val slots = mutableListOf<MediaItem>()
+    private val swaps = mutableListOf<Pair<Int, MediaItem>>()
+
+    private fun addon(id: String) = com.stash.core.addons.InstalledAddon(
+        base = "https://$id.example/",
+        manifest = com.stash.addons.contract.Manifest(
+            stash = 1, id = id, name = id, version = "1", kind = com.stash.addons.contract.AddonKind.SERVER, resources = listOf("search", "stream"),
+        ),
+        userAdded = true,
+    )
+
+    /** A slot the autoplay radio queued: a placeholder, no origin of its own. */
+    private fun radioSlot(track: Track) = MediaItem.Builder()
+        .setMediaId(track.id.toString())
+        .setUri(stashResolveUri(track.id, title = track.title, artist = track.artist, durationMs = track.durationMs))
+        .setMediaMetadata(MediaMetadata.Builder().setExtras(Bundle().apply { putLong(EXTRA_TRACK_ID, track.id) }).build())
+        .build()
+
+    /** A slot holding a URL [origin] handed out, stamped as the look-ahead and a tap stamp it. */
+    private fun urlSlot(id: Long, origin: String) = MediaItem.Builder()
+        .setMediaId(id.toString())
+        .setUri("https://media.${origin.replace(":", "-")}.example/$id.flac")
+        .setMediaMetadata(
+            MediaMetadata.Builder().setExtras(
+                Bundle().apply {
+                    putLong(EXTRA_TRACK_ID, id)
+                    putString(EXTRA_STREAM_ORIGIN, origin)
+                    putString(EXTRA_STREAM_CODEC, "flac")
+                },
+            ).build(),
+        )
+        .build()
+
+    private fun link(origin: String, url: String = "https://media.example/x.flac") =
+        StreamUrl(url = url, expiresAtMs = System.currentTimeMillis() + 3_600_000L, codec = "flac", origin = origin)
+
+    /** Lets the watcher run: a resolve may take it off the test's scheduler for a moment. */
+    private fun TestScope.settle(rounds: Int = 200, until: () -> Boolean = { false }) {
+        for (round in 0 until rounds) {
+            testScheduler.runCurrent()
+            if (until()) return
+            Thread.sleep(5)
+        }
+    }
+
+    @Before
+    fun setUp() {
+        repo = PlayerRepositoryImpl(
+            context = ApplicationProvider.getApplicationContext(),
+            playbackStateStore = playbackStateStore,
+            musicRepository = musicRepository,
+            streamingPreference = streamingPreference,
+            streamResolver = streamResolver,
+            streamUrlCache = cache,
+            connectivity = mockk<ConnectivityMonitor>(relaxed = true),
+            trackDao = trackDao,
+            playbackResumer = PlaybackResumer(playbackStateStore, trackDao),
+            radioGenerator = mockk(relaxed = true),
+            trackIdentityEvents = trackIdentityEvents,
+            playbackSessionBus = PlaybackSessionBus(),
+            addonStreamCheck = check,
+        )
+        every { controller.isConnected } returns true
+        repo.controllerDeferred = controller
+        every { controller.currentMediaItemIndex } returns 0
+        every { controller.nextMediaItemIndex } returns 1
+        every { controller.mediaItemCount } answers { slots.size }
+        every { controller.getMediaItemAt(any()) } answers { slots[firstArg()] }
+        every { controller.currentMediaItem } answers { slots[0] }
+        every { controller.replaceMediaItem(any(), any()) } answers {
+            swaps += firstArg<Int>() to secondArg<MediaItem>()
+            slots[firstArg()] = secondArg()
+        }
+        coEvery { trackDao.getById(any()) } returns null
+        coEvery { streamResolver.resolve(any(), allowYouTube = true, allowYtDlp = true, speculative = true) } returns
+            StreamUrl(url = newUrl, expiresAtMs = Long.MAX_VALUE, codec = "flac", origin = "qbdlx")
+        repo.currentQueueTracks = listOf(playing, second, third)
+    }
+
+    // ------------------------------------------------------------------------------------- an add-on leaves
+
+    @Test
+    fun `item 281 - the radio's next two songs, read ahead from an add-on that is removed, are both resolved again`() = runTest {
+        // The song playing came from the add-on; the radio queued the next two as placeholders, and the
+        // player opened both from the same add-on while reading ahead (32 s files: two fit in its buffer).
+        slots += listOf(urlSlot(1L, "addon:radio"), radioSlot(second), radioSlot(third))
+        check.opened(2L, "addon:radio")
+        check.opened(3L, "addon:radio")
+        cache.put(2L, link("addon:radio"))
+        cache.put(3L, link("addon:radio"))
+        val on = MutableStateFlow(listOf(addon("radio")))
+        val watching = launch { repo.resolveAgainWhenAnAddonLeaves(on) }
+        settle(rounds = 5)
+        assertThat(swaps).isEmpty()
+
+        on.value = emptyList() // removed, mid-song
+        settle { swaps.size >= 3 }
+        watching.cancel()
+
+        // Both slots were put back as placeholders the player hasn't seen (so it builds new sources,
+        // dropping what it read ahead), without the add-on's stamps; then the next one was looked up again.
+        val putBack = swaps.filter { it.second.localConfiguration?.uri?.scheme == STASH_RESOLVE_SCHEME }
+        assertThat(putBack.map { it.first }).containsExactly(1, 2)
+        assertThat(putBack[0].second.localConfiguration?.uri).isNotEqualTo(radioSlot(second).localConfiguration?.uri)
+        assertThat(putBack[1].second.localConfiguration?.uri).isNotEqualTo(radioSlot(third).localConfiguration?.uri)
+        assertThat(putBack[1].second.localConfiguration?.uri?.getQueryParameter("d")).isEqualTo("210000")
+        assertThat(slots[1].localConfiguration?.uri?.toString()).isEqualTo(newUrl)
+        coVerify(exactly = 1) { streamResolver.resolve(match { it.id == 2L }, allowYouTube = true, allowYtDlp = true, speculative = true) }
+        // Its links are out of the cache, and its notes are gone; the song playing plays on.
+        assertThat(cache.get(3L)).isNull()
+        assertThat(check.openedFrom(2L)).isNull()
+        assertThat(check.openedFrom(3L)).isNull()
+        assertThat(swaps.none { it.first == 0 }).isTrue()
+    }
+
+    @Test
+    fun `a link the add-on handed out further down the queue is resolved again too, and another source's next song is left alone`() = runTest {
+        slots += listOf(urlSlot(1L, "qbdlx"), urlSlot(2L, "qbdlx"), urlSlot(3L, "addon:gone"))
+        val on = MutableStateFlow(listOf(addon("gone")))
+        val watching = launch { repo.resolveAgainWhenAnAddonLeaves(on) }
+        settle(rounds = 5)
+        on.value = emptyList()
+        settle { swaps.isNotEmpty() }
+        settle(rounds = 10)
+        watching.cancel()
+
+        assertThat(swaps.map { it.first }).containsExactly(2)
+        assertThat(slots[2].localConfiguration?.uri?.scheme).isEqualTo(STASH_RESOLVE_SCHEME)
+        assertThat(slots[2].mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN)).isNull()
+        assertThat(slots[2].mediaMetadata.extras?.getString(EXTRA_STREAM_CODEC)).isNull()
+        // The next song came from elsewhere: nothing to look up again.
+        coVerify(exactly = 0) { streamResolver.resolve(any(), any(), any(), any()) }
+    }
+
+    // ------------------------------------------------------------------------------------- an add-on is set aside
+
+    @Test
+    fun `a refused stream read ahead two songs deep is put back, with every slot of that add-on, and nothing of another`() = runTest {
+        slots += listOf(urlSlot(1L, "qbdlx"), urlSlot(2L, "addon:other"), radioSlot(third))
+        check.opened(3L, "addon:liar")
+        cache.put(3L, link("addon:liar"))
+
+        repo.resolveAgainWhenAStreamIsRefused(flowOf(AddonStreamCheck.Refused("addon:liar", 3L, "3", AddonStreamCheck.Why.LOSSY)))
+
+        assertThat(swaps.map { it.first }).containsExactly(2)
+        assertThat(slots[2].localConfiguration?.uri?.scheme).isEqualTo(STASH_RESOLVE_SCHEME)
+        assertThat(cache.get(3L)).isNull()
+        // Put back before the player reached it: no error will come for it.
+        assertThat(check.takeRefusal(3L)).isFalse()
+    }
+
+    @Test
+    fun `a refused stream in the next slot is put back and looked up again from the next source`() = runTest {
+        slots += listOf(urlSlot(1L, "qbdlx"), urlSlot(2L, "addon:liar"))
+
+        repo.resolveAgainWhenAStreamIsRefused(flowOf(AddonStreamCheck.Refused("addon:liar", 2L, "2", AddonStreamCheck.Why.VIDEO)))
+
+        assertThat(swaps.map { it.first }).containsExactly(1, 1).inOrder()
+        assertThat(swaps[0].second.localConfiguration?.uri?.scheme).isEqualTo(STASH_RESOLVE_SCHEME)
+        assertThat(slots[1].localConfiguration?.uri?.toString()).isEqualTo(newUrl)
+    }
+
+    // ------------------------------------------------------------------------------------- the song playing is refused
+
+    private fun idleMain() = shadowOf(Looper.getMainLooper()).idle()
+
+    private fun refusalOfPlaying(cause: Throwable?) {
+        slots += listOf(urlSlot(1L, "addon:liar"), urlSlot(2L, "qbdlx"))
+        repo.playerListener.onPlayerError(PlaybackException("Source error", cause, PlaybackException.ERROR_CODE_IO_UNSPECIFIED))
+        idleMain()
+    }
+
+    private fun assertResolvedAgainNotRetried() {
+        assertThat(swaps.map { it.first }).containsExactly(0)
+        val placeholder = swaps.single().second
+        assertThat(placeholder.localConfiguration?.uri?.scheme).isEqualTo(STASH_RESOLVE_SCHEME)
+        assertThat(placeholder.mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN)).isNull()
+        verify { controller.prepare() }
+        // Not the cascade guard's same-link retry, nor a skip: the song plays from the next source.
+        verify(exactly = 0) { controller.seekTo(any<Int>(), any<Long>()) }
+        verify(exactly = 0) { controller.seekToNextMediaItem() }
+        assertThat(repo.streamingHaltedEvents.replayCache).isEmpty()
+    }
+
+    @Test
+    fun `the song playing whose add-on stream was refused is resolved again, not retried on the same link`() {
+        refusalOfPlaying(AddonStreamRefusedException(AddonStreamCheck.Why.LOSSY))
+        assertResolvedAgainNotRetried()
+    }
+
+    @Test
+    fun `the refusal is known by its message when the session sends the cause on as another exception`() {
+        refusalOfPlaying(android.os.RemoteException(AddonStreamRefusedException(AddonStreamCheck.Why.LENGTH).message))
+        assertResolvedAgainNotRetried()
+    }
+
+    @Test
+    fun `the refusal is known by the check's record when the session sends no cause at all`() {
+        check.judge(AddonStreamCheck.Claim("addon:liar", 1L, "1", statedLossless = true, songMs = 0L), listOf("audio/mpeg"), null)
+        refusalOfPlaying(cause = null)
+        assertResolvedAgainNotRetried()
+    }
+
+    @Test
+    fun `any other error of an add-on stream still goes to the cascade guard`() {
+        refusalOfPlaying(java.io.IOException("connection reset"))
+        assertThat(swaps).isEmpty()
+        verify { controller.seekTo(0, any<Long>()) } // its one same-item retry
+    }
+}
