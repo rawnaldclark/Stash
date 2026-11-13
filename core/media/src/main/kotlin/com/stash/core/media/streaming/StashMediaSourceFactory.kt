@@ -169,9 +169,26 @@ class StashMediaSourceFactory(
      * opened a stream: an add-on's stream is checked before it plays, any other is left alone.
      */
     private fun checkedLazy(item: MediaItem): MediaSource {
-        val source = lazyFactory.createMediaSource(item)
+        // A placeholder's stream is a file read through its data source, never a manifest (a manifest's
+        // answer gets a source of its own, [ResolveFirstMediaSource]). A slot put back from a manifest's
+        // item may still carry its MIME type (`application/dash+xml`), which would make this a DASH
+        // source that reads the file as a manifest and fails (review-888 M1).
+        val source = lazyFactory.createMediaSource(
+            if (item.localConfiguration?.mimeType == null) item else item.buildUpon().setMimeType(null).build(),
+        )
         val check = addonCheck ?: return source
         return AddonCheckedMediaSource(source, check) { opened -> opened?.let { AddonStreamCheck.claimOf(it, item) } }
+    }
+
+    /**
+     * A placeholder's resolve, whose answer may be played now: an add-on that left or was set aside
+     * while it answered ([StreamUrlCache.isServable]; an unofficial one may take 6 s) is asked past
+     * once, and its answer is never handed on (review-888 m1).
+     */
+    private suspend fun resolveServable(entity: com.stash.core.data.db.entity.TrackEntity): StreamUrl? {
+        val first = resolver.resolve(entity, allowYouTube = true, allowYtDlp = true) ?: return null
+        if (urlCache.isServable(first)) return first
+        return resolver.resolve(entity, allowYouTube = true, allowYtDlp = true)?.takeIf { urlCache.isServable(it) }
     }
 
     /** [source], for an item resolved to an add-on's stream, judged by [addonCheck] before it plays. */
@@ -291,7 +308,7 @@ class StashMediaSourceFactory(
                             urlCache.get(trackId)?.takeIf {
                                 (row?.soundCloudId == null && row?.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud"
                             } ?: (if (uri.getQueryParameter("sc") == "1" && row?.soundCloudId == null) null else placeholderEntity(trackDao, trackId, uri))
-                                ?.let { resolver.resolve(it, allowYouTube = true, allowYtDlp = true) }
+                                ?.let { resolveServable(it) }
                                 ?.also { urlCache.put(trackId, it) }
                         }
                     },
@@ -299,7 +316,12 @@ class StashMediaSourceFactory(
                         // A manifest's segments are read by the DASH source, never by a placeholder's data
                         // source: which add-on answered is noted here (a progressive child notes it as it opens).
                         if (resolved != null) addonCheck?.opened(trackId, resolved.origin)
-                        if (resolved?.isHls == true) {
+                        if (resolved != null && !urlCache.isServable(resolved)) {
+                            // Its add-on left or was set aside since it answered, and the note above may have come
+                            // too late for the queue to see (review-888 m1): the lazy child resolves again as it
+                            // opens, without it.
+                            checkedLazy(item)
+                        } else if (resolved?.isHls == true) {
                             streamingFactory.createHlsMediaSource(item, resolved)
                         } else if (resolved?.isDash == true) {
                             if (AddonPlayback.isAddonOrigin(resolved.origin)) {

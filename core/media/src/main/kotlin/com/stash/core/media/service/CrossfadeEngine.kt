@@ -10,6 +10,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import com.stash.core.media.streaming.isPutBack
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -227,6 +228,7 @@ class CrossfadeEngine(
         spare.volume = 0f
         // At the master's speed, so the next song doesn't change tempo when it takes over.
         spare.playbackParameters = playerA.playbackParameters
+        primedUri = item.localConfiguration?.uri
         spare.setMediaItem(item)
         spare.prepare()
         spare.seekTo(0)
@@ -274,17 +276,25 @@ class CrossfadeEngine(
         if (::playerB.isInitialized) playerB.bufferedPosition.coerceAtLeast(0) else 0
 
     /**
-     * True when the spare is primed with [item] (so we don't re-prepare it): the same song, from
-     * the same place. A slot put back with another URI since the spare was primed (the song's link
-     * came from an add-on that left or was set aside, a download finished, a new quality) is
-     * another item: priming the spare again builds it a new source, so the fade never plays what
-     * the slot no longer holds. A change of metadata only (a cover, the quality stamped) keeps it.
+     * True when the spare is primed with [item] (so we don't re-prepare it): the same song, and
+     * its slot not put back since. A slot put back to be resolved again (`stash-resolve://` with
+     * [isPutBack]: its link came from an add-on that left or was set aside, or a new quality was
+     * picked) is another item: priming the spare again builds it a new source, so the fade never
+     * plays what the slot no longer holds. Anything else keeps the spare, as it did when only the
+     * song was compared: a change of metadata (a cover, the quality stamped), a placeholder the
+     * look-ahead swapped for the very URL it resolved to, a slot that now shows its manifest
+     * (review-888 m2: re-priming on those fetched the same file again and could miss the fade).
      */
     fun isPreparedFor(item: MediaItem?): Boolean {
         if (item == null || !::playerB.isInitialized || playerB.mediaItemCount == 0) return false
         val primed = playerB.currentMediaItem ?: return false
-        return primed.mediaId == item.mediaId && primed.localConfiguration?.uri == item.localConfiguration?.uri
+        if (primed.mediaId != item.mediaId) return false
+        val uri = item.localConfiguration?.uri
+        return uri == primedUri || uri?.isPutBack() != true
     }
+
+    /** The URI the spare was last primed on ([prepareNext]), as its slot gave it. */
+    @Volatile private var primedUri: android.net.Uri? = null
 
     /**
      * Lets the spare go when it is primed (and not fading in) on the song [mediaId]: the player

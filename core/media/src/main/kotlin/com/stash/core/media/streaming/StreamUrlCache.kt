@@ -165,7 +165,15 @@ class StreamUrlCache @Inject constructor(
      * add-on is set aside ([health]): a link it handed out before its stream was refused is not
      * played either, nor one a resolve already under way puts here after.
      */
-    private fun addonIsOn(url: StreamUrl): Boolean {
+    private fun addonIsOn(url: StreamUrl): Boolean = isServable(url)
+
+    /**
+     * Whether [url] may be played now: true unless an add-on answered it and that add-on is no longer
+     * on or is set aside ([addonIsOn]). For a link fresh from a resolve, which never passed through
+     * [get]: an add-on removed while it was answering (an unofficial one may take 6 s) must not be
+     * played either (review-888 m1). Any thread.
+     */
+    fun isServable(url: StreamUrl): Boolean {
         val origin = url.origin ?: return true
         if (!origin.startsWith(AddonStreamRung.ORIGIN_PREFIX)) return true
         if (health?.isDegraded(origin) == true) return false

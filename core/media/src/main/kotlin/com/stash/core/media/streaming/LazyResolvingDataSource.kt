@@ -84,8 +84,14 @@ private const val ROW_OVERRIDE_PARAM = "pin"
  */
 fun Uri.withRowOverride(): Uri = buildUpon().appendQueryParameter(ROW_OVERRIDE_PARAM, "1").build()
 
-/** Query param counting how often a placeholder was resolved again from the start ([resolvedAgain]). Read by no one. */
+/** Query param marking a placeholder put back to be resolved again from the start ([resolvedAgain]). Read only by [isPutBack]. */
 private const val AGAIN_PARAM = "again"
+
+/**
+ * The next [AGAIN_PARAM] value. It starts at the wall clock and only grows, so no put-back's URI is
+ * one an earlier put-back made, in this process or a past one whose queue was restored.
+ */
+private val againSeq = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
 
 /**
  * [this] placeholder as a new item to the player: the same song, its source built afresh.
@@ -94,17 +100,22 @@ private const val AGAIN_PARAM = "again"
  * period it already prepared and every byte it already loaded: a placeholder put back in its own
  * slot plays what its first open read. A song whose link must not play any more (its add-on left
  * or was set aside) needs a new source, which opens and resolves again; a URI that differs only in
- * this count is that. Every other param is kept, so the resolve reads the same inputs.
+ * [AGAIN_PARAM] is that. Its value is new each time, not one more than this URI's: a slot's item
+ * does not always show its source's own URI (a [ResolveFirstMediaSource] shows its DASH child's
+ * manifest), so "one more" than the queue's placeholder could be the source's own URI again, which
+ * it would keep (review-888 M1). Every other param is kept, so the resolve reads the same inputs.
  */
 fun Uri.resolvedAgain(): Uri {
-    val again = (getQueryParameter(AGAIN_PARAM)?.toIntOrNull() ?: 0) + 1
     val builder = buildUpon().clearQuery()
     for (name in queryParameterNames) {
         if (name == AGAIN_PARAM) continue
         for (value in getQueryParameters(name)) builder.appendQueryParameter(name, value)
     }
-    return builder.appendQueryParameter(AGAIN_PARAM, again.toString()).build()
+    return builder.appendQueryParameter(AGAIN_PARAM, againSeq.incrementAndGet().toString()).build()
 }
+
+/** True for a placeholder put back to be resolved again ([resolvedAgain]): its slot's link was dropped. */
+fun Uri.isPutBack(): Boolean = scheme == STASH_RESOLVE_SCHEME && getQueryParameter(AGAIN_PARAM) != null
 
 /**
  * DataSource that turns a `stash-resolve://track/<id>` placeholder into a
@@ -156,7 +167,8 @@ class LazyResolvingDataSource(
     private val addonDelegate: (() -> DataSource)? = null,
     /**
      * Told each stream this source opens for a song (its track id; never a downloaded file), on the
-     * loader thread, once it is open: the player's check of an add-on's stream reads it to know whose
+     * loader thread: as a first open picks it, before any byte is asked for ([servable]), and once it
+     * is open. The player's check of an add-on's stream reads it to know whose
      * stream its period plays ([AddonCheckedMediaSource], [OpenedStream]), and which queued songs an
      * add-on's links are in ([AddonStreamCheck.opened]). Null: nobody asks.
      */
@@ -244,7 +256,8 @@ class LazyResolvingDataSource(
             next
         }
 
-        var stream = fresh
+        // A first open: the stream is noted as this song's, then its add-on is asked about ([servable]).
+        var stream = if (pin == null) servable(fresh, trackId, uri) else fresh
         val length = try {
             openStream(stream, dataSpec)
         } catch (e: IOException) {
@@ -277,6 +290,26 @@ class LazyResolvingDataSource(
         if (stream !== pin) pinStream(stream)
         onOpened?.invoke(trackId, stream)
         return length
+    }
+
+    /**
+     * [stream], told to [onOpened] before it opens, unless the add-on that answered it left or was set
+     * aside meanwhile ([StreamUrlCache.isServable]): an unofficial add-on may take its whole 6 s budget
+     * to answer, and one removed in that time must not be played (review-888 m1). The note comes
+     * first, so a leave either finds this song by it (the queue puts its slot back) or is seen here.
+     * Then the song is resolved once more, now without that add-on.
+     */
+    private fun servable(stream: StreamUrl, trackId: Long, uri: Uri): StreamUrl {
+        onOpened?.invoke(trackId, stream)
+        if (urlCache.isServable(stream)) return stream
+        urlCache.invalidate(trackId)
+        val again = resolveBlocking(trackId, uri)?.takeIf { urlCache.isServable(it) }
+            ?: throw IOException("track $trackId: the add-on that answered is no longer on, and no other source answered")
+        if (again.isDash || again.isHls) {
+            throw IOException("track $trackId resolved to a DASH manifest; needs a DASH media source")
+        }
+        onOpened?.invoke(trackId, again)
+        return again
     }
 
     /** Opens [stream] at [dataSpec]'s position with the delegate its origin needs. */
