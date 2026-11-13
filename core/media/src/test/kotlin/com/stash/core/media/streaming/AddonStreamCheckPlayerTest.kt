@@ -2,6 +2,7 @@ package com.stash.core.media.streaming
 
 import android.content.Context
 import android.os.Bundle
+import android.os.Looper
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
@@ -53,6 +54,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.net.InetAddress
 import java.util.concurrent.CopyOnWriteArrayList
@@ -616,6 +618,42 @@ class AddonStreamCheckPlayerTest {
     }
 
     private fun stashPlaceholder(item: MediaItem) = item.buildUpon().setUri(stashResolveUri(item.mediaId.toLong())).build()
+
+    /**
+     * review-888 R2-M1: song 1 paused in its last 90 s, the spare primed on song 3 from the add-on. The
+     * add-on is removed: song 3's slot is put back, and the look-ahead fills it with another source's
+     * URL before the poll (which runs only while playing) looks. The spare held the removed add-on's
+     * stream, and the fade played it.
+     */
+    @Test fun `the spare goes when its slot is put back, even if the look-ahead fills the slot again before the poll looks`() {
+        coEvery { resolver.resolve(any(), any(), any(), any()) } returns null // the put-back placeholder isn't opened here
+        val built = mutableListOf<Spare>()
+        val engine = engine(built)
+        val master = engine.masterPlayer
+        val fromX = addonItem(3L, "/a.mp3", codec = "mp3")
+        master.setMediaItems(listOf(MediaItem.Builder().setMediaId("1").setUri(url("/a.mp3")).build(), fromX))
+        engine.prepareNext(fromX)
+        assertThat(engine.isPreparedFor(master.getMediaItemAt(1))).isTrue()
+
+        // X leaves: the slot is put back, then the look-ahead swaps in Y's URL for the same song. No poll ran between.
+        master.replaceMediaItem(1, fromX.buildUpon().setUri(stashResolveUri(3L).resolvedAgain()).build())
+        val fromY = fromX.buildUpon().setUri(url("/b48.mp3")).setMediaMetadata(
+            fromX.mediaMetadata.buildUpon().setExtras(Bundle(fromX.mediaMetadata.extras).apply { putString(EXTRA_STREAM_ORIGIN, "qbdlx") }).build(),
+        ).build()
+        master.replaceMediaItem(1, fromY)
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertThat(built[1].player.mediaItemCount).isEqualTo(0)
+        assertThat(engine.isPreparedFor(master.getMediaItemAt(1))).isFalse()
+
+        // Primed again on Y's URL, it stays through what doesn't change the stream: new metadata, its own URL.
+        engine.prepareNext(master.getMediaItemAt(1))
+        master.replaceMediaItem(1, fromY.buildUpon().setMediaMetadata(fromY.mediaMetadata.buildUpon().setTitle("Stamped").build()).build())
+        shadowOf(Looper.getMainLooper()).idle()
+        assertThat(engine.isPreparedFor(master.getMediaItemAt(1))).isTrue()
+        // R2-n2: the slot became the song's downloaded file; the fade must play the file, not the spare's stream.
+        assertThat(engine.isPreparedFor(fromY.buildUpon().setUri("file:///music/3.flac").build())).isFalse()
+    }
 
     @Test fun `the spare is never primed on a URL from an add-on that is set aside`() {
         val fromLiar = addonItem(5L, "/a.mp3", codec = "flac")
