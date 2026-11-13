@@ -125,7 +125,10 @@ class AddonStreamCheck internal constructor(
     fun judge(claim: Claim, sampleMimeTypes: List<String?>, streamMs: Long?): Why? {
         val why = verdict(claim.statedLossless, sampleMimeTypes, streamMs, claim.songMs) ?: return null
         health.recordWrongFile(claim.origin)
-        refusedSongs[claim.trackId] = elapsedMs()
+        val now = elapsedMs()
+        // A refusal no error ever read (its slot was put back first) stands for nothing after a while.
+        refusedSongs.entries.removeIf { now - it.value > REFUSAL_FRESH_MS }
+        refusedSongs[claim.trackId] = now
         log("${claim.addonId} refused for ${claim.trackId}: ${why.word}")
         events.tryEmit(Refused(claim.origin, claim.trackId, claim.mediaId, why))
         return why

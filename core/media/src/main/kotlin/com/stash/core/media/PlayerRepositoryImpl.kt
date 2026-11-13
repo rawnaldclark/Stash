@@ -708,7 +708,7 @@ class PlayerRepositoryImpl @Inject constructor(
         java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     /**
-     * Bumped by [reresolveNextStream], and when an add-on leaves ([dropNextStreamWhenAnAddonLeaves]).
+     * Bumped by [reresolveNextStream], and when an add-on leaves ([resolveAgainLinksFrom]).
      * A prefetch whose resolve was in flight across a bump may hold the old quality's URL, or the
      * departed add-on's, so it resolves again rather than put that in the next slot.
      */

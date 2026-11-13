@@ -206,7 +206,7 @@ internal class CheckedPeriod(
 
     override fun getBufferedPositionUs(): Long = inner.bufferedPositionUs
 
-    /** A refused stream loads nothing more: not a byte more from a host that lied. */
+    /** A refused stream asks for no more loading: its loader stops at its next check, and its source is released when the slot is put back. */
     override fun getNextLoadPositionUs(): Long = if (refused != null) C.TIME_END_OF_SOURCE else inner.nextLoadPositionUs
 
     override fun continueLoading(loadingInfo: LoadingInfo): Boolean = refused == null && inner.continueLoading(loadingInfo)
