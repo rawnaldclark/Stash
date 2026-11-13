@@ -269,11 +269,14 @@ class LazyResolvingDataSource(
             runCatching { active?.close() }
             active = null
             urlCache.invalidate(trackId)
-            stream = resolveBlocking(trackId, uri)?.takeIf { it.origin != CloudCopyFinder.ORIGIN }
+            val fallback = resolveBlocking(trackId, uri)?.takeIf { it.origin != CloudCopyFinder.ORIGIN }
                 ?: throw IOException("stream resolve failed for track $trackId after its cloud copy failed", e)
-            if (stream.isDash || stream.isHls) {
+            if (fallback.isDash || fallback.isHls) {
                 throw IOException("track $trackId resolved to a DASH manifest; needs a DASH media source", e)
             }
+            // An answer like any first open's: noted, then its add-on asked, so one removed while it
+            // answered (an unofficial one may take 6 s) is never opened (review-888 R2-m2).
+            stream = servable(fallback, trackId, uri)
             openStream(stream, dataSpec)
         }
         if (dataSpec.length == C.LENGTH_UNSET.toLong() && length != C.LENGTH_UNSET.toLong()) {

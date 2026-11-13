@@ -319,6 +319,32 @@ class LazyResolvingDataSourceTest {
     }
 
     @Test
+    fun `a cloud copy's fallback from an add-on that left meanwhile is never opened - review-888 R2-m2`() {
+        every { urlCache.get(5L) } returns stream("stash-cloud://dropbox/1/abc?v=1", CloudCopyFinder.ORIGIN)
+        val cloud: DataSource = mockk(relaxed = true)
+        every { cloud.open(any()) } throws java.io.IOException("401")
+        val gone = stream("https://media.gone.example/5.flac", "addon:gone")
+        val next = stream("https://cdn/q.flac", "qbdlx")
+        val told = mutableListOf<String?>()
+        every { urlCache.isServable(gone) } answers { told += "asked"; false }
+        coEvery { trackDao.getById(5L) } returns TrackEntity(id = 5L, title = "t", artist = "a")
+        coEvery { resolver.resolve(any(), any(), any()) } returnsMany listOf(gone, next)
+        every { httpSource.open(any()) } returns 100L
+
+        LazyResolvingDataSource(
+            resolver, urlCache, trackDao, { httpSource }, { jioSaavnSource },
+            addonDelegate = { httpSource }, cloudDelegate = { cloud }, cloudCopies = mockk(relaxUnitFun = true),
+            onOpened = { _, s -> told += s.origin },
+        ).open(placeholderSpec(5L))
+
+        // The fallback's answer is noted first (a leave from then on finds the song), then asked; then the
+        // song is resolved again without it.
+        assertThat(told).containsAtLeast("addon:gone", "asked", "qbdlx").inOrder()
+        verify(exactly = 0) { httpSource.open(match { it.uri.toString() == gone.url }) }
+        verify(exactly = 1) { httpSource.open(match { it.uri.toString() == next.url }) }
+    }
+
+    @Test
     fun `a song downloaded after it was queued plays its file, even with a stream cached`() {
         every { urlCache.get(42L) } returns stream("https://cdn/x.flac", "squid")
         coEvery { trackDao.getById(42L) } returns TrackEntity(id = 42L, title = "t", artist = "a", isDownloaded = true)
