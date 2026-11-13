@@ -526,10 +526,12 @@ class InTreeAddonRegistry @Inject constructor(
         // The kept index first, as in [loadPersisted]: whichever pass runs first at a cold start, an
         // add-on Stash turned off is never published from its kept copy, and never asked.
         catalog.awaitLoaded()
+        // Read before the lists are: a list that changes after this line, and is published by
+        // [publishKnown], makes this pass's older list one it must not publish over the newer one.
+        val version = listsVersion
         val wanted = wanted()
         val now = nowMs()
         answeredAt.keys.retainAll(wanted.map { it.key }.toSet())
-        val version = listsVersion
         // By entry, never by base: two manifests in one folder (`a.json`, `b.json`) share a base.
         val before = slots.associateBy { it.w.key }
         val kept = wanted.map { w -> kept(w, before[w.key]) }

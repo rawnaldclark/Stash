@@ -663,7 +663,8 @@ class AddonRegistryTest {
         try {
             registry.start(scope, emptyFlow())
             withTimeout(5_000) { registry.entries.first { list -> list.size == 2 && list.all { it.manifest != null } } }
-            assertThat(registry.addons.value.map { it.id }).containsExactly("one")
+            // The entries are published a moment before the add-ons that are on: wait for those, never read them at once.
+            withTimeout(5_000) { registry.addons.first { list -> list.map { it.id } == listOf("one") } }
             assertThat(registry.entries.value.single { it.manifest?.manifest?.id == "two" }.hold).isEqualTo(AddonHold.OFF)
             val before = server.requestCount
             switches.flow.value = emptySet()
