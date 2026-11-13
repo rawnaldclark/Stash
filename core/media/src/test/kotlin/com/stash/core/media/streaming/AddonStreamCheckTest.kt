@@ -67,10 +67,28 @@ class AddonStreamCheckTest {
         assertThat(verdict(stated = false, listOf("audio/mp4a-latm"), song)).isNull()
     }
 
+    @Test fun `a manifest offering lossless audio with a lossy fallback beside it is honest - review-888 M2`() {
+        // A DASH or HLS add-on: FLAC or ALAC, plus AAC (or Atmos) for slow networks; the player picks the lossless one.
+        assertThat(verdict(stated = true, listOf("audio/flac", "audio/mp4a-latm"), song)).isNull()
+        assertThat(verdict(stated = true, listOf("audio/mp4a-latm", "audio/alac"), song)).isNull()
+        assertThat(verdict(stated = true, listOf("audio/flac", "audio/eac3-joc"), song)).isNull()
+        assertThat(verdict(stated = true, listOf("audio/raw", "audio/mpeg"), song)).isNull()
+        // Every audio format lossy is still a lie, however many there are.
+        assertThat(verdict(stated = true, listOf("audio/mp4a-latm", "audio/eac3-joc"), song)).isEqualTo(Why.LOSSY)
+        assertThat(verdict(stated = true, listOf("audio/mpeg", null, "audio/x-something-new"), song)).isEqualTo(Why.LOSSY)
+    }
+
     @Test fun `a video track is refused whatever the add-on called it`() {
         assertThat(verdict(stated = false, listOf("audio/mp4a-latm", "video/avc"), song)).isEqualTo(Why.VIDEO)
         assertThat(verdict(stated = true, listOf("video/hevc", "audio/flac"), song)).isEqualTo(Why.VIDEO)
         assertThat(verdict(stated = false, listOf("video/avc"), null)).isEqualTo(Why.VIDEO)
+    }
+
+    @Test fun `a cover picture stored as a still-image track is not a video - review-888 m8`() {
+        assertThat(verdict(stated = true, listOf("audio/flac", "video/mjpeg"), song)).isNull()
+        assertThat(verdict(stated = false, listOf("audio/mp4a-latm", "image/png"), song)).isNull()
+        // Its audio is still judged.
+        assertThat(verdict(stated = true, listOf("audio/mp4a-latm", "video/mjpeg"), song)).isEqualTo(Why.LOSSY)
     }
 
     @Test fun `a stub far shorter than the song is refused by the downloads' own rule`() {

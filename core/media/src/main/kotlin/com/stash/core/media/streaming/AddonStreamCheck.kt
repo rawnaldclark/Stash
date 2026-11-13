@@ -23,8 +23,10 @@ import javax.inject.Singleton
  * origin, its lossy pass included) is judged on what the player's extractor read from its bytes,
  * when the media period is prepared and before the player can select a track or feed a renderer
  * ([AddonCheckedMediaSource]). It is refused when:
- *  - [Why.VIDEO]: it has a video track;
- *  - [Why.LOSSY]: the add-on called it lossless (codec or tier) and it is a lossy codec ([LOSSY_MIME_TYPES]).
+ *  - [Why.VIDEO]: it has a motion-video track (a cover picture stored as a still-image track is not one);
+ *  - [Why.LOSSY]: the add-on called it lossless (codec or tier) and none of its audio is: every audio
+ *    format it lists is a lossy codec ([LOSSY_MIME_TYPES]). A manifest that offers FLAC or ALAC with an
+ *    AAC or Atmos fallback beside it is honest: the player picks the lossless one (review-888 M2).
  *    FLAC, ALAC and PCM count as lossless whichever one the add-on named;
  *  - [Why.LENGTH]: it is far shorter than the song, by the downloads' own rule
  *    ([isLosslessDurationDegraded]), so a stream and a download agree. Skipped when the song's
@@ -75,7 +77,12 @@ class AddonStreamCheck internal constructor(
 
     private val events = MutableSharedFlow<Refused>(extraBufferCapacity = 16, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
-    /** Every refusal as it happens. Emitted from a player's playback thread; collect where the players are touched. */
+    /**
+     * Every refusal as it happens. Emitted from a player's playback thread; collect where the players
+     * are touched. No replay: a refusal emitted before a collector subscribes is not seen by it. For
+     * the song playing that loses nothing, since its error carries the refusal ([AddonStreamRefusedException])
+     * and [takeRefusal] holds the record.
+     */
     val refusals: SharedFlow<Refused> = events.asSharedFlow()
 
     /** Songs whose stream was refused, by track id: when. Read once each by [takeRefusal]. */
@@ -168,14 +175,33 @@ class AddonStreamCheck internal constructor(
             "audio/mha1", "audio/mhm1",
         )
 
-        /** The player's codec words ([AddonStreamRung.codecName]) that call a stream lossless. */
+        /**
+         * Lossless audio, as media3 names a track's `sampleMimeType`: FLAC, ALAC, PCM (raw and WAV),
+         * Dolby TrueHD and DTS-HD (Master Audio). One of these in a stream is the lossless audio
+         * its add-on promised, whatever else the stream also offers.
+         */
+        private val LOSSLESS_MIME_TYPES = setOf(
+            "audio/flac", "audio/alac", "audio/raw", "audio/wav", "audio/true-hd", "audio/vnd.dts.hd",
+        )
+
+        /**
+         * Still pictures media3 may report as a "video" track (a cover stored as a track of its own):
+         * not a video. A file that is a video carries a motion codec (H.264, HEVC, VP9, AV1...).
+         */
+        private val STILL_PICTURE_MIME_TYPES = setOf("video/mjpeg")
+
+        /**
+         * The player's codec words ([AddonStreamRung.codecName]) that call a stream lossless:
+         * "wav" is the word for PCM (`Codec.PCM`).
+         */
         private val LOSSLESS_WORDS = setOf("flac", "alac", "wav")
 
         /** The rules, as one pure decision. Null: the stream may play. */
         fun verdict(statedLossless: Boolean, sampleMimeTypes: List<String?>, streamMs: Long?, songMs: Long): Why? {
             val mimes = sampleMimeTypes.mapNotNull { it?.lowercase() }
-            if (mimes.any { it.startsWith("video/") }) return Why.VIDEO
-            if (statedLossless && mimes.any { it in LOSSY_MIME_TYPES }) return Why.LOSSY
+            if (mimes.any { it.startsWith("video/") && it !in STILL_PICTURE_MIME_TYPES }) return Why.VIDEO
+            // Judged as a set: lossy only when no audio format of it is lossless (review-888 M2).
+            if (statedLossless && mimes.any { it in LOSSY_MIME_TYPES } && mimes.none { it in LOSSLESS_MIME_TYPES }) return Why.LOSSY
             if (isLosslessDurationDegraded(streamMs, songMs)) return Why.LENGTH
             return null
         }

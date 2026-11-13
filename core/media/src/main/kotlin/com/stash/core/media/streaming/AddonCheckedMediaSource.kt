@@ -61,12 +61,24 @@ internal class AddonCheckedMediaSource(
 
     override fun createPeriod(id: MediaSource.MediaPeriodId, allocator: Allocator, startPositionUs: Long): MediaPeriod {
         val opened = OpenedStream()
+        val lengthBefore = durationMs
         // The child's period makes its data source now, on this thread: a placeholder's says what it opens.
         val inner = OpenedStream.during(opened) { super.createPeriod(id, allocator, startPositionUs) }
         return CheckedPeriod(inner) { groups ->
-            claimOf(opened.stream)?.let { claim -> check.judge(claim, mimeTypesOf(groups), durationMs) }
+            claimOf(opened.stream)?.let { claim -> check.judge(claim, mimeTypesOf(groups), lengthOf(opened, lengthBefore)) }
         }
     }
+
+    /**
+     * The length of the stream the period was prepared from. An item's own URL is one file, so its
+     * timeline's length is that file's. A placeholder ([OpenedStream.stream] set) may open another
+     * stream each time it is prepared again (a retry, a prepare after an error), and media3's
+     * progressive source keeps the last length it knew when a new stream reports none: only a length
+     * this period's own prepare reported counts, else it is unknown and the length rule is skipped
+     * (review-888 m8). A new stream exactly as long as the last one is skipped too: it was judged then.
+     */
+    private fun lengthOf(opened: OpenedStream, lengthBefore: Long?): Long? =
+        if (opened.stream == null) durationMs else durationMs?.takeIf { it != lengthBefore }
 
     override fun releasePeriod(mediaPeriod: MediaPeriod) {
         super.releasePeriod((mediaPeriod as CheckedPeriod).inner)
@@ -114,7 +126,7 @@ internal class OpenedStream {
             try {
                 return block()
             } finally {
-                creating.set(outer)
+                if (outer == null) creating.remove() else creating.set(outer)
             }
         }
     }
