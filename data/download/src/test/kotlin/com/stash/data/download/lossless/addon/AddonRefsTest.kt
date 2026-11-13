@@ -314,6 +314,36 @@ class AddonRefsTest {
         assertThat(refs.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq)).isInstanceOf(AddonRefs.Streamed.Ok::class.java)
     }
 
+    // ------------------------------------------------------------------------------------------ the streams it answered (review-882 round 3, nit 6)
+
+    @Test fun `a long sync does not make the playing song's refusal count for nothing`() = runTest {
+        val other = TrackQuery(artist = "Daft Punk", title = "One More Time", durationMs = 320_000L, isrc = "GBDUW0000053")
+        val oneMoreTime = Track(id = "43", title = "One More Time", artist = "Daft Punk", durationMs = 320_000L, isrc = "GBDUW0000053")
+        var n = 0
+        val client: HttpAddonClient = mockk {
+            coEvery { search(any(), any(), any(), any()) } returns AddonResult.Ok(SearchResponse(tracks = listOf(exact, oneMoreTime)))
+            coEvery { stream(any(), any(), any(), any()) } answers { AddonResult.Ok(flac.copy(url = "https://cdn.example/${n++}.flac")) }
+        }
+        val refs = refs(client)
+        // A sync's downloads, all within the hour, fill the map but one.
+        repeat(511) {
+            now += 1_000L
+            refs.stream(addon(), other, AddonRefs.Pass.LOSSLESS, losslessReq)
+        }
+        // The song playing now, and one more download after it.
+        now += 1_000L
+        val playing = refs.stream(addon(), song, AddonRefs.Pass.LOSSLESS, losslessReq) as AddonRefs.Streamed.Ok
+        now += 1_000L
+        refs.stream(addon(), other, AddonRefs.Pass.LOSSLESS, losslessReq)
+
+        // The playing song's stream is refused: it still counts (clearing the whole map lost it).
+        refs.refusedOnTheWire(playing.info.url, MediaRefusal.URL)
+        assertThat(dao.rows["bc" to key]!!.remoteId).isNull()
+        // The oldest went: a refusal of the first download's stream finds nothing to drop.
+        refs.refusedOnTheWire("https://cdn.example/0.flac", MediaRefusal.URL)
+        assertThat(dao.rows["bc" to TidalClient.cacheKey(other)]!!.remoteId).isEqualTo("43")
+    }
+
     // ------------------------------------------------------------------------------------------ failures that are not misses (review-882 M3)
 
     @Test fun `a search that answers 404 is not a miss - nothing is remembered against the song`() = runTest {

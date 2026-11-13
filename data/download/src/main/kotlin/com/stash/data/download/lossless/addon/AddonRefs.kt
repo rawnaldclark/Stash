@@ -248,7 +248,14 @@ class AddonRefs @Inject constructor(
         val now = nowMs()
         if (answeredStreams.size >= MAX_ANSWERED) {
             answeredStreams.entries.removeIf { now - it.value.atMs > ANSWERED_TTL_MS }
-            if (answeredStreams.size >= MAX_ANSWERED) answeredStreams.clear()
+            // Still full (a long sync): the oldest quarter goes, and the newest stay, among them
+            // the playing song's. Clearing it all forgot that one too, and its refusal then
+            // counted for nothing (review-882 round 3, nit 6).
+            if (answeredStreams.size >= MAX_ANSWERED) {
+                answeredStreams.entries.sortedBy { it.value.atMs }
+                    .take(answeredStreams.size - MAX_ANSWERED + MAX_ANSWERED / 4)
+                    .forEach { answeredStreams.remove(it.key, it.value) }
+            }
         }
         answeredStreams[streamKey(url)] = Answered(addonId, rid, key, now)
     }
@@ -439,8 +446,9 @@ class AddonRefs @Inject constructor(
      * as perfect, and title and artist words alone decide (a 30-second preview, a live take that
      * doesn't say so, another artist's song of the same name). That holds whatever is known of the
      * song's own length (round 2): one that is not trusted, a video's, is still held loosely
-     * against the row's, and words alone are not a match for an add-on the user added. The one
-     * thing that places a row without a length is the song's own ISRC.
+     * against the row's, and words alone are not a match for any add-on: one the user added and
+     * the signed config's defaults alike (round 3, nit 2). The one thing that places a row
+     * without a length is the song's own ISRC.
      */
     private fun statesLength(query: TrackQuery, t: Track): Boolean {
         if ((t.durationMs ?: 0L) > 0) return true
