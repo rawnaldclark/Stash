@@ -25,8 +25,9 @@ import kotlinx.coroutines.launch
  * cannot read. This source runs [resolve] (which warms [StreamUrlCache]) when the
  * player prepares it, then hands the result to [childFor]: a DASH source for an
  * MPD, otherwise the existing lazy progressive source, which then opens straight
- * from the warm cache. Used only while a Tidal server is configured, so the
- * proven lazy path is untouched for everyone else.
+ * from the warm cache. Used while a Tidal server is configured or an add-on that is
+ * on can answer a DASH manifest ([AddonPlayback.resolveBeforeSourcePick], review-882
+ * round 2, F9), so the proven lazy path is untouched for everyone else.
  *
  * A metadata-only change ([canUpdateMediaItem]: a cover learnt, the quality stamped)
  * is taken in place: the same resolve, the same child, the song plays on. Media3's
