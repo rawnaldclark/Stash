@@ -45,6 +45,11 @@ dependencies {
     testImplementation(libs.room.runtime)
     // The lengths pass's job: what it asks of WorkManager (its network), against WorkManager's own test runtime
     testImplementation(libs.work.testing)
+    // RecordInMixesPageRowTest composes the page's toggle on Robolectric, as :feature:home's HomeAlbumRowsSizeTest does its rows.
+    // The Compose BOM is only on the main classpath, so it is applied again here.
+    testImplementation(platform(libs.compose.bom))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("androidx.compose.ui:ui-test-manifest")
 
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

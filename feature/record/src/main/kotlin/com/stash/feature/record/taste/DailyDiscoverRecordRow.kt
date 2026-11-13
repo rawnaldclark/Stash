@@ -1,14 +1,18 @@
 package com.stash.feature.record.taste
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,8 +28,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.db.dao.StashMixRecipeDao
-import com.stash.core.ui.components.StashSwitch
-import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.record.R
 import com.stash.feature.record.imports.RecordImportStore
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -66,7 +68,7 @@ class DailyDiscoverRecordViewModel @Inject constructor(
 }
 
 /**
- * The switch row under Daily Discover's Download button, on that page only and only after a Your record import; nothing on any
+ * The toggle beside Daily Discover's Download button, on that page only and only after a Your record import; nothing on any
  * other mix. The library page hands its playlist id in (feature:library doesn't depend on this module: the app passes the row).
  */
 @Composable
@@ -84,34 +86,34 @@ fun DailyDiscoverRecordRow(
 }
 
 /**
- * The row itself: the page header's glass (12 dp corners, the icon buttons' fill), title and line on the left, the switch on
- * the right, as Settings' row. The whole row toggles; TalkBack reads it as one switch.
+ * The toggle itself, beside the Download button and in that button's shape: outlined, 12 dp corners, 16/12 padding, a 20 dp
+ * icon, labelLarge. Off: the vinyl icon in onSurface; on: a check in primary, as "Downloaded". The whole thing toggles;
+ * TalkBack reads it as a switch.
  */
 @Composable
 internal fun RecordInMixesPageRow(on: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+    val color = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+    val shape = RoundedCornerShape(12.dp)
     Row(
         modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(StashTheme.extendedColors.glassBackground)
+            .clip(shape)
+            .border(ButtonDefaults.outlinedButtonBorder(), shape)
             .toggleable(value = on, role = Role.Switch, onValueChange = onChange)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.record_in_mixes_title),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = stringResource(R.string.record_in_mixes_page_subtitle),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Spacer(Modifier.width(12.dp))
-        // The row is the toggle; the switch only shows the state.
-        StashSwitch(checked = on, onCheckedChange = null)
+        Icon(
+            imageVector = if (on) Icons.Rounded.CheckCircle else Icons.Rounded.Album,
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = stringResource(R.string.record_in_mixes_page_label),
+            style = MaterialTheme.typography.labelLarge,
+            color = color,
+            maxLines = 1,
+        )
     }
 }
