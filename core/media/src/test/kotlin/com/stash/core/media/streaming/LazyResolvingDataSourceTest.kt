@@ -31,7 +31,8 @@ import java.io.IOException
 class LazyResolvingDataSourceTest {
 
     private val resolver: StreamSourceRegistry = mockk()
-    private val urlCache: StreamUrlCache = mockk(relaxUnitFun = true)
+    /** Every link may be played unless a test says its add-on left ([StreamUrlCache.isServable]). */
+    private val urlCache: StreamUrlCache = mockk(relaxUnitFun = true) { every { isServable(any()) } returns true }
     private val trackDao: TrackDao = mockk()
     private val httpSource: DataSource = mockk(relaxed = true)
     private val jioSaavnSource: DataSource = mockk(relaxed = true)
@@ -91,6 +92,36 @@ class LazyResolvingDataSourceTest {
 
         verify { urlCache.put(42L, any()) }
         verify { httpSource.open(any()) }
+    }
+
+    @Test
+    fun `an add-on's answer is noted before it opens, and one from an add-on that left meanwhile is never opened - review-888 m1`() {
+        val gone = stream("https://media.gone.example/42.flac", "addon:gone")
+        val next = stream("https://cdn/y.flac", "qbdlx")
+        val told = mutableListOf<String?>()
+        every { urlCache.get(42L) } returns null
+        every { urlCache.isServable(gone) } answers { told += "asked"; false }
+        coEvery { trackDao.getById(42L) } returns TrackEntity(id = 42L, title = "t", artist = "a")
+        coEvery { resolver.resolve(any(), any(), any()) } returnsMany listOf(gone, next)
+        every { httpSource.open(any()) } returns 100L
+        val lazy = LazyResolvingDataSource(
+            resolver = resolver,
+            urlCache = urlCache,
+            trackDao = trackDao,
+            httpDelegate = { httpSource },
+            jioSaavnDelegate = { jioSaavnSource },
+            addonDelegate = { httpSource },
+            onOpened = { _, stream -> told += stream.origin },
+        )
+
+        lazy.open(placeholderSpec(42L))
+
+        // Noted first (a leave from then on finds the song), then asked; then resolved again without it.
+        assertThat(told.take(2)).containsExactly("addon:gone", "asked").inOrder()
+        verify { urlCache.invalidate(42L) }
+        verify(exactly = 1) { httpSource.open(match { it.uri.toString() == next.url }) }
+        verify(exactly = 0) { httpSource.open(match { it.uri.toString() == gone.url }) }
+        assertThat(told.last()).isEqualTo("qbdlx")
     }
 
     @Test

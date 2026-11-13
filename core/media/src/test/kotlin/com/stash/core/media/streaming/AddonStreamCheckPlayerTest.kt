@@ -414,13 +414,10 @@ class AddonStreamCheckPlayerTest {
         cache = StreamUrlCache(DataSaver.Off, none, gate)
     }
 
-    private fun playsTheNextSourceWhenTheAddonLeftWhileItAnswered(resolveFirst: Boolean) {
+    private fun playsTheNextSourceWhenTheAddonLeftWhileItAnswered(resolveFirst: Boolean, answer: StreamUrl) {
         withTheAddonGone()
         // The resolve was under way when the add-on was removed: it still answers with the add-on's link.
-        coEvery { resolver.resolve(any(), any(), any(), any()) } returnsMany listOf(
-            link("/a.mp3", codec = "mp3", origin = "addon:gone"),
-            link("/b48.mp3", codec = "mp3", origin = "qbdlx"),
-        )
+        coEvery { resolver.resolve(any(), any(), any(), any()) } returnsMany listOf(answer, link("/b48.mp3", codec = "mp3", origin = "qbdlx"))
         val audio = FakeRenderer(C.TRACK_TYPE_AUDIO)
         val p = player(audio, resolveFirst = resolveFirst)
         p.setMediaItem(placeholderOf(14L))
@@ -436,10 +433,14 @@ class AddonStreamCheckPlayerTest {
     }
 
     @Test fun `a placeholder whose resolve answered from an add-on removed meanwhile resolves once more`() =
-        playsTheNextSourceWhenTheAddonLeftWhileItAnswered(resolveFirst = false)
+        playsTheNextSourceWhenTheAddonLeftWhileItAnswered(resolveFirst = false, answer = link("/a.mp3", codec = "mp3", origin = "addon:gone"))
 
-    @Test fun `resolve-first - a placeholder whose resolve answered from an add-on removed meanwhile resolves once more`() =
-        playsTheNextSourceWhenTheAddonLeftWhileItAnswered(resolveFirst = true)
+    @Test fun `resolve-first - a manifest answered by an add-on removed meanwhile is not played - the song resolves once more`() =
+        // A manifest gets a DASH source of its own, which never asks the cache whether its add-on is still on.
+        playsTheNextSourceWhenTheAddonLeftWhileItAnswered(
+            resolveFirst = true,
+            answer = link("/flac.mpd", codec = "flac", origin = "addon:gone", isDash = true),
+        )
 
     // ------------------------------------------------------------------------------------- what the extractor found: video, length
 

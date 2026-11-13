@@ -234,5 +234,18 @@ class AddonStreamCheckTest {
         assertThat(twice).isNotEqualTo(again)
         assertThat(twice.getQueryParameters("again")).hasSize(1)
         assertThat(Uri.parse(twice.toString()).getQueryParameter("d")).isEqualTo("180000")
+        assertThat(again.isPutBack()).isTrue()
+        assertThat(first.isPutBack()).isFalse()
+    }
+
+    @Test fun `the queue's placeholder put back twice is two URIs - review-888 M1`() {
+        // A slot holding a URL is put back as the queue's placeholder for its song. Under resolve-first the
+        // slot shows its source's manifest, not the source's own URI, which may be that placeholder put back
+        // once already: "one more" than the queue's placeholder would be that same URI, and the source is kept.
+        val queued = stashResolveUri(78L, title = "T", artist = "A", durationMs = 180_000L)
+        val once = queued.resolvedAgain()
+        val twice = queued.resolvedAgain()
+        assertThat(twice).isNotEqualTo(once)
+        assertThat(twice.isPutBack()).isTrue()
     }
 }
