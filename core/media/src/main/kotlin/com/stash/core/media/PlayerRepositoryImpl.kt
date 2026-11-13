@@ -464,34 +464,14 @@ class PlayerRepositoryImpl @Inject constructor(
      * swapped in on Wi-Fi, which ExoPlayer starts buffering well before the transition. Its slot
      * goes back to a placeholder, resolved when the song is reached under the new decision, and the
      * look-ahead runs again (it skips itself while Data saver applies, and on Wi-Fi it lines up FLAC
-     * again). A file, a placeholder or a cloud song is already right. PR #759's
-     * `reresolveNextStream` does the same for a quality picked in Now Playing; once both are in,
-     * this becomes a call to it.
+     * again). A file, a placeholder or a cloud song is already right.
+     *
+     * The same as a quality picked in Now Playing, so it is [reresolveNextStream]: the slot is put back
+     * with a URI no source has had and no MIME type (a slot showing a resolve-first source's manifest
+     * kept that source, and its hi-res manifest streamed on mobile data: review-888 R2-m1), every
+     * stream stamp goes, and a look-ahead still resolving under the old decision asks again.
      */
-    internal suspend fun relineNextStream() {
-        if (listenTogetherOwnsQueue) return
-        val controller = controllerDeferred ?: return
-        val index = controller.nextMediaItemIndex
-        // No next song, or it is this one again (a one-song queue on repeat): a new source would restart it.
-        if (index !in 0 until controller.mediaItemCount || index == controller.currentMediaItemIndex) return
-        val item = controller.getMediaItemAt(index)
-        val nextId = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, -1L) ?: return
-        streamUrlCache.invalidate(nextId)
-        val scheme = item.localConfiguration?.uri?.scheme
-        val queued = currentQueueTracks.firstOrNull { it.id == nextId }
-        if ((scheme == "https" || scheme == "http") && queued != null) {
-            val extras = Bundle(item.mediaMetadata.extras ?: Bundle()).apply {
-                listOf(EXTRA_STREAM_CODEC, EXTRA_STREAM_BIT_DEPTH, EXTRA_STREAM_SAMPLE_RATE, EXTRA_STREAM_BITRATE, EXTRA_STREAM_ORIGIN, EXTRA_STREAM_DASH)
-                    .forEach(::remove)
-            }
-            val placeholder = item.buildUpon()
-                .setUri(queued.toStreamPlaceholderMediaItem().localConfiguration?.uri)
-                .setMediaMetadata(item.mediaMetadata.buildUpon().setExtras(extras).build())
-                .build()
-            replaceMediaItemKeepingShuffle(controller, index, placeholder)
-        }
-        prefetchNextTrack()
-    }
+    internal suspend fun relineNextStream() = reresolveNextStream()
 
     /**
      * A download that lands while its song waits next in line: the prefetch watcher
