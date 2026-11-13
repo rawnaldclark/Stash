@@ -172,10 +172,14 @@ class AddonStreamRung internal constructor(
             Log.d(TAG, "$name answer needs request headers; not played yet")
             return null
         }
-        return toStreamUrl(info, streamed.ref.artwork, name) ?: run {
+        val url = toStreamUrl(info, streamed.ref.artwork, name) ?: run {
             Log.d(TAG, "$name answer has already expired; not played")
-            null
+            return null
         }
+        // The song's length for the player's check of this stream (AddonStreamCheck's length rule):
+        // what the resolve asked with (a placeholder's library row), else what the add-on's own matched
+        // item says. A Search tap or a radio song with no length of its own is judged by it.
+        return url.copy(songMs = track.durationMs.takeIf { it > 0 } ?: streamed.ref.durationMs?.takeIf { it > 0 })
     }
 
     companion object {

@@ -29,8 +29,10 @@ import javax.inject.Singleton
  *    AAC or Atmos fallback beside it is honest: the player picks the lossless one (review-888 M2).
  *    FLAC, ALAC and PCM count as lossless whichever one the add-on named;
  *  - [Why.LENGTH]: it is far shorter than the song, by the downloads' own rule
- *    ([isLosslessDurationDegraded]), so a stream and a download agree. Skipped when the song's
- *    length is unknown.
+ *    ([isLosslessDurationDegraded]), so a stream and a download agree. The song's length is the
+ *    best one known: the queue item's (a Search tap's falls back to the library row's), else the
+ *    one its source knew ([StreamUrl.songMs]: what the resolve asked with, else the add-on's own
+ *    matched item's). Skipped only when none is known.
  *
  * A refusal sets the add-on aside, in the content-health gate the downloads use
  * ([LosslessSourceHealthGate.recordWrongFile], its cooldown): the stream chain ([AddonStreamRungs]),
@@ -66,7 +68,7 @@ class AddonStreamCheck internal constructor(
      * @property origin `addon:<id>`: the add-on, as the stream's origin and its download source's id.
      * @property mediaId The song's queue item ([MediaItem.mediaId]): the crossfade spare is matched by it.
      * @property statedLossless The add-on called it lossless: its codec or tier said FLAC, ALAC or PCM.
-     * @property songMs The song's own length as the library knows it; 0 when unknown.
+     * @property songMs The song's length, the best known ([claimOf]); 0 when none is.
      */
     data class Claim(val origin: String, val trackId: Long, val mediaId: String, val statedLossless: Boolean, val songMs: Long) {
         val addonId: String get() = origin.removePrefix(AddonStreamRung.ORIGIN_PREFIX)
@@ -222,7 +224,8 @@ class AddonStreamCheck internal constructor(
                 trackId = trackIdOf(item),
                 mediaId = item.mediaId,
                 statedLossless = statesLossless(extras.getString(StashPlaybackService.EXTRA_STREAM_CODEC)),
-                songMs = songMsOf(item),
+                songMs = songMsOf(item).takeIf { it > 0L }
+                    ?: extras.getLong(StashPlaybackService.EXTRA_STREAM_SONG_MS, 0L).coerceAtLeast(0L),
             )
         }
 
@@ -232,7 +235,8 @@ class AddonStreamCheck internal constructor(
          */
         fun claimOf(stream: StreamUrl, item: MediaItem): Claim? {
             val origin = stream.origin?.takeIf { AddonPlayback.isAddonOrigin(it) } ?: return null
-            return Claim(origin, trackIdOf(item), item.mediaId, statesLossless(stream.codec), songMsOf(item))
+            val songMs = songMsOf(item).takeIf { it > 0L } ?: stream.songMs?.takeIf { it > 0L } ?: 0L
+            return Claim(origin, trackIdOf(item), item.mediaId, statesLossless(stream.codec), songMs)
         }
 
         /** The song's track id: its extra, else a placeholder's own (`stash-resolve://track/<id>`), else its media id. */

@@ -3,10 +3,16 @@ package com.stash.core.media.streaming
 import com.google.common.truth.Truth.assertThat
 import com.stash.addons.contract.AddonKind
 import com.stash.addons.contract.Codec
+import com.stash.addons.contract.Delivery
 import com.stash.addons.contract.Manifest
 import com.stash.addons.contract.StreamCapabilities
+import com.stash.addons.contract.StreamInfo
+import com.stash.addons.contract.Tier
 import com.stash.core.addons.AddonRegistry
 import com.stash.core.addons.InstalledAddon
+import com.stash.core.data.db.entity.TrackEntity
+import com.stash.data.download.lossless.addon.AddonRefs
+import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,6 +57,27 @@ class AddonStreamRungsPhase2Test {
         now += com.stash.data.download.lossless.LosslessSourceHealthGate.COOLDOWN_MS
         assertThat(rungs.rungs().map { it.addon.id }).containsExactly("liar", "honest").inOrder()
     }
+
+    @Test fun `a stream carries the song's length for the player's check - the resolve's own, else the add-on's matched item's - #888 3b`() =
+        kotlinx.coroutines.test.runTest {
+            val info = StreamInfo(url = "https://cdn.example/a.flac", manifest = Delivery.NONE, tier = Tier.LOSSLESS, cors = false, codec = Codec.FLAC)
+            var matched: Long? = 222_640L
+            val refs = mockk<AddonRefs> {
+                coEvery { stream(any(), any(), any(), any(), any(), any(), any()) } answers {
+                    AddonRefs.Streamed.Ok(info, AddonRefs.Ref("r1", null, null, 0.9f, durationMs = matched))
+                }
+            }
+            val rung = AddonStreamRungs(Registry(listOf(addon("liar", firstParty = false))), refs).rungs().single()
+            val tapped = TrackEntity(id = 1L, title = "Feel Good Inc.", artist = "Gorillaz") // a Search result with no length
+
+            // The add-on's own matched item's length, when the song the resolve asked for had none.
+            assertThat(rung.resolve(tapped, null)?.songMs).isEqualTo(222_640L)
+            // A placeholder resolved from its library row asks with the row's: that one.
+            assertThat(rung.resolve(tapped.copy(durationMs = 222_000L), null)?.songMs).isEqualTo(222_000L)
+            // A ref read back from the table states none: unknown.
+            matched = null
+            assertThat(rung.resolve(tapped, null)?.songMs).isNull()
+        }
 
     @Test fun `lossy codecs keep their names`() {
         assertThat(AddonStreamRung.codecName(Codec.AAC)).isEqualTo("aac")

@@ -329,6 +329,13 @@ class StashPlaybackService : MediaLibraryService() {
          */
         const val EXTRA_STREAM_DASH = "stash_stream_dash"
 
+        /**
+         * The song's length as the stream's source knew it ([com.stash.core.media.streaming.StreamUrl.songMs]),
+         * for the add-on stream check's length rule when [EXTRA_TRACK_DURATION_MS] is absent. A stream
+         * stamp: it goes with the stream it describes, and it is never the song's length elsewhere.
+         */
+        const val EXTRA_STREAM_SONG_MS = "stash_stream_song_ms"
+
         private const val ROOT_ID = "ROOT"
         private const val PLAYLISTS_ID = "PLAYLISTS"
         /** Saved albums (item 5, 2026-11-02): listed apart from the playlists, as Library lists them. */

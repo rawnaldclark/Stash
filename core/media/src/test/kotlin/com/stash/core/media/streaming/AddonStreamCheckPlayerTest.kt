@@ -30,6 +30,7 @@ import com.stash.core.media.service.CrossfadeEngine
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_CODEC
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_DASH
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_ORIGIN
+import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_SONG_MS
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_DURATION_MS
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_ID
 import com.stash.core.media.service.isResolvedForCrossfade
@@ -498,6 +499,48 @@ class AddonStreamCheckPlayerTest {
         assertThat(lines).isEmpty()
         assertThat(gate.isDegraded("addon:liar")).isFalse()
         coVerify(exactly = 2) { resolver.resolve(any(), any(), any(), any()) }
+    }
+
+    // #888 phone run 3b: "Feel Good Inc." tapped in Search, its result with no length; the liar's 10 s file played.
+
+    @Test fun `a tapped song with no length of its own is judged by the length its stream's source knew`() {
+        // The tap resolved to the add-on's URL; the rung stamped the song's length it knew (the add-on's matched item's).
+        val audio = FakeRenderer(C.TRACK_TYPE_AUDIO)
+        val p = player(audio)
+        val tapped = addonItem(16L, "/short.mp3", codec = "mp3", songMs = null).let { item ->
+            item.buildUpon().setMediaMetadata(
+                item.mediaMetadata.buildUpon().setExtras(Bundle(item.mediaMetadata.extras).apply { putLong(EXTRA_STREAM_SONG_MS, 222_640L) }).build(),
+            ).build()
+        }
+        p.setMediaItem(tapped)
+        p.prepare()
+        p.play()
+
+        val error = TestPlayerRunHelper.runUntilError(p)
+
+        assertThat(AddonStreamRefusedException.isIn(error)).isTrue()
+        assertThat(lines).containsExactly("liar refused for 16: length")
+        assertThat(audio.sampleBufferReadCount).isEqualTo(0)
+    }
+
+    @Test fun `a radio placeholder with no length is judged by the length its resolve knew`() {
+        coEvery { resolver.resolve(any(), any(), any(), any()) } returns
+            link("/short.mp3", codec = "mp3", origin = "addon:liar").copy(songMs = 222_640L)
+        val audio = FakeRenderer(C.TRACK_TYPE_AUDIO)
+        val p = player(audio)
+        p.setMediaItem(
+            MediaItem.Builder().setMediaId("17").setUri(stashResolveUri(17L, title = "Feel Good Inc.", artist = "Gorillaz"))
+                .setMediaMetadata(MediaMetadata.Builder().setExtras(Bundle().apply { putLong(EXTRA_TRACK_ID, 17L) }).build())
+                .build(),
+        )
+        p.prepare()
+        p.play()
+
+        val error = TestPlayerRunHelper.runUntilError(p)
+
+        assertThat(AddonStreamRefusedException.isIn(error)).isTrue()
+        assertThat(lines).containsExactly("liar refused for 17: length")
+        assertThat(audio.sampleBufferReadCount).isEqualTo(0)
     }
 
     @Test fun `with the song's length unknown a short file plays`() {

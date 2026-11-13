@@ -7,6 +7,7 @@ import androidx.media3.common.MediaMetadata
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_CODEC
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_ORIGIN
+import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_SONG_MS
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_DURATION_MS
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_ID
 import com.stash.core.media.streaming.AddonStreamCheck.Why
@@ -218,6 +219,32 @@ class AddonStreamCheckTest {
         assertThat(AddonStreamCheck.claimOf(opened, placeholder))
             .isEqualTo(AddonStreamCheck.Claim("addon:lossy-pass", 77L, "77", statedLossless = false, songMs = 180_000L))
         assertThat(AddonStreamCheck.claimOf(opened.copy(origin = "tidal"), placeholder)).isNull()
+    }
+
+    @Test fun `with no length of its own in the queue, a claim takes the one the stream's source knew - #888 phone run 3b`() {
+        // A Search tap, or a radio song, whose result had no length: the library row's or the add-on's own matched
+        // item's, as the rung stamped it. The queue's own length still comes first.
+        val tapped = AddonStreamCheck.claimOf(item({
+            putLong(EXTRA_TRACK_ID, 42L)
+            putString(EXTRA_STREAM_ORIGIN, "addon:liar")
+            putString(EXTRA_STREAM_CODEC, "flac")
+            putLong(EXTRA_STREAM_SONG_MS, 222_640L)
+        }))!!
+        assertThat(tapped.songMs).isEqualTo(222_640L)
+        val known = AddonStreamCheck.claimOf(item({
+            putLong(EXTRA_TRACK_ID, 42L)
+            putString(EXTRA_STREAM_ORIGIN, "addon:liar")
+            putLong(EXTRA_TRACK_DURATION_MS, 200_000L)
+            putLong(EXTRA_STREAM_SONG_MS, 222_640L)
+        }))!!
+        assertThat(known.songMs).isEqualTo(200_000L)
+
+        val noLength = item({}, uri = stashResolveUri(78L, title = "T", artist = "A").toString(), mediaId = "78")
+        val opened = StreamUrl(url = "https://media.example/x", expiresAtMs = Long.MAX_VALUE, codec = "flac", origin = "addon:liar", songMs = 222_640L)
+        assertThat(AddonStreamCheck.claimOf(opened, noLength)!!.songMs).isEqualTo(222_640L)
+        // And so the stub is refused, which it wasn't with no length.
+        assertThat(verdict(stated = true, listOf("audio/flac"), 10_000, songMs = AddonStreamCheck.claimOf(opened, noLength)!!.songMs)).isEqualTo(Why.LENGTH)
+        assertThat(AddonStreamCheck.claimOf(opened.copy(songMs = null), noLength)!!.songMs).isEqualTo(0L)
     }
 
     // ------------------------------------------------------------------------------------- a placeholder resolved again

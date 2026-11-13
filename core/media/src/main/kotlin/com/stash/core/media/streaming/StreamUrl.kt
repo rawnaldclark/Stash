@@ -54,4 +54,13 @@ data class StreamUrl(
     val isDash: Boolean = false,
     val isHls: Boolean = false,
     val isPreview: Boolean = false,
+    /**
+     * How long the song this stream was found for is, as best its source knew (an add-on's,
+     * [AddonStreamRung]): the length the resolve asked with (a placeholder's library row), else
+     * the length the add-on's own matched item states (its search row). Null when neither is
+     * known. Read by the add-on stream check's length rule when the queue item knows no length
+     * for the song, as a Search tap or a radio song whose result had none ([AddonStreamCheck]).
+     * Never shown, and never the song's length elsewhere: it may be the add-on's word.
+     */
+    val songMs: Long? = null,
 )

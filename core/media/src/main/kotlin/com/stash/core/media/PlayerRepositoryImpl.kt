@@ -46,6 +46,7 @@ import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_DASH
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_ORIGIN
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_SAMPLE_RATE
+import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_SONG_MS
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_DURATION_MS
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_ID
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_IS_STREAMABLE
@@ -1563,6 +1564,8 @@ class PlayerRepositoryImpl @Inject constructor(
             resolved.origin?.let { putString(EXTRA_STREAM_ORIGIN, it) }
             // The slot's URL is a manifest, or no longer one (an earlier resolve's word must not stay).
             if (resolved.isDash) putBoolean(EXTRA_STREAM_DASH, true) else remove(EXTRA_STREAM_DASH)
+            // The song's length as this stream's source knew it, for the add-on check; never an earlier stream's.
+            resolved.songMs?.let { putLong(EXTRA_STREAM_SONG_MS, it) } ?: remove(EXTRA_STREAM_SONG_MS)
         }
         // #336 follow-up: upgrade artwork together with the stream metadata so
         // Now Playing cannot keep a stale video thumbnail after prefetch.
@@ -3254,7 +3257,8 @@ class PlayerRepositoryImpl @Inject constructor(
             musicVideoType = item.musicVideoType,
             explicit = item.explicit ?: stored?.explicit,
         )
-        val result = buildMediaItemForTrack(transient)
+        // The library row's length when the result has none: the add-on stream check judges a stub by it.
+        val result = buildMediaItemForTrack(transient, knownSongMs = stored?.durationMs ?: 0L)
         if (result is StreamRoutingResult.Item) {
             // Single-item replacement: drop the stale logical queue so the
             // queue display falls back to the (one-item) timeline.
@@ -3291,7 +3295,15 @@ class PlayerRepositoryImpl @Inject constructor(
         track: TrackEntity,
         allowYouTube: Boolean = true,
         allowYtDlp: Boolean = true,
+        /**
+         * The song's length when [track] (what the resolve asks with) knows none: a Search result
+         * with no length, for a song the library has a row for. The item says it as the song's
+         * length, so the add-on stream check can judge a stub against it (#888 phone run, 3b); the
+         * resolve still asks with [track]'s own.
+         */
+        knownSongMs: Long = 0L,
     ): StreamRoutingResult {
+        val songMs = track.durationMs.takeIf { it > 0 } ?: knownSongMs
         val localPath = track.filePath
         // The disk check off the main thread (playTrack runs on the caller's, Main from a
         // viewModelScope): on a SAF tree it is a ContentResolver query a slow provider stalls.
@@ -3316,7 +3328,7 @@ class PlayerRepositoryImpl @Inject constructor(
                             putSoundCloudMetadata(track.toDomain())
                                 track.youtubeId?.let { putString(EXTRA_TRACK_YOUTUBE_ID, it) }
                                 putTrackOrigin(track.source, track.spotifyUri)
-                                if (track.durationMs > 0) putLong(EXTRA_TRACK_DURATION_MS, track.durationMs)
+                                if (songMs > 0) putLong(EXTRA_TRACK_DURATION_MS, songMs)
                                 // This branch plays the local file, so it is never "stream-only",
                                 // whatever the row's is_streamable says: rows first seen via Search,
                                 // Discovery, a share or a Stash Mix keep is_streamable=1 after they
@@ -3421,7 +3433,7 @@ class PlayerRepositoryImpl @Inject constructor(
                             putSoundCloudMetadata(track.toDomain())
                             track.youtubeId?.let { putString(EXTRA_TRACK_YOUTUBE_ID, it) }
                             putTrackOrigin(track.source, track.spotifyUri)
-                            if (track.durationMs > 0) putLong(EXTRA_TRACK_DURATION_MS, track.durationMs)
+                            if (songMs > 0) putLong(EXTRA_TRACK_DURATION_MS, songMs)
                             putBoolean(EXTRA_TRACK_IS_STREAMABLE, track.isStreamable)
                             // Surface the actual format Qobuz served so Now Playing
                             // shows "FLAC · 24-bit/96 kHz" instead of the stale Room
@@ -3432,6 +3444,7 @@ class PlayerRepositoryImpl @Inject constructor(
                             stream.bitrateKbps?.let { putInt(EXTRA_STREAM_BITRATE, it) }
                             stream.origin?.let { putString(EXTRA_STREAM_ORIGIN, it) }
                             if (stream.isDash) putBoolean(EXTRA_STREAM_DASH, true)
+                            stream.songMs?.let { putLong(EXTRA_STREAM_SONG_MS, it) }
                             if (stream.origin == "soundcloud") putBoolean(EXTRA_SOUNDCLOUD_PREVIEW, stream.isPreview)
                         })
                         .build()
@@ -4491,6 +4504,7 @@ class PlayerRepositoryImpl @Inject constructor(
         /** The extras that describe the stream a slot plays, for Now Playing's quality line. */
         private val streamStampKeys = listOf(
             EXTRA_STREAM_CODEC, EXTRA_STREAM_BIT_DEPTH, EXTRA_STREAM_SAMPLE_RATE, EXTRA_STREAM_BITRATE, EXTRA_STREAM_ORIGIN, EXTRA_STREAM_DASH,
+            EXTRA_STREAM_SONG_MS,
         )
 
         /**
