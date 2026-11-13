@@ -1388,7 +1388,16 @@ class PlayerRepositoryImpl @Inject constructor(
      * song playing, [playerListener]'s `onPlayerError` resolves it again.
      */
     internal suspend fun resolveAgainWhenAStreamIsRefused(refusals: kotlinx.coroutines.flow.Flow<com.stash.core.media.streaming.AddonStreamCheck.Refused>) {
+        // The player's read-ahead and the crossfade spare can both open the same stream, so both refuse
+        // it. If the second open noted itself after the first refusal's put-back, that refusal would
+        // find the slot again and put back its new answer (review-888 R2-n1). The add-on is set aside
+        // for its whole cooldown after the first, so a second refusal of it for the same song within a
+        // moment is the same stream: handled once.
+        val handled = HashMap<Pair<String, Long>, Long>()
         refusals.collect { refused ->
+            val now = android.os.SystemClock.elapsedRealtime()
+            handled.entries.removeIf { now - it.value > com.stash.core.media.streaming.AddonStreamCheck.REFUSAL_FRESH_MS }
+            if (handled.put(refused.origin to refused.trackId, now) != null) return@collect
             resolveAgainLinksFrom(setOf(refused.origin), refusedTrackId = refused.trackId, why = "was set aside")
         }
     }
@@ -1425,12 +1434,19 @@ class PlayerRepositoryImpl @Inject constructor(
             var again = 0
             var nextAgain = false
             for (index in 0 until controller.mediaItemCount) {
-                if (index == playing) continue // plays on; a refused one is onPlayerError's
                 val item = controller.getMediaItemAt(index)
                 val trackId = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, 0L)?.takeIf { it != 0L } ?: continue
                 val from = item.mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN) in origins ||
                     addonStreamCheck?.openedFrom(trackId) in origins
                 if (!from) continue
+                if (index == playing) {
+                    // It plays on to its end; a refused one is onPlayerError's. A replay of it (a repeat,
+                    // Previous, a tap) must not open the link again: its slot is put back once the player
+                    // moves off it or repeats it, and meanwhile the player's source opens no new play of
+                    // it (AddonStreamGoneException; review-888 R2-m3).
+                    if (trackId != refusedTrackId) heldOverTrackId = trackId
+                    continue
+                }
                 streamUrlCache.invalidate(trackId)
                 val fresh = resolvedAgainItem(item, trackId)
                 addonStreamCheck?.forget(trackId)
@@ -1448,6 +1464,55 @@ class PlayerRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             Log.w(TAG, "queued songs were not resolved again after an add-on $why: ${e.javaClass.simpleName}")
         }
+    }
+
+    /**
+     * The song that was playing when an add-on whose link it plays left or was set aside
+     * ([resolveAgainLinksFrom]): it played on, and its slot is put back once the player moves off it
+     * or repeats it ([putBackHeldOver]). Main thread.
+     */
+    private var heldOverTrackId: Long? = null
+
+    /** The player moved off the held-over song, or repeated it: its slot is put back now (review-888 R2-m3). */
+    private fun putBackHeldOver(controller: MediaController, reason: Int) {
+        val held = heldOverTrackId ?: return
+        val now = controller.currentMediaItem?.mediaMetadata?.extras?.getLong(EXTRA_TRACK_ID, 0L)
+        if (now == held && reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) return // still on it (its item changed)
+        heldOverTrackId = null
+        for (index in 0 until controller.mediaItemCount) {
+            if (controller.getMediaItemAt(index).mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, 0L) == held) {
+                putBackLinkFromGoneAddon(controller, index)
+            }
+        }
+    }
+
+    /**
+     * The slot at [index], if its stream came from an add-on that is no longer on or is set aside, put
+     * back as a fresh placeholder ([resolvedAgainItem]): the song playing goes on from where it is
+     * ([resolveAgainAfterRefusal]), any other is just replaced. A slot from anywhere else is left as it
+     * is, and a player stopped on an error is prepared. True when it was put back.
+     */
+    internal fun putBackLinkFromGoneAddon(controller: MediaController, index: Int): Boolean {
+        val item = if (index in 0 until controller.mediaItemCount) controller.getMediaItemAt(index) else null
+        val trackId = item?.mediaMetadata?.extras?.getLong(EXTRA_TRACK_ID, 0L)?.takeIf { it != 0L }
+        if (item == null || trackId == null || !isFromGoneAddon(item, trackId)) {
+            if (controller.playbackState == Player.STATE_IDLE && controller.playerError != null) controller.prepare()
+            return false
+        }
+        if (index == controller.currentMediaItemIndex) {
+            resolveAgainAfterRefusal(controller, item, index, trackId)
+        } else {
+            streamUrlCache.invalidate(trackId)
+            addonStreamCheck?.forget(trackId)
+            replaceMediaItemKeepingShuffle(controller, index, resolvedAgainItem(item, trackId))
+        }
+        return true
+    }
+
+    /** Whether [item]'s stream (its origin, or what its source opened) is an add-on's that left or is set aside. */
+    private fun isFromGoneAddon(item: MediaItem, trackId: Long): Boolean {
+        val origin = item.mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN) ?: addonStreamCheck?.openedFrom(trackId) ?: return false
+        return com.stash.core.media.streaming.AddonPlayback.isAddonOrigin(origin) && !streamUrlCache.isServableOrigin(origin)
     }
 
     /**
@@ -3586,6 +3651,8 @@ class PlayerRepositoryImpl @Inject constructor(
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             val controller = controllerDeferred ?: return
             noteCurrentItem(controller, reason)
+            // The song playing when its add-on left: off it, or repeating it, its slot is put back (review-888 R2-m3).
+            if (heldOverTrackId != null) putBackHeldOver(controller, reason)
             // Safety net: keep the chosen speed across transitions / queue rebuilds. Not in a session,
             // where drift correction nudges the speed on purpose.
             if (!listenTogetherOwnsQueue && controller.playbackParameters.speed != _playbackSpeed.value) {
@@ -3767,6 +3834,17 @@ class PlayerRepositoryImpl @Inject constructor(
             // user may have skipped before the error came, and the controller already shows the song
             // they picked (review-888 m9). Only the refused song is resolved again.
             // (A failing id comes from the controller's current item: both are there below.)
+            // A new play of a link whose add-on left or was set aside while the song played (a repeat, a
+            // replay, a prepare after an error): the player's source would not open it (review-888 R2-m3).
+            // Not a failed stream, so not the cascade guard's: the song is resolved again from where it
+            // was, without that add-on. If the song shown isn't from such an add-on, it plays as it is.
+            if (failingId != null && com.stash.core.media.streaming.AddonStreamGoneException.isIn(error)) {
+                note("ADDON_GONE (resolved again)")
+                Log.i(TAG, "onPlayerError: track $failingId's link came from an add-on that is no longer on; resolving it again")
+                val failedIndex = controller.currentMediaItemIndex
+                scope.launch { putBackLinkFromGoneAddon(controller, failedIndex) }
+                return
+            }
             val refusedHere = failingId != null && addonStreamCheck?.takeRefusal(failingId) == true
             if (failingId != null && (refusedHere || com.stash.core.media.streaming.AddonStreamRefusedException.isIn(error))) {
                 if (refusedHere) {

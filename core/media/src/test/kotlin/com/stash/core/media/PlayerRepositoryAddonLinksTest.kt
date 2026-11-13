@@ -144,25 +144,30 @@ class PlayerRepositoryAddonLinksTest {
         }
     }
 
+    /** The repository over [urlCache], wired to the test's controller. */
+    private fun repoOver(urlCache: StreamUrlCache) = PlayerRepositoryImpl(
+        context = ApplicationProvider.getApplicationContext(),
+        playbackStateStore = playbackStateStore,
+        musicRepository = musicRepository,
+        streamingPreference = streamingPreference,
+        streamResolver = streamResolver,
+        streamUrlCache = urlCache,
+        connectivity = mockk<ConnectivityMonitor>(relaxed = true),
+        trackDao = trackDao,
+        playbackResumer = PlaybackResumer(playbackStateStore, trackDao),
+        radioGenerator = mockk(relaxed = true),
+        trackIdentityEvents = trackIdentityEvents,
+        playbackSessionBus = PlaybackSessionBus(),
+        addonStreamCheck = check,
+    ).also {
+        it.controllerDeferred = controller
+        it.currentQueueTracks = listOf(playing, second, third)
+    }
+
     @Before
     fun setUp() {
-        repo = PlayerRepositoryImpl(
-            context = ApplicationProvider.getApplicationContext(),
-            playbackStateStore = playbackStateStore,
-            musicRepository = musicRepository,
-            streamingPreference = streamingPreference,
-            streamResolver = streamResolver,
-            streamUrlCache = cache,
-            connectivity = mockk<ConnectivityMonitor>(relaxed = true),
-            trackDao = trackDao,
-            playbackResumer = PlaybackResumer(playbackStateStore, trackDao),
-            radioGenerator = mockk(relaxed = true),
-            trackIdentityEvents = trackIdentityEvents,
-            playbackSessionBus = PlaybackSessionBus(),
-            addonStreamCheck = check,
-        )
         every { controller.isConnected } returns true
-        repo.controllerDeferred = controller
+        repo = repoOver(cache)
         every { controller.currentMediaItemIndex } returns 0
         every { controller.nextMediaItemIndex } returns 1
         every { controller.mediaItemCount } answers { slots.size }
@@ -175,7 +180,6 @@ class PlayerRepositoryAddonLinksTest {
         coEvery { trackDao.getById(any()) } returns null
         coEvery { streamResolver.resolve(any(), allowYouTube = true, allowYtDlp = true, speculative = true) } returns
             StreamUrl(url = newUrl, expiresAtMs = Long.MAX_VALUE, codec = "flac", origin = "qbdlx")
-        repo.currentQueueTracks = listOf(playing, second, third)
     }
 
     // ------------------------------------------------------------------------------------- an add-on leaves
@@ -271,6 +275,25 @@ class PlayerRepositoryAddonLinksTest {
         repo.resolveAgainWhenAStreamIsRefused(flowOf(refused, refused))
 
         // Put back once, the next source's link swapped in; the second finds nothing of the add-on in the slot.
+        assertThat(swaps.map { it.first }).containsExactly(1, 1).inOrder()
+        assertThat(slots[1].localConfiguration?.uri?.toString()).isEqualTo(newUrl)
+        coVerify(exactly = 1) { streamResolver.resolve(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `a second refusal of the same stream whose open noted itself after the first put-back is handled once - review-888 R2-n1`() = runTest {
+        slots += listOf(urlSlot(1L, "qbdlx"), radioSlot(second))
+        check.opened(2L, "addon:liar")
+        val refused = AddonStreamCheck.Refused("addon:liar", 2L, "2", AddonStreamCheck.Why.LOSSY)
+
+        repo.resolveAgainWhenAStreamIsRefused(
+            kotlinx.coroutines.flow.flow {
+                emit(refused)
+                check.opened(2L, "addon:liar") // the spare's open of the same stream returned just now
+                emit(refused)
+            },
+        )
+
         assertThat(swaps.map { it.first }).containsExactly(1, 1).inOrder()
         assertThat(slots[1].localConfiguration?.uri?.toString()).isEqualTo(newUrl)
         coVerify(exactly = 1) { streamResolver.resolve(any(), any(), any(), any()) }
@@ -401,5 +424,97 @@ class PlayerRepositoryAddonLinksTest {
 
         assertThat(swaps).isEmpty()
         verify { controller.prepare() }
+    }
+
+    // ------------------------------------------------------------------------------------- the song playing when its add-on leaves (R2-m3)
+
+    /** The add-ons that are on, as the app's registry has them; the cache serves an add-on's links only while it is among them. */
+    private val on = MutableStateFlow(listOf(addon("gone")))
+
+    /** The repository over a cache that knows which add-ons are on, as the app's does; song 1 plays from add-on "gone". */
+    private fun TestScope.playingFromAnAddonThatIsThenRemoved() {
+        val registry = object : com.stash.core.addons.AddonRegistry { override val addons = on }
+        repo = repoOver(StreamUrlCache(com.stash.core.data.prefs.DataSaver.Off, registry, gate))
+        idleMain()
+        repo.controllerDeferred = controller // the session bus's initial "not alive" released the seam
+        slots += listOf(urlSlot(1L, "addon:gone"), urlSlot(2L, "qbdlx"), urlSlot(3L, "qbdlx"))
+        val watching = launch { repo.resolveAgainWhenAnAddonLeaves(on) }
+        settle(rounds = 5)
+        on.value = emptyList() // removed, mid-song
+        settle(rounds = 10)
+        watching.cancel()
+    }
+
+    @Test
+    fun `the song playing when its add-on is removed plays on, and its slot is put back once the player moves off it`() = runTest {
+        playingFromAnAddonThatIsThenRemoved()
+        assertThat(swaps).isEmpty() // not interrupted
+
+        // The song ends; the next one plays. Previous, repeat-all or a tap would now play the slot again.
+        every { controller.currentMediaItemIndex } returns 1
+        every { controller.currentMediaItem } answers { slots[1] }
+        repo.playerListener.onMediaItemTransition(slots[1], Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+        idleMain()
+
+        assertThat(swaps.map { it.first }).containsExactly(0)
+        val putBack = slots[0]
+        assertThat(putBack.localConfiguration?.uri?.isPutBack()).isTrue()
+        assertThat(putBack.mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN)).isNull()
+        // Nothing interrupted: the song playing now is left alone.
+        verify(exactly = 0) { controller.prepare() }
+        verify(exactly = 0) { controller.seekTo(any<Int>(), any<Long>()) }
+    }
+
+    @Test
+    fun `the song playing when its add-on is removed, repeated, resolves again from its start`() = runTest {
+        playingFromAnAddonThatIsThenRemoved()
+        every { controller.currentPosition } returns 0L
+        // A metadata change of the song playing is not leaving it.
+        repo.playerListener.onMediaItemTransition(slots[0], Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED)
+        idleMain()
+        assertThat(swaps).isEmpty()
+
+        repo.playerListener.onMediaItemTransition(slots[0], Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT)
+        idleMain()
+
+        assertThat(swaps.map { it.first }).containsExactly(0)
+        assertThat(slots[0].localConfiguration?.uri?.isPutBack()).isTrue()
+        verifyOrder {
+            controller.replaceMediaItem(0, any())
+            controller.seekTo(0, 0L)
+            controller.prepare()
+        }
+    }
+
+    @Test
+    fun `a new play of a removed add-on's link the player would not open is resolved again from where it was, not counted as a failure`() = runTest {
+        playingFromAnAddonThatIsThenRemoved()
+        every { controller.currentPosition } returns resumedAtMs
+        // Repeat-one: the player's source would not open the link for the song's next play (AddonCheckedMediaSource).
+        repo.playerListener.onPlayerError(
+            PlaybackException("Source error", com.stash.core.media.streaming.AddonStreamGoneException(1L), PlaybackException.ERROR_CODE_IO_UNSPECIFIED),
+        )
+        idleMain()
+
+        assertResolvedAgainNotRetried()
+    }
+
+    @Test
+    fun `that error on a song from elsewhere plays the song as it is`() = runTest {
+        playingFromAnAddonThatIsThenRemoved()
+        every { controller.currentMediaItemIndex } returns 1
+        every { controller.currentMediaItem } answers { slots[1] }
+        every { controller.playbackState } returns Player.STATE_IDLE
+        every { controller.playerError } returns PlaybackException("gone", null, PlaybackException.ERROR_CODE_IO_UNSPECIFIED)
+        val before = swaps.size
+
+        repo.playerListener.onPlayerError(
+            PlaybackException("Source error", com.stash.core.media.streaming.AddonStreamGoneException(1L), PlaybackException.ERROR_CODE_IO_UNSPECIFIED),
+        )
+        idleMain()
+
+        assertThat(swaps.drop(before).map { it.first }).doesNotContain(1)
+        verify { controller.prepare() }
+        verify(exactly = 0) { controller.seekToNextMediaItem() }
     }
 }

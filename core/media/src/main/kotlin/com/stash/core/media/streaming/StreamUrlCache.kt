@@ -173,8 +173,15 @@ class StreamUrlCache @Inject constructor(
      * [get]: an add-on removed while it was answering (an unofficial one may take 6 s) must not be
      * played either (review-888 m1). Any thread.
      */
-    fun isServable(url: StreamUrl): Boolean {
-        val origin = url.origin ?: return true
+    fun isServable(url: StreamUrl): Boolean = isServableOrigin(url.origin)
+
+    /**
+     * [isServable] by the source alone: false for an add-on's origin (`addon:<id>`) whose add-on is
+     * not on or is set aside. For a link the player already holds, whose stream is known only by its
+     * origin (review-888 R2-m3). Any thread.
+     */
+    fun isServableOrigin(origin: String?): Boolean {
+        if (origin == null) return true
         if (!origin.startsWith(AddonStreamRung.ORIGIN_PREFIX)) return true
         if (health?.isDegraded(origin) == true) return false
         if (addons === NoAddonGate) return true

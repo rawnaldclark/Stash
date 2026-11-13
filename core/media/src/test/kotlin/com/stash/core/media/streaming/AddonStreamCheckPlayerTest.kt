@@ -83,6 +83,8 @@ class AddonStreamCheckPlayerTest {
     private val server = MockWebServer()
     private val gate = LosslessSourceHealthGate()
     private val lines = CopyOnWriteArrayList<String>()
+    /** Every path the media host was asked for, in order. */
+    private val requested = CopyOnWriteArrayList<String?>()
     private val check = AddonStreamCheck(gate).apply { log = { lines += it } }
     private val resolver: StreamSourceRegistry = mockk()
     private val dao: TrackDao = mockk { coEvery { getById(any()) } returns null }
@@ -118,7 +120,7 @@ class AddonStreamCheckPlayerTest {
 
     @Before fun setUp() {
         server.dispatcher = object : Dispatcher() {
-            override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {
+            override fun dispatch(request: RecordedRequest): MockResponse = when (request.path.also { requested += it }) {
                 "/a.mp3" -> mp3(seconds = 60)
                 "/short.mp3" -> mp3(seconds = 8)
                 "/b48.mp3" -> mp3(seconds = 60, sampleRate = 48_000)
@@ -551,6 +553,56 @@ class AddonStreamCheckPlayerTest {
         p.prepare()
         TestPlayerRunHelper.runUntilPlaybackState(p, Player.STATE_READY)
         assertThat(lines).isEmpty()
+    }
+
+    // ------------------------------------------------------------------------------------- an add-on removed while its song plays (R2-m3)
+
+    /** The add-ons that are on; the cache (and so the factory) serves an add-on's links only while it is among them. */
+    private val on = kotlinx.coroutines.flow.MutableStateFlow(
+        listOf(
+            com.stash.core.addons.InstalledAddon(
+                base = "https://liar.example/",
+                manifest = com.stash.addons.contract.Manifest(
+                    stash = 1, id = "liar", name = "liar", version = "1", kind = com.stash.addons.contract.AddonKind.SERVER,
+                    resources = listOf("search", "stream"),
+                ),
+                userAdded = true,
+            ),
+        ),
+    )
+
+    @Test fun `the song playing when its add-on is removed plays on, and a new play of its link is never opened`() {
+        val registry = object : com.stash.core.addons.AddonRegistry { override val addons = on }
+        cache = StreamUrlCache(DataSaver.Off, registry, gate)
+        val audio = FakeRenderer(C.TRACK_TYPE_AUDIO)
+        val p = player(audio)
+        p.setMediaItem(addonItem(20L, "/a.mp3", codec = "mp3"))
+        p.prepare()
+        p.play()
+        TestPlayerRunHelper.runUntilPlaybackState(p, Player.STATE_READY)
+
+        on.value = emptyList() // removed, mid-song
+
+        // The song playing plays on, a seek in it included: its period was made before.
+        p.seekTo(30_000)
+        TestPlayerRunHelper.runUntilPendingCommandsAreFullyHandled(p)
+        TestPlayerRunHelper.runUntilPlaybackState(p, Player.STATE_READY)
+        assertThat(p.playerError).isNull()
+        val asked = requested.count { it == "/a.mp3" }
+
+        // Its next play (a repeat, a replay, a prepare after an error) is a new period: never opened.
+        p.stop()
+        p.prepare()
+        val error = TestPlayerRunHelper.runUntilError(p)
+        assertThat(AddonStreamGoneException.isIn(error)).isTrue()
+        assertThat(requested.count { it == "/a.mp3" }).isEqualTo(asked)
+
+        // Nor is one of its links handed out to a tap just as it left (review-888 R2-n3).
+        p.setMediaItem(addonItem(21L, "/short.mp3", codec = "mp3"))
+        p.prepare()
+        assertThat(AddonStreamGoneException.isIn(TestPlayerRunHelper.runUntilError(p))).isTrue()
+        assertThat(requested).doesNotContain("/short.mp3")
+        assertThat(lines).isEmpty() // not a refusal: nothing set aside, nothing logged as one
     }
 
     // ------------------------------------------------------------------------------------- the crossfade spare

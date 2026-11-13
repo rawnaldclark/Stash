@@ -40,6 +40,13 @@ import java.io.IOException
  * placeholder: then the data source says what it opened ([OpenedStream]) and [claimOf] reads it.
  * A stream that is not an add-on's (claim null) is never judged.
  *
+ * **A link whose add-on left.** A stream known before it opens (claim non-null without an open: an
+ * add-on's URL, a manifest resolved before its source was picked) whose add-on is no longer on or is
+ * set aside ([isGone]) is never opened by a new period: a repeat of the song, a replay of it, a prepare
+ * after an error. That period fails with [AddonStreamGoneException] before it opens anything, and
+ * `PlayerRepositoryImpl` resolves the song again from where it was. A period made before (the song
+ * playing when the add-on left) plays on to its end, its seeks included (review-888 R2-m3).
+ *
  * Threading: [createPeriod], [releasePeriod], [onChildSourceInfoRefreshed] and the period's
  * callbacks run on the playback thread.
  */
@@ -47,6 +54,8 @@ import java.io.IOException
 internal class AddonCheckedMediaSource(
     child: MediaSource,
     private val check: AddonStreamCheck,
+    /** Whether the add-on of this origin (`addon:<id>`) left or is set aside. Any thread. */
+    private val isGone: (String) -> Boolean = { false },
     /** The claim of the stream a period plays, from what its data source opened (null: not known yet, or not a placeholder). */
     private val claimOf: (StreamUrl?) -> AddonStreamCheck.Claim?,
 ) : WrappingMediaSource(child) {
@@ -64,6 +73,12 @@ internal class AddonCheckedMediaSource(
         val lengthBefore = durationMs
         // The child's period makes its data source now, on this thread: a placeholder's says what it opens.
         val inner = OpenedStream.during(opened) { super.createPeriod(id, allocator, startPositionUs) }
+        // Known before it opens, and its add-on gone since: this new period never opens it.
+        val known = claimOf(null)
+        if (known != null && isGone(known.origin)) {
+            android.util.Log.i(TAG, "track ${known.trackId}: its add-on is no longer on; its link is not opened again")
+            return CheckedPeriod(inner, failed = AddonStreamGoneException(known.trackId)) { null }
+        }
         return CheckedPeriod(inner) { groups ->
             claimOf(opened.stream)?.let { claim -> check.judge(claim, mimeTypesOf(groups), lengthOf(opened, lengthBefore)) }
         }
@@ -85,6 +100,8 @@ internal class AddonCheckedMediaSource(
     }
 
     private companion object {
+        const val TAG = "AddonStreamCheck"
+
         fun windowDurationMs(timeline: Timeline): Long? {
             if (timeline.isEmpty) return null
             return timeline.getWindow(0, Timeline.Window()).durationMs.takeIf { it != C.TIME_UNSET && it > 0L }
@@ -156,24 +173,48 @@ class AddonStreamRefusedException(message: String) : IOException(message) {
 }
 
 /**
+ * What the player's error says when a new play of a link was not opened because the add-on that
+ * handed it out is no longer on, or is set aside ([AddonCheckedMediaSource]): the song's id only,
+ * never the host or URL. Known by its message too, as [AddonStreamRefusedException] is.
+ */
+class AddonStreamGoneException(message: String) : IOException(message) {
+    constructor(trackId: Long) : this(MESSAGE_PREFIX + trackId)
+
+    companion object {
+        private const val MESSAGE_PREFIX = "a link from an add-on that is no longer on was not opened: track "
+
+        /** Whether [error], or what caused it, is such a link not opened. */
+        fun isIn(error: Throwable?): Boolean = generateSequence(error) { it.cause }.take(MAX_CAUSES).any {
+            it is AddonStreamGoneException || it.message?.startsWith(MESSAGE_PREFIX) == true
+        }
+
+        private const val MAX_CAUSES = 8
+    }
+}
+
+/**
  * [inner], prepared only if [judge] lets it play ([AddonCheckedMediaSource]). A refused period
  * never reports itself prepared, asks for no more loading, and throws [AddonStreamRefusedException]
  * from [maybeThrowPrepareError]: the player fails it as it would a period whose link is dead.
+ * One made [failed] (its add-on is gone: [AddonStreamGoneException]) never prepares [inner] at all,
+ * so its link is never opened.
  */
 @OptIn(UnstableApi::class)
 internal class CheckedPeriod(
     val inner: MediaPeriod,
+    failed: IOException? = null,
     /** Judges the stream by its tracks; non-null: refused, and why. Called once, on the playback thread. */
     private val judge: (TrackGroupArray) -> AddonStreamCheck.Why?,
 ) : MediaPeriod, MediaPeriod.Callback {
 
     private var callback: MediaPeriod.Callback? = null
 
-    /** Set when the stream was refused; from then on the period is a failed one. */
-    @Volatile private var refused: AddonStreamRefusedException? = null
+    /** Set when the stream was refused, or from the start ([failed]); from then on the period is a failed one. */
+    @Volatile private var refused: IOException? = failed
 
     override fun prepare(callback: MediaPeriod.Callback, positionUs: Long) {
         this.callback = callback
+        if (refused != null) return // its link is not opened
         inner.prepare(this, positionUs)
     }
 

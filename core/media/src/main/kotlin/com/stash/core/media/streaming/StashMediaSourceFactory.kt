@@ -191,19 +191,28 @@ class StashMediaSourceFactory(
         return resolver.resolve(entity, allowYouTube = true, allowYtDlp = true)?.takeIf { urlCache.isServable(it) }
     }
 
-    /** [source], for an item resolved to an add-on's stream, judged by [addonCheck] before it plays. */
+    /**
+     * [source], for an item resolved to an add-on's stream, judged by [addonCheck] before it plays,
+     * and never opened again by a new period once its add-on left or was set aside ([isGone]).
+     */
     private fun checked(source: MediaSource, item: MediaItem): MediaSource {
         val check = addonCheck ?: return source
         val claim = AddonStreamCheck.claimOf(item) ?: return source
-        return AddonCheckedMediaSource(source, check) { claim }
+        return AddonCheckedMediaSource(source, check, isGone) { claim }
     }
 
     /** [source] for a placeholder that resolved to the add-on stream [resolved] before its source was picked. */
     private fun checked(source: MediaSource, resolved: StreamUrl, item: MediaItem): MediaSource {
         val check = addonCheck ?: return source
         val claim = AddonStreamCheck.claimOf(resolved, item) ?: return source
-        return AddonCheckedMediaSource(source, check) { claim }
+        return AddonCheckedMediaSource(source, check, isGone) { claim }
     }
+
+    /**
+     * Whether an add-on's link may no longer be opened afresh: its add-on left or is set aside. A
+     * placeholder needs no such word: its link is dropped from [urlCache] then, and it resolves again.
+     */
+    private val isGone: (String) -> Boolean = { origin -> !urlCache.isServableOrigin(origin) }
 
     /** What a stream opens as in Download mode: an error, so the player skips it. */
     private val refusedDataSourceFactory = DataSource.Factory { DownloadModeRefusal() }
