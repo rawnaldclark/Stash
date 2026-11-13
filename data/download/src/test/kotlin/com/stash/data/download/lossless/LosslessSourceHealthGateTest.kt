@@ -67,6 +67,26 @@ class LosslessSourceHealthGateTest {
     }
 
     @Test
+    fun `a slow download while a wrong file holds a source aside keeps the wrong file as the reason - review-888 m6`() = kotlinx.coroutines.test.runTest {
+        val g = LosslessSourceHealthGate(nowMs = { testScheduler.currentTime })
+        val seen = mutableListOf<Map<String, LosslessSourceHealthGate.SetAside>>()
+        val watching = launch { g.setAside.collect { seen += it } }
+        g.recordWrongFile("addon:liar")
+        testScheduler.advanceTimeBy(1_000)
+        g.recordDegraded("addon:liar") // a download of it timed out, or hit the guard
+        testScheduler.runCurrent()
+        // Set aside from the new instant, and Settings still says why.
+        assertThat(seen.last()).containsExactly("addon:liar", LosslessSourceHealthGate.SetAside(1_000 + LosslessSourceHealthGate.COOLDOWN_MS, wrongFile = true))
+
+        // Once the wrong file's cooldown is over, a slow download is only that.
+        testScheduler.advanceTimeBy(LosslessSourceHealthGate.COOLDOWN_MS + 1)
+        g.recordDegraded("addon:liar")
+        testScheduler.runCurrent()
+        assertThat(seen.last().getValue("addon:liar").wrongFile).isFalse()
+        watching.cancel()
+    }
+
+    @Test
     fun `setAside says which sources are set aside, until when and why, and stops saying it when the cooldown ends`() = kotlinx.coroutines.test.runTest {
         val g = LosslessSourceHealthGate(nowMs = { testScheduler.currentTime })
         val seen = mutableListOf<Map<String, LosslessSourceHealthGate.SetAside>>()

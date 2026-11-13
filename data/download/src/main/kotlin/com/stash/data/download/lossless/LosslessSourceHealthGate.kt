@@ -61,7 +61,11 @@ class LosslessSourceHealthGate(
     fun recordWrongFile(sourceId: String) = record(sourceId, wrongFile = true)
 
     private fun record(sourceId: String, wrongFile: Boolean) {
-        degradedUntil[sourceId] = SetAside(nowMs() + COOLDOWN_MS, wrongFile)
+        val now = nowMs()
+        // A slow download while a wrong file still holds it aside keeps the reason Settings shows for it (review-888 m6).
+        degradedUntil.compute(sourceId) { _, was ->
+            SetAside(now + COOLDOWN_MS, wrongFile || (was != null && now < was.untilMs && was.wrongFile))
+        }
         records.update { it + 1 }
     }
 

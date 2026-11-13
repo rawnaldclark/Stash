@@ -56,10 +56,17 @@ class AddonStreamRungs @Inject constructor(
     /** Set aside in the content-health gate (its `addon:<id>` key, also its download source's id): not asked, in either pass. */
     private fun setAside(addon: InstalledAddon): Boolean {
         val key = AddonStreamRung.ORIGIN_PREFIX + addon.id
-        if (!health.isDegraded(key)) return false
-        Log.d(TAG, "skipping $key: set aside (content-health cooldown)")
+        if (!health.isDegraded(key)) {
+            saidSetAside.remove(key)
+            return false
+        }
+        // Said once per cooldown, not on every resolve of every pass (review-888 n5).
+        if (saidSetAside.add(key)) Log.d(TAG, "skipping $key: set aside (content-health cooldown)")
         return true
     }
+
+    /** The add-ons [setAside] has already said are set aside, while they still are. */
+    private val saidSetAside: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     /**
      * True when an add-on that is on can answer a stream as a DASH manifest. The player then
