@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
@@ -403,16 +402,11 @@ class InTreeAddonRegistry @Inject constructor(
         this.scope = scope
         scope.launch(Dispatchers.IO) {
             guarded { loadPersisted() }
-            // The signed config's defaults and the user's sealed list both arrive after this starts.
-            val lists = combine(defaults.entries, users.entries) { d, u -> d to u }.distinctUntilChanged()
-            // Every arrival is published at once from what is known, the kept manifests included,
-            // waiting for no read (review-885 M5).
-            launch { lists.collectLatest { guarded { publishKnown() } } }
-            // And every arrival is a pass that reads what is new. One pass at a time, and a list that
-            // changes while a manifest is being read does not cancel that read: cancelled, it was
-            // asked a second time (N2: at a cold start the two lists arrive a moment apart). The
-            // lists that arrive meanwhile get one more pass, for the newest.
-            lists.conflate().collect { guarded { pass(force = false, restartRetries = true) } }
+            // The signed config's defaults and the user's sealed list both arrive after this starts:
+            // every arrival is a pass, and every pass publishes the kept manifests before it asks anything.
+            combine(defaults.entries, users.entries) { d, u -> d to u }
+                .distinctUntilChanged()
+                .collectLatest { guarded { listChanged() } }
         }
         scope.launch(Dispatchers.IO) {
             configApplied.collect { tick ->
@@ -487,6 +481,11 @@ class InTreeAddonRegistry @Inject constructor(
      * (one read per add-on, as SPEC.md 3 has it). A new or re-linked entry has never answered, so it is
      * read at once. The retries of entries that didn't answer start over, as the list is a new one.
      */
+    private suspend fun listChanged() = withContext(Dispatchers.IO) {
+        publishKnown()
+        pass(force = false, restartRetries = true)
+    }
+
     /** Bumped, under [applyLock], each time [publishKnown] publishes: a pass that started before it must not publish its older list over it. */
     @Volatile private var listsVersion = 0
 
