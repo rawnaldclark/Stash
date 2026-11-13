@@ -26,7 +26,8 @@ import javax.inject.Singleton
  *
  * Returns [FinalizeResult]. **No DB writes** — caller does its own
  * row insert/update so sync preserves spotifyUri/isrc/album/explicit
- * and search runs `linkTrackToDownloadsMix` on its own path.
+ * and search runs `linkTrackToDownloadsMix` on its own path (a tap on Download links in
+ * `MusicRepositoryImpl.requestDownload`, before anything downloads: #761).
  *
  * Loudness measurement is intentionally NOT part of this flow anymore
  * (v0.9.26 hotfix). The synchronous ffmpeg ebur128 pass added ~25–50 s
