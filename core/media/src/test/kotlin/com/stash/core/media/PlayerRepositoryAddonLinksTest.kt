@@ -559,4 +559,43 @@ class PlayerRepositoryAddonLinksTest {
         // Put back before the player reached it, whichever word came first: no error will read its refusal.
         assertThat(check.takeRefusal(3L)).isFalse()
     }
+
+    // ------------------------------------------------------------------------------------- only the error path prepares (R3-m2)
+
+    @Test
+    fun `moving off a held-over song whose add-on came back prepares nothing - review-888 R3-m2`() = runTest {
+        playingFromAnAddonThatIsThenRemoved()
+        on.value = listOf(addon("gone")) // back on: the held slot is no longer an add-on's that left
+        // The move lands on a song whose read-ahead failed: the player is stopped on that error, onPlayerError's to handle.
+        every { controller.currentMediaItemIndex } returns 1
+        every { controller.currentMediaItem } answers { slots[1] }
+        every { controller.playbackState } returns Player.STATE_IDLE
+        every { controller.playerError } returns PlaybackException("file gone", null, PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND)
+
+        repo.playerListener.onMediaItemTransition(slots[1], Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+        idleMain()
+
+        assertThat(swaps).isEmpty()
+        verify(exactly = 0) { controller.prepare() }
+    }
+
+    @Test
+    fun `a gone error whose song the user skipped before the put-back ran still prepares the song shown - review-888 R3-m2`() = runTest {
+        playingFromAnAddonThatIsThenRemoved()
+        repo.playerListener.onPlayerError(
+            PlaybackException("Source error", com.stash.core.media.streaming.AddonStreamGoneException(1L), PlaybackException.ERROR_CODE_IO_UNSPECIFIED),
+        )
+        // Before the put-back runs, the user skips to song 2; the player is still stopped on the error.
+        every { controller.currentMediaItemIndex } returns 1
+        every { controller.currentMediaItem } answers { slots[1] }
+        every { controller.playbackState } returns Player.STATE_IDLE
+        every { controller.playerError } returns PlaybackException("gone", null, PlaybackException.ERROR_CODE_IO_UNSPECIFIED)
+        idleMain()
+
+        // Song 1's slot is put back as it stands, and the song the user picked is prepared, once.
+        assertThat(swaps.map { it.first }).containsExactly(0)
+        assertThat(slots[0].localConfiguration?.uri?.isPutBack()).isTrue()
+        verify(exactly = 1) { controller.prepare() }
+        verify(exactly = 0) { controller.seekTo(any<Int>(), any<Long>()) }
+    }
 }

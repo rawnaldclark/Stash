@@ -1520,18 +1520,29 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     /**
+     * The player wouldn't open a new play of the link at [failedIndex]: its add-on is no longer on or is
+     * set aside ([com.stash.core.media.streaming.AddonStreamGoneException]). The slot is put back
+     * ([putBackLinkFromGoneAddon]). If that didn't prepare the player (the slot is from elsewhere, or the
+     * user moved off it before this ran) and the player is stopped on the error, the song it shows is
+     * prepared, as for a refusal (review-888 m4, R3-m2). Only this error path prepares.
+     */
+    internal fun resolveAgainAfterGone(controller: MediaController, failedIndex: Int) {
+        val playedFromHere = putBackLinkFromGoneAddon(controller, failedIndex) && failedIndex == controller.currentMediaItemIndex
+        if (!playedFromHere && controller.playbackState == Player.STATE_IDLE && controller.playerError != null) controller.prepare()
+    }
+
+    /**
      * The slot at [index], if its stream came from an add-on that is no longer on or is set aside, put
      * back as a fresh placeholder ([resolvedAgainItem]): the song playing goes on from where it is
      * ([resolveAgainAfterRefusal]), any other is just replaced. A slot from anywhere else is left as it
-     * is, and a player stopped on an error is prepared. True when it was put back.
+     * is. Nothing here prepares a player stopped on an error, which the transition listener must never
+     * do; [resolveAgainAfterGone] does, on the error path (review-888 R3-m2). True when it was put back.
      */
     internal fun putBackLinkFromGoneAddon(controller: MediaController, index: Int): Boolean {
         val item = if (index in 0 until controller.mediaItemCount) controller.getMediaItemAt(index) else null
         val trackId = item?.mediaMetadata?.extras?.getLong(EXTRA_TRACK_ID, 0L)?.takeIf { it != 0L }
-        if (item == null || trackId == null || !isFromGoneAddon(item, trackId)) {
-            if (controller.playbackState == Player.STATE_IDLE && controller.playerError != null) controller.prepare()
-            return false
-        }
+        if (item == null || trackId == null || !isFromGoneAddon(item, trackId)) return false
+        if (trackId == heldOverTrackId) heldOverTrackId = null // put back now: nothing left to hold
         if (index == controller.currentMediaItemIndex) {
             resolveAgainAfterRefusal(controller, item, index, trackId)
         } else {
@@ -3873,9 +3884,9 @@ class PlayerRepositoryImpl @Inject constructor(
             // was, without that add-on. If the song shown isn't from such an add-on, it plays as it is.
             if (failingId != null && com.stash.core.media.streaming.AddonStreamGoneException.isIn(error)) {
                 note("ADDON_GONE (resolved again)")
-                Log.i(TAG, "onPlayerError: track $failingId's link came from an add-on that is no longer on; resolving it again")
+                Log.i(TAG, "onPlayerError: track $failingId's link came from an add-on that is no longer on or is set aside; resolving it again")
                 val failedIndex = controller.currentMediaItemIndex
-                scope.launch { putBackLinkFromGoneAddon(controller, failedIndex) }
+                scope.launch { resolveAgainAfterGone(controller, failedIndex) }
                 return
             }
             val refusedHere = failingId != null && addonStreamCheck?.takeRefusal(failingId) == true
