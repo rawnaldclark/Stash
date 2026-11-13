@@ -80,6 +80,7 @@ class StreamingPreferenceTest {
     }
 
     @Test fun forceYouTubeFallback_roundTrips() = runTest {
+        prefs.devInstrumentsEnabled = true
         prefs.setForceYouTubeFallback(true)
         assertTrue(prefs.forceYouTubeFallback.first())
         assertTrue(prefs.isForceYouTubeFallback())
@@ -142,10 +143,17 @@ class StreamingPreferenceTest {
         assertFalse(prefs.isSkipQobuz())
     }
 
-    @Test fun forceYouTubeFallback_staysHonoredRegardlessOfBuildType() = runTest {
-        // "Stream via YouTube" is a visible user setting, not a dev instrument:
-        // the user can always see and clear it, and its failure mode is safe.
+    @Test fun forceYouTubeFallback_ignoredOnNonDebuggableBuilds() = runTest {
+        // The row is gone from release builds (2026-11-13): a stale "on" must not cost anyone FLAC.
         prefs.devInstrumentsEnabled = false
+        prefs.setForceYouTubeFallback(true)
+        assertFalse(prefs.isForceYouTubeFallback())
+        assertTrue(prefs.forceYouTubeFallback.first()) // stored, just not honored
+        prefs.setForceYouTubeFallback(false)
+    }
+
+    @Test fun forceYouTubeFallback_honoredOnDebuggableBuilds() = runTest {
+        prefs.devInstrumentsEnabled = true
         prefs.setForceYouTubeFallback(true)
         assertTrue(prefs.isForceYouTubeFallback())
         prefs.setForceYouTubeFallback(false)
