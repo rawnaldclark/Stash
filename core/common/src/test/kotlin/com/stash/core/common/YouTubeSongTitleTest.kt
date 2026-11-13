@@ -96,6 +96,31 @@ class YouTubeSongTitleTest {
         assertEquals("", p.version)
     }
 
+    @Test fun `a dash before only a bracketed note is not artist - title`() {
+        // YouTube Music's "Nightmare Before Christmas Special Edition" (2006), as Tidal lists it too.
+        // Read as artist "Overture", song "(The Nightmare Before Christmas)": no catalog title matched.
+        val overture = parse("Overture - (The Nightmare Before Christmas)", "Danny Elfman")
+        assertEquals(YouTubeSongTitle.Parsed("Danny Elfman", "Overture - (The Nightmare Before Christmas)", ""), overture)
+        val opening = parse("Opening - (The Nightmare Before Christmas)", "Patrick Stewart")
+        assertEquals(YouTubeSongTitle.Parsed("Patrick Stewart", "Opening - (The Nightmare Before Christmas)", ""), opening)
+        // Square brackets and an en dash read the same.
+        assertEquals(YouTubeSongTitle.Parsed("Band", "Song – [Disc 2]", ""), parse("Song – [Disc 2]", "Band"))
+    }
+
+    @Test fun `a channel row with a bracketed note still takes the artist from the left side`() {
+        val p = parse("Danny Elfman - Overture - (The Nightmare Before Christmas)", "Disney Music")
+        assertEquals("Danny Elfman", p.artist)
+        assertEquals("Overture - (The Nightmare Before Christmas)", p.title)
+    }
+
+    @Test fun `a dash left bare once the noise bracket goes is not artist - title`() {
+        // A labelled row the parser got wrong: artist "Church & State", no title.
+        val p = parse("Church & State (Sad Gay Version) - (Official Lyric Video)", "Brandi Carlile")
+        assertEquals(YouTubeSongTitle.Parsed("Brandi Carlile", "Church & State", "Sad Gay Version"), p)
+        assertEquals(YouTubeSongTitle.Parsed("Band", "Song", ""), parse("Song - (Official Video)", "Band"))
+        assertEquals(YouTubeSongTitle.Parsed("Band", "Song", "Live"), parse("Song - (Live)", "Band"))
+    }
+
     @Test fun `a channel row still takes the artist from the left side`() {
         val p = parse("Phantogram - When I'm Small", "KEXP")
         assertEquals("Phantogram", p.artist)
@@ -109,7 +134,8 @@ class YouTubeSongTitleTest {
      * change may not lower them. The version column is checked too: a version the parser drops is a
      * live take or remix the matcher would trade for the studio cut. 2026-10-17, keeping every
      * version (not just the first bracket) and the words after a quoted title: both 91.5 -> 91.7%,
-     * version words 98.0 -> 98.2%, performance versions found 82.3 -> 88.0%.
+     * version words 98.0 -> 98.2%, performance versions found 82.3 -> 88.0%. 2026-11-13, a dash before
+     * only a bracket is no "Artist - Title" split: title 92.8 -> 92.9%, the rest unchanged.
      */
     @Test fun `parses the labelled library rows`() {
         val rows = checkNotNull(javaClass.classLoader?.getResource("youtube/titles-v1.tsv")).readText()
