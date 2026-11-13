@@ -92,6 +92,7 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var tuningController: com.stash.core.media.tuning.TuningController
     @Inject lateinit var trackDao: TrackDao
     @Inject lateinit var streamingPreference: com.stash.core.data.prefs.StreamingPreference
+    @Inject lateinit var connectivity: com.stash.core.media.streaming.ConnectivityMonitor
 
     /**
      * Download mode just switched on (review on #731): a stream already open keeps reading on the connection it has, and
@@ -946,8 +947,12 @@ class StashPlaybackService : MediaLibraryService() {
             catalog = listenTogetherCatalog,
             api = roomApiClient,
             connector = roomConnector,
-            // Radio streams, so an Offline host's station would only be a run of songs it can't play.
-            autoplayRadio = { autoplayRadioPreference.enabled.first() && streamAllowedNow() },
+            // Radio streams, so an Offline host's station would only be a run of songs it can't play; the same on mobile data
+            // with Stream on cellular off.
+            autoplayRadio = {
+                autoplayRadioPreference.enabled.first() && streamAllowedNow() &&
+                    !(connectivity.isCellular() && !streamingPreference.streamOnCellular.first())
+            },
             displayName = { sharePreference.displayName() },
             clock = { android.os.SystemClock.elapsedRealtime() },
             guestsAddPreference = { sharePreference.guestsAddNow() },
