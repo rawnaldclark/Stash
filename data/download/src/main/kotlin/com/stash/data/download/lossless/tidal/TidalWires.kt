@@ -82,6 +82,14 @@ class TidalWires @Inject constructor(
     suspend fun switchedOff(): Boolean = switches.isOff(PlayOrder.TIDAL)
 
     /**
+     * No route ([route] null) is the rung's settled answer: it is switched off, or a config is
+     * applied and gives it none, or this build has no config to wait for. Before the cached config
+     * has loaded, in a cold start's first moment, a Tidal user's phone has no route either, and that
+     * only means "not known yet" (review-885 round 2, N1).
+     */
+    suspend fun offSettled(): Boolean = switchedOff() || config.applied.value || !config.enabled
+
+    /**
      * The route a lookup takes now (the class doc's order); null = the rung is off. [ownServer] false
      * skips the user's own server. Switched off in Settings › Add-ons, there is no route at all: it
      * must not fall through to Stash's relay.

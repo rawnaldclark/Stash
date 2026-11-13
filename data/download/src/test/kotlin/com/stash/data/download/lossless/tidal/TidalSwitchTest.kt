@@ -90,6 +90,38 @@ class TidalSwitchTest {
         assertThat(client.lookup(song, cacheOnly = true)).isEqualTo(TidalLookup.NeedsRelay)
     }
 
+    @Test fun `a look-ahead before the cached config has loaded is not told Off - the real play asks`() = runBlocking<Unit> {
+        // review-885 round 2, N1: in a cold start's first moment a Tidal user's phone has no route yet
+        // (the cached config is still loading). Off there sent the look-ahead past Tidal to the next source.
+        val appliedFlow = MutableStateFlow(false)
+        val relayFlow = MutableStateFlow<TidalRelay?>(null)
+        val cold: LosslessConfigFetcher = mockk {
+            every { tidalRelay } returns relayFlow
+            every { applied } returns appliedFlow
+            every { enabled } returns true
+        }
+        val wires = TidalWires(
+            cold, FixedRegistry(), mockk<LegacyRelayWire>(relaxed = true), mockk(relaxed = true), TidalDebugSettings.off(),
+            OwnTidalServer(Users(emptyList()), prefs), switches,
+        )
+        val client = TidalClient(prefs, FakeAddonRefDao(), mockk(relaxed = true), wires)
+        val song = TrackQuery(artist = "Artist", title = "Title")
+
+        assertThat(client.lookup(song, cacheOnly = true)).isEqualTo(TidalLookup.NeedsRelay)
+        // The config is applied and names a relay: there is a route, as on any Tidal user's phone.
+        relayFlow.value = stash
+        appliedFlow.value = true
+        assertThat(client.lookup(song, cacheOnly = true)).isEqualTo(TidalLookup.NeedsRelay)
+        // An applied config that names no Tidal server: no route is the answer now.
+        relayFlow.value = null
+        assertThat(client.lookup(song, cacheOnly = true)).isEqualTo(TidalLookup.Off)
+        // Switched off is Off whether or not a config has loaded.
+        appliedFlow.value = false
+        switches.setOn(PlayOrder.TIDAL, false)
+        assertThat(client.lookup(song, cacheOnly = true)).isEqualTo(TidalLookup.Off)
+        switches.setOn(PlayOrder.TIDAL, true)
+    }
+
     @Test fun `another row's switch leaves Tidal on`() = runBlocking<Unit> {
         val w = wires()
         switches.setOn("addon:builtin", false)

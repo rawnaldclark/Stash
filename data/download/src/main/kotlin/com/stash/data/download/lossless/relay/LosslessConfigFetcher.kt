@@ -207,6 +207,14 @@ class LosslessConfigFetcher @Inject constructor(
     /** `updated_at` (unix seconds) of the applied config; 0 until one is loaded. For the diagnostics bundle. */
     val updatedAt: StateFlow<Long> = _updatedAt.asStateFlow()
 
+    private val _applied = MutableStateFlow(false)
+
+    /**
+     * True once a config is applied, from the cache or a fetch. Until then its relay and default
+     * add-ons are not known yet, which is not the same as having none (review-885 round 2, N1).
+     */
+    val applied: StateFlow<Boolean> = _applied.asStateFlow()
+
     private val _refreshedAt = MutableStateFlow(0L)
 
     /**
@@ -315,6 +323,7 @@ class LosslessConfigFetcher @Inject constructor(
         _defaultAddons.value = cfg.defaultAddonEntries()
         _addonIndex.value = cfg.addonIndexUrl()
         _updatedAt.value = cfg.updatedAt
+        _applied.value = true
     }
 
     /** Load the cache, then keep the config fresh with [refreshLoop]. */
