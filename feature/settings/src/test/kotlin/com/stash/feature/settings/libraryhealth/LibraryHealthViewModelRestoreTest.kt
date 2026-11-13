@@ -64,6 +64,34 @@ class LibraryHealthViewModelRestoreTest {
     }
 
     /**
+     * #761: a song asked back that no playlist holds would land as a downloaded song in no
+     * playlist, which Refresh cleanup deletes once Downloads › Clear history erased its row's
+     * mark. The ones no playlist holds join Your Downloads (the repository picks them).
+     */
+    @Test fun `re-download missing keeps the songs no playlist holds`() {
+        val trackDao = mockk<TrackDao>(relaxed = true) {
+            coEvery { restorableDownloadIds() } returns listOf(1L, 2L)
+        }
+        val music = mockk<MusicRepository>(relaxed = true)
+        val vm = LibraryHealthViewModel(
+            appContext = mockk(relaxed = true),
+            trackDao = trackDao,
+            downloadQueueDao = mockk(relaxed = true),
+            metadataExtractor = mockk(relaxed = true),
+            fileExistenceSessionFactory = mockk(relaxed = true),
+            reconciliationUseCase = mockk(relaxed = true),
+            adoptExistingFilesUseCase = mockk(relaxed = true),
+            musicRepository = music,
+            localFileOps = mockk(relaxed = true),
+        )
+
+        vm.restoreMissingDownloads()
+
+        coVerify { music.keepUnlistedInYourDownloads(listOf(1L, 2L)) }
+        coVerify { music.resumeWaitingDownloads(tap = true) }
+    }
+
+    /**
      * "Refresh quality info", then Back: the blocking metadata read never
      * checked for cancellation and the runCatching around each write swallowed
      * it, so the closed screen kept opening every file of the library.
