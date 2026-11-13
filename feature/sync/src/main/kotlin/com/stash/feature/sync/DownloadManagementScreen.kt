@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -35,6 +36,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,9 +53,12 @@ import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.sync.QueueRunState
+import com.stash.core.ui.components.streaming.StreamingModeChip
+import com.stash.core.ui.components.streaming.StreamingModeSheet
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.sync.components.DownloadManagementRow
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadManagementScreen(
     onBack: () -> Unit,
@@ -67,6 +72,8 @@ fun DownloadManagementScreen(
             viewModel.dismissMessage()
         }
     }
+
+    var showModeSheet by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -83,6 +90,7 @@ fun DownloadManagementScreen(
                 onSelectTab = viewModel::selectTab,
                 onPause = viewModel::pause,
                 onResume = viewModel::resumeDownloads,
+                onOpenMode = { showModeSheet = true },
             )
             when (state.selectedTab) {
                 DownloadManagementTab.QUEUE -> QueueContent(
@@ -100,6 +108,15 @@ fun DownloadManagementScreen(
             }
         }
     }
+
+    if (showModeSheet) {
+        StreamingModeSheet(
+            streamingEnabled = state.onlineMode,
+            onSelect = { viewModel.setStreamingEnabled(it); showModeSheet = false },
+            onDismiss = { showModeSheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        )
+    }
 }
 
 @Composable
@@ -109,6 +126,7 @@ private fun DownloadsHeader(
     onSelectTab: (DownloadManagementTab) -> Unit,
     onPause: () -> Unit,
     onResume: () -> Unit,
+    onOpenMode: () -> Unit,
 ) {
     val extendedColors = StashTheme.extendedColors
     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -121,12 +139,17 @@ private fun DownloadsHeader(
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.sync_back))
         }
         Spacer(Modifier.height(12.dp))
-        Text(
-            text = stringResource(R.string.sync_downloads_title),
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = stringResource(R.string.sync_downloads_title),
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.weight(1f),
+            )
+            // The Sync tab's chip (owner, 2026-11-13). Hidden until the mode is read, so it never shows the wrong one.
+            if (!state.isLoading) StreamingModeChip(streamingEnabled = state.onlineMode, onClick = onOpenMode)
+        }
         Text(
             text = queueStatusText(state),
             style = MaterialTheme.typography.bodyMedium,

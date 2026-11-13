@@ -160,7 +160,7 @@ class DownloadManagementViewModel @Inject constructor(
     private val downloadEnqueuer: SingleTrackDownloadEnqueuer,
     private val cancellationController: DownloadCancellationController,
     private val resumer: DownloadQueueResumer,
-    streamingPreference: StreamingPreference,
+    private val streamingPreference: StreamingPreference,
     @param:dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context? = null,
 ) : ViewModel() {
     private val selectedTab = MutableStateFlow(DownloadManagementTab.QUEUE)
@@ -218,6 +218,11 @@ class DownloadManagementViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /** The mode chip's sheet, as on the Sync tab. Offline starts the songs a sync queued (StashApplication watches the switch). */
+    fun setStreamingEnabled(enabled: Boolean) {
+        viewModelScope.launch { streamingPreference.setEnabled(enabled) }
     }
 
     fun selectTab(tab: DownloadManagementTab) {
