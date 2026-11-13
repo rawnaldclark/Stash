@@ -598,4 +598,27 @@ class PlayerRepositoryAddonLinksTest {
         verify(exactly = 1) { controller.prepare() }
         verify(exactly = 0) { controller.seekTo(any<Int>(), any<Long>()) }
     }
+
+    // ------------------------------------------------------------------------------------- a crossfade's incoming (R3-n5)
+
+    @Test
+    fun `a song landed on that plays a removed add-on's stream is held over too - review-888 R3-n5`() = runTest {
+        playingFromAnAddonThatIsThenRemoved() // song 1 held over
+        // Mid-fade: the incoming, song 2, was primed on the add-on's URL before it left, and the swap lands on it.
+        slots[1] = urlSlot(2L, "addon:gone")
+        every { controller.currentMediaItemIndex } returns 1
+        every { controller.currentMediaItem } answers { slots[1] }
+        repo.playerListener.onMediaItemTransition(slots[1], Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+        idleMain()
+        assertThat(swaps.map { it.first }).containsExactly(0) // song 1 put back; song 2 plays on
+
+        every { controller.currentMediaItemIndex } returns 2
+        every { controller.nextMediaItemIndex } returns androidx.media3.common.C.INDEX_UNSET // the last song: nothing to look ahead to
+        every { controller.currentMediaItem } answers { slots[2] }
+        repo.playerListener.onMediaItemTransition(slots[2], Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+        idleMain()
+
+        assertThat(swaps.map { it.first }).containsExactly(0, 1).inOrder()
+        assertThat(slots[1].localConfiguration?.uri?.isPutBack()).isTrue()
+    }
 }

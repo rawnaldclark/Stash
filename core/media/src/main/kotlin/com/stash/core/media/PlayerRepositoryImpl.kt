@@ -1509,6 +1509,11 @@ class PlayerRepositoryImpl @Inject constructor(
     /** The player moved off the held-over song, or repeated it: its slot is put back now (review-888 R2-m3). */
     private fun putBackHeldOver(controller: MediaController, reason: Int) {
         val held = heldOverTrackId ?: return
+        // A session or a browser holds the queue now: nothing of this phone's to put back (review-888 R3-n4).
+        if (listenTogetherOwnsQueue || playsOnBrowser) {
+            heldOverTrackId = null
+            return
+        }
         val now = controller.currentMediaItem?.mediaMetadata?.extras?.getLong(EXTRA_TRACK_ID, 0L)
         if (now == held && reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) return // still on it (its item changed)
         heldOverTrackId = null
@@ -1551,6 +1556,14 @@ class PlayerRepositoryImpl @Inject constructor(
             replaceMediaItemKeepingShuffle(controller, index, resolvedAgainItem(item, trackId))
         }
         return true
+    }
+
+    /** Holds over the song playing if its slot holds a stream from an add-on that left or is set aside ([putBackHeldOver]). */
+    private fun holdOverIfFromGoneAddon(controller: MediaController) {
+        if (listenTogetherOwnsQueue || playsOnBrowser) return
+        val item = controller.currentMediaItem ?: return
+        val trackId = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, 0L)?.takeIf { it != 0L } ?: return
+        if (isFromGoneAddon(item, trackId)) heldOverTrackId = trackId
     }
 
     /** Whether [item]'s stream (its origin, or what its source opened) is an add-on's that left or is set aside. */
@@ -3697,6 +3710,9 @@ class PlayerRepositoryImpl @Inject constructor(
             noteCurrentItem(controller, reason)
             // The song playing when its add-on left: off it, or repeating it, its slot is put back (review-888 R2-m3).
             if (heldOverTrackId != null) putBackHeldOver(controller, reason)
+            // A song landed on that plays a gone add-on's stream (a crossfade's incoming, primed before the
+            // add-on left mid-fade): held over the same way (review-888 R3-n5).
+            if (heldOverTrackId == null) holdOverIfFromGoneAddon(controller)
             // Safety net: keep the chosen speed across transitions / queue rebuilds. Not in a session,
             // where drift correction nudges the speed on purpose.
             if (!listenTogetherOwnsQueue && controller.playbackParameters.speed != _playbackSpeed.value) {
