@@ -274,8 +274,10 @@ private fun PreviewCard(
     onAdd: (AddonLinks.Preview, String?, Boolean) -> Unit,
     onCancel: () -> Unit,
 ) {
-    // The password's own text, written in the same frame as each key.
-    var token by remember(preview) { mutableStateOf("") }
+    // The password's own text, written in the same frame as each key. Kept for the same link: when Add
+    // finds the add-on is no longer Official the card is drawn again for the sheet, and the password
+    // typed for it stays (review-885 round 2, N8).
+    var token by remember(preview.manifestUrl) { mutableStateOf("") }
     var sheet by rememberSaveable(preview.manifestUrl) { mutableStateOf(false) }
     val official = preview.trust == Trust.FIRST_PARTY || preview.trust == Trust.OFFICIAL
     SettingsGroupCard(

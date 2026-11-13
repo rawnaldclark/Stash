@@ -694,6 +694,29 @@ class AddonScreensTest {
         assertThat(added).containsExactly(Triple("hifi", "s3cret", false))
     }
 
+    @Test fun `the password typed is kept when Add finds the add-on is no longer Official`() {
+        // review-885 round 2, N8: the index changed between the preview and the tap, so Add shows the
+        // same add-on again, now for the sheet. The field was keyed on the whole preview and emptied.
+        var step by mutableStateOf<AddFromLinkViewModel.Step>(AddFromLinkViewModel.Step.Ready(preview(trust = Trust.OFFICIAL, needsToken = true)))
+        rule.setContent {
+            MaterialTheme {
+                AddFromLinkContent(
+                    step = step, link = "", replacing = false, lands = AddFromLinkViewModel.Lands.AFTER_TIDAL, clipboardEmpty = false,
+                    onBack = {}, onLinkChange = {}, onRead = {}, onPaste = {}, onScan = {},
+                    onAdd = { p, token, agreed -> added += Triple(p.id, token, agreed) },
+                    onCancel = {},
+                )
+            }
+        }
+        rule.onNodeWithTag(ADDON_PASSWORD_FIELD_TAG).performScrollTo().performTextInput("s3cret")
+        step = AddFromLinkViewModel.Step.Ready(preview(trust = Trust.UNOFFICIAL, needsToken = true))
+        rule.waitForIdle()
+
+        rule.onNodeWithText("Add").performScrollTo().assertIsEnabled().performClick()
+        rule.onNodeWithText("Add anyway").performSemanticsAction(SemanticsActions.OnClick)
+        assertThat(added).containsExactly(Triple("hifi", "s3cret", true))
+    }
+
     @Test fun `a refusal that comes from Add is said on the preview, which stays`() {
         showAdd(AddFromLinkViewModel.Step.Ready(preview(), refused = AddonLinks.Refusal.COULD_NOT_SAVE))
         rule.onNodeWithText("Couldn't save. Try again.").assertExists()
