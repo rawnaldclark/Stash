@@ -273,10 +273,35 @@ class CrossfadeEngine(
     fun spareBufferedMs(): Long =
         if (::playerB.isInitialized) playerB.bufferedPosition.coerceAtLeast(0) else 0
 
-    /** True when the spare is primed with [mediaId] (so we don't re-prepare it). */
-    fun isPreparedFor(mediaId: String?): Boolean =
-        mediaId != null && ::playerB.isInitialized &&
-            playerB.mediaItemCount > 0 && playerB.currentMediaItem?.mediaId == mediaId
+    /**
+     * True when the spare is primed with [item] (so we don't re-prepare it): the same song, from
+     * the same place. A slot put back with another URI since the spare was primed (the song's link
+     * came from an add-on that left or was set aside, a download finished, a new quality) is
+     * another item: priming the spare again builds it a new source, so the fade never plays what
+     * the slot no longer holds. A change of metadata only (a cover, the quality stamped) keeps it.
+     */
+    fun isPreparedFor(item: MediaItem?): Boolean {
+        if (item == null || !::playerB.isInitialized || playerB.mediaItemCount == 0) return false
+        val primed = playerB.currentMediaItem ?: return false
+        return primed.mediaId == item.mediaId && primed.localConfiguration?.uri == item.localConfiguration?.uri
+    }
+
+    /**
+     * Lets the spare go when it is primed (and not fading in) on the song [mediaId]: the player
+     * refused the add-on stream it opened for it. The master and its pause-at-end hold are left
+     * alone ([cancelTransition] would clear the hold the sleep timer's end-of-song relies on).
+     * True when the spare was let go; the poll primes it again on the next song as its slot stands.
+     */
+    fun dropSpareFor(mediaId: String): Boolean {
+        if (transitioning || !::playerB.isInitialized || playerB.mediaItemCount == 0) return false
+        if (playerB.currentMediaItem?.mediaId != mediaId) return false
+        android.util.Log.i("Crossfade", "drop spare=${tag(playerB)} item=$mediaId")
+        playerB.playWhenReady = false
+        playerB.stop()
+        playerB.clearMediaItems()
+        playerB.volume = 1f
+        return true
+    }
 
     /**
      * Runs the crossfade and the late role-swap. [fadeMs] is the ramp length;
