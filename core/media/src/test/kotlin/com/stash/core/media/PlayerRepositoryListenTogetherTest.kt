@@ -68,15 +68,22 @@ class PlayerRepositoryListenTogetherTest {
         )
         .build()
 
-    private fun build(autoplay: AutoplayRadioPreference = AutoplayRadioPreference.Off): PlayerRepositoryImpl {
+    private fun build(
+        autoplay: AutoplayRadioPreference = AutoplayRadioPreference.Off,
+        connectivity: com.stash.core.media.streaming.ConnectivityMonitor = mockk(relaxed = true),
+        streamOnCellular: Boolean = true,
+    ): PlayerRepositoryImpl {
         val repo = PlayerRepositoryImpl(
             context = ApplicationProvider.getApplicationContext(),
             playbackStateStore = playbackStateStore,
             musicRepository = musicRepository,
-            streamingPreference = mockk<com.stash.core.data.prefs.StreamingPreference>(relaxed = true) { coEvery { current() } returns true },
+            streamingPreference = mockk<com.stash.core.data.prefs.StreamingPreference>(relaxed = true) {
+                coEvery { current() } returns true
+                every { this@mockk.streamOnCellular } returns flowOf(streamOnCellular)
+            },
             streamResolver = mockk(),
             streamUrlCache = streamUrlCache,
-            connectivity = mockk(relaxed = true),
+            connectivity = connectivity,
             trackDao = mockk(relaxed = true),
             playbackResumer = playbackResumer,
             radioGenerator = radioGenerator,
@@ -132,6 +139,24 @@ class PlayerRepositoryListenTogetherTest {
 
     @Test fun `without a session the same last song would have started autoplay radio`() {
         val repo = build(autoplay = autoplayOn)
+        sessionPlayer()
+        repo.updateState(controller)
+        shadowOf(Looper.getMainLooper()).idle()
+        coVerify(exactly = 1) { radioGenerator.start(any()) }
+    }
+
+    @Test fun `on mobile data with Stream on cellular off autoplay radio builds no station`() {
+        val cellular = mockk<com.stash.core.media.streaming.ConnectivityMonitor>(relaxed = true) { every { isCellular() } returns true }
+        val repo = build(autoplay = autoplayOn, connectivity = cellular, streamOnCellular = false)
+        sessionPlayer()
+        repo.updateState(controller)
+        shadowOf(Looper.getMainLooper()).idle()
+        coVerify(exactly = 0) { radioGenerator.start(any()) }
+    }
+
+    @Test fun `on mobile data with Stream on cellular on autoplay radio still starts`() {
+        val cellular = mockk<com.stash.core.media.streaming.ConnectivityMonitor>(relaxed = true) { every { isCellular() } returns true }
+        val repo = build(autoplay = autoplayOn, connectivity = cellular, streamOnCellular = true)
         sessionPlayer()
         repo.updateState(controller)
         shadowOf(Looper.getMainLooper()).idle()
