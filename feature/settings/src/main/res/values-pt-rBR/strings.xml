@@ -325,8 +325,6 @@
     <!-- Settings > Playback -->
     <string name="settings_stream_on_cellular_title">Transmitir usando dados móveis</string>
     <string name="settings_stream_on_cellular_desc">Usa dados móveis</string>
-    <string name="settings_stream_via_youtube_title">Transmitir pelo YouTube</string>
-    <string name="settings_stream_via_youtube_desc">Tente isto se as músicas não tocarem ou forem interrompidas</string>
     <string name="settings_force_qobuz_debug_title">Forçar apenas Qobuz (depuração)</string>
     <string name="settings_force_qobuz_debug_desc">Somente em versões de depuração. Direciona o streaming e os downloads pelo Qobuz, sem recorrer ao YouTube.</string>
     <string name="settings_streaming_unavailable">O streaming não está disponível nesta versão.</string>

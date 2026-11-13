@@ -82,6 +82,14 @@ class SettingsSearchTest {
         assertThat(app.single { it.title == title }.page).isEqualTo(SettingsPage.PLAYBACK)
     }
 
+    @Test fun `the real index sends youtube to the Lossless switch`() {
+        val title = "Lossless"
+        val app = settingsSearchIndex { id -> if (id == R.string.settings_lossless_title) title else "zz$id" }
+        fun found(q: String) = searchSettings(q, app) { "Audio & Quality" }.map { it.title }
+        for (q in listOf("youtube", "lossy")) assertThat(found(q)).contains(title)
+        assertThat(app.single { it.title == title }.page).isEqualTo(SettingsPage.AUDIO)
+    }
+
     @Test fun `the real index finds Use your record in mixes on Library and Storage`() {
         val title = "Use your record in mixes"
         val app = settingsSearchIndex { id -> if (id == R.string.settings_search_record_in_mixes) title else "zz$id" }

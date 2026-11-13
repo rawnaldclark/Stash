@@ -325,8 +325,6 @@
     <!-- Settings > Playback -->
     <string name="settings_stream_on_cellular_title">Über Mobilfunk streamen</string>
     <string name="settings_stream_on_cellular_desc">Nutzt mobile Daten</string>
-    <string name="settings_stream_via_youtube_title">Über YouTube streamen</string>
-    <string name="settings_stream_via_youtube_desc">Probiere dies, wenn Songs nicht abgespielt werden oder abbrechen</string>
     <string name="settings_force_qobuz_debug_title">Nur Qobuz erzwingen (Debug)</string>
     <string name="settings_force_qobuz_debug_desc">Nur Debug-Versionen. Leitet Streaming und Downloads über Qobuz, ohne auf YouTube zurückzugreifen.</string>
     <string name="settings_streaming_unavailable">Streaming ist in diesem Build nicht verfügbar.</string>
