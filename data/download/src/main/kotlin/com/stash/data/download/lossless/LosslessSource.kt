@@ -325,7 +325,9 @@ data class AudioFormat(
 /**
  * Snapshot of a source's rate-limit state. [tokensAvailable] under 1.0
  * means the next call will wait; [isCircuitBroken] true means the source
- * has been temporarily disabled because of repeated failures.
+ * is blocked for [msUntilUnblock]: paused after a rate limit (a 429, or a
+ * busy relay's own Retry-After), or held out because its breaker tripped
+ * on repeated failures ([breakerTripped]).
  *
  * Settings UI uses this to render a per-source status row.
  */
@@ -335,4 +337,10 @@ data class RateLimitState(
     val isCircuitBroken: Boolean,
     val msUntilUnblock: Long,
     val recentFailures: Int,
+    /**
+     * True while the block is a tripped breaker's (repeated failures), false while it is only a
+     * pause the source asked for. A caller booking a retry can wait out a pause to the moment it
+     * ends; a breaker says the source is failing ([com.stash.data.download.lossless.tidal.TidalAacResolver]).
+     */
+    val breakerTripped: Boolean = false,
 )
