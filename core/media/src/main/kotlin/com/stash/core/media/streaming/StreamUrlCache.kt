@@ -3,6 +3,7 @@ package com.stash.core.media.streaming
 import com.stash.core.addons.AddonRegistry
 import com.stash.core.addons.InstalledAddon
 import com.stash.core.data.prefs.DataSaver
+import com.stash.data.download.lossless.LosslessSourceHealthGate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
@@ -94,6 +95,11 @@ class StreamUrlCache @Inject constructor(
     private val dataSaver: DataSaver,
     /** The add-ons that are on: an add-on's link is served only while its add-on is among them ([addonIsOn]). */
     private val addons: AddonRegistry = NoAddonGate,
+    /**
+     * The content-health gate: an add-on set aside there (the player refused its stream, or a
+     * download its file) has none of its links served until its cooldown ends ([addonIsOn]).
+     */
+    private val health: LosslessSourceHealthGate? = null,
 ) {
     /** No Data saver: for tests and hand-built graphs. */
     internal constructor() : this(DataSaver.Off)
@@ -155,14 +161,42 @@ class StreamUrlCache @Inject constructor(
      * asked again. What it handed out before must not be played again either, for the hour a link
      * can live here: that fetch goes to a host the add-on chose, after the user (or Stash) said
      * stop. The entry is dropped and the next reader resolves afresh, without that add-on. A song
-     * that is already playing has its link in the player and plays to its end.
+     * that is already playing has its link in the player and plays to its end. The same while the
+     * add-on is set aside ([health]): a link it handed out before its stream was refused is not
+     * played either, nor one a resolve already under way puts here after.
      */
-    private fun addonIsOn(url: StreamUrl): Boolean {
-        if (addons === NoAddonGate) return true
-        val origin = url.origin ?: return true
+    private fun addonIsOn(url: StreamUrl): Boolean = isServable(url)
+
+    /**
+     * Whether [url] may be played now: true unless an add-on answered it and that add-on is no longer
+     * on or is set aside ([addonIsOn]). For a link fresh from a resolve, which never passed through
+     * [get]: an add-on removed while it was answering (an unofficial one may take 6 s) must not be
+     * played either (review-888 m1). Any thread.
+     */
+    fun isServable(url: StreamUrl): Boolean = isServableOrigin(url.origin)
+
+    /**
+     * [isServable] by the source alone: false for an add-on's origin (`addon:<id>`) whose add-on is
+     * not on or is set aside. For a link the player already holds, whose stream is known only by its
+     * origin (review-888 R2-m3). Any thread.
+     */
+    fun isServableOrigin(origin: String?): Boolean {
+        if (origin == null) return true
         if (!origin.startsWith(AddonStreamRung.ORIGIN_PREFIX)) return true
+        if (health?.isDegraded(origin) == true) return false
+        if (addons === NoAddonGate) return true
         val id = origin.removePrefix(AddonStreamRung.ORIGIN_PREFIX)
         return addons.generic().any { it.id == id }
+    }
+
+    /**
+     * Drops every link [origin] handed out (an add-on that left, or was set aside), now rather than
+     * when each is next read. Returns the songs whose link it was.
+     */
+    fun invalidateOrigin(origin: String): Set<Long> = synchronized(lock) {
+        val gone = cache.entries.filter { it.value.url.origin == origin }.mapTo(HashSet()) { it.key }
+        gone.forEach(cache::remove)
+        gone
     }
 
     fun put(trackId: Long, url: StreamUrl) {

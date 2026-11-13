@@ -16,10 +16,11 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.stateIn
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import javax.inject.Inject
@@ -55,6 +56,10 @@ class TidalDebugSettings internal constructor(
     private val store: DataStore<Preferences>?,
     /** Whether this build honours the instruments: debuggable builds only. */
     val honored: Boolean,
+    /** Where [state] follows the store: its own IO scope in the app; a test passes its own. */
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    /** Says that the store couldn't be read: once. */
+    private val warn: (String) -> Unit = { Log.w(TAG, it) },
 ) {
     @Inject constructor(@ApplicationContext context: Context) : this(
         context.tidalDebugDataStore,
@@ -66,11 +71,20 @@ class TidalDebugSettings internal constructor(
     /** What is set. [origin] null: no override. */
     data class State(val wire: Wire = Wire.AUTO, val origin: String? = null)
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    /** The stored state as it applies to this build: [State] defaults on a release build. */
+    /**
+     * The stored state as it applies to this build: [State] defaults on a release build. A store
+     * that can't be read reads as nothing set, for the moment only: it is read again, after a pause
+     * that grows to a minute, and followed from then on. A `catch` here ended the flow, so one failed
+     * read left the defaults in place until the process died (seen as a CI timeout of
+     * `TidalWiresRouteTest`, review-888 round 2).
+     */
     val state: StateFlow<State> = (store?.data ?: kotlinx.coroutines.flow.flowOf(emptyPreferences()))
-        .catch { emit(emptyPreferences()) }
+        .retryWhen { cause, attempt ->
+            if (attempt == 0L) warn("debug settings unreadable (${cause.javaClass.simpleName}); defaults until they read again")
+            emit(emptyPreferences())
+            delay(retryDelayMs(attempt))
+            true
+        }
         .map { p ->
             if (!honored) {
                 State()
@@ -130,6 +144,9 @@ class TidalDebugSettings internal constructor(
             } else {
                 client.newBuilder().connectionSpecs(listOf(okhttp3.ConnectionSpec.MODERN_TLS, okhttp3.ConnectionSpec.CLEARTEXT)).build()
             }
+
+        /** The pause before the store is read again after its [attempt]th failed read: 1 s, doubling, at most a minute. */
+        internal fun retryDelayMs(attempt: Long): Long = minOf(1_000L shl attempt.coerceAtMost(6L).toInt(), 60_000L)
 
         /** For tests and release-like wiring: nothing stored, nothing honoured. */
         fun off(): TidalDebugSettings = TidalDebugSettings(null, honored = false)

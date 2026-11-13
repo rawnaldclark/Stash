@@ -1,6 +1,7 @@
 package com.stash.data.download.lossless
 
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.launch
 import org.junit.Test
 
 class LosslessSourceHealthGateTest {
@@ -52,5 +53,63 @@ class LosslessSourceHealthGateTest {
         g.recordDegraded("kennyy_qobuz") // re-degraded — window restarts
         now += 20 // past the ORIGINAL window, before the new one
         assertThat(g.isDegraded("kennyy_qobuz")).isTrue()
+    }
+
+    @Test
+    fun `a wrong file sets a source aside for the same cooldown as any degradation`() {
+        // The player's check of an add-on's stream (AddonStreamCheck) and the download's format check
+        // share this gate: both chains skip the add-on for the cooldown.
+        val g = gate()
+        g.recordWrongFile("addon:liar")
+        assertThat(g.isDegraded("addon:liar")).isTrue()
+        now += LosslessSourceHealthGate.COOLDOWN_MS
+        assertThat(g.isDegraded("addon:liar")).isFalse()
+    }
+
+    @Test
+    fun `a slow download while a wrong file holds a source aside keeps the wrong file as the reason - review-888 m6`() = kotlinx.coroutines.test.runTest {
+        val g = LosslessSourceHealthGate(nowMs = { testScheduler.currentTime })
+        val seen = mutableListOf<Map<String, LosslessSourceHealthGate.SetAside>>()
+        val watching = launch { g.setAside.collect { seen += it } }
+        g.recordWrongFile("addon:liar")
+        testScheduler.advanceTimeBy(1_000)
+        g.recordDegraded("addon:liar") // a download of it timed out, or hit the guard
+        testScheduler.runCurrent()
+        // Set aside from the new instant, and Settings still says why.
+        assertThat(seen.last()).containsExactly("addon:liar", LosslessSourceHealthGate.SetAside(1_000 + LosslessSourceHealthGate.COOLDOWN_MS, wrongFile = true))
+
+        // Once the wrong file's cooldown is over, a slow download is only that.
+        testScheduler.advanceTimeBy(LosslessSourceHealthGate.COOLDOWN_MS + 1)
+        g.recordDegraded("addon:liar")
+        testScheduler.runCurrent()
+        assertThat(seen.last().getValue("addon:liar").wrongFile).isFalse()
+        watching.cancel()
+    }
+
+    @Test
+    fun `setAside says which sources are set aside, until when and why, and stops saying it when the cooldown ends`() = kotlinx.coroutines.test.runTest {
+        val g = LosslessSourceHealthGate(nowMs = { testScheduler.currentTime })
+        val seen = mutableListOf<Map<String, LosslessSourceHealthGate.SetAside>>()
+        val watching = launch { g.setAside.collect { seen += it } }
+        testScheduler.runCurrent()
+        assertThat(seen.last()).isEmpty()
+
+        g.recordWrongFile("addon:liar")
+        g.recordDegraded("addon:slow")
+        testScheduler.runCurrent()
+        val until = LosslessSourceHealthGate.COOLDOWN_MS
+        assertThat(seen.last()).containsExactly(
+            "addon:liar", LosslessSourceHealthGate.SetAside(until, wrongFile = true),
+            "addon:slow", LosslessSourceHealthGate.SetAside(until, wrongFile = false),
+        )
+
+        // A moment before the end it still holds; at the end the screen is told it doesn't.
+        testScheduler.advanceTimeBy(until - 1)
+        testScheduler.runCurrent()
+        assertThat(seen.last()).hasSize(2)
+        testScheduler.advanceTimeBy(1)
+        testScheduler.runCurrent()
+        assertThat(seen.last()).isEmpty()
+        watching.cancel()
     }
 }

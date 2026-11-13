@@ -156,6 +156,8 @@ class StashPlaybackService : MediaLibraryService() {
     /** The add-on client: its media client plays `addon:` streams under the base rules (add-ons plan phase 4 §2.6). */
     @Inject lateinit var addonClient: com.stash.core.addons.HttpAddonClient
     @Inject lateinit var addonStreamRungs: com.stash.core.media.streaming.AddonStreamRungs
+    /** Judges each add-on stream before a sound of it plays; its refusals drop the crossfade spare that holds one. */
+    @Inject lateinit var addonStreamCheck: com.stash.core.media.streaming.AddonStreamCheck
     @Inject lateinit var cloudLinkResolver: com.stash.data.cloud.playback.CloudLinkResolver
     @Inject lateinit var cloudCopyFinder: com.stash.core.media.streaming.CloudCopyFinder
     @Inject @field:com.stash.core.media.streaming.StreamCache
@@ -326,6 +328,13 @@ class StashPlaybackService : MediaLibraryService() {
          * (review-882 N4).
          */
         const val EXTRA_STREAM_DASH = "stash_stream_dash"
+
+        /**
+         * The song's length as the stream's source knew it ([com.stash.core.media.streaming.StreamUrl.songMs]),
+         * for the add-on stream check's length rule when [EXTRA_TRACK_DURATION_MS] is absent. A stream
+         * stamp: it goes with the stream it describes, and it is never the song's length elsewhere.
+         */
+        const val EXTRA_STREAM_SONG_MS = "stash_stream_song_ms"
 
         private const val ROOT_ID = "ROOT"
         private const val PLAYLISTS_ID = "PLAYLISTS"
@@ -777,6 +786,9 @@ class StashPlaybackService : MediaLibraryService() {
                     com.stash.core.media.streaming.AddonPlayback.isAddonOrigin(origin)
             },
             isDashStream = { item -> item.mediaMetadata.extras?.getBoolean(EXTRA_STREAM_DASH) == true },
+            // Every add-on stream is judged by what its bytes are before a sound of it plays: the
+            // master's song, the next one read ahead into it, and the crossfade spare's.
+            addonCheck = addonStreamCheck,
             httpClient = okHttpClient,
             // Full-timeline queue: stash-resolve:// placeholders resolve
             // just-in-time inside LazyResolvingDataSource at open().
@@ -911,6 +923,17 @@ class StashPlaybackService : MediaLibraryService() {
                 val was = streamAllowedCache
                 streamAllowedCache = allowed
                 if (was == true && !allowed) dropStreamsForDownloadMode()
+            }
+        }
+
+        // A stream the spare was primed on was refused (AddonStreamCheck): the spare is let go, and
+        // primed again on the next song as its slot then stands (the player resolves it again).
+        serviceScope.launch {
+            addonStreamCheck.refusals.collect { refused ->
+                if (crossfadeEngine?.dropSpareFor(refused.mediaId) == true) {
+                    android.util.Log.i("Crossfade", "spare let go: its add-on stream was refused")
+                    crossfadePreparedId = null
+                }
             }
         }
 
@@ -1706,7 +1729,7 @@ class StashPlaybackService : MediaLibraryService() {
         // are in the back stretch of the current one, so a COLD stream has tens
         // of seconds to buffer (not just the few seconds before the seam). This
         // is what makes streaming crossfade reliable.
-        if (remaining <= PREPARE_AT_MS && !engine.isPreparedFor(nextId)) {
+        if (remaining <= PREPARE_AT_MS && !engine.isPreparedFor(nextItem)) {
             engine.prepareNext(nextItem)
             crossfadePreparedId = nextId
         }
@@ -1714,7 +1737,7 @@ class StashPlaybackService : MediaLibraryService() {
         // Phase 2 — fire only when the spare has buffered at least the fade
         // length ahead, so it can't stall mid-fade (a barely-READY spare
         // glitches on cold streams). Buffer is song time: the fade plays fade × speed of it.
-        if (remaining <= fade && engine.isPreparedFor(nextId) &&
+        if (remaining <= fade && engine.isPreparedFor(nextItem) &&
             engine.spareBufferedMs() >= wallToMediaMs(fade, speed)
         ) {
             val fadeMs = minOf(fade, remaining - HANDOFF_MARGIN_MS)
@@ -1812,20 +1835,9 @@ class StashPlaybackService : MediaLibraryService() {
         stopSelf()
     }
 
-    /**
-     * Whether [item] is playable right now (so a fade into it won't error).
-     * Local/downloaded items (file/content URIs) always are. A streaming item
-     * is only playable once a resolver has produced its URL, which stamps
-     * [EXTRA_STREAM_ORIGIN] — placeholder queue-fill http(s) URLs lack it.
-     */
-    private fun isNextResolved(item: MediaItem): Boolean {
-        val scheme = item.localConfiguration?.uri?.scheme?.lowercase() ?: return false
-        return if (scheme == "http" || scheme == "https") {
-            item.mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN) != null
-        } else {
-            true
-        }
-    }
+    /** [isResolvedForCrossfade], with the stream check's set-aside add-ons. */
+    private fun isNextResolved(item: MediaItem): Boolean =
+        isResolvedForCrossfade(item) { origin -> addonStreamCheck.isSetAside(origin) }
 
     /**
      * Posts a lightweight "Resuming…" foreground notification so a
@@ -3363,4 +3375,22 @@ internal fun togetherLine(state: com.stash.core.media.listen.ListenTogetherState
     val others = room.members.filter { it.id != room.myId }.sortedBy { if (it.id == room.hostId) 0 else 1 }
     val first = others.firstOrNull() ?: return "Listening together"
     return "With ${first.name ?: "Someone"}" + if (others.size > 1) " +${others.size - 1}" else ""
+}
+
+/**
+ * Whether [item] is playable right now (so a fade into it won't error).
+ * Local/downloaded items (file/content URIs) always are. A streaming item
+ * is only playable once a resolver has produced its URL, which stamps
+ * [StashPlaybackService.EXTRA_STREAM_ORIGIN] — placeholder queue-fill http(s) URLs lack it.
+ *
+ * Nor is a URL an add-on handed out while that add-on is set aside ([isSetAside]: the player
+ * refused one of its streams). The spare is not primed on it: its slot is about to be put back as a
+ * placeholder and resolved from another source (`PlayerRepositoryImpl.resolveAgainLinksFrom`),
+ * and the spare follows the slot then ([CrossfadeEngine.isPreparedFor]).
+ */
+internal fun isResolvedForCrossfade(item: MediaItem, isSetAside: (String?) -> Boolean): Boolean {
+    val scheme = item.localConfiguration?.uri?.scheme?.lowercase() ?: return false
+    if (scheme != "http" && scheme != "https") return true
+    val origin = item.mediaMetadata.extras?.getString(StashPlaybackService.EXTRA_STREAM_ORIGIN) ?: return false
+    return !isSetAside(origin)
 }

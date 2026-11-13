@@ -129,26 +129,28 @@ class AddonPhase2HostTest {
      * defaults. With `TidalDebugSettings.off()` this test passed even if `honored` were never read
      * (review-881 M13): that object has no store. `TidalWiresRouteTest` carries it through `route()`.
      */
-    @Test fun `a release build honours nothing a debug build stored - the config's relay and no stand-in add-on`() = runBlocking<Unit> {
-        val store = PreferenceDataStoreFactory.create(scope = scope) { File(dir, "debug.preferences_pb") }
+    @Test fun `a release build honours nothing a debug build stored - the config's relay and no stand-in add-on`() = kotlinx.coroutines.test.runTest {
+        // In memory, followed on the test's own dispatcher: nothing waits in real time (review-888 round 2).
+        val store = com.stash.data.download.lossless.tidal.MemoryPreferencesStore()
         val relay = TidalRelay("https://relay.stash.example", "tok")
         val forced = TidalDebugSettings.State(TidalDebugSettings.Wire.V1, "http://127.0.0.1:8797")
 
-        val debug = TidalDebugSettings(store, honored = true)
+        val debug = TidalDebugSettings(store, honored = true, scope = backgroundScope)
         debug.setWire(TidalDebugSettings.Wire.V1)
         debug.setOrigin("http://127.0.0.1:8797")
-        withTimeout(5_000) { debug.state.first { it == forced } }
+        testScheduler.runCurrent()
+        assertThat(debug.state.value).isEqualTo(forced)
         assertThat(debug.relay(relay)).isEqualTo(TidalRelay("http://127.0.0.1:8797", "tok"))
         assertThat(debug.addonEntry(relay)).isEqualTo(
             DefaultAddonEntry("http://127.0.0.1:8797/v1/tok/manifest.json", enabled = true, firstParty = true),
         )
 
-        val release = TidalDebugSettings(store, honored = false)
-        // The store is already in memory (the object above read it): 200 ms is ample for this one to read it too.
-        repeat(20) {
-            assertThat(release.state.value).isEqualTo(TidalDebugSettings.State())
-            kotlinx.coroutines.delay(10)
-        }
+        val release = TidalDebugSettings(store, honored = false, scope = backgroundScope)
+        // It has read the same store (all there is to run has run), and still says the defaults.
+        val readsBefore = store.reads
+        testScheduler.runCurrent()
+        assertThat(store.reads).isGreaterThan(readsBefore)
+        assertThat(release.state.value).isEqualTo(TidalDebugSettings.State())
         assertThat(release.relay(relay)).isEqualTo(relay)
         assertThat(release.addonEntry(relay)).isNull()
     }

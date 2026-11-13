@@ -18,6 +18,7 @@ import com.stash.core.media.streaming.StreamQualityPolicy
 import com.stash.core.media.streaming.StreamSourceRegistry
 import com.stash.core.media.streaming.StreamUrl
 import com.stash.core.media.streaming.StreamUrlCache
+import com.stash.core.media.streaming.isPutBack
 import com.stash.core.model.Track
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -252,6 +253,44 @@ class PlayerRepositoryDataSaverPrefetchTest {
         assertThat(replacement.captured.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID)).isEqualTo(42L)
         coVerify(exactly = 0) { streamResolver.resolve(any(), any(), any(), any()) }
         assertThat(cache.get(42L)).isNull()
+    }
+
+    /**
+     * review-888 R2-m1: a next slot that shows a resolve-first source's hi-res manifest (its URL and
+     * the DASH MIME type) was copied back with the queue's own placeholder and that MIME type, so the
+     * player kept the source and streamed the manifest on mobile data anyway.
+     */
+    @Test
+    fun `a manifest lined up next is put back as a new placeholder with no MIME type when Data saver comes into effect`() = runTest {
+        val repo = repo(dataSaver = true)
+        queue(repo, streamedNext, uri = "https://tidal.example/42.mpd")
+        val manifest = controller.getMediaItemAt(1).buildUpon()
+            .setMimeType(androidx.media3.common.MimeTypes.APPLICATION_MPD)
+            .setMediaMetadata(
+                MediaMetadata.Builder().setExtras(
+                    android.os.Bundle().apply {
+                        putLong(EXTRA_TRACK_ID, 42L)
+                        putString(EXTRA_STREAM_CODEC, "flac")
+                        putBoolean(com.stash.core.media.service.StashPlaybackService.EXTRA_STREAM_DASH, true)
+                        putLong(com.stash.core.media.service.StashPlaybackService.EXTRA_STREAM_SONG_MS, 200_000L)
+                    },
+                ).build(),
+            )
+            .build()
+        every { controller.getMediaItemAt(1) } returns manifest
+        val replacement = slot<MediaItem>()
+        every { controller.replaceMediaItem(1, capture(replacement)) } returns Unit
+
+        repo.relineNextStream()
+
+        val put = replacement.captured
+        assertThat(put.localConfiguration?.uri?.scheme).isEqualTo("stash-resolve")
+        assertThat(put.localConfiguration!!.uri.isPutBack()).isTrue()
+        assertThat(put.localConfiguration?.mimeType).isNull()
+        val extras = put.mediaMetadata.extras!!
+        assertThat(extras.containsKey(com.stash.core.media.service.StashPlaybackService.EXTRA_STREAM_DASH)).isFalse()
+        assertThat(extras.containsKey(com.stash.core.media.service.StashPlaybackService.EXTRA_STREAM_SONG_MS)).isFalse()
+        assertThat(extras.getLong(EXTRA_TRACK_ID)).isEqualTo(42L)
     }
 
     @Test

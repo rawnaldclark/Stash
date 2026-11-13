@@ -61,7 +61,44 @@ class AddonOverviewRowsTest {
         official: List<OfficialEntry> = emptyList(),
         unauthorized: Set<String> = emptySet(),
         described: (String) -> OfficialEntry? = { null },
-    ) = AddonOverview.build(users, entries, reading, named, saved, official, unauthorized, described)
+        setAside: Map<String, com.stash.data.download.lossless.LosslessSourceHealthGate.SetAside> = emptyMap(),
+    ) = AddonOverview.build(users, entries, reading, named, saved, official, unauthorized, described, setAside)
+
+    // ------------------------------------------------------------------------------------------ set aside for a wrong file
+
+    @Test fun `an add-on set aside for a file that wasn't what it said says so until it is used again, and stays on`() {
+        // The player refused its stream (AddonStreamCheck): a lossy file under "lossless", a video, a stub.
+        val until = 1_700_000_000_000L
+        val aside = com.stash.data.download.lossless.LosslessSourceHealthGate.SetAside(until, wrongFile = true)
+        val state = build(
+            users = listOf(user("liar"), user("honest")),
+            entries = listOf(entry("liar"), entry("honest")),
+            setAside = mapOf("addon:liar" to aside),
+        )
+        val liar = state.row("addon:liar")!!
+        assertThat(liar.status).isEqualTo(AddonOverview.Status.SENT_WRONG_FILE)
+        assertThat(liar.setAsideUntilMs).isEqualTo(until)
+        // Nothing for the user to do: the switch stays on, the row keeps its place.
+        assertThat(liar.on).isTrue()
+        assertThat(liar.canSwitch).isTrue()
+        assertThat(state.order.map { it.key }).containsExactly("qobuz", "tidal", "addon:liar", "addon:honest").inOrder()
+        assertThat(state.row("addon:honest")!!.status).isEqualTo(AddonOverview.Status.WORKING)
+        assertThat(state.row("addon:honest")!!.setAsideUntilMs).isNull()
+    }
+
+    @Test fun `set aside for anything but a wrong file, or switched off meanwhile, the row says what it said before`() {
+        val until = 1_700_000_000_000L
+        val slow = com.stash.data.download.lossless.LosslessSourceHealthGate.SetAside(until, wrongFile = false)
+        val wrong = slow.copy(wrongFile = true)
+        val state = build(
+            users = listOf(user("slow"), user("off", enabled = false)),
+            entries = listOf(entry("slow"), entry("off", hold = AddonHold.OFF)),
+            setAside = mapOf("addon:slow" to slow, "addon:off" to wrong),
+        )
+        assertThat(state.row("addon:slow")!!.status).isEqualTo(AddonOverview.Status.WORKING)
+        assertThat(state.row("addon:off")!!.status).isEqualTo(AddonOverview.Status.OFF)
+        assertThat(state.row("addon:off")!!.setAsideUntilMs).isNull()
+    }
 
     // ------------------------------------------------------------------------------------------ which rows, in what order
 

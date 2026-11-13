@@ -168,8 +168,8 @@ class DownloadManagerDurationBackstopTest {
 
         assertThat(result).isInstanceOf(TrackDownloadResult.Success::class.java)
         assertThat((result as TrackDownloadResult.Success).filePath).isEqualTo(committed.filePath)
-        // The degraded first source was cooled down…
-        coVerify { losslessHealthGate.recordDegraded("kennyy_qobuz") }
+        // The degraded first source was cooled down, for a file that wasn't what it said…
+        coVerify { losslessHealthGate.recordWrongFile("kennyy_qobuz") }
         // …and we re-resolved to reach the good second source.
         coVerify(exactly = 2) { losslessRegistry.resolve(any()) }
     }
@@ -203,7 +203,9 @@ class DownloadManagerDurationBackstopTest {
         val result = newSubject().tryLosslessDownload(stubTrack())
 
         assertThat((result as TrackDownloadResult.Success).filePath).isEqualTo(committed.filePath)
-        coVerify(exactly = 1) { losslessHealthGate.recordDegraded("addon:stranger") }
+        // Cooled down for a file that wasn't what it said: Settings › Add-ons says so on its row.
+        coVerify(exactly = 1) { losslessHealthGate.recordWrongFile("addon:stranger") }
+        coVerify(exactly = 0) { losslessHealthGate.recordDegraded(any()) }
         coVerify(exactly = 2) { losslessRegistry.resolve(any()) }
     }
 
@@ -244,6 +246,8 @@ class DownloadManagerDurationBackstopTest {
         }
 
         coVerify(exactly = rounds) { losslessHealthGate.recordDegraded("addon:stranger") }
+        // Slow or pointed at the user's own network is not a wrong file: the row says nothing of a file.
+        coVerify(exactly = 0) { losslessHealthGate.recordWrongFile(any()) }
         coVerify(exactly = rounds * 2) { losslessRegistry.resolve(any()) }
     }
 
@@ -258,6 +262,7 @@ class DownloadManagerDurationBackstopTest {
         assertThat(newSubject().tryLosslessDownload(stubTrack())).isNull()
 
         coVerify(exactly = 0) { losslessHealthGate.recordDegraded(any()) }
+        coVerify(exactly = 0) { losslessHealthGate.recordWrongFile(any()) }
         coVerify(exactly = 1) { losslessRegistry.resolve(any()) }
     }
 

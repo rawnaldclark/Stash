@@ -85,8 +85,12 @@ internal const val LOSSLESS_SAMPLE_FRACTION = 0.5
  * below the track's known duration (< [LOSSLESS_SAMPLE_FRACTION] of expected).
  * Requires a known expected duration (> 0) and a readable probe; otherwise
  * returns false — never reject on missing data (that's the yt-dlp path's job).
+ *
+ * Public: the player's check of an add-on's stream (`AddonStreamCheck` in `:core:media`) applies
+ * this same rule to the stream's length before a sound of it plays, so a download and a stream
+ * agree on what is too short.
  */
-internal fun isLosslessDurationDegraded(probedMs: Long?, expectedMs: Long): Boolean {
+fun isLosslessDurationDegraded(probedMs: Long?, expectedMs: Long): Boolean {
     if (probedMs == null || probedMs <= 0L) return false
     if (expectedMs <= 0L) return false
     return probedMs <= LOSSLESS_SAMPLE_MAX_MS && probedMs < expectedMs * LOSSLESS_SAMPLE_FRACTION
@@ -893,10 +897,12 @@ class DownloadManager @Inject constructor(
             // The same for a fetch the add-on media client refused (it pointed at the user's own
             // network: asking again asks for the same refusal) and for one that outlasted its
             // time limit (round 2, F7 and F2).
-            if (e is LosslessUrlDownloader.NotTheStatedFormatException ||
-                e is LosslessUrlDownloader.TookTooLongException ||
-                LosslessUrlDownloader.isGuardRefusal(e)
-            ) {
+            if (e is LosslessUrlDownloader.NotTheStatedFormatException) {
+                // Settings › Add-ons says this one: "Sent a file that wasn't what it said".
+                losslessHealthGate.recordWrongFile(match.sourceId)
+                return@repeat
+            }
+            if (e is LosslessUrlDownloader.TookTooLongException || LosslessUrlDownloader.isGuardRefusal(e)) {
                 losslessHealthGate.recordDegraded(match.sourceId)
                 return@repeat
             }
@@ -920,7 +926,8 @@ class DownloadManager @Inject constructor(
                     "${track.durationMs}ms for '${track.artist} - ${track.title}' — " +
                     "rejecting + failing over",
             )
-            losslessHealthGate.recordDegraded(match.sourceId)
+            // A stub far shorter than the song is a file that wasn't what it was said to be.
+            losslessHealthGate.recordWrongFile(match.sourceId)
             runCatching { fetched.delete() }
             return@repeat
         }

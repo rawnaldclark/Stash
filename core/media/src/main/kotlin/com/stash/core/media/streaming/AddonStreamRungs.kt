@@ -12,6 +12,7 @@ import com.stash.core.addons.InstalledAddon
 import com.stash.core.addons.Trust
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.data.download.lossless.LosslessQualityTier
+import com.stash.data.download.lossless.LosslessSourceHealthGate
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.addon.AddonRefs
 import com.stash.data.download.lossless.forLibrarySource
@@ -35,17 +36,37 @@ import javax.inject.Singleton
 class AddonStreamRungs @Inject constructor(
     private val registry: AddonRegistry,
     private val refs: AddonRefs,
+    /**
+     * The content-health gate: an add-on whose stream the player refused ([AddonStreamCheck]), or
+     * whose file a download refused, is set aside there for its cooldown and is no rung until then.
+     */
+    private val health: LosslessSourceHealthGate = LosslessSourceHealthGate(),
 ) {
     /**
      * The lossless rungs, in the registry's order (user-added first); [StreamSourceRegistry] places
      * them by the play order. Empty, with no work done, when none are on. The first-party Tidal add-on is never one: the Tidal rung plays it
-     * ([AddonRegistry.generic]).
+     * ([AddonRegistry.generic]). An add-on that is set aside ([health]) is left out.
      */
     fun rungs(): List<AddonStreamRung> {
         val addons = registry.generic()
         if (addons.isEmpty()) return emptyList()
-        return addons.filter(::canStreamLossless).map { AddonStreamRung(it, refs) }
+        return addons.filter { canStreamLossless(it) && !setAside(it) }.map { AddonStreamRung(it, refs) }
     }
+
+    /** Set aside in the content-health gate (its `addon:<id>` key, also its download source's id): not asked, in either pass. */
+    private fun setAside(addon: InstalledAddon): Boolean {
+        val key = AddonStreamRung.ORIGIN_PREFIX + addon.id
+        if (!health.isDegraded(key)) {
+            saidSetAside.remove(key)
+            return false
+        }
+        // Said once per cooldown, not on every resolve of every pass (review-888 n5).
+        if (saidSetAside.add(key)) Log.d(TAG, "skipping $key: set aside (content-health cooldown)")
+        return true
+    }
+
+    /** The add-ons [setAside] has already said are set aside, while they still are. */
+    private val saidSetAside: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     /**
      * True when an add-on that is on can answer a stream as a DASH manifest. The player then
@@ -56,14 +77,16 @@ class AddonStreamRungs @Inject constructor(
     fun mayAnswerDash(): Boolean =
         registry.generic().any { canStream(it) && Delivery.DASH in it.manifest.stream!!.knownManifests }
 
-    /** The lossy pass's rungs (phase 4 §2.4), in the registry's order. Empty, with no work done, when none are on. */
+    /** The lossy pass's rungs (phase 4 §2.4), in the registry's order. Empty, with no work done, when none are on. Never one set aside. */
     fun lossyRungs(): List<AddonStreamRung> {
         val addons = registry.generic()
         if (addons.isEmpty()) return emptyList()
-        return addons.filter(::canStreamLossy).map { AddonStreamRung(it, refs) }
+        return addons.filter { canStreamLossy(it) && !setAside(it) }.map { AddonStreamRung(it, refs) }
     }
 
     internal companion object {
+        private const val TAG = "AddonStreamRung"
+
         /** Streams, finds songs (resolve or search), and plays in a delivery the player takes. */
         private fun canStream(addon: InstalledAddon): Boolean {
             val m = addon.manifest
@@ -149,10 +172,14 @@ class AddonStreamRung internal constructor(
             Log.d(TAG, "$name answer needs request headers; not played yet")
             return null
         }
-        return toStreamUrl(info, streamed.ref.artwork, name) ?: run {
+        val url = toStreamUrl(info, streamed.ref.artwork, name) ?: run {
             Log.d(TAG, "$name answer has already expired; not played")
-            null
+            return null
         }
+        // The song's length for the player's check of this stream (AddonStreamCheck's length rule):
+        // what the resolve asked with (a placeholder's library row), else what the add-on's own matched
+        // item says. A Search tap or a radio song with no length of its own is judged by it.
+        return url.copy(songMs = track.durationMs.takeIf { it > 0 } ?: streamed.ref.durationMs?.takeIf { it > 0 })
     }
 
     companion object {

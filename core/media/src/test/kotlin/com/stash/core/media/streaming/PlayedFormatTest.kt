@@ -65,10 +65,30 @@ class PlayedFormatTest {
         }
     }
 
-    @Test fun `until the extractor names a codec this app knows, the add-on's label stands`() {
-        val stated = playing("addon:stranger")
-        assertThat(PlayedFormat.applyTo(stated, null, unknown, unknown, unknown)).isEqualTo(stated)
-        assertThat(PlayedFormat.applyTo(stated, "audio/x-something-new", 44_100, pcm16, unknown)).isEqualTo(stated)
+    @Test fun `until the extractor names a codec this app knows, nothing of the add-on's label is shown`() {
+        // A real add-on said "flac, Lossless, 16/44.1" over an MP3 (2026-11-13): Now Playing showed
+        // "lossless" until the extractor read it, and for good once the player refused it, since a
+        // refused stream is never read that far.
+        val stated = playing("addon:stranger", bits = 16, rate = 44_100, kbps = 1411)
+        for (shown in listOf(
+            PlayedFormat.applyTo(stated, null, unknown, unknown, unknown),
+            PlayedFormat.applyTo(stated, "audio/x-something-new", 44_100, pcm16, unknown),
+            PlayedFormat.beforeDecoding(stated),
+        )) {
+            assertThat(shown.fileFormat).isEmpty()
+            assertThat(shown.bitsPerSample).isNull()
+            assertThat(shown.sampleRateHz).isNull()
+            assertThat(shown.qualityKbps).isEqualTo(0)
+            // Still the add-on's stream: the origin stays, so the decoded format replaces this when it comes.
+            assertThat(shown.streamOrigin).isEqualTo("addon:stranger")
+        }
+    }
+
+    @Test fun `before decoding, Stash's own sources keep their catalog's word`() {
+        for (origin in listOf("qbdlx", "tidal", "jiosaavn", "youtube", "cloud", null)) {
+            val stated = playing(origin, bits = 24, rate = 96_000)
+            assertThat(PlayedFormat.beforeDecoding(stated)).isEqualTo(stated)
+        }
     }
 
     @Test fun `the codec tags are the ones Now Playing shows`() {
