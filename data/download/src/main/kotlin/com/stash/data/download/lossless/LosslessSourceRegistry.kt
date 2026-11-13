@@ -41,6 +41,9 @@ class LosslessSourceRegistry @Inject constructor(
     private val playOrder: PlayOrder,
 ) {
 
+    /** Where the chain line goes; tests read it. */
+    internal var chainLog: (String) -> Unit = { Log.i(TAG, it) }
+
     /**
      * Walk sources in priority order, return the first match that meets
      * the user's quality threshold. Returns null when no source has a
@@ -48,9 +51,6 @@ class LosslessSourceRegistry @Inject constructor(
      * pipeline as a last resort (the strict-superset behavior we want for
      * Path ii of the source-priority model).
      */
-    /** Where the chain line goes; tests read it. */
-    internal var chainLog: (String) -> Unit = { Log.i(TAG, it) }
-
     suspend fun resolve(query: TrackQuery, bypassRateLimit: Boolean = false): SourceResult? {
         val ordered = chain()
         // The order this download asks its sources in: the play order (Settings › Add-ons).
