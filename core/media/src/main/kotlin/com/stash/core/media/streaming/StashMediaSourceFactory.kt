@@ -81,6 +81,12 @@ class StashMediaSourceFactory(
     private val isAddonOrigin: (MediaItem) -> Boolean = { false },
     /** An item whose URL is a DASH manifest by its own word (its DASH extra), whatever its path. */
     private val isDashStream: (MediaItem) -> Boolean = { false },
+    /**
+     * Judges every add-on's stream before a sound of it plays ([AddonCheckedMediaSource]): an item
+     * resolved to an add-on's URL, and a placeholder whose data source opens one. Null in tests that
+     * don't ask, and then nothing is judged.
+     */
+    private val addonCheck: AddonStreamCheck? = null,
 ) : MediaSource.Factory {
 
     private val resolver = resolver
@@ -139,9 +145,48 @@ class StashMediaSourceFactory(
                 localDelegate = { localDataSourceFactory.createDataSource() },
                 streamAllowed = streamAllowed,
                 addonDelegate = addonSourceFactory?.let { f -> { f.createDataSource() } },
+                onOpened = onOpenedFor(OpenedStream.beingCreated()),
             )
         }
+
+    /**
+     * What a placeholder's data source says when it opens a stream: to the period the add-on check
+     * is creating ([checkedLazy]), so it knows whose stream it judges, and to [addonCheck], so a song
+     * whose link an add-on handed out is found in the queue when that add-on leaves or is set aside.
+     */
+    private fun onOpenedFor(period: OpenedStream?): ((Long, StreamUrl) -> Unit)? {
+        val check = addonCheck
+        if (period == null && check == null) return null
+        return { trackId, stream ->
+            period?.stream = stream
+            check?.opened(trackId, stream.origin)
+        }
+    }
     private val lazyFactory = DefaultMediaSourceFactory(lazyDataSourceFactory)
+
+    /**
+     * A placeholder's lazy source, its periods judged by [addonCheck] once their data source has
+     * opened a stream: an add-on's stream is checked before it plays, any other is left alone.
+     */
+    private fun checkedLazy(item: MediaItem): MediaSource {
+        val source = lazyFactory.createMediaSource(item)
+        val check = addonCheck ?: return source
+        return AddonCheckedMediaSource(source, check) { opened -> opened?.let { AddonStreamCheck.claimOf(it, item) } }
+    }
+
+    /** [source], for an item resolved to an add-on's stream, judged by [addonCheck] before it plays. */
+    private fun checked(source: MediaSource, item: MediaItem): MediaSource {
+        val check = addonCheck ?: return source
+        val claim = AddonStreamCheck.claimOf(item) ?: return source
+        return AddonCheckedMediaSource(source, check) { claim }
+    }
+
+    /** [source] for a placeholder that resolved to the add-on stream [resolved] before its source was picked. */
+    private fun checked(source: MediaSource, resolved: StreamUrl, item: MediaItem): MediaSource {
+        val check = addonCheck ?: return source
+        val claim = AddonStreamCheck.claimOf(resolved, item) ?: return source
+        return AddonCheckedMediaSource(source, check) { claim }
+    }
 
     /** What a stream opens as in Download mode: an error, so the player skips it. */
     private val refusedDataSourceFactory = DataSource.Factory { DownloadModeRefusal() }
@@ -251,23 +296,27 @@ class StashMediaSourceFactory(
                         }
                     },
                     childFor = { item, resolved ->
+                        // A manifest's segments are read by the DASH source, never by a placeholder's data
+                        // source: which add-on answered is noted here (a progressive child notes it as it opens).
+                        if (resolved != null) addonCheck?.opened(trackId, resolved.origin)
                         if (resolved?.isHls == true) {
                             streamingFactory.createHlsMediaSource(item, resolved)
                         } else if (resolved?.isDash == true) {
                             if (AddonPlayback.isAddonOrigin(resolved.origin)) {
-                                // An add-on's manifest and segments on the add-on media client, or refused.
-                                addonSourceFactory?.let { streamingFactory.createDashMediaSource(item, resolved.url, it) }
+                                // An add-on's manifest and segments on the add-on media client, or refused;
+                                // judged by what the manifest says before a segment plays.
+                                addonSourceFactory?.let { checked(streamingFactory.createDashMediaSource(item, resolved.url, it), resolved, item) }
                                     ?: unwiredAddonFactory.createMediaSource(item)
                             } else {
                                 streamingFactory.createDashMediaSource(item, resolved.url, null)
                             }
                         } else {
-                            lazyFactory.createMediaSource(item)
+                            checkedLazy(item)
                         }
                     },
                 )
             }
-            return lazyFactory.createMediaSource(mediaItem)
+            return checkedLazy(mediaItem)
         }
         // A resolved Tidal MPD (prefetch / foreground tap set the item's URI to it).
         // Keyed on the path, not an extra: the session strips local configuration,
@@ -278,8 +327,8 @@ class StashMediaSourceFactory(
             (uri.path?.endsWith(".mpd") == true || (isAddonOrigin(mediaItem) && isDashStream(mediaItem)))
         ) {
             if (isAddonOrigin(mediaItem)) {
-                // An add-on's manifest and segments on the add-on media client, or refused.
-                return addonSourceFactory?.let { streamingFactory.createDashMediaSource(mediaItem, uri.toString(), it) }
+                // An add-on's manifest and segments on the add-on media client, or refused; judged before it plays.
+                return addonSourceFactory?.let { checked(streamingFactory.createDashMediaSource(mediaItem, uri.toString(), it), mediaItem) }
                     ?: unwiredAddonFactory.createMediaSource(mediaItem)
             }
             return streamingFactory.createDashMediaSource(mediaItem, uri.toString(), null)
@@ -292,8 +341,11 @@ class StashMediaSourceFactory(
         if (isJioSaavnOrigin(mediaItem)) {
             return jioSaavnFactory.createMediaSource(mediaItem)
         }
-        // An add-on's URL on the add-on media client, or refused: never on the default source.
-        if (isAddonOrigin(mediaItem)) return (addonFactory ?: unwiredAddonFactory).createMediaSource(mediaItem)
+        // An add-on's URL on the add-on media client, or refused: never on the default source. Judged
+        // by what its bytes are before a sound of it plays (AddonStreamCheck).
+        if (isAddonOrigin(mediaItem)) {
+            return addonFactory?.let { checked(it.createMediaSource(mediaItem), mediaItem) } ?: unwiredAddonFactory.createMediaSource(mediaItem)
+        }
         return localFactory.createMediaSource(mediaItem)
     }
 }

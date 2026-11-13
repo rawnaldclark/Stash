@@ -12,6 +12,7 @@ import com.stash.core.addons.InstalledAddon
 import com.stash.core.addons.Trust
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.data.download.lossless.LosslessQualityTier
+import com.stash.data.download.lossless.LosslessSourceHealthGate
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.addon.AddonRefs
 import com.stash.data.download.lossless.forLibrarySource
@@ -35,16 +36,29 @@ import javax.inject.Singleton
 class AddonStreamRungs @Inject constructor(
     private val registry: AddonRegistry,
     private val refs: AddonRefs,
+    /**
+     * The content-health gate: an add-on whose stream the player refused ([AddonStreamCheck]), or
+     * whose file a download refused, is set aside there for its cooldown and is no rung until then.
+     */
+    private val health: LosslessSourceHealthGate = LosslessSourceHealthGate(),
 ) {
     /**
      * The lossless rungs, in the registry's order (user-added first); [StreamSourceRegistry] places
      * them by the play order. Empty, with no work done, when none are on. The first-party Tidal add-on is never one: the Tidal rung plays it
-     * ([AddonRegistry.generic]).
+     * ([AddonRegistry.generic]). An add-on that is set aside ([health]) is left out.
      */
     fun rungs(): List<AddonStreamRung> {
         val addons = registry.generic()
         if (addons.isEmpty()) return emptyList()
-        return addons.filter(::canStreamLossless).map { AddonStreamRung(it, refs) }
+        return addons.filter { canStreamLossless(it) && !setAside(it) }.map { AddonStreamRung(it, refs) }
+    }
+
+    /** Set aside in the content-health gate (its `addon:<id>` key, also its download source's id): not asked, in either pass. */
+    private fun setAside(addon: InstalledAddon): Boolean {
+        val key = AddonStreamRung.ORIGIN_PREFIX + addon.id
+        if (!health.isDegraded(key)) return false
+        Log.d(TAG, "skipping $key: set aside (content-health cooldown)")
+        return true
     }
 
     /**
@@ -56,14 +70,16 @@ class AddonStreamRungs @Inject constructor(
     fun mayAnswerDash(): Boolean =
         registry.generic().any { canStream(it) && Delivery.DASH in it.manifest.stream!!.knownManifests }
 
-    /** The lossy pass's rungs (phase 4 §2.4), in the registry's order. Empty, with no work done, when none are on. */
+    /** The lossy pass's rungs (phase 4 §2.4), in the registry's order. Empty, with no work done, when none are on. Never one set aside. */
     fun lossyRungs(): List<AddonStreamRung> {
         val addons = registry.generic()
         if (addons.isEmpty()) return emptyList()
-        return addons.filter(::canStreamLossy).map { AddonStreamRung(it, refs) }
+        return addons.filter { canStreamLossy(it) && !setAside(it) }.map { AddonStreamRung(it, refs) }
     }
 
     internal companion object {
+        private const val TAG = "AddonStreamRung"
+
         /** Streams, finds songs (resolve or search), and plays in a delivery the player takes. */
         private fun canStream(addon: InstalledAddon): Boolean {
             val m = addon.manifest

@@ -84,6 +84,28 @@ private const val ROW_OVERRIDE_PARAM = "pin"
  */
 fun Uri.withRowOverride(): Uri = buildUpon().appendQueryParameter(ROW_OVERRIDE_PARAM, "1").build()
 
+/** Query param counting how often a placeholder was resolved again from the start ([resolvedAgain]). Read by no one. */
+private const val AGAIN_PARAM = "again"
+
+/**
+ * [this] placeholder as a new item to the player: the same song, its source built afresh.
+ *
+ * Media3 keeps a media source whose new item has the same URI (`canUpdateMediaItem`), with the
+ * period it already prepared and every byte it already loaded: a placeholder put back in its own
+ * slot plays what its first open read. A song whose link must not play any more (its add-on left
+ * or was set aside) needs a new source, which opens and resolves again; a URI that differs only in
+ * this count is that. Every other param is kept, so the resolve reads the same inputs.
+ */
+fun Uri.resolvedAgain(): Uri {
+    val again = (getQueryParameter(AGAIN_PARAM)?.toIntOrNull() ?: 0) + 1
+    val builder = buildUpon().clearQuery()
+    for (name in queryParameterNames) {
+        if (name == AGAIN_PARAM) continue
+        for (value in getQueryParameters(name)) builder.appendQueryParameter(name, value)
+    }
+    return builder.appendQueryParameter(AGAIN_PARAM, again.toString()).build()
+}
+
 /**
  * DataSource that turns a `stash-resolve://track/<id>` placeholder into a
  * playable stream at open time: [StreamUrlCache] first (the next-up
@@ -132,6 +154,13 @@ class LazyResolvingDataSource(
      * Null in tests: such a stream is then refused, never opened on [httpDelegate] (review-882 B1).
      */
     private val addonDelegate: (() -> DataSource)? = null,
+    /**
+     * Told each stream this source opens for a song (its track id; never a downloaded file), on the
+     * loader thread, once it is open: the player's check of an add-on's stream reads it to know whose
+     * stream its period plays ([AddonCheckedMediaSource], [OpenedStream]), and which queued songs an
+     * add-on's links are in ([AddonStreamCheck.opened]). Null: nobody asks.
+     */
+    private val onOpened: ((trackId: Long, stream: StreamUrl) -> Unit)? = null,
 ) : DataSource {
 
     private var active: DataSource? = null
@@ -246,6 +275,7 @@ class LazyResolvingDataSource(
             pinnedTotalLength = total
         }
         if (stream !== pin) pinStream(stream)
+        onOpened?.invoke(trackId, stream)
         return length
     }
 
