@@ -4,7 +4,9 @@ import android.os.Bundle
 import android.os.Looper
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
@@ -22,6 +24,7 @@ import com.stash.core.media.streaming.STASH_RESOLVE_SCHEME
 import com.stash.core.media.streaming.StreamSourceRegistry
 import com.stash.core.media.streaming.StreamUrl
 import com.stash.core.media.streaming.StreamUrlCache
+import com.stash.core.media.streaming.isPutBack
 import com.stash.core.media.streaming.stashResolveUri
 import com.stash.core.model.Track
 import com.stash.data.download.lossless.LosslessSourceHealthGate
@@ -30,6 +33,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import io.mockk.verifyOrder
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -101,6 +105,28 @@ class PlayerRepositoryAddonLinksTest {
                     putLong(EXTRA_TRACK_ID, id)
                     putString(EXTRA_STREAM_ORIGIN, origin)
                     putString(EXTRA_STREAM_CODEC, "flac")
+                },
+            ).build(),
+        )
+        .build()
+
+    /**
+     * A slot as the player shows a DASH stream: the manifest's own item, its MPD and MIME type. With
+     * [origin] it is an add-on's item resolved to its manifest; without, a resolve-first source's
+     * DASH child (its own URI is the placeholder, which the slot does not show).
+     */
+    private fun manifestSlot(id: Long, origin: String?) = MediaItem.Builder()
+        .setMediaId(id.toString())
+        .setUri("https://media.example/$id/manifest.mpd")
+        .setMimeType(MimeTypes.APPLICATION_MPD)
+        .setMediaMetadata(
+            MediaMetadata.Builder().setExtras(
+                Bundle().apply {
+                    putLong(EXTRA_TRACK_ID, id)
+                    origin?.let {
+                        putString(EXTRA_STREAM_ORIGIN, it)
+                        putString(EXTRA_STREAM_CODEC, "flac")
+                    }
                 },
             ).build(),
         )
@@ -235,12 +261,64 @@ class PlayerRepositoryAddonLinksTest {
         assertThat(slots[1].localConfiguration?.uri?.toString()).isEqualTo(newUrl)
     }
 
+    @Test
+    fun `a second refusal of the same read-ahead leaves the slot's new answer alone - review-888 m3`() = runTest {
+        // The player read the next song ahead from the add-on, and so did the crossfade spare: two refusals.
+        slots += listOf(urlSlot(1L, "qbdlx"), radioSlot(second))
+        check.opened(2L, "addon:liar")
+        val refused = AddonStreamCheck.Refused("addon:liar", 2L, "2", AddonStreamCheck.Why.LOSSY)
+
+        repo.resolveAgainWhenAStreamIsRefused(flowOf(refused, refused))
+
+        // Put back once, the next source's link swapped in; the second finds nothing of the add-on in the slot.
+        assertThat(swaps.map { it.first }).containsExactly(1, 1).inOrder()
+        assertThat(slots[1].localConfiguration?.uri?.toString()).isEqualTo(newUrl)
+        coVerify(exactly = 1) { streamResolver.resolve(any(), any(), any(), any()) }
+    }
+
+    // ------------------------------------------------------------------------------------- a manifest's slot (review-888 M1)
+
+    @Test
+    fun `a slot showing a DASH add-on's manifest is put back with no MIME type and a URI its source never had`() = runTest {
+        // Resolve-first (a Tidal server set, a DASH add-on on): the slot shows the source's DASH child, with no origin
+        // of its own; the source's own URI is the queue's placeholder. The add-on is removed.
+        slots += listOf(urlSlot(1L, "qbdlx"), manifestSlot(2L, origin = null))
+        check.opened(2L, "addon:dash")
+        val on = MutableStateFlow(listOf(addon("dash")))
+        val watching = launch { repo.resolveAgainWhenAnAddonLeaves(on) }
+        settle(rounds = 5)
+        on.value = emptyList()
+        settle { swaps.size >= 2 }
+        watching.cancel()
+
+        val (index, putBack) = swaps.first()
+        assertThat(index).isEqualTo(1)
+        // Not the queue's placeholder, which the source would keep (with the add-on's manifest in it)...
+        assertThat(putBack.localConfiguration?.uri?.isPutBack()).isTrue()
+        assertThat(putBack.localConfiguration?.uri).isNotEqualTo(radioSlot(second).localConfiguration?.uri)
+        // ...and no manifest type, which would make the next source's file read as a manifest.
+        assertThat(putBack.localConfiguration?.mimeType).isNull()
+        assertThat(putBack.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID)).isEqualTo(2L)
+        // The look-ahead's answer, a file, carries none either.
+        assertThat(slots[1].localConfiguration?.uri?.toString()).isEqualTo(newUrl)
+        assertThat(slots[1].localConfiguration?.mimeType).isNull()
+    }
+
     // ------------------------------------------------------------------------------------- the song playing is refused
 
     private fun idleMain() = shadowOf(Looper.getMainLooper()).idle()
 
-    private fun refusalOfPlaying(cause: Throwable?) {
-        slots += listOf(urlSlot(1L, "addon:liar"), urlSlot(2L, "qbdlx"))
+    /** Where the refused song stood: a session resumed at 2:10, say. */
+    private val resumedAtMs = 130_000L
+
+    /**
+     * The song playing (song 1, [slot]) fails with [cause]. [refused]: its stream was refused, which the
+     * check records before the player's error is raised (AddonCheckedMediaSource).
+     */
+    private fun refusalOfPlaying(cause: Throwable?, refused: Boolean = true, slot: MediaItem = urlSlot(1L, "addon:liar")) {
+        slots += listOf(slot, urlSlot(2L, "qbdlx"))
+        every { controller.currentPosition } returns resumedAtMs
+        if (refused) check.judge(AddonStreamCheck.Claim("addon:liar", 1L, "1", statedLossless = true, songMs = 0L), listOf("audio/mpeg"), null)
         repo.playerListener.onPlayerError(PlaybackException("Source error", cause, PlaybackException.ERROR_CODE_IO_UNSPECIFIED))
         idleMain()
     }
@@ -249,37 +327,79 @@ class PlayerRepositoryAddonLinksTest {
         assertThat(swaps.map { it.first }).containsExactly(0)
         val placeholder = swaps.single().second
         assertThat(placeholder.localConfiguration?.uri?.scheme).isEqualTo(STASH_RESOLVE_SCHEME)
+        assertThat(placeholder.localConfiguration?.mimeType).isNull()
         assertThat(placeholder.mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN)).isNull()
         verify { controller.prepare() }
-        // Not the cascade guard's same-link retry, nor a skip: the song plays from the next source.
-        verify(exactly = 0) { controller.seekTo(any<Int>(), any<Long>()) }
+        // From where it was, on the next source (review-888 m5): the slot was put back first, so this is not
+        // the cascade guard's same-link retry. Nor a skip.
+        verifyOrder {
+            controller.replaceMediaItem(0, any())
+            controller.seekTo(0, resumedAtMs)
+            controller.prepare()
+        }
         verify(exactly = 0) { controller.seekToNextMediaItem() }
         assertThat(repo.streamingHaltedEvents.replayCache).isEmpty()
     }
 
     @Test
-    fun `the song playing whose add-on stream was refused is resolved again, not retried on the same link`() {
+    fun `the song playing whose add-on stream was refused is resolved again from where it was, not retried on the same link`() {
         refusalOfPlaying(AddonStreamRefusedException(AddonStreamCheck.Why.LOSSY))
         assertResolvedAgainNotRetried()
     }
 
     @Test
-    fun `the refusal is known by its message when the session sends the cause on as another exception`() {
+    fun `the refusal is known when the session sends the cause on as another exception`() {
         refusalOfPlaying(android.os.RemoteException(AddonStreamRefusedException(AddonStreamCheck.Why.LENGTH).message))
         assertResolvedAgainNotRetried()
     }
 
     @Test
     fun `the refusal is known by the check's record when the session sends no cause at all`() {
-        check.judge(AddonStreamCheck.Claim("addon:liar", 1L, "1", statedLossless = true, songMs = 0L), listOf("audio/mpeg"), null)
         refusalOfPlaying(cause = null)
         assertResolvedAgainNotRetried()
     }
 
     @Test
+    fun `a refused DASH stream of the song playing is put back with no manifest type - review-888 M1`() {
+        refusalOfPlaying(AddonStreamRefusedException(AddonStreamCheck.Why.LOSSY), slot = manifestSlot(1L, origin = "addon:liar"))
+        assertResolvedAgainNotRetried()
+        assertThat(swaps.single().second.localConfiguration?.uri?.isPutBack()).isTrue()
+    }
+
+    @Test
     fun `any other error of an add-on stream still goes to the cascade guard`() {
-        refusalOfPlaying(java.io.IOException("connection reset"))
+        refusalOfPlaying(java.io.IOException("connection reset"), refused = false)
         assertThat(swaps).isEmpty()
         verify { controller.seekTo(0, any<Long>()) } // its one same-item retry
+    }
+
+    @Test
+    fun `a refusal of another song - the user skipped before the error came - plays the song shown as it is - review-888 m9`() {
+        // Song 9's stream was refused; the controller already shows song 1, which the user picked.
+        slots += listOf(urlSlot(1L, "qbdlx"), urlSlot(2L, "qbdlx"))
+        check.judge(AddonStreamCheck.Claim("addon:liar", 9L, "9", statedLossless = true, songMs = 0L), listOf("audio/mpeg"), null)
+        repo.playerListener.onPlayerError(
+            PlaybackException("Source error", AddonStreamRefusedException(AddonStreamCheck.Why.LOSSY), PlaybackException.ERROR_CODE_IO_UNSPECIFIED),
+        )
+        idleMain()
+
+        assertThat(swaps).isEmpty()
+        verify { controller.prepare() }
+        verify(exactly = 0) { controller.seekTo(any<Int>(), any<Long>()) }
+        verify(exactly = 0) { controller.seekToNextMediaItem() }
+        assertThat(repo.streamingHaltedEvents.replayCache).isEmpty()
+    }
+
+    @Test
+    fun `a refusal whose song the player moved off leaves the player playing what it shows - review-888 m4`() {
+        // Song 2 (index 1) was refused, but a queue edit moved the player to index 0 before the put-back ran.
+        slots += listOf(urlSlot(1L, "qbdlx"), urlSlot(2L, "addon:liar"))
+        every { controller.playbackState } returns Player.STATE_IDLE
+        every { controller.playerError } returns PlaybackException("refused", null, PlaybackException.ERROR_CODE_IO_UNSPECIFIED)
+
+        repo.resolveAgainAfterRefusal(controller, slots[1], failedIndex = 1, trackId = 2L)
+
+        assertThat(swaps).isEmpty()
+        verify { controller.prepare() }
     }
 }

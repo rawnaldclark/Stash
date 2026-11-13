@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MimeTypes
 import androidx.media3.session.MediaController
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
@@ -18,6 +19,7 @@ import com.stash.core.media.streaming.STASH_RESOLVE_SCHEME
 import com.stash.core.media.streaming.StreamSourceRegistry
 import com.stash.core.media.streaming.StreamUrl
 import com.stash.core.media.streaming.StreamUrlCache
+import com.stash.core.media.streaming.isPutBack
 import com.stash.core.model.Track
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -236,6 +238,25 @@ class PlayerRepositoryReresolveNextStreamTest {
         verify { streamUrlCache.put(2L, match { it.url == newUrl }) }
         // The song playing keeps its stream.
         verify(exactly = 0) { controller.replaceMediaItem(0, any()) }
+    }
+
+    @Test
+    fun `a next slot showing its manifest gets a placeholder its source never had, and the new stream no manifest type - review-888 M1`() = runTest {
+        // Resolve-first (a Tidal server set): the slot shows the source's DASH child, the MPD and its MIME type. The
+        // source's own URI is the queue's placeholder: put back as that, the source would be kept, resolved under the
+        // old setting.
+        val manifest = slot(2L, "https://relay.example/dash/td/2.mpd", "flac").buildUpon().setMimeType(MimeTypes.APPLICATION_MPD).build()
+        every { controller.getMediaItemAt(1) } returns manifest
+        resolvesNextTo(stream(newUrl, "aac"))
+
+        repo.reresolveNextStream()
+
+        assertThat(swaps).hasSize(2)
+        assertThat(swaps[0].localConfiguration?.uri?.isPutBack()).isTrue()
+        assertThat(swaps[0].localConfiguration?.mimeType).isNull()
+        // The slot still reads as the manifest here: the new URL's item is built afresh, not the manifest's changed.
+        assertThat(swaps[1].localConfiguration?.uri?.toString()).isEqualTo(newUrl)
+        assertThat(swaps[1].localConfiguration?.mimeType).isNull()
     }
 
     @Test
