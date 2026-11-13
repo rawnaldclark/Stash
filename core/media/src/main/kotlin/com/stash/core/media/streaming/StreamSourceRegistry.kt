@@ -198,6 +198,19 @@ class StreamSourceRegistry internal constructor(
          * it is asked like any first rung.
          */
         speculative: Boolean = false,
+    ): StreamUrl? = resolveOnce(track, allowYouTube, allowYtDlp, speculative, secondAsk = false)
+
+    /**
+     * [resolve]'s work, single-flighted per song and flags. [secondAsk]: [resolveLosslessOnly]'s walk,
+     * the same song asked again after a busy answer. It counts no lossless miss for the Home banner;
+     * the walk before it already did.
+     */
+    private suspend fun resolveOnce(
+        track: TrackEntity,
+        allowYouTube: Boolean,
+        allowYtDlp: Boolean,
+        speculative: Boolean,
+        secondAsk: Boolean,
     ): StreamUrl? {
         // Last line of defence: a cloud song (the user's own file) is never looked up on the
         // lossless relays, JioSaavn or YouTube. Its player item streams from stash-cloud://.
@@ -218,7 +231,7 @@ class StreamSourceRegistry internal constructor(
         // Keyed on the FLAGS as well as the id: background fill calls with
         // allowYouTube/allowYtDlp = false deliberately accept a narrower source
         // set, and must never be handed a foreground result (or vice versa).
-        val key = resolveKey(track.id, allowYouTube, allowYtDlp, speculative)
+        val key = resolveKey(track.id, allowYouTube, allowYtDlp, speculative) + if (secondAsk) ":again" else ""
         inFlightResolves[key]?.let { return it.await() }
 
         val fresh = resolveScope.async(start = CoroutineStart.LAZY) {
@@ -240,7 +253,7 @@ class StreamSourceRegistry internal constructor(
             // find this track", and RefreshingDataSource's open() threw a
             // non-IOException Media3 never retries. doResolve still records it.
             withTimeoutOrNull(LazyResolvingDataSource.RESOLVE_DEADLINE_MS) {
-                doResolve(track, allowYouTube, allowYtDlp, speculative)
+                doResolve(track, allowYouTube, allowYtDlp, speculative, secondAsk)
             }
         }
         val existing = inFlightResolves.putIfAbsent(key, fresh)
@@ -290,7 +303,7 @@ class StreamSourceRegistry internal constructor(
      * would change what it plays.
      */
     suspend fun resolveLosslessOnly(track: TrackEntity): StreamUrl? =
-        resolve(track, allowYouTube = false, allowYtDlp = true)
+        resolveOnce(track, allowYouTube = false, allowYtDlp = true, speculative = false, secondAsk = true)
 
     /**
      * Shared scope for in-flight resolves. Mirrors
@@ -313,6 +326,7 @@ class StreamSourceRegistry internal constructor(
         allowYouTube: Boolean,
         allowYtDlp: Boolean,
         speculative: Boolean,
+        secondAsk: Boolean,
     ): StreamUrl? {
         val startedNs = System.nanoTime()
         // The Lossless switch (Settings › Audio & Quality) governs streaming as well as
@@ -575,9 +589,8 @@ class StreamSourceRegistry internal constructor(
                     // skipped on purpose (no request), and lossless is not "offline".
                     if (isLosslessRung(name) && result != null) {
                         losslessSourceHealth.recordLosslessServed()
-                    } else if (index == lastLossless && result == null && losslessQuota?.isSpent() != true && allowYouTube) {
-                        // allowYouTube: a lossless-only walk ([resolveLosslessOnly]) is the same song
-                        // asked again after a busy answer; the walk before it counted its miss.
+                    } else if (index == lastLossless && result == null && losslessQuota?.isSpent() != true && !secondAsk) {
+                        // Not for [resolveLosslessOnly]'s second ask: the walk before it counted this song's miss.
                         losslessSourceHealth.recordLosslessMiss()
                     }
                     if (result != null) {
