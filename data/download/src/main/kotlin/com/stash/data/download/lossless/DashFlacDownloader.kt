@@ -52,6 +52,10 @@ class DashFlacDownloader @Inject constructor(
      *   each segment is read up to what is left of this ceiling and never past
      *   [MAX_ADDON_SEGMENT_BYTES], the read stopping there (round 3, R2: what is left is 58-354 MB
      *   for a whole song). Stash's own Tidal (null) keeps the one bound a segment always had.
+     * @param fetchTimeLimitMs  The most the fetch may take: the manifest and every segment, not
+     *   the remux after it (review-882 round 3, nit 5). Null = no limit (Stash's own Tidal). When it
+     *   runs out the answer is `LosslessUrlDownloader.TookTooLongException`, not logged here: the
+     *   caller says it once (nit 4).
      * @param onProgress  (segmentsDone, totalSegments) — the init counts as one.
      */
     suspend fun download(
@@ -60,40 +64,16 @@ class DashFlacDownloader @Inject constructor(
         headers: Map<String, String>,
         destination: File,
         maxBytes: Long? = null,
+        fetchTimeLimitMs: Long? = null,
         onProgress: (done: Long, total: Long) -> Unit = { _, _ -> },
     ): Result<File> = withContext(Dispatchers.IO) {
         val temp = File(destination.parentFile, "${destination.nameWithoutExtension}.dash.mp4")
         try {
-            // The MPD comes from our own Worker and may carry headers (token); the
-            // segment URLs are Tidal-signed and get none — never leak them to the CDN.
-            val manifestLimit = if (maxBytes != null) MAX_ADDON_MANIFEST_BYTES else MAX_SEGMENT_BYTES
-            val mpd = fetchBytes(client, mpdUrl, headers, manifestLimit, stream = mpdUrl).toString(Charsets.UTF_8)
-            val plan = DashManifestParser.parse(mpd, mpdUrl, maxPlanChars = if (maxBytes != null) MAX_ADDON_PLAN_CHARS else null)
-            val urls = listOf(plan.initUrl) + plan.mediaUrls
-            val total = urls.size.toLong()
-
-            destination.parentFile?.mkdirs()
-            var written = 0L
-            temp.sink().buffer().use { sink ->
-                urls.forEachIndexed { i, url ->
-                    currentCoroutineContext().ensureActive()
-                    // What this segment may be: the read stops there, before it is all in memory.
-                    val limit = if (maxBytes != null) {
-                        val left = maxBytes - written
-                        if (left <= 0) throw TooLargeException()
-                        minOf(left, MAX_ADDON_SEGMENT_BYTES)
-                    } else {
-                        MAX_SEGMENT_BYTES
-                    }
-                    written += fetchWithRetry(
-                        client, url, sink, label = if (i == 0) "init" else "segment $i/${total - 1}", limit = limit,
-                        stream = mpdUrl,
-                    )
-                    if (maxBytes != null && written > maxBytes) throw TooLargeException()
-                    onProgress(i + 1L, total)
+            withFetchTimeLimit(fetchTimeLimitMs) { fetchToTemp(client, mpdUrl, headers, destination, temp, maxBytes, onProgress) }
+                ?: run {
+                    runCatching { destination.delete() }
+                    return@withContext Result.failure(LosslessUrlDownloader.TookTooLongException())
                 }
-                sink.flush()
-            }
             if (temp.length() == 0L) throw IOException("dash download produced empty file")
 
             remux(temp, destination)
@@ -108,6 +88,48 @@ class DashFlacDownloader @Inject constructor(
             Result.failure(e)
         } finally {
             runCatching { temp.delete() }
+        }
+    }
+
+    /** The manifest, then the init and every segment into [temp], in order. */
+    private suspend fun fetchToTemp(
+        client: OkHttpClient,
+        mpdUrl: String,
+        headers: Map<String, String>,
+        destination: File,
+        temp: File,
+        maxBytes: Long?,
+        onProgress: (done: Long, total: Long) -> Unit,
+    ) {
+        // The MPD comes from our own Worker and may carry headers (token); the
+        // segment URLs are Tidal-signed and get none — never leak them to the CDN.
+        val manifestLimit = if (maxBytes != null) MAX_ADDON_MANIFEST_BYTES else MAX_SEGMENT_BYTES
+        val mpd = fetchBytes(client, mpdUrl, headers, manifestLimit, stream = mpdUrl).toString(Charsets.UTF_8)
+        val plan = DashManifestParser.parse(mpd, mpdUrl, maxPlanChars = if (maxBytes != null) MAX_ADDON_PLAN_CHARS else null)
+        val urls = listOf(plan.initUrl) + plan.mediaUrls
+        val total = urls.size.toLong()
+
+        destination.parentFile?.mkdirs()
+        var written = 0L
+        temp.sink().buffer().use { sink ->
+            urls.forEachIndexed { i, url ->
+                currentCoroutineContext().ensureActive()
+                // What this segment may be: the read stops there, before it is all in memory.
+                val limit = if (maxBytes != null) {
+                    val left = maxBytes - written
+                    if (left <= 0) throw TooLargeException()
+                    minOf(left, MAX_ADDON_SEGMENT_BYTES)
+                } else {
+                    MAX_SEGMENT_BYTES
+                }
+                written += fetchWithRetry(
+                    client, url, sink, label = if (i == 0) "init" else "segment $i/${total - 1}", limit = limit,
+                    stream = mpdUrl,
+                )
+                if (maxBytes != null && written > maxBytes) throw TooLargeException()
+                onProgress(i + 1L, total)
+            }
+            sink.flush()
         }
     }
 
@@ -138,6 +160,9 @@ class DashFlacDownloader @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: IOException) {
+                // Cancelled (the time limit, or Stop), the read fails as the cancel closed it: no
+                // retry, and no "attempt failed" line for it (review-882 round 3, nit 4).
+                currentCoroutineContext().ensureActive()
                 // A URL the add-on guard refused stays refused: asking again only asks the add-on's host again.
                 val refused = LosslessUrlDownloader.isGuardRefusal(e)
                 // Nor is one that was too large any smaller the next time: asking again fetched it all again.

@@ -103,43 +103,35 @@ class LosslessUrlDownloader @Inject constructor(
     ): Result<File> = withContext(Dispatchers.IO) {
         // An add-on's fetch has a time limit as well as a size ceiling (review-882 round 2, F2).
         // The stall window alone let a server that sends a byte every 89 s hold a download slot
-        // for as long as it liked, and with a few songs the whole sync. The limit covers the whole
-        // fetch, a DASH answer's manifest and every segment included. Stash's own sources have none.
+        // for as long as it liked, and with a few songs the whole sync. The limit covers the
+        // fetch: the file, or a DASH answer's manifest and every segment. Not the DASH remux nor
+        // the format check after it, which are the phone's own work (round 3, nit 5). Stash's
+        // own sources have none.
         val limitMs = source.maxBytes?.takeIf { isAddonSource(source.sourceId) }?.let(timeLimitMs)
-            ?: return@withContext fetch(source, destination, onProgress)
-        withTimeoutOrNull(limitMs) {
-            // A blocking read that the limit cut short comes back as an ordinary failure without
-            // the coroutine ever having suspended, and withTimeoutOrNull then hands that failure
-            // on as the block's own answer: ask whether the limit has passed.
-            fetch(source, destination, onProgress).also { ensureActive() }
-        } ?: run {
-            Log.w(TAG, "fetch ${source.sourceId}: took longer than a file of its size may (${limitMs / 1000} s); not kept")
-            runCatching { if (destination.exists()) destination.delete() }
-            Result.failure(TookTooLongException())
-        }
-    }
-
-    /** Tests: the time an add-on's fetch may take for a ceiling of so many bytes ([timeLimitFor]). */
-    internal var timeLimitMs: (Long) -> Long = { timeLimitFor(it) }
-
-    private suspend fun fetch(
-        source: SourceResult,
-        destination: File,
-        onProgress: (bytesRead: Long, totalBytes: Long) -> Unit,
-    ): Result<File> {
-        // A DASH manifest (Tidal) is not the file: fetch its segments and remux.
-        if (source.isDash) {
-            return dashDownloader.download(
+        val fetched = if (source.isDash) {
+            // A DASH manifest (Tidal) is not the file: fetch its segments and remux.
+            dashDownloader.download(
                 client = clientFor(source),
                 mpdUrl = source.downloadUrl,
                 headers = source.downloadHeaders,
                 destination = destination,
-                onProgress = onProgress,
                 maxBytes = source.maxBytes,
-            ).asStated(source)
+                fetchTimeLimitMs = limitMs,
+                onProgress = onProgress,
+            )
+        } else {
+            withFetchTimeLimit(limitMs) { fetchFile(source, destination, onProgress) } ?: Result.failure(TookTooLongException())
         }
-        return fetchFile(source, destination, onProgress).asStated(source)
+        if (fetched.exceptionOrNull() is TookTooLongException) {
+            // The one line for a cut (round 3, nit 4): the cut's own failure is not logged as well.
+            Log.w(TAG, "fetch ${source.sourceId}: took longer than a file of its size may (${(limitMs ?: 0L) / 1000} s); not kept")
+            runCatching { if (destination.exists()) destination.delete() }
+        }
+        fetched.asStated(source)
     }
+
+    /** Tests: the time an add-on's fetch may take for a ceiling of so many bytes ([timeLimitFor]). */
+    internal var timeLimitMs: (Long) -> Long = { timeLimitFor(it) }
 
     /**
      * A file an add-on answered is kept only when it starts as the format the add-on said it is
@@ -248,12 +240,15 @@ class LosslessUrlDownloader @Inject constructor(
             runCatching { if (destination.exists()) destination.delete() }
             throw e
         } catch (e: Exception) {
-            // An add-on's failure by class only: its message can name the URL, which can carry a token.
-            Log.w(TAG, "fetch ${source.sourceId} threw: ${e.javaClass.simpleName}" + if (isAddonSource(source.sourceId)) "" else ": ${e.message}")
             // Best-effort cleanup of any partial file so the caller's
             // fallback path doesn't accidentally treat a 0-byte temp
             // file as a successful download.
             runCatching { if (destination.exists()) destination.delete() }
+            // Cancelled (the time limit, or Stop), the read fails as the cancel closed it: that
+            // failure is the cancellation's, which is what is passed on (round 3, nit 4).
+            currentCoroutineContext().ensureActive()
+            // An add-on's failure by class only: its message can name the URL, which can carry a token.
+            Log.w(TAG, "fetch ${source.sourceId} threw: ${e.javaClass.simpleName}" + if (isAddonSource(source.sourceId)) "" else ": ${e.message}")
             Result.failure(e)
         }
     }
@@ -309,8 +304,9 @@ class LosslessUrlDownloader @Inject constructor(
         /**
          * How long an add-on's fetch may take for a ceiling of [maxBytes]: the time that many
          * bytes need at [FLOOR_BYTES_PER_SECOND], and a minute to get going. A 4-minute CD FLAC
-         * (ceiling 61 MB) gets about 17 minutes; the slowest connection it allows still plays the
-         * same file in real time.
+         * (ceiling 61 MB) gets about 17 minutes. The ceiling is well above the real file (a FLAC
+         * is about half to two thirds of its PCM size), so the slowest average it lets through
+         * is about 28-36 KB/s: far below what plays the file in real time (review-882 round 3, nit 3).
          */
         fun timeLimitFor(maxBytes: Long): Long = maxBytes.coerceAtLeast(0L) / FLOOR_BYTES_PER_SECOND * 1_000L + 60_000L
 
@@ -336,5 +332,28 @@ class LosslessUrlDownloader @Inject constructor(
         // 90 s tolerates the pause without masking a truly dead socket.
         private const val FETCH_STALL_TIMEOUT_SECONDS = 90L
         private const val NO_REDIRECT_SOURCE_ID = "jiosaavn"
+    }
+}
+
+/**
+ * [block] within [limitMs], or null when that limit cut it short (null [limitMs]: no limit). For
+ * an add-on's fetch: the file, or a DASH answer's manifest and segments ([LosslessUrlDownloader.download]).
+ *
+ * A blocking read the cut closed comes back as an ordinary failure, thrown or returned, without
+ * the coroutine having suspended: whatever [block] comes to once the time is up is the cut, never
+ * a failure of its own. Only this limit's own cut is null: a cancellation from outside (the
+ * user's Stop) is passed on as it is.
+ */
+internal suspend fun <T : Any> withFetchTimeLimit(limitMs: Long?, block: suspend () -> T): T? {
+    if (limitMs == null) return block()
+    return withTimeoutOrNull(limitMs) {
+        try {
+            block().also { ensureActive() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            ensureActive()
+            throw e
+        }
     }
 }
