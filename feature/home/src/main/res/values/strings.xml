@@ -15,6 +15,8 @@
     <string name="home_cd_help_menu">Report an issue or help translate</string>
     <string name="home_report_issue">Report an issue</string>
     <string name="home_report_issue_desc">Grab diagnostics, then open GitHub</string>
+    <!-- The button at the end of Home's feed; opens Settings › Appearance › Home layout. -->
+    <string name="home_edit_home">Edit Home</string>
     <string name="home_help_translate">Help us translate</string>
     <string name="home_help_translate_desc">After getting access, contribute on Weblate</string>
     <string name="home_request_translator_access">Request translator access</string>
