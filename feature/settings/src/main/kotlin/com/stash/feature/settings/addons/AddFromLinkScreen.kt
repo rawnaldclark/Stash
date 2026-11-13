@@ -30,6 +30,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -77,22 +78,42 @@ fun AddFromLinkScreen(
     replacingKey: String? = null,
     viewModel: AddFromLinkViewModel = hiltViewModel(),
 ) {
+    // What the screen keeps belongs to the link it was opened with. Another link shared to Stash while
+    // it is open comes to this same screen (StashScaffold opens it single top): Navigation keeps its
+    // entry, with the entry's saved state and view model, and draws the screen again from that saved
+    // state. The first link's field and its "already read" mark came back, and the new link was never
+    // read. Under its own key the new link starts afresh; the same link, after a rotation or a return
+    // to Stash, gets its state back.
+    key(initialLink) {
+        AddFromLinkFor(onBack, onAdded, modifier, initialLink, replacingKey, viewModel)
+    }
+}
+
+/** [AddFromLinkScreen] for the one link it was opened with, [initialLink]. */
+@Composable
+private fun AddFromLinkFor(
+    onBack: () -> Unit,
+    onAdded: () -> Unit,
+    modifier: Modifier,
+    initialLink: String?,
+    replacingKey: String?,
+    viewModel: AddFromLinkViewModel,
+) {
     val step by viewModel.step.collectAsStateWithLifecycle()
     val lands by viewModel.lands.collectAsStateWithLifecycle()
     // The field's own text, written in the same frame as each key: never a value that waits on the view model.
-    // Keyed by the link the screen was opened with: another link shared to Stash while this screen is
-    // open arrives as a new one, and takes the field over.
-    var link by rememberSaveable(initialLink) { mutableStateOf(initialLink.orEmpty()) }
+    var link by rememberSaveable { mutableStateOf(initialLink.orEmpty()) }
     var scanning by rememberSaveable { mutableStateOf(false) }
     var clipboardEmpty by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     val focusManager = LocalFocusManager.current
 
-    // A shared link (or an official add-on's Add) goes straight to its preview, once for each link.
-    var readInitial by rememberSaveable(initialLink) { mutableStateOf(false) }
+    // A shared link (or an official add-on's Add) goes straight to its preview, once.
+    var readInitial by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(initialLink) {
         if (!readInitial && !initialLink.isNullOrBlank()) {
             readInitial = true
+            // The view model is the entry's: it can still hold, or be reading, the link shared before this one.
             viewModel.reset()
             viewModel.read(initialLink, replacingKey)
         }
