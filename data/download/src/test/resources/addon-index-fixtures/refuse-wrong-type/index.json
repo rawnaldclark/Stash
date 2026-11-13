@@ -1,0 +1,14 @@
+{
+  "type": "stash-addon-list",
+  "v": 1,
+  "updated_at": 1794355200,
+  "addons": [
+    {
+      "id": "tidal",
+      "name": "Tidal",
+      "summary": "Lossless and Hi-Res",
+      "default": true
+    }
+  ],
+  "blocked": []
+}

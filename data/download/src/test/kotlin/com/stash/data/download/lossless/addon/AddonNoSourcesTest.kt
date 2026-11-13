@@ -18,6 +18,7 @@ import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourceHealthGate
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.LosslessSourceRegistry
+import com.stash.data.download.lossless.PlayOrder
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.tidal.FakeAddonRefDao
 import io.mockk.coEvery
@@ -25,6 +26,7 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.Test
@@ -46,7 +48,6 @@ class AddonNoSourcesTest {
 
     private val prefs: LosslessSourcePreferences = mockk {
         coEvery { qualityTierNow() } returns LosslessQualityTier.HI_RES
-        coEvery { priorityOrderNow() } returns emptyList()
         coEvery { minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
     }
     private val healthGate: LosslessSourceHealthGate = mockk { coEvery { isDegraded(any()) } returns false }
@@ -72,19 +73,20 @@ class AddonNoSourcesTest {
     }
 
     /** No Hilt-bound source: the chain is the add-ons alone, one the user added and one default. */
-    private fun registry() = LosslessSourceRegistry(
-        sources = emptySet(),
-        prefs = prefs,
-        healthGate = healthGate,
-        streamingPreference = streamingPreference,
-        availability = mockk(),
-        addons = AddonDownloadSources(
-            Registry(listOf(addon("mine", userAdded = true), addon("official", userAdded = false))),
-            AddonRefs(client, FakeAddonRefDao()),
-            AggregatorRateLimiter(),
-            prefs,
-        ),
-    )
+    private fun registry(): LosslessSourceRegistry {
+        val addons = Registry(listOf(addon("mine", userAdded = true), addon("official", userAdded = false)))
+        return LosslessSourceRegistry(
+            sources = emptySet(),
+            prefs = prefs,
+            healthGate = healthGate,
+            streamingPreference = streamingPreference,
+            availability = mockk(),
+            addons = AddonDownloadSources(addons, AddonRefs(client, FakeAddonRefDao()), AggregatorRateLimiter(), prefs),
+            // The chain is asked in the play order (add-ons phase 4 §2.8); nothing saved is the automatic
+            // one: the user's add-ons, then the defaults.
+            playOrder = PlayOrder(flowOf(null), {}, addons),
+        )
+    }
 
     private val query = TrackQuery(artist = "A", title = "B", isrc = "GBAAA0000001")
 

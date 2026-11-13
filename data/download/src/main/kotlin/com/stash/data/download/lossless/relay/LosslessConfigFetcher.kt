@@ -14,11 +14,6 @@ import com.stash.core.addons.HttpAddonClient
 import com.stash.data.download.BuildConfig
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.io.IOException
-import java.security.KeyFactory
-import java.security.Signature
-import java.security.spec.X509EncodedKeySpec
-import java.util.Base64
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -42,7 +37,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import okhttp3.OkHttpClient
-import okhttp3.Request
 
 /**
  * A Tidal (BitChord) server: an https base and its optional token. [userOwned] = the user's own
@@ -83,6 +77,12 @@ data class LosslessConfig(
      * Releases before phase 2 ignore the key (unknown keys are ignored).
      */
     @SerialName("default_addons") val defaultAddons: JsonElement? = null,
+    /**
+     * Where the signed add-on index lives (add-ons phase 4 §1.4): `<url>` and `<url>.sig`. In the
+     * config so the index can move with one publish. Read through [addonIndexUrl], which drops
+     * anything but a plain https `.json` URL; releases before phase 4 ignore the key.
+     */
+    @SerialName("addon_index") val addonIndex: String? = null,
 ) {
     /**
      * [defaultAddons] as entries: https manifest URLs ending in `/manifest.json` with no query or
@@ -102,9 +102,28 @@ data class LosslessConfig(
         }.take(MAX_DEFAULT_ADDONS).toList()
     }
 
+    /** [addonIndex] when it is a URL the app fetches ([indexUrlOrNull]); null otherwise. */
+    fun addonIndexUrl(): String? = indexUrlOrNull(addonIndex)
+
     companion object {
         /** The most `default_addons` entries read (the publisher allows no more). */
         const val MAX_DEFAULT_ADDONS = 16
+
+        /**
+         * An index URL as the publisher writes it (`normaliseIndexUrl` in infra/lossless-config):
+         * https, a host, a path ending in `.json`, no credentials, query or fragment, at most 2048
+         * characters, and not a github.com page (that serves HTML; the file is on
+         * raw.githubusercontent.com). Anything else is null: never repaired.
+         */
+        fun indexUrlOrNull(raw: String?): String? {
+            val url = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            if (url.length > 2048 || url.any { it.isWhitespace() || it == '\\' } || '?' in url || '#' in url) return null
+            if (!url.startsWith("https://")) return null
+            val u = url.toHttpUrlOrNull() ?: return null
+            if (u.username.isNotEmpty() || u.password.isNotEmpty() || u.query != null || u.fragment != null) return null
+            if (!u.encodedPath.endsWith(".json") || u.host == "github.com" || u.host == "www.github.com") return null
+            return url
+        }
 
         /** A boolean, [default] when absent; null (skip the entry) when present and not a boolean. */
         private fun flag(v: JsonElement?, default: Boolean = true): Boolean? = when {
@@ -179,9 +198,22 @@ class LosslessConfigFetcher @Inject constructor(
      */
     val defaultAddons: StateFlow<List<DefaultAddonEntry>> = _defaultAddons.asStateFlow()
 
+    private val _addonIndex = MutableStateFlow<String?>(null)
+
+    /** The applied config's `addon_index` ([LosslessConfig.addonIndexUrl]): where `AddonIndexFetcher` reads the signed index; null without one. */
+    val addonIndex: StateFlow<String?> = _addonIndex.asStateFlow()
+
     private val _updatedAt = MutableStateFlow(0L)
     /** `updated_at` (unix seconds) of the applied config; 0 until one is loaded. For the diagnostics bundle. */
     val updatedAt: StateFlow<Long> = _updatedAt.asStateFlow()
+
+    private val _applied = MutableStateFlow(false)
+
+    /**
+     * True once a config is applied, from the cache or a fetch. Until then its relay and default
+     * add-ons are not known yet, which is not the same as having none (review-885 round 2, N1).
+     */
+    val applied: StateFlow<Boolean> = _applied.asStateFlow()
 
     private val _refreshedAt = MutableStateFlow(0L)
 
@@ -289,7 +321,9 @@ class LosslessConfigFetcher @Inject constructor(
         _relayKey.value = cfg.relayKey
         _tidalRelay.value = cfg.tidalRelayUrl?.let { TidalRelay(it, cfg.tidalRelayToken?.takeIf { t -> t.isNotBlank() }) }
         _defaultAddons.value = cfg.defaultAddonEntries()
+        _addonIndex.value = cfg.addonIndexUrl()
         _updatedAt.value = cfg.updatedAt
+        _applied.value = true
     }
 
     /** Load the cache, then keep the config fresh with [refreshLoop]. */
@@ -333,10 +367,7 @@ class LosslessConfigFetcher @Inject constructor(
         return (RETRY_INTERVAL_MS shl doublings).coerceAtMost(MAX_RETRY_INTERVAL_MS)
     }
 
-    internal fun verify(bytes: ByteArray, sigB64: String): Boolean = runCatching {
-        val pub = KeyFactory.getInstance("EC").generatePublic(X509EncodedKeySpec(Base64.getDecoder().decode(publicKeyB64)))
-        Signature.getInstance("SHA256withECDSA").run { initVerify(pub); update(bytes); verify(Base64.getDecoder().decode(sigB64)) }
-    }.getOrDefault(false)
+    internal fun verify(bytes: ByteArray, sigB64: String): Boolean = SignedJson.verify(bytes, sigB64, publicKeyB64)
 
 
     /** The config with its Tidal relay URL already normalised; null when the JSON is unusable. */
@@ -345,16 +376,7 @@ class LosslessConfigFetcher @Inject constructor(
         cfg.copy(tidalRelayUrl = LosslessSourcePreferences.normaliseEndpoint(cfg.tidalRelayUrl))
     }.getOrNull()
 
-    private fun getBytes(url: String): ByteArray {
-        val req = Request.Builder().url(url).header("Accept", "*/*").get().build()
-        httpClient.newCall(req).execute().use { r ->
-            if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
-            val src = r.body?.source() ?: throw IOException("empty body")
-            // request(n) reads until n bytes are buffered or EOF; true = at least n available.
-            if (src.request(MAX_CONFIG_BYTES + 1)) throw IOException("body over $MAX_CONFIG_BYTES bytes")
-            return src.readByteArray()
-        }
-    }
+    private fun getBytes(url: String): ByteArray = SignedJson.getBytes(httpClient, url, MAX_CONFIG_BYTES)
 
     /**
      * Fetching config must never crash the app, so anything short of a
@@ -390,6 +412,7 @@ class LosslessConfigFetcher @Inject constructor(
         _relayKey.value = null
         _tidalRelay.value = null
         _defaultAddons.value = emptyList()
+        _addonIndex.value = null
         context.losslessRelayConfigDataStore.edit { it.clear() }
     }
 

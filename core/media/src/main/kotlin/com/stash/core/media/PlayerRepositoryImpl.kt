@@ -126,6 +126,9 @@ class PlayerRepositoryImpl @Inject constructor(
     // Remote v2 (spec 2026-11-03 §2.3): while a linked browser plays the queue, this phone resolves nothing it won't play.
     // Null in hand-built tests (never a browser).
     private val browserOutputs: com.stash.core.media.cast.BrowserOutputs? = null,
+    // The add-ons that are on. When one leaves (removed, switched off, turned off by Stash), the link it handed out
+    // for the next song is dropped. Null in hand-built tests (nothing is watched).
+    private val addonRegistry: com.stash.core.addons.AddonRegistry? = null,
 ) : PlayerRepository {
 
     /**
@@ -234,6 +237,8 @@ class PlayerRepositoryImpl @Inject constructor(
             ensureController()
             seedGhostFromPersistedSession()
         }
+
+        addonRegistry?.let { registry -> scope.launch { dropNextStreamWhenAnAddonLeaves(registry.addons) } }
 
         // Idle-stop handshake. The service flips this false just before it
         // stops itself: release the controller so OUR binding doesn't keep
@@ -697,8 +702,9 @@ class PlayerRepositoryImpl @Inject constructor(
         java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     /**
-     * Bumped by [reresolveNextStream]. A prefetch whose resolve was in flight across a bump may
-     * hold the old quality's URL, so it resolves again rather than put that in the next slot.
+     * Bumped by [reresolveNextStream], and when an add-on leaves ([dropNextStreamWhenAnAddonLeaves]).
+     * A prefetch whose resolve was in flight across a bump may hold the old quality's URL, or the
+     * departed add-on's, so it resolves again rather than put that in the next slot.
      */
     @Volatile private var streamQualityChanges = 0
 
@@ -1368,6 +1374,42 @@ class PlayerRepositoryImpl @Inject constructor(
         // The URL is also in StreamUrlCache, so even an unswapped placeholder
         // opens instantly on a cache hit.
         refreshControllerMediaItem(controller, nextTimelineIndex, next, resolved)
+    }
+
+    /**
+     * An add-on that leaves [addons] (removed, switched off, turned off by Stash) is not asked again.
+     * The look-ahead may already have put a link it handed out into the next song's slot: that slot
+     * is resolved again, without the add-on, the way a quality change does it ([reresolveNextStream]).
+     * Only a slot whose link came from the add-on that left; the song playing plays to its end.
+     */
+    internal suspend fun dropNextStreamWhenAnAddonLeaves(addons: kotlinx.coroutines.flow.Flow<List<com.stash.core.addons.InstalledAddon>>) {
+        var on = emptySet<String>()
+        addons.collect { list ->
+            val now = list.mapTo(HashSet()) { it.id }
+            val left = on - now
+            on = now
+            if (left.isEmpty()) return@collect
+            // A look-ahead already under way may be resolving the next song through the add-on that
+            // left: its slot is still a placeholder, with no origin to look at below. Counted as a
+            // change, that look-ahead asks again, now without the add-on, rather than put its answer
+            // in the slot (review-885 round 2, R2-M1).
+            streamQualityChanges++
+            try {
+                val controller = controllerDeferred ?: return@collect
+                val index = controller.nextMediaItemIndex
+                if (index !in 0 until controller.mediaItemCount) return@collect
+                val origin = controller.getMediaItemAt(index).mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN) ?: return@collect
+                val prefix = com.stash.core.media.streaming.AddonStreamRung.ORIGIN_PREFIX
+                if (origin.startsWith(prefix) && origin.removePrefix(prefix) in left) {
+                    Log.i(TAG, "the next song's link came from an add-on that is no longer on: resolving it again")
+                    reresolveNextStream()
+                }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
+                Log.w(TAG, "the next song was not resolved again after an add-on left: ${e.javaClass.simpleName}")
+            }
+        }
     }
 
     /**

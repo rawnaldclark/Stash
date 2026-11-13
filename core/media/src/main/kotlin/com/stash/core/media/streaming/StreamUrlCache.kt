@@ -1,6 +1,10 @@
 package com.stash.core.media.streaming
 
+import com.stash.core.addons.AddonRegistry
+import com.stash.core.addons.InstalledAddon
 import com.stash.core.data.prefs.DataSaver
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -77,9 +81,19 @@ internal fun StreamUrl.isLosslessLink(): Boolean =
  * constructor. Tests build it with no Data saver through the internal
  * no-argument constructor.
  */
+/**
+ * Stands for "no add-on registry" in [StreamUrlCache]: hand-built graphs and tests, where every
+ * add-on's link is served. The app's cache is given the real registry.
+ */
+internal object NoAddonGate : AddonRegistry {
+    override val addons: StateFlow<List<InstalledAddon>> = MutableStateFlow(emptyList())
+}
+
 @Singleton
 class StreamUrlCache @Inject constructor(
     private val dataSaver: DataSaver,
+    /** The add-ons that are on: an add-on's link is served only while its add-on is among them ([addonIsOn]). */
+    private val addons: AddonRegistry = NoAddonGate,
 ) {
     /** No Data saver: for tests and hand-built graphs. */
     internal constructor() : this(DataSaver.Off)
@@ -121,6 +135,11 @@ class StreamUrlCache @Inject constructor(
                 return null
             }
         }
+        // An add-on's link is served only while that add-on is on.
+        if (!addonIsOn(url)) {
+            synchronized(lock) { if (cache[trackId]?.url === url) cache.remove(trackId) }
+            return null
+        }
         // Outside the lock: appliesNow asks the system for the network. Only a lossless entry
         // pays for that question, and it is dropped only if a newer put hasn't replaced it.
         if (url.isLosslessLink() && dataSaver.appliesNow()) {
@@ -128,6 +147,22 @@ class StreamUrlCache @Inject constructor(
             return null
         }
         return url
+    }
+
+    /**
+     * Whether [url] may still be handed out: always, unless it came from an add-on that is no longer
+     * on. Removed, switched off, turned off by Stash or held for any other reason, an add-on is not
+     * asked again. What it handed out before must not be played again either, for the hour a link
+     * can live here: that fetch goes to a host the add-on chose, after the user (or Stash) said
+     * stop. The entry is dropped and the next reader resolves afresh, without that add-on. A song
+     * that is already playing has its link in the player and plays to its end.
+     */
+    private fun addonIsOn(url: StreamUrl): Boolean {
+        if (addons === NoAddonGate) return true
+        val origin = url.origin ?: return true
+        if (!origin.startsWith(AddonStreamRung.ORIGIN_PREFIX)) return true
+        val id = origin.removePrefix(AddonStreamRung.ORIGIN_PREFIX)
+        return addons.generic().any { it.id == id }
     }
 
     fun put(trackId: Long, url: StreamUrl) {

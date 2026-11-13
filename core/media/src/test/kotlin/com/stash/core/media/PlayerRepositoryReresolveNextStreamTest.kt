@@ -64,6 +64,108 @@ class PlayerRepositoryReresolveNextStreamTest {
     /** Every item put in the next song's slot, in order. */
     private val swaps = mutableListOf<MediaItem>()
 
+    private fun addon(id: String) = com.stash.core.addons.InstalledAddon(
+        base = "https://$id.example/",
+        manifest = com.stash.addons.contract.Manifest(
+            stash = 1, id = id, name = id, version = "1", kind = com.stash.addons.contract.AddonKind.SERVER, resources = listOf("search", "stream"),
+        ),
+        userAdded = true,
+    )
+
+    /** The next song's slot, holding a link the add-on [addonId] handed out. */
+    private fun slotFrom(addonId: String) = slot(2L, oldUrl, "flac").let { item ->
+        val extras = Bundle(item.mediaMetadata.extras).apply {
+            putString(com.stash.core.media.service.StashPlaybackService.EXTRA_STREAM_ORIGIN, "addon:$addonId")
+        }
+        item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().setExtras(extras).build()).build()
+    }
+
+    @Test
+    fun `when the add-on that handed out the next song's link leaves, that song is resolved again`() = runTest {
+        // review-885 M6: removed, switched off or turned off by Stash, an add-on is not asked again. The
+        // link the look-ahead already put in the next slot must not be played either.
+        every { controller.getMediaItemAt(1) } returns slotFrom("mine")
+        resolvesNextTo(stream(newUrl, "aac"))
+        val on = kotlinx.coroutines.flow.MutableStateFlow(listOf(addon("mine"), addon("other")))
+        val watching = launch { repo.dropNextStreamWhenAnAddonLeaves(on) }
+        // The watcher runs on this test's scheduler; a resolve may leave it for a moment.
+        fun settle(rounds: Int = 10, until: () -> Boolean = { false }) {
+            for (round in 0 until rounds) {
+                testScheduler.runCurrent()
+                if (until()) return
+                Thread.sleep(5)
+            }
+        }
+        settle()
+        assertThat(swaps).isEmpty()
+
+        // Another add-on leaves: this slot is not its, and stays.
+        on.value = listOf(addon("mine"))
+        settle()
+        assertThat(swaps).isEmpty()
+
+        // The one whose link it is leaves.
+        on.value = emptyList()
+        settle(rounds = 400) { swaps.size == 2 }
+        watching.cancel()
+        verify { streamUrlCache.invalidate(2L) }
+        assertThat(swaps).hasSize(2)
+        assertThat(swaps[0].localConfiguration?.uri?.scheme).isEqualTo(STASH_RESOLVE_SCHEME)
+        assertThat(swaps[1].localConfiguration?.uri?.toString()).isEqualTo(newUrl)
+        // The song playing keeps its stream.
+        verify(exactly = 0) { controller.replaceMediaItem(0, any()) }
+    }
+
+    @Test
+    fun `a look-ahead resolving through an add-on when it leaves asks again, and the slot never gets that add-on's link`() = runTest {
+        // review-885 round 2, R2-M1: the song just started and its look-ahead for the next one is under
+        // way from the placeholder, through the add-on, when the add-on is removed or switched off.
+        every { controller.getMediaItemAt(1) } returns slot(2L, "$STASH_RESOLVE_SCHEME://track/2")
+        val started = CompletableDeferred<Unit>()
+        val addonsAnswer = CompletableDeferred<StreamUrl>()
+        var asked = 0
+        coEvery {
+            streamResolver.resolve(any(), allowYouTube = true, allowYtDlp = true, speculative = true)
+        } coAnswers {
+            asked++
+            if (asked == 1) {
+                started.complete(Unit)
+                addonsAnswer.await()
+            } else {
+                stream(newUrl, "aac") // asked again, the add-on is no longer in the chain
+            }
+        }
+        val on = kotlinx.coroutines.flow.MutableStateFlow(listOf(addon("mine")))
+        val watching = launch { repo.dropNextStreamWhenAnAddonLeaves(on) }
+        testScheduler.runCurrent()
+        val lookAhead = launch { repo.prefetchNextTrack() }
+        started.await()
+
+        on.value = emptyList() // it leaves while its answer is on the way
+        testScheduler.runCurrent()
+        addonsAnswer.complete(StreamUrl(url = oldUrl, expiresAtMs = Long.MAX_VALUE, codec = "flac", origin = "addon:mine"))
+        lookAhead.join()
+        watching.cancel()
+
+        assertThat(asked).isEqualTo(2)
+        assertThat(swaps.map { it.localConfiguration?.uri?.toString() }).containsExactly(newUrl)
+        verify(exactly = 0) { streamUrlCache.put(2L, match { it.url == oldUrl }) }
+    }
+
+    @Test
+    fun `an add-on leaving changes nothing for a next song that came from somewhere else`() = runTest {
+        // The slot in setUp holds a link with no add-on origin.
+        resolvesNextTo(stream(newUrl, "aac"))
+        val on = kotlinx.coroutines.flow.MutableStateFlow(listOf(addon("mine")))
+        val watching = launch { repo.dropNextStreamWhenAnAddonLeaves(on) }
+        testScheduler.runCurrent()
+        on.value = emptyList()
+        repeat(20) { testScheduler.runCurrent(); Thread.sleep(5) }
+        watching.cancel()
+        assertThat(swaps).isEmpty()
+        coVerify(exactly = 0) { streamResolver.resolve(any(), any(), any(), any()) }
+    }
+
     private fun slot(id: Long, uri: String, codec: String? = null): MediaItem = MediaItem.Builder()
         .setMediaId(id.toString())
         .setUri(uri)

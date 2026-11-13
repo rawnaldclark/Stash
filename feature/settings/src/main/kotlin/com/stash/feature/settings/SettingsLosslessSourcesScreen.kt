@@ -50,9 +50,9 @@ import com.stash.feature.settings.components.SettingsScaffold
 /**
  * Settings > Audio & Quality > Lossless sources: where FLAC comes from, kept
  * off the main quality screen so it stays short. The routing rows, today's
- * free allowance, the supporter unlock, the listener's own Qobuz account,
- * and (collapsed) Advanced: Add from a link (the user's own add-ons), the listener's own Tidal
- * server read-only when one is set, and the debug-build Tidal wire instruments.
+ * free allowance, the supporter unlock and the listener's own Qobuz account. On a debug build
+ * only, a collapsed Advanced card holds the Tidal wire instruments. The add-ons, and the listener's
+ * own Tidal server, are on Settings › Add-ons.
  */
 @Composable
 fun SettingsLosslessSourcesScreen(
@@ -189,56 +189,56 @@ fun SettingsLosslessSourcesScreen(
 
             }
         }
-        GlassCard {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // -- Advanced expander row (chevron + label) -----------
-                var advancedExpanded by remember(uiState.losslessEnabled) { mutableStateOf(false) }
-                val chevronRotation by animateFloatAsState(
-                    targetValue = if (advancedExpanded) 90f else 0f,
-                    label = "advancedChevron",
-                )
-                val advancedExpandedDesc = stringResource(if (advancedExpanded) R.string.settings_state_expanded else R.string.settings_state_collapsed)
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { advancedExpanded = !advancedExpanded }
-                        .semantics {
-                            role = Role.Button
-                            // Spec §Accessibility: announce collapsed/expanded
-                            // state to screen readers.
-                            stateDescription = advancedExpandedDesc
-                        }
-                        .padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null, // parent Row carries role + stateDescription + label
-                        modifier = Modifier.graphicsLayer(rotationZ = chevronRotation),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        // Advanced: only the debug-build Tidal wire instruments are left here. The add-ons, the
+        // user's own Tidal server among them, have their own page (Settings › Add-ons, add-ons
+        // phase 4 §2.1, §2.10), so a release build shows no Advanced card at all.
+        val wireDebug: TidalWireDebugViewModel = hiltViewModel()
+        if (wireDebug.honored) {
+            GlassCard {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // -- Advanced expander row (chevron + label) -----------
+                    var advancedExpanded by remember(uiState.losslessEnabled) { mutableStateOf(false) }
+                    val chevronRotation by animateFloatAsState(
+                        targetValue = if (advancedExpanded) 90f else 0f,
+                        label = "advancedChevron",
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = stringResource(R.string.settings_advanced),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                    val advancedExpandedDesc = stringResource(if (advancedExpanded) R.string.settings_state_expanded else R.string.settings_state_collapsed)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { advancedExpanded = !advancedExpanded }
+                            .semantics {
+                                role = Role.Button
+                                // Spec §Accessibility: announce collapsed/expanded
+                                // state to screen readers.
+                                stateDescription = advancedExpandedDesc
+                            }
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null, // parent Row carries role + stateDescription + label
+                            modifier = Modifier.graphicsLayer(rotationZ = chevronRotation),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = stringResource(R.string.settings_advanced),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
 
-                AnimatedVisibility(
-                    visible = advancedExpanded,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut(),
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        // -- Add-ons phase 2 (plan §5.4, §5.5) -------------
-                        // The old Custom Tidal server field: hidden when empty, read-only
-                        // with Remove when set (removed in the next release). Then "Add
-                        // from a link", and the Tidal wire instruments on debug builds.
-                        OwnTidalServerRow()
-                        AddonLinksSection()
-                        TidalWireDebugRows()
+                    AnimatedVisibility(
+                        visible = advancedExpanded,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut(),
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            TidalWireDebugRows(wireDebug)
+                        }
                     }
                 }
             }

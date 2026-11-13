@@ -24,6 +24,39 @@ class LosslessSourcePreferencesTest {
     @Before fun clear() = runBlocking {
         prefs.clearBitchordServer()
         prefs.setLosslessOfflineDismissed(false)
+        prefs.setPlayOrder(null)
+        prefs.writeRawForTest { it.remove(stringPreferencesKey("play_order_off")) }
+    }
+
+    /** The play order (add-ons phase 4 §2.8): nothing saved is automatic; a drag saves the whole order. */
+    @Test fun `the play order is null until it is saved, and saving null goes back to automatic`() = runTest {
+        assertThat(prefs.playOrderNow()).isNull()
+        prefs.setPlayOrder(listOf("addon:mine", "qobuz", "tidal", "qobuz"))
+        assertThat(prefs.playOrderNow()).containsExactly("addon:mine", "qobuz", "tidal").inOrder()
+        prefs.setPlayOrder(null)
+        assertThat(prefs.playOrderNow()).isNull()
+        prefs.setPlayOrder(emptyList())
+        assertThat(prefs.playOrder.first()).isNull()
+    }
+
+    @Test fun `the rows switched off are kept as a set, and the last one switched on leaves no key`() = runTest {
+        assertThat(prefs.playOrderOff.first()).isEmpty()
+        prefs.setPlayOrderOff("tidal", off = true)
+        prefs.setPlayOrderOff("addon:builtin", off = true)
+        prefs.setPlayOrderOff("tidal", off = true)
+        assertThat(prefs.playOrderOff.first()).containsExactly("tidal", "addon:builtin")
+        prefs.setPlayOrderOff("tidal", off = false)
+        prefs.setPlayOrderOff("addon:builtin", off = false)
+        assertThat(prefs.playOrderOff.first()).isEmpty()
+    }
+
+    /** The priority list no screen ever wrote is gone with the play order: the startup purge deletes a stored one. */
+    @Test fun `the retired priority list is purged`() = runTest {
+        var stored: String? = "x"
+        prefs.writeRawForTest { it[stringPreferencesKey("priority_order")] = "tidal_bitchord,qbdlx_qobuz" }
+        prefs.purgeRetiredSourceKeys()
+        prefs.writeRawForTest { stored = it[stringPreferencesKey("priority_order")] }
+        assertThat(stored).isNull()
     }
 
     /**

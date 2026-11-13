@@ -30,6 +30,8 @@ dependencies {
     implementation(project(":data:lyrics"))
     // For MoveLibraryCoordinator + MoveLibraryState (storage migration UI).
     implementation(project(":data:download"))
+    // Settings › Add-ons: an add-on's trust, what it sees and its allowance are :core:addons' own types.
+    implementation(project(":core:addons"))
     // Cloud storage libraries (Dropbox / OneDrive): accounts and cloud folders settings.
     implementation(project(":data:cloud"))
     // YouTube Music profiles (#664): the profile list's model and the profile photos.

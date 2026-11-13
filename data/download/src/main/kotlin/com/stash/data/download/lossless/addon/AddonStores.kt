@@ -72,6 +72,11 @@ class DataStoreAddonManifestStore internal constructor(
         store.edit { p -> gone.forEach { p.remove(stringPreferencesKey(it)) } }
     }
 
+    override suspend fun forget(keys: Set<String>) {
+        if (keys.isEmpty()) return
+        store.edit { p -> keys.forEach { p.remove(prefKey(it)) } }
+    }
+
     private fun prefKey(key: String) = stringPreferencesKey(PREFIX + key)
 
     private companion object {
@@ -124,10 +129,22 @@ class EncryptedUserAddons internal constructor(
     /**
      * One entry as sealed. [kind] is [UserAddonKind]'s name; absent (a list sealed before phase 4)
      * is a manifest add-on. A kind this build doesn't know is kept, untouched, but not used, so a
-     * newer build's entry survives an older build's writes.
+     * newer build's entry survives an older build's writes. [id] and [name]: the add-on's manifest
+     * id and name when it was added; [consent]: what the user agreed its server may see
+     * (`AddonSees` names); [addedAt]: epoch milliseconds (add-ons plan phase 4 §2.13). All absent
+     * in a list sealed before them, and unknown keys are ignored, so blobs read both ways.
      */
     @Serializable
-    private data class Stored(val manifest: String, val token: String? = null, val enabled: Boolean = true, val kind: String? = null)
+    private data class Stored(
+        val manifest: String,
+        val token: String? = null,
+        val enabled: Boolean = true,
+        val kind: String? = null,
+        val id: String? = null,
+        val name: String? = null,
+        val consent: List<String>? = null,
+        @kotlinx.serialization.SerialName("added_at") val addedAt: Long? = null,
+    )
 
     private val state = MutableStateFlow<List<UserAddonEntry>>(emptyList())
     override val entries: StateFlow<List<UserAddonEntry>> = state.asStateFlow()
@@ -158,8 +175,14 @@ class EncryptedUserAddons internal constructor(
      */
     @Volatile private var unknown: List<Stored> = emptyList()
 
-    /** The stored list is there and has not opened this run: the user's add-ons are missing, not gone. */
-    val unreadable: Boolean get() = loaded.isCompleted && !opened
+    private val notOpened = MutableStateFlow(false)
+
+    /**
+     * The stored list is there and has not opened this run: the user's add-ons are missing, not gone.
+     * A flow, so Settings › Add-ons can say so instead of showing an empty list (review-882 J2), and
+     * stop saying it the moment a later read opens it. Set after every [tryOpen].
+     */
+    override val unreadable: StateFlow<Boolean> = notOpened.asStateFlow()
 
     init {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
@@ -185,6 +208,31 @@ class EncryptedUserAddons internal constructor(
     /** Removes the add-on added from [manifestUrl] (never the user's own Tidal server). */
     suspend fun remove(manifestUrl: String) = update { list ->
         list.filterNot { it.kind == UserAddonKind.MANIFEST && it.manifestUrl == manifestUrl }
+    }
+
+    /**
+     * Puts [entry] where the add-on added from [oldManifestUrl] is, keeping its place in the list
+     * (Replace link, phase 4 §2.9). With no such add-on it is added at the end.
+     */
+    suspend fun replace(oldManifestUrl: String, entry: UserAddonEntry) = update { list ->
+        require(entry.token == null || InstalledAddon.isHeaderSafe(entry.token!!)) { "token not header-safe" }
+        val at = list.indexOfFirst { it.kind == UserAddonKind.MANIFEST && it.manifestUrl == oldManifestUrl }
+        if (at < 0) {
+            list.filterNot { it.kind == entry.kind && it.manifestUrl == entry.manifestUrl } + entry
+        } else {
+            list.mapIndexedNotNull { i, e ->
+                when {
+                    i == at -> entry
+                    e.kind == entry.kind && e.manifestUrl == entry.manifestUrl -> null // the new link was already another entry's
+                    else -> e
+                }
+            }
+        }
+    }
+
+    /** Records what the user agreed the add-on added from [manifestUrl] may see (phase 4 §2.7). */
+    suspend fun setConsent(manifestUrl: String, consent: Set<String>) = update { list ->
+        list.map { if (it.kind == UserAddonKind.MANIFEST && it.manifestUrl == manifestUrl) it.copy(consent = consent) else it }
     }
 
     /** Removes every entry of [kind]. */
@@ -220,7 +268,12 @@ class EncryptedUserAddons internal constructor(
             if (!opened) tryOpen()
             if (!opened) throw UnreadableException()
             val next = change(state.value)
-            val stored = next.map { Stored(it.manifestUrl, it.token, it.enabled, it.kind.takeIf { k -> k != UserAddonKind.MANIFEST }?.name) } + unknown
+            val stored = next.map {
+                Stored(
+                    it.manifestUrl, it.token, it.enabled, it.kind.takeIf { k -> k != UserAddonKind.MANIFEST }?.name,
+                    it.id, it.name, it.consent?.sorted(), it.addedAt,
+                )
+            } + unknown
             val blob = Base64.getEncoder().encodeToString(sealer.seal(json.encodeToString(LIST, stored).toByteArray()))
             store.edit { it[KEY] = blob }
             state.value = next
@@ -232,6 +285,14 @@ class EncryptedUserAddons internal constructor(
      * list did not open (the class doc's three cases). Under [writeLock].
      */
     private suspend fun tryOpen() {
+        try {
+            readStored()
+        } finally {
+            notOpened.value = !opened
+        }
+    }
+
+    private suspend fun readStored() {
         lastTryMs = nowMs()
         val blob = try {
             store.data.first()[KEY]
@@ -254,7 +315,9 @@ class EncryptedUserAddons internal constructor(
         // Both in one go, before [opened]: a write must never see the entries without the
         // unknown-kind ones it has to carry along.
         unknown = all.orEmpty().filter { kindOf(it) == null }
-        state.value = all.orEmpty().mapNotNull { s -> kindOf(s)?.let { UserAddonEntry(s.manifest, s.token, s.enabled, it) } }
+        state.value = all.orEmpty().mapNotNull { s ->
+            kindOf(s)?.let { UserAddonEntry(s.manifest, s.token, s.enabled, it, s.id, s.name, s.consent?.toSet(), s.addedAt) }
+        }
         opened = true
     }
 
