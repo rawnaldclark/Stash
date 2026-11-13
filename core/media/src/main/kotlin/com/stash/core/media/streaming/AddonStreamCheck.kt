@@ -9,6 +9,8 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -26,8 +28,9 @@ import javax.inject.Singleton
  *  - [Why.VIDEO]: it has a motion-video track (a cover picture stored as a still-image track is not one);
  *  - [Why.LOSSY]: the add-on called it lossless (codec or tier) and none of its audio is: every audio
  *    format it lists is a lossy codec ([LOSSY_MIME_TYPES]). A manifest that offers FLAC or ALAC with an
- *    AAC or Atmos fallback beside it is honest: the player picks the lossless one (review-888 M2).
- *    FLAC, ALAC and PCM count as lossless whichever one the add-on named;
+ *    AAC or Atmos fallback beside it is honest (review-888 M2); which of them plays is the player's
+ *    track choice, and Now Playing shows what the decoder plays (R2-n4, R3-n3). FLAC, ALAC and PCM
+ *    count as lossless whichever one the add-on named;
  *  - [Why.LENGTH]: it is far shorter than the song, by the downloads' own rule
  *    ([isLosslessDurationDegraded]), so a stream and a download agree. The song's length is the
  *    best one known: the queue item's (a Search tap's falls back to the library row's), else the
@@ -86,6 +89,16 @@ class AddonStreamCheck internal constructor(
      * and [takeRefusal] holds the record.
      */
     val refusals: SharedFlow<Refused> = events.asSharedFlow()
+
+    /**
+     * The add-ons set aside right now, by origin (`addon:<id>`), for any reason: a stream this check
+     * refused, or a download's wrong file or one that took too long ([LosslessSourceHealthGate]). A
+     * new set whenever one is set aside or its cooldown ends. What the queue holds from one is put
+     * back as it is set aside (`PlayerRepositoryImpl.resolveAgainWhenAnAddonIsSetAside`, review-888 R3-m1).
+     */
+    val setAsideAddons: kotlinx.coroutines.flow.Flow<Set<String>> = health.setAside
+        .map { aside -> aside.keys.filterTo(HashSet<String>()) { AddonPlayback.isAddonOrigin(it) }.toSet() }
+        .distinctUntilChanged()
 
     /** Songs whose stream was refused, by track id: when. Read once each by [takeRefusal]. */
     private val refusedSongs = ConcurrentHashMap<Long, Long>()

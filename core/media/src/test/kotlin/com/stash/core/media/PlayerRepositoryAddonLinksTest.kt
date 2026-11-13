@@ -517,4 +517,108 @@ class PlayerRepositoryAddonLinksTest {
         verify { controller.prepare() }
         verify(exactly = 0) { controller.seekToNextMediaItem() }
     }
+
+    // ------------------------------------------------------------------------------------- an add-on set aside by a download (R3-m1)
+
+    @Test
+    fun `an add-on a download set aside has its queued links put back before the player reaches them - review-888 R3-m1`() = runTest {
+        // The look-ahead swapped the add-on's URL into the next slot; then one of its downloads took too long.
+        slots += listOf(urlSlot(1L, "qbdlx"), urlSlot(2L, "addon:slow"), urlSlot(3L, "qbdlx"))
+        val watching = launch { repo.resolveAgainWhenAnAddonIsSetAside(check.setAsideAddons) }
+        settle(rounds = 5)
+        assertThat(swaps).isEmpty()
+
+        gate.recordDegraded("addon:slow")
+        settle { swaps.size >= 2 }
+        watching.cancel()
+
+        // Put back now and looked up again: the join plays the next source's file, not a gone error.
+        assertThat(swaps.map { it.first }).containsExactly(1, 1).inOrder()
+        assertThat(swaps[0].second.localConfiguration?.uri?.isPutBack()).isTrue()
+        assertThat(slots[1].localConfiguration?.uri?.toString()).isEqualTo(newUrl)
+    }
+
+    @Test
+    fun `a refusal and the set-aside it makes put the add-on's links back once, and take the refusal with them`() = runTest {
+        slots += listOf(urlSlot(1L, "qbdlx"), radioSlot(second), radioSlot(third))
+        check.opened(2L, "addon:liar")
+        check.opened(3L, "addon:liar")
+        val asides = launch { repo.resolveAgainWhenAnAddonIsSetAside(check.setAsideAddons) }
+        val refusals = launch { repo.resolveAgainWhenAStreamIsRefused(check.refusals) }
+        settle(rounds = 5)
+
+        // Song 3, read ahead two deep, is refused: the check records it, sets the add-on aside, and says so.
+        check.judge(AddonStreamCheck.Claim("addon:liar", 3L, "3", statedLossless = true, songMs = 0L), listOf("audio/mpeg"), null)
+        settle { swaps.size >= 3 }
+        settle(rounds = 10)
+        asides.cancel()
+        refusals.cancel()
+
+        assertThat(swaps.map { it.first }).containsExactly(1, 2, 1).inOrder()
+        coVerify(exactly = 1) { streamResolver.resolve(any(), any(), any(), any()) }
+        // Put back before the player reached it, whichever word came first: no error will read its refusal.
+        assertThat(check.takeRefusal(3L)).isFalse()
+    }
+
+    // ------------------------------------------------------------------------------------- only the error path prepares (R3-m2)
+
+    @Test
+    fun `moving off a held-over song whose add-on came back prepares nothing - review-888 R3-m2`() = runTest {
+        playingFromAnAddonThatIsThenRemoved()
+        on.value = listOf(addon("gone")) // back on: the held slot is no longer an add-on's that left
+        // The move lands on a song whose read-ahead failed: the player is stopped on that error, onPlayerError's to handle.
+        every { controller.currentMediaItemIndex } returns 1
+        every { controller.currentMediaItem } answers { slots[1] }
+        every { controller.playbackState } returns Player.STATE_IDLE
+        every { controller.playerError } returns PlaybackException("file gone", null, PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND)
+
+        repo.playerListener.onMediaItemTransition(slots[1], Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+        idleMain()
+
+        assertThat(swaps).isEmpty()
+        verify(exactly = 0) { controller.prepare() }
+    }
+
+    @Test
+    fun `a gone error whose song the user skipped before the put-back ran still prepares the song shown - review-888 R3-m2`() = runTest {
+        playingFromAnAddonThatIsThenRemoved()
+        repo.playerListener.onPlayerError(
+            PlaybackException("Source error", com.stash.core.media.streaming.AddonStreamGoneException(1L), PlaybackException.ERROR_CODE_IO_UNSPECIFIED),
+        )
+        // Before the put-back runs, the user skips to song 2; the player is still stopped on the error.
+        every { controller.currentMediaItemIndex } returns 1
+        every { controller.currentMediaItem } answers { slots[1] }
+        every { controller.playbackState } returns Player.STATE_IDLE
+        every { controller.playerError } returns PlaybackException("gone", null, PlaybackException.ERROR_CODE_IO_UNSPECIFIED)
+        idleMain()
+
+        // Song 1's slot is put back as it stands, and the song the user picked is prepared, once.
+        assertThat(swaps.map { it.first }).containsExactly(0)
+        assertThat(slots[0].localConfiguration?.uri?.isPutBack()).isTrue()
+        verify(exactly = 1) { controller.prepare() }
+        verify(exactly = 0) { controller.seekTo(any<Int>(), any<Long>()) }
+    }
+
+    // ------------------------------------------------------------------------------------- a crossfade's incoming (R3-n5)
+
+    @Test
+    fun `a song landed on that plays a removed add-on's stream is held over too - review-888 R3-n5`() = runTest {
+        playingFromAnAddonThatIsThenRemoved() // song 1 held over
+        // Mid-fade: the incoming, song 2, was primed on the add-on's URL before it left, and the swap lands on it.
+        slots[1] = urlSlot(2L, "addon:gone")
+        every { controller.currentMediaItemIndex } returns 1
+        every { controller.currentMediaItem } answers { slots[1] }
+        repo.playerListener.onMediaItemTransition(slots[1], Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+        idleMain()
+        assertThat(swaps.map { it.first }).containsExactly(0) // song 1 put back; song 2 plays on
+
+        every { controller.currentMediaItemIndex } returns 2
+        every { controller.nextMediaItemIndex } returns androidx.media3.common.C.INDEX_UNSET // the last song: nothing to look ahead to
+        every { controller.currentMediaItem } answers { slots[2] }
+        repo.playerListener.onMediaItemTransition(slots[2], Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+        idleMain()
+
+        assertThat(swaps.map { it.first }).containsExactly(0, 1).inOrder()
+        assertThat(slots[1].localConfiguration?.uri?.isPutBack()).isTrue()
+    }
 }
