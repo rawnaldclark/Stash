@@ -170,22 +170,31 @@ class AddonOverview @Inject constructor(
      * The row [key] of the list on screen ([shown], the state the screen drew) was dropped at index
      * [to] of it: the first drag saves the whole order.
      */
-    suspend fun move(shown: State, key: String, to: Int): Boolean {
-        val next = PlayOrder.moved(shown.keys, shown.order.map { it.key }, key, to) ?: return true
-        return saved { playOrder.set(next) }
+    suspend fun move(shown: State, key: String, to: Int): Boolean = saved {
+        // From the order as it is saved now, as [nudge] does: a second drop before the first one's
+        // save had flowed back to the screen started from the order on screen and lost the first
+        // (review-885 round 2, N4).
+        playOrder.change { savedNow ->
+            val (keys, onScreen) = asSaved(savedNow, shown)
+            if (key !in onScreen) null else PlayOrder.moved(keys, onScreen, key, to)
+        }
     }
 
     /** One place up or down (TalkBack's Move up / Move down, and the add-on page's). */
     suspend fun nudge(shown: State, key: String, up: Boolean): Boolean = saved {
         playOrder.change { savedNow ->
-            // The rows the screen drew, in the order as it is saved now. A second tap before the first
-            // one's save has flowed back to the screen moves the row once more; from the order on
-            // screen it repeated the first move (review-885 N3).
-            val keys = PlayOrder.effective(savedNow, shown.keys.filter { PlayOrder.addonIdOf(it) != null }).keys
-            val onScreen = shown.order.map { it.key }.sortedBy { keys.indexOf(it) }
+            // A second tap before the first one's save has flowed back to the screen moves the row
+            // once more; from the order on screen it repeated the first move (review-885 N3).
+            val (keys, onScreen) = asSaved(savedNow, shown)
             val at = onScreen.indexOf(key)
             if (at < 0) null else PlayOrder.moved(keys, onScreen, key, if (up) at - 1 else at + 1)
         }
+    }
+
+    /** The whole order as it is saved now ([savedNow]), and the rows the screen drew ([shown]) in that order. */
+    private fun asSaved(savedNow: List<String>?, shown: State): Pair<List<String>, List<String>> {
+        val keys = PlayOrder.effective(savedNow, shown.keys.filter { PlayOrder.addonIdOf(it) != null }).keys
+        return keys to shown.order.map { it.key }.sortedBy { keys.indexOf(it) }
     }
 
     /** The switch. False when it could not be saved: the screen says so, and nothing changed. */

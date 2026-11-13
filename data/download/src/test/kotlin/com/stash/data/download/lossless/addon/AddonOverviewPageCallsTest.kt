@@ -143,6 +143,23 @@ class AddonOverviewPageCallsTest {
         assertThat(savedOrder.value).containsExactly("qobuz", "addon:mine", "tidal").inOrder()
     }
 
+    @Test fun `two quick drops both count - the second starts from what the first saved`() = runBlocking<Unit> {
+        // review-885 round 2, N4: N3 by drag. A second drop before the screen has drawn the first one
+        // worked from the order on screen and saved the whole order, so the first drop was lost.
+        val savedOrder = MutableStateFlow<List<String>?>(null)
+        val order = PlayOrder(savedOrder, { savedOrder.value = it }, FixedRegistry(listOf(addon())))
+        val overview = overview(playOrder = order)
+        val qobuz = row.copy(key = "qobuz", kind = AddonOverview.Kind.QOBUZ)
+        val tidal = row.copy(key = "tidal", kind = AddonOverview.Kind.TIDAL)
+        val shown = AddonOverview.State(order = listOf(qobuz, tidal, row), keys = listOf("qobuz", "tidal", "addon:mine"), loaded = true)
+
+        assertThat(overview.move(shown, "addon:mine", 0)).isTrue()
+        assertThat(savedOrder.value).containsExactly("addon:mine", "qobuz", "tidal").inOrder()
+        // Tidal dropped at the top while the screen still draws the order from before the first drop.
+        assertThat(overview.move(shown, "tidal", 0)).isTrue()
+        assertThat(savedOrder.value).containsExactly("tidal", "addon:mine", "qobuz").inOrder()
+    }
+
     @Test fun `the page's two questions leave the thread of the screen that asks them`() {
         val screen = Executors.newSingleThreadExecutor { r -> Thread(r, "the-screen") }
         try {
