@@ -1,6 +1,5 @@
 package com.stash.data.download.lossless.tidal
 
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.google.common.truth.Truth.assertThat
 import com.stash.addons.contract.AddonKind
 import com.stash.addons.contract.Manifest
@@ -19,20 +18,14 @@ import com.stash.data.download.lossless.relay.supporter
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
-import org.junit.After
 import org.junit.Test
-import java.io.File
-import java.nio.file.Files
 
 /**
  * [TidalWires]: which server, over which wire, a Tidal lookup goes to (plan §5.4), and what the
@@ -40,14 +33,6 @@ import java.nio.file.Files
  * a "release builds honour nothing" test that used a settings object with no store at all.
  */
 class TidalWiresRouteTest {
-
-    private val dir: File = Files.createTempDirectory("tidal-wires").toFile()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    @After fun tearDown() {
-        scope.cancel()
-        dir.deleteRecursively()
-    }
 
     private val ownEndpoint = MutableStateFlow<String?>(null)
     private val configRelay = MutableStateFlow<TidalRelay?>(TidalRelay(RELAY, "relay-token"))
@@ -139,22 +124,27 @@ class TidalWiresRouteTest {
 
     // ------------------------------------------------------------------------------------------ the debug instruments
 
-    /** A settings object over a real store holding a forced wire and an override origin. */
-    private suspend fun storedInstruments(): androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences> {
-        val store = PreferenceDataStoreFactory.create(scope = scope) { File(dir, "tidal_debug.preferences_pb") }
-        val debugBuild = TidalDebugSettings(store, honored = true)
+    /**
+     * A store holding a forced wire and an override origin, written by a build that honours them, and
+     * read back by it. In memory, and every settings object follows it on the test's own dispatcher:
+     * nothing here waits in real time (a 5 s wait on a real store's IO thread timed out on CI,
+     * review-888 round 2).
+     */
+    private suspend fun TestScope.storedInstruments(): MemoryPreferencesStore {
+        val store = MemoryPreferencesStore()
+        val debugBuild = TidalDebugSettings(store, honored = true, scope = backgroundScope)
         debugBuild.setWire(TidalDebugSettings.Wire.LEGACY)
         assertThat(debugBuild.setOrigin("https://staging.example")).isEqualTo("https://staging.example")
+        runCurrent()
         // Proof that the store holds both and that an honouring build reads them.
-        withTimeout(5_000) {
-            debugBuild.state.first { it == TidalDebugSettings.State(TidalDebugSettings.Wire.LEGACY, "https://staging.example") }
-        }
+        assertThat(debugBuild.state.value).isEqualTo(TidalDebugSettings.State(TidalDebugSettings.Wire.LEGACY, "https://staging.example"))
         return store
     }
 
-    @Test fun `a debug build honours a stored forced wire and override origin`() = runBlocking<Unit> {
-        val debug = TidalDebugSettings(storedInstruments(), honored = true)
-        withTimeout(5_000) { debug.state.first { it.wire == TidalDebugSettings.Wire.LEGACY && it.origin != null } }
+    @Test fun `a debug build honours a stored forced wire and override origin`() = runTest {
+        val debug = TidalDebugSettings(storedInstruments(), honored = true, scope = backgroundScope)
+        runCurrent()
+        assertThat(debug.state.value).isEqualTo(TidalDebugSettings.State(TidalDebugSettings.Wire.LEGACY, "https://staging.example"))
         val wires = wires(debug)
         registry.state.value = listOf(firstPartyTidal)
         // Forced legacy: the add-on is passed over, and the override's origin stands in for the config's relay.
@@ -163,16 +153,15 @@ class TidalWiresRouteTest {
         assertThat(wires.describe()).isEqualTo("legacy relay (forced, debug server override)")
     }
 
-    @Test fun `a release build ignores the same stored values - the config decides`() = runBlocking<Unit> {
+    @Test fun `a release build ignores the same stored values - the config decides`() = runTest {
         val store = storedInstruments()
-        val release = TidalDebugSettings(store, honored = false)
+        val release = TidalDebugSettings(store, honored = false, scope = backgroundScope)
         val wires = wires(release)
         registry.state.value = listOf(firstPartyTidal)
-        // The store is loaded (the honouring object above read it); give this one every chance to read it too.
-        repeat(20) {
-            assertThat(release.state.value).isEqualTo(TidalDebugSettings.State())
-            delay(10)
-        }
+        // It has read the store (all there is to run has run), and still says the defaults.
+        runCurrent()
+        assertThat(store.reads).isAtLeast(2)
+        assertThat(release.state.value).isEqualTo(TidalDebugSettings.State())
         assertThat(wires.route()).isInstanceOf(TidalWires.Route.Addon::class.java)
         assertThat(wires.ownerRelay()).isEqualTo(TidalRelay(RELAY, "relay-token"))
         assertThat(release.relay(configRelay.value)).isEqualTo(configRelay.value)
@@ -183,12 +172,39 @@ class TidalWiresRouteTest {
         assertThat(wires.describe()).isEqualTo("legacy relay")
     }
 
-    @Test fun `a release build stores nothing when asked to set an instrument`() = runBlocking<Unit> {
-        val store = PreferenceDataStoreFactory.create(scope = scope) { File(dir, "release.preferences_pb") }
-        val release = TidalDebugSettings(store, honored = false)
+    @Test fun `a release build stores nothing when asked to set an instrument`() = runTest {
+        val store = MemoryPreferencesStore()
+        val release = TidalDebugSettings(store, honored = false, scope = backgroundScope)
         release.setWire(TidalDebugSettings.Wire.V1)
         assertThat(release.setOrigin("https://staging.example")).isNull()
-        assertThat(store.data.first().asMap()).isEmpty()
+        assertThat(store.values.value.asMap()).isEmpty()
+    }
+
+    /**
+     * A read of the store that fails used to end the settings' flow (`catch` emitted the defaults and
+     * completed): a debug build then ignored what was set until the process died. Now the store is
+     * read again after a pause, followed from then on, and the failure is said once.
+     */
+    @Test fun `a store that can't be read is read again and followed from then on, said once`() = runTest {
+        val store = MemoryPreferencesStore(storedInstruments().values.value).apply { failReads = 2 }
+        val said = mutableListOf<String>()
+        val debug = TidalDebugSettings(store, honored = true, scope = backgroundScope, warn = { said += it })
+        runCurrent()
+        assertThat(debug.state.value).isEqualTo(TidalDebugSettings.State()) // unreadable: nothing set, for now
+
+        advanceTimeBy(TidalDebugSettings.retryDelayMs(0))
+        runCurrent()
+        assertThat(debug.state.value).isEqualTo(TidalDebugSettings.State()) // the second read fails too
+
+        advanceTimeBy(TidalDebugSettings.retryDelayMs(1))
+        runCurrent()
+        assertThat(debug.state.value).isEqualTo(TidalDebugSettings.State(TidalDebugSettings.Wire.LEGACY, "https://staging.example"))
+        // And followed: a change made now shows.
+        debug.setWire(TidalDebugSettings.Wire.V1)
+        runCurrent()
+        assertThat(debug.state.value.wire).isEqualTo(TidalDebugSettings.Wire.V1)
+        assertThat(said).hasSize(1)
+        assertThat(said.single()).doesNotContain("staging")
     }
 
     // ------------------------------------------------------------------------------------------ describe()
