@@ -376,9 +376,18 @@ class InTreeAddonRegistry @Inject constructor(
         val id: String? get() = read?.manifest?.id ?: w.id
     }
 
-    /** The entries now. The user's list is waited for: a pass that ran before it was read would take "not read yet" for "none". */
-    private suspend fun wanted(): List<Wanted> {
-        val user = users.loadedEntries().filter { it.kind == UserAddonKind.MANIFEST }.mapNotNull { e ->
+    /** The two lists as one read of them found them: what [wanted] is built from. */
+    private data class Lists(val users: List<UserAddonEntry>, val defaults: List<DefaultAddonEntry>)
+
+    /** The lists now. The user's list is waited for: a pass that ran before it was read would take "not read yet" for "none". */
+    private suspend fun lists(): Lists = Lists(users.loadedEntries(), defaults.entries.value)
+
+    /** The entries now ([lists]). */
+    private suspend fun wanted(): List<Wanted> = wanted(lists())
+
+    /** The entries of [lists]: the user's add-ons, then the enabled defaults. */
+    private fun wanted(lists: Lists): List<Wanted> {
+        val user = lists.users.filter { it.kind == UserAddonKind.MANIFEST }.mapNotNull { e ->
             HttpAddonClient.baseOf(e.manifestUrl)?.let {
                 Wanted(
                     e.manifestUrl, it, HttpAddonClient.manifestFileOf(e.manifestUrl), userAdded = true, token = e.token,
@@ -386,7 +395,7 @@ class InTreeAddonRegistry @Inject constructor(
                 )
             }
         }
-        val defaults = defaults.entries.value.filter { it.enabled }.mapNotNull { e ->
+        val defaults = lists.defaults.filter { it.enabled }.mapNotNull { e ->
             HttpAddonClient.baseOf(e.manifestUrl)?.let {
                 Wanted(
                     e.manifestUrl, it, HttpAddonClient.manifestFileOf(e.manifestUrl), userAdded = false, token = null,
@@ -445,7 +454,10 @@ class InTreeAddonRegistry @Inject constructor(
      * for the kept index first, so an add-on Stash turned off is never published from its kept copy.
      */
     suspend fun loadPersisted() = refreshLock.withLock {
-        if (state.value.isNotEmpty()) return@withLock
+        // Any pass at all, not only one that left an add-on on: a pass that found the user's only
+        // add-on held (its link now serves another add-on) publishes none, and its kept copy, the
+        // manifest they approved, must not turn it back on (review-885 round 2, N3).
+        if (slots.isNotEmpty()) return@withLock
         catalog.awaitLoaded()
         val kept = wanted().map { w -> kept(w, null) }
         applyLock.withLock { publish(kept, defaultsOff()) }
@@ -489,6 +501,15 @@ class InTreeAddonRegistry @Inject constructor(
     /** Bumped, under [applyLock], each time [publishKnown] publishes: a pass that started before it must not publish its older list over it. */
     @Volatile private var listsVersion = 0
 
+    /**
+     * The lists [publishKnown] last published, under [applyLock]; null before it first has (tests
+     * that never [start], a pass at a cold start before the list collector's first). A pass publishes
+     * only these lists (review-885 round 2, N2): the collector misses a list that changes and changes
+     * back between two of its looks (a `StateFlow` never hands it a value equal to the last one), so a
+     * pass that read the list in between, in either direction, published one nobody would correct.
+     */
+    @Volatile private var knownLists: Lists? = null
+
     /** A fresh config was applied in this run: the defaults' list, empty or not, is all there is ([forgetRemoved]). */
     @Volatile private var defaultsKnown = false
 
@@ -501,7 +522,8 @@ class InTreeAddonRegistry @Inject constructor(
      */
     private suspend fun publishKnown() {
         catalog.awaitLoaded()
-        val wanted = wanted()
+        val read = lists()
+        val wanted = wanted(read)
         val known = slots.associateBy { it.w.key }
         // Entries not seen before start from their kept manifest, read before the lock is taken.
         val fresh = wanted.filter { it.key !in known }.associate { it.key to kept(it, null) }
@@ -513,6 +535,7 @@ class InTreeAddonRegistry @Inject constructor(
         applyLock.withLock {
             val now = slots.associateBy { it.w.key }
             listsVersion++
+            knownLists = read
             publish(
                 wanted.map { w ->
                     now[w.key]?.let { Slot(w, it.read, it.trust, it.hold, it.refused, it.changed) } ?: fresh[w.key] ?: Slot(w, null, Trust.UNOFFICIAL, AddonHold.NOT_LOADED, null)
@@ -529,16 +552,18 @@ class InTreeAddonRegistry @Inject constructor(
         // Read before the lists are: a list that changes after this line, and is published by
         // [publishKnown], makes this pass's older list one it must not publish over the newer one.
         val version = listsVersion
-        val wanted = wanted()
+        val read = lists()
+        val wanted = wanted(read)
         val now = nowMs()
         answeredAt.keys.retainAll(wanted.map { it.key }.toSet())
         // By entry, never by base: two manifests in one folder (`a.json`, `b.json`) share a base.
         val before = slots.associateBy { it.w.key }
         val kept = wanted.map { w -> kept(w, before[w.key]) }
         // What stands after the publish, settled again under the lock ([publish]): a block that landed
-        // since `kept` was built is in it. If the lists changed meanwhile ([publishKnown]), theirs stands.
+        // since `kept` was built is in it. If the lists changed meanwhile ([publishKnown]), theirs stands,
+        // and so do they when this pass read lists the list collector never published ([knownLists]).
         val standing = applyLock.withLock {
-            if (listsVersion == version) publish(kept, defaultsOff())
+            if (listsVersion == version && knownLists.let { it == null || it == read }) publish(kept, defaultsOff())
             slots
         }
         val mine = wanted.toSet()
@@ -562,7 +587,9 @@ class InTreeAddonRegistry @Inject constructor(
                 readingState.value = false
             }
         }
-        forgetRemoved(wanted)
+        // The entries that stand, which are this pass's own when it published them: an entry a list
+        // this pass did not publish lacks may still be wanted, and its kept manifest stays.
+        forgetRemoved(standing.map { it.w })
         retryUnanswered(due)
     }
 

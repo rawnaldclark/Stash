@@ -366,6 +366,107 @@ class AddonRegistryTest {
         }
     }
 
+    /**
+     * A user's list that one read finds otherwise than its flow ever shows: as when it changed and
+     * changed back between two looks of the list collector, which a `StateFlow` never hands a value
+     * equal to the last one it saw. [nextRead], when set, is what the next read finds, once.
+     */
+    private class FlippingUsers(list: List<UserAddonEntry>) : UserAddons {
+        val flow = MutableStateFlow(list)
+        override val entries: StateFlow<List<UserAddonEntry>> = flow
+        val reads = AtomicInteger(0)
+        @Volatile var nextRead: List<UserAddonEntry>? = null
+        override suspend fun loadedEntries(): List<UserAddonEntry> {
+            reads.incrementAndGet()
+            return nextRead?.also { nextRead = null } ?: flow.value
+        }
+    }
+
+    /** [registry] started, once its list collector has published the lists and run its own pass (three reads of the user's list). */
+    private suspend fun startedOn(registry: InTreeAddonRegistry, users: FlippingUsers, scope: CoroutineScope) {
+        registry.start(scope, emptyFlow())
+        withTimeout(5_000) { while (users.reads.get() < 3) delay(10) }
+        delay(100)
+    }
+
+    @Test fun `an add-on switched on and straight off again is not left on by a pass that read it on`() = runBlocking<Unit> {
+        // review-885 round 2, N2: the direction the known limit did not name. A pass from elsewhere (an
+        // applied config, Settings › Add-ons opening) read the list while it was on; the list collector
+        // saw it off before and after. Published, that list kept a switched-off add-on in the chains.
+        serve("m", manifestJson("mine"))
+        val on = agreed(url("m"), id = "mine")
+        val users = FlippingUsers(listOf(on.copy(enabled = false)))
+        val registry = registry(users = users)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            startedOn(registry, users, scope)
+            users.nextRead = listOf(on)
+            registry.refresh()
+            assertThat(registry.addons.value).isEmpty()
+            assertThat(registry.entries.value.single().hold).isEqualTo(AddonHold.OFF)
+            assertThat(asked).doesNotContain("m")
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test fun `an add-on switched off and straight on again is not turned off by a pass that read it off`() = runBlocking<Unit> {
+        serve("m", manifestJson("mine"))
+        val on = agreed(url("m"), id = "mine")
+        val users = FlippingUsers(listOf(on))
+        val registry = registry(users = users)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            startedOn(registry, users, scope)
+            withTimeout(5_000) { registry.addons.first { it.isNotEmpty() } }
+            users.nextRead = listOf(on.copy(enabled = false))
+            registry.refresh()
+            assertThat(registry.addons.value.map { it.id }).containsExactly("mine")
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test fun `a pass that read the list without an add-on that is still there keeps its kept manifest`() = runBlocking<Unit> {
+        // Removed and added again between two looks of the list collector: the add-on is wanted, and its
+        // kept manifest is what keeps it on at an offline start.
+        serve("m", manifestJson("mine"))
+        val users = FlippingUsers(listOf(agreed(url("m"), id = "mine")))
+        val registry = registry(users = users)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            startedOn(registry, users, scope)
+            withTimeout(5_000) { registry.addons.first { it.isNotEmpty() } }
+            val keptBefore = store.rows.keys.toSet()
+            assertThat(keptBefore).isNotEmpty()
+            users.nextRead = emptyList()
+            registry.refresh()
+            assertThat(store.rows.keys).containsAtLeastElementsIn(keptBefore)
+            assertThat(registry.addons.value.map { it.id }).containsExactly("mine")
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test fun `a kept manifest does not turn back on an add-on a pass found serving another add-on`() = runBlocking<Unit> {
+        // review-885 round 2, N3: at a cold start the config collector's first pass can run before
+        // loadPersisted. It finds the user's only add-on's link serving another add-on: nothing is on.
+        // loadPersisted then took "nothing on" for "nothing loaded" and published the kept copy.
+        serve("m", manifestJson("mine"))
+        val users = Users(listOf(agreed(url("m"), id = "mine")))
+        registry(users = users).refresh() // an earlier run read and kept the manifest the user approved
+        serve("m", manifestJson("someone-else"))
+        val registry = registry(users = users)
+        registry.refresh()
+        assertThat(registry.addons.value).isEmpty()
+        assertThat(registry.entries.value.single().hold).isEqualTo(AddonHold.CHANGED)
+
+        registry.loadPersisted()
+
+        assertThat(registry.addons.value).isEmpty()
+        assertThat(registry.entries.value.single().hold).isEqualTo(AddonHold.CHANGED)
+    }
+
     @Test fun `a cold start reads each add-on's manifest once, however the lists and the first config arrive`() = runBlocking<Unit> {
         // Seen on a phone: two GETs of each manifest within the same second. The user's list, the
         // signed config's defaults and the first applied config each start a pass, and a pass for a
