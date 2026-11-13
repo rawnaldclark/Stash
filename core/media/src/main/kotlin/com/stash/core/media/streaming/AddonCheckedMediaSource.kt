@@ -76,7 +76,7 @@ internal class AddonCheckedMediaSource(
         // Known before it opens, and its add-on gone since: this new period never opens it.
         val known = claimOf(null)
         if (known != null && isGone(known.origin)) {
-            android.util.Log.i(TAG, "track ${known.trackId}: its add-on is no longer on; its link is not opened again")
+            android.util.Log.i(TAG, "track ${known.trackId}: its add-on is no longer on or is set aside; its link is not opened again")
             return CheckedPeriod(inner, failed = AddonStreamGoneException(known.trackId)) { null }
         }
         return CheckedPeriod(inner) { groups ->

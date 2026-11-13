@@ -9,6 +9,8 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -86,6 +88,16 @@ class AddonStreamCheck internal constructor(
      * and [takeRefusal] holds the record.
      */
     val refusals: SharedFlow<Refused> = events.asSharedFlow()
+
+    /**
+     * The add-ons set aside right now, by origin (`addon:<id>`), for any reason: a stream this check
+     * refused, or a download's wrong file or one that took too long ([LosslessSourceHealthGate]). A
+     * new set whenever one is set aside or its cooldown ends. What the queue holds from one is put
+     * back as it is set aside (`PlayerRepositoryImpl.resolveAgainWhenAnAddonIsSetAside`, review-888 R3-m1).
+     */
+    val setAsideAddons: kotlinx.coroutines.flow.Flow<Set<String>> = health.setAside
+        .map { aside -> aside.keys.filterTo(HashSet<String>()) { AddonPlayback.isAddonOrigin(it) }.toSet() }
+        .distinctUntilChanged()
 
     /** Songs whose stream was refused, by track id: when. Read once each by [takeRefusal]. */
     private val refusedSongs = ConcurrentHashMap<Long, Long>()

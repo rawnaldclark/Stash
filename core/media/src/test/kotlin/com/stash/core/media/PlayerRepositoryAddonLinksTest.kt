@@ -517,4 +517,46 @@ class PlayerRepositoryAddonLinksTest {
         verify { controller.prepare() }
         verify(exactly = 0) { controller.seekToNextMediaItem() }
     }
+
+    // ------------------------------------------------------------------------------------- an add-on set aside by a download (R3-m1)
+
+    @Test
+    fun `an add-on a download set aside has its queued links put back before the player reaches them - review-888 R3-m1`() = runTest {
+        // The look-ahead swapped the add-on's URL into the next slot; then one of its downloads took too long.
+        slots += listOf(urlSlot(1L, "qbdlx"), urlSlot(2L, "addon:slow"), urlSlot(3L, "qbdlx"))
+        val watching = launch { repo.resolveAgainWhenAnAddonIsSetAside(check.setAsideAddons) }
+        settle(rounds = 5)
+        assertThat(swaps).isEmpty()
+
+        gate.recordDegraded("addon:slow")
+        settle { swaps.size >= 2 }
+        watching.cancel()
+
+        // Put back now and looked up again: the join plays the next source's file, not a gone error.
+        assertThat(swaps.map { it.first }).containsExactly(1, 1).inOrder()
+        assertThat(swaps[0].second.localConfiguration?.uri?.isPutBack()).isTrue()
+        assertThat(slots[1].localConfiguration?.uri?.toString()).isEqualTo(newUrl)
+    }
+
+    @Test
+    fun `a refusal and the set-aside it makes put the add-on's links back once, and take the refusal with them`() = runTest {
+        slots += listOf(urlSlot(1L, "qbdlx"), radioSlot(second), radioSlot(third))
+        check.opened(2L, "addon:liar")
+        check.opened(3L, "addon:liar")
+        val asides = launch { repo.resolveAgainWhenAnAddonIsSetAside(check.setAsideAddons) }
+        val refusals = launch { repo.resolveAgainWhenAStreamIsRefused(check.refusals) }
+        settle(rounds = 5)
+
+        // Song 3, read ahead two deep, is refused: the check records it, sets the add-on aside, and says so.
+        check.judge(AddonStreamCheck.Claim("addon:liar", 3L, "3", statedLossless = true, songMs = 0L), listOf("audio/mpeg"), null)
+        settle { swaps.size >= 3 }
+        settle(rounds = 10)
+        asides.cancel()
+        refusals.cancel()
+
+        assertThat(swaps.map { it.first }).containsExactly(1, 2, 1).inOrder()
+        coVerify(exactly = 1) { streamResolver.resolve(any(), any(), any(), any()) }
+        // Put back before the player reached it, whichever word came first: no error will read its refusal.
+        assertThat(check.takeRefusal(3L)).isFalse()
+    }
 }

@@ -248,6 +248,7 @@ class PlayerRepositoryImpl @Inject constructor(
 
         addonRegistry?.let { registry -> scope.launch { resolveAgainWhenAnAddonLeaves(registry.addons) } }
         addonStreamCheck?.let { check -> scope.launch { resolveAgainWhenAStreamIsRefused(check.refusals) } }
+        addonStreamCheck?.let { check -> scope.launch { resolveAgainWhenAnAddonIsSetAside(check.setAsideAddons) } }
 
         // Idle-stop handshake. The service flips this false just before it
         // stops itself: release the controller so OUR binding doesn't keep
@@ -1388,18 +1389,45 @@ class PlayerRepositoryImpl @Inject constructor(
      * song playing, [playerListener]'s `onPlayerError` resolves it again.
      */
     internal suspend fun resolveAgainWhenAStreamIsRefused(refusals: kotlinx.coroutines.flow.Flow<com.stash.core.media.streaming.AddonStreamCheck.Refused>) {
-        // The player's read-ahead and the crossfade spare can both open the same stream, so both refuse
-        // it. If the second open noted itself after the first refusal's put-back, that refusal would
-        // find the slot again and put back its new answer (review-888 R2-n1). The add-on is set aside
-        // for its whole cooldown after the first, so a second refusal of it for the same song within a
-        // moment is the same stream: handled once.
-        val handled = HashMap<Pair<String, Long>, Long>()
         refusals.collect { refused ->
-            val now = android.os.SystemClock.elapsedRealtime()
-            handled.entries.removeIf { now - it.value > com.stash.core.media.streaming.AddonStreamCheck.REFUSAL_FRESH_MS }
-            if (handled.put(refused.origin to refused.trackId, now) != null) return@collect
+            // The player's read-ahead and the crossfade spare can both open the same stream, so both
+            // refuse it; the refusal also sets the add-on aside, which [resolveAgainWhenAnAddonIsSetAside]
+            // hears too. Whichever comes first puts the add-on's links back; the others are the same
+            // event ([putBackMomentsAgo]; review-888 R2-n1, R3-m1).
+            if (putBackMomentsAgo(refused.origin)) return@collect
             resolveAgainLinksFrom(setOf(refused.origin), refusedTrackId = refused.trackId, why = "was set aside")
         }
+    }
+
+    /**
+     * An add-on set aside in the content-health gate for any reason: a stream the player refused, or a
+     * download's wrong file or one that took too long ([com.stash.core.media.streaming.AddonStreamCheck.setAsideAddons]).
+     * What the queue holds from it is put back now ([resolveAgainLinksFrom]), so the next song is looked
+     * up again before the player reaches it. Left to the player, a URL slot from it failed only when its
+     * period was made (the gone guard), at the join: a pause and a switch of source, or a skip when no
+     * other source has the song (review-888 R3-m1).
+     */
+    internal suspend fun resolveAgainWhenAnAddonIsSetAside(setAside: kotlinx.coroutines.flow.Flow<Set<String>>) {
+        var was = emptySet<String>()
+        setAside.collect { now ->
+            val newly = now - was
+            was = now
+            val origins = newly.filterNotTo(HashSet()) { putBackMomentsAgo(it) }
+            if (origins.isNotEmpty()) resolveAgainLinksFrom(origins, refusedTrackId = null, why = "was set aside")
+        }
+    }
+
+    /** When each add-on's links were last put back ([resolveAgainLinksFrom]), by origin. Main thread. */
+    private val putBackAt = HashMap<String, Long>()
+
+    /**
+     * Whether [origin]'s links were put back a moment ago ([com.stash.core.media.streaming.AddonStreamCheck.REFUSAL_FRESH_MS]):
+     * another word of the same set-aside. The add-on is set aside for its whole cooldown, so it hands
+     * out no new link meanwhile, and a second pass would only find the slots' new answers.
+     */
+    private fun putBackMomentsAgo(origin: String): Boolean {
+        val at = putBackAt[origin] ?: return false
+        return android.os.SystemClock.elapsedRealtime() - at <= com.stash.core.media.streaming.AddonStreamCheck.REFUSAL_FRESH_MS
     }
 
     /**
@@ -1425,6 +1453,8 @@ class PlayerRepositoryImpl @Inject constructor(
         // again, now without it, rather than put its answer in the slot (review-885 round 2, R2-M1).
         streamQualityChanges++
         origins.forEach { streamUrlCache.invalidateOrigin(it) }
+        val at = android.os.SystemClock.elapsedRealtime()
+        origins.forEach { putBackAt[it] = at }
         if (listenTogetherOwnsQueue) return
         if (playsOnBrowser) return // the browser finds and streams each song itself
         try {
@@ -1443,15 +1473,18 @@ class PlayerRepositoryImpl @Inject constructor(
                     // It plays on to its end; a refused one is onPlayerError's. A replay of it (a repeat,
                     // Previous, a tap) must not open the link again: its slot is put back once the player
                     // moves off it or repeats it, and meanwhile the player's source opens no new play of
-                    // it (AddonStreamGoneException; review-888 R2-m3).
+                    // it (AddonStreamGoneException; review-888 R2-m3). When the gate's word of a refusal
+                    // comes before the refusal's own, a refused song is held too; onPlayerError then puts
+                    // it back as a placeholder from no add-on, so its later put-back does nothing (R3-m1).
                     if (trackId != refusedTrackId) heldOverTrackId = trackId
                     continue
                 }
                 streamUrlCache.invalidate(trackId)
                 val fresh = resolvedAgainItem(item, trackId)
                 addonStreamCheck?.forget(trackId)
-                // Put back before the player reached it: its refusal will never be an error to read.
-                if (trackId == refusedTrackId) addonStreamCheck?.takeRefusal(trackId)
+                // Put back before the player reached it: a refusal of it will never be an error to read,
+                // whichever word of the set-aside (the refusal, or the gate's) put it back.
+                addonStreamCheck?.takeRefusal(trackId)
                 replaceMediaItemKeepingShuffle(controller, index, fresh)
                 again++
                 if (index == next) nextAgain = true
