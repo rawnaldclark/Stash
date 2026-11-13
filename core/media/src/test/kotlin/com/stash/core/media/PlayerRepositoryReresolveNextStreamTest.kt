@@ -117,6 +117,42 @@ class PlayerRepositoryReresolveNextStreamTest {
     }
 
     @Test
+    fun `a look-ahead resolving through an add-on when it leaves asks again, and the slot never gets that add-on's link`() = runTest {
+        // review-885 round 2, R2-M1: the song just started and its look-ahead for the next one is under
+        // way from the placeholder, through the add-on, when the add-on is removed or switched off.
+        every { controller.getMediaItemAt(1) } returns slot(2L, "$STASH_RESOLVE_SCHEME://track/2")
+        val started = CompletableDeferred<Unit>()
+        val addonsAnswer = CompletableDeferred<StreamUrl>()
+        var asked = 0
+        coEvery {
+            streamResolver.resolve(any(), allowYouTube = true, allowYtDlp = true, speculative = true)
+        } coAnswers {
+            asked++
+            if (asked == 1) {
+                started.complete(Unit)
+                addonsAnswer.await()
+            } else {
+                stream(newUrl, "aac") // asked again, the add-on is no longer in the chain
+            }
+        }
+        val on = kotlinx.coroutines.flow.MutableStateFlow(listOf(addon("mine")))
+        val watching = launch { repo.dropNextStreamWhenAnAddonLeaves(on) }
+        testScheduler.runCurrent()
+        val lookAhead = launch { repo.prefetchNextTrack() }
+        started.await()
+
+        on.value = emptyList() // it leaves while its answer is on the way
+        testScheduler.runCurrent()
+        addonsAnswer.complete(StreamUrl(url = oldUrl, expiresAtMs = Long.MAX_VALUE, codec = "flac", origin = "addon:mine"))
+        lookAhead.join()
+        watching.cancel()
+
+        assertThat(asked).isEqualTo(2)
+        assertThat(swaps.map { it.localConfiguration?.uri?.toString() }).containsExactly(newUrl)
+        verify(exactly = 0) { streamUrlCache.put(2L, match { it.url == oldUrl }) }
+    }
+
+    @Test
     fun `an add-on leaving changes nothing for a next song that came from somewhere else`() = runTest {
         // The slot in setUp holds a link with no add-on origin.
         resolvesNextTo(stream(newUrl, "aac"))

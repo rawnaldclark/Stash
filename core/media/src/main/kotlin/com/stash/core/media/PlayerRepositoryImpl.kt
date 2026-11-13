@@ -702,8 +702,9 @@ class PlayerRepositoryImpl @Inject constructor(
         java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     /**
-     * Bumped by [reresolveNextStream]. A prefetch whose resolve was in flight across a bump may
-     * hold the old quality's URL, so it resolves again rather than put that in the next slot.
+     * Bumped by [reresolveNextStream], and when an add-on leaves ([dropNextStreamWhenAnAddonLeaves]).
+     * A prefetch whose resolve was in flight across a bump may hold the old quality's URL, or the
+     * departed add-on's, so it resolves again rather than put that in the next slot.
      */
     @Volatile private var streamQualityChanges = 0
 
@@ -1376,15 +1377,6 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     /**
-     * The next song was resolved when this one started, under the old setting: its URL is
-     * cached, and usually in its slot too, so a quality change would only have reached the
-     * song after it. The slot goes back to a placeholder and the cached URL is dropped, then
-     * the prefetch resolves it again under the new setting. Where that prefetch stops short
-     * (a speculative resolve never asks the Tidal relay), the placeholder resolves when the
-     * song plays, still under the new setting. Either resolve also drops every other cached
-     * URL ([com.stash.core.media.streaming.StreamQualityPolicy] sees the change).
-     */
-    /**
      * An add-on that leaves [addons] (removed, switched off, turned off by Stash) is not asked again.
      * The look-ahead may already have put a link it handed out into the next song's slot: that slot
      * is resolved again, without the add-on, the way a quality change does it ([reresolveNextStream]).
@@ -1397,6 +1389,11 @@ class PlayerRepositoryImpl @Inject constructor(
             val left = on - now
             on = now
             if (left.isEmpty()) return@collect
+            // A look-ahead already under way may be resolving the next song through the add-on that
+            // left: its slot is still a placeholder, with no origin to look at below. Counted as a
+            // change, that look-ahead asks again, now without the add-on, rather than put its answer
+            // in the slot (review-885 round 2, R2-M1).
+            streamQualityChanges++
             try {
                 val controller = controllerDeferred ?: return@collect
                 val index = controller.nextMediaItemIndex
@@ -1415,6 +1412,15 @@ class PlayerRepositoryImpl @Inject constructor(
         }
     }
 
+    /**
+     * The next song was resolved when this one started, under the old setting: its URL is
+     * cached, and usually in its slot too, so a quality change would only have reached the
+     * song after it. The slot goes back to a placeholder and the cached URL is dropped, then
+     * the prefetch resolves it again under the new setting. Where that prefetch stops short
+     * (a speculative resolve never asks the Tidal relay), the placeholder resolves when the
+     * song plays, still under the new setting. Either resolve also drops every other cached
+     * URL ([com.stash.core.media.streaming.StreamQualityPolicy] sees the change).
+     */
     override suspend fun reresolveNextStream() {
         if (listenTogetherOwnsQueue) return
         if (playsOnBrowser) return // nothing streams on this phone while a browser plays
