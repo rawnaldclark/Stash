@@ -249,7 +249,12 @@ internal fun AddonsContent(
                         onClick = { onAddFromLink(null) },
                     )
                 },
-            ) + state.official.map { entry -> { OfficialRow(entry, onAdd = { onAddFromLink(entry.manifestUrl) }) } },
+            ) + state.official.map { entry ->
+                {
+                    val claimed = entry.id in state.claimed
+                    OfficialRow(entry, claimedBy = state.claimed[entry.id], claimed = claimed, onAdd = { onAddFromLink(entry.manifestUrl) })
+                }
+            },
         )
         PageEndSpace()
     }
@@ -374,13 +379,26 @@ private fun AddonRow(
     }
 }
 
-/** An official add-on not added yet: its name, its Official mark with the one line the signed list says about it, and Add. */
+/**
+ * An official add-on not added yet: its name, its Official mark with the one line the signed list says about it, and
+ * Add; or, when one of the user's add-ons calls itself by its id, why it can't be added.
+ */
 @Composable
-private fun OfficialRow(entry: OfficialEntry, onAdd: () -> Unit) {
+private fun OfficialRow(
+    entry: OfficialEntry,
+    /** The name of the user's add-on that calls itself by this one's id, if it has one. */
+    claimedBy: String?,
+    /**
+     * One of the user's add-ons calls itself by this one's id: Add would only say "You already have
+     * this add-on", so the row says why it can't be added and has no Add (review-885 round 2, b).
+     */
+    claimed: Boolean,
+    onAdd: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(role = Role.Button, onClick = onAdd)
+            .then(if (claimed) Modifier else Modifier.clickable(role = Role.Button, onClick = onAdd))
             .padding(horizontal = SettingsRowPadH, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -393,12 +411,25 @@ private fun OfficialRow(entry: OfficialEntry, onAdd: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (claimed) {
+                Text(
+                    text = if (claimedBy != null) {
+                        stringResource(R.string.settings_addons_official_claimed, claimedBy)
+                    } else {
+                        stringResource(R.string.settings_addons_official_claimed_unnamed)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
-        Text(
-            text = stringResource(R.string.settings_addons_add),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-        )
+        if (!claimed) {
+            Text(
+                text = stringResource(R.string.settings_addons_add),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
 }
 

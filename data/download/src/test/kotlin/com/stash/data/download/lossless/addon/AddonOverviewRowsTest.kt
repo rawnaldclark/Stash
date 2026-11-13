@@ -189,6 +189,24 @@ class AddonOverviewRowsTest {
         assertThat(row.mark).isEqualTo(AddonOverview.Mark.NOT_MADE_BY_STASH)
         assertThat(row.summary).isNull()
         assertThat(state.official.map { it.id }).containsExactly("radio")
+        // Round 2, open point b: Add would refuse it ("You already have this add-on"), so the screen is
+        // told which of the user's add-ons stands in its way.
+        assertThat(state.claimed).containsExactly("radio", "radio")
+    }
+
+    @Test fun `an official add-on is claimed only by an add-on of the user's that has its id`() {
+        val radio = OfficialEntry("radio", "Example Radio", "Live stations", manifestUrl = "https://addons.example.org/radio/manifest.json")
+        // An add-on of the user's under another id claims nothing.
+        assertThat(build(users = listOf(user("mine")), entries = listOf(entry("mine")), official = listOf(radio)).claimed).isEmpty()
+        // A link of the user's that now serves the official one's id: Add refuses it too, and its row
+        // (the add-on the user approved) has another id, so no name is known.
+        val changed = build(
+            users = listOf(user("mine")),
+            entries = listOf(entry("mine", hold = AddonHold.CHANGED, manifest = manifest("radio"))),
+            official = listOf(radio),
+        )
+        assertThat(changed.official.map { it.id }).containsExactly("radio")
+        assertThat(changed.claimed).containsExactly("radio", null)
     }
 
     @Test fun `each thing that can be wrong has its own status, and the ones Stash won't use have no switch`() {

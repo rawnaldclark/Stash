@@ -1394,6 +1394,8 @@
     <string name="settings_addons_row_tidal_own">Tidal · your own server</string>
     <string name="settings_addons_official">Official</string>
     <string name="settings_addons_official_summary">Official · %1$s</string>
+    <string name="settings_addons_official_claimed">Your add-on %1$s says it is this one. Remove it to add this one.</string>
+    <string name="settings_addons_official_claimed_unnamed">One of your add-ons says it is this one. Remove it to add this one.</string>
     <string name="settings_addons_not_made">Not made by Stash</string>
     <string name="settings_addons_not_made_host">Not made by Stash · %1$s</string>
     <string name="settings_addons_get_section">Get add-ons</string>

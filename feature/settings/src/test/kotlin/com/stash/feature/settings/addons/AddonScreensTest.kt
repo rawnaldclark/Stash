@@ -179,8 +179,13 @@ class AddonScreensTest {
         }
     }
 
-    private fun state(vararg order: AddonOverview.Row, others: List<AddonOverview.Row> = emptyList(), official: List<OfficialEntry> = emptyList(), unreadable: Boolean = false) =
-        AddonOverview.State(order = order.toList(), others = others, official = official, keys = order.map { it.key }, loaded = true, unreadable = unreadable)
+    private fun state(
+        vararg order: AddonOverview.Row,
+        others: List<AddonOverview.Row> = emptyList(),
+        official: List<OfficialEntry> = emptyList(),
+        unreadable: Boolean = false,
+        claimed: Map<String, String?> = emptyMap(),
+    ) = AddonOverview.State(order = order.toList(), others = others, official = official, claimed = claimed, keys = order.map { it.key }, loaded = true, unreadable = unreadable)
 
     /** The labels of the TalkBack actions on the row named [title]. */
     private fun actionsOf(title: String): List<String> =
@@ -315,6 +320,25 @@ class AddonScreensTest {
         rule.onNodeWithText("Official · Live stations").assertExists()
         rule.onNodeWithText("Example Radio").performScrollTo().performClick()
         assertThat(addFromLink).containsExactly("https://addons.example.org/radio/manifest.json")
+    }
+
+    @Test fun `an official add-on one of the user's add-ons claims says why it can't be added, and has no Add`() {
+        // Round 2, open point b: Add refuses an id the user's add-ons already have, so the row offered
+        // an Add that could only answer "You already have this add-on".
+        val radio = OfficialEntry("radio", "Example Radio", "Live stations", manifestUrl = "https://addons.example.org/radio/manifest.json")
+        showList(state(tidal, official = listOf(radio), claimed = mapOf("radio" to "Fake Radio")))
+        rule.onNodeWithText("Official · Live stations").assertExists()
+        rule.onNodeWithText("Your add-on Fake Radio says it is this one. Remove it to add this one.").assertExists()
+        rule.onAllNodesWithText("Add").assertCountEquals0()
+        rule.onNodeWithText("Example Radio").performScrollTo().performClick()
+        assertThat(addFromLink).isEmpty()
+    }
+
+    @Test fun `with no name known, the claim is said without one`() {
+        val radio = OfficialEntry("radio", "Example Radio", "Live stations", manifestUrl = "https://addons.example.org/radio/manifest.json")
+        showList(state(tidal, official = listOf(radio), claimed = mapOf("radio" to null)))
+        rule.onNodeWithText("One of your add-ons says it is this one. Remove it to add this one.").assertExists()
+        rule.onAllNodesWithText("Add").assertCountEquals0()
     }
 
     // ------------------------------------------------------------------------------------------ an add-on's page

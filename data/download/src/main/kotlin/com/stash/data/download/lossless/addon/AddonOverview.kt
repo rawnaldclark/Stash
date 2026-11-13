@@ -130,6 +130,13 @@ class AddonOverview @Inject constructor(
         val others: List<Row> = emptyList(),
         /** Official add-ons the user hasn't added. */
         val official: List<OfficialEntry> = emptyList(),
+        /**
+         * The ids in [official] that one of the user's own add-ons also calls itself by. Add refuses an
+         * id the user's add-ons already have ("You already have this add-on"), so the screen says why
+         * and offers no Add (review-885 round 2, open point b). The value is that add-on's name, when
+         * its row has one.
+         */
+        val claimed: Map<String, String?> = emptyMap(),
         /** Nothing was ever dragged. */
         val automatic: Boolean = true,
         /** The whole order's keys, the rows not on screen included: what a drag is applied to. */
@@ -304,10 +311,19 @@ class AddonOverview @Inject constructor(
             // Stash doesn't run that calls itself by an official one's id must not take that one out of
             // "Get add-ons" (review-885 N5).
             val taken = addonRows.filter { it.mark == Mark.OFFICIAL }.mapNotNull { PlayOrder.addonIdOf(it.key) }.toSet()
+            val offered = official.filterNot { it.id in taken }
+            // The ids Add finds the user already has (`AddonLinks.idTaken`): each of their entries' own,
+            // and the id each of their links serves now.
+            val theirs = userEntries.mapNotNull { it.id }.toSet() +
+                entries.filter { it.userAdded }.mapNotNull { it.manifest?.manifest?.id }
+            val claimed = offered.filter { it.id in theirs }.associate { o ->
+                o.id to userRows.firstOrNull { PlayOrder.addonIdOf(it.key) == o.id }?.name?.takeIf { it.isNotBlank() }
+            }
             return State(
                 order = order.sorted(listOfNotNull(qobuz, tidal) + inOrder) { it.key },
                 others = addonRows.filterNot { it.playsSongs },
-                official = official.filterNot { it.id in taken },
+                official = offered,
+                claimed = claimed,
                 automatic = order.automatic,
                 keys = order.keys,
                 loaded = true,
