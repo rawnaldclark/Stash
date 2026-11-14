@@ -46,6 +46,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.relay.LosslessDownloadPurpose
 import javax.inject.Inject
@@ -198,6 +199,24 @@ class DownloadManager @Inject constructor(
 
     /** Emits real-time progress snapshots for all in-flight downloads. */
     val progress: SharedFlow<DownloadProgress> = _progress.asSharedFlow()
+
+    /**
+     * The manager's own scope for album-art fetches started in
+     * [downloadFromYouTube]. App-lifetime, instantiated inline like
+     * BitchordClient's lookupScope (no Hilt ApplicationScope qualifier
+     * exists in this codebase). The art deferred deliberately does NOT
+     * become a child of the downloading coroutine: the async fires next
+     * to the yt-dlp download so the fetch overlaps it instead of adding
+     * its own network round-trip between download and embed, but the
+     * attempt's early failure returns must not block on a fetch whose
+     * blocking OkHttp call ignores coroutine cancellation. The success path
+     * awaits the fetch at the embed; every way out of the attempt (saved,
+     * failed, thrown, cancelled) then [Deferred.cancel]s it in one `finally`,
+     * so it never outlives the attempt that started it.
+     */
+    private val artworkScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
+    )
 
     companion object {
         private const val TAG = "DownloadManager"
@@ -508,6 +527,48 @@ class DownloadManager @Inject constructor(
         val qualityTier = qualityPrefs.qualityTier.first()
         val qualityArgs = if (opusOnly) qualityTier.toOpusYtDlpArgs() else qualityTier.toYtDlpArgs()
 
+        // Album art runs concurrently with the download. It used to sit
+        // BETWEEN download and embed, adding its own network round-trip to
+        // the track's wall-clock time; the embed needs it only once the
+        // download has finished, so it now overlaps the whole download
+        // instead. A failure inside the art job resolves to null exactly as
+        // before — we never block a download on the art server.
+        //
+        // Runs on [artworkScope], not as a child of this attempt (see the
+        // scope's doc), so nothing ties its life to this attempt but the
+        // `finally` below. A request already on the wire still finishes into
+        // [AlbumArtCache] — pure atomic cacheDir bytes, there for the retry
+        // and for the album's other songs. The success path awaits the
+        // deferred at the metadata embed, by which time it usually finished
+        // during the download.
+        val artDeferred = artworkScope.async {
+            runCatching { albumArtCache.resolveArt(effectiveTrack) }
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                .getOrNull()
+        }
+        // One place for every way out: a failed download, a throw, and a
+        // cancel (the user's Stop, or WorkManager stopping the worker when
+        // Wi-Fi is lost) all end the fetch with the attempt. Cancelling a
+        // fetch that already finished does nothing.
+        return try {
+            ytDlpDownloadAndFile(track, effectiveTrack, youtubeUrl, qualityArgs, artDeferred)
+        } finally {
+            artDeferred.cancel()
+        }
+    }
+
+    /**
+     * [downloadFromYouTube]'s download, tagging and filing. [artDeferred] is the
+     * cover fetch started alongside it: awaited at the embed, and ended by the
+     * caller however this returns or throws.
+     */
+    private suspend fun ytDlpDownloadAndFile(
+        track: Track,
+        effectiveTrack: Track,
+        youtubeUrl: String,
+        qualityArgs: List<String>,
+        artDeferred: kotlinx.coroutines.Deferred<File?>,
+    ): TrackDownloadResult {
         // Step 3: Download via yt-dlp
         val tempDir = fileOrganizer.getTempDir()
         val tempFilename = "dl_${track.id}_${attemptTag()}"
@@ -563,9 +624,7 @@ class DownloadManager @Inject constructor(
             // Spotify/YT-Music identity already on the Track row. Failure is
             // non-fatal: the file remains playable and yt-dlp's fallback tags
             // stay in place. A cancel is not a failure: it propagates.
-            val art = runCatching { albumArtCache.resolveArt(effectiveTrack) }
-                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
-                .getOrNull()
+            val art = artDeferred.await()
             runCatching { metadataEmbedder.embedMetadata(downloadedFile, effectiveTrack, art) }
                 .onFailure {
                     if (it is kotlinx.coroutines.CancellationException) throw it

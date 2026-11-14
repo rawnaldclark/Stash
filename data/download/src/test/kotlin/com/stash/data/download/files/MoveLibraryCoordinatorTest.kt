@@ -123,6 +123,43 @@ class MoveLibraryCoordinatorTest {
         assertThat(tree.written[recorded[1L]]).isEqualTo("studio take".toByteArray())
     }
 
+    /** Per-playlist moves a song into the playlist the one batched read names for it. */
+    @Test fun `per playlist moves each song under the playlist read for it`() = runBlocking {
+        every { storagePreference.libraryLayout } returns flowOf(LibraryLayout.PLAYLIST)
+        val tree = FakeSafTree(resolver, storagePreference)
+        val filed = internalTrack(1, "Album A", "filed")
+        val unfiled = internalTrack(2, "Album B", "unfiled")
+        coEvery { trackDao.getDownloadedTracksWithPathPrefix(any()) } returns listOf(filed, unfiled)
+        coEvery { trackDao.getFirstPlaylistNamesForTracks(listOf(1L, 2L)) } returns mapOf(1L to "Gothic")
+
+        coordinator.start(tree.treeUri)
+        val done = withTimeout(10_000) { coordinator.state.first { it is MoveLibraryState.Done } }
+
+        assertThat(done).isEqualTo(MoveLibraryState.Done(moved = 2, failed = 0))
+        assertThat(recorded[1L]).isEqualTo(tree.uriOf("gothic/artist-intro.opus"))
+        assertThat(recorded[2L]).isEqualTo(tree.uriOf("artist/album-b/intro.opus"))
+        coVerify(exactly = 0) { trackDao.getFirstPlaylistNameForTrack(any()) }
+    }
+
+    /**
+     * The playlist names could not be read: the move stops before the first
+     * file, instead of filing the whole library under artist and album.
+     */
+    @Test fun `no file moves when the playlist names can't be read`() = runBlocking {
+        every { storagePreference.libraryLayout } returns flowOf(LibraryLayout.PLAYLIST)
+        val tree = FakeSafTree(resolver, storagePreference)
+        val song = internalTrack(1, "Album A", "audio")
+        coEvery { trackDao.getDownloadedTracksWithPathPrefix(any()) } returns listOf(song)
+        coEvery { trackDao.getFirstPlaylistNamesForTracks(any()) } throws IllegalStateException("db closed")
+
+        coordinator.start(tree.treeUri)
+        withTimeout(10_000) { coordinator.state.first { it is MoveLibraryState.Error } }
+
+        assertThat(tree.written).isEmpty()
+        assertThat(recorded).isEmpty()
+        assertThat(File(song.filePath!!).readText()).isEqualTo("audio")
+    }
+
     /**
      * A legacy library can have two rows on one internal file. Moving one of
      * them used to delete the file unconditionally, leaving the other row on
@@ -196,9 +233,64 @@ class MoveLibraryCoordinatorTest {
         assertThat(tree.written.keys).doesNotContain(tree.uriOf("artist-song-3.opus"))
     }
 
-    private fun internalTrack(id: Long, album: String, audio: String, title: String = "Intro"): TrackEntity {
+    /**
+     * The AOSP provider adds the MIME type's extension to a name whose own
+     * extension belongs to another type: an imported "intro.aac", made as
+     * `audio/mp4`, comes back "intro.aac.m4a" although the name was free.
+     * That is the provider's naming, not a name lost to a download. Taking
+     * it for one failed every candidate name, so the file never left
+     * internal storage.
+     */
+    @Test fun `a file the provider names its own way still moves`() = runBlocking {
+        val tree = FakeSafTree(resolver, storagePreference)
+        tree.nameOnCreate = { mime, name -> if (mime == "audio/mp4" && name.endsWith(".aac")) "$name.m4a" else name }
+        val import = internalTrack(1, "Album A", "adts audio", ext = "aac")
+        coEvery { trackDao.getDownloadedTracksWithPathPrefix(any()) } returns listOf(import)
+
+        coordinator.start(tree.treeUri)
+        val done = withTimeout(10_000) { coordinator.state.first { it is MoveLibraryState.Done } }
+
+        assertThat(done).isEqualTo(MoveLibraryState.Done(moved = 1, failed = 0))
+        assertThat(recorded[1L]).isEqualTo(tree.uriOf("artist-intro.aac.m4a"))
+        assertThat(tree.written[recorded[1L]]).isEqualTo("adts audio".toByteArray())
+        assertThat(tree.deleted).isEmpty()
+    }
+
+    /**
+     * A download can write into the tree while the move runs. Its file at a
+     * name the move listed as free is not the move's to replace or to share:
+     * the song takes its next name.
+     */
+    @Test fun `a name a download took after the folder was listed is left to it`() = runBlocking {
+        val tree = FakeSafTree(resolver, storagePreference)
+        val tracks = (1L..2L).map { internalTrack(it, "Album $it", "take $it", title = "Song $it") }
+        coEvery { trackDao.getDownloadedTracksWithPathPrefix(any()) } returns tracks
+        // The folder is listed for song 1; then a download lands at song 2's name.
+        coEvery { trackDao.markAsDownloaded(1L, any(), any(), any(), any(), any()) } answers {
+            recorded[1L] = secondArg()
+            tree.seed("artist-song-2.opus", "a download".toByteArray())
+            1
+        }
+
+        coordinator.start(tree.treeUri)
+        val done = withTimeout(10_000) { coordinator.state.first { it is MoveLibraryState.Done } }
+
+        assertThat(done).isEqualTo(MoveLibraryState.Done(moved = 2, failed = 0))
+        assertThat(tree.written[tree.uriOf("artist-song-2.opus")]).isEqualTo("a download".toByteArray())
+        assertThat(recorded[2L]).isEqualTo(tree.uriOf("artist-song-2-album-2.opus"))
+        assertThat(tree.written[recorded[2L]]).isEqualTo("take 2".toByteArray())
+        assertThat(tree.exists("artist-song-2 (1).opus")).isFalse()
+    }
+
+    private fun internalTrack(
+        id: Long,
+        album: String,
+        audio: String,
+        title: String = "Intro",
+        ext: String = "opus",
+    ): TrackEntity {
         val albumDir = album.lowercase().replace(' ', '-')
-        val file = File(musicDir, "artist/$albumDir/${title.lowercase().replace(' ', '-')}.opus")
+        val file = File(musicDir, "artist/$albumDir/${title.lowercase().replace(' ', '-')}.$ext")
         file.parentFile!!.mkdirs()
         file.writeText(audio)
         return TrackEntity(
