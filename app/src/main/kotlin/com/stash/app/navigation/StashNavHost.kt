@@ -145,6 +145,8 @@ private fun StashNavGraph(
     ) {
         composable<HomeRoute> { homeEntry ->
             HomeScreen(
+                // Edit Home: only from Home itself, so a double tap opens one page.
+                onOpenHomeLayout = { if (navController.currentBackStackEntry === homeEntry) navController.navigate(SettingsHomeLayoutRoute) },
                 onNavigateToSettings = {
                     navController.navigate(SettingsRoute) {
                         // Clear top so repeated taps don't stack Settings entries.
@@ -566,9 +568,9 @@ private fun StashNavGraph(
             )
         }
         composable<SettingsHomeLayoutRoute> { backStackEntry ->
-            val settingsEntry = remember(backStackEntry) { navController.getBackStackEntry(SettingsRoute) }
-            val viewModel: com.stash.feature.settings.SettingsViewModel =
-                androidx.hilt.navigation.compose.hiltViewModel(settingsEntry)
+            // From Home's Edit Home there is no Settings below: the page keeps its own view model, and Back goes straight to Home.
+            val owner = remember(backStackEntry) { runCatching { navController.getBackStackEntry(SettingsRoute) }.getOrNull() ?: backStackEntry }
+            val viewModel: com.stash.feature.settings.SettingsViewModel = androidx.hilt.navigation.compose.hiltViewModel(owner)
             com.stash.feature.settings.SettingsHomeLayoutScreen(
                 onBack = { navController.popBackStack() },
                 viewModel = viewModel,
