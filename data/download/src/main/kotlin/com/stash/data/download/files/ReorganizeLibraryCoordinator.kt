@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -142,35 +143,61 @@ class ReorganizeLibraryCoordinator @Inject constructor(
         }
         val musicRoot = fileOrganizer.internalMusicRoot().absolutePath.trimEnd('/')
 
-        val entries = refs.mapNotNull { ref ->
-            val ext = ref.filePath.substringAfterLast('.', "").ifBlank { "m4a" }
-            val playlistName =
-                if (layout == LibraryLayout.PLAYLIST) {
-                    runCatching { trackDao.getFirstPlaylistNameForTrack(ref.id) }.getOrNull()
-                } else {
-                    null
-                }
-            val location = LibraryLayoutResolver.resolve(
-                layout,
-                artist = ref.artist,
-                album = ref.album.takeIf { it.isNotBlank() },
-                title = ref.title,
-                playlistName = playlistName,
-            )
-            val targetName = "${location.baseName}.$ext"
-            val isSaf = ref.filePath.startsWith("content://")
-
-            val alreadyInPlace = if (isSaf) {
-                treeUri?.let { safAlreadyInPlace(it, ref.filePath, location.dirKey, targetName) } ?: false
+        // PLAYLIST needs each track's owning playlist name. One batched query
+        // for the whole plan instead of one per track — the per-track form is
+        // an N+1 over Room's IPC that dominated building this plan (and thus
+        // opening Settings › Library & Storage) on a few-thousand-track library.
+        // NOT wrapped in runCatching: a swallowed failure would plan and MOVE
+        // every track to its ARTIST_ALBUM fallback location, misfiling the
+        // whole library in one pass. Letting it propagate reads as
+        // "couldn't read the library database" ([countMisplacedTracks] maps
+        // it to 0 via the SettingsViewModel's runCatching) — the button hides
+        // or the pass errors, both safely retryable. A track ABSENT from the
+        // map is the normal no-playlist case, not an error.
+        val playlistNamesByTrackId: Map<Long, String> =
+            if (layout == LibraryLayout.PLAYLIST) {
+                trackDao.getFirstPlaylistNamesForTracks(refs.map { it.id })
             } else {
-                val expected = if (location.segments.isEmpty()) {
-                    File(musicRoot, targetName)
-                } else {
-                    File(File(musicRoot, location.dirKey), targetName)
-                }
-                File(ref.filePath).absoluteFile == expected.absoluteFile
+                emptyMap()
             }
-            PlanEntry(ref.id, ref.filePath, isSaf, location, targetName, alreadyInPlace)
+
+        // The per-ref slug matching and path math below is pure CPU work over
+        // the whole downloaded library. This is a suspend function but nothing
+        // inside the loop suspends, so the whole loop ran on the CALLER's
+        // dispatcher — Main when Settings opens and the composable's
+        // LaunchedEffect asks for the misuse count, freezing the UI for the
+        // plan duration on a few-thousand-track library. Hoist to Default.
+        val entries = withContext(Dispatchers.Default) {
+            refs.mapNotNull { ref ->
+                val ext = ref.filePath.substringAfterLast('.', "").ifBlank { "m4a" }
+                val playlistName =
+                    if (layout == LibraryLayout.PLAYLIST) {
+                        playlistNamesByTrackId[ref.id]
+                    } else {
+                        null
+                    }
+                val location = LibraryLayoutResolver.resolve(
+                    layout,
+                    artist = ref.artist,
+                    album = ref.album.takeIf { it.isNotBlank() },
+                    title = ref.title,
+                    playlistName = playlistName,
+                )
+                val targetName = "${location.baseName}.$ext"
+                val isSaf = ref.filePath.startsWith("content://")
+
+                val alreadyInPlace = if (isSaf) {
+                    treeUri?.let { safAlreadyInPlace(it, ref.filePath, location.dirKey, targetName) } ?: false
+                } else {
+                    val expected = if (location.segments.isEmpty()) {
+                        File(musicRoot, targetName)
+                    } else {
+                        File(File(musicRoot, location.dirKey), targetName)
+                    }
+                    File(ref.filePath).absoluteFile == expected.absoluteFile
+                }
+                PlanEntry(ref.id, ref.filePath, isSaf, location, targetName, alreadyInPlace)
+            }
         }
 
         // Two rows can resolve to ONE target: SINGLE_FOLDER drops the album
@@ -245,6 +272,10 @@ class ReorganizeLibraryCoordinator @Inject constructor(
             }
 
             val dirCache = HashMap<String, DocumentFile>(256)
+            // One listing per directory for the whole pass — the O(n²)
+            // children-query re-scan (see SafListingSession) was the dominant
+            // per-file cost of the SAF move.
+            val listing = SafListingSession()
             var moved = 0
             var failed = 0
             _state.value = ReorganizeLibraryState.Running(current = 0, total = work.size)
@@ -253,7 +284,7 @@ class ReorganizeLibraryCoordinator @Inject constructor(
                 _state.value = ReorganizeLibraryState.Running(current = index, total = work.size)
                 val ok = runCatching {
                     if (entry.sourceIsSaf) {
-                        moveWithinSaf(entry, safRoot!!, dirCache)
+                        moveWithinSaf(entry, safRoot!!, dirCache, listing)
                     } else {
                         moveWithinInternal(entry)
                     }
@@ -349,6 +380,7 @@ class ReorganizeLibraryCoordinator @Inject constructor(
         entry: PlanEntry,
         root: DocumentFile,
         dirCache: MutableMap<String, DocumentFile>,
+        listing: SafListingSession,
     ): Boolean {
         // sourcePath is the audio DOCUMENT uri healed in by a previous write
         // (createFile().uri), not the picked TREE uri. fromTreeUri would
@@ -358,27 +390,59 @@ class ReorganizeLibraryCoordinator @Inject constructor(
         val source = DocumentFile.fromSingleUri(context, Uri.parse(entry.sourcePath))
             ?: error("Source document unreadable: ${entry.sourcePath}")
 
+        // Target directory. dirCache holds DIRECTORY handles (one live
+        // findFile per unique dir, then reused — the race-safe pattern: a
+        // download may create a dir mid-pass and a stale listing would make
+        // createDirectory spawn a duplicate "name (1)" folder). Listing
+        // caches are for FILE lookups only, where a stale entry can never
+        // create a misplaced directory.
         var cursor = root
-        var cumulativeKey = ""
+        var cursorKey = ""
         for (segment in entry.location.segments) {
-            cumulativeKey = if (cumulativeKey.isEmpty()) segment else "$cumulativeKey/$segment"
-            cursor = dirCache.getOrPut(cumulativeKey) {
+            val childKey = if (cursorKey.isEmpty()) segment else "$cursorKey/$segment"
+            cursor = dirCache.getOrPut(childKey) {
                 cursor.findFile(segment)?.takeIf { it.isDirectory }
                     ?: cursor.createDirectory(segment)
                     ?: error("Could not create SAF directory '$segment'")
             }
+            cursorKey = childKey
         }
 
+        // Claim the target name from the pass's cached listing — the old
+        // code re-listed the whole target folder over IPC for EVERY track,
+        // which on a single-folder layout (every file in the root) made the
+        // pass O(n²) binder traffic and several seconds per file on slow
+        // providers. The pass itself keeps the listing true (noteCreated /
+        // noteDeleted on every mutation it makes).
+        val existing = listing.find(cursorKey, cursor, entry.targetName)
         // Already exactly where the layout wants it → skip without touching
         // (protects against delete-then-recreate of the only copy). Counted
         // as a successful no-op.
-        val existing = cursor.findFile(entry.targetName)
         if (existing != null && existing.uri == source.uri) return true
 
-        existing?.delete()
+        // A document at the target name (leftover of a pass cut short, or a
+        // foreign copy this row's plan claim outranks) is replaced.
+        if (existing != null) {
+            existing.delete()
+            listing.noteDeleted(cursorKey, entry.targetName)
+        }
+
         val format = entry.targetName.substringAfterLast('.', "m4a")
         val target = cursor.createFile(mimeTypeFor(format), entry.targetName)
             ?: error("Could not create SAF file '${entry.targetName}'")
+        // SAFENAME GUARD: the pass trusts its listing cache, but downloads
+        // may write into the tree while it runs (the gate excludes only the
+        // other bulk pass), and a name that was free when the folder was
+        // listed can be taken by now — providers then silently auto-rename
+        // the new document ("song (1).opus" in the AOSP provider). Adopting
+        // that would misfile the track, so the document is dropped, the
+        // track fails WITHOUT touching the DB, and the source file stays
+        // intact for the next pass.
+        if (target.name != null && target.name != entry.targetName) {
+            target.delete()
+            error("Target name '${entry.targetName}' was taken mid-pass (got '${target.name}')")
+        }
+        listing.noteCreated(cursorKey, entry.targetName, target)
 
         context.contentResolver.openInputStream(source.uri)?.use { input ->
             context.contentResolver.openOutputStream(target.uri)?.use { output ->
@@ -392,7 +456,7 @@ class ReorganizeLibraryCoordinator @Inject constructor(
         if (!source.delete()) {
             Log.w(TAG, "Old SAF document could not be deleted: ${entry.sourcePath}")
         }
-        moveSafSidecar(entry, root, cursor)
+        moveSafSidecar(entry, root, cursor, listing, cursorKey)
         return true
     }
 
@@ -405,8 +469,18 @@ class ReorganizeLibraryCoordinator @Inject constructor(
      * `<volume>:<path>` simply leave the sidecar alone. Best-effort — the
      * audio and its DB row are already consistent when this runs, so a
      * sidecar problem must never fail the track.
+     *
+     * The descend-walk reuses [listing] (one listing per directory for the
+     * whole pass) — with the plain `findFile` walk this was three more
+     * full-folder children queries per moved track, on top of the audio's.
      */
-    private fun moveSafSidecar(entry: PlanEntry, root: DocumentFile, targetDir: DocumentFile) {
+    private fun moveSafSidecar(
+        entry: PlanEntry,
+        root: DocumentFile,
+        targetDir: DocumentFile,
+        listing: SafListingSession,
+        targetDirKey: String,
+    ) {
         try {
             val docRel = DocumentsContract
                 .getDocumentId(Uri.parse(entry.sourcePath))
@@ -422,28 +496,43 @@ class ReorganizeLibraryCoordinator @Inject constructor(
             // exist under root and are skipped. Once we have descended even
             // once we are inside the tree, and any further miss means the
             // path doesn't match this tree: give up rather than guess.
+            // Each descent reads the parent's cached listing.
             var oldDir = root
+            var oldDirKey = ""
             var descended = false
             for (segment in parts.dropLast(1)) {
-                val child = oldDir.findFile(segment)?.takeIf { it.isDirectory }
+                val child = listing.find(oldDirKey, oldDir, segment)?.takeIf { it.isDirectory }
                 if (child == null) {
                     if (descended) return
                     continue
                 }
+                oldDirKey = if (oldDirKey.isEmpty()) segment else "$oldDirKey/$segment"
                 oldDir = child
                 descended = true
             }
-            val sidecar = oldDir.findFile(oldName)?.takeIf { it.isFile } ?: return
-            if (sidecar.uri == targetDir.findFile(newName)?.uri) return
+            val sidecar = listing.find(oldDirKey, oldDir, oldName)?.takeIf { it.isFile } ?: return
+            if (sidecar.uri == listing.find(targetDirKey, targetDir, newName)?.uri) return
 
-            targetDir.findFile(newName)?.delete()
+            // A same-named sidecar that isn't the one being moved goes —
+            // deleting is irreversible, so the decision reads disk truth.
+            listing.findFresh(targetDirKey, targetDir, newName)?.delete()
+            listing.noteDeleted(targetDirKey, newName)
             val moved = targetDir.createFile(LRC_MIME, newName) ?: return
+            // Provider auto-rename (a racing sidecar writer) → this is not
+            // the document the track expects next to its audio; best-effort
+            // means leave it rather than litter.
+            if (moved.name != null && moved.name != newName) {
+                moved.delete()
+                return
+            }
+            listing.noteCreated(targetDirKey, newName, moved)
             context.contentResolver.openInputStream(sidecar.uri)?.use { input ->
                 context.contentResolver.openOutputStream(moved.uri)?.use { output ->
                     input.copyTo(output)
                 }
             }
             sidecar.delete()
+            listing.noteDeleted(oldDirKey, oldName)
         } catch (t: Throwable) {
             Log.w(TAG, "Could not move SAF lyrics sidecar for ${entry.targetName}", t)
         }

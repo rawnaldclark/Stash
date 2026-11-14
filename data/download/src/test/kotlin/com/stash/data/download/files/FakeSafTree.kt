@@ -60,14 +60,23 @@ internal class FakeSafTree(
             path.replace("/", "%2F")
 
     fun exists(path: String): Boolean =
-        dirs[path.substringBeforeLast('/')]?.containsKey(path.substringAfterLast('/')) == true
+        dirs[path.substringBeforeLast('/', "")]?.containsKey(path.substringAfterLast('/')) == true
 
     fun seedDir(path: String): DocumentFile =
-        path.split('/').fold(root) { cursor, segment -> cursor.findFile(segment) ?: cursor.createDirectory(segment)!! }
+        if (path.isEmpty()) {
+            root
+        } else {
+            path.split('/').fold(root) { cursor, segment -> cursor.findFile(segment) ?: cursor.createDirectory(segment)!! }
+        }
 
-    fun seed(path: String, bytes: ByteArray) {
-        seedDir(path.substringBeforeLast('/')).createFile("audio/flac", path.substringAfterLast('/'))
+    /** Seeds a file at [path] (creating its directories), returns its document. */
+    fun seed(path: String, bytes: ByteArray): DocumentFile {
+        // substringBeforeLast's default handles root-level files: without it
+        // "song.opus" made its own directory named "song.opus".
+        val dir = seedDir(path.substringBeforeLast('/', ""))
+        val doc = dir.createFile("audio/flac", path.substringAfterLast('/'))!!
         written[uriOf(path)] = bytes
+        return doc
     }
 
     private fun uri(path: String): Uri {
