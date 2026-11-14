@@ -97,7 +97,7 @@ class MoveLibraryCoordinator @Inject constructor(
      * there's nothing to move.
      */
     suspend fun countMovableTracks(): Int =
-        trackDao.getDownloadedTracksWithPathPrefix(internalPrefix).size
+        trackDao.countDownloadedTracksWithPathPrefix(internalPrefix)
 
     /**
      * Kick off the move. No-op if already [Running]. Returns immediately;
@@ -158,6 +158,24 @@ class MoveLibraryCoordinator @Inject constructor(
             val layout = runCatching { storagePreference.libraryLayout.first() }
                 .getOrDefault(LibraryLayout.DEFAULT)
 
+            // PLAYLIST-layout moves need each track's owning playlist name
+            // for its destination directory. Resolve them all upfront — one
+            // batched query instead of one per track, which was one Room
+            // round-trip per moved file.
+            // NOT runCatching-wrapped: on failure this pass must stop BEFORE
+            // the first file moves. A swallowed error here would silently
+            // file every track under its ARTIST_ALBUM fallback location —
+            // misplacing the whole library in one pass (and each later pass
+            // would see them misplaced again). It propagates to the catch
+            // below as an Error state the user can retry. A track ABSENT
+            // from the map is the normal no-playlist case, not an error.
+            val playlistNamesByTrackId: Map<Long, String> =
+                if (layout == LibraryLayout.PLAYLIST) {
+                    trackDao.getFirstPlaylistNamesForTracks(tracks.map { it.id })
+                } else {
+                    emptyMap()
+                }
+
             var moved = 0
             var failed = 0
             _state.value = MoveLibraryState.Running(current = 0, total = total)
@@ -172,7 +190,7 @@ class MoveLibraryCoordinator @Inject constructor(
 
             for ((index, track) in tracks.withIndex()) {
                 _state.value = MoveLibraryState.Running(current = index, total = total)
-                val ok = runCatching { moveOne(track, root, layout, dirCache) }
+                val ok = runCatching { moveOne(track, root, layout, playlistNamesByTrackId[track.id], dirCache) }
                 // runCatching swallows CancellationException too. Cancel works
                 // by cancelling activeJob, which surfaced here as one failed
                 // track: the loop copied the REST of the library (each copy
@@ -202,6 +220,7 @@ class MoveLibraryCoordinator @Inject constructor(
         track: TrackEntity,
         root: DocumentFile,
         layout: LibraryLayout,
+        playlistName: String?,
         dirCache: MutableMap<String, DocumentFile>,
     ) {
         val path = track.filePath ?: return
@@ -212,12 +231,9 @@ class MoveLibraryCoordinator @Inject constructor(
 
         // Same resolver the download path uses, so the moved library has
         // exactly the structure new downloads will keep producing (#198/#104).
-        val playlistName =
-            if (layout == LibraryLayout.PLAYLIST) {
-                runCatching { trackDao.getFirstPlaylistNameForTrack(track.id) }.getOrNull()
-            } else {
-                null
-            }
+        // The playlist name is resolved upfront for the whole pass in
+        // [runMove]; null here is the normal "no playlist owns this track"
+        // case, which the resolver handles with the ARTIST_ALBUM fallback.
         val location = LibraryLayoutResolver.resolve(
             layout,
             artist = track.artist,

@@ -29,13 +29,27 @@ object FileOrganizerSlugs {
      * Lowercases, preserves Unicode letters and numbers, strips other characters
      * (except spaces and hyphens), collapses whitespace into single hyphens, and
      * truncates to 60 Unicode code points.
+     *
+     * Hot path: layout resolution calls this for artist, title and album/playlist
+     * of EVERY downloaded track — once when a commit chooses a location, and
+     * once per track again when a whole-library plan (reorganize count, pass,
+     * library move) recomputes locations. The two patterns are therefore
+     * pre-compiled: constructing a `Regex` builds and links its matcher state,
+     * which was repeated per call (per field!) for thousands of tracks in the
+     * plan loops.
      */
     fun slugify(input: String): String =
         input.lowercase()
-            .replace(Regex("[^\\p{L}\\p{N}\\s-]"), "")
-            .replace(Regex("\\s+"), "-")
+            .replace(STRIP_PATTERN, "")
+            .replace(SPACE_PATTERN, "-")
             .trim('-')
             .takeCodePoints(60)
+
+    /** Anything that is not a (Unicode) letter, number, whitespace or hyphen. */
+    private val STRIP_PATTERN = Regex("[^\\p{L}\\p{N}\\s-]")
+
+    /** Runs of whitespace collapse to a single hyphen. */
+    private val SPACE_PATTERN = Regex("\\s+")
 
     private fun String.takeCodePoints(count: Int): String =
         substring(0, offsetByCodePoints(0, minOf(count, codePointCount(0, length))))
