@@ -28,6 +28,7 @@ import com.stash.core.media.streaming.StreamSourceRegistry
 import com.stash.core.media.streaming.StreamUrl
 import com.stash.core.media.streaming.StreamUrlCache
 import com.stash.core.media.streaming.YouTubeStreamResolver
+import com.stash.core.media.streaming.forThisPlayOnly
 import com.stash.core.media.streaming.stashResolveUri
 import com.stash.core.media.streaming.STASH_RESOLVE_SCHEME
 import com.stash.core.media.streaming.mimeTypeOf
@@ -1293,8 +1294,11 @@ class PlayerRepositoryImpl @Inject constructor(
         // extras and Now Playing would read the "opus" fallback for it. Under
         // Data saver the cache serves no lossless link (StreamUrlCache.get), so
         // only a link resolved under Data saver is swapped in: no new bytes.
+        // Not a link an earlier play kept only for itself (a fallback while Tidal was busy): the
+        // slot stays a placeholder, and the player's own look-ahead asks the lossless sources again.
         val cached = streamUrlCache.get(next.id)?.takeIf {
-            (next.soundCloudId == null && next.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud"
+            !it.forThisPlayOnly &&
+                ((next.soundCloudId == null && next.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud")
         }
         val nowMs = System.currentTimeMillis()
         if (cached != null && cached.expiresAtMs > nowMs + PREFETCH_FRESH_THRESHOLD_MS) {
@@ -1350,6 +1354,12 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         if (resolved == null) {
             Log.d("LATDIAG", "prefetch-next-end id=${next.id} dt=${System.currentTimeMillis() - t0}ms outcome=null")
+            return
+        }
+        if (resolved.forThisPlayOnly) {
+            // A lossy fallback while Tidal was busy: not swapped in. The slot stays a placeholder, whose
+            // own look-ahead (ResolveFirstMediaSource) can wait out the busy time and still get FLAC.
+            Log.d("LATDIAG", "prefetch-next-end id=${next.id} dt=${System.currentTimeMillis() - t0}ms outcome=busy-fallback; left to the player")
             return
         }
         streamUrlCache.put(next.id, resolved)
@@ -3458,8 +3468,11 @@ class PlayerRepositoryImpl @Inject constructor(
         // Asked BEFORE the cache is read: a changed decision (Data saver now in effect) drops the
         // links saved under the old one, and the cache serves no lossless link under Data saver.
         qualityPolicy?.dataSaverApplies()
+        // A link an earlier play kept only for itself (a fallback while Tidal was busy) is not this
+        // play's: the lossless sources are asked again.
         val cached = streamUrlCache.get(track.id)?.takeIf {
-            (track.soundCloudId == null && track.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud"
+            !it.forThisPlayOnly &&
+                ((track.soundCloudId == null && track.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud")
         }
         val stream = cached ?: streamResolver.resolve(
             track,

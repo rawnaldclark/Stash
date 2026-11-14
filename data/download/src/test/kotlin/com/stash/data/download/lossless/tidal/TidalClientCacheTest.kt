@@ -1,6 +1,7 @@
 package com.stash.data.download.lossless.tidal
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.data.download.lossless.LosslessBusyNote
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.quota.LosslessQuota
@@ -277,6 +278,27 @@ class TidalClientCacheTest {
         searchReply = { ok(SEARCH_HIT) }
         assertThat(client.lookup(query)).isInstanceOf(TidalLookup.Found::class.java)
         assertThat(searches.get()).isEqualTo(2)
+    }
+
+    @Test fun `the streaming resolve tells its walk Tidal is busy until the Retry-After, and a miss tells it nothing`() = runBlocking {
+        // A 15 s pacing busy on /stream, as the P5 heard for Poor Jack on 11-13.
+        streamReply = { MockResponse().setResponseCode(503).setHeader("Retry-After", "15").setBody("""{"error":"busy"}""") }
+        val busyWalk = LosslessBusyNote()
+        val busy = kotlinx.coroutines.withContext(busyWalk) { client.resolve(query) }
+        assertThat(busy).isNull()
+        assertThat(busyWalk.untilMs).isEqualTo(now + 15_000)
+
+        // The circuit still open: the answer is busy with no request, and the walk hears it too.
+        val laterWalk = LosslessBusyNote()
+        kotlinx.coroutines.withContext(laterWalk) { client.resolve(query.copy(isrc = "OTHER")) }
+        assertThat(laterWalk.untilMs).isEqualTo(now + 15_000)
+
+        // A genuine miss (no lossless version) is not busy: nothing is noted.
+        now += 15_000
+        streamReply = { MockResponse().setResponseCode(404).setBody("""{"error":"lossless_unavailable"}""") }
+        val missWalk = LosslessBusyNote()
+        assertThat(kotlinx.coroutines.withContext(missWalk) { client.resolve(query) }).isNull()
+        assertThat(missWalk.heard).isFalse()
     }
 
     @Test fun `503 Retry-After is clamped to between 15 s and 15 min`() = runBlocking {
