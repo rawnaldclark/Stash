@@ -138,9 +138,9 @@ fun PlaylistDetailScreen(
     onBack: () -> Unit,
     onSelectionModeChanged: (Boolean) -> Unit = {},
     /**
-     * A row the app hands in for a Stash Mix's page, under its Download button: today Daily Discover's "Use your record in
-     * mixes" switch (feature:record decides whether this mix is Daily Discover and whether there is an import, and draws
-     * nothing otherwise). It gets the playlist id and the header's side padding.
+     * A toggle the app hands in for a Stash Mix's page, beside its Download button: today Daily Discover's "Your record"
+     * (feature:record decides whether this mix is Daily Discover and whether there is an import, and draws nothing
+     * otherwise). It gets the playlist id and a modifier.
      */
     stashMixRow: (@Composable (playlistId: Long, modifier: Modifier) -> Unit)? = null,
     viewModel: PlaylistDetailViewModel = hiltViewModel(),
@@ -299,23 +299,28 @@ fun PlaylistDetailScreen(
                     )
                 }
 
-                // ── Download button (#474); a followed mix has it in its follow block ──
-                downloadButton?.takeIf { !it.followed }?.let { button ->
-                    item(key = "download") {
-                        DownloadButton(
-                            state = button,
-                            onClick = { viewModel.toggleDownload() },
-                            onTurnOff = { viewModel.turnDownloadOff() },
-                            modifier = Modifier.padding(start = HeaderGutter, end = HeaderGutter, bottom = 8.dp),
-                        )
-                    }
-                }
-
-                // ── A Stash Mix's own row (Daily Discover: "Use your record in mixes") ──
+                // ── Download button (#474), and beside it a Stash Mix's own toggle (Daily Discover: Your record) ──
+                // A followed mix has its Download in its follow block.
                 val mix = state.playlist?.takeIf { it.type == PlaylistType.STASH_MIX }
-                if (stashMixRow != null && mix != null) {
-                    item(key = "stash_mix_row") {
-                        stashMixRow(mix.id, Modifier.padding(start = HeaderGutter, end = HeaderGutter, bottom = 8.dp))
+                val button = downloadButton?.takeIf { !it.followed }
+                if (button != null || (stashMixRow != null && mix != null)) {
+                    item(key = "download") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(start = HeaderGutter, end = HeaderGutter, bottom = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            // The Download button gives way first on a narrow screen (its label ellipsizes).
+                            button?.let {
+                                DownloadButton(
+                                    state = it,
+                                    onClick = { viewModel.toggleDownload() },
+                                    onTurnOff = { viewModel.turnDownloadOff() },
+                                    modifier = Modifier.weight(1f, fill = false),
+                                )
+                            }
+                            if (stashMixRow != null && mix != null) stashMixRow(mix.id, Modifier)
+                        }
                     }
                 }
 
