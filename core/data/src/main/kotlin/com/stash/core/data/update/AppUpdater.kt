@@ -27,6 +27,7 @@ import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -83,8 +84,11 @@ class AppUpdater internal constructor(
     private val context: Context,
     private val okHttpClient: OkHttpClient,
     testSteps: Steps?,
+    /** Where the download and install work runs; tests pass a dispatcher they can wait on. */
+    dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    @Inject constructor(@ApplicationContext context: Context, okHttpClient: OkHttpClient) : this(context, okHttpClient, null)
+    @Inject constructor(@ApplicationContext context: Context, okHttpClient: OkHttpClient) :
+        this(context, okHttpClient, null, Dispatchers.IO)
 
     /** The platform's part of an update, replaced in tests: checking the APK, the install permission, the install itself. */
     internal interface Steps {
@@ -127,7 +131,7 @@ class AppUpdater internal constructor(
     }
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private var job: Job? = null
 
     /**
