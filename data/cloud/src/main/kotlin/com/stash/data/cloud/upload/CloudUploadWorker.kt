@@ -7,6 +7,8 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.stash.core.common.notification.OpenStashRequest
+import com.stash.core.common.notification.openStashPendingIntent
 import androidx.hilt.work.HiltWorker
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -100,6 +102,7 @@ class CloudUploadWorker @AssistedInject constructor(
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)
+            .setContentIntent(openStashPendingIntent(applicationContext, OpenStashRequest.CLOUD_UPLOAD))
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", cancel)
             .build()
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
