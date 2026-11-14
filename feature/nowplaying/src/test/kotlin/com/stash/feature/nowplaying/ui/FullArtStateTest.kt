@@ -72,6 +72,36 @@ class FullArtStateTest {
     }
 
     @Test
+    fun `skipping through songs with no art never crashes, and the next art's front fades in quickly`() {
+        val state = FullArtState()
+        state.show(listOf(page("front:a"), page("back:a")))
+        state.open(now = 1_000L, position = 0L, start = 0)
+        state.tick(1_016L, 0L, playing = true, failed = emptySet(), still = false)
+
+        // Skipping 6 songs in a row that have no art (#909): no pages at each song change, nor at a
+        // tick, a seek (believed once the change has settled) or a swipe in between. Any of them
+        // reaching the empty page list threw ArithmeticException (divide by zero).
+        state.show(emptyList())
+        var now = 2_000L
+        repeat(6) {
+            state.newSong(now)
+            state.tick(now + 16L, 0L, playing = true, failed = emptySet(), still = false)
+            state.tick(now + 1_500L, 60_000L, playing = true, failed = emptySet(), still = false)
+            state.turn(1)
+            now += 2_000L
+        }
+        // Then a song whose art comes a moment after the skip.
+        state.newSong(now)
+        state.tick(now + 16L, 0L, playing = true, failed = emptySet(), still = false)
+        assertEquals("nothing new to show yet", "front:a", state.shown.last().page.key)
+
+        state.show(listOf(page("front:b"), page("back:b")))
+        state.tick(now + 32L, 16L, playing = true, failed = emptySet(), still = false)
+        assertEquals("front:b", state.shown.last().page.key)
+        assertEquals("the new song's quick fade, not the 2.2 s page fade", 300L, state.shown.last().fadeMs)
+    }
+
+    @Test
     fun `a page turned by hand keeps the slow crossfade`() {
         val state = FullArtState()
         state.show(listOf(page("front:a"), page("back:a")))
