@@ -209,8 +209,10 @@ class DownloadManager @Inject constructor(
      * to the yt-dlp download so the fetch overlaps it instead of adding
      * its own network round-trip between download and embed, but the
      * attempt's early failure returns must not block on a fetch whose
-     * blocking OkHttp call ignores coroutine cancellation. Failure paths
-     * [Deferred.cancel] the fetch; the success path awaits it at the embed.
+     * blocking OkHttp call ignores coroutine cancellation. The success path
+     * awaits the fetch at the embed; every way out of the attempt (saved,
+     * failed, thrown, cancelled) then [Deferred.cancel]s it in one `finally`,
+     * so it never outlives the attempt that started it.
      */
     private val artworkScope = kotlinx.coroutines.CoroutineScope(
         kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
@@ -525,10 +527,6 @@ class DownloadManager @Inject constructor(
         val qualityTier = qualityPrefs.qualityTier.first()
         val qualityArgs = if (opusOnly) qualityTier.toOpusYtDlpArgs() else qualityTier.toYtDlpArgs()
 
-        // Step 3: Download via yt-dlp
-        val tempDir = fileOrganizer.getTempDir()
-        val tempFilename = "dl_${track.id}_${attemptTag()}"
-
         // Album art runs concurrently with the download. It used to sit
         // BETWEEN download and embed, adding its own network round-trip to
         // the track's wall-clock time; the embed needs it only once the
@@ -537,17 +535,43 @@ class DownloadManager @Inject constructor(
         // before — we never block a download on the art server.
         //
         // Runs on [artworkScope], not as a child of this attempt (see the
-        // scope's doc): the failure returns below cancel the deferred so the
-        // fetch outlives nothing that cares about it. Unawaited on a failure
-        // path it would simply finish into [AlbumArtCache] anyway — pure
-        // atomic cacheDir bytes — so this order stays the warm-up it already
-        // was. The success path awaits the deferred at the metadata embed,
-        // by which time it usually finished during the download.
+        // scope's doc), so nothing ties its life to this attempt but the
+        // `finally` below. A request already on the wire still finishes into
+        // [AlbumArtCache] — pure atomic cacheDir bytes, there for the retry
+        // and for the album's other songs. The success path awaits the
+        // deferred at the metadata embed, by which time it usually finished
+        // during the download.
         val artDeferred = artworkScope.async {
             runCatching { albumArtCache.resolveArt(effectiveTrack) }
                 .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
                 .getOrNull()
         }
+        // One place for every way out: a failed download, a throw, and a
+        // cancel (the user's Stop, or WorkManager stopping the worker when
+        // Wi-Fi is lost) all end the fetch with the attempt. Cancelling a
+        // fetch that already finished does nothing.
+        return try {
+            ytDlpDownloadAndFile(track, effectiveTrack, youtubeUrl, qualityArgs, artDeferred)
+        } finally {
+            artDeferred.cancel()
+        }
+    }
+
+    /**
+     * [downloadFromYouTube]'s download, tagging and filing. [artDeferred] is the
+     * cover fetch started alongside it: awaited at the embed, and ended by the
+     * caller however this returns or throws.
+     */
+    private suspend fun ytDlpDownloadAndFile(
+        track: Track,
+        effectiveTrack: Track,
+        youtubeUrl: String,
+        qualityArgs: List<String>,
+        artDeferred: kotlinx.coroutines.Deferred<File?>,
+    ): TrackDownloadResult {
+        // Step 3: Download via yt-dlp
+        val tempDir = fileOrganizer.getTempDir()
+        val tempFilename = "dl_${track.id}_${attemptTag()}"
 
         val dlResult = downloadExecutor.download(
             url = youtubeUrl,
@@ -563,12 +587,10 @@ class DownloadManager @Inject constructor(
             is DownloadResult.Success -> dlResult.file
             is DownloadResult.YtDlpError -> {
                 emitProgress(track.id, 0f, DownloadStatus.FAILED)
-                artDeferred.cancel()
                 return TrackDownloadResult.Failed("yt-dlp: ${ytDlpFailureText(dlResult.message)}")
             }
             is DownloadResult.NoOutput -> {
                 emitProgress(track.id, 0f, DownloadStatus.FAILED)
-                artDeferred.cancel()
                 val detail = buildString {
                     append("yt-dlp produced no output file.")
                     dlResult.stderr?.let { append(" stderr: ${ytDlpFailureText(it, max = 300)}") }
@@ -577,7 +599,6 @@ class DownloadManager @Inject constructor(
             }
             is DownloadResult.Error -> {
                 emitProgress(track.id, 0f, DownloadStatus.FAILED)
-                artDeferred.cancel()
                 return TrackDownloadResult.Failed("Error: ${dlResult.message}")
             }
         }
@@ -586,7 +607,6 @@ class DownloadManager @Inject constructor(
         // after the commit, so the worker classifies and retries it as before.
         if (!acceptBeforeCommit(downloadedFile, effectiveTrack, "yt-dlp")) {
             emitProgress(track.id, 0f, DownloadStatus.FAILED)
-            artDeferred.cancel()
             return TrackDownloadResult.Failed("Downloaded file too small — discarded as a failed download")
         }
 
