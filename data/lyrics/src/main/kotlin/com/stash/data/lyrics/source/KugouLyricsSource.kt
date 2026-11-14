@@ -27,7 +27,9 @@ import kotlin.math.abs
  * candidates must name the track ([isSameSong]): KuGou answers any keyword
  * with something, and a length alone is no proof. Timed lines only, with
  * KuGou's credit lines (作词/作曲/Lyrics by…) cut from the head and tail, so
- * the sheet shows lyrics and not liner notes.
+ * the sheet shows lyrics and not liner notes. An instrumental's file holds only
+ * KuGou's note "纯音乐，请欣赏" ("Pure music, please enjoy"): a miss, so the next
+ * source is asked ([isPureMusicPlaceholder]).
  *
  * Returns null ONLY on a definitive miss (KuGou answered and had nothing).
  * Transport errors and non-2xx statuses THROW, so the repository never
@@ -57,6 +59,7 @@ class KugouLyricsSource(
         val candidate = findCandidate(query, keyword, durationSec) ?: return@withContext null
         val lrc = normalizeLrc(downloadLyrics(candidate))
         if (lrc.isBlank()) return@withContext null // a file with no timed lines is a miss, not lyrics
+        if (isPureMusicPlaceholder(lrc)) return@withContext null // an instrumental's note to the listener is not lyrics
         LyricsResult(
             sourceId = id,
             plainText = plainFromLrc(lrc),
@@ -198,6 +201,10 @@ class KugouLyricsSource(
             RegexOption.IGNORE_CASE,
         )
         private val TIMESTAMP = Regex("^\\[\\d\\d:\\d\\d\\.\\d{2,3}\\]")
+        /** Whitespace and punctuation (ASCII and full-width), which KuGou's files vary in: "纯音乐，请欣赏" / "纯音乐 请欣赏". */
+        private val NOISE = Regex("[\\p{Z}\\s\\p{P}]+")
+        /** KuGou's instrumental note: "纯音乐，请欣赏", "纯音乐，请您欣赏", "此歌曲为没有填词的纯音乐，请您欣赏". */
+        private val PURE_MUSIC_NOTE = Regex("^(?:此歌曲为没有填词的)?纯音乐请(?:您)?欣赏$")
 
         /** Strips bracketed tags from the title and joins artists the way KuGou lists them. */
         fun keywordFor(title: String, artist: String): Keyword {
@@ -256,6 +263,15 @@ class KugouLyricsSource(
             val headCut = (region - 1 downTo 0).firstOrNull { lines[it].matches(CREDIT_LINE) }?.plus(1) ?: 0
             val tailCut = (region - 1 downTo 0).firstOrNull { lines[lines.lastIndex - it].matches(CREDIT_LINE) }?.plus(1) ?: 0
             return lines.drop(headCut).dropLast(tailCut).joinToString("\n")
+        }
+
+        /**
+         * Whether the LRC's only text is KuGou's note for an instrumental ("纯音乐，请欣赏": "Pure
+         * music, please enjoy"), however punctuated or repeated: no lyrics, though the file is timed.
+         */
+        fun isPureMusicPlaceholder(lrc: String): Boolean {
+            val texts = plainFromLrc(lrc).lines().map { it.replace(NOISE, "") }.filter { it.isNotEmpty() }
+            return texts.isNotEmpty() && texts.all { PURE_MUSIC_NOTE.matches(it) }
         }
 
         /** The LRC's text without timestamps, one line per timed line. */
