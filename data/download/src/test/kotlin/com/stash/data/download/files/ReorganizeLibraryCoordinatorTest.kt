@@ -135,6 +135,54 @@ class ReorganizeLibraryCoordinatorTest {
         assertThat(done.skipped).isEqualTo(2)
     }
 
+    /**
+     * Per-playlist files a song under the playlist the one batched read
+     * names for it; a song no playlist owns keeps its artist and album
+     * folders. No song is asked about on its own any more.
+     */
+    @Test fun `per playlist files each song under the playlist read for it`() = runBlocking {
+        coEvery { fileOrganizer.currentLayout() } returns LibraryLayout.PLAYLIST
+        val filed = seed("bauhaus/in-the-flat-field/dark-entries.m4a", "FILED")
+        val unfiled = seed("bauhaus/mask/hollow-hills.m4a", "UNFILED")
+        coEvery { trackDao.getDownloadedTrackRefs() } returns listOf(
+            ref(1L, filed, "Bauhaus", "In The Flat Field", "Dark Entries"),
+            ref(2L, unfiled, "Bauhaus", "Mask", "Hollow Hills"),
+        )
+        coEvery { trackDao.getFirstPlaylistNamesForTracks(listOf(1L, 2L)) } returns mapOf(1L to "Gothic")
+
+        assertThat(coordinator.countMisplacedTracks()).isEqualTo(1)
+        coordinator.start()
+        val done = awaitDone()
+
+        assertThat(File(musicRoot, "gothic/bauhaus-dark-entries.m4a").readText()).isEqualTo("FILED")
+        assertThat(unfiled.readText()).isEqualTo("UNFILED")
+        assertThat(done.moved).isEqualTo(1)
+        assertThat(done.skipped).isEqualTo(1)
+        coVerify(exactly = 0) { trackDao.getFirstPlaylistNameForTrack(any()) }
+    }
+
+    /**
+     * The playlist names could not be read: nothing moves on a guess. A
+     * plan made without them files every song under its artist and album,
+     * and the pass would move the whole library there.
+     */
+    @Test fun `no song moves when the playlist names can't be read`() = runBlocking {
+        coEvery { fileOrganizer.currentLayout() } returns LibraryLayout.PLAYLIST
+        val song = seed("gothic/bauhaus-dark-entries.m4a", "AUDIO")
+        coEvery { trackDao.getDownloadedTrackRefs() } returns listOf(
+            ref(1L, song, "Bauhaus", "In The Flat Field", "Dark Entries"),
+        )
+        coEvery { trackDao.getFirstPlaylistNamesForTracks(any()) } throws IllegalStateException("db closed")
+
+        coordinator.start()
+        withTimeout(10_000) { coordinator.state.first { it is ReorganizeLibraryState.Error } }
+        awaitGateReleased()
+
+        assertThat(song.readText()).isEqualTo("AUDIO")
+        assertThat(File(musicRoot, "bauhaus").exists()).isFalse()
+        coVerify(exactly = 0) { trackDao.healFilePath(any(), any()) }
+    }
+
     /** One unmovable track is counted and does not stop the rest of the pass. */
     @Test fun `a missing source file fails only its own track`() = runBlocking {
         val present = seed("a/x/one.m4a", "ONE")

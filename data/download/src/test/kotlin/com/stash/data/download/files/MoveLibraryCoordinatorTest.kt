@@ -123,6 +123,43 @@ class MoveLibraryCoordinatorTest {
         assertThat(tree.written[recorded[1L]]).isEqualTo("studio take".toByteArray())
     }
 
+    /** Per-playlist moves a song into the playlist the one batched read names for it. */
+    @Test fun `per playlist moves each song under the playlist read for it`() = runBlocking {
+        every { storagePreference.libraryLayout } returns flowOf(LibraryLayout.PLAYLIST)
+        val tree = FakeSafTree(resolver, storagePreference)
+        val filed = internalTrack(1, "Album A", "filed")
+        val unfiled = internalTrack(2, "Album B", "unfiled")
+        coEvery { trackDao.getDownloadedTracksWithPathPrefix(any()) } returns listOf(filed, unfiled)
+        coEvery { trackDao.getFirstPlaylistNamesForTracks(listOf(1L, 2L)) } returns mapOf(1L to "Gothic")
+
+        coordinator.start(tree.treeUri)
+        val done = withTimeout(10_000) { coordinator.state.first { it is MoveLibraryState.Done } }
+
+        assertThat(done).isEqualTo(MoveLibraryState.Done(moved = 2, failed = 0))
+        assertThat(recorded[1L]).isEqualTo(tree.uriOf("gothic/artist-intro.opus"))
+        assertThat(recorded[2L]).isEqualTo(tree.uriOf("artist/album-b/intro.opus"))
+        coVerify(exactly = 0) { trackDao.getFirstPlaylistNameForTrack(any()) }
+    }
+
+    /**
+     * The playlist names could not be read: the move stops before the first
+     * file, instead of filing the whole library under artist and album.
+     */
+    @Test fun `no file moves when the playlist names can't be read`() = runBlocking {
+        every { storagePreference.libraryLayout } returns flowOf(LibraryLayout.PLAYLIST)
+        val tree = FakeSafTree(resolver, storagePreference)
+        val song = internalTrack(1, "Album A", "audio")
+        coEvery { trackDao.getDownloadedTracksWithPathPrefix(any()) } returns listOf(song)
+        coEvery { trackDao.getFirstPlaylistNamesForTracks(any()) } throws IllegalStateException("db closed")
+
+        coordinator.start(tree.treeUri)
+        withTimeout(10_000) { coordinator.state.first { it is MoveLibraryState.Error } }
+
+        assertThat(tree.written).isEmpty()
+        assertThat(recorded).isEmpty()
+        assertThat(File(song.filePath!!).readText()).isEqualTo("audio")
+    }
+
     /**
      * A legacy library can have two rows on one internal file. Moving one of
      * them used to delete the file unconditionally, leaving the other row on

@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -142,14 +143,39 @@ class ReorganizeLibraryCoordinator @Inject constructor(
         }
         val musicRoot = fileOrganizer.internalMusicRoot().absolutePath.trimEnd('/')
 
-        val entries = refs.mapNotNull { ref ->
-            val ext = ref.filePath.substringAfterLast('.', "").ifBlank { "m4a" }
-            val playlistName =
-                if (layout == LibraryLayout.PLAYLIST) {
-                    runCatching { trackDao.getFirstPlaylistNameForTrack(ref.id) }.getOrNull()
-                } else {
-                    null
-                }
+        // PLAYLIST needs each track's owning playlist name. One batched query
+        // for the whole plan instead of one per track — the per-track form is
+        // an N+1 over Room's IPC that dominated building this plan (and thus
+        // opening Settings › Library & Storage) on a few-thousand-track library.
+        // NOT wrapped in runCatching: a swallowed failure would plan and MOVE
+        // every track to its ARTIST_ALBUM fallback location, misfiling the
+        // whole library in one pass. Letting it propagate reads as
+        // "couldn't read the library database" ([countMisplacedTracks] maps
+        // it to 0 via the SettingsViewModel's runCatching) — the button hides
+        // or the pass errors, both safely retryable. A track ABSENT from the
+        // map is the normal no-playlist case, not an error.
+        val playlistNamesByTrackId: Map<Long, String> =
+            if (layout == LibraryLayout.PLAYLIST) {
+                trackDao.getFirstPlaylistNamesForTracks(refs.map { it.id })
+            } else {
+                emptyMap()
+            }
+
+        // The per-ref slug matching and path math below is pure CPU work over
+        // the whole downloaded library. This is a suspend function but nothing
+        // inside the loop suspends, so the whole loop ran on the CALLER's
+        // dispatcher — Main when Settings opens and the composable's
+        // LaunchedEffect asks for the misuse count, freezing the UI for the
+        // plan duration on a few-thousand-track library. Hoist to Default.
+        val entries = withContext(Dispatchers.Default) {
+            refs.mapNotNull { ref ->
+                val ext = ref.filePath.substringAfterLast('.', "").ifBlank { "m4a" }
+                val playlistName =
+                    if (layout == LibraryLayout.PLAYLIST) {
+                        playlistNamesByTrackId[ref.id]
+                    } else {
+                        null
+                    }
             val location = LibraryLayoutResolver.resolve(
                 layout,
                 artist = ref.artist,
@@ -171,6 +197,7 @@ class ReorganizeLibraryCoordinator @Inject constructor(
                 File(ref.filePath).absoluteFile == expected.absoluteFile
             }
             PlanEntry(ref.id, ref.filePath, isSaf, location, targetName, alreadyInPlace)
+            }
         }
 
         // Two rows can resolve to ONE target: SINGLE_FOLDER drops the album
