@@ -26,6 +26,15 @@ internal class FakeSafTree(
 
     /** Writes to a document whose URI this matches fail part-way, as on a full card. */
     var failWritesTo: (String) -> Boolean = { false }
+
+    /**
+     * The name the provider gives a new file asked for as (MIME type, name).
+     * It is not always the name asked for, even when that one is free: the
+     * AOSP provider adds the MIME type's extension to a name whose own
+     * extension belongs to another type ("song.aac" made as `audio/mp4`
+     * comes back "song.aac.m4a") and cuts a name longer than 255 bytes.
+     */
+    var nameOnCreate: (String, String) -> String = { _, name -> name }
     private val dirs = mutableMapOf<String, MutableMap<String, DocumentFile>>()
     private val root = dir("")
 
@@ -99,7 +108,7 @@ internal class FakeSafTree(
             dir(join(path, name)).also { children[name] = it }
         }
         every { doc.createFile(any(), any()) } answers {
-            var name = secondArg<String>()
+            var name = nameOnCreate(firstArg(), secondArg())
             if (name in children) name = "${name.substringBeforeLast('.')} (1).${name.substringAfterLast('.')}"
             file(join(path, name), children).also { children[name] = it }
         }

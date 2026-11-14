@@ -73,4 +73,23 @@ internal class SafListingSession {
         invalidate(dirKey)
         return find(dirKey, dir, name)
     }
+
+    /**
+     * Whether a document the provider made under another name than
+     * [wantedName] lost that name to a writer outside the pass: true only
+     * when [wantedName] is really in [dir] now, read from the provider.
+     *
+     * A different name alone does not say so. Providers also write a FREE
+     * name their own way: the AOSP one adds the MIME type's extension to a
+     * name whose own extension belongs to another type (an imported
+     * "song.aac", made as `audio/mp4`, comes back "song.aac.m4a") and cuts
+     * a name longer than 255 bytes. Those documents are where the provider
+     * will always put that track, so the pass keeps them; refusing them
+     * left such a track failing every pass.
+     *
+     * Re-reads [dir] (the fresh listing holds the new document under the
+     * name it got); only reached when a create comes back renamed.
+     */
+    fun lostNameTo(dirKey: String, dir: DocumentFile, wantedName: String): Boolean =
+        findFresh(dirKey, dir, wantedName) != null
 }

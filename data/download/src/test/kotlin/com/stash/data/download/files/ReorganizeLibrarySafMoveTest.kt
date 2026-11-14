@@ -210,4 +210,29 @@ class ReorganizeLibrarySafMoveTest {
         assertThat(tree.written[tree.uriOf("artist-three.m4a")]).isEqualTo("THREE".toByteArray())
         verify(exactly = 1) { root.listFiles() }
     }
+
+    /**
+     * A provider may write a FREE name its own way (the AOSP one cuts a name
+     * longer than 255 bytes). That is not a name lost to a download: the
+     * document is the song's, and the song moves to it as it did before the
+     * pass checked the names it gets.
+     */
+    @Test
+    fun `a name the provider writes its own way is kept`() = runBlocking {
+        seed("artist/album-a/song.m4a", "AUDIO".toByteArray())
+        coEvery { trackDao.getDownloadedTrackRefs() } returns listOf(
+            safRef(1L, "artist/album-a/song.m4a", "Artist", "Album A", "Song"),
+        )
+        tree.nameOnCreate = { _, name -> if (name == "artist-song.m4a") "artist-so.m4a" else name }
+
+        coordinator.start()
+        val done = awaitDone()
+
+        val targetUri = tree.uriOf("artist-so.m4a")
+        assertThat(done.moved).isEqualTo(1)
+        assertThat(done.failed).isEqualTo(0)
+        assertThat(tree.written[targetUri]).isEqualTo("AUDIO".toByteArray())
+        assertThat(tree.exists("artist/album-a/song.m4a")).isFalse()
+        coVerify(exactly = 1) { trackDao.healFilePath(1L, targetUri) }
+    }
 }

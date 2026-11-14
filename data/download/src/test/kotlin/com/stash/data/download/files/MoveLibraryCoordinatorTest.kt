@@ -233,9 +233,38 @@ class MoveLibraryCoordinatorTest {
         assertThat(tree.written.keys).doesNotContain(tree.uriOf("artist-song-3.opus"))
     }
 
-    private fun internalTrack(id: Long, album: String, audio: String, title: String = "Intro"): TrackEntity {
+    /**
+     * The AOSP provider adds the MIME type's extension to a name whose own
+     * extension belongs to another type: an imported "intro.aac", made as
+     * `audio/mp4`, comes back "intro.aac.m4a" although the name was free.
+     * That is the provider's naming, not a name lost to a download. Taking
+     * it for one failed every candidate name, so the file never left
+     * internal storage.
+     */
+    @Test fun `a file the provider names its own way still moves`() = runBlocking {
+        val tree = FakeSafTree(resolver, storagePreference)
+        tree.nameOnCreate = { mime, name -> if (mime == "audio/mp4" && name.endsWith(".aac")) "$name.m4a" else name }
+        val import = internalTrack(1, "Album A", "adts audio", ext = "aac")
+        coEvery { trackDao.getDownloadedTracksWithPathPrefix(any()) } returns listOf(import)
+
+        coordinator.start(tree.treeUri)
+        val done = withTimeout(10_000) { coordinator.state.first { it is MoveLibraryState.Done } }
+
+        assertThat(done).isEqualTo(MoveLibraryState.Done(moved = 1, failed = 0))
+        assertThat(recorded[1L]).isEqualTo(tree.uriOf("artist-intro.aac.m4a"))
+        assertThat(tree.written[recorded[1L]]).isEqualTo("adts audio".toByteArray())
+        assertThat(tree.deleted).isEmpty()
+    }
+
+    private fun internalTrack(
+        id: Long,
+        album: String,
+        audio: String,
+        title: String = "Intro",
+        ext: String = "opus",
+    ): TrackEntity {
         val albumDir = album.lowercase().replace(' ', '-')
-        val file = File(musicDir, "artist/$albumDir/${title.lowercase().replace(' ', '-')}.opus")
+        val file = File(musicDir, "artist/$albumDir/${title.lowercase().replace(' ', '-')}.$ext")
         file.parentFile!!.mkdirs()
         file.writeText(audio)
         return TrackEntity(

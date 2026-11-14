@@ -334,18 +334,25 @@ class MoveLibraryCoordinator @Inject constructor(
             // document is dropped and this suffix is given up — the source
             // file is untouched and the next suffix / next run gets an
             // honest chance at a free name.
-            if (target.name != null && target.name != filename) {
+            // Only when the name really is taken, though: a provider that
+            // writes a free name its own way is not a race (see lostNameTo),
+            // and its document is kept as it was before this guard. Dropping
+            // it failed every candidate name, so an imported .aac or .mp4
+            // file could never leave internal storage.
+            val createdName = target.name ?: filename
+            if (createdName != filename && listing.lostNameTo(dirKey, cursor, filename)) {
                 target.delete()
+                listing.noteDeleted(dirKey, createdName)
                 continue
             }
-            listing.noteCreated(dirKey, filename, target)
+            listing.noteCreated(dirKey, createdName, target)
             // Path-based providers hand a new document a deleted one's URI,
             // which a track whose file went missing may still record. Only
             // probed for a freshly created name — after a delete the reused
             // URI was already vetted by the check above.
             if (existing == null && trackDao.countOtherTracksWithFilePath(target.uri.toString(), track.id) > 0) {
                 target.delete()
-                listing.noteDeleted(dirKey, filename)
+                listing.noteDeleted(dirKey, createdName)
                 continue
             }
             return target

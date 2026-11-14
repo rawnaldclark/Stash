@@ -438,11 +438,16 @@ class ReorganizeLibraryCoordinator @Inject constructor(
         // that would misfile the track, so the document is dropped, the
         // track fails WITHOUT touching the DB, and the source file stays
         // intact for the next pass.
-        if (target.name != null && target.name != entry.targetName) {
+        // Only when the name really is taken, though: a provider that writes
+        // a free name its own way is not a race (see lostNameTo), and its
+        // document is kept as it was before this guard.
+        val createdName = target.name ?: entry.targetName
+        if (createdName != entry.targetName && listing.lostNameTo(cursorKey, cursor, entry.targetName)) {
             target.delete()
-            error("Target name '${entry.targetName}' was taken mid-pass (got '${target.name}')")
+            listing.noteDeleted(cursorKey, createdName)
+            error("Target name '${entry.targetName}' was taken mid-pass (got '$createdName')")
         }
-        listing.noteCreated(cursorKey, entry.targetName, target)
+        listing.noteCreated(cursorKey, createdName, target)
 
         context.contentResolver.openInputStream(source.uri)?.use { input ->
             context.contentResolver.openOutputStream(target.uri)?.use { output ->
