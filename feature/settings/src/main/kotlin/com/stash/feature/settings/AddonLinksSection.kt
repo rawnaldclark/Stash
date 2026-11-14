@@ -33,7 +33,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
-import com.stash.data.download.lossless.LosslessSourcePreferences
+import com.stash.data.download.lossless.tidal.OwnTidalServer
 import com.stash.data.download.lossless.addon.AddonLinks
 import com.stash.data.download.lossless.tidal.TidalDebugSettings
 import com.stash.data.download.lossless.tidal.TidalWires
@@ -55,7 +55,7 @@ import javax.inject.Inject
 @HiltViewModel
 class AddonLinksViewModel @Inject constructor(
     private val links: AddonLinks,
-    private val prefs: LosslessSourcePreferences,
+    private val own: OwnTidalServer,
     private val debug: TidalDebugSettings,
     private val wires: TidalWires,
 ) : ViewModel() {
@@ -76,7 +76,7 @@ class AddonLinksViewModel @Inject constructor(
         links.added.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** The host of the user's own Tidal server, when one is set (never the full URL: it can carry a path token). */
-    val ownServerHost: StateFlow<String?> = prefs.bitchordEndpoint
+    val ownServerHost: StateFlow<String?> = own.endpoint
         .map { url -> url?.removePrefix("https://")?.removePrefix("http://")?.substringBefore('/') }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -117,10 +117,7 @@ class AddonLinksViewModel @Inject constructor(
 
     /** Removes the user's own Tidal server and its token: the rung goes back to Stash's. */
     fun removeOwnServer() {
-        viewModelScope.launch {
-            prefs.setBitchordEndpoint(null)
-            prefs.setBitchordAccessToken("")
-        }
+        viewModelScope.launch { own.remove() }
     }
 
     fun setWire(wire: TidalDebugSettings.Wire) {

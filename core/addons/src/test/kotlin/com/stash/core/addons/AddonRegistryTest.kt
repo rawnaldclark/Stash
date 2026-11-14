@@ -152,6 +152,15 @@ class AddonRegistryTest {
         assertThat(registry.addons.value.first().token).isEqualTo("s3cret")
     }
 
+    @Test fun `the user's own Tidal server is never loaded as an add-on`() = runBlocking<Unit> {
+        // Add-ons phase 4 §2.10: it serves no manifest, and the Tidal rung plays it.
+        val own = UserAddonEntry("http://127.0.0.1:${server.port}/own", token = "own-token", kind = UserAddonKind.OWN_TIDAL_SERVER)
+        val registry = registry(users = Users(listOf(own)))
+        registry.refresh()
+        assertThat(registry.addons.value).isEmpty()
+        assertThat(server.requestCount).isEqualTo(0)
+    }
+
     @Test fun `an applied config re-reads at most every 10 minutes when nothing changed`() = runBlocking<Unit> {
         var now = 1_000_000L
         val registry = registry(Defaults(listOf(DefaultAddonEntry(url("a")))))

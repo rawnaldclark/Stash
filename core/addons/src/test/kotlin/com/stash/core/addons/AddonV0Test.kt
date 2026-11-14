@@ -30,10 +30,14 @@ class AddonV0Test {
         assertThrows(AddonContractException::class.java) { AddonValidator.anyManifest(parse(v0.replace("\"tidal\"", "\"Tidal Plugin\""))) }
     }
 
-    @Test fun `only v0 and v1 are read`() {
+    @Test fun `v0, v1 and Eclipse-family manifests are read, and nothing else`() {
         val newer = assertThrows(AddonContractException::class.java) { AddonValidator.anyManifest(parse(v0.replace("\"stash\":0", "\"stash\":2"))) }
         assertThat(newer.reason).contains("newer Stash")
-        assertThrows(AddonContractException::class.java) { AddonValidator.anyManifest(parse("""{"id":"x","name":"X","version":"1","resources":["search"]}""")) }
+        // Phase 4 §2.3: no `stash`, an id and search or stream is an Eclipse-family add-on.
+        val eclipse = AddonValidator.readManifest(parse("""{"id":"x","name":"X","version":"1","resources":["search"]}"""))
+        assertThat(eclipse.dialect).isEqualTo(AddonDialect.ECLIPSE)
+        val none = assertThrows(AddonContractException::class.java) { AddonValidator.anyManifest(parse("""{"id":"x","name":"X","version":"1","resources":["lyrics"]}""")) }
+        assertThat(none.reason).contains("not a Stash add-on")
     }
 
     @Test fun `stream tiers are derived, never over-claimed`() {

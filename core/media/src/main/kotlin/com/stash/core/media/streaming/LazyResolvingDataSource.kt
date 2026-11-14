@@ -126,6 +126,12 @@ class LazyResolvingDataSource(
     private val localDelegate: (() -> DataSource)? = null,
     /** False in Download mode: nothing is resolved, the open fails and the song is skipped. */
     private val streamAllowed: () -> Boolean = { true },
+    /**
+     * Opens an add-on's stream (`addon:` origins) on the add-on media client, whose guard, DNS
+     * filter and connection check refuse the user's own network (add-ons plan phase 4 §2.6).
+     * Null in tests: such a stream is then refused, never opened on [httpDelegate] (review-882 B1).
+     */
+    private val addonDelegate: (() -> DataSource)? = null,
 ) : DataSource {
 
     private var active: DataSource? = null
@@ -190,11 +196,13 @@ class LazyResolvingDataSource(
             val next = (if (overridesRow(uri)) null else urlCache.get(trackId))
                 ?: resolveBlocking(trackId, uri)
                 ?: throw IOException("stream resolve failed for track $trackId")
-            // A DASH MPD (Tidal Hi-Res) cannot be byte-piped into the progressive
-            // extractor this source feeds. ResolveFirstMediaSource routes those to a
-            // DASH source up front; reaching here means it was bypassed (an override
-            // item, or a server configured after this item was built). The URL is
-            // cached, so the player's retry of this item builds the DASH source.
+            // A DASH MPD (Tidal Hi-Res, an add-on's) cannot be byte-piped into the
+            // progressive extractor this source feeds. ResolveFirstMediaSource routes
+            // those to a DASH source up front; reaching here means it was bypassed: an
+            // override item, or an item built before a Tidal server was set or a
+            // DASH-capable add-on was switched on. The player's retry evicts the cached
+            // answer and opens this same source again, which asks again and fails here
+            // the same way; the song is then skipped (review-882 round 3, nit 1).
             if (next.isDash || next.isHls) {
                 throw IOException("track $trackId resolved to a DASH manifest; needs a DASH media source")
             }
@@ -246,7 +254,13 @@ class LazyResolvingDataSource(
         val delegate = when (stream.origin) {
             JioSaavnStreamResolver.ORIGIN -> jioSaavnDelegate()
             CloudCopyFinder.ORIGIN -> cloudDelegate?.invoke() ?: throw IOException("cloud playback isn't wired")
-            else -> httpDelegate()
+            // An add-on's URL opens on the add-on media client or not at all (review-882 B1): never
+            // on the plain HTTP source, which follows redirects and resolves names unguarded.
+            else -> if (stream.origin?.startsWith(AddonStreamRung.ORIGIN_PREFIX) == true) {
+                addonDelegate?.invoke() ?: throw IOException("add-on playback isn't wired")
+            } else {
+                httpDelegate()
+            }
         }
         return delegateTo(delegate, dataSpec.buildUpon().setUri(Uri.parse(stream.url)).build())
     }

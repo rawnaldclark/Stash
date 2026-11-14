@@ -1,0 +1,10 @@
+{
+  "id": "org.example.isrc",
+  "name": "ISRC",
+  "version": "2",
+  "resources": [
+    "search",
+    "stream",
+    "isrc"
+  ]
+}

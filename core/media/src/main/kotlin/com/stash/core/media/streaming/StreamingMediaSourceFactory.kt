@@ -104,8 +104,10 @@ class StreamingMediaSourceFactory @Inject constructor(
      * `initialization` to its own signed `/dash/td/<id>/init.mp4`, which patches
      * the fLaC box's zero sample rate that made FragmentedMp4Extractor fail.
      */
-    fun createDashMediaSource(mediaItem: MediaItem, mpdUrl: String): MediaSource {
-        val httpFactory = DefaultHttpDataSource.Factory()
+    fun createDashMediaSource(mediaItem: MediaItem, mpdUrl: String, http: DataSource.Factory? = null): MediaSource {
+        // [http]: an add-on's DASH (its MPD and every segment) on the add-on media client, which
+        // refuses the user's own network (add-ons plan phase 4 §2.6).
+        val httpFactory = http ?: DefaultHttpDataSource.Factory()
             .setUserAgent("Stash/0.9.26")
             .setConnectTimeoutMs(10_000)
             .setReadTimeoutMs(30_000)

@@ -1,0 +1,9 @@
+{
+  "url": "https://media.example.org/dash/track_123.mpd",
+  "format": "dash",
+  "codec": "flac",
+  "container": "fmp4",
+  "sampleRate": 96000,
+  "bitDepth": 24,
+  "expiresAt": 1893456000
+}

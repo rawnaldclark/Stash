@@ -1,0 +1,5 @@
+{
+  "url": "https://cdn.example.org/a.flac",
+  "codec": "flac",
+  "expiresAt": 1794355200000
+}

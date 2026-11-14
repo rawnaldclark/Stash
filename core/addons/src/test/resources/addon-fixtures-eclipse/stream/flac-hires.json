@@ -1,0 +1,8 @@
+{
+  "url": "https://cdn.example.org/a.flac",
+  "format": "flac",
+  "quality": "lossless",
+  "sampleRate": 96000,
+  "bitDepth": 24,
+  "expiresAt": 1794355200
+}

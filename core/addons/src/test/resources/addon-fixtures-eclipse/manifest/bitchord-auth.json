@@ -1,0 +1,10 @@
+{
+  "id": "org.example.attested",
+  "name": "Attested",
+  "version": "1",
+  "resources": [
+    "search",
+    "stream"
+  ],
+  "bitchordAuth": true
+}

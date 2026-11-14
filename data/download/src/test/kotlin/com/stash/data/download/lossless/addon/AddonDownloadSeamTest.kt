@@ -9,7 +9,9 @@ import com.stash.addons.contract.StreamInfo
 import com.stash.addons.contract.StreamRequest
 import com.stash.addons.contract.Tier
 import com.stash.addons.contract.Track
+import com.stash.core.addons.AddonDialect
 import com.stash.core.addons.AddonRegistry
+import com.stash.core.addons.EclipseTraits
 import com.stash.core.addons.AddonResult
 import com.stash.core.addons.HttpAddonClient
 import com.stash.core.addons.InstalledAddon
@@ -20,6 +22,7 @@ import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.RelaySigner
 import com.stash.data.download.lossless.relay.TidalRelay
+import com.stash.data.download.lossless.tidal.FakeAddonRefDao
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.coVerifyOrder
@@ -68,13 +71,19 @@ class AddonDownloadSeamTest {
         assertThat(sources.sources()).isEmpty()
     }
 
-    @Test fun `only add-ons that resolve and give lossless files become sources`() {
+    @Test fun `only add-ons that find songs, allow downloads and give lossless files become sources`() {
         val limiter = AggregatorRateLimiter()
         val ok = addon()
         val lossyOnly = addon(tiers = listOf("high")).let { it.copy(manifest = it.manifest.copy(id = "lossy")) }
-        val noResolve = addon(resources = listOf("download")).let { it.copy(manifest = it.manifest.copy(id = "noresolve")) }
-        val sources = AddonDownloadSources(Registry(listOf(ok, lossyOnly, noResolve)), mockk(), limiter, prefs).sources()
-        assertThat(sources.map { it.id }).containsExactly("addon:dl")
+        val noFinding = addon(resources = listOf("download")).let { it.copy(manifest = it.manifest.copy(id = "nofinding")) }
+        // Phase 4 §2.4: search without resolve is matched on the phone, so it is a source.
+        val searchOnly = addon(resources = listOf("search", "stream")).let { it.copy(manifest = it.manifest.copy(id = "search")) }
+        // BitChord's allowDownloads: 0.
+        val noDownloads = addon(resources = listOf("search", "stream")).let {
+            it.copy(manifest = it.manifest.copy(id = "nodl"), dialect = AddonDialect.ECLIPSE, eclipse = EclipseTraits(allowDownloads = false))
+        }
+        val sources = AddonDownloadSources(Registry(listOf(ok, lossyOnly, noFinding, searchOnly, noDownloads)), mockk(), limiter, prefs).sources()
+        assertThat(sources.map { it.id }).containsExactly("addon:dl", "addon:search")
     }
 
     // ------------------------------------------------------------------------------------------ the source
@@ -85,7 +94,7 @@ class AddonDownloadSeamTest {
             coEvery { resolve(any(), any(), any()) } returns AddonResult.Ok(Track(id = "td:7", title = "B", artist = "A", isrc = "GBAAA0000001"))
             coEvery { download(any(), "td:7", capture(request), any()) } returns AddonResult.Ok(flac)
         }
-        val source = AddonDownloadSources(Registry(listOf(addon())), client, AggregatorRateLimiter(), prefs).sources().single()
+        val source = AddonDownloadSources(Registry(listOf(addon())), refs(client), AggregatorRateLimiter(), prefs).sources().single()
         val r = source.resolve(TrackQuery(artist = "A", title = "B", isrc = "GBAAA0000001"))!!
         assertThat(r.sourceId).isEqualTo("addon:dl")
         assertThat(r.downloadUrl).isEqualTo(flac.url)
@@ -105,16 +114,100 @@ class AddonDownloadSeamTest {
     }
 
     @Test fun `no match, a failure, or an answer needing headers is no source result`() = runTest {
-        val client: HttpAddonClient = mockk {
-            coEvery { resolve(any(), any(), any()) } returnsMany listOf(
-                AddonResult.Ok(null),
-                AddonResult.Failed(com.stash.core.addons.AddonFailure.Timeout),
-                AddonResult.Ok(Track(id = "1", title = "B", artist = "A")),
-            )
-            coEvery { download(any(), any(), any(), any()) } returns AddonResult.Ok(flac.copy(headers = mapOf("Referer" to "https://x.example/")))
+        // Each case on its own refs table: a miss stamp would otherwise answer the next case.
+        for (answer in listOf<AddonResult<Track?>>(
+            AddonResult.Ok(null),
+            AddonResult.Failed(com.stash.core.addons.AddonFailure.Timeout),
+            AddonResult.Ok(Track(id = "1", title = "B", artist = "A")),
+        )) {
+            val client: HttpAddonClient = mockk {
+                coEvery { resolve(any(), any(), any()) } returns answer
+                coEvery { download(any(), any(), any(), any()) } returns AddonResult.Ok(flac.copy(headers = mapOf("Referer" to "https://x.example/")))
+            }
+            val source = AddonDownloadSources(Registry(listOf(addon())), refs(client), AggregatorRateLimiter(), prefs).sources().single()
+            assertThat(source.resolve(TrackQuery(artist = "A", title = "B"))).isNull()
+            coVerify(exactly = 1) { client.resolve(any(), any(), any()) }
         }
-        val source = AddonDownloadSources(Registry(listOf(addon())), client, AggregatorRateLimiter(), prefs).sources().single()
-        repeat(3) { assertThat(source.resolve(TrackQuery(artist = "A", title = "B"))).isNull() }
+    }
+
+    @Test fun `a search-only add-on is matched on the phone and downloads its match`() = runTest {
+        val client: HttpAddonClient = mockk {
+            coEvery { search(any(), any(), any(), any(), any()) } returns AddonResult.Ok(
+                com.stash.addons.contract.SearchResponse(tracks = listOf(Track(id = "9", title = "Digital Love", artist = "Daft Punk", durationMs = 301_000L))),
+            )
+            coEvery { stream(any(), "9", any(), true, any()) } returns AddonResult.Ok(flac)
+        }
+        val a = addon(resources = listOf("search", "stream"))
+        val source = AddonDownloadSources(Registry(listOf(a)), refs(client), AggregatorRateLimiter(), prefs).sources().single()
+        val r = source.resolve(TrackQuery(artist = "Daft Punk", title = "Digital Love", durationMs = 301_000L))!!
+        assertThat(r.sourceTrackId).isEqualTo("9")
+        assertThat(r.confidence).isAtLeast(0.7f)
+    }
+
+    /**
+     * review-882 J3, the one line that does it (round 2, F4): [AddonLosslessSource] tells
+     * [AddonRefs] that a download may not match by search for an add-on the user added. The same
+     * add-on as the test above, but the user's: nothing is asked, and the source has no answer.
+     */
+    @Test fun `a download never searches an add-on the user added - the source asks nothing and answers null`() = runTest {
+        val client: HttpAddonClient = mockk {
+            coEvery { search(any(), any(), any(), any(), any()) } returns AddonResult.Ok(
+                com.stash.addons.contract.SearchResponse(tracks = listOf(Track(id = "9", title = "Digital Love", artist = "Daft Punk", durationMs = 301_000L))),
+            )
+            coEvery { stream(any(), "9", any(), any(), any()) } returns AddonResult.Ok(flac)
+        }
+        val mine = addon(resources = listOf("search", "stream")).copy(userAdded = true)
+        val refs = refs(client)
+        val source = AddonDownloadSources(Registry(listOf(mine)), refs, AggregatorRateLimiter(), prefs).sources().single()
+        val song = TrackQuery(artist = "Daft Punk", title = "Digital Love", durationMs = 301_000L)
+
+        // A sync or sweep download (paced), and one that is not paced: neither searches.
+        assertThat(source.resolve(song)).isNull()
+        assertThat(source.resolve(song, bypassRateLimit = true)).isNull()
+        coVerify(exactly = 0) { client.search(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { client.stream(any(), any(), any(), any(), any()) }
+
+        // Once a play has matched the song there, the download uses that ref: still no search of its own.
+        assertThat(refs.stream(mine, song, AddonRefs.Pass.LOSSLESS, AddonLosslessSource.lossless(LosslessQualityTier.HI_RES)))
+            .isInstanceOf(AddonRefs.Streamed.Ok::class.java)
+        assertThat(source.resolve(song)!!.sourceTrackId).isEqualTo("9")
+        coVerify(exactly = 1) { client.search(any(), any(), any(), any(), any()) }
+    }
+
+    /** round 2, F2: without a length that can be trusted, the ceiling used to be an hour of audio for every such song. */
+    @Test fun `a download's ceiling follows the song's trusted length, else the matched item's own with a margin`() = runTest {
+        val client: HttpAddonClient = mockk {
+            coEvery { resolve(any(), any(), any()) } returns AddonResult.Ok(Track(id = "td:7", title = "B", artist = "A", durationMs = 240_000L))
+            coEvery { download(any(), "td:7", any(), any()) } returns AddonResult.Ok(flac)
+        }
+        val source = AddonDownloadSources(Registry(listOf(addon())), refs(client), AggregatorRateLimiter(), prefs).sources().single()
+
+        // A video's length (33 minutes of it): the item's own four minutes and a quarter decide.
+        val video = source.resolve(TrackQuery(artist = "A", title = "B", durationMs = 2_000_000L, durationReliable = false))!!
+        assertThat(video.maxBytes).isEqualTo(AddonLosslessSource.ceilingBytes(300_000L, flac))
+
+        // A length that can be trusted is used as it is.
+        val trusted = source.resolve(TrackQuery(artist = "A", title = "Another", durationMs = 200_000L))!!
+        assertThat(trusted.maxBytes).isEqualTo(AddonLosslessSource.ceilingBytes(200_000L, flac))
+    }
+
+    /** review-882 B1 and M7: the downloader saves `coverArtUrl` as the song's art, where it would outlive the add-on. */
+    @Test fun `a download from an add-on the user added carries no cover art, a default add-on's does`() = runTest {
+        val art = "https://addon.example/tok/art/7.jpg"
+        fun client(): HttpAddonClient = mockk {
+            coEvery { resolve(any(), any(), any()) } returns AddonResult.Ok(
+                Track(id = "td:7", title = "B", artist = "A", artwork = listOf(com.stash.addons.contract.Artwork(art))),
+            )
+            coEvery { download(any(), "td:7", any(), any()) } returns AddonResult.Ok(flac)
+        }
+        fun sourceFor(addon: InstalledAddon) = AddonDownloadSources(Registry(listOf(addon)), refs(client()), AggregatorRateLimiter(), prefs).sources().single()
+
+        val mine = sourceFor(addon().copy(userAdded = true)).resolve(TrackQuery(artist = "A", title = "B"))!!
+        assertThat(mine.downloadUrl).isEqualTo(flac.url)
+        assertThat(mine.coverArtUrl).isNull()
+
+        val official = sourceFor(addon()).resolve(TrackQuery(artist = "A", title = "B"))!!
+        assertThat(official.coverArtUrl).isEqualTo(art)
     }
 
     // ------------------------------------------------------------------------------------------ host ports
@@ -191,6 +284,8 @@ class AddonDownloadSeamTest {
             relaySigner.entitle(any())
         }
     }
+
+    private fun refs(client: HttpAddonClient) = AddonRefs(client, FakeAddonRefDao())
 
     private fun TestScope.virtualClock(): AggregatorRateLimiter.Clock = object : AggregatorRateLimiter.Clock {
         override fun nowMs(): Long = testScheduler.currentTime

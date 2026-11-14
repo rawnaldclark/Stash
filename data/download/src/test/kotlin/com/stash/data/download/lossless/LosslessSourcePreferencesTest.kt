@@ -22,19 +22,27 @@ class LosslessSourcePreferencesTest {
 
     /** The preferencesDataStore delegate is process-wide; start each test clean (codebase convention). */
     @Before fun clear() = runBlocking {
-        prefs.setBitchordEndpoint(null)
+        prefs.clearBitchordServer()
         prefs.setLosslessOfflineDismissed(false)
     }
 
-    @Test fun `own Tidal server is null by default, normalised on set, cleared on blank`() = runTest {
+    /**
+     * The old Custom Tidal server keys (add-ons phase 4 §2.10): nothing writes them any more; they
+     * are read as an older build stored them, a blank one is none, and both go in one edit.
+     */
+    @Test fun `the old own Tidal server keys read as stored and are cleared together`() = runTest {
         assertThat(prefs.bitchordEndpoint.first()).isNull()
-        prefs.setBitchordEndpoint("  https://tidal.example.org/  ")
+        prefs.writeRawForTest {
+            it[stringPreferencesKey("bitchord_endpoint")] = "https://tidal.example.org"
+            it[stringPreferencesKey("bitchord_access_token")] = "   "
+        }
         assertThat(prefs.bitchordEndpointNow()).isEqualTo("https://tidal.example.org")
-        prefs.setBitchordEndpoint("http://insecure.example") // not https -> rejected
+        assertThat(prefs.bitchordAccessTokenNow()).isNull()
+        prefs.writeRawForTest { it[stringPreferencesKey("bitchord_access_token")] = "tok" }
+        assertThat(prefs.bitchordAccessTokenNow()).isEqualTo("tok")
+        prefs.clearBitchordServer()
         assertThat(prefs.bitchordEndpointNow()).isNull()
-        prefs.setBitchordEndpoint("https://tidal.example.org")
-        prefs.setBitchordEndpoint("   ")
-        assertThat(prefs.bitchordEndpointNow()).isNull()
+        assertThat(prefs.bitchordAccessTokenNow()).isNull()
     }
 
     /**

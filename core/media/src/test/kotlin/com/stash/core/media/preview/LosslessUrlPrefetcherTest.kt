@@ -5,6 +5,7 @@ import com.stash.core.model.TrackItem
 import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.LosslessSourceRegistry
+import com.stash.data.download.lossless.addon.NoAddonSources
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -40,6 +41,23 @@ class LosslessUrlPrefetcherTest {
 
         // lookup awaits its own resolve, so the call has definitely landed here.
         coVerify { registry.resolve(any(), bypassRateLimit = true) }
+    }
+
+    /**
+     * review-882 B1: the preview plays its match on a plain cached HTTP source, so its lookup must
+     * reach no add-on. The marker is what every add-on source obeys (`AddonLosslessSource`, proven
+     * in `:data:download`'s `AddonNoSourcesTest`).
+     */
+    @Test fun `a preview's lookup is marked to ask no add-on`() = runTest {
+        var marked: Boolean? = null
+        coEvery { registry.resolve(any(), any()) } coAnswers {
+            marked = kotlinx.coroutines.currentCoroutineContext()[NoAddonSources.Key] != null
+            null
+        }
+
+        LosslessUrlPrefetcher(registry, availability, losslessPrefs).lookup(item)
+
+        assertThat(marked).isTrue()
     }
 
     @Test fun `the preview query carries the album like a download does`() = runTest {

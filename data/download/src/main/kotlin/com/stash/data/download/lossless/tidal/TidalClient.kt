@@ -149,7 +149,7 @@ class TidalClient @Inject constructor(
         if (cachedMiss(readCache(key), aac, now)) return TidalLookup.NoMatch
         // AAC mode's own "no AAC" stamp: its retry sweep skips the song for free.
         if (aacOnly && aacOnlyMissed(key, now)) return TidalLookup.NoMatch
-        if (quota.isSpent() && prefs.bitchordEndpointNow() == null) return TidalLookup.Spent(quota.resetsAtMs())
+        if (quota.isSpent() && !wires.ownServerSet()) return TidalLookup.Spent(quota.resetsAtMs())
         if (cacheOnly) return TidalLookup.NeedsRelay
         val wire = wires.current { nowMs() } ?: return TidalLookup.Off
         appTooOldUntilMs[wire.serverKey]?.let { until ->

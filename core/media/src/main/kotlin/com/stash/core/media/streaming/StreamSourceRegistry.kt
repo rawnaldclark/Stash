@@ -52,8 +52,11 @@ import javax.inject.Singleton
  *   1c. Add-ons ([AddonStreamRungs], Stash Add-ons v1) that stream lossless: user-added ones
  *      just ahead of 1 on every play (unlike the user's own Tidal server, with no quality or
  *      own-Qobuz condition), the defaults after 1b. Same gates as 1b; a metered one never
- *      spends its allowance on a look-ahead. None in phase 1: the registry is empty and the
- *      chain is exactly the one above.
+ *      spends its allowance on a look-ahead. With no add-on on, the chain is exactly the one above.
+ *   1d. The add-ons' lossy pass (`lossy:addon:<id>`, add-ons plan phase 4 §2.4): each asked for
+ *      a lossy stream at [StreamQualityPolicy.lossyQuality], before JioSaavn, under JioSaavn's
+ *      gate. With Lossless off or Data saver on, only this pass of the add-ons runs. Never a
+ *      lossless serve for the Home banner.
  *   2. [YouTubeStreamResolver] — yt-dlp / InnerTube extraction. Last
  *      resort, reached only when the track genuinely isn't in the Qobuz
  *      catalog (Bandcamp re-uploads, region-exclusive, underground
@@ -406,6 +409,21 @@ class StreamSourceRegistry internal constructor(
                 }
                 // The default add-ons: lossless rungs for what Qobuz and Tidal miss.
                 addonRungs.filterNot { it.userAdded }.forEach { addAddon(it) }
+                // The lossy pass (add-ons plan phase 4 §2.4): add-ons that have only MP3 or AAC
+                // (or have a song only in lossy) are asked at the policy's LossyQuality, after the
+                // lossless rungs and before JioSaavn, under JioSaavn's gate. With Lossless off or
+                // Data saver on, only this pass runs. None on: empty, nothing else is read.
+                val lossyRungs = if (allowYouTube && allowYtDlp) addons?.lossyRungs().orEmpty() else emptyList()
+                if (lossyRungs.isNotEmpty()) {
+                    val lossyQuality = qualityPolicy?.lossyQuality() ?: LossyQuality.FULL
+                    lossyRungs.forEach { rung ->
+                        if (speculative && rung.spendsQuota) {
+                            add(ADDON_LOSSY_DEFERRED to { _: TrackEntity -> null })
+                        } else {
+                            add(rung.lossyName to { t: TrackEntity -> rung.resolveLossy(t, lossyQuality) })
+                        }
+                    }
+                }
                 // AAC fallback at the policy's LossyQuality (320; 160 or 96 where Data saver
                 // applies). Foreground/next-up only: a
                 // speculative full-queue fill must not turn into one metadata
@@ -446,7 +464,7 @@ class StreamSourceRegistry internal constructor(
         // only then the yt-dlp-capable rung. Foreground resolves only: the
         // speculative background fill keeps its cheap sequential chain.
         val hedged = allowYouTube && allowYtDlp && resolvers.size > 1 && resolvers.last().first == "youtube" &&
-            resolvers.none { it.first == TIDAL_DEFERRED || it.first == ADDON_DEFERRED }
+            resolvers.none { it.first == TIDAL_DEFERRED || it.first == ADDON_DEFERRED || it.first == ADDON_LOSSY_DEFERRED }
 
         // For the diagnostics bundle's "Recent resolves": the rung that served, set at each
         // exit below. Still null when the walk ends means every rung missed.
@@ -475,7 +493,7 @@ class StreamSourceRegistry internal constructor(
                         servedBy = "none (speculative; Tidal waits for the play)"
                         return@coroutineScope null
                     }
-                    if (name == ADDON_DEFERRED) {
+                    if (name == ADDON_DEFERRED || name == ADDON_LOSSY_DEFERRED) {
                         Log.i(TAG, "speculative resolve of ${track.id} stops before a metered add-on; the real play asks it")
                         servedBy = "none (speculative; an add-on waits for the play)"
                         return@coroutineScope null
@@ -556,6 +574,9 @@ class StreamSourceRegistry internal constructor(
         private const val TIDAL_AAC = "tidal-aac"
 
         private const val ADDON_DEFERRED = "addon-deferred"
+
+        /** The lossy pass's stop before a metered add-on: not a lossless rung, so the banner's miss is unaffected. */
+        private const val ADDON_LOSSY_DEFERRED = "addon-lossy-deferred"
 
         /** The rungs whose serve is lossless, for the Home banner's signal ([LosslessSourceHealth]). */
         private val LOSSLESS_RUNGS = setOf("qbdlx", "tidal")

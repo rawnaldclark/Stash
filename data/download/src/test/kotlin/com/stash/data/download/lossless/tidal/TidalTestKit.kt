@@ -8,6 +8,7 @@ import com.stash.core.addons.AddonRegistry
 import com.stash.core.addons.AddonTrust
 import com.stash.core.addons.HttpAddonClient
 import com.stash.core.addons.InstalledAddon
+import com.stash.core.addons.NoUserAddons
 import com.stash.core.data.db.dao.AddonRefDao
 import com.stash.core.data.db.entity.AddonRefEntity
 import com.stash.data.download.lossless.LosslessSourcePreferences
@@ -32,6 +33,15 @@ class FakeAddonRefDao : AddonRefDao {
     override suspend fun upsert(entity: AddonRefEntity) { rows[entity.songKey] = entity }
 
     override suspend fun deleteOlderThan(addonId: String, before: Long): Int = 0
+
+    override suspend fun delete(addonId: String, songKey: String): Int =
+        if (rows[songKey]?.addonId == addonId) { rows.remove(songKey); 1 } else 0
+
+    override suspend fun deleteFor(addonId: String): Int {
+        val gone = rows.filterValues { it.addonId == addonId }.keys
+        gone.forEach { rows.remove(it) }
+        return gone.size
+    }
 }
 
 /** A `tidal` row as the old `tidal_match_cache` tests wrote it. */
@@ -83,7 +93,7 @@ fun tidalClient(
     debug: TidalDebugSettings = TidalDebugSettings.off(),
 ): TidalClient {
     val legacy = LegacyRelayWire(http, signer, quota)
-    val wires = TidalWires(prefs, config, registry, legacy, AddonV1Wire(addonClient, quota), debug)
+    val wires = TidalWires(config, registry, legacy, AddonV1Wire(addonClient, quota), debug, OwnTidalServer(NoUserAddons, prefs))
     return TidalClient(prefs, dao, quota, wires)
 }
 

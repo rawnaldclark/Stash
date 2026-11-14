@@ -185,40 +185,6 @@ class SettingsViewModelTest {
         job.cancel()
     }
 
-    // -- The user's own Tidal (BitChord) server ------------------------------
-
-    @Test fun `committing a valid Tidal server stores it normalised`() = runTest {
-        val vm = newVm()
-
-        vm.onBitchordEndpointCommitted("https://tidal.example/")
-        advanceUntilIdle()
-
-        coVerify(exactly = 1) { losslessPrefs.setBitchordEndpoint("https://tidal.example") }
-        assertThat(vm.bitchordEndpointError.value).isNull()
-    }
-
-    @Test fun `committing a non-https Tidal server errors and stores nothing`() = runTest {
-        val vm = newVm()
-
-        vm.onBitchordEndpointCommitted("http://x")
-        advanceUntilIdle()
-
-        assertThat(vm.bitchordEndpointError.value).isEqualTo("Must be an https:// URL")
-        coVerify(exactly = 0) { losslessPrefs.setBitchordEndpoint(any()) }
-    }
-
-    @Test fun `committing blank clears the Tidal server without an error`() = runTest {
-        val vm = newVm()
-        vm.onBitchordEndpointCommitted("http://x")
-        assertThat(vm.bitchordEndpointError.value).isNotNull()
-
-        vm.onBitchordEndpointCommitted("")
-        advanceUntilIdle()
-
-        assertThat(vm.bitchordEndpointError.value).isNull()
-        coVerify(exactly = 1) { losslessPrefs.setBitchordEndpoint(null) }
-    }
-
     // -- Autoplay radio toggle (2026-09-07) --------------------------------------------
 
     @Test

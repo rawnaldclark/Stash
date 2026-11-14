@@ -165,6 +165,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var losslessSourcePreferences: com.stash.data.download.lossless.LosslessSourcePreferences
 
+    /** Moves the old Custom Tidal server into the sealed add-on store (add-ons phase 4 §2.10). */
+    @Inject
+    lateinit var ownTidalServerMigration: com.stash.data.download.lossless.tidal.OwnTidalServerMigration
+
     /**
      * Only so [maybePurgeRetiredSourceArtifacts] can delete the retired token
      * pool's cached third-party credentials on upgrade — the lazy purge inside
@@ -716,6 +720,8 @@ class StashApplication : Application(), Configuration.Provider {
         applicationScope.launch { maybeBackfillCodecsFromExtension() }
         applicationScope.launch { maybeBackfillTrackAlbums() }
         applicationScope.launch { maybePurgeRetiredSourceArtifacts() }
+        // Every start until it has moved (a Keystore failure keeps the old keys for the next one).
+        applicationScope.launch { ownTidalServerMigration.run() }
         applicationScope.launch { relabelYouTubeRowsClaimingSpotify() }
         // One-shot: seed the streaming Wi-Fi quality tier from the user's
         // current download tier on first run, so existing users' streaming

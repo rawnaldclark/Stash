@@ -1,0 +1,11 @@
+{
+  "url": "https://media.example.org/hls/track_123.m3u8",
+  "manifest": "hls",
+  "codec": "flac",
+  "container": "fmp4",
+  "sampleRate": 44100,
+  "bitDepth": 16,
+  "bitrate": 1411000,
+  "encrypted": false,
+  "quality": "lossless"
+}

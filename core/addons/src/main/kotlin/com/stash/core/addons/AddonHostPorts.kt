@@ -83,7 +83,65 @@ interface AddonHostOptions {
      * only, for an add-on under `wrangler dev` reached over `adb reverse`; never in a release build.
      */
     val allowLocalHttp: Boolean
+
+    /**
+     * The `User-Agent` on every add-on request, in every dialect: `Stash/<versionName>` (add-ons plan
+     * phase 4 §2.3). An add-on author can tell Stash apart and say no, just as Stash asks of other
+     * apps for its own Tidal add-on. Without the app's own interceptors, OkHttp would send its own.
+     */
+    val userAgent: String get() = DEFAULT_USER_AGENT
+
+    companion object {
+        const val DEFAULT_USER_AGENT: String = "Stash"
+    }
 }
+
+/**
+ * Told when the add-on media client refused to fetch a stream an add-on answered: the fetch
+ * pointed at the user's own network (a private address in a redirect or a segment, a name that
+ * resolves there) or broke the URL rule (review-882 round 2, F7). A stream that cannot be
+ * fetched for that reason will not fetch the next time either, so the host stops offering it for
+ * the song and lets the next source have it.
+ *
+ * Called on the fetching thread, before the refusal reaches the caller of the fetch.
+ */
+fun interface AddonMediaRefusals {
+    /**
+     * [streamUrl]: the URL the add-on answered for the stream (the refused fetch's own first URL,
+     * or the manifest a refused segment belongs to, [AddonStreamTag]). Never to be logged.
+     * [why]: what was refused, which says how long the refusal holds.
+     */
+    fun refused(streamUrl: String, why: MediaRefusal)
+}
+
+/** What the add-on media client's guard refused ([AddonMediaRefusals]). */
+enum class MediaRefusal {
+    /**
+     * The URL itself, or a redirect's: an address on the user's own network written into it, or
+     * not an https URL on a public host. Also a private peer behind a public answer (the last
+     * check). True on any network.
+     */
+    URL,
+
+    /**
+     * The DNS filter ([NoPublicAddressException]): every answer for the host was private. That is
+     * what the resolver the phone asked said (a blocker answering `0.0.0.0`, a work network's
+     * split DNS), so it can be otherwise on another network (review-882 round 3, R3).
+     */
+    NO_PUBLIC_ADDRESS,
+}
+
+/** Nobody is told: for hand-built clients in tests. */
+object NoMediaRefusals : AddonMediaRefusals {
+    override fun refused(streamUrl: String, why: MediaRefusal) = Unit
+}
+
+/**
+ * A request tag (`Request.tag(AddonStreamTag::class.java)`): the stream a media request belongs
+ * to, for a request that is not the stream's own URL (a DASH segment, tagged with its manifest's
+ * URL). The media client's guard reports a refusal under it.
+ */
+class AddonStreamTag(val streamUrl: String)
 
 /** The release rule: https only. */
 object StrictAddonHost : AddonHostOptions {

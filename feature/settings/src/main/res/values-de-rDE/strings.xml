@@ -273,11 +273,8 @@
     <string name="settings_lossy_fallback_switch_label_aac">JioSaavn, dann YouTube, wenn Tidal kein AAC hat</string>
     <string name="settings_advanced">Erweitert</string>
     <string name="settings_url_placeholder">https://…</string>
-    <string name="settings_bitchord_desc">Optional: Nutze deinen eigenen BitChord-Server für Tidal statt des Servers von Stash. Sonst leer lassen.</string>
     <string name="settings_bitchord_server_label">Eigener Tidal-Server (optional)</string>
     <string name="settings_access_token_label">Zugriffs-Token (optional)</string>
-    <string name="settings_bitchord_token_saved">Ein Token ist gespeichert</string>
-    <string name="settings_bitchord_token_hint">Nur, wenn dein eigener Server ACCESS_TOKEN setzt</string>
     <string name="settings_equalizer_title">Equalizer</string>
     <!-- Settings > Audio & Quality > Lossless tiers -->
     <string name="settings_lossless_tier_max">Max (24 Bit/192 kHz)</string>
