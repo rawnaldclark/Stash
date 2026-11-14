@@ -212,6 +212,64 @@ class ReorganizeLibrarySafMoveTest {
     }
 
     /**
+     * The pass's own writes keep its listings true: two songs leave one
+     * folder for another, and each one's lyrics file is still found in the
+     * folder the first move changed, and lands beside its song.
+     */
+    @Test
+    fun `lyrics follow each song when two share a folder`() = runBlocking {
+        seed("artist/album-a/one.m4a", "ONE".toByteArray())
+        seed("artist/album-a/one.lrc", "one words".toByteArray())
+        seed("artist/album-a/two.m4a", "TWO".toByteArray())
+        seed("artist/album-a/two.lrc", "two words".toByteArray())
+        coEvery { trackDao.getDownloadedTrackRefs() } returns listOf(
+            safRef(1L, "artist/album-a/one.m4a", "Artist", "Album A", "One"),
+            safRef(2L, "artist/album-a/two.m4a", "Artist", "Album A", "Two"),
+        )
+
+        coordinator.start()
+        val done = awaitDone()
+
+        assertThat(done.moved).isEqualTo(2)
+        assertThat(done.failed).isEqualTo(0)
+        assertThat(tree.written[tree.uriOf("artist-one.lrc")]).isEqualTo("one words".toByteArray())
+        assertThat(tree.written[tree.uriOf("artist-two.lrc")]).isEqualTo("two words".toByteArray())
+        assertThat(tree.written[tree.uriOf("artist-two.m4a")]).isEqualTo("TWO".toByteArray())
+        assertThat(tree.exists("artist/album-a/one.lrc")).isFalse()
+        assertThat(tree.exists("artist/album-a/two.lrc")).isFalse()
+    }
+
+    /**
+     * A download can write into the tree while the pass runs. Its file at a
+     * name the pass listed as free is not the pass's to replace: the song
+     * that wanted the name fails with its own file and row untouched.
+     */
+    @Test
+    fun `a name a download took after the folder was listed is left to it`() = runBlocking {
+        seed("artist/album-a/one.m4a", "ONE".toByteArray())
+        seed("artist/album-b/two.m4a", "TWO".toByteArray())
+        coEvery { trackDao.getDownloadedTrackRefs() } returns listOf(
+            safRef(1L, "artist/album-a/one.m4a", "Artist", "Album A", "One"),
+            safRef(2L, "artist/album-b/two.m4a", "Artist", "Album B", "Two"),
+        )
+        // The root is listed for song 1; then a download lands at song 2's name.
+        coEvery { trackDao.healFilePath(1L, any()) } answers {
+            tree.seed("artist-two.m4a", "A DOWNLOAD".toByteArray())
+            Unit
+        }
+
+        coordinator.start()
+        val done = awaitDone()
+
+        assertThat(done.moved).isEqualTo(1)
+        assertThat(done.failed).isEqualTo(1)
+        assertThat(tree.written[tree.uriOf("artist-two.m4a")]).isEqualTo("A DOWNLOAD".toByteArray())
+        assertThat(tree.exists("artist/album-b/two.m4a")).isTrue()
+        assertThat(tree.exists("artist-two (1).m4a")).isFalse()
+        coVerify(exactly = 0) { trackDao.healFilePath(2L, any()) }
+    }
+
+    /**
      * A provider may write a FREE name its own way (the AOSP one cuts a name
      * longer than 255 bytes). That is not a name lost to a download: the
      * document is the song's, and the song moves to it as it did before the

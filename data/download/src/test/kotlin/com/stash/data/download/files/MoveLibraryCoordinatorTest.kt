@@ -256,6 +256,32 @@ class MoveLibraryCoordinatorTest {
         assertThat(tree.deleted).isEmpty()
     }
 
+    /**
+     * A download can write into the tree while the move runs. Its file at a
+     * name the move listed as free is not the move's to replace or to share:
+     * the song takes its next name.
+     */
+    @Test fun `a name a download took after the folder was listed is left to it`() = runBlocking {
+        val tree = FakeSafTree(resolver, storagePreference)
+        val tracks = (1L..2L).map { internalTrack(it, "Album $it", "take $it", title = "Song $it") }
+        coEvery { trackDao.getDownloadedTracksWithPathPrefix(any()) } returns tracks
+        // The folder is listed for song 1; then a download lands at song 2's name.
+        coEvery { trackDao.markAsDownloaded(1L, any(), any(), any(), any(), any()) } answers {
+            recorded[1L] = secondArg()
+            tree.seed("artist-song-2.opus", "a download".toByteArray())
+            1
+        }
+
+        coordinator.start(tree.treeUri)
+        val done = withTimeout(10_000) { coordinator.state.first { it is MoveLibraryState.Done } }
+
+        assertThat(done).isEqualTo(MoveLibraryState.Done(moved = 2, failed = 0))
+        assertThat(tree.written[tree.uriOf("artist-song-2.opus")]).isEqualTo("a download".toByteArray())
+        assertThat(recorded[2L]).isEqualTo(tree.uriOf("artist-song-2-album-2.opus"))
+        assertThat(tree.written[recorded[2L]]).isEqualTo("take 2".toByteArray())
+        assertThat(tree.exists("artist-song-2 (1).opus")).isFalse()
+    }
+
     private fun internalTrack(
         id: Long,
         album: String,
