@@ -32,13 +32,16 @@ sealed interface TidalAac {
     data class Unavailable(val reason: Reason, val retryAtMs: Long) : TidalAac
 
     enum class Reason {
-        /** The relay's account pool is busy (503 / 429 that is not the daily cap). */
+        /**
+         * The relay's account pool is busy (503 / 429 that is not the daily cap), or Tidal is
+         * still paused for the wait such an answer asked for.
+         */
         BUSY,
 
         /** This device's own pacing for Tidal AAC lookups. */
         RATE_LIMITED,
 
-        /** An error, an open circuit breaker, or an answer that wasn't AAC. */
+        /** An error, a tripped circuit breaker, or an answer that wasn't AAC. */
         FAILED,
 
         /** The day's Tidal allowance is spent: nothing until the reset. */
@@ -54,8 +57,9 @@ sealed interface TidalAac {
  * after the lossless rung missed.
  *
  * Gates: the user's "Tidal AAC when no FLAC" switch, the relay configured, and
- * its own [SOURCE_ID] rate-limit bucket (same numbers as `tidal_bitchord`); the
- * lossless source's open breaker also stops it, since both hit the same relay.
+ * its own [SOURCE_ID] rate-limit bucket (same numbers as `tidal_bitchord`); a
+ * block on the lossless source's bucket also stops it, since both hit the same
+ * relay. A block that is only a busy relay's pause waits until it ends ([blocked]).
  * A [resolve] for a user's tap (`foreground`) skips the bucket, as a tapped FLAC
  * search does, so it does not queue behind a sync's one-per-ten-seconds pace.
  *
@@ -91,11 +95,14 @@ class TidalAacResolver @Inject constructor(
         val label = "${query.artist} - ${query.title}"
         if (!aacOnly && !prefs.tidalAacFallbackNow()) return TidalAac.NoAac
         if (!client.isConfigured()) return TidalAac.NoAac
-        if (rateLimiter.stateOf(SOURCE_ID).isCircuitBroken ||
-            rateLimiter.stateOf(TidalLosslessSource.SOURCE_ID).isCircuitBroken
-        ) {
-            Log.i(TAG, "skip '$label': circuit breaker open")
-            return unavailable(TidalAac.Reason.FAILED, nowMs() + FAILED_RETRY_MS)
+        val aacState = rateLimiter.stateOf(SOURCE_ID)
+        val losslessState = rateLimiter.stateOf(TidalLosslessSource.SOURCE_ID)
+        if (aacState.isCircuitBroken || losslessState.isCircuitBroken) {
+            return blocked(
+                label,
+                blockedForMs = maxOf(aacState.msUntilUnblock, losslessState.msUntilUnblock),
+                breakerTripped = aacState.breakerTripped || losslessState.breakerTripped,
+            )
         }
         // A cached AAC miss (or no match at all), an open pool-busy circuit and a spent day cost nothing.
         when (val cached = client.lookup(query, allowAac = true, cacheOnly = true, aacOnly = aacOnly)) {
@@ -122,7 +129,9 @@ class TidalAacResolver @Inject constructor(
         val stream = when (outcome) {
             is TidalLookup.Found -> outcome.stream
             is TidalLookup.Busy -> {
-                rateLimiter.reportRateLimited(SOURCE_ID)
+                // Paused for the relay's own Retry-After, not the bucket's configured 429 backoff
+                // (120 s), which the next song read as a block and waited five minutes behind.
+                rateLimiter.reportRateLimited(SOURCE_ID, outcome.untilMs - nowMs())
                 return unavailable(TidalAac.Reason.BUSY, outcome.untilMs)
             }
             is TidalLookup.Spent -> return TidalAac.Unavailable(TidalAac.Reason.SPENT, outcome.untilMs)
@@ -159,6 +168,29 @@ class TidalAacResolver @Inject constructor(
         )
     }
 
+    /**
+     * The answer while a Tidal bucket is blocked: nothing is asked. Both buckets count (both ask
+     * one relay): [blockedForMs] is the later of their blocks, [breakerTripped] whether either
+     * block is a tripped breaker's rather than only a pause.
+     *
+     * Only paused (a busy relay's own Retry-After): [TidalAac.Reason.BUSY], tried again the moment
+     * the pause ends. A breaker that tripped on repeated failures: [TidalAac.Reason.FAILED], looked
+     * at again after [FAILED_RETRY_MS], or when its block ends if that is sooner. Every block used
+     * to be FAILED + 5 minutes, so a relay's 30 s pause held each waiting download for five.
+     * [unavailable] keeps the [MIN_RETRY_MS] floor either way.
+     */
+    private fun blocked(label: String, blockedForMs: Long, breakerTripped: Boolean): TidalAac.Unavailable {
+        val now = nowMs()
+        val unblockAtMs = now + blockedForMs
+        return if (breakerTripped) {
+            Log.i(TAG, "skip '$label': circuit breaker open")
+            unavailable(TidalAac.Reason.FAILED, minOf(now + FAILED_RETRY_MS, unblockAtMs))
+        } else {
+            Log.i(TAG, "skip '$label': Tidal paused for ${blockedForMs / 1000}s")
+            unavailable(TidalAac.Reason.BUSY, unblockAtMs)
+        }
+    }
+
     /** A transient [TidalAac.Unavailable], announced on [retryEvents]. */
     private fun unavailable(reason: TidalAac.Reason, retryAtMs: Long): TidalAac.Unavailable {
         val at = maxOf(retryAtMs, nowMs() + MIN_RETRY_MS)
@@ -174,7 +206,10 @@ class TidalAacResolver @Inject constructor(
         /** One token per ten seconds (the bucket's rate), with some slack. */
         internal const val RATE_LIMITED_RETRY_MS = 30_000L
 
-        /** An error or an open breaker: look again in a few minutes, not at once. */
+        /**
+         * An error or a tripped breaker: look again in a few minutes, not at once (a breaker
+         * whose block ends sooner is looked at when it ends, see [blocked]).
+         */
         internal const val FAILED_RETRY_MS = 5 * 60_000L
 
         /** No retry sooner than this, so a waiting queue is never swept in a tight loop. */
