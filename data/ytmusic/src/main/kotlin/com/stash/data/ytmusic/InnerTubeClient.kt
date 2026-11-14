@@ -180,6 +180,12 @@ enum class InnerTubeVariant(
  * the API returns personalized results (liked songs, playlists, mixes). When
  * unauthenticated, only public data is accessible.
  *
+ * Searches never carry the login ([searchWithStatus]): YouTube keeps every search
+ * made with it in the account's search history, so Stash's song matching filled
+ * the search bar of the user's own YouTube app. Nothing a search is used for
+ * (matching, canonical ids, artist and album lookups, the Search tab) reads the
+ * user's library, and a signed-out search answers all of them.
+ *
  * This client handles the raw HTTP layer; higher-level parsing is done by
  * [YTMusicApiClient].
  */
@@ -224,8 +230,11 @@ class InnerTubeClient @Inject constructor(
      */
     @Volatile internal var visitorData: String? = null
 
-    /** Test seam: points [player] and [warmPoTokens] at a local server instead of `variant.apiBase`. */
+    /** Test seam: points [player], [warmPoTokens], [search] and [browse] at a local server instead of the real host. */
     internal var apiBaseOverride: String? = null
+
+    /** The YouTube Music endpoint for [action] (`search`, `browse`), on [apiBaseOverride] in tests. */
+    private fun musicApi(action: String): String = "${apiBaseOverride ?: BASE_URL}/$action"
 
     /** The variant that last served audio; asked first next time. */
     @Volatile private var lastAudioWinner: InnerTubeVariant? = null
@@ -343,7 +352,7 @@ class InnerTubeClient @Inject constructor(
             // to albums-only vs singles-only). Omitted → unfiltered/default view.
             if (!params.isNullOrBlank()) put("params", params)
         }
-        executeRequest("$BASE_URL/browse", body, null, variant)
+        executeRequest(musicApi("browse"), body, null, variant)
     }
 
     /**
@@ -412,21 +421,13 @@ class InnerTubeClient @Inject constructor(
         }
 
     /**
-     * Calls the InnerTube `search` action.
+     * Calls the InnerTube `search` action, signed out ([searchWithStatus]).
      *
      * @param query The search query string.
      * @return The parsed JSON response, or null on failure.
      */
-    suspend fun search(query: String, params: String? = null): JsonObject? = withContext(Dispatchers.IO) {
-        val cookie = tokenManager.getYouTubeCookie()
-        val variant = InnerTubeVariant.WEB_REMIX
-        val body = buildJsonObject {
-            put("context", buildContext(variant))
-            put("query", query)
-            if (params != null) put("params", params)
-        }
-        executeRequest("$BASE_URL/search", body, cookie, variant)
-    }
+    suspend fun search(query: String, params: String? = null): JsonObject? =
+        searchWithStatus(query, params).body
 
     /**
      * Calls the InnerTube `search` action, preserving the HTTP outcome.
@@ -438,17 +439,25 @@ class InnerTubeClient @Inject constructor(
      * artist-photo backfill needs to decide between a permanent "no photo"
      * sentinel and a transient retry, and the album screen's YouTube Music
      * fallback between "not available here" and "try again" (#481).
+     *
+     * Always signed out: no cookie, SAPISIDHASH, session index or Brand profile,
+     * and the login is not even read. A search sent with the login lands in the
+     * account's YouTube search history, and Stash searches for every song it
+     * matches. Signed out, YouTube answers an unfiltered search in its flat layout
+     * (one `itemSectionRenderer` per row, no album or length on the rows), which
+     * every reader of an unfiltered search already handles; the songs- and
+     * artists-filtered searches keep their titled `musicShelfRenderer` shelf
+     * (checked live 2026-11-13).
      */
     suspend fun searchWithStatus(query: String, params: String? = null): RequestOutcome =
         withContext(Dispatchers.IO) {
-            val cookie = tokenManager.getYouTubeCookie()
             val variant = InnerTubeVariant.WEB_REMIX
             val body = buildJsonObject {
                 put("context", buildContext(variant))
                 put("query", query)
                 if (params != null) put("params", params)
             }
-            executeRequestWithStatus("$BASE_URL/search", body, cookie, variant)
+            executeRequestWithStatus(musicApi("search"), body, cookie = null, variant = variant, sendLogin = false)
         }
 
     /** ytmusicapi-derived filter selector that constrains search results to the
@@ -932,6 +941,11 @@ class InnerTubeClient @Inject constructor(
      * resolution is cached across calls: cookie + SAPISID + Authorization
      * header are fetched once and reused. A 401 response clears the cache so
      * the next call re-resolves. Non-session callers resolve auth per request.
+     *
+     * [sendLogin] false sends the request signed out whatever is stored: the
+     * login is not read, and the request goes out as a signed-out web client
+     * (public API key, visitor id, no cookie). For public lookups that must
+     * stay out of the account's history ([searchWithStatus]).
      */
     internal suspend fun executeRequestWithStatus(
         url: String,
@@ -940,8 +954,11 @@ class InnerTubeClient @Inject constructor(
         variant: InnerTubeVariant,
         /** False sends the request as the Google account itself, not a picked Brand profile (accounts_list). */
         asProfile: Boolean = true,
+        /** False sends no login at all (see the function doc). */
+        sendLogin: Boolean = true,
     ): RequestOutcome = withContext(Dispatchers.IO) {
-        val (effectiveCookie, sapiSid, authHeader) = resolveAuth(cookie, variant)
+        val (effectiveCookie, sapiSid, authHeader) =
+            if (sendLogin) resolveAuth(cookie, variant) else Triple(null, null, null)
         val authed = variant == InnerTubeVariant.WEB_REMIX && sapiSid != null && effectiveCookie != null && authHeader != null
         // A Brand Account profile (#664): its id on the request (header AND context, as the web
         // client does) and its owner's session index. Never on /player: a brand id there earns a
@@ -957,7 +974,8 @@ class InnerTubeClient @Inject constructor(
             else -> "${url}${separator}prettyPrint=false" // keyless (IOS etc.)
         }
 
-        Log.d(TAG, "executeRequest: POST $fullUrl (authenticated=${sapiSid != null}, variant=$variant)")
+        // What was sent: the iOS/VR clients never carry the login, even when one is stored.
+        Log.d(TAG, "executeRequest: POST $fullUrl (authenticated=$authed, variant=$variant)")
 
         val requestBuilder = Request.Builder()
             .url(fullUrl)
@@ -984,7 +1002,8 @@ class InnerTubeClient @Inject constructor(
 
         try {
             okHttpClient.newCall(requestBuilder.build()).execute().use { resp ->
-                if (resp.code == 401) invalidateAuthCache()
+                // A 401 to a signed-out request says nothing about the stored login.
+                if (resp.code == 401 && sendLogin) invalidateAuthCache()
                 if (!resp.isSuccessful) {
                     val errorBodyLen = resp.body?.string()?.length ?: 0
                     Log.e(TAG, "executeRequest: HTTP ${resp.code}, errorBodyLen=$errorBodyLen")
