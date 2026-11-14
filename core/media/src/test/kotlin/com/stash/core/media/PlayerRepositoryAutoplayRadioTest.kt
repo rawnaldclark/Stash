@@ -333,6 +333,32 @@ class PlayerRepositoryAutoplayRadioTest {
     }
 
     @Test
+    fun `the station skips songs already in the queue and keeps its own order`() = runTest {
+        // Pixel 5, 11-13: Linger Radio, after Dreams and Linger, brought Dreams again.
+        repo.setQueue(listOf(track(1), track(2)), startIndex = 1)
+        stationBuilds(
+            listOf(
+                track(2).copy(id = 9_002), // the seed, as a fresh search finds it
+                track(1).copy(id = 5_001), // a song already queued, found again under another id
+                track(201),
+                track(1), // the same library song
+                track(202),
+            ),
+        )
+
+        playerEvent()
+
+        assertThat(fake.ids()).containsExactly(1L, 2L, 201L, 202L).inOrder()
+
+        // Its later batches too: the station's own songs and the user's.
+        coEvery { radioGenerator.nextBatch(any()) } returns listOf(track(201), track(203), track(2).copy(id = 6_002), track(204))
+        repo.growRadio()
+
+        assertThat(fake.ids()).containsExactly(1L, 2L, 201L, 202L, 203L, 204L).inOrder()
+        assertThat(repo.currentQueueTracks.map { it.id }).containsExactly(1L, 2L, 201L, 202L, 203L, 204L).inOrder()
+    }
+
+    @Test
     fun `under shuffle the station plays after the last song of the play order`() = runTest {
         repo.setQueue(listOf(track(1), track(2)), startIndex = 0)
         fake.shuffle = true

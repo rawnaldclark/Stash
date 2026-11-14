@@ -1652,7 +1652,9 @@ class PlayerRepositoryImpl @Inject constructor(
             giveBackAutoplayTry(seed)
             return AutoplayRadioOutcome.QueueMovedOn
         }
-        appendStationSongs(controller, discoveries)
+        val fresh = notQueuedYet(controller, discoveries)
+        if (fresh.isEmpty()) return AutoplayRadioOutcome.NoStation
+        appendStationSongs(controller, fresh)
         radioSession = session
         radioActive = true
         // Only one grower (see startRadio): library shuffle was off, or no station would have been wanted.
@@ -1680,6 +1682,28 @@ class PlayerRepositoryImpl @Inject constructor(
         if (window != null && !window.endsAtOrderEnd) return false
         val last = lastSlotInPlayOrder(controller, window)
         return last >= 0 && controller.getMediaItemAt(last).queueTrackId() == seed.id
+    }
+
+    /**
+     * A station's [tracks] without the songs already in the queue, in the station's order: a station after an album
+     * doesn't play its songs again (Pixel 5, 11-13: Linger Radio brought back Dreams, two songs earlier). A song is
+     * already there when the player holds the same library id or the same title and artist, or, for a big queue, when
+     * its whole order holds the id. Main thread.
+     */
+    private fun notQueuedYet(controller: MediaController, tracks: List<Track>): List<Track> {
+        val ids = HashSet<Long>()
+        val keys = HashSet<String>()
+        fun note(id: Long, title: String, artist: String) {
+            if (id != 0L) ids += id
+            if (title.isNotBlank()) keys += trackIdentity(title, artist)
+        }
+        for (i in 0 until controller.mediaItemCount) {
+            val item = controller.getMediaItemAt(i)
+            note(item.queueTrackId(), item.mediaMetadata.title?.toString().orEmpty(), item.mediaMetadata.artist?.toString().orEmpty())
+        }
+        currentQueueTracks.forEach { note(it.id, it.title, it.artist) }
+        queueWindow?.let { window -> for (p in 0 until window.total) ids += window.idAtPosition(p) }
+        return tracks.filter { it.id !in ids && trackIdentity(it.title, it.artist) !in keys }
     }
 
     /**
@@ -1742,8 +1766,10 @@ class PlayerRepositoryImpl @Inject constructor(
                 return
             }
             // Library ids, as in startRadio, so the grown queue resumes too. Streaming tracks →
-            // stash-resolve:// placeholders (see startRadio), after the last song in play order.
-            val queued = batch.map { it.withQueueIdentity() }
+            // stash-resolve:// placeholders (see startRadio), after the last song in play order, without the
+            // songs the queue holds already (the next batch comes with the next player event).
+            val queued = notQueuedYet(controller, batch.map { it.withQueueIdentity() })
+            if (queued.isEmpty()) return
             appendStationSongs(controller, queued)
         }
     }
