@@ -1349,6 +1349,21 @@ test("v2 401 refresh: a failed refresh cools the seat and the next seat answers 
   assert.equal(f.dbWrites.some(({ sql }) => sql.includes("state='dead'")), false);
 });
 
+test("v2 401 refresh failed: the next seat's v1 lossless_unavailable is cached 6 h (transient), not 5 days", async () => {
+  const t = nowS();
+  const accounts = [liveAccount(), { ...liveAccount(), id: "b", access_token: "b-token" }];
+  const f = v2Fixture({ accounts, tidalResponse: async (url) => (isV2(url)
+    ? new Response(JSON.stringify({ errors: [{ status: "401" }] }), { status: 401 })
+    : aacResponse()) }); // v1 caps the CD track at AAC: lossless_unavailable
+  await withFetch(null, f.fetchTidal, async () => {
+    const r = await worker.fetch(authorizedRequest("/stream/td:9"), f.env);
+    assert.equal(r.status, 404);
+    assert.deepEqual(await r.json(), { error: "lossless_unavailable" });
+  });
+  const ttl = f.responseCache.get("stream:US:9:aac=:web=app:v2").expires_at - t;
+  assert.ok(ttl <= 6 * 3600 + 2, `cached ${ttl} s: v2 never answered for this track, so v2 may serve it on a later ask`);
+});
+
 test("v2 401 after a successful refresh is a strike + busy, like v1; the refreshed token is used for the retry", async () => {
   const f = v2Fixture({ tidalResponse: async (url) => (url.startsWith("https://auth.tidal.com/")
     ? new Response(JSON.stringify({ access_token: "fresh-token", expires_in: 3600 }), { status: 200 })

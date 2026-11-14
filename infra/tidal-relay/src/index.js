@@ -547,7 +547,9 @@ async function v2Stream(trackId, request, env, seat, account, allowAac, budget, 
       return { response: busy() };
     }
     if (r.status === 503 && (await r.clone().json().catch(() => ({}))).error === "refresh_failed") {
-      trace.path = "v1"; trace.reason = "refresh_failed";
+      // Transient like any seat failure: the next seat answers on v1 alone, and its lossless_unavailable (v1 caps CD
+      // tracks at AAC) must be cached 6 h, not the 5 days that hid a track v2 could play.
+      trace.path = "v1"; trace.reason = "refresh_failed"; trace.transient = true;
       return { seatFailed: true };
     }
     if (r.status === 401) { // survived tidalFetch's refresh + retry: the same strike v1 gives
