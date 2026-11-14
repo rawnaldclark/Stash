@@ -447,7 +447,8 @@ interface TrackDao {
     *
     * Leaves out tracks whose last lookup found no lossless version after
     * [retryBefore] ([TrackEntity.flacNoMatchAt]), and lists never-tried tracks
-    * first, then the oldest misses.
+    * first, then the oldest misses. Within each, the newest songs (highest id)
+    * come first: what was just added is what the listener is playing now.
     */
     @Query(
         """
@@ -465,7 +466,7 @@ interface TrackDao {
         AND t.soundcloud_id IS NULL
         AND bl.canonical_key IS NULL
         AND (t.flac_no_match_at IS NULL OR t.flac_no_match_at < :retryBefore)
-        ORDER BY t.flac_no_match_at IS NOT NULL, t.flac_no_match_at ASC, t.id ASC
+        ORDER BY t.flac_no_match_at IS NOT NULL, t.flac_no_match_at ASC, t.id DESC
         """
     )
     suspend fun getLosslessUpgradeCandidates(retryBefore: Long): List<TrackEntity>
