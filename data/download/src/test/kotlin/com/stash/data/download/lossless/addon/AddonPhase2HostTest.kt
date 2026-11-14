@@ -123,12 +123,34 @@ class AddonPhase2HostTest {
         assertThat(TidalDebugSettings.normaliseOrigin("https://staging.example?x=1")).isNull()
     }
 
-    @Test fun `a release build honours nothing - the config's relay and no stand-in add-on`() {
-        val off = TidalDebugSettings.off()
+    /**
+     * The store holds a forced wire and an override origin (a debug build wrote them). The same
+     * store read by a build that honours them gives both; read by a release build it gives the
+     * defaults. With `TidalDebugSettings.off()` this test passed even if `honored` were never read
+     * (review-881 M13): that object has no store. `TidalWiresRouteTest` carries it through `route()`.
+     */
+    @Test fun `a release build honours nothing a debug build stored - the config's relay and no stand-in add-on`() = runBlocking<Unit> {
+        val store = PreferenceDataStoreFactory.create(scope = scope) { File(dir, "debug.preferences_pb") }
         val relay = TidalRelay("https://relay.stash.example", "tok")
-        assertThat(off.relay(relay)).isEqualTo(relay)
-        assertThat(off.addonEntry(relay)).isNull()
-        assertThat(off.state.value).isEqualTo(TidalDebugSettings.State())
+        val forced = TidalDebugSettings.State(TidalDebugSettings.Wire.V1, "http://127.0.0.1:8797")
+
+        val debug = TidalDebugSettings(store, honored = true)
+        debug.setWire(TidalDebugSettings.Wire.V1)
+        debug.setOrigin("http://127.0.0.1:8797")
+        withTimeout(5_000) { debug.state.first { it == forced } }
+        assertThat(debug.relay(relay)).isEqualTo(TidalRelay("http://127.0.0.1:8797", "tok"))
+        assertThat(debug.addonEntry(relay)).isEqualTo(
+            DefaultAddonEntry("http://127.0.0.1:8797/v1/tok/manifest.json", enabled = true, firstParty = true),
+        )
+
+        val release = TidalDebugSettings(store, honored = false)
+        // The store is already in memory (the object above read it): 200 ms is ample for this one to read it too.
+        repeat(20) {
+            assertThat(release.state.value).isEqualTo(TidalDebugSettings.State())
+            kotlinx.coroutines.delay(10)
+        }
+        assertThat(release.relay(relay)).isEqualTo(relay)
+        assertThat(release.addonEntry(relay)).isNull()
     }
 
     @Test fun `kept manifests - read back, and forgotten when their entry goes`() = runBlocking {
@@ -147,12 +169,7 @@ class AddonPhase2HostTest {
         override fun open(sealed: ByteArray) = seal(sealed)
     }
 
-    private object Broken : EncryptedUserAddons.Sealer {
-        override fun seal(plain: ByteArray) = plain
-        override fun open(sealed: ByteArray): ByteArray = throw java.security.GeneralSecurityException("key lost")
-    }
-
-    @Test fun `user add-ons - sealed on disk, read back by the next run, unreadable reads as none`() = runBlocking {
+    @Test fun `user add-ons - sealed on disk and read back by the next run`() = runBlocking<Unit> {
         val file = File(dir, "u.preferences_pb")
         val ds = PreferenceDataStoreFactory.create(scope = scope) { file }
         val users = EncryptedUserAddons(ds, Scramble)
@@ -171,9 +188,8 @@ class AddonPhase2HostTest {
         val nextRun = EncryptedUserAddons(ds, Scramble)
         withTimeout(5_000) { nextRun.entries.first { it.size == 2 } }
         assertThat(nextRun.entries.value.first().token).isEqualTo("hdr-token")
-
-        val lostKey = EncryptedUserAddons(ds, Broken)
-        lostKey.remove("nothing") // waits for the load
-        assertThat(lostKey.entries.value).isEmpty()
+        assertThat(nextRun.loadedEntries()).hasSize(2)
+        assertThat(nextRun.unreadable).isFalse()
+        // What a list that does not open reads as, and what may then be written: EncryptedUserAddonsReadTest.
     }
 }

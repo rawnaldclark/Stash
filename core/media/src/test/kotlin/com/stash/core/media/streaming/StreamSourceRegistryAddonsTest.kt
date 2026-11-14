@@ -271,6 +271,29 @@ class StreamSourceRegistryAddonsTest {
         assertThat(calls).contains("health:served")
     }
 
+    /**
+     * review-882 B1 and M7: the player saves a stream's `coverArtUrl` as the song's art and shows
+     * it through the image loader's ordinary client. From an add-on the user added there is none.
+     */
+    @Test fun `a stream from an add-on the user added carries no cover art, a default add-on's does`() = runTest {
+        val art = "https://addon.example/tok/art/1.jpg"
+        fun client(): HttpAddonClient = mockk {
+            coEvery { resolve(any(), any(), any()) } returns AddonResult.Ok(
+                Track(id = "x1", title = "Title", artist = "Artist", artwork = listOf(com.stash.addons.contract.Artwork(art))),
+            )
+            coEvery { stream(any(), any(), any(), any()) } returns AddonResult.Ok(flac)
+        }
+        val mine = AddonStreamRungs(Registry(listOf(addon(id = "mine", userAdded = true))), refs(client()))
+        val fromMine = registry(mine).resolve(track(), allowYouTube = false, allowYtDlp = true)
+        assertThat(fromMine!!.origin).isEqualTo("addon:mine")
+        assertThat(fromMine.coverArtUrl).isNull()
+
+        val official = AddonStreamRungs(Registry(listOf(addon())), refs(client()))
+        val fromOfficial = registry(official).resolve(track(), allowYouTube = false, allowYtDlp = true)
+        assertThat(fromOfficial!!.origin).isEqualTo("addon:test")
+        assertThat(fromOfficial.coverArtUrl).isEqualTo(art)
+    }
+
     @Test fun `a user-added add-on goes ahead of Qobuz`() = runTest {
         val rungs = AddonStreamRungs(Registry(listOf(addon(id = "mine", userAdded = true))), refs(addonClient(hit = false)))
         registry(rungs).resolve(track(), allowYouTube = false, allowYtDlp = true)

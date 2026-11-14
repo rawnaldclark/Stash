@@ -43,7 +43,12 @@ private val Context.tidalDebugDataStore: DataStore<Preferences> by preferencesDa
  *    relay key stay the live config's: only the origin is typed, never a secret.
  *
  * A release build ignores both whatever is stored ([honored]), the rule the force-source toggles
- * learned the hard way (#429: a pref that outlives its UI is a silent single point of failure).
+ * learned the hard way (#429: a pref that outlives its UI is a silent single point of failure),
+ * and stores nothing when asked to.
+ *
+ * Reading a staging run's logs: [state] is Auto with no override until the store has been read, a
+ * moment after a cold start, so the very first lookups of a debug build's process can go to the
+ * live server on the wire the config picks (review-881 N8; left as it is, a debug-only window).
  */
 @Singleton
 class TidalDebugSettings internal constructor(
@@ -78,12 +83,15 @@ class TidalDebugSettings internal constructor(
         }
         .stateIn(scope, SharingStarted.Eagerly, State())
 
+    /** Forces a wire. Nothing is stored on a build that would not honour it. */
     suspend fun setWire(wire: Wire) {
+        if (!honored) return
         store?.edit { it[WIRE] = wire.name }
     }
 
-    /** Sets the override origin; blank or invalid clears it. Returns what was stored. */
+    /** Sets the override origin; blank or invalid clears it. Returns what was stored: nothing on a build that would not honour it. */
     suspend fun setOrigin(raw: String?): String? {
+        if (!honored) return null
         val origin = raw?.let(::normaliseOrigin)
         store?.edit { if (origin == null) it.remove(ORIGIN) else it[ORIGIN] = origin }
         if (origin != null) Log.i(TAG, "owner server override set (debug build)") else Log.i(TAG, "owner server override cleared")

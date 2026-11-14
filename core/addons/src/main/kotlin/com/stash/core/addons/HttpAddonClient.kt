@@ -83,6 +83,8 @@ class HttpAddonClient @Inject constructor(
     private val trust: AddonTrust,
     private val signer: AddonInstallSigner,
     hostOptions: AddonHostOptions = StrictAddonHost,
+    /** Told when [mediaClient]'s guard refuses a stream's fetch ([AddonMediaRefusals]). */
+    private val refusals: AddonMediaRefusals = NoMediaRefusals,
 ) {
     /**
      * The URL rule's development exception (SPEC.md 1.1): `http:` on localhost, for debug builds
@@ -96,6 +98,9 @@ class HttpAddonClient @Inject constructor(
 
     /** Tests: sees every line this client logs, to prove none carries a secret. */
     internal var logHook: ((String) -> Unit)? = null
+
+    /** Tests: the longest a foreground play waits for a song still being prepared ([PREPARING_WAIT_MS]). */
+    internal var preparingWaitCapMs: Long = PREPARING_WAIT_MS
 
     /** `Stash/<versionName>` on every add-on request (add-ons plan phase 4 §2.3). */
     private val userAgent: String = hostOptions.userAgent
@@ -117,24 +122,49 @@ class HttpAddonClient @Inject constructor(
      * OkHttp pools connections per address, and an address includes its DNS, so a connection one
      * client made is never handed to the other.
      */
-    private val publicHttp: OkHttpClient = http.newBuilder()
-        .dns(PublicOnlyDns(sharedClient.dns, allowLoopback = hostOptions.allowLocalHttp))
-        .build()
+    private val publicHttp: OkHttpClient = PublicOnlyDns(sharedClient.dns, allowLoopback = hostOptions.allowLocalHttp).let { dns ->
+        http.newBuilder()
+            .dns(dns)
+            // Behind a proxy the DNS above is never asked for the add-on's name: ask it here (review-882 M2).
+            .addInterceptor(AddonMediaGuard.proxyGuard(dns, sharedClient.proxy, sharedClient.proxySelector))
+            .build()
+    }
 
     /**
-     * What the player fetches add-on streams with (`addon:` origins, add-ons plan phase 4 §2.6): the
-     * app's shared client without its interceptors (their debug logging prints URLs, and a stream
-     * URL can carry a signature), following redirects as a player must, with [PublicOnlyDns] and
-     * a connection guard ([PublicOnlyDns.connectionGuard]) for an IP literal in a redirect, so no
-     * add-on can make the player fetch from the user's own network.
+     * What EVERY fetch of a URL an add-on handed over goes through (`addon:` origins and sources,
+     * add-ons plan phase 4 §2.6; review-882 B1): the player's streams, the downloader's files and
+     * the DASH downloader's manifests and segments. The app's shared client without its
+     * interceptors (their debug logging prints URLs, and a stream URL can carry a signature), and:
+     *  - [AddonMediaGuard]: the URL rule on the first URL and on every redirect hop, which it
+     *    follows by hand, so an address on the user's own network is refused before any
+     *    connection is opened; `User-Agent: Stash/<version>` on every hop;
+     *  - [PublicOnlyDns]: a name that resolves to the user's own network is refused;
+     *  - [PublicOnlyDns.connectionGuard]: the last check, on the connection's peer.
+     *
+     * A consumer that fetched an add-on's URL on any other client would have none of this: the
+     * wiring tests (`AddonMediaClientTest`, `AddonFetchWiringTest`) hold each one to it.
      */
     val mediaClient: OkHttpClient by lazy {
+        val dns = PublicOnlyDns(sharedClient.dns, allowLoopback = hostOptions.allowLocalHttp)
         sharedClient.newBuilder()
             .apply {
                 interceptors().clear()
                 networkInterceptors().clear()
             }
-            .dns(PublicOnlyDns(sharedClient.dns, allowLoopback = hostOptions.allowLocalHttp))
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .dns(dns)
+            .addInterceptor(
+                AddonMediaGuard(
+                    allowed = { AddonValidator.isAllowedUrl(it.toString(), optionsFor(publicOnly = true), Limits.STREAM_URL) },
+                    isLocalAddress = { AddonValidator.isLocalAddressUrl(it.toString(), optionsFor(publicOnly = true)) },
+                    publicDns = dns,
+                    proxy = sharedClient.proxy,
+                    proxySelector = sharedClient.proxySelector,
+                    userAgent = userAgent,
+                    onRefused = { stream, why -> refusals.refused(stream, why) },
+                ),
+            )
             .addNetworkInterceptor(PublicOnlyDns.connectionGuard(allowLoopback = hostOptions.allowLocalHttp))
             .apply { if (hostOptions.allowLocalHttp) connectionSpecs(listOf(ConnectionSpec.MODERN_TLS, ConnectionSpec.CLEARTEXT)) }
             .build()
@@ -195,11 +225,16 @@ class HttpAddonClient @Inject constructor(
     /**
      * [readManifest], with the checked answer as JSON text too, for a host that keeps the last good
      * manifest across restarts ([AddonManifestStore]). The text holds no URL or token of ours.
+     *
+     * The text is the answer as it arrived, never the parsed tree written out again: the validator
+     * ignores keys it doesn't know, so a valid manifest can carry a value nested tens of thousands
+     * deep, and `JsonElement.toString()` recurses once per level (a `StackOverflowError`, which no
+     * `catch (e: Exception)` above this call stops). A manifest is at most [MANIFEST_BYTES].
      */
     suspend fun manifestWithJson(base: String, publicOnly: Boolean = true): AddonResult<Pair<AddonManifest, String>> {
         val opts = optionsFor(publicOnly)
-        return exchange(null, base, Route.MANIFEST, listOf("manifest.json"), emptyList(), signPayload = null, opts) {
-            AddonValidator.readManifest(it, opts) to it.toString()
+        return exchange(null, base, Route.MANIFEST, listOf("manifest.json"), emptyList(), signPayload = null, opts) { element, text ->
+            AddonValidator.readManifest(element, opts) to text
         }
     }
 
@@ -244,9 +279,14 @@ class HttpAddonClient @Inject constructor(
                 song.isrc?.takeIf { it.isNotBlank() }?.let { add("isrc" to it) }
                 song.durationMs?.takeIf { it > 0 }?.let { add("durationMs" to it.toString()) }
             }
+            // No [AddonValidator.checkResolve] here: "the same song or null" is v1's promise. An
+            // Eclipse-family /resolve often answers its top search hit, and an item of another
+            // length is then an honest answer about another song, not a broken one: the host's
+            // matcher judges it like a search row (review-882 round 2, F8). Thrown out here it
+            // counted toward the breaker, and three in a row paused the add-on for 30 minutes.
+            // The dialect has no `maxTier`, so rule 7 has nothing to check either.
             return call(addon, Route.RESOLVE, emptyList(), params, paced = paced) {
                 val item = AddonEclipse.resolveResponse(it, opts) ?: return@call null
-                AddonValidator.checkResolve(item, query)
                 gateIds(addon.manifest, item)
             }
         }
@@ -289,34 +329,65 @@ class HttpAddonClient @Inject constructor(
                     }
                 }
                 // SPEC.md 10.1 and phase 4 §2.3: an answer out of range is a quality miss, never a broken answer.
-                if (info.tier !in request.minTier..request.tier || info.manifest !in request.manifest) {
+                if (!answers(dialect, request, info)) {
                     throw AddonRefusalException(ErrorCode.QUALITY_UNAVAILABLE, held = info)
+                }
+                if (dialect == AddonDialect.ECLIPSE && AddonEclipse.tierIsDefault(info)) {
+                    debug("${addon.id} ${route.name.lowercase()}: an answer that states no quality, taken at the 320 setting")
                 }
                 info
             }
         }
         val first = ask()
+        if (first.isStreamAnswer()) wastedWaits.remove(addon.id)
         // Eclipse's per-song "still preparing": a foreground play waits once, briefly, then moves on.
         val preparing = ((first as? AddonResult.Failed)?.failure as? AddonFailure.Refused)?.takeIf { it.preparing }
         if (preparing != null && !paced) {
-            val waitMs = ((preparing.retryAfterSec ?: 1) * 1000L).coerceIn(0L, PREPARING_WAIT_MS)
+            // The lossy pass of a play whose lossless pass just waited for this song asks once and moves on.
+            val waited = waitedFor[addon.id]
+            if (waited != null && waited.first == id && nowMs() - waited.second in 0 until PREPARING_SAME_PLAY_MS) return first
+            val waitMs = ((preparing.retryAfterSec ?: 1) * 1000L).coerceIn(0L, preparingWaitCapMs)
             debug("${addon.id} ${route.name.lowercase()}: still preparing; asking once more in ${waitMs} ms")
             delay(waitMs)
-            return ask()
+            waitedFor[addon.id] = id to nowMs()
+            val second = ask()
+            when {
+                second.isStreamAnswer() -> wastedWaits.remove(addon.id)
+                ((second as? AddonResult.Failed)?.failure as? AddonFailure.Refused)?.preparing == true ->
+                    wastedWaits.merge(addon.id, 1) { a, b -> a + b }
+            }
+            return second
         }
         return first
     }
+
+    /**
+     * How many foreground waits in a row an add-on's "still preparing" has wasted (the song was
+     * still not ready after the wait), with no stream answered between (review-882 M4). A server
+     * that is simply overloaded answers `503` with a short `Retry-After` for every song; read as
+     * "preparing" each time, it cost every play a 3 s wait and was never paused. From
+     * [PREPARING_WASTED_WAITS] on, such an answer is what SPEC.md 7 makes of any other `503`:
+     * `unavailable`, pausing the add-on for its `Retry-After`. The first stream it answers ends that.
+     * Memory only: a restart starts again.
+     */
+    private val wastedWaits = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+    /** Per add-on: the song a foreground play last waited for, and when ([nowMs]). */
+    private val waitedFor = java.util.concurrent.ConcurrentHashMap<String, Pair<String, Long>>()
+
+    /** The add-on answered with a stream: in range, or held as out of range. */
+    private fun AddonResult<StreamInfo>.isStreamAnswer(): Boolean =
+        this is AddonResult.Ok || ((this as? AddonResult.Failed)?.failure as? AddonFailure.Refused)?.held != null
+
+    private fun readsAsPreparing(addon: InstalledAddon?): Boolean =
+        addon != null && (wastedWaits[addon.id] ?: 0) < PREPARING_WASTED_WAITS
 
     /**
      * The `quality` an Eclipse-family add-on is sent (phase 4 §2.3): the first option of its own
      * `quality` select, else `LOSSLESS` for a lossless range, `HIGH` for a high one, `LOW` below.
      */
     private fun qualityParam(addon: InstalledAddon, request: StreamRequest): String =
-        addon.eclipse?.qualityOption ?: when {
-            request.minTier.isLossless -> "LOSSLESS"
-            request.tier >= Tier.HIGH -> "HIGH"
-            else -> "LOW"
-        }
+        eclipseQuality(addon.eclipse?.qualityOption, request)
 
     /** `GET /lyrics` by the add-on's own [id], else by [d] (SPEC.md 4.6). No lyrics is `not_found`. */
     suspend fun lyrics(addon: InstalledAddon, d: Descriptor?, id: String? = null, paced: Boolean = false): AddonResult<Lyrics> {
@@ -388,7 +459,7 @@ class HttpAddonClient @Inject constructor(
         }
         val path = if (segments.isEmpty()) listOf(route.name.lowercase().replace('_', '-')) else segments
         val withSettings = params + addon.settings.map { (k, v) -> k to v }
-        val result = exchange(addon, addon.base, route, path, withSettings, signPayload, optionsFor(addon), parse)
+        val result = exchange(addon, addon.base, route, path, withSettings, signPayload, optionsFor(addon)) { element, _ -> parse(element) }
         if (circuit) report(addon.id, result)
         return result
     }
@@ -421,6 +492,7 @@ class HttpAddonClient @Inject constructor(
         }
     }
 
+    /** [parse] gets the answer as a tree and as the text it arrived as. */
     private suspend fun <T> exchange(
         addon: InstalledAddon?,
         base: String,
@@ -429,7 +501,7 @@ class HttpAddonClient @Inject constructor(
         params: List<Pair<String, String>>,
         signPayload: String?,
         opts: AddonValidator.Options,
-        parse: (JsonElement) -> T,
+        parse: (JsonElement, String) -> T,
     ): AddonResult<T> {
         val tag = "${addon?.id ?: "manifest"} ${route.name.lowercase()}"
         val baseUrl = base.takeIf { AddonValidator.isAllowedUrl(it, opts) }?.toHttpUrlOrNull()
@@ -442,6 +514,7 @@ class HttpAddonClient @Inject constructor(
             params.forEach { (k, v) -> addQueryParameter(k, v) }
         }.build()
         val deadline = nowMs() + route.timeoutMs
+        val maxBytes = if (route == Route.MANIFEST) MANIFEST_BYTES else Limits.BODY_BYTES
         val firstParty = signPayload != null && trust.isFirstParty(base)
         val client = if (opts.publicOnly) publicHttp else http
         val eclipse = addon?.dialect == AddonDialect.ECLIPSE
@@ -464,7 +537,7 @@ class HttpAddonClient @Inject constructor(
                 if (remaining <= 0) return AddonResult.Failed(AddonFailure.Timeout)
                 // The call timeout only starts once OkHttp's dispatcher runs the call: this also
                 // bounds the wait for a connection slot.
-                val reply = withTimeoutOrNull(remaining) { execute(client, builder.build(), remaining, adoptServerTime = signed) }
+                val reply = withTimeoutOrNull(remaining) { execute(client, builder.build(), remaining, adoptServerTime = signed, maxBytes = maxBytes) }
                     ?: run {
                         debug("$tag: timed out")
                         return AddonResult.Failed(AddonFailure.Timeout)
@@ -482,8 +555,13 @@ class HttpAddonClient @Inject constructor(
                     mayResign = false
                     continue
                 }
-                if (reply.tooLarge) return AddonResult.Failed(AddonFailure.InvalidResponse("", "body over 2 MiB"))
-                val element = reply.body?.let { runCatching { json.parseToJsonElement(it) }.getOrNull() }
+                if (reply.tooLarge) {
+                    return AddonResult.Failed(
+                        AddonFailure.InvalidResponse("", if (route == Route.MANIFEST) "manifest over 64 KiB" else "body over 2 MiB"),
+                    )
+                }
+                val text = reply.body
+                val element = text?.let { runCatching { json.parseToJsonElement(it) }.getOrNull() }
                 if (reply.code !in 200..299) {
                     debug("$tag: HTTP ${reply.code}")
                     // A first-party 401 that names the server's clock is a skewed signature, not a
@@ -494,19 +572,29 @@ class HttpAddonClient @Inject constructor(
                     }
                     val refused = refusal(reply, element, eclipse)
                     if (refused.onlyBitChord) warn("$tag: ${AddonEclipse.ONLY_BITCHORD}")
-                    return AddonResult.Failed(
-                        if (eclipse && (route == Route.STREAM || route == Route.DOWNLOAD) && refused.isPreparing()) refused.copy(preparing = true) else refused,
-                    )
+                    val preparing = eclipse && (route == Route.STREAM || route == Route.DOWNLOAD) && refused.isPreparing()
+                    if (preparing && !readsAsPreparing(addon)) debug("$tag: still preparing after ${PREPARING_WASTED_WAITS} wasted waits; read as unavailable")
+                    return AddonResult.Failed(if (preparing && readsAsPreparing(addon)) refused.copy(preparing = true) else refused)
                 }
-                element ?: return AddonResult.Failed(AddonFailure.InvalidResponse("", "not JSON"))
+                if (element == null || text == null) return AddonResult.Failed(AddonFailure.InvalidResponse("", "not JSON"))
                 return try {
-                    AddonResult.Ok(parse(element))
+                    AddonResult.Ok(parse(element, text))
                 } catch (e: AddonRefusalException) {
                     debug("$tag: ${e.code.wire}")
                     AddonResult.Failed(AddonFailure.Refused(e.code, reply.code, null, null, held = e.held?.let(::HeldStream)))
                 } catch (e: AddonContractException) {
                     warn("$tag: invalid answer at ${loggable(e.path.ifEmpty { "/" })}: ${loggable(e.reason)}")
                     AddonResult.Failed(AddonFailure.InvalidResponse(e.path, e.reason))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    // Reading an answer is not suspending and touches nothing but the answer, so
+                    // whatever it throws is about the answer: a StackOverflowError on a value
+                    // nested too deep, a number no rule expected. An Error is caught on purpose;
+                    // it would otherwise pass every `catch (e: Exception)` between here and the
+                    // caller's coroutine scope. Class name only: the message can quote the answer.
+                    warn("$tag: the answer could not be read (${e.javaClass.simpleName})")
+                    AddonResult.Failed(AddonFailure.InvalidResponse("", "unreadable"))
                 }
             }
         } catch (e: CancellationException) {
@@ -576,8 +664,10 @@ class HttpAddonClient @Inject constructor(
         val wwwAuthenticate: String? = null,
     )
 
-    /** Runs [request] with a call timeout of [timeoutMs]; cancelling the coroutine cancels the call. */
-    private suspend fun execute(client: OkHttpClient, request: Request, timeoutMs: Long, adoptServerTime: Boolean): Reply = suspendCancellableCoroutine { cont ->
+    /** Runs [request] on [client] with a call timeout of [timeoutMs]; cancelling the coroutine cancels the call. At most [maxBytes] of body are read. */
+    private suspend fun execute(
+        client: OkHttpClient, request: Request, timeoutMs: Long, adoptServerTime: Boolean, maxBytes: Long,
+    ): Reply = suspendCancellableCoroutine { cont ->
         val call = client.newCall(request)
         call.timeout().timeout(timeoutMs, TimeUnit.MILLISECONDS)
         cont.invokeOnCancellation { call.cancel() }
@@ -588,7 +678,7 @@ class HttpAddonClient @Inject constructor(
 
             override fun onResponse(call: Call, response: Response) {
                 val reply = try {
-                    response.use { readReply(it, adoptServerTime) }
+                    response.use { readReply(it, adoptServerTime, maxBytes) }
                 } catch (e: IOException) {
                     if (cont.isActive) cont.resumeWithException(e)
                     return
@@ -599,13 +689,13 @@ class HttpAddonClient @Inject constructor(
     }
 
     /** [adoptServerTime]: only a signed request's 401 may move the signing clock; no other add-on gets to. */
-    private fun readReply(r: Response, adoptServerTime: Boolean): Reply {
+    private fun readReply(r: Response, adoptServerTime: Boolean, maxBytes: Long): Reply {
         val adopted = adoptServerTime && r.code == 401 && signer.adoptServerTime(r)
         val named = r.code == 401 && r.header(SERVER_TIME_HEADER) != null
         val www = if (r.code == 401) r.header("WWW-Authenticate") else null
         if (r.code in 300..399) return Reply(r.code, r.header("Location"), null, false, null, false)
         val source = r.body?.source() ?: return Reply(r.code, null, r.header("Retry-After"), adopted, null, false, named, www)
-        if (source.request(Limits.BODY_BYTES + 1)) return Reply(r.code, null, r.header("Retry-After"), adopted, null, true, named, www)
+        if (source.request(maxBytes + 1)) return Reply(r.code, null, r.header("Retry-After"), adopted, null, true, named, www)
         val text = source.buffer.readUtf8()
         return Reply(r.code, null, r.header("Retry-After"), adopted, text, false, named, www)
     }
@@ -631,6 +721,13 @@ class HttpAddonClient @Inject constructor(
         private const val TAG = "HttpAddonClient"
         private const val MAX_REDIRECTS = 3
 
+        /**
+         * The most a `manifest.json` may weigh: SPEC.md A.1's cap for a phone add-on's manifest,
+         * held to every manifest here. A real one is a few hundred bytes; the registry keeps each
+         * one on disk and reads them all at every cold start.
+         */
+        const val MANIFEST_BYTES = 64L * 1024
+
         /** The first-party skew answer's header (SPEC.md 6, informative): the server's clock, epoch seconds. */
         const val SERVER_TIME_HEADER = "X-Stash-Server-Time"
 
@@ -645,6 +742,42 @@ class HttpAddonClient @Inject constructor(
 
         /** How long a foreground play waits for a song still being prepared, once: min(Retry-After, this). */
         const val PREPARING_WAIT_MS = 3_000L
+
+        /**
+         * The `quality` an Eclipse-family add-on is sent for [request] (the spec's `eclipseQuality`):
+         * [qualityOption], the first option of its own `quality` select, when it declares one; else
+         * `LOSSLESS` for a lossless range, `HIGH` for a high one, `LOW` below.
+         */
+        internal fun eclipseQuality(qualityOption: String?, request: StreamRequest): String = qualityOption ?: when {
+            request.minTier.isLossless -> "LOSSLESS"
+            request.tier >= Tier.HIGH -> "HIGH"
+            else -> "LOW"
+        }
+
+        /** After this many wasted waits in a row, "still preparing" is read as plain `unavailable` (see `wastedWaits`). */
+        const val PREPARING_WASTED_WAITS = 2
+
+        /** How long after a wait the same song's next ask (the lossy pass of the same play) does not wait again. */
+        const val PREPARING_SAME_PLAY_MS = 2 * 60_000L
+
+        /**
+         * Whether [info] answers [request] for an add-on of [dialect]: its tier within the asked
+         * range and its delivery among the asked ones (SPEC.md 5.2).
+         *
+         * One exception (review-882 J5). An Eclipse-family answer that is not lossless and does not
+         * say what it is ([AddonEclipse.tierIsDefault]: `{"url": …}`, or with only `format: "mp3"`)
+         * reads as `low` for want of anything better. Asked for `high` (the 320 setting; the add-on
+         * was sent `quality=HIGH`) it is taken: an unlabelled lossy file from a source the user
+         * chose is no worse than the YouTube fallback, and refusing it made every add-on that
+         * answers a bare URL one that is added and then never plays. Asked for `low` only (Data
+         * saver) it is refused: nothing says it is small. One that states it is under 256 kbps
+         * keeps its `low` both ways.
+         */
+        fun answers(dialect: AddonDialect, request: StreamRequest, info: StreamInfo): Boolean {
+            if (info.manifest !in request.manifest) return false
+            if (dialect == AddonDialect.ECLIPSE && AddonEclipse.tierIsDefault(info)) return Tier.HIGH in request.minTier..request.tier
+            return info.tier in request.minTier..request.tier
+        }
 
         /** The [AddonRateGate] key of add-on [addonId]: its own bucket and breaker. */
         fun rateKey(addonId: String): String = "addon_$addonId"

@@ -1,0 +1,7 @@
+{
+  "status": 503,
+  "route": "search",
+  "headers": {
+    "Retry-After": "10"
+  }
+}

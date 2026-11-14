@@ -28,11 +28,27 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Add-ons phase 2 exit test (plan §7.1 B7): the same relay answers, served once as the legacy
- * relay serves them and once through the v1 face ([V1FacePort], a line-for-line port of
- * `stash-addon-tidal/src/faces/v1.js`), give the same [TidalLookup], the same `addon_refs` rows,
- * the same allowance and the same busy circuit, whichever wire the Tidal rung uses.
+ * relay serves them and once through the v1 face ([V1FacePort], a hand port of
+ * `stash-addon-tidal/src/faces/v1.js` at the commit it names), give the same [TidalLookup], the
+ * same `addon_refs` rows, the same allowance and the same busy circuit, whichever wire the Tidal
+ * rung uses.
  *
- * One known difference is pinned on its own ([`a relay 502 is a failed lookup on legacy and a 15 s pause on v1`]).
+ * **Where the wires differ** (review-881 M4). None of these changes which song is picked or which
+ * file plays; each is pinned by a `difference - ...` test at the end of this class, so a change to
+ * either wire that moves one shows up here:
+ *
+ * | Case | Legacy wire | v1 wire |
+ * |---|---|---|
+ * | A 503 with no `Retry-After` that the Worker didn't write (a CDN's error page) | busy 5 minutes | a failed lookup, no pause |
+ * | A stream answer the app can't use (a codec other than FLAC or AAC) | a 14-day miss | the face answers 503: a failed lookup, nothing cached |
+ * | "artist title" over 200 characters | sent whole | cut at 200 (SPEC.md 4.2's limit, which the face enforces) |
+ * | One malformed row in a search answer | the other rows are read | the whole answer is dropped (reject, don't repair): a failed lookup |
+ * | The relay reports 0 for bit depth, rate or bitrate | 0 is shown | the face fills in 16 / 44100 / 1411 |
+ * | The longest wait on a hung server | 10 s search, 10 s stream | 10 s search, 15 s stream (the contract's timeouts) |
+ *
+ * Two more are decisions, not accidents, and have their own tests in `TidalV1WirePolicyTest`: at
+ * the CD quality setting the v1 wire asks for CD FLAC only (decision D15), and a v1 face that
+ * fails hard three times in a row is set aside for the legacy relay (review-881 M7).
  */
 class TidalWireParityTest {
 
@@ -49,6 +65,13 @@ class TidalWireParityTest {
     private val legacySearches = AtomicInteger()
     private val v1Searches = AtomicInteger()
 
+    /** The `q` each server was last searched with. */
+    @Volatile private var legacyQ: String? = null
+    @Volatile private var v1Q: String? = null
+
+    /** When set, both hosts answer every request with this instead (a CDN's own page, in front of the Worker). */
+    @Volatile private var inFront: (() -> MockResponse)? = null
+
     private val query = TrackQuery(artist = "Daft Punk", title = "Get Lucky", isrc = "USQX91300108", durationMs = 248_000)
 
     /** One side of the comparison: a client, its rows and its allowance. */
@@ -61,8 +84,9 @@ class TidalWireParityTest {
         legacyServer.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val url = request.requestUrl!!
+                inFront?.let { return it() }
                 return when {
-                    url.encodedPath == "/search" -> { legacySearches.incrementAndGet(); search.raw() }
+                    url.encodedPath == "/search" -> { legacySearches.incrementAndGet(); legacyQ = url.queryParameter("q"); search.raw() }
                     url.encodedPath.startsWith("/stream/") ->
                         stream(listOfNotNull(url.queryParameter("aac")?.let { "aac" to it }, url.queryParameter("hires")?.let { "hires" to it }).toMap()).raw()
                     else -> MockResponse().setResponseCode(404)
@@ -73,9 +97,10 @@ class TidalWireParityTest {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val url = request.requestUrl!!
                 val route = url.encodedPath.removePrefix("/v1/$TOKEN/")
+                inFront?.let { return it() }
                 return when {
                     route == "manifest.json" -> json(200, V1FacePort.MANIFEST)
-                    route == "search" -> { v1Searches.incrementAndGet(); V1FacePort.search(search, url.queryParameter("limit")) }
+                    route == "search" -> { v1Searches.incrementAndGet(); v1Q = url.queryParameter("q"); V1FacePort.search(search, url.queryParameter("limit")) }
                     route.startsWith("stream/") -> V1FacePort.stream(url, stream)
                     else -> MockResponse().setResponseCode(404)
                 }
@@ -271,16 +296,85 @@ class TidalWireParityTest {
     }
 
     /**
-     * The one difference: the face answers a relay 502 ("Tidal refused this one request") as
-     * `unavailable` 503 with `retryAfter: 15`, which reads exactly like a busy pool. The legacy
-     * wire fails that song alone; the v1 wire pauses the whole rung for 15 s. Reported to the
-     * add-on side (an HTTP 502 `unavailable` would keep them apart; SPEC.md 7 allows it).
+     * A track Tidal refuses (the relay's 502). The face used to answer it as `unavailable` 503
+     * with `retryAfter: 15`, which reads exactly like a busy pool: the v1 wire paused Tidal on the
+     * whole phone for 15 s where the legacy wire failed that one song (review-881 M3). The face now
+     * keeps the status 502 (stash-addon-tidal 40ab038), and the two agree.
      */
-    @Test fun `a relay 502 is a failed lookup on legacy and a 15 s pause on v1`() = runBlocking {
+    @Test fun `a track Tidal refuses (relay 502) fails that one song on both, and pauses nothing`() {
         search = searchHit()
         stream = { RelayAnswer(502, """{"error":"upstream"}""") }
-        assertThat(legacy.client.lookup(query)).isEqualTo(TidalLookup.Failed)
-        assertThat(v1.client.lookup(query)).isEqualTo(TidalLookup.Busy(now + 15_000))
+        assertThat(same { it.lookup(query) }).isEqualTo(TidalLookup.Failed)
+        assertThat(v1.client.isBusy()).isFalse()
+        assertThat(legacy.client.isBusy()).isFalse()
+        // The same song is asked again at once on both: nothing was paused, nothing remembered.
+        stream = { cdFlac() }
+        assertThat(same { it.lookup(query) }).isInstanceOf(TidalLookup.Found::class.java)
+    }
+
+    // ------------------------------------------------------------------ where the wires differ (review-881 M4)
+
+    @Test fun `difference - a 503 with no Retry-After from in front of the Worker`() = runBlocking<Unit> {
+        inFront = { MockResponse().setResponseCode(503).setBody("<html>Service Unavailable</html>") }
+        assertThat(legacy.client.lookup(query)).isEqualTo(TidalLookup.Busy(now + TidalClient.BUSY_BACKOFF_MS))
+        assertThat(v1.client.lookup(query)).isEqualTo(TidalLookup.Failed)
+        assertThat(legacy.client.isBusy()).isTrue()
+        assertThat(v1.client.isBusy()).isFalse()
+    }
+
+    @Test fun `difference - a codec the app can't play`() = runBlocking<Unit> {
+        search = searchHit()
+        stream = { RelayAnswer(200, """{"url":"https://lgf.audio.tidal.com/mediatracks/a.m4a?token=t9","codec":"alac","container":"mp4","manifest":"none"}""") }
+        // Legacy: the answer is read, refused by the client, and remembered as a miss (14 days).
+        assertThat(legacy.client.lookup(query)).isEqualTo(TidalLookup.NoMatch)
+        assertThat(legacy.dao.rows.values.single().losslessMissAt).isEqualTo(now)
+        // v1: the face cannot read it and answers 503 with no retryAfter: a failed lookup, nothing remembered.
+        assertThat(v1.client.lookup(query)).isEqualTo(TidalLookup.Failed)
+        assertThat(v1.dao.rows.values.single().losslessMissAt).isNull()
+        assertThat(v1.client.isBusy()).isFalse()
+    }
+
+    @Test fun `difference - a search of more than 200 characters`() = runBlocking<Unit> {
+        val long = query.copy(title = "Get Lucky " + "x".repeat(300), isrc = null)
+        legacy.client.lookup(long)
+        v1.client.lookup(long)
+        assertThat(legacyQ).isEqualTo("${long.artist} ${long.title}")
+        assertThat(v1Q).isEqualTo("${long.artist} ${long.title}".take(200))
+    }
+
+    @Test fun `difference - one malformed search row`() = runBlocking<Unit> {
+        // The second row's artwork has a space in it: no URL by the contract's rule.
+        search = RelayAnswer(
+            200,
+            """{"tracks":[
+                {"id":"td:363236466","title":"Get Lucky","artist":"Daft Punk","duration":248,"audioQuality":"LOSSLESS","isrc":"USQX91300108"},
+                {"id":"td:1550546","title":"One More Time","artist":"Daft Punk","duration":320,"audioQuality":"LOSSLESS",
+                 "artwork":"https://resources.tidal.com/images/a b/1280x1280.jpg"}
+            ]}""",
+        )
+        stream = { cdFlac() }
+        assertThat(legacy.client.lookup(query)).isInstanceOf(TidalLookup.Found::class.java)
+        assertThat(v1.client.lookup(query)).isEqualTo(TidalLookup.Failed)
+        assertThat(v1.dao.rows).isEmpty()
+    }
+
+    @Test fun `difference - a FLAC answer with no numbers`() = runBlocking<Unit> {
+        search = searchHit(quality = "LOSSLESS")
+        stream = { RelayAnswer(200, """{"url":"https://lgf.audio.tidal.com/mediatracks/a.flac?token=t1","codec":"flac","container":"flac","manifest":"none","bitDepth":0,"sampleRate":0,"bitrate":0}""") }
+        val a = (legacy.client.lookup(query) as TidalLookup.Found).stream
+        val b = (v1.client.lookup(query) as TidalLookup.Found).stream
+        assertThat(Triple(a.bitDepth, a.sampleRateHz, a.bitrateKbps)).isEqualTo(Triple(0, 0, 0))
+        assertThat(Triple(b.bitDepth, b.sampleRateHz, b.bitrateKbps)).isEqualTo(Triple(16, 44_100, 1411))
+        // The same file either way.
+        assertThat(b.url).isEqualTo(a.url)
+        assertThat(b.codec).isEqualTo(a.codec)
+    }
+
+    /** By their constants: waiting 15 s on a hung socket would only test OkHttp. */
+    @Test fun `difference - the longest wait on a hung server`() {
+        assertThat(TidalClient.TIMEOUT_S).isEqualTo(10L)
+        assertThat(com.stash.core.addons.HttpAddonClient.Route.SEARCH.timeoutMs).isEqualTo(10_000L)
+        assertThat(com.stash.core.addons.HttpAddonClient.Route.STREAM.timeoutMs).isEqualTo(15_000L)
     }
 
     /** What the relay answers one request with. [tag] is the relay's internal answer tag (`rights`), never on the wire. */

@@ -22,8 +22,13 @@ interface TidalWire {
     /** `"<artist> <title>"` on Tidal: every row, as neutral candidates; the client filters and picks. */
     suspend fun search(q: String): WireReply<List<TidalCandidate>>
 
-    /** A stream of the `td:<n>` track [id] in [mode]. [title] and [artist]: hints a relay may use. */
-    suspend fun stream(id: String, mode: TidalStreamMode, title: String, artist: String): WireReply<TidalWireStream>
+    /**
+     * A stream of the `td:<n>` track [id] in [mode]. [title] and [artist]: hints a relay may use.
+     * [cdOnly]: the listener's quality setting is CD, so nothing above CD FLAC is wanted (decision
+     * D15). Only the v1 wire can ask for that; the legacy relay ignores it and answers what Tidal
+     * gives, as it always did.
+     */
+    suspend fun stream(id: String, mode: TidalStreamMode, title: String, artist: String, cdOnly: Boolean = false): WireReply<TidalWireStream>
 
     enum class Kind(val label: String) {
         LEGACY("legacy relay"),
@@ -33,10 +38,10 @@ interface TidalWire {
 
 /** What the rung asks a stream for. */
 enum class TidalStreamMode {
-    /** FLAC only (relay: no `aac`; v1: `tier=hires&minTier=lossless&manifest=none,dash`). */
+    /** FLAC only (relay: no `aac`; v1: `tier=hires&minTier=lossless&manifest=none,dash`, `tier=lossless` at the CD setting). */
     LOSSLESS,
 
-    /** FLAC, else Tidal's AAC 320 (relay: `aac=1`; v1: `tier=hires&minTier=high&manifest=none,dash`). */
+    /** FLAC, else Tidal's AAC 320 (relay: `aac=1`; v1: `tier=hires&minTier=high&manifest=none,dash`, `tier=lossless` at the CD setting). */
     LOSSLESS_OR_AAC,
 
     /** AAC 320 even when FLAC exists (relay: `aac=only&hires=0`; v1: `tier=high&minTier=high&manifest=none`). */
@@ -75,7 +80,8 @@ sealed interface WireReply<out T> {
     /**
      * No stream of this track in the asked mode. [definitive]: a real answer about the song (relay
      * `lossless_unavailable`, v1 `quality_unavailable`), trusted 14 days; anything else (relay
-     * `not_available`, v1 `not_found` or `region_unavailable`) may be transient: 6 h.
+     * `not_available`, v1 `not_found` or `region_unavailable`, and v1 `quality_unavailable` when
+     * the ask was CD only) may be transient: 6 h.
      */
     data class NotFound(val definitive: Boolean) : WireReply<Nothing>
 

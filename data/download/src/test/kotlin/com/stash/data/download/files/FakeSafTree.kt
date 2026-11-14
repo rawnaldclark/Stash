@@ -26,6 +26,15 @@ internal class FakeSafTree(
 
     /** Writes to a document whose URI this matches fail part-way, as on a full card. */
     var failWritesTo: (String) -> Boolean = { false }
+
+    /**
+     * The name the provider gives a new file asked for as (MIME type, name).
+     * It is not always the name asked for, even when that one is free: the
+     * AOSP provider adds the MIME type's extension to a name whose own
+     * extension belongs to another type ("song.aac" made as `audio/mp4`
+     * comes back "song.aac.m4a") and cuts a name longer than 255 bytes.
+     */
+    var nameOnCreate: (String, String) -> String = { _, name -> name }
     private val dirs = mutableMapOf<String, MutableMap<String, DocumentFile>>()
     private val root = dir("")
 
@@ -60,14 +69,23 @@ internal class FakeSafTree(
             path.replace("/", "%2F")
 
     fun exists(path: String): Boolean =
-        dirs[path.substringBeforeLast('/')]?.containsKey(path.substringAfterLast('/')) == true
+        dirs[path.substringBeforeLast('/', "")]?.containsKey(path.substringAfterLast('/')) == true
 
     fun seedDir(path: String): DocumentFile =
-        path.split('/').fold(root) { cursor, segment -> cursor.findFile(segment) ?: cursor.createDirectory(segment)!! }
+        if (path.isEmpty()) {
+            root
+        } else {
+            path.split('/').fold(root) { cursor, segment -> cursor.findFile(segment) ?: cursor.createDirectory(segment)!! }
+        }
 
-    fun seed(path: String, bytes: ByteArray) {
-        seedDir(path.substringBeforeLast('/')).createFile("audio/flac", path.substringAfterLast('/'))
+    /** Seeds a file at [path] (creating its directories), returns its document. */
+    fun seed(path: String, bytes: ByteArray): DocumentFile {
+        // substringBeforeLast's default handles root-level files: without it
+        // "song.opus" made its own directory named "song.opus".
+        val dir = seedDir(path.substringBeforeLast('/', ""))
+        val doc = dir.createFile("audio/flac", path.substringAfterLast('/'))!!
         written[uriOf(path)] = bytes
+        return doc
     }
 
     private fun uri(path: String): Uri {
@@ -90,7 +108,7 @@ internal class FakeSafTree(
             dir(join(path, name)).also { children[name] = it }
         }
         every { doc.createFile(any(), any()) } answers {
-            var name = secondArg<String>()
+            var name = nameOnCreate(firstArg(), secondArg())
             if (name in children) name = "${name.substringBeforeLast('.')} (1).${name.substringAfterLast('.')}"
             file(join(path, name), children).also { children[name] = it }
         }

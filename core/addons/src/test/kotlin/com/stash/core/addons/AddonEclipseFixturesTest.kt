@@ -82,9 +82,56 @@ class AddonEclipseFixturesTest {
         // Artwork on a private address and a malformed ISRC are dropped; the row stays.
         assertThat(r.tracks[2].artwork).isNull()
         assertThat(r.tracks[2].isrc).isNull()
+        // No `artists` list was sent; the album is read (a year written as text too). The client
+        // keeps albums only for an add-on that has album pages.
         assertThat(r.artists).isNull()
-        assertThat(r.albums).isNull()
+        assertThat(r.albums).containsExactly(com.stash.addons.contract.AlbumSummary("al", "Discovery", "Daft Punk", 2001))
     }
+
+    // ------------------------------------------------------------------------------------------ settled with the spec's reader (review-882 M10)
+
+    @Test fun `a manifest that states no version is at 0_0_0`() {
+        assertThat(AddonValidator.readManifest(load("manifest/bitchord-minimal.json"), user).manifest.version).isEqualTo("0.0.0")
+    }
+
+    @Test fun `the quality select is read as the add-on wrote it, even when v1 would not draw that setting`() {
+        fun option(settings: String) = AddonEclipse.manifest(
+            Json.parseToJsonElement("""{"id":"q.addon","resources":["search","stream"],"settings":$settings}"""), user,
+        ).eclipse!!.qualityOption
+        // No label on the setting or its options: v1 refuses to draw it, and the add-on still reads `quality`.
+        assertThat(option("""[{"key":"quality","type":"select","options":[{"value":"FLAC"},{"value":"MP3"}]}]""")).isEqualTo("FLAC")
+        // The first option that has a text value.
+        assertThat(option("""[{"key":"quality","type":"select","options":[{"value":7},"x",{"value":"HI"}]}]""")).isEqualTo("HI")
+        // Not a select, another key, or a value no option may have: as if none were declared.
+        assertThat(option("""[{"key":"quality","type":"text"}]""")).isNull()
+        assertThat(option("""[{"key":"Quality","type":"select","options":[{"value":"FLAC"}]}]""")).isNull()
+        assertThat(option("""[{"key":"quality","type":"select","options":[{"value":"${"x".repeat(101)}"}]}]""")).isNull()
+        assertThat(option("""[{"key":"quality","type":"select","options":[{"value":""}]}]""")).isNull()
+    }
+
+    @Test fun `anything but false on encrypted, drm, hybrid or video is not playable`() {
+        fun stream(extra: String) = Json.parseToJsonElement("""{"url":"https://cdn.example.org/a.flac","codec":"flac",$extra}""")
+        for (marker in listOf("encrypted", "drm", "hybrid", "video")) {
+            for (value in listOf("true", "0", "1", "\"false\"", "\"0\"", "\"\"", "\"cenc\"", "{}", "[]")) {
+                val refused = assertThrows("$marker: $value", AddonRefusalException::class.java) { AddonEclipse.streamInfo(stream("\"$marker\":$value"), user) }
+                assertThat(refused.code).isEqualTo(ErrorCode.QUALITY_UNAVAILABLE)
+            }
+            for (value in listOf("false", "null")) {
+                assertThat(AddonEclipse.streamInfo(stream("\"$marker\":$value"), user).tier).isEqualTo(Tier.LOSSLESS)
+            }
+        }
+    }
+
+    @Test fun `an empty manifest field says nothing - the delivery is read from format`() {
+        fun delivery(fields: String) =
+            AddonEclipse.streamInfo(Json.parseToJsonElement("""{"url":"https://cdn.example.org/a","codec":"flac",$fields}"""), user).manifest
+        assertThat(delivery("\"manifest\":\"\"")).isEqualTo(Delivery.NONE)
+        assertThat(delivery("\"manifest\":\"\",\"format\":\"dash\"")).isEqualTo(Delivery.DASH)
+        assertThat(delivery("\"manifest\":\"  \",\"format\":\"hls\"")).isEqualTo(Delivery.HLS)
+        // A delivery this app does not know is still a broken answer.
+        assertThrows(AddonContractException::class.java) { delivery("\"manifest\":\"smooth\"") }
+    }
+
 
     @Test fun `streams read codec first, format as a codec word or a delivery, and derive the tier`() {
         val hires = AddonEclipse.streamInfo(load("stream/flac-hires.json"), user)

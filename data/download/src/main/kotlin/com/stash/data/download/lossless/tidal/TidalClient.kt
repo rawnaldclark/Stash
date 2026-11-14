@@ -105,8 +105,8 @@ class TidalClient @Inject constructor(
      * The stream for [query], or null on anything else (miss, busy, error, off). Kept for
      * the streaming rung, which only needs "play this or move on"; see [lookup].
      */
-    suspend fun resolve(query: TrackQuery, allowAac: Boolean = false): TidalStream? =
-        (lookup(query, allowAac) as? TidalLookup.Found)?.stream
+    suspend fun resolve(query: TrackQuery, allowAac: Boolean = false, cdOnly: Boolean = false): TidalStream? =
+        (lookup(query, allowAac, cdOnly = cdOnly) as? TidalLookup.Found)?.stream
 
     /**
      * Find [query] on Tidal, spending as little relay quota as possible:
@@ -127,12 +127,20 @@ class TidalClient @Inject constructor(
      *
      * [aacOnly]: the AAC 320 download mode. Tidal's AAC for ANY track, even one it has in FLAC.
      * Implies [allowAac]. A cached AAC miss skips it; its own miss is not cached (see [fetch]).
+     *
+     * [cdOnly]: the listener's quality setting for this lookup is CD (the streaming tier of the
+     * network they are on, or the download tier). "CD means CD" (decision D15): on the v1 wire the
+     * stream is asked at `tier=lossless`, so Tidal's CD FLAC comes back even for a track it has in
+     * Hi-Res. The legacy wire has no such lane and is asked exactly as before. The song's cached
+     * match and miss stamps are shared with a Hi-Res lookup: Tidal has a track in CD FLAC whenever
+     * it has it in Hi-Res, bar the odd one, so "no lossless" means the same at either setting.
      */
     suspend fun lookup(
         query: TrackQuery,
         allowAac: Boolean = false,
         cacheOnly: Boolean = false,
         aacOnly: Boolean = false,
+        cdOnly: Boolean = false,
     ): TidalLookup {
         val aac = allowAac || aacOnly
         val now = nowMs()
@@ -149,9 +157,12 @@ class TidalClient @Inject constructor(
             appTooOldUntilMs.remove(wire.serverKey, until)
         }
 
-        val flightKey = "$key|aac=${if (aacOnly) "only" else aac.toString()}"
+        // Only the v1 wire can ask for CD only, and AAC mode asks for no FLAC at all. On the legacy
+        // wire the setting changes nothing, so it must not split one song's lookups in two either.
+        val cd = cdOnly && !aacOnly && wire.kind == TidalWire.Kind.V1
+        val flightKey = "$key|aac=${if (aacOnly) "only" else aac.toString()}${if (cd) "|cd" else ""}"
         inFlight[flightKey]?.let { return it.await() }
-        val fresh = lookupScope.async(start = CoroutineStart.LAZY) { fetch(wire, query, key, aac, aacOnly) }
+        val fresh = lookupScope.async(start = CoroutineStart.LAZY) { fetch(wire, query, key, aac, aacOnly, cd) }
         val existing = inFlight.putIfAbsent(flightKey, fresh)
         val deferred = if (existing != null) {
             // Lost the race: drop ours (a LAZY async is still attached to the scope's job).
@@ -173,6 +184,7 @@ class TidalClient @Inject constructor(
         key: String,
         allowAac: Boolean,
         aacOnly: Boolean = false,
+        cdOnly: Boolean = false,
     ): TidalLookup =
         withContext(Dispatchers.IO) {
             try {
@@ -219,7 +231,7 @@ class TidalClient @Inject constructor(
                     allowAac -> TidalStreamMode.LOSSLESS_OR_AAC
                     else -> TidalStreamMode.LOSSLESS
                 }
-                when (val r = heard(wire, wire.stream(id, mode, match.title, match.artist))) {
+                when (val r = heard(wire, wire.stream(id, mode, match.title, match.artist, cdOnly))) {
                     is WireReply.Ok -> {
                         val stream = toStream(r.value, match, allowAac, wire)
                         if (stream == null) {

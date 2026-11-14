@@ -338,6 +338,9 @@ class AggregatorRateLimiter @Inject constructor() {
                 isCircuitBroken = now < bucket.blockedUntilMs,
                 msUntilUnblock = (bucket.blockedUntilMs - now).coerceAtLeast(0L),
                 recentFailures = bucket.consecutiveFailures,
+                // The latch is set only when the breaker trips and is cleared just above once its
+                // block has run out: while it holds, the block is the breaker's, not a 429 pause.
+                breakerTripped = bucket.wasCircuitBroken && now < bucket.blockedUntilMs,
             )
         }
         resetEventId?.let { _circuitResetEvents.tryEmit(it) }

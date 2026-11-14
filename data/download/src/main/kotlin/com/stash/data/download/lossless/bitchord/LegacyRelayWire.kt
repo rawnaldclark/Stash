@@ -132,7 +132,10 @@ class LegacyRelayWire @Inject constructor(
             }
         }
 
-        override suspend fun stream(id: String, mode: TidalStreamMode, title: String, artist: String): WireReply<TidalWireStream> {
+        /** [cdOnly] is not sent: this wire stays exactly as it was, and the relay's legacy routes have no CD lane. */
+        override suspend fun stream(
+            id: String, mode: TidalStreamMode, title: String, artist: String, cdOnly: Boolean,
+        ): WireReply<TidalWireStream> {
             val url = (base ?: return WireReply.Error(0)).newBuilder()
                 .addPathSegment("stream")
                 .addPathSegment(id)

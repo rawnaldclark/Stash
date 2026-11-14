@@ -1,6 +1,7 @@
 package com.stash.core.media.streaming
 
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.tidal.TidalClient
 import com.stash.data.download.lossless.tidal.TidalStream
@@ -16,14 +17,33 @@ class TidalStreamResolverTest {
 
     private val client: TidalClient = mockk {
         coEvery { isConfigured() } returns true
-        coEvery { resolve(any(), any()) } returns null
+        coEvery { resolve(any(), any(), any()) } returns null
+    }
+
+    /** The streaming tier of the network the phone is on; each test that cares sets it. */
+    private var streamingTier = LosslessQualityTier.HI_RES
+    private val quality: StreamQualityPolicy = mockk { coEvery { streamingTier() } answers { streamingTier } }
+
+    /** "CD means CD" (decision D15, review-881 M5): the rung tells the client when the listener chose CD. */
+    @Test
+    fun `the streaming tier decides whether Tidal is asked for CD only`() = runTest {
+        val prefs: LosslessSourcePreferences = mockk { coEvery { tidalAacFallbackNow() } returns true }
+        val track = TrackEntity(title = "Get Lucky", artist = "Daft Punk")
+        for ((tier, cdOnly) in listOf(LosslessQualityTier.CD to true, LosslessQualityTier.HI_RES to false, LosslessQualityTier.MAX to false)) {
+            streamingTier = tier
+            TidalStreamResolver(client, prefs, quality).resolve(track)
+            coVerify(exactly = 1) { client.resolve(any(), allowAac = true, cdOnly = cdOnly) }
+            TidalStreamResolver(client, prefs, quality).resolveLossless(track)
+            coVerify(exactly = 1) { client.resolve(any(), allowAac = false, cdOnly = cdOnly) }
+            io.mockk.clearMocks(client, answers = false)
+        }
     }
 
     @Test
     fun `the Tidal AAC switch decides whether streaming asks for AAC`() = runTest {
         for (on in listOf(true, false)) {
             val prefs: LosslessSourcePreferences = mockk { coEvery { tidalAacFallbackNow() } returns on }
-            TidalStreamResolver(client, prefs).resolve(TrackEntity(title = "Get Lucky", artist = "Daft Punk"))
+            TidalStreamResolver(client, prefs, quality).resolve(TrackEntity(title = "Get Lucky", artist = "Daft Punk"))
             coVerify { client.resolve(any(), allowAac = on) }
         }
     }
@@ -33,7 +53,7 @@ class TidalStreamResolverTest {
     fun `the lossless-only resolve never asks for AAC, whatever the switch says`() = runTest {
         val prefs: LosslessSourcePreferences = mockk { coEvery { tidalAacFallbackNow() } returns true }
 
-        TidalStreamResolver(client, prefs).resolveLossless(TrackEntity(title = "Get Lucky", artist = "Daft Punk"))
+        TidalStreamResolver(client, prefs, quality).resolveLossless(TrackEntity(title = "Get Lucky", artist = "Daft Punk"))
 
         coVerify(exactly = 1) { client.resolve(any(), allowAac = false) }
         coVerify(exactly = 0) { client.resolve(any(), allowAac = true) }
@@ -52,7 +72,7 @@ class TidalStreamResolverTest {
     fun `prefer-AAC asks the relay in aac=only mode and labels it Tidal AAC`() = runTest {
         coEvery { client.lookup(any(), allowAac = true, cacheOnly = false, aacOnly = true) } returns TidalLookup.Found(stream("aac"))
 
-        val s = TidalStreamResolver(client, prefs).resolveAacOnly(track)!!
+        val s = TidalStreamResolver(client, prefs, quality).resolveAacOnly(track)!!
 
         assertThat(s.codec).isEqualTo("aac")
         assertThat(s.origin).isEqualTo("tidal")
@@ -65,21 +85,21 @@ class TidalStreamResolverTest {
     @Test
     fun `prefer-AAC refuses a FLAC answer`() = runTest {
         coEvery { client.lookup(any(), allowAac = true, cacheOnly = false, aacOnly = true) } returns TidalLookup.Found(stream("flac"))
-        assertThat(TidalStreamResolver(client, prefs).resolveAacOnly(track)).isNull()
+        assertThat(TidalStreamResolver(client, prefs, quality).resolveAacOnly(track)).isNull()
     }
 
     @Test
     fun `prefer-AAC is a miss on busy, spent, no match and error`() = runTest {
         for (r in listOf(TidalLookup.Busy(1L), TidalLookup.Spent(1L), TidalLookup.NoMatch, TidalLookup.Failed, TidalLookup.Off)) {
             coEvery { client.lookup(any(), allowAac = true, cacheOnly = false, aacOnly = true) } returns r
-            assertThat(TidalStreamResolver(client, prefs).resolveAacOnly(track)).isNull()
+            assertThat(TidalStreamResolver(client, prefs, quality).resolveAacOnly(track)).isNull()
         }
     }
 
     @Test
     fun `prefer-AAC makes no request with no relay configured`() = runTest {
         coEvery { client.isConfigured() } returns false
-        assertThat(TidalStreamResolver(client, prefs).resolveAacOnly(track)).isNull()
+        assertThat(TidalStreamResolver(client, prefs, quality).resolveAacOnly(track)).isNull()
         coVerify(exactly = 0) { client.lookup(any(), any(), any(), any()) }
     }
 }

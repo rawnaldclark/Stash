@@ -187,7 +187,8 @@ class LosslessSourcePreferences @Inject constructor(
     private fun legacyDownloadMode(prefs: Preferences): DownloadMode =
         if (prefs[enabledKey] ?: true) DownloadMode.LOSSLESS else DownloadMode.OPUS
 
-    /** Tests: write keys as an older build stored them, bypassing today's setters. */
+    /** Tests only: write keys as an older build stored them, bypassing today's setters. No app code may call it. */
+    @androidx.annotation.VisibleForTesting
     internal suspend fun writeRawForTest(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         context.losslessDataStore.edit { block(it) }
     }

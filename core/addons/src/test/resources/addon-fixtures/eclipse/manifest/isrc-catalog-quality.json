@@ -1,0 +1,45 @@
+{
+  "id": "com.example.full",
+  "name": "Full",
+  "version": "2.0.0",
+  "resources": [
+    "search",
+    "stream",
+    "isrc",
+    "catalog",
+    "settings",
+    "notifications"
+  ],
+  "types": [
+    "track"
+  ],
+  "catalogs": [
+    {
+      "id": "new",
+      "type": "album",
+      "name": "New albums"
+    },
+    {
+      "id": "hot",
+      "type": "track",
+      "name": "Hot tracks"
+    }
+  ],
+  "settings": [
+    {
+      "key": "quality",
+      "type": "select",
+      "label": "Quality",
+      "options": [
+        {
+          "value": "hi_res",
+          "label": "Hi-Res"
+        },
+        {
+          "value": "cd",
+          "label": "CD"
+        }
+      ]
+    }
+  ]
+}

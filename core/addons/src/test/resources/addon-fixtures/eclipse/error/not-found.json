@@ -1,0 +1,7 @@
+{
+  "status": 404,
+  "route": "stream",
+  "body": {
+    "error": "not found"
+  }
+}

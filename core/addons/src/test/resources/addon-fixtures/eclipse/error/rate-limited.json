@@ -1,0 +1,10 @@
+{
+  "status": 429,
+  "route": "search",
+  "headers": {
+    "Retry-After": "30"
+  },
+  "body": {
+    "retryAfter": 30
+  }
+}

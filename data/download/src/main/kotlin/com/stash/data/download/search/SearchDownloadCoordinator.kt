@@ -521,7 +521,10 @@ class SearchDownloadCoordinator @Inject constructor(
         // Lossy AAC rungs: fetched by the downloader and checked as AAC, not FLAC.
         val isLossyAac = match.sourceId == JioSaavnResolver.SOURCE_ID ||
             match.sourceId == com.stash.data.download.lossless.tidal.TidalAacResolver.SOURCE_ID
-        if (isLossyAac || match.isDash) {
+        // An add-on chose this URL: only the downloader fetches it, on the add-on media client
+        // (review-882 B1). The cached HTTP source below has none of the base rules.
+        val fromAddon = com.stash.data.download.lossless.LosslessUrlDownloader.isAddonSource(match.sourceId)
+        if (isLossyAac || match.isDash || fromAddon) {
             // Use the shared OkHttp downloader rather than Media3's redirect-
             // following HTTP source. The Jio transport disables redirects so
             // the trusted aac.saavncdn.com URL cannot pivot to another host.
@@ -532,7 +535,8 @@ class SearchDownloadCoordinator @Inject constructor(
                 if (error is CancellationException) throw error
                 runCatching { tempFile.delete() }
                 return SourceFinalizeAttempt.BeforeCommitFailure(
-                    "${match.sourceId} fetch failed: ${error.message}",
+                    // An add-on's failure by class only: its message can name the media host.
+                    "${match.sourceId} fetch failed: ${if (fromAddon) error.javaClass.simpleName else error.message}",
                     transient = true,
                 )
             }

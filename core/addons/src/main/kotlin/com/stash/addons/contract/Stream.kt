@@ -1,4 +1,4 @@
-// Vendored from stash-addon-spec types/kotlin at 8ca8e83 (Stash Add-ons v1, draft 2). Edit the spec, then copy it here again.
+// Vendored from stash-addon-spec types/kotlin at 6de2370 (Stash Add-ons v1; these files last changed there in 43a5acc). Edit the spec, then copy it here again.
 package com.stash.addons.contract
 
 import kotlinx.serialization.SerialName
@@ -7,13 +7,13 @@ import kotlinx.serialization.Serializable
 /** Quality tiers, lowest first (SPEC.md 5.1). Declaration order is the tier order. */
 @Serializable
 public enum class Tier(public val wire: String) {
-    /** Lossy below 256 kbps: data saver, Tidal LOW, JioSaavn 96/160. */
+    /** Lossy below 256 kbps: data saver (96 or 160 kbps, for example). */
     @SerialName("low") LOW("low"),
-    /** Lossy at 256 kbps or more: Tidal HIGH (the AAC 320 the app uses today), JioSaavn 320. */
+    /** Lossy at 256 kbps or more: AAC 256 or 320, MP3 320. */
     @SerialName("high") HIGH("high"),
-    /** Lossless at 16-bit or less and 48 kHz or less: CD, Tidal LOSSLESS. */
+    /** Lossless at 16-bit or less and 48 kHz or less: CD quality. */
     @SerialName("lossless") LOSSLESS("lossless"),
-    /** Lossless above that: Tidal HI_RES_LOSSLESS. */
+    /** Lossless above that: 24-bit, or above 48 kHz. */
     @SerialName("hires") HIRES("hires");
 
     public val isLossless: Boolean get() = this >= LOSSLESS
@@ -62,10 +62,10 @@ public enum class Container {
 
 /**
  * What the host asks of `/stream/{id}` and `/download/{id}` (SPEC.md 5.2): the best tier within
- * [[minTier], [tier]] in one of [manifest]. The app's Tidal requests today:
+ * [[minTier], [tier]] in one of [manifest]. For example:
  *  - lossless only: `StreamRequest(Tier.HIRES, Tier.LOSSLESS, listOf(NONE, DASH))`
- *  - `?aac=1`: `StreamRequest(Tier.HIRES, Tier.HIGH, listOf(NONE, DASH))`
- *  - `?aac=only`: `StreamRequest(Tier.HIGH, Tier.HIGH, listOf(NONE))`
+ *  - lossless, else lossy at 256 kbps or more: `StreamRequest(Tier.HIRES, Tier.HIGH, listOf(NONE, DASH))`
+ *  - lossy at 256 kbps or more, progressive: `StreamRequest(Tier.HIGH, Tier.HIGH, listOf(NONE))`
  */
 public data class StreamRequest(
     val tier: Tier = Tier.HIRES,

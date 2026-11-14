@@ -2,11 +2,15 @@ package com.stash.data.download.lossless
 
 import android.content.Context
 import androidx.work.BackoffPolicy
+import androidx.work.Constraints
+import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequest
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.stash.data.download.lossless.quota.LosslessQuota
 import io.mockk.slot
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import io.mockk.every
 import io.mockk.mockk
@@ -18,6 +22,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -75,8 +80,31 @@ class LosslessRetrySchedulerTest {
         )
         subject.scope = scope
         subject.workManagerProvider = { workManager }
+        subject.nowMs = { now }
         subject.start()
         return subject
+    }
+
+    /** What WorkManager holds under the Tidal sweep's name when the next booking looks. */
+    private fun tidalSweeps(vararg sweeps: WorkInfo) {
+        every { workManager.getWorkInfosForUniqueWork(LosslessRetryScheduler.TIDAL_WORK_NAME) } returns
+            mockk { every { get() } returns sweeps.toList() }
+    }
+
+    /** A Tidal sweep in [state]; an ENQUEUED one is due [dueInMs] from now. */
+    private fun sweep(state: WorkInfo.State, dueInMs: Long = 0L) = WorkInfo(
+        UUID.randomUUID(), state, emptySet(), Data.EMPTY, Data.EMPTY, 0, 0, Constraints.NONE, 0L, null,
+        if (state == WorkInfo.State.ENQUEUED) now + dueInMs else Long.MAX_VALUE,
+    )
+
+    /** Every Tidal sweep booking: the policy it went in with, and the request. */
+    private fun tidalBookings(): Pair<MutableList<ExistingWorkPolicy>, MutableList<OneTimeWorkRequest>> {
+        val policies = mutableListOf<ExistingWorkPolicy>()
+        val requests = mutableListOf<OneTimeWorkRequest>()
+        every {
+            workManager.enqueueUniqueWork(LosslessRetryScheduler.TIDAL_WORK_NAME, capture(policies), capture(requests))
+        } returns mockk(relaxed = true)
+        return policies to requests
     }
 
     @Test
@@ -100,19 +128,62 @@ class LosslessRetrySchedulerTest {
     }
 
     @Test
-    fun `Tidal busy for a waiting download books one sweep for when it should be free`() = runTest(UnconfinedTestDispatcher()) {
+    fun `Tidal busy for a waiting download books a Tidal-only sweep for when it should be free`() = runTest(UnconfinedTestDispatcher()) {
         newSubject(backgroundScope)
+        tidalSweeps()
+        val (policies, requests) = tidalBookings()
 
-        tidalRetries.emit(System.currentTimeMillis() + 60_000)
+        tidalRetries.emit(now + 60_000)
         advanceUntilIdle()
 
-        verify(exactly = 1) {
-            workManager.enqueueUniqueWork(
-                LosslessRetryScheduler.TIDAL_WORK_NAME,
-                ExistingWorkPolicy.KEEP,
-                any<OneTimeWorkRequest>(),
-            )
-        }
+        assertEquals(listOf(ExistingWorkPolicy.APPEND_OR_REPLACE), policies)
+        val request = requests.single()
+        assertEquals(60_000L, request.workSpec.initialDelay)
+        assertTrue(request.workSpec.input.getBoolean(LosslessRetryWorker.KEY_TIDAL_BUSY_ONLY, false))
+        assertFalse(request.workSpec.input.getBoolean(LosslessRetryWorker.KEY_AT_RESET, false))
+        verify(exactly = 0) { workManager.enqueueUniqueWork(LosslessRetryWorker.UNIQUE_WORK_NAME, any(), any<OneTimeWorkRequest>()) }
+    }
+
+    /** The owner's "they aren't restarting": KEEP counted the running sweep as existing work and dropped the booking. */
+    @Test
+    fun `a busy answer while the Tidal sweep runs, or is about to, books another after it`() = runTest(UnconfinedTestDispatcher()) {
+        newSubject(backgroundScope)
+        val (policies, _) = tidalBookings()
+
+        tidalSweeps(sweep(WorkInfo.State.RUNNING))
+        tidalRetries.emit(now + 30_000)
+        advanceUntilIdle()
+
+        // Due within the margin: it may read the waiting rows before this song is written back.
+        tidalSweeps(sweep(WorkInfo.State.ENQUEUED, dueInMs = LosslessRetryScheduler.TIDAL_KEEP_MARGIN_MS - 1_000))
+        tidalRetries.emit(now + 30_000)
+        advanceUntilIdle()
+
+        // State unreadable: booking behind whatever is there costs at most one extra sweep.
+        every { workManager.getWorkInfosForUniqueWork(LosslessRetryScheduler.TIDAL_WORK_NAME) } returns
+            mockk { every { get() } throws java.util.concurrent.ExecutionException(IllegalStateException("db")) }
+        tidalRetries.emit(now + 30_000)
+        advanceUntilIdle()
+
+        assertEquals(List(3) { ExistingWorkPolicy.APPEND_OR_REPLACE }, policies)
+    }
+
+    @Test
+    fun `a Tidal sweep still ahead is kept, so busy answers never chain more than one behind another`() = runTest(UnconfinedTestDispatcher()) {
+        newSubject(backgroundScope)
+        val (policies, _) = tidalBookings()
+
+        // Booked and not due for a while: it re-queues every song that waits before it starts.
+        tidalSweeps(sweep(WorkInfo.State.ENQUEUED, dueInMs = 25_000))
+        tidalRetries.emit(now + 30_000)
+        advanceUntilIdle()
+
+        // One already waits behind a running sweep: it runs its own delay after that one.
+        tidalSweeps(sweep(WorkInfo.State.RUNNING), sweep(WorkInfo.State.BLOCKED))
+        tidalRetries.emit(now + 30_000)
+        advanceUntilIdle()
+
+        assertEquals(List(2) { ExistingWorkPolicy.KEEP }, policies)
     }
 
     @Test

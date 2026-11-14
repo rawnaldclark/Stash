@@ -16,8 +16,9 @@ class DashManifestException(message: String) : Exception(message)
 
 /**
  * Minimal MPD reader for Tidal's audio manifests (one `SegmentTemplate` with a
- * `SegmentTimeline`, no DRM). Pure JVM — a regex pass, not an XML stack — because
- * the shape is fixed and this keeps it unit-testable without Android.
+ * `SegmentTimeline`, no DRM). Pure JVM — one forward text scan, not an XML stack — because
+ * the shape is fixed and this keeps it unit-testable without Android. An add-on's manifest
+ * comes through here too, so no step may cost more than the length of the text.
  *
  * Deliberately narrow: anything it does not understand (`r="-1"`, template
  * tokens other than `$Number$`, no timeline) is an error, so a format change
@@ -25,14 +26,21 @@ class DashManifestException(message: String) : Exception(message)
  */
 object DashManifestParser {
 
-    private val TEMPLATE = Regex("<(?:\\w+:)?SegmentTemplate\\b([^>]*)>", RegexOption.IGNORE_CASE)
-    private val TIMELINE = Regex(
-        "<(?:\\w+:)?SegmentTimeline\\b[^>]*>(.*?)</(?:\\w+:)?SegmentTimeline>",
-        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
-    )
-    private val S_ELEMENT = Regex("<(?:\\w+:)?S\\b([^>]*?)/?>", RegexOption.IGNORE_CASE)
-    private val ATTR = Regex("([\\w:]+)\\s*=\\s*(\"([^\"]*)\"|'([^']*)')")
-    private val BASE_URL = Regex("<(?:\\w+:)?BaseURL\\b[^>]*>([^<]*)<", RegexOption.IGNORE_CASE)
+    // Every element is found by its opening name alone, and where it ends by `indexOf`: one forward
+    // pass over the text. One regex per element, with `[^>]*` or `.*?` running to the end of the
+    // text, scanned the rest of the text again from every opening that had no end: the square of
+    // the size, and an add-on's 1 MiB manifest held a download for minutes of CPU that no
+    // cancellation reaches (review-882 round 3, R1). Each element ends where its regex ended.
+    private val TEMPLATE_OPEN = Regex("<(?:\\w+:)?SegmentTemplate\\b", RegexOption.IGNORE_CASE)
+    private val TIMELINE_OPEN = Regex("<(?:\\w+:)?SegmentTimeline\\b", RegexOption.IGNORE_CASE)
+    private val TIMELINE_CLOSE = Regex("</(?:\\w+:)?SegmentTimeline>", RegexOption.IGNORE_CASE)
+    private val S_OPEN = Regex("<(?:\\w+:)?S\\b", RegexOption.IGNORE_CASE)
+    private val BASE_URL_OPEN = Regex("<(?:\\w+:)?BaseURL\\b", RegexOption.IGNORE_CASE)
+
+    // A name is tried only where a run of name characters starts. Tried from inside the run too,
+    // a long run with no `=` after it cost far more than the square (64 KiB: two minutes on a
+    // desktop). It finds what it found before: a match can only ever start at the run's start.
+    private val ATTR = Regex("(?<![\\w:])([\\w:]+)\\s*=\\s*(\"([^\"]*)\"|'([^']*)')")
     private val NUMBER_TOKEN = Regex("\\\$Number(%0(\\d+)d)?\\$")
 
     /** Guards against a hostile/garbled manifest asking for millions of fetches. */
@@ -42,9 +50,12 @@ object DashManifestParser {
      * @param mpd      Manifest XML text.
      * @param mpdUrl   Where it came from; relative URLs resolve against it (and
      *                 any `BaseURL`). Tidal's are absolute, so this rarely matters.
+     * @param maxPlanChars  The most the segment URLs may add up to, in characters; null = no bound
+     *   (Stash's own Tidal). Set for an add-on's manifest: its media template is copied once per
+     *   segment, and a 1 MiB template over [MAX_SEGMENTS] segments would be gigabytes of strings.
      */
-    fun parse(mpd: String, mpdUrl: String): DashPlan {
-        val templateAttrs = TEMPLATE.find(mpd)?.groupValues?.get(1)
+    fun parse(mpd: String, mpdUrl: String, maxPlanChars: Long? = null): DashPlan {
+        val templateAttrs = element(mpd, TEMPLATE_OPEN)?.attrs
             ?: throw DashManifestException("no SegmentTemplate")
         val attrs = attributes(templateAttrs)
         val init = attrs["initialization"]?.takeIf { it.isNotBlank() }
@@ -56,11 +67,18 @@ object DashManifestParser {
             it.toLongOrNull() ?: throw DashManifestException("bad startNumber '$it'")
         } ?: 1L
 
-        val timeline = TIMELINE.find(mpd)?.groupValues?.get(1)
+        // The text after the first SegmentTimeline's `>`, up to the first closing tag after it.
+        val timelineOpen = element(mpd, TIMELINE_OPEN) ?: throw DashManifestException("no SegmentTimeline")
+        val timelineClose = TIMELINE_CLOSE.find(mpd, timelineOpen.end + 1)
             ?: throw DashManifestException("no SegmentTimeline")
+        val timeline = mpd.substring(timelineOpen.end + 1, timelineClose.range.first)
         var count = 0L
-        for (s in S_ELEMENT.findAll(timeline)) {
-            val r = attributes(s.groupValues[1])["r"]?.let {
+        var at = 0
+        while (true) {
+            val s = element(timeline, S_OPEN, at) ?: break
+            at = s.end + 1
+            // `<S d="1"/>`: the `/` before the `>` is not an attribute's.
+            val r = attributes(s.attrs.removeSuffix("/"))["r"]?.let {
                 it.toLongOrNull() ?: throw DashManifestException("bad r '$it'")
             } ?: 0L
             // r=-1 means "repeat until the period ends" — needs durations we don't model.
@@ -69,10 +87,27 @@ object DashManifestParser {
             if (count > MAX_SEGMENTS) throw DashManifestException("too many segments")
         }
         if (count == 0L) throw DashManifestException("empty SegmentTimeline")
+        if (maxPlanChars != null && media.length.toLong() * count > maxPlanChars) {
+            throw DashManifestException("segment URLs too long")
+        }
 
         val base = baseFor(mpd, mpdUrl)
         val mediaUrls = (0 until count).map { i -> resolve(base, expand(media, startNumber + i)) }
         return DashPlan(initUrl = resolve(base, init), mediaUrls = mediaUrls)
+    }
+
+    /** An element's attribute text (between its name and its `>`) and the index of that `>`. */
+    private class Element(val attrs: String, val end: Int)
+
+    /**
+     * The first element that [open] finds at or after [from], or null. When the first opening has
+     * no `>` after it, no later one has either: there is nothing more to find, as with the regex.
+     */
+    private fun element(text: String, open: Regex, from: Int = 0): Element? {
+        val name = open.find(text, from) ?: return null
+        val end = text.indexOf('>', name.range.last + 1)
+        if (end < 0) return null
+        return Element(text.substring(name.range.last + 1, end), end)
     }
 
     private fun attributes(raw: String): Map<String, String> =
@@ -95,7 +130,10 @@ object DashManifestParser {
     private fun baseFor(mpd: String, mpdUrl: String): Lazy<URI> = lazy {
         try {
             val docUri = URI(mpdUrl)
-            val baseText = BASE_URL.find(mpd)?.groupValues?.get(1)?.trim()?.let(::decodeEntities)
+            // The text after the first BaseURL's `>`, up to the next `<`; none when there is no `<` after it.
+            val baseText = element(mpd, BASE_URL_OPEN)
+                ?.let { open -> mpd.indexOf('<', open.end + 1).takeIf { it >= 0 }?.let { mpd.substring(open.end + 1, it) } }
+                ?.trim()?.let(::decodeEntities)
             if (baseText.isNullOrEmpty()) docUri else docUri.resolve(baseText)
         } catch (e: IllegalArgumentException) {
             throw DashManifestException("unresolvable base URL")
