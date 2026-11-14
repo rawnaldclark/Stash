@@ -34,6 +34,43 @@ class DashManifestParserTest {
         assertThat(plan.mediaUrls.last()).isEqualTo("https://cdn/t/53.mp4?a=1&b=2")
     }
 
+    /** Tidal's 30 s PREVIEW of "Linger" (td:575545), as the relay served it on 2026-11-13: it says how long it is. */
+    @Test fun `a manifest says how long it plays - Tidal's preview of Linger is 29,907 ms`() {
+        val plan = DashManifestParser.parse(
+            mpd(
+                """<SegmentTemplate timescale="44100" initialization="https://cdn/t/0.mp4" media="https://cdn/t/$n.mp4" startNumber="1">""",
+                """<S d="176128" r="6"/><S d="86016"/>""",
+            ),
+            mpdUrl,
+        )
+        assertThat(plan.mediaUrls).hasSize(8)
+        assertThat(plan.durationMs).isEqualTo(29_907L)
+    }
+
+    @Test fun `a whole song's manifest says the whole song`() {
+        val plan = DashManifestParser.parse(
+            mpd(
+                """<SegmentTemplate timescale="44100" initialization="https://cdn/t/0.mp4" media="https://cdn/t/$n.mp4" startNumber="1">""",
+                """<S d="176128" r="51"/><S d="118808"/>""",
+            ),
+            mpdUrl,
+        )
+        // 52 x 176128 + 118808 samples at 44.1 kHz.
+        assertThat(plan.durationMs).isEqualTo(210_373L)
+    }
+
+    @Test fun `a segment with no length leaves the manifest's length unknown, and the plan as it was`() {
+        val plan = DashManifestParser.parse(
+            mpd(
+                """<SegmentTemplate timescale="44100" initialization="https://cdn/i.mp4" media="https://cdn/$n.mp4">""",
+                """<S d="176128"/><S r="1"/>""",
+            ),
+            mpdUrl,
+        )
+        assertThat(plan.mediaUrls).hasSize(3)
+        assertThat(plan.durationMs).isNull()
+    }
+
     @Test fun `multiple S with t attrs and no startNumber default to 1`() {
         val plan = DashManifestParser.parse(
             mpd(

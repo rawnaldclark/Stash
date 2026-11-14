@@ -45,7 +45,10 @@ class SoundCloudDownloads @Inject constructor(
             val audio = probe.extract(temporary!!.absolutePath)
                 ?: return@withContext TrackDownloadResult.Failed("Could not verify downloaded audio")
             // Verify before committing: even a server/extractor preview without a preview flag is refused.
-            if (!fullLength(audio.durationMs, metadata.durationMs) || temporary!!.length() <= 0)
+            // Judged by what its frames run when they can be measured: a clip can keep the song's header.
+            val playsMs = runCatching { probe.extractFramesMs(temporary!!.absolutePath) }.getOrNull()
+                ?.takeIf { it > 0L } ?: audio.durationMs
+            if (!fullLength(playsMs, metadata.durationMs) || temporary!!.length() <= 0)
                 return@withContext TrackDownloadResult.Failed("Incomplete SoundCloud audio was discarded")
             when (val saved = finalizer.finalizeFile(temporary!!, track,
                 AudioFormat(audio.format, audio.bitrateKbps, fileExtension = temporary!!.extension))) {
