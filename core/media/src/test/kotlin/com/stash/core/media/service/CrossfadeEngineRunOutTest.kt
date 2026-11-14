@@ -178,7 +178,11 @@ class CrossfadeEngineRunOutTest {
         // engine hands back from a listener here). Asked for after "x" had started, the wait raced
         // the playback thread, which plays on while this thread does anything else: once "x" was
         // past its first second the position was never reported, and the test timed out (on CI).
-        TestPlayerRunHelper.run(fade.master).untilPosition(1, 1_000)
+        // "AtLeast": it waits for what the player shows (the checks below read that), and holds
+        // once "x" is past its first second however the clock stepped. untilPosition stops at the
+        // playback thread's own position, which can be a step ahead of what the player shows: it
+        // came back with "a" still showing (on CI).
+        TestPlayerRunHelper.run(fade.master).untilPositionAtLeast(1, 1_000)
         advanceTimeBy(1_000) // a ramp left running would show here
         runCurrent()
 
