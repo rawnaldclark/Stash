@@ -760,6 +760,7 @@ class DatabaseBackupManager @Inject constructor(
                 rearmDuplicateCleanup(runNow = false)
                 rearmMixPinCleanup(runNow = false)
                 rearmLoneCancelBackfill()
+                rearmOwnDownloadsBackfill()
                 rearmMixRecipeRetune()
             }
 
@@ -857,6 +858,20 @@ class DatabaseBackupManager @Inject constructor(
             LoneCancelBackfill.forContext(context, database.downloadQueueDao()).rearm()
         } catch (e: Exception) {
             android.util.Log.w("BackupManager", "Couldn't re-arm the lone-cancel backfill", e)
+        }
+    }
+
+    /**
+     * A swapped-in backup made before #761 brings back hand downloads that aren't in Your
+     * Downloads, and the one-time [OwnDownloadsBackfill] that links them has its done flag in
+     * SharedPreferences, which a restore leaves alone. Re-armed here, it runs at the restart; it
+     * only adds links and leaves out a song with any link to Your Downloads. Best-effort.
+     */
+    private fun rearmOwnDownloadsBackfill() {
+        try {
+            OwnDownloadsBackfill.rearm(context)
+        } catch (e: Exception) {
+            android.util.Log.w("BackupManager", "Couldn't re-arm the Your Downloads backfill", e)
         }
     }
 
