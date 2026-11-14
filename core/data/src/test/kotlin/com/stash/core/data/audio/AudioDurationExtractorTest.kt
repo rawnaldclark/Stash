@@ -4,7 +4,9 @@ import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.shadows.ShadowMediaExtractor
@@ -19,6 +21,8 @@ import org.robolectric.shadows.util.DataSource
  */
 @RunWith(RobolectricTestRunner::class)
 class AudioDurationExtractorTest {
+
+    @get:Rule val tmp = TemporaryFolder()
 
     private val extractor = AudioDurationExtractor(ApplicationProvider.getApplicationContext())
 
@@ -84,5 +88,27 @@ class AudioDurationExtractorTest {
         retrieverReports(path, "audio/flac")
 
         assertThat(extractor.extract(path)!!.format).isEqualTo("flac")
+    }
+
+    /**
+     * The gap that kept Tidal's 30 s preview of "Linger" as the song (Pixel 5, 2026-11-13): the
+     * retriever reports a FLAC's STREAMINFO length (here as the platform did, 274,773 ms), which a
+     * preview cut from the whole song keeps. The frames say where the audio stops.
+     */
+    @Test
+    fun `a clip under the song's header - the header says 4 35, its frames say 0 30`() {
+        val bytes = requireNotNull(javaClass.getResourceAsStream("/flac/tidal-preview-shape.flac")) { "missing flac/tidal-preview-shape.flac" }
+            .use { it.readBytes() }
+        val clip = tmp.newFile("linger.flac").apply { writeBytes(bytes) }
+        ShadowMediaMetadataRetriever.addMetadata(clip.absolutePath, MediaMetadataRetriever.METADATA_KEY_DURATION, "274773")
+
+        assertThat(extractor.extractMs(clip.absolutePath)).isEqualTo(274_773L)
+        assertThat(extractor.extractFramesMs(clip.absolutePath)).isEqualTo(29_907L)
+    }
+
+    @Test
+    fun `a document or a missing file has no measured length`() {
+        assertThat(extractor.extractFramesMs("content://com.android.externalstorage.documents/document/x.flac")).isNull()
+        assertThat(extractor.extractFramesMs(java.io.File(tmp.root, "gone.flac").absolutePath)).isNull()
     }
 }

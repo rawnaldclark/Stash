@@ -22,6 +22,7 @@ import com.stash.core.model.TrackItem
 import com.stash.core.model.YouTubeVideoId
 import com.stash.data.download.DownloadExecutor
 import com.stash.data.download.DownloadResult
+import com.stash.data.download.clipAt
 import com.stash.data.download.DownloadManager
 import com.stash.data.download.jiosaavn.JioSaavnResolver
 import com.stash.data.download.jiosaavn.toJioSaavnKbps
@@ -592,27 +593,32 @@ class SearchDownloadCoordinator @Inject constructor(
         if (isLossyAac) {
             val metadata = audioDurationExtractor.extract(tempFile.absolutePath)
             val length = aacLength ?: AacLength(expectedMs = (track.durationSeconds * 1_000).toLong(), reliable = true)
-            if (!isValidLossyAac(metadata, length, match.format.bitrateKbps)) {
+            // The length checked above is the header's: a clip under the song's header passes it (clipAt).
+            val clip = audioDurationExtractor.clipAt(tempFile.absolutePath, length.expectedMs, headerMs = metadata?.durationMs)
+            if (!isValidLossyAac(metadata, length, match.format.bitrateKbps) || clip != null) {
                 runCatching { tempFile.delete() }
                 return SourceFinalizeAttempt.BeforeCommitFailure(
                     "${match.sourceId} media failed AAC quality validation: format=${metadata?.format}, " +
                         "bitrate=${metadata?.bitrateKbps} (asked ${match.format.bitrateKbps}), " +
                         "duration=${metadata?.durationMs}, " +
-                        "expected=${length.expectedMs} (${if (length.reliable) "song length" else "video length"})",
+                        "expected=${length.expectedMs} (${if (length.reliable) "song length" else "video length"})" +
+                        (clip?.let { ", a clip: $it" } ?: ""),
                 )
             }
         } else {
             // The checks DownloadManager's lossless path has: a short copy, a file
             // that isn't the codec asked for, or a preview-length stub never commits.
             val metadata = audioDurationExtractor.extract(tempFile.absolutePath)
+            val expectedMs = (track.durationSeconds * 1_000).toLong()
             val problem = SearchLosslessFile.problem(
                 expectedCodec = match.format.codec,
                 bytesWritten = bytesWritten,
                 expectedBytes = expectedBytes,
                 probedFormat = metadata?.format,
                 probedMs = metadata?.durationMs,
-                expectedMs = (track.durationSeconds * 1_000).toLong(),
-            )
+                expectedMs = expectedMs,
+            ) ?: audioDurationExtractor.clipAt(tempFile.absolutePath, expectedMs, headerMs = metadata?.durationMs)
+                ?.let { "a clip of the song: $it" }
             if (problem != null) {
                 Log.w(TAG, "lossless file from ${match.sourceId} rejected for ${track.videoId}: $problem")
                 runCatching { tempFile.delete() }
@@ -777,6 +783,12 @@ class SearchDownloadCoordinator @Inject constructor(
         // at the same name before upsertSearchTrack rejected it.
         if (!localFileOps.acceptDownloadOrDelete(tempFile.absolutePath)) {
             return TrackFinalizer.FinalizeResult.Failed("Downloaded file failed validation")
+        }
+        // Nor is a clip of the song kept as the song (clipAt), whatever its header says.
+        audioDurationExtractor.clipAt(tempFile.absolutePath, (track.durationSeconds * 1_000).toLong())?.let { clip ->
+            Log.w(TAG, "yt-dlp file for ${track.videoId} is a clip ($clip); not kept")
+            runCatching { tempFile.delete() }
+            return TrackFinalizer.FinalizeResult.Failed("Downloaded file is a clip of the song")
         }
 
         // opus/0 are placeholder values — TrackFinalizer probes the real codec

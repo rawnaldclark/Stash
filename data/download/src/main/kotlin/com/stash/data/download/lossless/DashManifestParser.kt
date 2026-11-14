@@ -9,6 +9,13 @@ import java.net.URI
 data class DashPlan(
     val initUrl: String,
     val mediaUrls: List<String>,
+    /**
+     * How long the segments play, in ms, from the timeline (every `d` times its repeats, over the
+     * template's `timescale`); null when a segment states no `d`. What the plan fetches, so a preview
+     * manifest says it is one: Tidal's 30 s PREVIEW of "Linger" was 7 x 176128 + 86016 samples at
+     * 44100 = 29,907 ms.
+     */
+    val durationMs: Long? = null,
 )
 
 /** A manifest we cannot turn into a [DashPlan]; the download fails rather than guessing. */
@@ -47,6 +54,13 @@ object DashManifestParser {
     const val MAX_SEGMENTS = 10_000
 
     /**
+     * The largest `d` counted toward [DashPlan.durationMs]: an hour at 768 kHz. Larger is garbage, and
+     * bounding it keeps the sum (at most [MAX_SEGMENTS] of them, each repeated at most that often) far
+     * from overflowing.
+     */
+    private const val MAX_SEGMENT_UNITS = 3_600L * 768_000L
+
+    /**
      * @param mpd      Manifest XML text.
      * @param mpdUrl   Where it came from; relative URLs resolve against it (and
      *                 any `BaseURL`). Tidal's are absolute, so this rarely matters.
@@ -66,6 +80,8 @@ object DashManifestParser {
         val startNumber = attrs["startNumber"]?.let {
             it.toLongOrNull() ?: throw DashManifestException("bad startNumber '$it'")
         } ?: 1L
+        // Units per second of every `d` (DASH: 1 when absent). A bad one leaves the length unknown, not the plan.
+        val timescale = attrs["timescale"]?.toLongOrNull() ?: 1L
 
         // The text after the first SegmentTimeline's `>`, up to the first closing tag after it.
         val timelineOpen = element(mpd, TIMELINE_OPEN) ?: throw DashManifestException("no SegmentTimeline")
@@ -73,18 +89,23 @@ object DashManifestParser {
             ?: throw DashManifestException("no SegmentTimeline")
         val timeline = mpd.substring(timelineOpen.end + 1, timelineClose.range.first)
         var count = 0L
+        // The timeline's length in timescale units; null once a segment states no usable `d`.
+        var units: Long? = 0L
         var at = 0
         while (true) {
             val s = element(timeline, S_OPEN, at) ?: break
             at = s.end + 1
             // `<S d="1"/>`: the `/` before the `>` is not an attribute's.
-            val r = attributes(s.attrs.removeSuffix("/"))["r"]?.let {
+            val sAttrs = attributes(s.attrs.removeSuffix("/"))
+            val r = sAttrs["r"]?.let {
                 it.toLongOrNull() ?: throw DashManifestException("bad r '$it'")
             } ?: 0L
             // r=-1 means "repeat until the period ends" — needs durations we don't model.
             if (r < 0) throw DashManifestException("open-ended repeat (r=$r) unsupported")
             count += 1 + r
             if (count > MAX_SEGMENTS) throw DashManifestException("too many segments")
+            val d = sAttrs["d"]?.toLongOrNull()?.takeIf { it in 1..MAX_SEGMENT_UNITS }
+            units = if (d == null) null else units?.plus(d * (1 + r))
         }
         if (count == 0L) throw DashManifestException("empty SegmentTimeline")
         if (maxPlanChars != null && media.length.toLong() * count > maxPlanChars) {
@@ -93,7 +114,8 @@ object DashManifestParser {
 
         val base = baseFor(mpd, mpdUrl)
         val mediaUrls = (0 until count).map { i -> resolve(base, expand(media, startNumber + i)) }
-        return DashPlan(initUrl = resolve(base, init), mediaUrls = mediaUrls)
+        val durationMs = units?.takeIf { timescale > 0 }?.let { it * 1_000L / timescale }
+        return DashPlan(initUrl = resolve(base, init), mediaUrls = mediaUrls, durationMs = durationMs)
     }
 
     /** An element's attribute text (between its name and its `>`) and the index of that `>`. */
