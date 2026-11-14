@@ -1,8 +1,11 @@
 package com.stash.core.data.audio
 
+import java.io.EOFException
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
 
 /**
  * How long a FLAC file's audio really runs, read from its last frame rather than its header.
@@ -54,31 +57,73 @@ object FlacAudioEnd {
 
     /** Whether [file] starts as a FLAC does (`fLaC`, after an ID3v2 tag when it has one). */
     fun isFlac(file: File): Boolean = try {
-        RandomAccessFile(file, "r").use { raf -> audioMarkerAt(raf) != null }
+        RandomAccessFile(file, "r").use { raf -> audioMarkerAt(raf.asBytes()) != null }
+    } catch (e: IOException) {
+        false
+    }
+
+    /** [isFlac] for an open file, such as a storage-access document's (read from its start; the position is not used). */
+    fun isFlac(channel: FileChannel): Boolean = try {
+        audioMarkerAt(channel.asBytes()) != null
     } catch (e: IOException) {
         false
     }
 
     /** [file]'s header and frame lengths; null when it is not a FLAC, or its end can't be settled. */
     fun read(file: File): Lengths? = try {
-        RandomAccessFile(file, "r").use(::read)
+        RandomAccessFile(file, "r").use { read(it.asBytes()) }
     } catch (e: IOException) {
         null
     }
 
-    internal fun read(raf: RandomAccessFile): Lengths? {
-        val info = streamInfo(raf) ?: return null
-        val available = raf.length() - info.audioStart
+    /** [read] for an open file, such as a storage-access document's. The caller closes [channel]. */
+    fun read(channel: FileChannel): Lengths? = try {
+        read(channel.asBytes())
+    } catch (e: IOException) {
+        null
+    }
+
+    internal fun read(raf: RandomAccessFile): Lengths? = read(raf.asBytes())
+
+    private fun read(bytes: Bytes): Lengths? {
+        val info = streamInfo(bytes) ?: return null
+        val length = bytes.length()
+        val available = length - info.audioStart
         if (available < MIN_HEADER_BYTES) return null
         // Three of the largest frames, so the last frame and the one before it are both in the window.
         val wanted = if (info.maxFrameBytes > 0) 3L * info.maxFrameBytes + MIN_HEADER_BYTES else MAX_TAIL_BYTES.toLong()
         val window = minOf(available, wanted.coerceIn(MIN_TAIL_BYTES.toLong(), MAX_TAIL_BYTES.toLong())).toInt()
-        val windowStart = raf.length() - window
+        val windowStart = length - window
         val tail = ByteArray(window)
-        raf.seek(windowStart)
-        raf.readFully(tail)
+        bytes.readFully(windowStart, tail)
         val end = lastFrameEnd(tail, windowStart, info) ?: return null
         return Lengths(info.sampleRate, info.totalSamples, end)
+    }
+
+    /** What the reader needs of a file: its length, and bytes at a position. */
+    private interface Bytes {
+        fun length(): Long
+
+        /** Fills [buf] from [pos]; an [EOFException] when the file ends first. */
+        fun readFully(pos: Long, buf: ByteArray)
+    }
+
+    private fun RandomAccessFile.asBytes(): Bytes = object : Bytes {
+        override fun length(): Long = this@asBytes.length()
+        override fun readFully(pos: Long, buf: ByteArray) {
+            seek(pos)
+            this@asBytes.readFully(buf)
+        }
+    }
+
+    private fun FileChannel.asBytes(): Bytes = object : Bytes {
+        override fun length(): Long = size()
+        override fun readFully(pos: Long, buf: ByteArray) {
+            val into = ByteBuffer.wrap(buf)
+            while (into.hasRemaining()) {
+                if (read(into, pos + into.position()) < 0) throw EOFException()
+            }
+        }
     }
 
     /** What the scan needs from STREAMINFO, and where the first frame starts. */
@@ -92,38 +137,36 @@ object FlacAudioEnd {
         val audioStart: Long,
     )
 
-    /** Where `fLaC` is in [raf] (0, or just after an ID3v2 tag); null when it is not there. */
-    private fun audioMarkerAt(raf: RandomAccessFile): Long? {
-        if (raf.length() < 4) return null
-        val head = ByteArray(10)
-        raf.seek(0)
-        val read = raf.read(head)
+    /** Where `fLaC` is in [bytes] (0, or just after an ID3v2 tag); null when it is not there. */
+    private fun audioMarkerAt(bytes: Bytes): Long? {
+        val length = bytes.length()
+        if (length < 4) return null
+        val head = ByteArray(minOf(10L, length).toInt())
+        bytes.readFully(0, head)
         var at = 0L
-        if (read >= 10 && head[0] == 'I'.code.toByte() && head[1] == 'D'.code.toByte() && head[2] == '3'.code.toByte()) {
+        if (head.size >= 10 && head[0] == 'I'.code.toByte() && head[1] == 'D'.code.toByte() && head[2] == '3'.code.toByte()) {
             // "ID3", two version bytes, flags, then the tag's length in four 7-bit bytes; a footer adds 10.
             val size = ((head[6].toInt() and 0x7F) shl 21) or ((head[7].toInt() and 0x7F) shl 14) or
                 ((head[8].toInt() and 0x7F) shl 7) or (head[9].toInt() and 0x7F)
             at = 10L + size + if ((head[5].toInt() and 0x10) != 0) 10 else 0
         }
-        if (at + 4 > raf.length()) return null
+        if (at + 4 > length) return null
         val marker = ByteArray(4)
-        raf.seek(at)
-        raf.readFully(marker)
+        bytes.readFully(at, marker)
         val isFlac = marker[0] == 'f'.code.toByte() && marker[1] == 'L'.code.toByte() &&
             marker[2] == 'a'.code.toByte() && marker[3] == 'C'.code.toByte()
         return if (isFlac) at else null
     }
 
     /** STREAMINFO (the first metadata block, as the format requires) and where the audio starts. */
-    private fun streamInfo(raf: RandomAccessFile): StreamInfo? {
-        val length = raf.length()
-        var pos = (audioMarkerAt(raf) ?: return null) + 4
+    private fun streamInfo(bytes: Bytes): StreamInfo? {
+        val length = bytes.length()
+        var pos = (audioMarkerAt(bytes) ?: return null) + 4
         var info: StreamInfo? = null
         val blockHeader = ByteArray(4)
         for (block in 0 until MAX_METADATA_BLOCKS) {
             if (pos + 4 > length) return null
-            raf.seek(pos)
-            raf.readFully(blockHeader)
+            bytes.readFully(pos, blockHeader)
             val last = (blockHeader[0].toInt() and 0x80) != 0
             val type = blockHeader[0].toInt() and 0x7F
             val size = ((blockHeader[1].toInt() and 0xFF) shl 16) or ((blockHeader[2].toInt() and 0xFF) shl 8) or
@@ -131,7 +174,7 @@ object FlacAudioEnd {
             if (block == 0) {
                 if (type != 0 || size < STREAMINFO_BYTES || pos + 4 + STREAMINFO_BYTES > length) return null
                 val b = ByteArray(STREAMINFO_BYTES)
-                raf.readFully(b)
+                bytes.readFully(pos + 4, b)
                 info = parseStreamInfo(b) ?: return null
             }
             pos += 4L + size

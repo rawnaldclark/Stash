@@ -38,6 +38,16 @@ class FlacAudioEndTest {
     }
 
     @Test
+    fun `an open file, as a storage-access document is read, measures the same as its path`() {
+        val path = file(fixture())
+        val (lengths, isFlac) = java.io.FileInputStream(path).use { FlacAudioEnd.read(it.channel) to FlacAudioEnd.isFlac(it.channel) }
+
+        assertThat(lengths).isEqualTo(FlacAudioEnd.read(path))
+        assertThat(isFlac).isTrue()
+        java.io.FileInputStream(file(fixture().copyOf(60))).use { assertThat(FlacAudioEnd.read(it.channel)).isNull() }
+    }
+
+    @Test
     fun `an honest file measures the length its header states`() {
         val lengths = FlacAudioEnd.read(file(withTotalSamples(fixture(), 322L * 4096)))!!
 
