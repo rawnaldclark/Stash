@@ -29,10 +29,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.stash.core.common.extensions.pluralize
+import java.text.Normalizer
+import java.util.Locale
 
 /**
  * Lightweight model for the playlist picker. Keeps the UI component
@@ -43,6 +46,26 @@ data class PlaylistInfo(
     val name: String,
     val trackCount: Int,
 )
+
+/**
+ * With fewer playlists than this the whole list fits on screen without
+ * scrolling (rows are ~64dp, the sheet opens about half-height), so a search
+ * field would only add clutter. From here on, finding one by scrolling is slower
+ * than typing.
+ */
+internal const val PLAYLIST_SEARCH_MIN_PLAYLISTS = 8
+
+/** Lowercase and strip accents, so "cafe" finds "Café" and "BEYONCE" finds "Beyoncé". */
+internal fun String.foldForSearch(): String =
+    Normalizer.normalize(trim().lowercase(Locale.ROOT), Normalizer.Form.NFD)
+        .replace(Regex("\\p{M}+"), "")
+
+/** The playlists whose name contains [query] (case- and accent-insensitive); all of them when it is blank. */
+internal fun filterPlaylists(playlists: List<PlaylistInfo>, query: String): List<PlaylistInfo> {
+    val needle = query.foldForSearch()
+    if (needle.isEmpty()) return playlists
+    return playlists.filter { it.name.foldForSearch().contains(needle) }
+}
 
 /**
  * Bottom sheet that lets the user save a track to an existing custom
@@ -56,8 +79,14 @@ fun SaveToPlaylistSheet(
     onCreatePlaylist: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState()
     var showCreateDialog by remember { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    val showSearch = playlists.size >= PLAYLIST_SEARCH_MIN_PLAYLISTS
+    // Ignore any typed text if the list shrinks below the threshold (the field is gone).
+    // With the search field the sheet opens full height: typing needs the room above the keyboard,
+    // and a half-height sheet would hide the first matches behind the field and the Create row.
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = showSearch)
+    val visiblePlaylists = if (showSearch) filterPlaylists(playlists, query) else playlists
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -73,6 +102,16 @@ fun SaveToPlaylistSheet(
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
         )
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+        if (showSearch) {
+            SearchFilterBar(
+                query = query,
+                onQueryChanged = { query = it },
+                onClear = { query = "" },
+                placeholder = "Search playlists",
+                autoFocus = false,
+            )
+        }
 
         // LazyColumn (not a plain Column) so the list scrolls cleanly when
         // the user has many playlists. A static Column inside ModalBottomSheet
@@ -108,7 +147,18 @@ fun SaveToPlaylistSheet(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
 
-            items(playlists, key = { it.id }) { playlist ->
+            if (visiblePlaylists.isEmpty()) {
+                item(key = "no-matches") {
+                    Text(
+                        text = "No playlists match \"${query.trim()}\".",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 20.dp),
+                    )
+                }
+            }
+
+            items(visiblePlaylists, key = { it.id }) { playlist ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
