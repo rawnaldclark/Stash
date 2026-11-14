@@ -171,6 +171,32 @@ class MusicRepositoryOwnDownloadsTest {
         assertNull(db.trackDao().getById(deleted))
     }
 
+    // ── The queue's own cleanups never drop a tap ────────────────────────
+
+    @Test fun `a tap on a sync's leftover row survives the cold start's and the next sync's queue cleanups`() = runTest {
+        // A Daily Mix the user never switched on: a sync once queued its song and left the row.
+        val mixSong = member(playlist("sp-daily-off", PlaylistType.DAILY_MIX), song("Mix Song", source = MusicSource.SPOTIFY))
+        val row = db.downloadQueueDao().insert(
+            DownloadQueueEntity(trackId = mixSong, syncId = syncRun(), status = DownloadStatus.FAILED, searchQuery = "q"),
+        )
+        val repo = repo()
+
+        // Tapped while offline: the download hasn't started by the next cold start's cleanup.
+        assertEquals(DownloadRequestResult.QUEUED, repo.requestDownload(mixSong))
+        db.downloadQueueDao().cancelDownloadsWithNoEnabledPlaylist()
+        assertEquals(row, db.downloadQueueDao().getByTrackId(mixSong)?.id)
+        assertEquals(listOf(row), db.downloadQueueDao().getAllPendingBySources(listOf("SPOTIFY")).map { it.id })
+
+        // Started, found no lossless copy, waits for one; the next sync reconciles the queue.
+        db.downloadQueueDao().updateStatus(row, DownloadStatus.WAITING_FOR_LOSSLESS)
+        db.downloadQueueDao().deleteOrphanedQueueEntries()
+        assertEquals(DownloadStatus.WAITING_FOR_LOSSLESS, db.downloadQueueDao().getStatusById(row))
+
+        // The user's own Remove download still ends it.
+        repo.removeDownload(mixSong)
+        assertNull(db.downloadQueueDao().getByTrackId(mixSong))
+    }
+
     // ── Library & Storage's "Download N again" ───────────────────────────
 
     @Test fun `songs asked back that no playlist holds join Your Downloads, a playlist's stay its own`() = runTest {
