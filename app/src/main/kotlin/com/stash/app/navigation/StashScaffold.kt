@@ -110,6 +110,8 @@ fun StashScaffold(
     losslessNotices: Flow<LosslessQuotaNotice> = emptyFlow(),
     tidyNotices: Flow<Int?> = emptyFlow(),
     onTidyNoticeShown: suspend () -> Unit = {},
+    clipNotices: Flow<Int?> = emptyFlow(),
+    onClipNoticeShown: suspend () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -317,6 +319,20 @@ fun StashScaffold(
                     duration = SnackbarDuration.Long,
                 )
                 onTidyNoticeShown()
+            }
+        }
+    }
+    // The one-time check for clips found songs saved as a short clip and downloads them again: once, as above.
+    LaunchedEffect(lifecycleOwner, clipNotices) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            clipNotices.collect { n ->
+                if (n == null || n <= 0) return@collect
+                snackbarHostState.showSnackbar(
+                    message = context.resources.getQuantityString(com.stash.app.R.plurals.clips_downloading_again, n, n),
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Long,
+                )
+                onClipNoticeShown()
             }
         }
     }
