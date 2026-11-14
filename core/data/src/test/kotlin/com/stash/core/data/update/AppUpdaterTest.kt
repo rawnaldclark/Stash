@@ -475,7 +475,8 @@ class AppUpdaterTest {
             }
         }
         updater.update()
-        idle()
+        idle() // the first job, which queues the resume's job before it ends
+        idle() // the resume's job: the first drain may have been queued before it
         scope.cancel()
 
         assertThat(resumed).isTrue()
