@@ -1708,9 +1708,9 @@ class PlayerRepositoryImpl @Inject constructor(
     /**
      * Adds a station's [tracks] after the last song in play order (autoplay's first batch, and every batch the station
      * grows by). A big queue takes them at the end of its whole order ([appendToWindow]), into the player as its
-     * window allows. Otherwise they join the player's end, and under shuffle the walk goes with them, them at its
-     * end: Media3 alone gives each one a random spot in the play order, before the playing song too, where it would
-     * never play. The logical queue first, as in addToQueue. Main thread.
+     * window allows. Otherwise they join the player's end, and under shuffle the play order is sent along with them
+     * at its end: Media3 alone gives each one a random spot in it, before the playing song too, where it would never
+     * play. The logical queue first, as in addToQueue. Main thread.
      */
     private fun appendStationSongs(controller: MediaController, tracks: List<Track>) {
         val items = tracks.map { it.toQueueMediaItem() }
