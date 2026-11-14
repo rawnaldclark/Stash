@@ -358,9 +358,20 @@ class SearchDownloadCoordinator @Inject constructor(
                     ),
                 )
             }
+            trackId
         }.onFailure { e ->
             if (e is CancellationException) throw e
             Log.w(TAG, "WAITING_FOR_LOSSLESS DAO write failed for ${track.videoId}: ${e.message}")
+        }.getOrNull()?.let { trackId ->
+            // The file lands later, through the queue's own download run, which links nothing: the
+            // song joins Your Downloads now, as a tap's does (#761). Otherwise, once Downloads ›
+            // Clear history erased its row's mark, Refresh cleanup could delete it. After the
+            // wait is written, so a failed link costs the link (the mark still spares it), never
+            // the wait.
+            runCatching { musicRepository.linkTrackToDownloadsMix(trackId) }.onFailure { e ->
+                if (e is CancellationException) throw e
+                Log.w(TAG, "Your Downloads link failed for waiting ${track.videoId}: ${e.message}")
+            }
         }
         return DownloadJobResult.Deferred(reason)
     }

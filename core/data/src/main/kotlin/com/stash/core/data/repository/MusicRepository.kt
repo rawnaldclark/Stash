@@ -295,6 +295,11 @@ interface MusicRepository {
      * already holds its audio ([com.stash.core.data.library.findLibraryCopy]),
      * so nothing is downloaded a second time. [queueDownload] is
      * `requestDownload(trackId) == QUEUED`.
+     *
+     * A song the user asks for joins Your Downloads ([linkTrackToDownloadsMix]) before
+     * anything downloads, as does the phone's copy when it is already there, so Refresh
+     * cleanup never deletes it (#761). [DownloadRequestResult.NOT_QUEUED] when that link
+     * can't be written.
      */
     suspend fun requestDownload(trackId: Long): DownloadRequestResult
 
@@ -399,11 +404,21 @@ interface MusicRepository {
 
     /**
      * Links [trackId] to the seeded DOWNLOADS_MIX playlist. Idempotent — a
-     * re-link of an already-linked track is a no-op. Called from
-     * [com.stash.core.media.actions.TrackActionsDelegate.handleDownloadSuccess]
-     * so manual downloads survive the startup orphan sweep.
+     * re-link of an already-linked track is a no-op; one the user took out is
+     * linked again. Called for every download the user asks for: a tap
+     * ([requestDownload]), and a Search download as its file lands or when it
+     * has to wait for a lossless copy, so manual downloads survive the orphan
+     * sweep (#761).
      */
     suspend fun linkTrackToDownloadsMix(trackId: Long)
+
+    /**
+     * Links the songs among [trackIds] that no playlist holds to Your Downloads, for
+     * Library & Storage's "Download N again": brought back by the user's own ask, such a
+     * song would otherwise be a downloaded song in no playlist, which Refresh cleanup
+     * deletes (#761). A song a playlist holds stays that playlist's. Returns how many it linked.
+     */
+    suspend fun keepUnlistedInYourDownloads(trackIds: List<Long>): Int
 
     /** Update a playlist's cover art URL (local file path or remote URL). */
     suspend fun updatePlaylistArtUrl(playlistId: Long, artUrl: String?)
