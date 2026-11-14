@@ -7,6 +7,8 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.stash.core.common.notification.OpenStashRequest
+import com.stash.core.common.notification.openStashPendingIntent
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
@@ -174,6 +176,7 @@ class LyricsTtmlUpgradeWorker @AssistedInject constructor(
             .setProgress(total, done, total == 0)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .setContentIntent(openStashPendingIntent(applicationContext, OpenStashRequest.LYRICS_PROGRESS))
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", cancel)
             .build()
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -196,6 +199,7 @@ class LyricsTtmlUpgradeWorker @AssistedInject constructor(
             .setContentTitle("Lyrics")
             .setContentText(text)
             .setAutoCancel(true)
+            .setContentIntent(openStashPendingIntent(applicationContext, OpenStashRequest.LYRICS_DONE))
             .build()
         runCatching { nm.notify(NOTIFICATION_ID_DONE, notification) }   // no-op without POST_NOTIFICATIONS
     }

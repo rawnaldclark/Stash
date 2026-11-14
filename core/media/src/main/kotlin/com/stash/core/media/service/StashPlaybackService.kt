@@ -1500,6 +1500,11 @@ class StashPlaybackService : MediaLibraryService() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(androidx.core.app.NotificationCompat.PRIORITY_LOW)
+            .setContentIntent(
+                com.stash.core.common.notification.openStashPendingIntent(
+                    this, com.stash.core.common.notification.OpenStashRequest.SLEEP_TIMER,
+                ),
+            )
             .build()
         nm.notify(SLEEP_TIMER_NOTIFICATION_ID, notification)
     }
