@@ -223,6 +223,7 @@ class PlayerRepositoryRadioTest {
         coEvery { radioGenerator.nextBatch(session) } returns listOf(track(2), track(3))
         repo.startRadio(RadioSeed.Artist("MBV", "id"))
         every { controller.mediaItemCount } returns 1 // the station's first song, loaded by startRadio
+        every { controller.getMediaItemAt(0) } returns MediaItem.Builder().setMediaId("1").build()
 
         repo.growRadio()
 
@@ -281,7 +282,8 @@ class PlayerRepositoryRadioTest {
         coEvery { radioGenerator.nextBatch(session) } returns listOf(synthetic("vC"))
         coEvery { musicRepository.ensureTrackPersisted(match { it.youtubeId == "vC" }) } returns 103L
         repo.startRadio(RadioSeed.Artist("MBV", "id"))
-        every { controller.mediaItemCount } returns 1
+        every { controller.mediaItemCount } returns 1 // the station's first song, loaded by startRadio
+        every { controller.getMediaItemAt(0) } returns MediaItem.Builder().setMediaId("1").build()
         val appended = slot<List<MediaItem>>()
         every { controller.addMediaItems(capture(appended)) } returns Unit
 

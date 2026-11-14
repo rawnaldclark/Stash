@@ -75,10 +75,10 @@ class StreamingPreference @Inject constructor(
     }
 
     /**
-     * Test-only toggle. When `true`, [StreamSourceRegistry] skips the
-     * lossless rungs and resolves every streaming track via the YouTube
-     * fallback resolver only — used to reproduce the lossless-down path
-     * on demand. Default `false` (normal use).
+     * Developer instrument (debug builds only). The user-facing "Stream via YouTube" row was
+     * removed 2026-11-13: people left it on and lost FLAC, while YouTube is already the chain's
+     * automatic last rung. Raw stored value; consumers read [isForceYouTubeFallback], which is
+     * debug-gated.
      */
     val forceYouTubeFallback: Flow<Boolean> = context.streamingDataStore.data.map { prefs ->
         prefs[forceYouTubeFallbackKey] ?: false
@@ -110,7 +110,7 @@ class StreamingPreference @Inject constructor(
     }
 
     /**
-     * Whether DEVELOPER force toggles (force-qbdlx, skip-Qobuz) are honored. Defaults to
+     * Whether DEVELOPER force toggles (force-qbdlx, skip-Qobuz, YouTube only) are honored. Defaults to
      * the installed app's debuggable flag — the same source of truth the Settings
      * screen uses to decide whether to SHOW those rows, so visibility and effect
      * can never disagree again.
@@ -122,9 +122,6 @@ class StreamingPreference @Inject constructor(
      * `[qbdlx]`-only chain from a toggle set back when it was still a visible
      * control. Enforced HERE, at the accessors, so both registries and any future
      * consumer inherit it and no call site can forget.
-     *
-     * Force-YouTube is deliberately NOT gated: "Stream via YouTube" is a visible
-     * user-facing recovery control, so the user can always see and clear it.
      *
      * internal var: test seam only.
      */
@@ -150,7 +147,9 @@ class StreamingPreference @Inject constructor(
 
     suspend fun current(): Boolean = enabled.first()
 
-    suspend fun isForceYouTubeFallback(): Boolean = forceYouTubeFallback.first()
+    /** [forceYouTubeFallback], honored only on debuggable builds (see [devInstrumentsEnabled]). */
+    suspend fun isForceYouTubeFallback(): Boolean =
+        devForceToggle(forceYouTubeFallback, "force_youtube_fallback")
 
     suspend fun isForceQbdlxOnly(): Boolean = devForceToggle(forceQbdlxOnly, "force_qbdlx_only")
 

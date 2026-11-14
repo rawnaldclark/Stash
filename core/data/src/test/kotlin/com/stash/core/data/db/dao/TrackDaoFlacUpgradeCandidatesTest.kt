@@ -96,4 +96,19 @@ class TrackDaoFlacUpgradeCandidatesTest {
 
         assertEquals(listOf(id), dao.getLosslessUpgradeCandidates(retryBefore = 5_000L).map { it.id })
     }
+
+    @Test
+    fun `the newest songs come first, untried before no-match`() = runTest {
+        insertOpus(1L)
+        insertOpus(2L)
+        insertOpus(3L)
+        insertOpus(4L, flacNoMatchAt = 1_000L)
+        insertOpus(5L, flacNoMatchAt = 1_000L)
+
+        // Never-tried first (newest of them first), then the misses (same stamp: newest first).
+        assertEquals(
+            listOf(3L, 2L, 1L, 5L, 4L),
+            dao.getLosslessUpgradeCandidates(retryBefore = 10_000L).map { it.id },
+        )
+    }
 }

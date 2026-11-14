@@ -72,6 +72,13 @@ object YouTubeSongTitle {
     private val DASH_TAIL = Regex("\\s+[-\u2013\u2014]\\s*([^-\u2013\u2014]*)$")
 
     /**
+     * A last dash before nothing but one bracketed part, the bracket in group 1: " - (The Nightmare
+     * Before Christmas)". Group 1 is absent when step 1 already took the bracket out as noise or a
+     * version ("Song - (Official Video)" leaves "Song -").
+     */
+    private val NOTE_TAIL = Regex("\\s+[-\u2013\u2014]\\s*([(\\[][^)\\]]*[)\\]])?\\s*$")
+
+    /**
      * @param title the row's title as YouTube had it.
      * @param artist the row's artist (often the uploading channel).
      */
@@ -135,6 +142,13 @@ object YouTubeSongTitle {
         }
 
         // 4. "Left - Right": YouTube's "Artist - Title", unless the row says otherwise.
+        // A dash before nothing but a bracket is not that split. YouTube Music lists Danny Elfman's
+        // "Overture - (The Nightmare Before Christmas)", and Tidal the same: it is his "Overture" with
+        // a note on it, not a song "(The Nightmare Before Christmas)" by "Overture", which no catalog
+        // title matched. The bracket is set aside here and goes back on the title below, as the
+        // catalogs write it; a dash step 1 left bare ("Song - (Official Video)") just goes.
+        val noteTail = NOTE_TAIL.find(t)
+        if (noteTail != null) t = t.substring(0, noteTail.range.first)
         val segs = t.split(DASH)
         if (segs.size > 1) {
             val left = segs[0]
@@ -166,6 +180,7 @@ object YouTubeSongTitle {
                 }
             }
         }
+        if (noteTail?.groups?.get(1) != null) t += noteTail.value.trimEnd()
 
         t = stripComposer(t, a)
         return Parsed(artist = a.trim(), title = t.replace(WHITESPACE, " ").trim(), version = versions.joinToString(", "))

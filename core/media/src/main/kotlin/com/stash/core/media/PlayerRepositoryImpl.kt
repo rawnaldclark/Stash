@@ -28,6 +28,7 @@ import com.stash.core.media.streaming.StreamSourceRegistry
 import com.stash.core.media.streaming.StreamUrl
 import com.stash.core.media.streaming.StreamUrlCache
 import com.stash.core.media.streaming.YouTubeStreamResolver
+import com.stash.core.media.streaming.forThisPlayOnly
 import com.stash.core.media.streaming.stashResolveUri
 import com.stash.core.media.streaming.STASH_RESOLVE_SCHEME
 import com.stash.core.media.streaming.mimeTypeOf
@@ -394,20 +395,21 @@ class PlayerRepositoryImpl @Inject constructor(
         }
 
         // Autoplay radio (user ask, 2026-09-07): with the setting on, the moment
-        // the LAST queued track starts, a song radio seeded from it is spliced
-        // behind it, so a one-off play never ends in silence. Tried once per
-        // track: a station that cannot be built is not retried on every tick.
+        // the LAST queued track starts, a song radio seeded from it is added
+        // after it ([autoplayRadioAfter]), so a one-off play never ends in
+        // silence. Tried once per track and queue: a station that cannot be
+        // built is not retried on every tick.
         scope.launch {
             kotlinx.coroutines.flow.combine(playerState, autoplayRadioPreference.enabled) { state, on -> state to on }
                 .collect { (state, on) ->
                     if (listenTogetherOwnsQueue) return@collect
                     if (!shouldAutoplayRadio(on, radioActive, libraryShuffleActive, state, autoplayTriedTrackId)) return@collect
+                    // Mobile data with Stream on cellular off: a station could not play, so none is built (as in Download mode).
+                    // Not marked tried: back on Wi-Fi, the next state change starts it.
+                    if (connectivity.isCellular() && !streamingPreference.streamOnCellular.first()) return@collect
                     val track = state.currentTrack ?: return@collect
                     autoplayTriedTrackId = track.id
-                    val result = startRadio(
-                        com.stash.core.data.radio.RadioSeed.Song(track.title, track.artist, track.youtubeId),
-                        keepCurrent = true,
-                    )
+                    val result = autoplayRadioAfter(track)
                     Log.i(TAG, "autoplay radio from '${track.title}' by ${track.artist}: $result")
                 }
         }
@@ -955,6 +957,8 @@ class PlayerRepositoryImpl @Inject constructor(
         radioActive = false
         radioSession = null
         _radioSeedLabel.value = null
+        // A new queue has a new end: its last song may seed a station even if it did before (an album played again).
+        autoplayTriedTrackId = null
         currentSource = source
         val generation = setQueueGeneration.incrementAndGet()
 
@@ -1293,8 +1297,11 @@ class PlayerRepositoryImpl @Inject constructor(
         // extras and Now Playing would read the "opus" fallback for it. Under
         // Data saver the cache serves no lossless link (StreamUrlCache.get), so
         // only a link resolved under Data saver is swapped in: no new bytes.
+        // Not a link an earlier play kept only for itself (a fallback while Tidal was busy): the
+        // slot stays a placeholder, and the player's own look-ahead asks the lossless sources again.
         val cached = streamUrlCache.get(next.id)?.takeIf {
-            (next.soundCloudId == null && next.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud"
+            !it.forThisPlayOnly &&
+                ((next.soundCloudId == null && next.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud")
         }
         val nowMs = System.currentTimeMillis()
         if (cached != null && cached.expiresAtMs > nowMs + PREFETCH_FRESH_THRESHOLD_MS) {
@@ -1350,6 +1357,12 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         if (resolved == null) {
             Log.d("LATDIAG", "prefetch-next-end id=${next.id} dt=${System.currentTimeMillis() - t0}ms outcome=null")
+            return
+        }
+        if (resolved.forThisPlayOnly) {
+            // A lossy fallback while Tidal was busy: not swapped in. The slot stays a placeholder, whose
+            // own look-ahead (ResolveFirstMediaSource) can wait out the busy time and still get FLAC.
+            Log.d("LATDIAG", "prefetch-next-end id=${next.id} dt=${System.currentTimeMillis() - t0}ms outcome=busy-fallback; left to the player")
             return
         }
         streamUrlCache.put(next.id, resolved)
@@ -1658,17 +1671,8 @@ class PlayerRepositoryImpl @Inject constructor(
         val item = controller.getMediaItemAt(timelineIndex)
         val itemTrackId = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID) ?: return false
         if (itemTrackId != next.id) return false
-        val newExtras = Bundle(item.mediaMetadata.extras ?: Bundle()).apply {
-            resolved.codec?.let { putString(EXTRA_STREAM_CODEC, it) }
-            resolved.bitsPerSample?.let { putInt(EXTRA_STREAM_BIT_DEPTH, it) }
-            resolved.sampleRateHz?.let { putInt(EXTRA_STREAM_SAMPLE_RATE, it) }
-            resolved.bitrateKbps?.let { putInt(EXTRA_STREAM_BITRATE, it) }
-            resolved.origin?.let { putString(EXTRA_STREAM_ORIGIN, it) }
-            // The slot's URL is a manifest, or no longer one (an earlier resolve's word must not stay).
-            if (resolved.isDash) putBoolean(EXTRA_STREAM_DASH, true) else remove(EXTRA_STREAM_DASH)
-            // The song's length as this stream's source knew it, for the add-on check; never an earlier stream's.
-            resolved.songMs?.let { putLong(EXTRA_STREAM_SONG_MS, it) } ?: remove(EXTRA_STREAM_SONG_MS)
-        }
+        // The same stamp a placeholder's DASH child gets when the player resolves the slot itself (#880).
+        val newExtras = com.stash.core.media.streaming.StreamStamp.onto(Bundle(item.mediaMetadata.extras ?: Bundle()), resolved)
         // #336 follow-up: upgrade artwork together with the stream metadata so
         // Now Playing cannot keep a stale video thumbnail after prefetch.
         val currentArt = item.mediaMetadata.artworkUri?.toString()
@@ -1855,6 +1859,152 @@ class PlayerRepositoryImpl @Inject constructor(
         currentSource = com.stash.core.model.PlaybackSource.Unknown
     }
 
+    /**
+     * Autoplay radio's station: a song radio seeded from [seed], the queue's last song, added AFTER it. Unlike
+     * "Start radio" ([startRadio] with keepCurrent) nothing the user queued goes: the songs before the seed stay,
+     * and so does the seed.
+     *
+     * The station takes a second or more to build, and the user may act meanwhile. Pixel 5, 2026-11-13: Previous one
+     * second after the last song began, and the station, spliced around the song playing then, took the last song
+     * away. So the queue is read again when the station lands ([stationStillFollows]): it goes in only while the seed
+     * is still the last song in play order and nothing else has taken the queue over. A Previous, a seek or a jump
+     * back changes nothing there; the station still waits after the last song. Called from the watcher only.
+     */
+    private suspend fun autoplayRadioAfter(seed: Track): AutoplayRadioOutcome {
+        val controller = ensureController() ?: return AutoplayRadioOutcome.PlayerNotReady
+        // A station is songs found online: Download mode plays only what is on the phone.
+        if (!streamAllowed()) return AutoplayRadioOutcome.DownloadMode
+        if (mobileDataBlocksStreams()) return AutoplayRadioOutcome.MobileData
+        val (session, generated) = try {
+            radioGenerator.start(com.stash.core.data.radio.RadioSeed.Song(seed.title, seed.artist, seed.youtubeId))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Thrown out of the watcher's collect, it would end autoplay until the app restarts.
+            Log.w(TAG, "autoplay radio: the station could not be built", e)
+            return AutoplayRadioOutcome.NoStation
+        }
+        // The seed plays already: only the songs it leads to join (found by title and artist, as in startRadio).
+        val seedKey = trackIdentity(seed.title, seed.artist)
+        // Library ids, as in startRadio, so the queue resumes after the app is closed.
+        val discoveries = generated.filter { trackIdentity(it.title, it.artist) != seedKey }.map { it.withQueueIdentity() }
+        if (discoveries.isEmpty()) return AutoplayRadioOutcome.NoStation
+        if (!streamAllowed()) return AutoplayRadioOutcome.DownloadMode
+        // The phone left Wi-Fi while the station was found. The try goes back, so back on Wi-Fi the next player event
+        // builds it again; on mobile data no new build starts (the check above, and the watcher's own once #896 is in).
+        if (mobileDataBlocksStreams()) {
+            if (autoplayTriedTrackId == seed.id) autoplayTriedTrackId = null
+            return AutoplayRadioOutcome.MobileData
+        }
+        // No suspension from here to the append: the queue checked is the queue changed.
+        if (!stationStillFollows(controller, seed)) {
+            giveBackAutoplayTry(seed)
+            return AutoplayRadioOutcome.QueueMovedOn
+        }
+        val fresh = notQueuedYet(controller, discoveries)
+        if (fresh.isEmpty()) return AutoplayRadioOutcome.NoStation
+        appendStationSongs(controller, fresh)
+        radioSession = session
+        radioActive = true
+        // Only one grower (see startRadio): library shuffle was off, or no station would have been wanted.
+        libraryShuffleActive = false
+        librarySnapshot = emptyList()
+        _radioSeedLabel.value = seed.title
+        currentSource = com.stash.core.model.PlaybackSource.Radio(seed.title)
+        return AutoplayRadioOutcome.Started
+    }
+
+    /**
+     * Whether a station built for [seed] may still go after it, read on the main thread right before the append.
+     * Nothing else has the queue: no station or library shuffle started meanwhile, no Listen Together, no queue still
+     * being built, not the #462 ghost, not a big queue's window nobody has confirmed yet. Repeat is still off (it
+     * keeps the music going itself). And the seed is still the last song in play order: songs queued after it play
+     * first, and the last of them seeds its own station when it starts.
+     */
+    private fun stationStillFollows(controller: MediaController, seed: Track): Boolean {
+        if (radioActive || libraryShuffleActive || listenTogetherOwnsQueue || ghostSession) return false
+        if (queueBuildsInFlight.get() > 0) return false
+        if (controller.repeatMode != Player.REPEAT_MODE_OFF) return false
+        // Drops a window the player no longer holds; null for one that isn't confirmed yet, which stays.
+        val window = activeWindow(controller)
+        if (window == null && queueWindow != null) return false
+        if (window != null && !window.endsAtOrderEnd) return false
+        val last = lastSlotInPlayOrder(controller, window)
+        return last >= 0 && controller.getMediaItemAt(last).queueTrackId() == seed.id
+    }
+
+    /**
+     * Mobile data with Stream on cellular off: a station's songs could not stream, so autoplay adds none (#896's rule,
+     * which the watcher also checks before a build; this reads it again when the station lands).
+     */
+    private suspend fun mobileDataBlocksStreams(): Boolean =
+        connectivity.isCellular() && !streamingPreference.streamOnCellular.first()
+
+    /**
+     * A station's [tracks] without the songs already in the queue, in the station's order: a station after an album
+     * doesn't play its songs again (Pixel 5, 11-13: Linger Radio brought back Dreams, two songs earlier). A song is
+     * already there when the player holds the same library id or the same title and artist, or, for a big queue, when
+     * its whole order holds the id. Main thread.
+     */
+    private fun notQueuedYet(controller: MediaController, tracks: List<Track>): List<Track> {
+        val ids = HashSet<Long>()
+        val keys = HashSet<String>()
+        fun note(id: Long, title: String, artist: String) {
+            if (id != 0L) ids += id
+            if (title.isNotBlank()) keys += trackIdentity(title, artist)
+        }
+        for (i in 0 until controller.mediaItemCount) {
+            val item = controller.getMediaItemAt(i)
+            note(item.queueTrackId(), item.mediaMetadata.title?.toString().orEmpty(), item.mediaMetadata.artist?.toString().orEmpty())
+        }
+        currentQueueTracks.forEach { note(it.id, it.title, it.artist) }
+        queueWindow?.let { window -> for (p in 0 until window.total) ids += window.idAtPosition(p) }
+        return tracks.filter { it.id !in ids && trackIdentity(it.title, it.artist) !in keys }
+    }
+
+    /**
+     * The timeline slot that plays last, or -1 for an empty player: under shuffle the end of the walk, otherwise the
+     * timeline's end. A big queue's [window] is in play order as it is, shuffle or not.
+     */
+    private fun lastSlotInPlayOrder(controller: MediaController, window: QueueWindow?): Int {
+        val count = controller.mediaItemCount
+        if (count == 0) return -1
+        if (window == null) shuffleWalk(controller)?.let { return it.last() }
+        return count - 1
+    }
+
+    /**
+     * A station that landed too late gives its try back, so its seed tries again when it ends the queue again (a song
+     * queued after it and taken out again, repeat switched off again). Not while the published state would start
+     * another try at once: a queue the watcher reads as ending where the player's doesn't would otherwise build the
+     * station again on every player event.
+     */
+    private fun giveBackAutoplayTry(seed: Track) {
+        if (autoplayTriedTrackId != seed.id) return
+        if (shouldAutoplayRadio(true, radioActive, libraryShuffleActive, _playerState.value, triedTrackId = null)) return
+        autoplayTriedTrackId = null
+    }
+
+    /**
+     * Adds a station's [tracks] after the last song in play order (autoplay's first batch, and every batch the station
+     * grows by). A big queue takes them at the end of its whole order ([appendToWindow]), into the player as its
+     * window allows. Otherwise they join the player's end, and under shuffle the play order is sent along with them
+     * at its end: Media3 alone gives each one a random spot in it, before the playing song too, where it would never
+     * play. The logical queue first, as in addToQueue. Main thread.
+     */
+    private fun appendStationSongs(controller: MediaController, tracks: List<Track>) {
+        val items = tracks.map { it.toQueueMediaItem() }
+        activeWindow(controller)?.let { window ->
+            appendToWindow(controller, window, tracks) { n -> items.take(n) }
+            return
+        }
+        currentQueueTracks = currentQueueTracks + tracks
+        val walk = shuffleWalk(controller)
+        val at = controller.mediaItemCount
+        controller.addMediaItems(items)
+        placeAppendedInShuffleOrder(controller, walk, at, items.size)
+    }
+
     /** Append the next generated batch to the station queue. Single-flight via
      *  [radioGrowMutex] so a flurry of state emissions can't fan out into
      *  concurrent grows. Internal as a test seam (the watcher that fires it is
@@ -1872,11 +2022,11 @@ class PlayerRepositoryImpl @Inject constructor(
                 return
             }
             // Library ids, as in startRadio, so the grown queue resumes too. Streaming tracks →
-            // stash-resolve:// placeholders (see startRadio). The logical queue first, as in
-            // addNext: the add is reported, and the queue published, during the call.
-            val queued = batch.map { it.withQueueIdentity() }
-            currentQueueTracks = currentQueueTracks + queued
-            controller.addMediaItems(queued.map { it.toQueueMediaItem() })
+            // stash-resolve:// placeholders (see startRadio), after the last song in play order, without the
+            // songs the queue holds already (the next batch comes with the next player event).
+            val queued = notQueuedYet(controller, batch.map { it.withQueueIdentity() })
+            if (queued.isEmpty()) return
+            appendStationSongs(controller, queued)
         }
     }
 
@@ -3458,8 +3608,11 @@ class PlayerRepositoryImpl @Inject constructor(
         // Asked BEFORE the cache is read: a changed decision (Data saver now in effect) drops the
         // links saved under the old one, and the cache serves no lossless link under Data saver.
         qualityPolicy?.dataSaverApplies()
+        // A link an earlier play kept only for itself (a fallback while Tidal was busy) is not this
+        // play's: the lossless sources are asked again.
         val cached = streamUrlCache.get(track.id)?.takeIf {
-            (track.soundCloudId == null && track.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud"
+            !it.forThisPlayOnly &&
+                ((track.soundCloudId == null && track.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud")
         }
         val stream = cached ?: streamResolver.resolve(
             track,
@@ -3572,6 +3725,7 @@ class PlayerRepositoryImpl @Inject constructor(
         radioActive = false
         radioSession = null
         _radioSeedLabel.value = null
+        autoplayTriedTrackId = null // a new queue, as in setQueueBuilding
         val controller = ensureController() ?: return
         dropWindow("a single song replaced the queue")
         resetPlayHistory()
@@ -4620,10 +4774,7 @@ class PlayerRepositoryImpl @Inject constructor(
         private const val TAG = "StashPlayer"
 
         /** The extras that describe the stream a slot plays, for Now Playing's quality line. */
-        private val streamStampKeys = listOf(
-            EXTRA_STREAM_CODEC, EXTRA_STREAM_BIT_DEPTH, EXTRA_STREAM_SAMPLE_RATE, EXTRA_STREAM_BITRATE, EXTRA_STREAM_ORIGIN, EXTRA_STREAM_DASH,
-            EXTRA_STREAM_SONG_MS,
-        )
+        private val streamStampKeys = com.stash.core.media.streaming.StreamStamp.KEYS
 
         /**
          * Separate tag for the Now Playing quality stamp so its (chatty,
