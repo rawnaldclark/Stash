@@ -492,7 +492,9 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
   // waiting out its gap, so the app asks again in 15 s. Every seat resting or capped is the pool's own five minutes,
   // as when no seat could be taken at all.
   if (previewed) return noSeat(env, seatKind.client);
-  return json({ error: "upstream_unavailable" }, 503);
+  // Both seats failed at seat level (Tidal 5xx, failed refresh) and rest; another seat may answer shortly. Without a
+  // Retry-After the app paused Tidal for the whole phone for its five-minute default.
+  return json({ error: "upstream_unavailable" }, 503, { "Retry-After": String(PACING_RETRY_AFTER) });
 }
 
 /** Seats one /stream may take: a second only after a seat-level failure (failed refresh, Tidal 5xx, a preview). */

@@ -693,6 +693,20 @@ test("v1 lanes (v2 off, ?aac=only): previews on both seats asked are busy Retry-
   assert.deepEqual(f.calls.map((c) => seatOf(c.options)), ["a"]);
 });
 
+test("both seats failing with a Tidal 5xx is 503 upstream_unavailable with Retry-After 15, not the app's five-minute default", async () => {
+  for (const v2 of [false, true]) {
+    const f = fixture({ accounts: [liveAccount(), { ...liveAccount(), id: "second" }], tidalResponse: async () => new Response("{}", { status: 500 }) });
+    if (v2) f.env.TIDAL_V2_MANIFESTS = "1";
+    await withFetch(null, f.fetchTidal, async () => {
+      const r = await worker.fetch(authorizedRequest("/stream/td:321"), f.env);
+      assert.equal(r.status, 503, `v2 ${v2}`);
+      assert.deepEqual(await r.json(), { error: "upstream_unavailable" }, `v2 ${v2}`);
+      assert.equal(r.headers.get("retry-after"), "15", `v2 ${v2}`);
+    });
+    assert.equal(f.responseCache.size, 0, `v2 ${v2}: never cached`);
+  }
+});
+
 test("a previewReason alone marks a preview; an answer that says FULL, or nothing, is the track as before", async () => {
   const withReason = () => new Response(JSON.stringify({ audioQuality: "LOSSLESS", manifestMimeType: "application/vnd.tidal.bts",
     manifest: Buffer.from(FLAC_BTS).toString("base64"), previewReason: "FULL_REQUIRES_SUBSCRIPTION" }), { status: 200 });
