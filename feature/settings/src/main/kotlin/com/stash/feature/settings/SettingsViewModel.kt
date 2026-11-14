@@ -428,12 +428,12 @@ class SettingsViewModel @Inject constructor(
     }
 
     /** Crossfade on/off — drives the Playback section toggle. Off by default. */
-    /** Autoplay radio: seed a song radio when the last queued track starts. Off by default. */
+    /** Autoplay radio: seed a song radio when the last queued track starts. On by default. */
     val autoplayRadioEnabled: kotlinx.coroutines.flow.StateFlow<Boolean> =
         autoplayRadioPreference.enabled.stateIn(
             viewModelScope,
             kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
-            false,
+            true,
         )
 
     val headphoneResumeOnReconnect: kotlinx.coroutines.flow.StateFlow<Boolean> =

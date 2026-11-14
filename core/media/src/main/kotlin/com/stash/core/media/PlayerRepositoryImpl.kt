@@ -403,6 +403,9 @@ class PlayerRepositoryImpl @Inject constructor(
                 .collect { (state, on) ->
                     if (listenTogetherOwnsQueue) return@collect
                     if (!shouldAutoplayRadio(on, radioActive, libraryShuffleActive, state, autoplayTriedTrackId)) return@collect
+                    // Mobile data with Stream on cellular off: a station could not play, so none is built (as in Download mode).
+                    // Not marked tried: back on Wi-Fi, the next state change starts it.
+                    if (connectivity.isCellular() && !streamingPreference.streamOnCellular.first()) return@collect
                     val track = state.currentTrack ?: return@collect
                     autoplayTriedTrackId = track.id
                     val result = startRadio(
