@@ -118,6 +118,9 @@ dependencies {
     // EqStoreTest setup in :core:media.
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
+    // A real (test) WorkManager: LosslessRetryTidalSweepTest books Tidal sweeps against the
+    // unique-work rules themselves, not a mock of them.
+    testImplementation(libs.work.testing)
 
     // Instrumented tests — MetadataEmbeddingIntegrationTest runs against the
     // ffmpeg .so bundled by youtubedl-android on a real device, since that

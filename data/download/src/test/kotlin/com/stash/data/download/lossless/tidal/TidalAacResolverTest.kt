@@ -34,12 +34,38 @@ class TidalAacResolverTest {
         codec = "aac",
     )
 
-    private fun ready(switchOn: Boolean = true, broken: Boolean = false, acquire: Boolean = true) {
+    private fun ready(switchOn: Boolean = true, acquire: Boolean = true) {
         coEvery { prefs.tidalAacFallbackNow() } returns switchOn
         coEvery { client.isConfigured() } returns true
-        coEvery { rateLimiter.stateOf(any()) } returns RateLimitState(2.0, 0L, broken, 0L, 0)
+        coEvery { rateLimiter.stateOf(any()) } returns RateLimitState(2.0, 0L, false, 0L, 0)
         coEvery { rateLimiter.acquire(id) } returns acquire
         coEvery { client.lookup(any(), any(), true) } returns TidalLookup.NeedsRelay
+    }
+
+    /** A blocked Tidal bucket: [blockedMs] long, a tripped breaker's block or only a pause. */
+    private fun blockedState(blockedMs: Long, tripped: Boolean) = RateLimitState(
+        tokensAvailable = 0.0,
+        msUntilNextToken = 0L,
+        isCircuitBroken = true,
+        msUntilUnblock = blockedMs,
+        recentFailures = 0,
+        breakerTripped = tripped,
+    )
+
+    /** A real limiter (the Tidal buckets' own numbers: 120 s 429 backoff, 15 min breaker) on [now]. */
+    private fun realLimiter(now: () -> Long) = AggregatorRateLimiter().apply {
+        clock = object : AggregatorRateLimiter.Clock {
+            override fun nowMs(): Long = now()
+        }
+    }
+
+    /** Every time [resolver] announces on retryEvents, for the rest of the test. */
+    private fun kotlinx.coroutines.test.TestScope.retryEventsOf(resolver: TidalAacResolver): List<Long> {
+        val events = mutableListOf<Long>()
+        backgroundScope.launch(kotlinx.coroutines.test.UnconfinedTestDispatcher(testScheduler)) {
+            resolver.retryEvents.collect { events += it }
+        }
+        return events
     }
 
     @Test fun `AAC answer maps to an aac m4a SourceResult at 320 kbps`() = runTest {
@@ -83,10 +109,100 @@ class TidalAacResolverTest {
         coVerify(exactly = 0) { rateLimiter.acquire(any()) }
     }
 
-    @Test fun `open breaker means no lookup, and a wait`() = runTest {
-        ready(broken = true)
-        assertThat((resolver.resolve(query) as TidalAac.Unavailable).reason).isEqualTo(TidalAac.Reason.FAILED)
-        coVerify(exactly = 0) { client.lookup(any(), any(), false) }
+    @Test fun `a tripped breaker means no lookup, and a long wait that still ends with its block`() = runTest {
+        ready()
+        resolver.nowMs = { 1_000L }
+        val events = retryEventsOf(resolver)
+        coEvery { rateLimiter.stateOf(id) } returns blockedState(15 * 60_000L, tripped = true)
+
+        assertThat(resolver.resolve(query))
+            .isEqualTo(TidalAac.Unavailable(TidalAac.Reason.FAILED, 1_000L + TidalAacResolver.FAILED_RETRY_MS))
+
+        // Two minutes left on it: looked at again when it ends, not five minutes on.
+        coEvery { rateLimiter.stateOf(id) } returns blockedState(2 * 60_000L, tripped = true)
+        assertThat(resolver.resolve(query))
+            .isEqualTo(TidalAac.Unavailable(TidalAac.Reason.FAILED, 1_000L + 2 * 60_000L))
+
+        assertThat(events).containsExactly(1_000L + TidalAacResolver.FAILED_RETRY_MS, 1_000L + 2 * 60_000L).inOrder()
+        coVerify(exactly = 0) { client.lookup(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { rateLimiter.acquire(any()) }
+    }
+
+    /** The phone's log at 01:06: the lossless rung's 29 s pause read as an open breaker, FAILED + 5 min. */
+    @Test fun `a bucket only paused for a busy relay is BUSY until the pause ends, announced for the sweep`() = runTest {
+        ready()
+        resolver.nowMs = { 1_000L }
+        val events = retryEventsOf(resolver)
+        coEvery { rateLimiter.stateOf(TidalLosslessSource.SOURCE_ID) } returns blockedState(29_000L, tripped = false)
+
+        assertThat(resolver.resolve(query)).isEqualTo(TidalAac.Unavailable(TidalAac.Reason.BUSY, 30_000L))
+
+        assertThat(events).containsExactly(30_000L)
+        coVerify(exactly = 0) { client.lookup(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { rateLimiter.acquire(any()) }
+    }
+
+    @Test fun `the later of the two buckets' pauses decides, and a short one still waits the floor`() = runTest {
+        ready()
+        resolver.nowMs = { 1_000L }
+        coEvery { rateLimiter.stateOf(id) } returns blockedState(20_000L, tripped = false)
+        coEvery { rateLimiter.stateOf(TidalLosslessSource.SOURCE_ID) } returns blockedState(45_000L, tripped = false)
+        assertThat(resolver.resolve(query)).isEqualTo(TidalAac.Unavailable(TidalAac.Reason.BUSY, 46_000L))
+
+        // Never sooner than MIN_RETRY_MS, so a waiting queue is not swept in a tight loop.
+        coEvery { rateLimiter.stateOf(id) } returns blockedState(2_000L, tripped = false)
+        coEvery { rateLimiter.stateOf(TidalLosslessSource.SOURCE_ID) } returns blockedState(5_000L, tripped = false)
+        assertThat(resolver.resolve(query))
+            .isEqualTo(TidalAac.Unavailable(TidalAac.Reason.BUSY, 1_000L + TidalAacResolver.MIN_RETRY_MS))
+    }
+
+    /**
+     * The phone's stall end to end on a real limiter: the lossless rung's lookup comes back busy for
+     * 30 s, and the AAC step of the same download waits BUSY for those 30 s (it was FAILED + 5 min,
+     * which booked the next sweep five minutes out). Once the pause is over, Tidal is asked again.
+     */
+    @Test fun `after a 30 s busy the download waits BUSY for 30 s, not FAILED for 5 minutes`() = runTest {
+        var now = 1_000_000L
+        val limiter = realLimiter { now }
+        val lossless = TidalLosslessSource(client, limiter) { now }
+        val aacStep = TidalAacResolver(client, limiter, prefs).apply { nowMs = { now } }
+        val events = retryEventsOf(aacStep)
+        coEvery { prefs.tidalAacFallbackNow() } returns true
+        coEvery { client.isConfigured() } returns true
+        coEvery { client.lookup(any(), any(), true, any()) } returns TidalLookup.NeedsRelay
+        coEvery { client.lookup(query, false, false, false) } returns TidalLookup.Busy(now + 30_000L)
+
+        assertThat(lossless.resolve(query)).isNull()
+        assertThat(aacStep.resolve(query)).isEqualTo(TidalAac.Unavailable(TidalAac.Reason.BUSY, 1_030_000L))
+
+        assertThat(events).containsExactly(1_030_000L)
+        coVerify(exactly = 0) { client.lookup(any(), true, false, any()) }
+
+        now += 30_000L
+        coEvery { client.lookup(query, allowAac = true, cacheOnly = false) } returns TidalLookup.Found(aac)
+        assertThat(aacStep.resolve(query)).isInstanceOf(TidalAac.Found::class.java)
+    }
+
+    @Test fun `the AAC lookup's own busy pauses Tidal AAC for the relay's wait, and the next song waits with it`() = runTest {
+        var now = 1_000_000L
+        val limiter = realLimiter { now }
+        val aacStep = TidalAacResolver(client, limiter, prefs).apply { nowMs = { now } }
+        coEvery { prefs.tidalAacFallbackNow() } returns true
+        coEvery { client.isConfigured() } returns true
+        coEvery { client.lookup(any(), any(), true, any()) } returns TidalLookup.NeedsRelay
+        coEvery { client.lookup(query, allowAac = true, cacheOnly = false) } returns TidalLookup.Busy(now + 30_000L)
+
+        assertThat(aacStep.resolve(query)).isEqualTo(TidalAac.Unavailable(TidalAac.Reason.BUSY, 1_030_000L))
+        limiter.stateOf(id).let {
+            assertThat(it.msUntilUnblock).isEqualTo(30_000L)
+            assertThat(it.breakerTripped).isFalse()
+        }
+
+        // The next song ten seconds on: no request, and a wait for the same pause (not 120 s, not 5 min).
+        now += 10_000L
+        val next = TrackQuery(artist = "Daft Punk", title = "One More Time")
+        assertThat(aacStep.resolve(next)).isEqualTo(TidalAac.Unavailable(TidalAac.Reason.BUSY, 1_030_000L))
+        coVerify(exactly = 0) { client.lookup(next, any(), false, any()) }
     }
 
     @Test fun `switch off means no AAC request`() = runTest {
@@ -149,7 +265,9 @@ class TidalAacResolverTest {
         assertThat(r.reason).isEqualTo(TidalAac.Reason.BUSY)
         assertThat(r.retryAtMs).isEqualTo(120_000L)
         assertThat(events).containsExactly(120_000L)
-        coVerify { rateLimiter.reportRateLimited(id) }
+        // Paused for the relay's own wait, not the configured backoff (the one-argument call).
+        coVerify { rateLimiter.reportRateLimited(id, 119_000L) }
+        coVerify(exactly = 0) { rateLimiter.reportRateLimited(id) }
         collecting.cancel()
     }
 

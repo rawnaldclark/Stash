@@ -92,7 +92,10 @@ class TidalLosslessSource internal constructor(
             TidalLookup.NoMatch, TidalLookup.Off, TidalLookup.NeedsRelay -> return null
             is TidalLookup.Busy -> {
                 purpose?.searchIncomplete = true
-                rateLimiter.reportRateLimited(id)
+                // Paused for the relay's own Retry-After, not the bucket's configured 429 backoff
+                // (120 s): a waiting download's retry is booked for when this block ends
+                // (TidalAacResolver), so a longer block here held every download past it.
+                rateLimiter.reportRateLimited(id, outcome.untilMs - nowMs())
                 return null
             }
             TidalLookup.Failed -> {

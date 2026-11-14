@@ -51,6 +51,10 @@ import dagger.assisted.AssistedInject
  * was busy is re-queued without a check (its download asks again, the one answer that counts);
  * one waiting for the daily reset is left to the reset sweep.
  *
+ * The Tidal sweep ([KEY_TIDAL_BUSY_ONLY], booked for when Tidal should be free again) does only
+ * that first part: it re-queues the rows that waited for Tidal and touches nothing else, so it is
+ * over in moments ([requeueWaitedForTidal]).
+ *
  * One answer per song: a match this sweep finds is handed to the download through
  * [ResolvedSourceHandoff], which takes it instead of asking the relay a second time (a found
  * answer costs a unit of the day's allowance). At most [MAX_LOOKUPS_PER_PASS] rows are looked up
@@ -85,6 +89,7 @@ class LosslessRetryWorker @AssistedInject constructor(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
+        if (inputData.getBoolean(KEY_TIDAL_BUSY_ONLY, false)) return requeueWaitedForTidal()
         val mode = losslessPrefs.downloadModeNow()
         // The allowance's reset matters to every relay lookup; Opus asks none.
         val atReset = mode != DownloadMode.OPUS && inputData.getBoolean(KEY_AT_RESET, false)
@@ -160,8 +165,10 @@ class LosslessRetryWorker @AssistedInject constructor(
                         resolvedCount++
                     }
                     TidalAac.NoAac -> Unit
-                    // Busy, paced or failed: the resolver booked the next sweep for when it clears.
-                    // A spent day: the reset sweep takes every row. Either way, stop here.
+                    // Busy, paced or failed: the resolver booked the Tidal sweep for when it clears
+                    // (it re-queues the downloads that waited for Tidal; these lookups go on with
+                    // the next general sweep, from the cursor). A spent day: the reset sweep takes
+                    // every row. Either way, stop here.
                     is TidalAac.Unavailable -> {
                         stoppedAt = entry.id - 1
                         break
@@ -193,6 +200,28 @@ class LosslessRetryWorker @AssistedInject constructor(
                 KEY_TOTAL to waiting.size,
             ),
         )
+    }
+
+    /**
+     * The Tidal sweep: every row that waited because Tidal was busy, paced or failing goes back in
+     * the queue as it is, and its download asks Tidal again (the one answer that counts). Nothing
+     * else: no lookup, no row with another reason, whatever the Download quality, and the cursor
+     * untouched. Kept this small so it is over in moments; a song that waits for Tidal while it
+     * runs is booked behind it (LosslessRetryScheduler), never lost.
+     */
+    private suspend fun requeueWaitedForTidal(): Result {
+        val waiting = downloadQueueDao.waitingForLosslessTracks(streamOnly = streamingPreference.current())
+        var requeued = 0
+        for (entry in waiting) {
+            if (DownloadWaitReason.fromCode(entry.errorMessage) != DownloadWaitReason.TIDAL_BUSY) continue
+            // As in the full sweep: the user picked this song's audio in Failed Matches (#531),
+            // and it waits for Lossy fallback, not for Tidal.
+            val track = trackDao.getById(entry.trackId) ?: continue
+            if (track.matchPickedAt != null) continue
+            requeue(entry.id)
+            requeued++
+        }
+        return Result.success(workDataOf(KEY_RESOLVED to requeued, KEY_TOTAL to waiting.size))
     }
 
     /** The catalog query for a library row, as the download makes it. */
@@ -228,6 +257,12 @@ class LosslessRetryWorker @AssistedInject constructor(
          * re-queues without resolving (see the class doc).
          */
         const val KEY_AT_RESET = "lossless_retry_at_reset"
+
+        /**
+         * Input-data key: true for the sweep booked for when Tidal should be free again, which only
+         * re-queues the rows that waited for Tidal ([DownloadWaitReason.TIDAL_BUSY]); see [doWork].
+         */
+        const val KEY_TIDAL_BUSY_ONLY = "lossless_retry_tidal_busy_only"
 
         /** Output-data key: how many WAITING_FOR_LOSSLESS rows were flipped to PENDING this sweep. */
         const val KEY_RESOLVED = "lossless_retry_resolved"

@@ -592,6 +592,78 @@ test("a LOSSLESS answer to the HI_RES_LOSSLESS request is served as FLAC", async
   assert.equal(f.calls.length, 1);
 });
 
+/** A v1 playbackinfo answer that states its assetPresentation (Tidal's own field: "FULL" or "PREVIEW"). */
+function presentedInfo(assetPresentation, audioQuality, manifestMimeType, payload) {
+  return new Response(JSON.stringify({
+    trackId: 575545,
+    assetPresentation,
+    audioQuality,
+    manifestMimeType,
+    manifest: Buffer.from(payload).toString("base64"),
+    bitDepth: 16,
+    sampleRate: 44100,
+  }), { status: 200 });
+}
+const bearer = (options) => options.headers.authorization;
+
+test("a v1 PREVIEW answer is never served: that seat cools down and the next seat's whole track is", async () => {
+  // td:575545 "Linger", 2026-11-13: one seat answered with the 30 s PREVIEW's manifest, which played and was saved as
+  // the song; another seat played the same album whole minutes later.
+  const accounts = [liveAccount(), { ...liveAccount(), id: "whole-account", access_token: "whole-token" }];
+  const f = fixture({ accounts, tidalResponse: async (_url, options) => (bearer(options) === "Bearer test-tidal-access-token"
+    ? presentedInfo("PREVIEW", "LOSSLESS", "application/dash+xml", MPD)
+    : presentedInfo("FULL", "LOSSLESS", "application/vnd.tidal.bts", FLAC_BTS)) });
+
+  await withFetch(null, f.fetchTidal, async () => {
+    const response = await worker.fetch(authorizedRequest("/stream/td:575545"), f.env);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.codec, "flac");
+    assert.equal(body.url, "https://cdn.example/track.flac");
+  });
+  assert.equal(playbackCalls(f).length, 2);
+  assert.ok(f.dbWrites.some(({ sql, args }) => sql.includes("SET cooling_until=?") && args[1] === "test-account"), "the preview seat cools");
+  assert.equal(f.dbWrites.some(({ sql, args }) => sql.includes("SET cooling_until=?") && args[1] === "whole-account"), false);
+  assert.equal(f.dbWrites.some(({ sql }) => sql.includes("state='dead'")), false, "never retired for it");
+  assert.equal(f.manifests.size, 0, "the preview's manifest is never stored");
+});
+
+test("when every seat asked has only the preview, the answer is busy and nothing is cached (lossless and ?aac=only)", async () => {
+  for (const [path, preview] of [
+    ["/stream/td:575545", () => presentedInfo("PREVIEW", "LOSSLESS", "application/dash+xml", MPD)],
+    ["/stream/td:575545?aac=1", () => presentedInfo("PREVIEW", "LOSSLESS", "application/dash+xml", MPD)],
+    ["/stream/td:575545?aac=only", () => presentedInfo("PREVIEW", "HIGH", "application/vnd.tidal.bts", AAC_BTS)],
+  ]) {
+    const f = fixture({ accounts: [liveAccount(), { ...liveAccount(), id: "second" }], tidalResponse: async () => preview() });
+    await withFetch(null, f.fetchTidal, async () => {
+      const response = await worker.fetch(authorizedRequest(path), f.env);
+      assert.equal(response.status, 503, path);
+      assert.deepEqual(await response.json(), { error: "busy" });
+    });
+    assert.equal(playbackCalls(f).length, 2, `${path}: two seats asked`);
+    assert.equal(f.responseCache.size, 0, `${path}: nothing cached`);
+    assert.equal(f.manifests.size, 0, `${path}: no manifest stored`);
+  }
+});
+
+test("a previewReason alone marks a preview; an answer that says FULL, or nothing, is the track as before", async () => {
+  const withReason = () => new Response(JSON.stringify({ audioQuality: "LOSSLESS", manifestMimeType: "application/vnd.tidal.bts",
+    manifest: Buffer.from(FLAC_BTS).toString("base64"), previewReason: "FULL_REQUIRES_SUBSCRIPTION" }), { status: 200 });
+  const f = fixture({ accounts: [liveAccount(), liveAccount()], tidalResponse: async () => withReason() });
+  await withFetch(null, f.fetchTidal, async () => {
+    assert.equal((await worker.fetch(authorizedRequest("/stream/td:1"), f.env)).status, 503);
+  });
+
+  for (const answer of [() => presentedInfo("FULL", "LOSSLESS", "application/vnd.tidal.bts", FLAC_BTS), () => losslessResponse()]) {
+    const g = fixture({ tidalResponse: async () => answer() });
+    await withFetch(null, g.fetchTidal, async () => {
+      const body = await (await worker.fetch(authorizedRequest("/stream/td:2"), g.env)).json();
+      assert.equal(body.codec, "flac");
+    });
+    assert.equal(playbackCalls(g).length, 1);
+  }
+});
+
 test("a 401 whose refresh cannot complete cools that seat (never kills it) and the next account serves", async () => {
   const accounts = [liveAccount(), { ...liveAccount(), id: "reserve-account", access_token: "reserve-token" }];
   const f = fixture({ accounts, tidalResponse: async (_url, options) => {
@@ -1092,6 +1164,22 @@ test("v2 refusals fall back to v1 on the same seat: two calls, bumpSeat counts t
     assert.equal(b.bitDepth, 24);
     assert.equal(b.sampleRate, 96000);
   });
+});
+
+test("v2 on: a preview v2 refuses is not served by v1 on the same seat either; busy within the two-call budget", async () => {
+  const f = v2Fixture({ accounts: [liveAccount(), liveAccount()], tidalResponse: tidalV2(
+    () => v2Answer({ attributes: { trackPresentation: "PREVIEW" } }),
+    () => presentedInfo("PREVIEW", "LOSSLESS", "application/dash+xml", MPD),
+  ) });
+  await withFetch(null, f.fetchTidal, async () => {
+    const r = await worker.fetch(authorizedRequest("/stream/td:575545"), f.env);
+    assert.equal(r.status, 503);
+    assert.deepEqual(await r.json(), { error: "busy" });
+  });
+  assert.equal(f.calls.length, 2, "v2 then v1, one seat");
+  assert.equal(f.accountCaps.length, 1);
+  assert.equal(f.responseCache.size, 0);
+  assert.equal(f.manifests.size, 0);
 });
 
 test("v2 429 cools the seat like a v1 429 and answers busy: no v1 call, nothing cached", async () => {

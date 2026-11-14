@@ -409,6 +409,8 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
   // included) and holds a stream to 2 on this path; with the flag off it is never consulted.
   const useV2 = (v2Manifests(env) || mse) && !aacOnly;
   const budget = { calls: 0 };
+  // Set when a seat answered with a preview (isPreviewAnswer): with no seat left to ask, busy, never the preview.
+  let previewed = false;
   for (let attempt = 0; attempt < 2; attempt++) {
     if (useV2 && budget.calls >= 2) break;
     const account = await takeAccount(env, seatKind);
@@ -450,6 +452,17 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
       continue;
     }
     const info = await data.json();
+    // v1 asks for assetpresentation=FULL, but a seat Tidal lets play only a preview still answers, with the 30 s
+    // PREVIEW's manifest, and it used to be served as the track (td:575545 "Linger", 2026-11-13: it played and was
+    // saved as 0:30 under the song's 4:35 header). This seat's answer, not the track's: another seat played the same
+    // album whole minutes later. So it is cooled like a 5xx and the next seat asked; with none left, busy (never
+    // cached) and the app asks again later. v2 refuses its own previews (v2Stream).
+    if (isPreviewAnswer(info)) {
+      console.warn(`tidal_preview ${JSON.stringify({ account: String(account.id).slice(-4), track: String(trackId) })}`);
+      await coolAccount(env, account.id, 300);
+      previewed = true;
+      continue;
+    }
     if (aacOnly) return aacInfo(info, skipsHires(new URL(request.url), aac) ? undefined : await trackHires(trackId, env, request));
     if (!["LOSSLESS", "HI_RES_LOSSLESS"].includes(info.audioQuality)) {
       // The normal answer for a CD-only track with this client, not a seat problem.
@@ -460,7 +473,16 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
     if (web) return await edgeInfo(trackId, info, env, web);
     return await streamInfo(trackId, request, env, info, allowAac);
   }
+  if (previewed) return busy();
   return json({ error: "upstream_unavailable" }, 503);
+}
+
+/**
+ * True when a v1 playbackinfo answer is a preview, not the track: its assetPresentation is anything but FULL, or it
+ * gives a previewReason (the same test v2Stream makes of trackPresentation). An answer that says neither is FULL.
+ */
+function isPreviewAnswer(info) {
+  return Boolean((info?.assetPresentation && String(info.assetPresentation).toUpperCase() !== "FULL") || info?.previewReason);
 }
 
 /** TIDAL_V2_MANIFESTS: "1" = on; unset, "0" or anything else = off (v1 only, as before). */

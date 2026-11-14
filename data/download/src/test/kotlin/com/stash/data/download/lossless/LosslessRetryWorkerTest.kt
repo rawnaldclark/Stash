@@ -250,6 +250,38 @@ class LosslessRetryWorkerTest {
     }
 
     @Test
+    fun `the Tidal sweep re-queues only the songs that waited for Tidal, with no lookup, in every mode`() = runTest {
+        every { workerParams.inputData } returns workDataOf(LosslessRetryWorker.KEY_TIDAL_BUSY_ONLY to true)
+        for (m in com.stash.core.model.DownloadMode.entries) {
+            io.mockk.clearMocks(enqueuer, registry, tidalAacResolver, downloadQueueDao, answers = false)
+            mode(m)
+            cursor.set(42L)
+            coEvery { downloadQueueDao.waitingForLosslessTracks(any()) } returns listOf(
+                entry(id = 100L, trackId = 1L).copy(errorMessage = "wait:tidal_busy"),
+                entry(id = 101L, trackId = 2L).copy(errorMessage = "wait:lossless"),
+                entry(id = 102L, trackId = 3L).copy(errorMessage = "wait:aac"),
+                entry(id = 103L, trackId = 4L).copy(errorMessage = "wait:reset"),
+                entry(id = 104L, trackId = 5L), // deferred before reasons were kept
+                // Waited for Tidal, but the user has since picked its audio (#531): left alone.
+                entry(id = 105L, trackId = 6L).copy(errorMessage = "wait:tidal_busy"),
+            )
+            coEvery { trackDao.getById(any()) } answers { stubTrackEntity(firstArg()) }
+            coEvery { trackDao.getById(6L) } returns stubTrackEntity(6L).copy(matchPickedAt = 1_000L)
+
+            val result = newWorker().doWork() as androidx.work.ListenableWorker.Result.Success
+
+            coVerify(exactly = 1) { downloadQueueDao.requeueIfStillWaiting(100L) }
+            coVerify(exactly = 1) { downloadQueueDao.requeueIfStillWaiting(any()) }
+            coVerify(exactly = 1) { enqueuer.enqueue(100L) }
+            coVerify(exactly = 1) { enqueuer.enqueue(any()) }
+            coVerify(exactly = 0) { registry.resolve(any()) }
+            coVerify(exactly = 0) { tidalAacResolver.resolve(any(), any(), any()) }
+            assertEquals("the general sweep's place is kept", 42L, cursor.get())
+            assertEquals(1, result.outputData.getInt(LosslessRetryWorker.KEY_RESOLVED, -1))
+        }
+    }
+
+    @Test
     fun `a row waiting for the reset is left alone while the day is spent`() = runTest {
         quota.onHeaders("500/500", "${now / 1000 + 3600}")
         coEvery { downloadQueueDao.waitingForLosslessTracks(any()) } returns

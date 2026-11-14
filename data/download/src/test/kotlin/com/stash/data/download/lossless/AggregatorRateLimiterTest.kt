@@ -167,6 +167,42 @@ class AggregatorRateLimiterTest {
     }
 
     @Test
+    fun `a stated pause blocks without a tripped breaker, a trip is both, and both end with their block`() = runTest {
+        val limiter = AggregatorRateLimiter().apply { clock = virtualClock() }
+        limiter.configure(
+            "src",
+            AggregatorRateLimiter.Config(
+                backoff429Ms = 120_000L,
+                circuitBreakAfter = 3,
+                circuitBreakDurationMs = 15 * 60_000L,
+            ),
+        )
+
+        // A busy relay's own Retry-After: blocked for exactly that long, no breaker.
+        limiter.reportRateLimited("src", 30_000L)
+        limiter.stateOf("src").let {
+            assertTrue(it.isCircuitBroken)
+            assertFalse(it.breakerTripped)
+            assertEquals(30_000L, it.msUntilUnblock)
+        }
+        advanceTimeBy(30_000L)
+        assertFalse(limiter.stateOf("src").isCircuitBroken)
+
+        // Failures in a row (the 429 above counted as one): the breaker trips.
+        repeat(2) { limiter.reportFailure("src") }
+        limiter.stateOf("src").let {
+            assertTrue(it.isCircuitBroken)
+            assertTrue(it.breakerTripped)
+            assertEquals(15 * 60_000L, it.msUntilUnblock)
+        }
+        advanceTimeBy(15 * 60_000L)
+        limiter.stateOf("src").let {
+            assertFalse(it.isCircuitBroken)
+            assertFalse(it.breakerTripped)
+        }
+    }
+
+    @Test
     fun `429 also bumps failure counter for sustained-rate-limit case`() = runTest {
         val limiter = AggregatorRateLimiter().apply { clock = virtualClock() }
         limiter.configure(
