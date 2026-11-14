@@ -97,9 +97,9 @@ class AudioDurationExtractorTest {
      */
     @Test
     fun `a clip under the song's header - the header says 4 35, its frames say 0 30`() {
-        val clip = tmp.newFile("linger.flac").apply {
-            writeBytes(javaClass.getResourceAsStream("/flac/tidal-preview-shape.flac")!!.use { it.readBytes() })
-        }
+        val bytes = requireNotNull(javaClass.getResourceAsStream("/flac/tidal-preview-shape.flac")) { "missing flac/tidal-preview-shape.flac" }
+            .use { it.readBytes() }
+        val clip = tmp.newFile("linger.flac").apply { writeBytes(bytes) }
         ShadowMediaMetadataRetriever.addMetadata(clip.absolutePath, MediaMetadataRetriever.METADATA_KEY_DURATION, "274773")
 
         assertThat(extractor.extractMs(clip.absolutePath)).isEqualTo(274_773L)

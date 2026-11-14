@@ -219,7 +219,8 @@ class DashManifestParserTest {
         for (shape in shapes) {
             val before = runCatching { OldParser.parse(shape, mpdUrl) }
             val now = runCatching { DashManifestParser.parse(shape, mpdUrl) }
-            assertThat(now.getOrNull()).isEqualTo(before.getOrNull())
+            // What is fetched is the same; the length (durationMs) is new, and not something the regexes read.
+            assertThat(now.getOrNull()?.copy(durationMs = null)).isEqualTo(before.getOrNull())
             assertThat(now.exceptionOrNull()?.message).isEqualTo(before.exceptionOrNull()?.message)
         }
     }
