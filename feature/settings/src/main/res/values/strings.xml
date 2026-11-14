@@ -1414,6 +1414,10 @@
     <string name="settings_addons_status_new_link_detail">The link you added stopped working. Ask whoever runs this add-on for a new one, then replace it here.</string>
     <string name="settings_addons_status_newer">Needs a newer Stash</string>
     <string name="settings_addons_status_newer_detail">Its newest version needs a newer Stash than this one. Update Stash to keep using it.</string>
+    <!-- An add-on handed over a file that wasn't what it said (a lossy file it called lossless, a video, a stub far shorter than the song). %1$s: the time it is used again, e.g. 14:30. -->
+    <string name="settings_addons_status_wrong_file">Sent a file that wasn\'t what it said. Not used until %1$s.</string>
+    <string name="settings_addons_status_wrong_file_short">Sent a file that wasn\'t what it said.</string>
+    <string name="settings_addons_status_wrong_file_detail">Stash plays your next source instead, then tries this add-on again.</string>
     <string name="settings_addons_status_wants_more">Wants to see more: review</string>
     <string name="settings_addons_status_wants_more_detail">It now asks for more than you agreed to. Stash won\'t use it until you review it.</string>
     <string name="settings_addons_status_changed">No longer the add-on you added</string>

@@ -45,7 +45,7 @@ object PlayedFormat {
     /**
      * [track] with its quality tags taken from what is being decoded, when an add-on answered its
      * stream ([AddonPlayback.isAddonOrigin]) and the extractor has read a codec this app can
-     * name. Any other track, and an add-on's until then, is returned as it is.
+     * name. Any other track is returned as it is; an add-on's until then is [beforeDecoding].
      *
      * A lossy codec carries no bit depth, whatever the add-on stated; its sample rate and bit
      * rate are the extractor's when it has them. A lossless one keeps a stated depth or rate the
@@ -53,7 +53,7 @@ object PlayedFormat {
      */
     fun applyTo(track: Track, sampleMimeType: String?, sampleRate: Int, pcmEncoding: Int, bitrate: Int): Track {
         if (!AddonPlayback.isAddonOrigin(track.streamOrigin)) return track
-        val codec = codecTag(sampleMimeType) ?: return track
+        val codec = codecTag(sampleMimeType) ?: return beforeDecoding(track)
         val rate = sampleRate.takeIf { it > 0 }
         val lossless = codec in LOSSLESS
         return track.copy(
@@ -67,6 +67,19 @@ object PlayedFormat {
                 else -> track.qualityKbps
             },
         )
+    }
+
+    /**
+     * [track] as Now Playing shows an add-on's stream before the player has read it (or after it
+     * read a codec this app cannot name): with no quality tags at all. What the add-on stated is
+     * not shown: one said "FLAC, Lossless, 16/44.1" over an MP3, and its claim stood on screen until
+     * the extractor read the file, or for good when the player refused it ([AddonStreamCheck]),
+     * whose stream never gets that far. A blank codec is no quality line ([Track.fileFormat]).
+     * Any other track is returned as it is.
+     */
+    fun beforeDecoding(track: Track): Track {
+        if (!AddonPlayback.isAddonOrigin(track.streamOrigin)) return track
+        return track.copy(fileFormat = "", bitsPerSample = null, sampleRateHz = null, qualityKbps = 0)
     }
 
     // media3 `C.ENCODING_PCM_*`, by value: this file stays free of the player's classes.

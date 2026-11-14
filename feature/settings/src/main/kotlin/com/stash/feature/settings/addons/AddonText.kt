@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -142,10 +143,24 @@ internal fun AddonOverview.Row.problemLine(): String? = when (status) {
     AddonOverview.Status.WANTS_MORE -> stringResource(R.string.settings_addons_status_wants_more)
     AddonOverview.Status.NEEDS_NEW_LINK -> stringResource(R.string.settings_addons_status_new_link)
     AddonOverview.Status.NEEDS_NEWER_STASH -> stringResource(R.string.settings_addons_status_newer)
+    AddonOverview.Status.SENT_WRONG_FILE -> wrongFileLine()
     AddonOverview.Status.ONLY_BITCHORD -> stringResource(R.string.settings_addons_refused_only_bitchord)
     AddonOverview.Status.CHANGED -> stringResource(R.string.settings_addons_status_changed)
     AddonOverview.Status.REPLACED -> stringResource(R.string.settings_addons_status_replaced)
     AddonOverview.Status.NOT_REACHABLE -> stringResource(R.string.settings_addons_not_loaded)
+}
+
+/**
+ * "Sent a file that wasn't what it said. Not used until 14:30.": the add-on handed over a file
+ * that was not what it said (the player's check of its stream, or a download's), and is set aside
+ * until then. The time in the phone's own 12- or 24-hour style.
+ */
+@Composable
+internal fun AddonOverview.Row.wrongFileLine(): String {
+    val until = setAsideUntilMs ?: return stringResource(R.string.settings_addons_status_wrong_file_short)
+    val context = LocalContext.current
+    val time = remember(until) { android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(until)) }
+    return stringResource(R.string.settings_addons_status_wrong_file, time)
 }
 
 /**

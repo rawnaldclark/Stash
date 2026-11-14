@@ -29,6 +29,10 @@ import com.stash.core.media.streaming.StreamUrl
 import com.stash.core.media.streaming.StreamUrlCache
 import com.stash.core.media.streaming.YouTubeStreamResolver
 import com.stash.core.media.streaming.stashResolveUri
+import com.stash.core.media.streaming.STASH_RESOLVE_SCHEME
+import com.stash.core.media.streaming.mimeTypeOf
+import com.stash.core.media.streaming.playedFrom
+import com.stash.core.media.streaming.putBackAs
 import com.stash.core.model.PlayerState
 import com.stash.core.model.RadioStartResult
 import com.stash.core.model.RepeatMode
@@ -42,6 +46,7 @@ import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_DASH
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_ORIGIN
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_SAMPLE_RATE
+import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_SONG_MS
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_DURATION_MS
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_ID
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_IS_STREAMABLE
@@ -126,9 +131,12 @@ class PlayerRepositoryImpl @Inject constructor(
     // Remote v2 (spec 2026-11-03 §2.3): while a linked browser plays the queue, this phone resolves nothing it won't play.
     // Null in hand-built tests (never a browser).
     private val browserOutputs: com.stash.core.media.cast.BrowserOutputs? = null,
-    // The add-ons that are on. When one leaves (removed, switched off, turned off by Stash), the link it handed out
-    // for the next song is dropped. Null in hand-built tests (nothing is watched).
+    // The add-ons that are on. When one leaves (removed, switched off, turned off by Stash), every queued song whose
+    // link it handed out is resolved again. Null in hand-built tests (nothing is watched).
     private val addonRegistry: com.stash.core.addons.AddonRegistry? = null,
+    // The player's check of an add-on's stream: its refusals (the add-on is set aside, its songs resolved again), and
+    // which add-on each placeholder's link came from. Null in hand-built tests (only a slot's own origin is read).
+    private val addonStreamCheck: com.stash.core.media.streaming.AddonStreamCheck? = null,
 ) : PlayerRepository {
 
     /**
@@ -238,7 +246,9 @@ class PlayerRepositoryImpl @Inject constructor(
             seedGhostFromPersistedSession()
         }
 
-        addonRegistry?.let { registry -> scope.launch { dropNextStreamWhenAnAddonLeaves(registry.addons) } }
+        addonRegistry?.let { registry -> scope.launch { resolveAgainWhenAnAddonLeaves(registry.addons) } }
+        addonStreamCheck?.let { check -> scope.launch { resolveAgainWhenAStreamIsRefused(check.refusals) } }
+        addonStreamCheck?.let { check -> scope.launch { resolveAgainWhenAnAddonIsSetAside(check.setAsideAddons) } }
 
         // Idle-stop handshake. The service flips this false just before it
         // stops itself: release the controller so OUR binding doesn't keep
@@ -455,34 +465,14 @@ class PlayerRepositoryImpl @Inject constructor(
      * swapped in on Wi-Fi, which ExoPlayer starts buffering well before the transition. Its slot
      * goes back to a placeholder, resolved when the song is reached under the new decision, and the
      * look-ahead runs again (it skips itself while Data saver applies, and on Wi-Fi it lines up FLAC
-     * again). A file, a placeholder or a cloud song is already right. PR #759's
-     * `reresolveNextStream` does the same for a quality picked in Now Playing; once both are in,
-     * this becomes a call to it.
+     * again). A file, a placeholder or a cloud song is already right.
+     *
+     * The same as a quality picked in Now Playing, so it is [reresolveNextStream]: the slot is put back
+     * with a URI no source has had and no MIME type (a slot showing a resolve-first source's manifest
+     * kept that source, and its hi-res manifest streamed on mobile data: review-888 R2-m1), every
+     * stream stamp goes, and a look-ahead still resolving under the old decision asks again.
      */
-    internal suspend fun relineNextStream() {
-        if (listenTogetherOwnsQueue) return
-        val controller = controllerDeferred ?: return
-        val index = controller.nextMediaItemIndex
-        // No next song, or it is this one again (a one-song queue on repeat): a new source would restart it.
-        if (index !in 0 until controller.mediaItemCount || index == controller.currentMediaItemIndex) return
-        val item = controller.getMediaItemAt(index)
-        val nextId = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, -1L) ?: return
-        streamUrlCache.invalidate(nextId)
-        val scheme = item.localConfiguration?.uri?.scheme
-        val queued = currentQueueTracks.firstOrNull { it.id == nextId }
-        if ((scheme == "https" || scheme == "http") && queued != null) {
-            val extras = Bundle(item.mediaMetadata.extras ?: Bundle()).apply {
-                listOf(EXTRA_STREAM_CODEC, EXTRA_STREAM_BIT_DEPTH, EXTRA_STREAM_SAMPLE_RATE, EXTRA_STREAM_BITRATE, EXTRA_STREAM_ORIGIN, EXTRA_STREAM_DASH)
-                    .forEach(::remove)
-            }
-            val placeholder = item.buildUpon()
-                .setUri(queued.toStreamPlaceholderMediaItem().localConfiguration?.uri)
-                .setMediaMetadata(item.mediaMetadata.buildUpon().setExtras(extras).build())
-                .build()
-            replaceMediaItemKeepingShuffle(controller, index, placeholder)
-        }
-        prefetchNextTrack()
-    }
+    internal suspend fun relineNextStream() = reresolveNextStream()
 
     /**
      * A download that lands while its song waits next in line: the prefetch watcher
@@ -702,7 +692,7 @@ class PlayerRepositoryImpl @Inject constructor(
         java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     /**
-     * Bumped by [reresolveNextStream], and when an add-on leaves ([dropNextStreamWhenAnAddonLeaves]).
+     * Bumped by [reresolveNextStream], and when an add-on leaves ([resolveAgainLinksFrom]).
      * A prefetch whose resolve was in flight across a bump may hold the old quality's URL, or the
      * departed add-on's, so it resolves again rather than put that in the next slot.
      */
@@ -1377,39 +1367,238 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     /**
-     * An add-on that leaves [addons] (removed, switched off, turned off by Stash) is not asked again.
-     * The look-ahead may already have put a link it handed out into the next song's slot: that slot
-     * is resolved again, without the add-on, the way a quality change does it ([reresolveNextStream]).
-     * Only a slot whose link came from the add-on that left; the song playing plays to its end.
+     * An add-on that leaves [addons] (removed, switched off, turned off by Stash) is not asked again,
+     * and no link it handed out plays again: [resolveAgainLinksFrom]. The song playing plays to its end.
      */
-    internal suspend fun dropNextStreamWhenAnAddonLeaves(addons: kotlinx.coroutines.flow.Flow<List<com.stash.core.addons.InstalledAddon>>) {
+    internal suspend fun resolveAgainWhenAnAddonLeaves(addons: kotlinx.coroutines.flow.Flow<List<com.stash.core.addons.InstalledAddon>>) {
         var on = emptySet<String>()
         addons.collect { list ->
             val now = list.mapTo(HashSet()) { it.id }
             val left = on - now
             on = now
             if (left.isEmpty()) return@collect
-            // A look-ahead already under way may be resolving the next song through the add-on that
-            // left: its slot is still a placeholder, with no origin to look at below. Counted as a
-            // change, that look-ahead asks again, now without the add-on, rather than put its answer
-            // in the slot (review-885 round 2, R2-M1).
-            streamQualityChanges++
-            try {
-                val controller = controllerDeferred ?: return@collect
-                val index = controller.nextMediaItemIndex
-                if (index !in 0 until controller.mediaItemCount) return@collect
-                val origin = controller.getMediaItemAt(index).mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN) ?: return@collect
-                val prefix = com.stash.core.media.streaming.AddonStreamRung.ORIGIN_PREFIX
-                if (origin.startsWith(prefix) && origin.removePrefix(prefix) in left) {
-                    Log.i(TAG, "the next song's link came from an add-on that is no longer on: resolving it again")
-                    reresolveNextStream()
+            val origins = left.mapTo(HashSet()) { com.stash.core.media.streaming.AddonStreamRung.ORIGIN_PREFIX + it }
+            resolveAgainLinksFrom(origins, refusedTrackId = null, why = "is no longer on")
+        }
+    }
+
+    /**
+     * The player refused a stream an add-on answered ([com.stash.core.media.streaming.AddonStreamCheck]):
+     * the add-on is set aside, and no link it handed out plays: [resolveAgainLinksFrom]. The refused
+     * song itself, if it is the next one read ahead or one further on, is among them; if it is the
+     * song playing, [playerListener]'s `onPlayerError` resolves it again.
+     */
+    internal suspend fun resolveAgainWhenAStreamIsRefused(refusals: kotlinx.coroutines.flow.Flow<com.stash.core.media.streaming.AddonStreamCheck.Refused>) {
+        refusals.collect { refused ->
+            // The player's read-ahead and the crossfade spare can both open the same stream, so both
+            // refuse it; the refusal also sets the add-on aside, which [resolveAgainWhenAnAddonIsSetAside]
+            // hears too. Whichever comes first puts the add-on's links back; the others are the same
+            // event ([putBackMomentsAgo]; review-888 R2-n1, R3-m1).
+            if (putBackMomentsAgo(refused.origin)) return@collect
+            resolveAgainLinksFrom(setOf(refused.origin), refusedTrackId = refused.trackId, why = "was set aside")
+        }
+    }
+
+    /**
+     * An add-on set aside in the content-health gate for any reason: a stream the player refused, or a
+     * download's wrong file or one that took too long ([com.stash.core.media.streaming.AddonStreamCheck.setAsideAddons]).
+     * What the queue holds from it is put back now ([resolveAgainLinksFrom]), so the next song is looked
+     * up again before the player reaches it. Left to the player, a URL slot from it failed only when its
+     * period was made (the gone guard), at the join: a pause and a switch of source, or a skip when no
+     * other source has the song (review-888 R3-m1).
+     */
+    internal suspend fun resolveAgainWhenAnAddonIsSetAside(setAside: kotlinx.coroutines.flow.Flow<Set<String>>) {
+        var was = emptySet<String>()
+        setAside.collect { now ->
+            val newly = now - was
+            was = now
+            val origins = newly.filterNotTo(HashSet()) { putBackMomentsAgo(it) }
+            if (origins.isNotEmpty()) resolveAgainLinksFrom(origins, refusedTrackId = null, why = "was set aside")
+        }
+    }
+
+    /** When each add-on's links were last put back ([resolveAgainLinksFrom]), by origin. Main thread. */
+    private val putBackAt = HashMap<String, Long>()
+
+    /**
+     * Whether [origin]'s links were put back a moment ago ([com.stash.core.media.streaming.AddonStreamCheck.REFUSAL_FRESH_MS]):
+     * another word of the same set-aside. The add-on is set aside for its whole cooldown, so it hands
+     * out no new link meanwhile, and a second pass would only find the slots' new answers.
+     */
+    private fun putBackMomentsAgo(origin: String): Boolean {
+        val at = putBackAt[origin] ?: return false
+        return android.os.SystemClock.elapsedRealtime() - at <= com.stash.core.media.streaming.AddonStreamCheck.REFUSAL_FRESH_MS
+    }
+
+    /**
+     * The one path for an add-on whose links must not play any more: it left (removed, switched off,
+     * turned off by Stash), or the player's check set it aside (it sent a file that wasn't what it said).
+     *
+     * Every link one of [origins] handed out is dropped from [streamUrlCache], and every queued song but
+     * the one playing whose slot came from one of them is put back as a fresh placeholder: a slot holding
+     * the add-on's URL (its origin extra says so), and a placeholder the player opened from it, which keeps
+     * no origin of its own but may already be read ahead into the player, a song or two past this one
+     * ([com.stash.core.media.streaming.AddonStreamCheck.openedFrom]; #885 item 281). A placeholder put
+     * back with the same URI would keep its source and what it loaded, so it gets another
+     * ([com.stash.core.media.streaming.resolvedAgain]), and Media3 builds a new source that opens and
+     * resolves without the add-on. The next song is then looked up again ([prefetchNextTrack]); the
+     * others resolve as they play. [refusedTrackId]'s slot, the refused song's, is found the same way:
+     * by its origin, or by what it opened. Once put back it is neither, so a second refusal of the same
+     * stream (the player's read-ahead and the crossfade spare both opened it) leaves the slot's new
+     * answer alone (review-888 m3).
+     */
+    internal suspend fun resolveAgainLinksFrom(origins: Set<String>, refusedTrackId: Long?, why: String) {
+        // A look-ahead already under way may be resolving the next song through one of them, its slot
+        // still a placeholder with nothing to look at below. Counted as a change, that look-ahead asks
+        // again, now without it, rather than put its answer in the slot (review-885 round 2, R2-M1).
+        streamQualityChanges++
+        origins.forEach { streamUrlCache.invalidateOrigin(it) }
+        val at = android.os.SystemClock.elapsedRealtime()
+        origins.forEach { putBackAt[it] = at }
+        if (listenTogetherOwnsQueue) return
+        if (playsOnBrowser) return // the browser finds and streams each song itself
+        try {
+            val controller = controllerDeferred ?: return
+            val playing = controller.currentMediaItemIndex
+            val next = controller.nextMediaItemIndex
+            var again = 0
+            var nextAgain = false
+            for (index in 0 until controller.mediaItemCount) {
+                val item = controller.getMediaItemAt(index)
+                val trackId = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, 0L)?.takeIf { it != 0L } ?: continue
+                val from = item.mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN) in origins ||
+                    addonStreamCheck?.openedFrom(trackId) in origins
+                if (!from) continue
+                if (index == playing) {
+                    // It plays on to its end; a refused one is onPlayerError's. A replay of it (a repeat,
+                    // Previous, a tap) must not open the link again: its slot is put back once the player
+                    // moves off it or repeats it, and meanwhile the player's source opens no new play of
+                    // it (AddonStreamGoneException; review-888 R2-m3). When the gate's word of a refusal
+                    // comes before the refusal's own, a refused song is held too; onPlayerError then puts
+                    // it back as a placeholder from no add-on, so its later put-back does nothing (R3-m1).
+                    if (trackId != refusedTrackId) heldOverTrackId = trackId
+                    continue
                 }
-            } catch (ce: CancellationException) {
-                throw ce
-            } catch (e: Exception) {
-                Log.w(TAG, "the next song was not resolved again after an add-on left: ${e.javaClass.simpleName}")
+                streamUrlCache.invalidate(trackId)
+                val fresh = resolvedAgainItem(item, trackId)
+                addonStreamCheck?.forget(trackId)
+                // Put back before the player reached it: a refusal of it will never be an error to read,
+                // whichever word of the set-aside (the refusal, or the gate's) put it back.
+                addonStreamCheck?.takeRefusal(trackId)
+                replaceMediaItemKeepingShuffle(controller, index, fresh)
+                again++
+                if (index == next) nextAgain = true
+            }
+            if (again == 0) return
+            Log.i(TAG, "$again queued song(s) had a link from an add-on that $why: resolving them again")
+            if (nextAgain) prefetchNextTrack()
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            Log.w(TAG, "queued songs were not resolved again after an add-on $why: ${e.javaClass.simpleName}")
+        }
+    }
+
+    /**
+     * The song that was playing when an add-on whose link it plays left or was set aside
+     * ([resolveAgainLinksFrom]): it played on, and its slot is put back once the player moves off it
+     * or repeats it ([putBackHeldOver]). Main thread.
+     */
+    private var heldOverTrackId: Long? = null
+
+    /** The player moved off the held-over song, or repeated it: its slot is put back now (review-888 R2-m3). */
+    private fun putBackHeldOver(controller: MediaController, reason: Int) {
+        val held = heldOverTrackId ?: return
+        // A session or a browser holds the queue now: nothing of this phone's to put back (review-888 R3-n4).
+        if (listenTogetherOwnsQueue || playsOnBrowser) {
+            heldOverTrackId = null
+            return
+        }
+        val now = controller.currentMediaItem?.mediaMetadata?.extras?.getLong(EXTRA_TRACK_ID, 0L)
+        if (now == held && reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) return // still on it (its item changed)
+        heldOverTrackId = null
+        for (index in 0 until controller.mediaItemCount) {
+            if (controller.getMediaItemAt(index).mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, 0L) == held) {
+                putBackLinkFromGoneAddon(controller, index)
             }
         }
+    }
+
+    /**
+     * The player wouldn't open a new play of the link at [failedIndex]: its add-on is no longer on or is
+     * set aside ([com.stash.core.media.streaming.AddonStreamGoneException]). The slot is put back
+     * ([putBackLinkFromGoneAddon]). If that didn't prepare the player (the slot is from elsewhere, or the
+     * user moved off it before this ran) and the player is stopped on the error, the song it shows is
+     * prepared, as for a refusal (review-888 m4, R3-m2). Only this error path prepares.
+     */
+    internal fun resolveAgainAfterGone(controller: MediaController, failedIndex: Int) {
+        val playedFromHere = putBackLinkFromGoneAddon(controller, failedIndex) && failedIndex == controller.currentMediaItemIndex
+        if (!playedFromHere && controller.playbackState == Player.STATE_IDLE && controller.playerError != null) controller.prepare()
+    }
+
+    /**
+     * The slot at [index], if its stream came from an add-on that is no longer on or is set aside, put
+     * back as a fresh placeholder ([resolvedAgainItem]): the song playing goes on from where it is
+     * ([resolveAgainAfterRefusal]), any other is just replaced. A slot from anywhere else is left as it
+     * is. Nothing here prepares a player stopped on an error, which the transition listener must never
+     * do; [resolveAgainAfterGone] does, on the error path (review-888 R3-m2). True when it was put back.
+     */
+    internal fun putBackLinkFromGoneAddon(controller: MediaController, index: Int): Boolean {
+        val item = if (index in 0 until controller.mediaItemCount) controller.getMediaItemAt(index) else null
+        val trackId = item?.mediaMetadata?.extras?.getLong(EXTRA_TRACK_ID, 0L)?.takeIf { it != 0L }
+        if (item == null || trackId == null || !isFromGoneAddon(item, trackId)) return false
+        if (trackId == heldOverTrackId) heldOverTrackId = null // put back now: nothing left to hold
+        if (index == controller.currentMediaItemIndex) {
+            resolveAgainAfterRefusal(controller, item, index, trackId)
+        } else {
+            streamUrlCache.invalidate(trackId)
+            addonStreamCheck?.forget(trackId)
+            replaceMediaItemKeepingShuffle(controller, index, resolvedAgainItem(item, trackId))
+        }
+        return true
+    }
+
+    /** Holds over the song playing if its slot holds a stream from an add-on that left or is set aside ([putBackHeldOver]). */
+    private fun holdOverIfFromGoneAddon(controller: MediaController) {
+        if (listenTogetherOwnsQueue || playsOnBrowser) return
+        val item = controller.currentMediaItem ?: return
+        val trackId = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, 0L)?.takeIf { it != 0L } ?: return
+        if (isFromGoneAddon(item, trackId)) heldOverTrackId = trackId
+    }
+
+    /** Whether [item]'s stream (its origin, or what its source opened) is an add-on's that left or is set aside. */
+    private fun isFromGoneAddon(item: MediaItem, trackId: Long): Boolean {
+        val origin = item.mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN) ?: addonStreamCheck?.openedFrom(trackId) ?: return false
+        return com.stash.core.media.streaming.AddonPlayback.isAddonOrigin(origin) && !streamUrlCache.isServableOrigin(origin)
+    }
+
+    /**
+     * [item] as a fresh `stash-resolve://` placeholder for song [trackId], without the stream stamps
+     * of the link it held (they describe a stream it no longer plays), with a URI no source in the
+     * player has had and no MIME type ([putBackAs]), so it builds a new source that resolves afresh.
+     * A slot that was a placeholder keeps its own resolve inputs; one that held a URL (a manifest's
+     * included) gets the queue's placeholder for the song, or one built from the slot's own words for
+     * a song outside it (a queue the service built).
+     */
+    private fun resolvedAgainItem(item: MediaItem, trackId: Long): MediaItem {
+        val uri = item.localConfiguration?.uri
+        val extras = item.mediaMetadata.extras
+        val placeholder = when {
+            uri?.scheme == STASH_RESOLVE_SCHEME -> uri
+            else -> currentQueueTracks.firstOrNull { it.id == trackId }
+                ?.takeIf { it.source != com.stash.core.model.MusicSource.CLOUD }
+                ?.toStreamPlaceholderMediaItem()?.localConfiguration?.uri
+                ?: stashResolveUri(
+                    trackId = trackId,
+                    youtubeId = extras?.getString(EXTRA_TRACK_YOUTUBE_ID),
+                    title = item.mediaMetadata.title?.toString(),
+                    artist = item.mediaMetadata.artist?.toString(),
+                    album = item.mediaMetadata.albumTitle?.toString(),
+                    durationMs = extras?.getLong(EXTRA_TRACK_DURATION_MS, 0L) ?: 0L,
+                )
+        }
+        val stripped = Bundle(extras ?: Bundle()).apply { streamStampKeys.forEach(::remove) }
+        return item.putBackAs(placeholder, stripped)
     }
 
     /**
@@ -1434,14 +1623,12 @@ class PlayerRepositoryImpl @Inject constructor(
         streamUrlCache.invalidate(nextId)
         // Only a slot holding a resolved stream: a file, a placeholder or a cloud song is already right.
         val scheme = item.localConfiguration?.uri?.scheme
-        val queued = currentQueueTracks.firstOrNull { it.id == nextId }
-        if ((scheme == "https" || scheme == "http") && queued != null) {
+        val queuedPlaceholder = currentQueueTracks.firstOrNull { it.id == nextId }?.toStreamPlaceholderMediaItem()?.localConfiguration?.uri
+        if ((scheme == "https" || scheme == "http") && queuedPlaceholder != null) {
             val extras = Bundle(item.mediaMetadata.extras ?: Bundle()).apply { streamStampKeys.forEach(::remove) }
-            val placeholder = item.buildUpon()
-                .setUri(queued.toStreamPlaceholderMediaItem().localConfiguration?.uri)
-                .setMediaMetadata(item.mediaMetadata.buildUpon().setExtras(extras).build())
-                .build()
-            replaceMediaItemKeepingShuffle(controller, index, placeholder)
+            // A URI no source has had and no MIME type: a slot showing a resolve-first source's manifest
+            // would otherwise keep that source, resolved under the old setting (review-888 M1).
+            replaceMediaItemKeepingShuffle(controller, index, item.putBackAs(queuedPlaceholder, extras))
         }
         prefetchNextTrack()
     }
@@ -1479,6 +1666,8 @@ class PlayerRepositoryImpl @Inject constructor(
             resolved.origin?.let { putString(EXTRA_STREAM_ORIGIN, it) }
             // The slot's URL is a manifest, or no longer one (an earlier resolve's word must not stay).
             if (resolved.isDash) putBoolean(EXTRA_STREAM_DASH, true) else remove(EXTRA_STREAM_DASH)
+            // The song's length as this stream's source knew it, for the add-on check; never an earlier stream's.
+            resolved.songMs?.let { putLong(EXTRA_STREAM_SONG_MS, it) } ?: remove(EXTRA_STREAM_SONG_MS)
         }
         // #336 follow-up: upgrade artwork together with the stream metadata so
         // Now Playing cannot keep a stale video thumbnail after prefetch.
@@ -1493,11 +1682,14 @@ class PlayerRepositoryImpl @Inject constructor(
             refreshedMeta.setArtworkUri(Uri.parse(art))
             persistArtUpgradeAsync(next.id, art)
         }
-        val refreshed = item.buildUpon()
+        val refreshed = if (resolved.origin == com.stash.core.media.streaming.CloudCopyFinder.ORIGIN || resolved.origin == "soundcloud") {
             // A cloud copy keeps the placeholder (its source has the fallback); see buildMediaItemForTrack.
-            .apply { if (resolved.origin != com.stash.core.media.streaming.CloudCopyFinder.ORIGIN && resolved.origin != "soundcloud") setUri(resolved.url) }
-            .setMediaMetadata(refreshedMeta.build())
-            .build()
+            item.buildUpon().setMediaMetadata(refreshedMeta.build()).build()
+        } else {
+            // A new item for the URL, with the URL's own MIME type: one the slot showed for a manifest
+            // must not stay with a file, which would then be read as a manifest (review-888 M1).
+            item.playedFrom(Uri.parse(resolved.url), refreshedMeta.build(), mimeTypeOf(resolved))
+        }
         replaceMediaItemKeepingShuffle(controller, timelineIndex, refreshed)
         return true
     }
@@ -1524,11 +1716,12 @@ class PlayerRepositoryImpl @Inject constructor(
             streamStampKeys.forEach(::remove)
             putBoolean(EXTRA_TRACK_IS_STREAMABLE, false)
         }
-        val refreshed = item.buildUpon()
-            .setUri(fileItem.localConfiguration?.uri)
-            .setRequestMetadata(fileItem.requestMetadata)
-            .setMediaMetadata(item.mediaMetadata.buildUpon().setExtras(extras).build())
-            .build()
+        // A new item for the file: a manifest's MIME type the slot showed must not stay (review-888 M1).
+        val refreshed = item.playedFrom(
+            uri = fileItem.localConfiguration?.uri,
+            metadata = item.mediaMetadata.buildUpon().setExtras(extras).build(),
+            requestMetadata = fileItem.requestMetadata,
+        )
         replaceMediaItemKeepingShuffle(controller, timelineIndex, refreshed)
         currentQueueTracks = currentQueueTracks.map { if (it.id == next.id) next else it }
         Log.d(TAG, "next-up id=${next.id} downloaded since it was queued; plays its file")
@@ -3166,7 +3359,8 @@ class PlayerRepositoryImpl @Inject constructor(
             musicVideoType = item.musicVideoType,
             explicit = item.explicit ?: stored?.explicit,
         )
-        val result = buildMediaItemForTrack(transient)
+        // The library row's length when the result has none: the add-on stream check judges a stub by it.
+        val result = buildMediaItemForTrack(transient, knownSongMs = stored?.durationMs ?: 0L)
         if (result is StreamRoutingResult.Item) {
             // Single-item replacement: drop the stale logical queue so the
             // queue display falls back to the (one-item) timeline.
@@ -3203,7 +3397,15 @@ class PlayerRepositoryImpl @Inject constructor(
         track: TrackEntity,
         allowYouTube: Boolean = true,
         allowYtDlp: Boolean = true,
+        /**
+         * The song's length when [track] (what the resolve asks with) knows none: a Search result
+         * with no length, for a song the library has a row for. The item says it as the song's
+         * length, so the add-on stream check can judge a stub against it (#888 phone run, 3b); the
+         * resolve still asks with [track]'s own.
+         */
+        knownSongMs: Long = 0L,
     ): StreamRoutingResult {
+        val songMs = track.durationMs.takeIf { it > 0 } ?: knownSongMs
         val localPath = track.filePath
         // The disk check off the main thread (playTrack runs on the caller's, Main from a
         // viewModelScope): on a SAF tree it is a ContentResolver query a slow provider stalls.
@@ -3228,7 +3430,7 @@ class PlayerRepositoryImpl @Inject constructor(
                             putSoundCloudMetadata(track.toDomain())
                                 track.youtubeId?.let { putString(EXTRA_TRACK_YOUTUBE_ID, it) }
                                 putTrackOrigin(track.source, track.spotifyUri)
-                                if (track.durationMs > 0) putLong(EXTRA_TRACK_DURATION_MS, track.durationMs)
+                                if (songMs > 0) putLong(EXTRA_TRACK_DURATION_MS, songMs)
                                 // This branch plays the local file, so it is never "stream-only",
                                 // whatever the row's is_streamable says: rows first seen via Search,
                                 // Discovery, a share or a Stash Mix keep is_streamable=1 after they
@@ -3333,7 +3535,7 @@ class PlayerRepositoryImpl @Inject constructor(
                             putSoundCloudMetadata(track.toDomain())
                             track.youtubeId?.let { putString(EXTRA_TRACK_YOUTUBE_ID, it) }
                             putTrackOrigin(track.source, track.spotifyUri)
-                            if (track.durationMs > 0) putLong(EXTRA_TRACK_DURATION_MS, track.durationMs)
+                            if (songMs > 0) putLong(EXTRA_TRACK_DURATION_MS, songMs)
                             putBoolean(EXTRA_TRACK_IS_STREAMABLE, track.isStreamable)
                             // Surface the actual format Qobuz served so Now Playing
                             // shows "FLAC · 24-bit/96 kHz" instead of the stale Room
@@ -3344,6 +3546,7 @@ class PlayerRepositoryImpl @Inject constructor(
                             stream.bitrateKbps?.let { putInt(EXTRA_STREAM_BITRATE, it) }
                             stream.origin?.let { putString(EXTRA_STREAM_ORIGIN, it) }
                             if (stream.isDash) putBoolean(EXTRA_STREAM_DASH, true)
+                            stream.songMs?.let { putLong(EXTRA_STREAM_SONG_MS, it) }
                             if (stream.origin == "soundcloud") putBoolean(EXTRA_SOUNDCLOUD_PREVIEW, stream.isPreview)
                         })
                         .build()
@@ -3505,6 +3708,11 @@ class PlayerRepositoryImpl @Inject constructor(
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             val controller = controllerDeferred ?: return
             noteCurrentItem(controller, reason)
+            // The song playing when its add-on left: off it, or repeating it, its slot is put back (review-888 R2-m3).
+            if (heldOverTrackId != null) putBackHeldOver(controller, reason)
+            // A song landed on that plays a gone add-on's stream (a crossfade's incoming, primed before the
+            // add-on left mid-fade): held over the same way (review-888 R3-n5).
+            if (heldOverTrackId == null) holdOverIfFromGoneAddon(controller)
             // Safety net: keep the chosen speed across transitions / queue rebuilds. Not in a session,
             // where drift correction nudges the speed on purpose.
             if (!listenTogetherOwnsQueue && controller.playbackParameters.speed != _playbackSpeed.value) {
@@ -3677,6 +3885,42 @@ class PlayerRepositoryImpl @Inject constructor(
                 return
             }
 
+            // The player refused an add-on's stream for this song before a sound of it played (its
+            // check: called lossless and lossy, a video, far too short). Not a failed stream: the
+            // add-on is set aside already, and the song plays from the next source in the user's
+            // order. Not counted by the cascade guard, and never a same-item retry, which would
+            // open the same refused link. If no source is left, that resolve fails like any other.
+            // The check's record says whether the song the controller shows is the one refused: the
+            // user may have skipped before the error came, and the controller already shows the song
+            // they picked (review-888 m9). Only the refused song is resolved again.
+            // (A failing id comes from the controller's current item: both are there below.)
+            // A new play of a link whose add-on left or was set aside while the song played (a repeat, a
+            // replay, a prepare after an error): the player's source would not open it (review-888 R2-m3).
+            // Not a failed stream, so not the cascade guard's: the song is resolved again from where it
+            // was, without that add-on. If the song shown isn't from such an add-on, it plays as it is.
+            if (failingId != null && com.stash.core.media.streaming.AddonStreamGoneException.isIn(error)) {
+                note("ADDON_GONE (resolved again)")
+                Log.i(TAG, "onPlayerError: track $failingId's link came from an add-on that is no longer on or is set aside; resolving it again")
+                val failedIndex = controller.currentMediaItemIndex
+                scope.launch { resolveAgainAfterGone(controller, failedIndex) }
+                return
+            }
+            val refusedHere = failingId != null && addonStreamCheck?.takeRefusal(failingId) == true
+            if (failingId != null && (refusedHere || com.stash.core.media.streaming.AddonStreamRefusedException.isIn(error))) {
+                if (refusedHere) {
+                    note("ADDON_REFUSED (resolved again)")
+                    Log.i(TAG, "onPlayerError: an add-on's stream for track $failingId was refused; resolving it again")
+                    val failedIndex = controller.currentMediaItemIndex
+                    scope.launch { resolveAgainAfterRefusal(controller, current, failedIndex, failingId) }
+                } else {
+                    // Another song's refusal (or one whose slot was put back already): this one plays as its slot stands.
+                    note("ADDON_REFUSED (another song's; prepared again)")
+                    Log.i(TAG, "onPlayerError: a refusal of another song's add-on stream; playing track $failingId as it is")
+                    controller.prepare()
+                }
+                return
+            }
+
             // The error code alone is NOT enough to decide recovery. A streamed
             // track that gets a 200 serving empty/garbage bytes fails with
             // ERROR_CODE_PARSING_CONTAINER_MALFORMED — a "non-IO" code. The old
@@ -3799,6 +4043,32 @@ class PlayerRepositoryImpl @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * The song at [failedIndex] had its add-on stream refused before a sound of it played: it is
+     * put back as a fresh placeholder ([resolvedAgainItem]) and prepared again. Its link is gone
+     * from the cache and the add-on is set aside, so the resolve goes to the next source in the
+     * user's order. It goes on from where it was (a resumed session, a seek into it), as the
+     * cascade's retry of a song does (review-888 m5). If the player has moved on since (a tap, a
+     * skip, a queue edit), the song it shows now is prepared instead, should the error have left
+     * the player stopped (review-888 m4).
+     */
+    internal fun resolveAgainAfterRefusal(controller: MediaController, failedItem: MediaItem, failedIndex: Int, trackId: Long) {
+        addonStreamCheck?.takeRefusal(trackId)
+        addonStreamCheck?.forget(trackId)
+        streamUrlCache.invalidate(trackId)
+        val active = controller.currentMediaItem
+        if (failedIndex !in 0 until controller.mediaItemCount || controller.currentMediaItemIndex != failedIndex ||
+            active == null || active.mediaId != failedItem.mediaId
+        ) {
+            if (controller.playbackState == Player.STATE_IDLE && controller.playerError != null) controller.prepare()
+            return
+        }
+        val position = controller.currentPosition
+        replaceMediaItemKeepingShuffle(controller, failedIndex, resolvedAgainItem(active, trackId))
+        controller.seekTo(failedIndex, position)
+        controller.prepare()
     }
 
     /**
@@ -4127,14 +4397,16 @@ class PlayerRepositoryImpl @Inject constructor(
      * for its own stream is only that: one that says "lossless" over an AAC file was shown as
      * FLAC. Once the extractor has read the stream, the badge says what it found. Read from the
      * controller on every refresh; [Player.Listener.onTracksChanged] asks for one when the
-     * tracks become known.
+     * tracks become known. Until then nothing of the add-on's word is shown
+     * ([com.stash.core.media.streaming.PlayedFormat.beforeDecoding]): a stream the player refuses
+     * ([com.stash.core.media.streaming.AddonStreamCheck]) never gets that far.
      */
-    private fun withPlayedFormat(track: Track, controller: MediaController): Track {
+    internal fun withPlayedFormat(track: Track, controller: MediaController): Track {
         if (!com.stash.core.media.streaming.AddonPlayback.isAddonOrigin(track.streamOrigin)) return track
         val format = controller.currentTracks.groups
             .firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.isSelected }
             ?.let { group -> (0 until group.length).firstOrNull { group.isTrackSelected(it) }?.let { group.getTrackFormat(it) } }
-            ?: return track
+            ?: return com.stash.core.media.streaming.PlayedFormat.beforeDecoding(track)
         return com.stash.core.media.streaming.PlayedFormat.applyTo(
             track, format.sampleMimeType, format.sampleRate, format.pcmEncoding, format.bitrate,
         )
@@ -4350,6 +4622,7 @@ class PlayerRepositoryImpl @Inject constructor(
         /** The extras that describe the stream a slot plays, for Now Playing's quality line. */
         private val streamStampKeys = listOf(
             EXTRA_STREAM_CODEC, EXTRA_STREAM_BIT_DEPTH, EXTRA_STREAM_SAMPLE_RATE, EXTRA_STREAM_BITRATE, EXTRA_STREAM_ORIGIN, EXTRA_STREAM_DASH,
+            EXTRA_STREAM_SONG_MS,
         )
 
         /**

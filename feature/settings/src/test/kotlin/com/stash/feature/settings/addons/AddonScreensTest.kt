@@ -281,6 +281,17 @@ class AddonScreensTest {
         rule.onNodeWithContentDescription("Use Off one").assertIsOff()
     }
 
+    @Test fun `an add-on set aside for a wrong file says so, and when it is used again, and keeps its switch on`() {
+        // The player refused its stream (AddonStreamCheck): it said lossless and sent an MP3, a video, a stub.
+        val until = 1_700_000_000_000L
+        val time = android.text.format.DateFormat.getTimeFormat(androidx.test.core.app.ApplicationProvider.getApplicationContext())
+            .format(java.util.Date(until))
+        val liar = relay.copy(status = AddonOverview.Status.SENT_WRONG_FILE, setAsideUntilMs = until)
+        showList(state(tidal, liar))
+        rule.onNodeWithText("Sent a file that wasn't what it said. Not used until $time.").assertExists()
+        rule.onNodeWithContentDescription("Use Hi-Fi Relay").assertIsOn()
+    }
+
     @Test fun `an add-on Stash turned off has Remove on its row, and Remove asks first`() {
         val blocked = relay.copy(status = AddonOverview.Status.TURNED_OFF_BY_STASH, blockReason = BlockReason.BROKEN, on = false, canSwitch = false)
         showList(state(tidal, blocked))
@@ -475,6 +486,11 @@ class AddonScreensTest {
                 "It now asks for more than you agreed to. Stash won't use it until you review it.",
             ),
             AddonOverview.Status.NOT_REACHABLE to listOf("Not reachable right now", "Stash couldn't reach it. It will try again by itself."),
+            // With no time known (it can't be: the gate gives one), the sentence stops at what it did.
+            AddonOverview.Status.SENT_WRONG_FILE to listOf(
+                "Sent a file that wasn't what it said.",
+                "Stash plays your next source instead, then tries this add-on again.",
+            ),
         )
         for ((status, lines) in said) {
             pageRow = relay.copy(status = status)

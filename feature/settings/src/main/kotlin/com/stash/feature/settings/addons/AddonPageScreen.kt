@@ -357,6 +357,8 @@ private fun StatusRow(row: AddonOverview.Row, live: AddonPageViewModel.Live, onR
             stringResource(R.string.settings_addons_status_new_link) to stringResource(R.string.settings_addons_status_new_link_detail)
         AddonOverview.Status.NEEDS_NEWER_STASH ->
             stringResource(R.string.settings_addons_status_newer) to stringResource(R.string.settings_addons_status_newer_detail)
+        AddonOverview.Status.SENT_WRONG_FILE ->
+            row.wrongFileLine() to stringResource(R.string.settings_addons_status_wrong_file_detail)
         AddonOverview.Status.ONLY_BITCHORD ->
             stringResource(R.string.settings_addons_refused_only_bitchord) to stringResource(R.string.settings_addons_status_only_bitchord_detail)
         AddonOverview.Status.CHANGED ->

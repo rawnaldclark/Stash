@@ -10,6 +10,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import com.stash.core.media.streaming.isPutBack
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -181,6 +182,11 @@ class CrossfadeEngine(
             // user just restarted was cut off at the swap.
             if (transitioning && reason == Player.DISCONTINUITY_REASON_SEEK) handBackToOutgoing()
         }
+
+        /** The queue changed: if the slot the spare was primed for was put back, the spare goes ([dropSpareIfItsSlotWasPutBack]). */
+        override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+            if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) dropSpareIfItsSlotWasPutBack()
+        }
     }
 
     fun initialize() {
@@ -227,6 +233,7 @@ class CrossfadeEngine(
         spare.volume = 0f
         // At the master's speed, so the next song doesn't change tempo when it takes over.
         spare.playbackParameters = playerA.playbackParameters
+        primedUri = item.localConfiguration?.uri
         spare.setMediaItem(item)
         spare.prepare()
         spare.seekTo(0)
@@ -273,10 +280,73 @@ class CrossfadeEngine(
     fun spareBufferedMs(): Long =
         if (::playerB.isInitialized) playerB.bufferedPosition.coerceAtLeast(0) else 0
 
-    /** True when the spare is primed with [mediaId] (so we don't re-prepare it). */
-    fun isPreparedFor(mediaId: String?): Boolean =
-        mediaId != null && ::playerB.isInitialized &&
-            playerB.mediaItemCount > 0 && playerB.currentMediaItem?.mediaId == mediaId
+    /**
+     * True when the spare is primed with [item] (so we don't re-prepare it): the same song, and
+     * its slot not put back since. A slot put back to be resolved again (`stash-resolve://` with
+     * [isPutBack]: its link came from an add-on that left or was set aside, or a new quality was
+     * picked) is another item: priming the spare again builds it a new source, so the fade never
+     * plays what the slot no longer holds. Anything else keeps the spare, as it did when only the
+     * song was compared: a change of metadata (a cover, the quality stamped), a placeholder the
+     * look-ahead swapped for the very URL it resolved to, a slot that now shows its manifest
+     * (review-888 m2: re-priming on those fetched the same file again and could miss the fade).
+     * A put-back the poll never sees, because the look-ahead filled the slot again first (or the
+     * song was paused), lets the spare go as it happens ([dropSpareIfItsSlotWasPutBack]). A slot
+     * that became the song's downloaded file is another item too: the fade plays the file, not the
+     * stream the spare holds (review-888 R2-n2).
+     */
+    fun isPreparedFor(item: MediaItem?): Boolean {
+        if (item == null || !::playerB.isInitialized || playerB.mediaItemCount == 0) return false
+        val primed = playerB.currentMediaItem ?: return false
+        if (primed.mediaId != item.mediaId) return false
+        val uri = item.localConfiguration?.uri
+        if (uri == primedUri) return true
+        if (uri?.scheme == "file" || uri?.scheme == "content") return false
+        return uri?.isPutBack() != true
+    }
+
+    /** The URI the spare was last primed on ([prepareNext]), as its slot gave it. */
+    @Volatile private var primedUri: android.net.Uri? = null
+
+    /**
+     * The master's queue changed. When the slot the spare was primed for (the next one) now holds a
+     * put-back placeholder it wasn't primed on, the spare holds a stream the slot no longer does: an
+     * add-on that left or was set aside, or a quality changed. It is let go now, as for a refusal
+     * ([dropSpareFor]), and the poll primes it again on the slot as it then stands.
+     *
+     * Not left to [isPreparedFor] alone: the poll runs only while the master plays, every 250 ms, and
+     * the look-ahead may fill the slot again first (a paused song, or an answer within 250 ms). The
+     * slot then holds another source's URL, which [isPreparedFor] keeps the spare on, and the fade
+     * played the add-on's stream that had just been removed (review-888 R2-M1). Main thread.
+     */
+    private fun dropSpareIfItsSlotWasPutBack() {
+        if (transitioning || !::playerB.isInitialized || playerB.mediaItemCount == 0) return
+        val spareId = playerB.currentMediaItem?.mediaId ?: return
+        val master = playerA
+        val next = master.nextMediaItemIndex
+        if (next == C.INDEX_UNSET) return
+        val slot = master.getMediaItemAt(next)
+        if (slot.mediaId != spareId) return
+        val uri = slot.localConfiguration?.uri ?: return
+        if (uri != primedUri && uri.isPutBack()) dropSpareFor(spareId)
+    }
+
+    /**
+     * Lets the spare go when it is primed (and not fading in) on the song [mediaId]: the player
+     * refused the add-on stream it opened for it, or its slot was put back
+     * ([dropSpareIfItsSlotWasPutBack]). The master and its pause-at-end hold are left
+     * alone ([cancelTransition] would clear the hold the sleep timer's end-of-song relies on).
+     * True when the spare was let go; the poll primes it again on the next song as its slot stands.
+     */
+    fun dropSpareFor(mediaId: String): Boolean {
+        if (transitioning || !::playerB.isInitialized || playerB.mediaItemCount == 0) return false
+        if (playerB.currentMediaItem?.mediaId != mediaId) return false
+        android.util.Log.i("Crossfade", "drop spare=${tag(playerB)} item=$mediaId")
+        playerB.playWhenReady = false
+        playerB.stop()
+        playerB.clearMediaItems()
+        playerB.volume = 1f
+        return true
+    }
 
     /**
      * Runs the crossfade and the late role-swap. [fadeMs] is the ramp length;

@@ -9,7 +9,10 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.TrackIdentityEvents
+import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_SONG_MS
+import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_DURATION_MS
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_ID
+import com.stash.core.media.streaming.AddonStreamCheck
 import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.media.streaming.StreamSourceRegistry
 import com.stash.core.media.streaming.StreamUrl
@@ -151,5 +154,42 @@ class PlayerRepositorySearchPlayIdentityTest {
         assertThat(played.captured.explicit).isTrue()
         assertThat(played.captured.albumArtUrl).isEqualTo("https://lastfm.example/reminisce.jpg")
         coVerify(exactly = 0) { trackDao.updateAlbumArtUrl(any(), any()) }
+    }
+
+    /**
+     * #888 phone run 3b: "Feel Good Inc." tapped in Search with an add-on that serves a 10 s stub first.
+     * The result carried no length, so the item had none and the add-on check's length rule was
+     * skipped: the stub played to its end. The library row knows the song is 3:42.
+     */
+    @Test
+    fun `a search result with no length plays with the library row's, and the add-on check judges a stub by it`() = runTest {
+        coEvery { musicRepository.ensureTrackPersisted(any()) } returns 10_000_330L
+        coEvery { trackDao.getById(10_000_330L) } returns com.stash.core.data.db.entity.TrackEntity(
+            id = 10_000_330L, title = "Feel Good Inc.", artist = "Gorillaz", durationMs = 222_640L,
+        )
+        coEvery { streamingPreference.current() } returns true
+        every { streamingPreference.streamOnCellular } returns flowOf(true)
+        every { connectivity.isConnected() } returns true
+        every { connectivity.isCellular() } returns false
+        val asked = slot<com.stash.core.data.db.entity.TrackEntity>()
+        coEvery { streamResolver.resolve(capture(asked), any(), any()) } returns StreamUrl(
+            url = "https://media.liar.example/stub", expiresAtMs = Long.MAX_VALUE, codec = "flac",
+            origin = "addon:p5-liar", songMs = 180_000L,
+        )
+        val queued = slot<MediaItem>()
+        every { controller.setMediaItem(capture(queued)) } just Runs
+        val item = TrackItem(videoId = "HyHNuVaZJ-k", title = "Feel Good Inc.", artist = "Gorillaz", durationSeconds = 0.0, thumbnailUrl = null)
+
+        repo.playFromStream(item)
+
+        val extras = queued.captured.mediaMetadata.extras!!
+        assertThat(extras.getLong(EXTRA_TRACK_DURATION_MS)).isEqualTo(222_640L)
+        val claim = AddonStreamCheck.claimOf(queued.captured)!!
+        assertThat(claim.songMs).isEqualTo(222_640L)
+        assertThat(AddonStreamCheck.verdict(claim.statedLossless, listOf("audio/flac"), 10_000L, claim.songMs)).isEqualTo(AddonStreamCheck.Why.LENGTH)
+        // The stream's own word rides along as a stream stamp, behind the row's...
+        assertThat(extras.getLong(EXTRA_STREAM_SONG_MS)).isEqualTo(180_000L)
+        // ...and the resolve still asked with the result's own (none): matching is as it was.
+        assertThat(asked.captured.durationMs).isEqualTo(0L)
     }
 }

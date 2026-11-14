@@ -15,6 +15,7 @@ import com.stash.core.addons.UserAddonEntry
 import com.stash.core.addons.UserAddonKind
 import com.stash.data.download.lossless.AggregatorRateLimiter
 import com.stash.data.download.lossless.LosslessAvailability
+import com.stash.data.download.lossless.LosslessSourceHealthGate
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.PlayOrder
 import com.stash.data.download.lossless.PlayOrderSwitches
@@ -53,6 +54,8 @@ class AddonOverview @Inject constructor(
     private val client: HttpAddonClient,
     private val limiter: AggregatorRateLimiter,
     private val links: AddonLinks,
+    /** The content-health gate: an add-on set aside for a file that wasn't what it said ([Status.SENT_WRONG_FILE]). */
+    private val health: LosslessSourceHealthGate = LosslessSourceHealthGate(),
 ) {
     enum class Kind { QOBUZ, TIDAL, ADDON }
 
@@ -77,6 +80,13 @@ class AddonOverview @Inject constructor(
 
         /** Its manifest now asks for a newer Stash than this one. */
         NEEDS_NEWER_STASH,
+
+        /**
+         * It handed over a file that wasn't what it said (a lossy file under "lossless", a video, a
+         * stub far shorter than the song): set aside for songs and downloads until
+         * [Row.setAsideUntilMs], when it is tried again. Stays on: nothing for the user to do.
+         */
+        SENT_WRONG_FILE,
 
         /** Its link now serves another add-on than the one the user approved: not used. */
         CHANGED,
@@ -121,6 +131,8 @@ class AddonOverview @Inject constructor(
         val ownServer: Boolean = false,
         /** Its manifest lists `quota`: it has an allowance to show. */
         val metered: Boolean = false,
+        /** [Status.SENT_WRONG_FILE]: when it is used again (epoch ms). */
+        val setAsideUntilMs: Long? = null,
     )
 
     data class State(
@@ -166,10 +178,21 @@ class AddonOverview @Inject constructor(
         },
         named,
         prefs.playOrder,
-        combine(index.index, catalog.official, client.unauthorized) { _, official, unauthorized -> official to unauthorized },
-    ) { read, named, saved, (official, unauthorized) ->
-        build(read.users, read.entries, read.reading, named, saved, official, unauthorized, catalog::described).copy(unreadable = read.unreadable)
+        combine(index.index, catalog.official, client.unauthorized, health.setAside) { _, official, unauthorized, setAside ->
+            Asked(official, unauthorized, setAside)
+        },
+    ) { read, named, saved, asked ->
+        build(
+            read.users, read.entries, read.reading, named, saved, asked.official, asked.unauthorized, catalog::described,
+            setAside = asked.setAside,
+        ).copy(unreadable = read.unreadable)
     }.distinctUntilChanged()
+
+    private data class Asked(
+        val official: List<OfficialEntry>,
+        val unauthorized: Set<String>,
+        val setAside: Map<String, LosslessSourceHealthGate.SetAside>,
+    )
 
     private data class Read(val users: List<UserAddonEntry>, val entries: List<AddonEntryState>, val reading: Boolean, val unreadable: Boolean)
 
@@ -279,18 +302,20 @@ class AddonOverview @Inject constructor(
             official: List<OfficialEntry>,
             unauthorized: Set<String>,
             described: (String) -> OfficialEntry? = { null },
+            /** The sources the content-health gate has set aside now, by id ([LosslessSourceHealthGate.setAside]). */
+            setAside: Map<String, LosslessSourceHealthGate.SetAside> = emptyMap(),
         ): State {
             val byKey = entries.associateBy { it.key }
             val userRows = userEntries.filter { it.kind == UserAddonKind.MANIFEST }.map { e ->
                 val handle = InTreeAddonRegistry.keyOf(e.manifestUrl)
-                addonRow(byKey[handle], e, handle, reading, unauthorized, described)
+                addonRow(byKey[handle], e, handle, reading, unauthorized, described, setAside)
             }
             // The first-party Tidal add-on is the Tidal row's; one of Stash's own that hasn't been read has no name to show yet.
             // A default the user's own add-on by the same id stands in for has no row: the user's is the one in use, and has one.
             val defaultRows = entries
                 .filter { !it.userAdded && it.hold != AddonHold.REPLACED }
                 .filter { !(it.firstParty && (it.manifest == null || it.manifest?.manifest?.id == NamedRungAddons.TIDAL)) }
-                .map { addonRow(it, null, it.key, reading, unauthorized, described) }
+                .map { addonRow(it, null, it.key, reading, unauthorized, described, setAside) }
             val addonRows = (userRows + defaultRows).distinctBy { it.key }
             val inOrder = addonRows.filter { it.playsSongs }
             val order = PlayOrder.effective(saved, inOrder.map { it.key })
@@ -331,12 +356,21 @@ class AddonOverview @Inject constructor(
         }
 
         private fun addonRow(
-            s: AddonEntryState?, e: UserAddonEntry?, handle: String, reading: Boolean, unauthorized: Set<String>, described: (String) -> OfficialEntry?,
+            s: AddonEntryState?,
+            e: UserAddonEntry?,
+            handle: String,
+            reading: Boolean,
+            unauthorized: Set<String>,
+            described: (String) -> OfficialEntry?,
+            setAside: Map<String, LosslessSourceHealthGate.SetAside>,
         ): Row {
             // The add-on the user approved: a manifest under another id is not it, and none of its words are shown.
             val manifest = s?.manifest?.manifest?.takeUnless { e?.id != null && it.id != e.id }
             val id = manifest?.id ?: e?.id
             val trust = s?.trust ?: Trust.UNOFFICIAL
+            // Set aside for a file that wasn't what it said (the player's stream check, or a download's).
+            // Only that reason has words here: one set aside for being slow says nothing new.
+            val wrongFile = id?.let { setAside[PlayOrder.addonKey(it)] }?.takeIf { it.wrongFile }
             val status = when {
                 s?.hold == AddonHold.BLOCKED -> Status.TURNED_OFF_BY_STASH
                 e?.enabled == false || s?.hold == AddonHold.OFF -> Status.OFF
@@ -346,6 +380,7 @@ class AddonOverview @Inject constructor(
                 s?.hold == AddonHold.WANTS_MORE -> Status.WANTS_MORE
                 id != null && id in unauthorized -> Status.NEEDS_NEW_LINK
                 s?.needsNewerStash == true -> Status.NEEDS_NEWER_STASH
+                wrongFile != null -> Status.SENT_WRONG_FILE
                 // Not read yet (just added, or the app just started): no verdict until it has been.
                 s != null && s.hold == AddonHold.NOT_LOADED && !reading -> Status.NOT_REACHABLE
                 else -> Status.WORKING
@@ -373,6 +408,7 @@ class AddonOverview @Inject constructor(
                 entryKey = handle,
                 userAdded = e != null,
                 metered = manifest?.offers(Resource.QUOTA) == true,
+                setAsideUntilMs = wrongFile?.untilMs?.takeIf { status == Status.SENT_WRONG_FILE },
             )
         }
     }
