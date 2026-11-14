@@ -239,7 +239,8 @@ internal class FullArtState {
     /** The page on screen's index, told to [onPage] when it changes. */
     internal var onPage: (Int) -> Unit = {}
 
-    private fun pageFor(segment: Int): FullArtPage = pages[(schedule.pageAt(segment) + offset).mod(pages.size)]
+    private fun pageFor(segment: Int): FullArtPage? =
+        if (pages.isEmpty()) null else pages[(schedule.pageAt(segment) + offset).mod(pages.size)]
 
     /** Opened on [start] (the page the square art was showing); the pages go on from there. */
     fun open(now: Long, position: Long, start: Int) {
