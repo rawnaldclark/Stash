@@ -4,7 +4,13 @@ import com.stash.core.model.Track
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import okhttp3.Call
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -20,6 +26,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 class AlbumArtCacheTest {
 
@@ -238,7 +247,100 @@ class AlbumArtCacheTest {
         assertTrue(cacheDir.listFiles().orEmpty().isEmpty())
     }
 
+    // Eight downloads run at once, and an album's songs start together: each used to find the
+    // cache empty and fetch the same cover for itself. Real threads here, not a test scheduler.
+    @Test fun `downloads of one album at once fetch its cover once`() = runBlocking(Dispatchers.Default) {
+        val body = ByteArray(2048) { 1 }
+        val fetches = AtomicInteger()
+        val secondFetch = CountDownLatch(1)
+        val firstFetchMayAnswer = CountDownLatch(1)
+        val call = slowCall(firstFetchMayAnswer) { imageResponse(body) }
+        every { httpClient.newCall(any()) } answers {
+            if (fetches.incrementAndGet() > 1) secondFetch.countDown()
+            call
+        }
+        val track = stubTrack(albumArtUrl = "https://i.scdn.co/image/abc")
+
+        val covers = (1..8).map { async { subject.resolveArt(track) } }
+        // The first fetch stays open until a second one starts, or long enough to say none will.
+        secondFetch.await(500, TimeUnit.MILLISECONDS)
+        firstFetchMayAnswer.countDown()
+        val files = withTimeout(10_000) { covers.awaitAll() }
+
+        assertEquals("one cover, one fetch", 1, fetches.get())
+        assertEquals(1, files.map { it?.path }.distinct().size)
+        assertTrue(files.all { it != null && body.contentEquals(it.readBytes()) })
+    }
+
+    // The ones that waited look for themselves when the fetch they waited on brought nothing:
+    // one failed request must not leave the album's other songs without their cover.
+    @Test fun `a cover fetch that fails does not cost the downloads waiting on it their art`() =
+        runBlocking(Dispatchers.Default) {
+            val body = ByteArray(512) { 2 }
+            val fetches = AtomicInteger()
+            val firstFetchMayAnswer = CountDownLatch(1)
+            val failing = slowCall(firstFetchMayAnswer) { throw java.io.IOException("connection reset") }
+            val working = slowCall(CountDownLatch(0)) { imageResponse(body) }
+            every { httpClient.newCall(any()) } answers {
+                if (fetches.incrementAndGet() == 1) failing else working
+            }
+            val track = stubTrack(albumArtUrl = "https://i.scdn.co/image/abc")
+
+            val covers = (1..2).map { async { subject.resolveArt(track) } }
+            Thread.sleep(300)
+            firstFetchMayAnswer.countDown()
+            val files = withTimeout(10_000) { covers.awaitAll() }
+
+            assertEquals("only the download whose own fetch failed goes without", 1, files.count { it == null })
+            assertEquals(1, files.count { it != null && body.contentEquals(it.readBytes()) })
+        }
+
+    // A cancelled download's fetch still lets go of the ones waiting on it.
+    @Test fun `a cancelled download's cover fetch does not strand the ones waiting on it`() =
+        runBlocking(Dispatchers.Default) {
+            val body = ByteArray(512) { 3 }
+            val fetchOpen = CountDownLatch(1)
+            val fetchMayAnswer = CountDownLatch(1)
+            val call = mockk<Call>()
+            every { httpClient.newCall(any()) } returns call
+            every { call.execute() } answers {
+                fetchOpen.countDown()
+                fetchMayAnswer.await(5, TimeUnit.SECONDS)
+                imageResponse(body)
+            }
+            val track = stubTrack(albumArtUrl = "https://i.scdn.co/image/abc")
+
+            val first = launch { subject.resolveArt(track) }
+            assertTrue(fetchOpen.await(5, TimeUnit.SECONDS))
+            val second = async { subject.resolveArt(track) }
+            Thread.sleep(200)
+            first.cancel()
+            fetchMayAnswer.countDown()
+
+            val cover = withTimeout(10_000) { second.await() }
+            assertNotNull(cover)
+            assertTrue(body.contentEquals(cover!!.readBytes()))
+        }
+
     // ─── helpers ───────────────────────────────────────────────────────
+
+    /** A call whose `execute()` waits for [mayAnswer] (5 s at most), then gives [answer]. */
+    private fun slowCall(mayAnswer: CountDownLatch, answer: () -> Response): Call {
+        val call = mockk<Call>()
+        every { call.execute() } answers {
+            mayAnswer.await(5, TimeUnit.SECONDS)
+            answer()
+        }
+        return call
+    }
+
+    private fun imageResponse(body: ByteArray): Response = Response.Builder()
+        .request(Request.Builder().url("https://example.test/").build())
+        .protocol(Protocol.HTTP_1_1)
+        .code(200)
+        .message("OK")
+        .body(body.toResponseBody("image/jpeg".toMediaType()))
+        .build()
 
     private fun stubTrack(albumArtUrl: String?) = Track(
         id = 1, title = "T", artist = "A", albumArtUrl = albumArtUrl,
