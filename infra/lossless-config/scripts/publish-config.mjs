@@ -12,6 +12,8 @@
  * Optional "default_addons": [{"manifest":"https://<add-on>/v1/<ACCESS_TOKEN>/manifest.json","enabled":true,"first_party":true}]
  * turns the app's Tidal v1 wire on (decision D9); leave it out (or []) and every app stays on the legacy wire. Only each
  * entry's origin is ever printed: the path carries the token.
+ * Optional "addon_index": "https://raw.githubusercontent.com/stash-addons/registry/main/index.json" is where the app finds the
+ * signed add-on index (add-ons phase 4; built and signed by scripts/publish-index.mjs). Public, so it is printed.
  * relay_key is stash-tidal-relay's RELAY_KEY secret (the app signs its install headers with it). Leaving out relay_key or
  * tidal_relay_url switches Tidal off in every installed app. `relays: []` is the kill switch for the Qobuz relay list.
  * Keep key.pem and input.json OUTSIDE the repo. See ../README.md.
@@ -53,7 +55,7 @@ async function report(pem) {
     const sigOk = pem
         ? verify("sha256", current.bytes, createPublicKey(createPrivateKey(readFileSync(pem))), Buffer.from(current.sig, "base64"))
         : "(no key given)";
-    console.log(`live: updated_at=${cfg.updated_at} relays=${cfg.relays.map((r) => r.base).join(",") || "(none)"} relay_key=${cfg.relay_key ? "present" : "absent"} default_addons=${describeDefaultAddons(cfg.default_addons)} signature=${sigOk}`);
+    console.log(`live: updated_at=${cfg.updated_at} relays=${cfg.relays.map((r) => r.base).join(",") || "(none)"} relay_key=${cfg.relay_key ? "present" : "absent"} default_addons=${describeDefaultAddons(cfg.default_addons)} addon_index=${cfg.addon_index || "(unset)"} signature=${sigOk}`);
 }
 
 switch (cmd) {
@@ -80,7 +82,7 @@ switch (cmd) {
         writeFileSync(join(dir, "lossless.json"), bytes);
         writeFileSync(join(dir, "lossless.json.sig"), sign("sha256", bytes, priv).toString("base64"));
         const preview = JSON.parse(text);
-        console.log(`publishing: updated_at=${preview.updated_at} relays=${preview.relays.map((r) => r.base).join(",") || "(none)"} tidal_relay_url=${preview.tidal_relay_url || "(unset)"} tidal_relay_token=${preview.tidal_relay_token ? "(present; redacted)" : "(unset)"} default_addons=${describeDefaultAddons(preview.default_addons)}`);
+        console.log(`publishing: updated_at=${preview.updated_at} relays=${preview.relays.map((r) => r.base).join(",") || "(none)"} tidal_relay_url=${preview.tidal_relay_url || "(unset)"} tidal_relay_token=${preview.tidal_relay_token ? "(present; redacted)" : "(unset)"} default_addons=${describeDefaultAddons(preview.default_addons)} addon_index=${preview.addon_index || "(unset)"}`);
         kvPut(KV_JSON, join(dir, "lossless.json"));
         kvPut(KV_SIG, join(dir, "lossless.json.sig"));
         console.log("uploaded. KV propagates within ~60 s; reading the live copy now (re-run `verify` if it is still the old one):");

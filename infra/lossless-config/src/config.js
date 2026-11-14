@@ -4,7 +4,7 @@
  * floor), relays normalised to what the client's LosslessSourcePreferences.normaliseEndpoint
  * produces (https only, no trailing slash) and sorted by priority. Stricter on input than the
  * client, on purpose: it STRIPS a query or fragment, this REJECTS one so a typo fails at publish time;
- * `v: 1`, the optional relay_key, and optional BitChord/Tidal relay settings. Callers sign the returned string's UTF-8 bytes as-is.
+ * `v: 1`, the optional relay_key, optional BitChord/Tidal relay settings, `default_addons` and `addon_index`. Callers sign the returned string's UTF-8 bytes as-is.
  */
 export function buildConfig(input, liveUpdatedAt, nowSec) {
     const relays = (input.relays || []).map((r, i) => {
@@ -30,7 +30,29 @@ export function buildConfig(input, liveUpdatedAt, nowSec) {
         cfg.tidal_relay_token = input.tidal_relay_token;
     }
     if (input.default_addons !== undefined) cfg.default_addons = buildDefaultAddons(input.default_addons);
+    if (input.addon_index !== undefined) {
+        const url = normaliseIndexUrl(input.addon_index);
+        if (!url) throw new Error("addon_index must be an https URL ending in .json, with no credentials, query or fragment, and not a github.com page (use raw.githubusercontent.com)");
+        cfg.addon_index = url;
+    }
     return JSON.stringify(cfg);
+}
+
+/**
+ * `addon_index` (add-ons phase 4, plan section 1.4): where the app fetches the signed add-on index (`<url>` and
+ * `<url>.sig`). Public, so it is printed. https, a path ending in `.json`, no credentials, query or fragment, at most
+ * 2048 characters. A github.com page is refused: it serves HTML, and the file is on raw.githubusercontent.com.
+ * Released apps ignore the key.
+ */
+export function normaliseIndexUrl(raw) {
+    if (typeof raw !== "string") return null;
+    const text = raw.trim();
+    if (!text || text.length > 2048 || /[\s\\]/.test(text)) return null;
+    let u;
+    try { u = new URL(text); } catch { return null; }
+    if (u.protocol !== "https:" || !u.hostname || u.username || u.password || u.search || u.hash || text.includes("?") || text.includes("#")) return null;
+    if (!u.pathname.endsWith(".json") || u.hostname === "github.com" || u.hostname === "www.github.com") return null;
+    return u.href;
 }
 
 /** At most this many `default_addons` entries (the app reads no more). */
