@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "deploy": "wrangler deploy",
+    "deploy": "node scripts/deploy.mjs",
     "dev": "wrangler dev",
     "test": "node --test",
     "tidal:login": "node scripts/device-login.mjs",

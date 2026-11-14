@@ -12,7 +12,7 @@ from this folder now (`npm ci`, then `npx wrangler deploy`). Same Worker name, s
 - `GET /stream/td:<id>?client=media3` with `X-Access-Token` → progressive FLAC URL or a signed DASH MPD URL, with the BitChord response fields. Progressive answers (FLAC and AAC) add `expiresAt` (epoch seconds, from Tidal's signed URL) when it is readable; DASH answers carry their expiry as `exp` in the signed URL. `?aac` is one of `1`, `only` or absent; any other value is treated as absent.
 - `GET /quota` with `X-Access-Token` and the signed install headers (below) → today's daily lossless count.
 - Signed `GET /dash/td/<id>.mpd` and `GET /dash/td/<id>/init.mp4` URLs need no header; their HMAC signatures (keyed by the `DASH_SIGNING_KEY` secret, see Deployment) expire after one hour.
-- Admin-only `POST /admin/device/start`, then `POST /admin/device/poll` with `{ "user_code": "..." }` starts and completes the Tidal OAuth device flow; `POST /admin/seats/pkce` adds a web seat (see `?web=mse` below). These require `X-Access-Token: <ADMIN_TOKEN>`.
+- Admin-only `POST /admin/device/start`, then `POST /admin/device/poll` with `{ "user_code": "..." }` starts and completes the Tidal OAuth device flow; `POST /admin/seats/pkce` adds a web seat (see `?web=mse` below); `GET /admin/seats` and `POST /admin/seats/import` list and copy seats (see "Moving to another account"). These require `X-Access-Token: <ADMIN_TOKEN>`.
 
 Tidal accounts are linked through the device flow; passwords and OAuth tokens are never printed. The pool rotates least-recently-used live accounts, with per-account caps of 200 upstream calls/hour and 3,200/day (`TIDAL_ACCOUNT_HOURLY_CAP` / `TIDAL_ACCOUNT_DAILY_CAP` in `wrangler.toml`; the code falls back to 250 and 1,600 when they are unset). It applies cooldowns for transient failures and retires an account only when Tidal rejects its refresh token (see the 401 rule below). A lower-than-lossless answer is final (no cross-check on another account), and Tidal's `subStatus=4005` is a track/rights refusal (`not_available`) that never kills an account. When no account is available, search and stream return `503 busy`: `Retry-After: 300` when seats are capped or cooling, `Retry-After: 15` when seats are only waiting out their pacing gap.
 
@@ -211,3 +211,41 @@ SELECT substr(account_id, -4) AS account, endpoint, hour_n, day_n,
        datetime(occurred_at, 'unixepoch') AS occurred_at
 FROM tidal_upstream_429_events ORDER BY occurred_at DESC;
 ```
+
+## Moving to another account (`REDIRECT_ORIGIN`, seat copy)
+
+The relay is moving to its own Cloudflare account as the add-on `stash-addon-tidal` (plan: `addons-phase2.md` §2–§3).
+The same relay code runs on both sides for the overlap; whichever side does not hold the seats redirects to the other.
+
+- **`REDIRECT_ORIGIN`** (var, empty by default = serve here). Set to a bare https origin, `/search`, `/stream/*` and
+  `/quota` answer `307` with `Location: <REDIRECT_ORIGIN><same path>?<same query>&via=old`, before the request limiter
+  and without touching D1. A 307 keeps the method; the app's OkHttp keeps `X-Access-Token` and the `X-Stash-*`
+  headers across hosts (it drops only `Authorization`), and the install signature covers `<install>:td:<n>:<ts>`, not
+  the host, so it verifies on the other side. `/health`, `/dash/*` (links signed here, at most an hour old) and
+  `/admin/*` are still served here. A request that already carries `via`, or a target that is this very origin, is
+  served here instead, so two shims pointed at each other cannot loop. A value that is not a bare https origin is
+  ignored (served here) and logged once. So is a loopback origin (`localhost`, `127.0.0.1`), unless
+  `REDIRECT_ALLOW_LOCAL = "1"` (tests and `wrangler dev` only). The web shim `stash-src-tidal` refuses redirects:
+  repoint it first.
+- **`GET /admin/seats`** (`ADMIN_TOKEN`): every seat with every column except the tokens, plus `has_access_token` /
+  `has_refresh_token` and counts by state. It never outputs a token.
+- **`POST /admin/seats/import`** (`ADMIN_TOKEN`): `{"seats":[{...}, ...]}`, at most 500 seats, each naming every column
+  of `tidal_accounts` and nothing else (tokens, state, counters, `last_call_at`, `generation`, `client`), so caps and
+  pacing carry over and no account is re-linked. One atomic batch: all seats or none. It upserts by `id`, but never
+  older over newer: a seat already here is overwritten only by a copy whose `generation` (bumped by every refresh and
+  re-link) is at least its own, so a re-run or a copy in the wrong direction cannot put stale tokens or a stale state
+  over fresh ones. A `live` or `reserve` seat must carry both tokens. It answers counts only (`imported`, `inserted`,
+  `updated`, `skipped_older`); errors name the field (`invalid seats[2].state`), never a value. The body is capped at
+  2 MiB as it arrives.
+
+The move itself is scripted in the add-on repo (`move-seats.mjs`, its README "Cutover" and "Rollback"): it reads the
+seats with `wrangler d1 execute --json` run with `WRANGLER_WRITE_LOGS=false` (otherwise wrangler copies every row it
+prints, tokens included, into its log folder for 30 days) and sends them to the other side's import route. Never run
+`wrangler d1 export` on this database while it serves traffic.
+
+**Deploying while the shim is on.** From cutover step 3 until this Worker is deleted, deploy it only with
+`npm run deploy` (`scripts/deploy.mjs`), never `wrangler deploy`. It first asks the live Worker whether it redirects
+(`GET /search`, redirects not followed) and refuses a deploy that would turn the redirect off or point it elsewhere:
+its own seats are parked then, so every phone still on this URL would get `503 busy`. Right after step 3, commit
+`REDIRECT_ORIGIN = "<new origin>"` to `wrangler.toml` on master, so a routine deploy keeps it. Only the rollback turns
+it off, with `npm run deploy -- --shim-off-on-purpose`.
