@@ -2,25 +2,28 @@ package com.stash.data.download.lossless.addon
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.google.common.truth.Truth.assertThat
-import com.stash.addons.contract.AddonKind
-import com.stash.addons.contract.Manifest
 import com.stash.core.addons.AddonHostOptions
+import com.stash.core.addons.DefaultAddonEntry
+import com.stash.core.addons.DefaultAddons
 import com.stash.core.addons.HttpAddonClient
-import com.stash.core.addons.InstalledAddon
-import com.stash.core.data.db.entity.AddonRefEntity
+import com.stash.core.addons.InTreeAddonRegistry
+import com.stash.core.addons.NoAddonCatalog
+import com.stash.core.addons.NoDefaultAddons
+import com.stash.core.addons.NoManifestStore
 import com.stash.core.addons.StrictAddonHost
-import com.stash.core.addons.UserAddonEntry
+import com.stash.core.data.db.entity.AddonRefEntity
+import com.stash.data.download.lossless.PlayOrder
+import com.stash.data.download.lossless.addon.AddonLinks.Refusal
 import com.stash.data.download.lossless.tidal.FakeAddonRefDao
-import com.stash.data.download.lossless.tidal.FixedRegistry
 import com.stash.data.download.lossless.tidal.LocalHttp
 import com.stash.data.download.lossless.tidal.TestAddonHost
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -38,13 +41,19 @@ import java.security.GeneralSecurityException
  * "Add from a link" (plan §5.5): what a pasted link is accepted as, what Add refuses and why, the
  * id clash, the header token, and what reaches the sealed list. review-881 M13 found only the
  * store tested, never [AddonLinks] itself.
+ *
+ * Written for #881's `AddonLinks`, whose refusals were English sentences; phase 4's are reasons
+ * ([Refusal]) the screen puts into words, so each case below checks the reason. Two cases changed
+ * with the plan (phase 4 §2.2) rather than with the wording: a root with no final `/` and a link
+ * typed without `https://` are both accepted now. What the list shows for each add-on (its name,
+ * else its host, never its link) moved to `AddonOverview`: `AddonOverviewRowsTest`. The agreement
+ * an add-on Stash doesn't run needs, Replace link and the blocklist are in `AddFromLinkFlowTest`.
  */
 class AddonLinksTest {
 
     private lateinit var server: MockWebServer
     private val dir: File = Files.createTempDirectory("addon-links").toFile()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val registry = FixedRegistry()
     private val refDao = FakeAddonRefDao()
 
     /** What `/<path>/manifest.json` answers; anything else is a 404. */
@@ -79,16 +88,30 @@ class AddonLinksTest {
     }
 
     private val key = Key()
-    private val users by lazy {
-        EncryptedUserAddons(PreferenceDataStoreFactory.create(scope = scope) { File(dir, "u.preferences_pb") }, key)
+    private val file by lazy { PreferenceDataStoreFactory.create(scope = scope) { File(dir, "u.preferences_pb") } }
+    private val users by lazy { EncryptedUserAddons(file, key) }
+
+    /** The signed config's add-ons, for the id clash with one of Stash's own. */
+    private val defaults = MutableStateFlow<List<DefaultAddonEntry>>(emptyList())
+    private val savedOrder = MutableStateFlow<List<String>?>(null)
+
+    private class Kit(val links: AddonLinks, val registry: InTreeAddonRegistry)
+
+    /** [AddonLinks] over a real registry. No index: every add-on is one Stash doesn't run, so Add needs the user's agreement. */
+    private fun kit(host: AddonHostOptions = LocalHttp): Kit {
+        val client = HttpAddonClient(OkHttpClient(), TestAddonHost(), TestAddonHost(firstParty = false), TestAddonHost(), host)
+        val stashOwn = object : DefaultAddons {
+            override val entries: StateFlow<List<DefaultAddonEntry>> = defaults
+        }
+        val registry = InTreeAddonRegistry(stashOwn, users, client, NoManifestStore)
+        val order = PlayOrder(savedOrder, { savedOrder.value = it }, registry)
+        return Kit(AddonLinks(client, users, registry, host, AddonRefs(client, refDao), NoAddonCatalog, order), registry)
     }
 
-    private fun links(host: AddonHostOptions = LocalHttp) =
-        HttpAddonClient(OkHttpClient(), TestAddonHost(), TestAddonHost(firstParty = false), TestAddonHost(), host).let { client ->
-            AddonLinks(client, users, registry, host, AddonRefs(client, refDao))
-        }
+    private fun links(host: AddonHostOptions = LocalHttp) = kit(host).links
 
     private fun link(path: String) = "http://127.0.0.1:${server.port}/$path/manifest.json"
+    private fun keyOf(path: String) = InTreeAddonRegistry.keyOf(link(path))
 
     private fun serve(path: String, body: String) {
         synchronized(manifests) { manifests["/$path/manifest.json"] = MockResponse().setHeader("Content-Type", "application/json").setBody(body) }
@@ -103,58 +126,55 @@ class AddonLinksTest {
     ) = """{"stash":$stash,"id":"$id","name":"Radio Add-on","version":"1.2.0","kind":"$kind","description":"Songs from the radio",
         "resources":[$resources],"stream":{"cors":false,"manifests":["none","dash"],"tiers":["lossless","hires"]}$extra}"""
 
-    private fun refusal(o: AddonLinks.Outcome) = (o as AddonLinks.Outcome.Refused).message
+    private fun refusal(o: AddonLinks.Outcome) = (o as AddonLinks.Outcome.Refused).reason
+    private suspend fun ready(links: AddonLinks, path: String) = (links.preview(link(path)) as AddonLinks.Outcome.Ready).preview
 
-    private fun installed(id: String, userAdded: Boolean) = InstalledAddon(
-        base = "https://elsewhere.example/$id/",
-        manifest = Manifest(stash = 1, id = id, name = "Other", version = "1", kind = AddonKind.SERVER, resources = listOf("search", "stream")),
-        userAdded = userAdded,
-        firstParty = !userAdded,
-    )
+    private fun url(link: String, local: Boolean = false) = (AddonLinks.normalise(link, allowLocalHttp = local) as? AddonLinks.Normalised.Url)?.url
 
     // ------------------------------------------------------------------------------------------ the link
 
-    @Test fun `a link is a manifest URL, or a base that gets manifest_json`() {
-        val links = links()
-        assertThat(links.normalise(" https://addon.example/tok/manifest.json ")).isEqualTo("https://addon.example/tok/manifest.json")
-        assertThat(links.normalise("https://addon.example/tok/")).isEqualTo("https://addon.example/tok/manifest.json")
+    @Test fun `a link is a manifest URL, or a base or a root that gets manifest_json`() {
+        assertThat(url(" https://addon.example/tok/manifest.json ")).isEqualTo("https://addon.example/tok/manifest.json")
+        assertThat(url("https://addon.example/tok/")).isEqualTo("https://addon.example/tok/manifest.json")
+        // Phase 4 §2.2: the root with no final `/`, and a link typed without its scheme.
+        assertThat(url("https://addon.example/tok")).isEqualTo("https://addon.example/tok/manifest.json")
+        assertThat(url("addon.example/manifest.json")).isEqualTo("https://addon.example/manifest.json")
         for (bad in listOf(
-            "https://addon.example/tok",
             "https://addon.example/manifest.json?x=1",
             "https://addon.example/manifest.json#top",
             "https://user:pw@addon.example/manifest.json",
             "ftp://addon.example/manifest.json",
-            "addon.example/manifest.json",
             "",
         )) {
-            assertThat(links.normalise(bad)).isNull()
+            assertThat(url(bad)).isNull()
         }
     }
 
     @Test fun `http is for a debug build's localhost only`() = runBlocking<Unit> {
         // A debug build: the development hosts over http, nothing else.
-        assertThat(links(LocalHttp).normalise("http://127.0.0.1:8787/manifest.json")).isNotNull()
-        assertThat(links(LocalHttp).normalise("http://addon.example/manifest.json")).isNull()
+        assertThat(url("http://127.0.0.1:8787/manifest.json", local = true)).isNotNull()
+        assertThat(url("http://addon.example/manifest.json", local = true)).isNull()
         // A release build: no http at all, and it says so. Nothing is fetched.
         val release = links(StrictAddonHost)
-        assertThat(release.normalise("http://127.0.0.1:8787/manifest.json")).isNull()
-        assertThat(refusal(release.preview(link("a")))).isEqualTo("The link must start with https://.")
-        assertThat(refusal(release.preview("not a link"))).isEqualTo("Paste the add-on's manifest link. It ends in /manifest.json.")
+        assertThat(url("http://127.0.0.1:8787/manifest.json", local = false)).isNull()
+        assertThat(refusal(release.preview(link("a")))).isEqualTo(Refusal.NOT_HTTPS)
+        assertThat(refusal(release.preview("not a link"))).isEqualTo(Refusal.NOT_AN_ADDON)
         assertThat(server.requestCount).isEqualTo(0)
     }
 
     // ------------------------------------------------------------------------------------------ preview
 
-    @Test fun `the preview shows the manifest's own words and what it offers, and asks nothing with a token`() = runBlocking<Unit> {
+    @Test fun `the preview shows the manifest's own words and what Stash will use, and asks nothing with a token`() = runBlocking<Unit> {
         serve("a", manifestJson(extra = ""","auth":{"token":"header"}"""))
-        val ready = links().preview(link("a")) as AddonLinks.Outcome.Ready
-        val p = ready.preview
+        val p = ready(links(), "a")
         assertThat(p.manifestUrl).isEqualTo(link("a"))
         assertThat(p.id).isEqualTo("radio")
         assertThat(p.name).isEqualTo("Radio Add-on")
         assertThat(p.version).isEqualTo("1.2.0")
         assertThat(p.description).isEqualTo("Songs from the radio")
-        assertThat(p.offers).containsExactly("Plays songs", "Lossless", "Downloads", "Lyrics").inOrder()
+        assertThat(p.uses).containsExactly(
+            AddonLinks.Use.PLAYS_SONGS, AddonLinks.Use.LOSSLESS, AddonLinks.Use.DOWNLOADS, AddonLinks.Use.LYRICS,
+        ).inOrder()
         assertThat(p.needsToken).isTrue()
         // The link can carry a token in its path: the preview never prints it.
         assertThat(p.toString()).isEqualTo("Preview(radio 1.2.0)")
@@ -171,29 +191,31 @@ class AddonLinksTest {
         serve("broken", manifestJson(id = "Not An Id!"))
         serve("html", "<html>not an add-on</html>")
 
-        assertThat(refusal(links.preview(link("pages")))).isEqualTo("This add-on offers nothing Stash can play yet.")
-        assertThat(refusal(links.preview(link("newer")))).isEqualTo("This add-on needs a newer Stash.")
-        assertThat(refusal(links.preview(link("junk")))).isEqualTo("That link isn't an add-on.")
-        assertThat(refusal(links.preview(link("broken")))).isEqualTo("That add-on's manifest isn't valid.")
-        assertThat(refusal(links.preview(link("html")))).isEqualTo("That add-on's manifest isn't valid.")
-        assertThat(refusal(links.preview(link("missing")))).isEqualTo("That add-on didn't answer with a manifest.")
+        assertThat(refusal(links.preview(link("pages")))).isEqualTo(Refusal.NOTHING_TO_PLAY)
+        assertThat(refusal(links.preview(link("newer")))).isEqualTo(Refusal.NEEDS_NEWER_STASH)
+        // Not a manifest, a manifest that isn't valid, a page, nothing at that address: none is an add-on.
+        assertThat(refusal(links.preview(link("junk")))).isEqualTo(Refusal.NOT_AN_ADDON)
+        assertThat(refusal(links.preview(link("broken")))).isEqualTo(Refusal.NOT_AN_ADDON)
+        assertThat(refusal(links.preview(link("html")))).isEqualTo(Refusal.NOT_AN_ADDON)
+        assertThat(refusal(links.preview(link("missing")))).isEqualTo(Refusal.NOT_AN_ADDON)
         // Nothing listens on port 9.
-        assertThat(refusal(links.preview("http://127.0.0.1:9/manifest.json"))).isEqualTo("Couldn't reach that add-on. Check the link and your connection.")
+        assertThat(refusal(links.preview("http://127.0.0.1:9/manifest.json"))).isEqualTo(Refusal.UNREACHABLE)
         assertThat(users.loadedEntries()).isEmpty()
     }
 
-    @Test fun `an id that is already on is refused, at the preview and again at Add`() = runBlocking<Unit> {
-        val links = links()
+    @Test fun `an id one of Stash's own add-ons has is refused, at the preview and again at Add`() = runBlocking<Unit> {
+        val kit = kit()
         serve("a", manifestJson(id = "radio"))
-        val preview = (links.preview(link("a")) as AddonLinks.Outcome.Ready).preview
+        val preview = ready(kit.links, "a")
 
-        registry.state.value = listOf(installed("radio", userAdded = true))
-        assertThat(refusal(links.preview(link("a")))).isEqualTo("You already added an add-on with this id (radio).")
-        // The id turned up between Check link and Add.
-        assertThat(refusal(links.add(preview, null))).isEqualTo("Stash already has an add-on with this id (radio).")
+        // The id turned up between the preview and Add: the signed config now names an add-on by it.
+        serve("stash-radio", manifestJson(id = "radio"))
+        defaults.value = listOf(DefaultAddonEntry(link("stash-radio")))
+        kit.registry.refresh(force = true)
+        assertThat(kit.registry.addons.value.map { it.id }).containsExactly("radio")
 
-        registry.state.value = listOf(installed("radio", userAdded = false))
-        assertThat(refusal(links.preview(link("a")))).isEqualTo("Stash already has an add-on with this id (radio).")
+        assertThat(refusal(kit.links.preview(link("a")))).isEqualTo(Refusal.ALREADY_ADDED)
+        assertThat(refusal(kit.links.add(preview, null, agreed = true))).isEqualTo(Refusal.ALREADY_ADDED)
         assertThat(users.loadedEntries()).isEmpty()
     }
 
@@ -203,83 +225,79 @@ class AddonLinksTest {
         val links = links()
         serve("open", manifestJson(id = "open"))
         serve("locked", manifestJson(id = "locked", extra = ""","auth":{"token":"header"}"""))
-        val open = (links.preview(link("open")) as AddonLinks.Outcome.Ready).preview
-        val locked = (links.preview(link("locked")) as AddonLinks.Outcome.Ready).preview
+        val open = ready(links, "open")
+        val locked = ready(links, "locked")
 
         // A token typed for an add-on that asked for none is not kept.
-        assertThat(links.add(open, "typed-anyway")).isEqualTo(AddonLinks.Outcome.Added)
+        assertThat(links.add(open, "typed-anyway", agreed = true)).isEqualTo(AddonLinks.Outcome.Added(keyOf("open")))
         // One that asks for a token is not added without it, nor with one a header can't carry.
-        assertThat(refusal(links.add(locked, "  "))).isEqualTo("This add-on needs its access token.")
-        assertThat(refusal(links.add(locked, "badétoken"))).isEqualTo("That token has characters a request can't carry.")
-        assertThat(links.add(locked, " s3cret ")).isEqualTo(AddonLinks.Outcome.Added)
+        assertThat(refusal(links.add(locked, "  ", agreed = true))).isEqualTo(Refusal.NEEDS_PASSWORD)
+        assertThat(refusal(links.add(locked, "badétoken", agreed = true))).isEqualTo(Refusal.BAD_PASSWORD)
+        assertThat(links.add(locked, " s3cret ", agreed = true)).isEqualTo(AddonLinks.Outcome.Added(keyOf("locked")))
 
-        assertThat(users.loadedEntries()).containsExactly(
-            UserAddonEntry(link("open"), token = null, enabled = true),
-            UserAddonEntry(link("locked"), token = "s3cret", enabled = true),
+        val kept = users.loadedEntries()
+        assertThat(kept.map { Triple(it.manifestUrl, it.token, it.enabled) }).containsExactly(
+            Triple(link("open"), null, true),
+            Triple(link("locked"), "s3cret", true),
         ).inOrder()
+        // Who each one said it was when it was added, so its row needs no answer from it.
+        assertThat(kept.map { it.id to it.name }).containsExactly("open" to "Radio Add-on", "locked" to "Radio Add-on").inOrder()
         // The same link again: refused before anything is fetched.
         val asked = server.requestCount
-        assertThat(refusal(links.preview(link("open")))).isEqualTo("This add-on is already added.")
+        assertThat(refusal(links.preview(link("open")))).isEqualTo(Refusal.ALREADY_ADDED)
         assertThat(server.requestCount).isEqualTo(asked)
-    }
-
-    @Test fun `the list names each add-on by its loaded manifest, else by its host, never by its link`() = runBlocking<Unit> {
-        val links = links()
-        serve("tok-123", manifestJson(id = "radio"))
-        links.add((links.preview(link("tok-123")) as AddonLinks.Outcome.Ready).preview, null)
-
-        val notLoaded = withTimeout(5_000) { links.added.first { it.size == 1 } }.single()
-        assertThat(notLoaded.loaded).isFalse()
-        assertThat(notLoaded.name).isEqualTo("127.0.0.1:${server.port}")
-        assertThat(notLoaded.toString()).doesNotContain("tok-123")
-
-        registry.state.value = listOf(
-            InstalledAddon(
-                base = HttpAddonClient.baseOf(link("tok-123"))!!,
-                manifest = Manifest(stash = 1, id = "radio", name = "Radio Add-on", version = "1", kind = AddonKind.SERVER, resources = listOf("search")),
-                userAdded = true,
-            ),
-        )
-        val loaded = withTimeout(5_000) { links.added.first { it.single().loaded } }.single()
-        assertThat(loaded.name).isEqualTo("Radio Add-on")
-        assertThat(loaded.id).isEqualTo("radio")
     }
 
     @Test fun `Remove and the switch change the sealed list and say so`() = runBlocking<Unit> {
         val links = links()
         serve("a", manifestJson(id = "a"))
         serve("b", manifestJson(id = "b"))
-        links.add((links.preview(link("a")) as AddonLinks.Outcome.Ready).preview, null)
-        links.add((links.preview(link("b")) as AddonLinks.Outcome.Ready).preview, null)
+        links.add(ready(links, "a"), null, agreed = true)
+        links.add(ready(links, "b"), null, agreed = true)
 
-        assertThat(links.setEnabled(link("a"), false)).isTrue()
+        assertThat(links.setEnabled(keyOf("a"), false)).isTrue()
         assertThat(users.loadedEntries().map { it.manifestUrl to it.enabled }).containsExactly(link("a") to false, link("b") to true).inOrder()
-        assertThat(links.remove(link("a"))).isTrue()
+        assertThat(links.remove(keyOf("a"))).isTrue()
         assertThat(users.loadedEntries().map { it.manifestUrl }).containsExactly(link("b"))
+    }
+
+    @Test fun `removing a copy that one of Stash's own add-ons replaced leaves that add-on's place and what it found alone`() = runBlocking<Unit> {
+        val kit = kit()
+        serve("mine", manifestJson(id = "radio"))
+        kit.links.add(ready(kit.links, "mine"), null, agreed = true)
+        // Later the signed config turns on Stash's own add-on by that id: it is the one in use.
+        serve("stash-radio", manifestJson(id = "radio"))
+        defaults.value = listOf(DefaultAddonEntry(link("stash-radio"), firstParty = true))
+        kit.registry.refresh(force = true)
+        assertThat(kit.registry.addons.value.single().firstParty).isTrue()
+        savedOrder.value = listOf("addon:radio", "qobuz", "tidal")
+        refDao.upsert(AddonRefEntity(addonId = "radio", songKey = "isrc:AA0000000001", remoteId = "1", resolvedAt = 1L))
+
+        assertThat(kit.links.remove(keyOf("mine"))).isTrue()
+        assertThat(users.loadedEntries()).isEmpty()
+        // The id is the other add-on's now: its place in the play order and what it found stay.
+        assertThat(savedOrder.value).containsExactly("addon:radio", "qobuz", "tidal").inOrder()
+        assertThat(refDao.rows.values.map { it.addonId }).containsExactly("radio")
     }
 
     /**
      * review-882 M1: "Remove clears the add-on's refs" was only ever tested on [AddonRefs.forget],
-     * never on Remove. This is Remove, for an add-on that is loaded. (One that is switched off is
-     * not in the registry's list, so Remove cannot name its id: review-882 M5, the part 2 builder's.)
+     * never on Remove. This is Remove, for an add-on that is loaded. (One that is switched off and was
+     * never read this run: `AddFromLinkFlowTest`, review-882 M5.)
      */
     @Test fun `Remove forgets what a loaded add-on said about songs, and nothing of any other add-on`() = runBlocking<Unit> {
-        val links = links()
+        val kit = kit()
         serve("a", manifestJson(id = "a"))
-        links.add((links.preview(link("a")) as AddonLinks.Outcome.Ready).preview, null)
-        // The registry has loaded it, and plays have kept refs for it and for another add-on.
-        registry.state.value = listOf(
-            InstalledAddon(
-                base = link("a").removeSuffix("manifest.json"),
-                manifest = Manifest(stash = 1, id = "a", name = "A", version = "1", kind = AddonKind.SERVER, resources = listOf("search", "stream")),
-                userAdded = true,
-            ),
-            installed("b", userAdded = true),
-        )
+        serve("b", manifestJson(id = "b"))
+        kit.links.add(ready(kit.links, "a"), null, agreed = true)
+        kit.links.add(ready(kit.links, "b"), null, agreed = true)
+        // The registry has loaded both, and plays have kept refs for each.
+        kit.registry.refresh(force = true)
+        assertThat(kit.registry.addons.value.map { it.id }).containsExactly("a", "b").inOrder()
         refDao.upsert(AddonRefEntity("a", "song-1", remoteId = "11", resolvedAt = 1L))
         refDao.upsert(AddonRefEntity("b", "song-2", remoteId = "22", resolvedAt = 1L))
 
-        assertThat(links.remove(link("a"))).isTrue()
+        assertThat(kit.links.remove(keyOf("a"))).isTrue()
 
         assertThat(refDao.rows.values.map { it.addonId }).containsExactly("b")
     }
@@ -289,17 +307,51 @@ class AddonLinksTest {
         val links = links()
         serve("a", manifestJson(id = "a"))
         serve("b", manifestJson(id = "b"))
-        links.add((links.preview(link("a")) as AddonLinks.Outcome.Ready).preview, null)
-        val b = (links.preview(link("b")) as AddonLinks.Outcome.Ready).preview
+        links.add(ready(links, "a"), null, agreed = true)
+        val b = ready(links, "b")
 
         key.failSeals = true
-        assertThat(refusal(links.add(b, null))).isEqualTo(AddonLinks.NOT_SAVED)
-        assertThat(links.remove(link("a"))).isFalse()
-        assertThat(links.setEnabled(link("a"), false)).isFalse()
-        assertThat(users.loadedEntries()).containsExactly(UserAddonEntry(link("a")))
+        assertThat(refusal(links.add(b, null, agreed = true))).isEqualTo(Refusal.COULD_NOT_SAVE)
+        assertThat(links.remove(keyOf("a"))).isFalse()
+        assertThat(links.setEnabled(keyOf("a"), false)).isFalse()
+        assertThat(users.loadedEntries().map { it.manifestUrl to it.enabled }).containsExactly(link("a") to true)
 
         key.failSeals = false
-        assertThat(links.add(b, null)).isEqualTo(AddonLinks.Outcome.Added)
+        assertThat(links.add(b, null, agreed = true)).isEqualTo(AddonLinks.Outcome.Added(keyOf("b")))
         assertThat(users.loadedEntries()).hasSize(2)
+    }
+
+    /**
+     * review-881 M11 and review-882 J2 together: while the stored list has not opened, Add, Remove and
+     * the switch are refused (never written over it), and the list says it is unreadable rather than empty.
+     */
+    @Test fun `while the stored list will not open, nothing is written over it and the list says so`() = runBlocking<Unit> {
+        val links = links()
+        serve("a", manifestJson(id = "a"))
+        serve("b", manifestJson(id = "b"))
+        links.add(ready(links, "a"), null, agreed = true)
+        assertThat(users.unreadable.value).isFalse()
+
+        // The next run: the same file, and a key that is not answering.
+        val busy = object : EncryptedUserAddons.Sealer {
+            @Volatile var answering = false
+            override fun seal(plain: ByteArray) = if (answering) key.seal(plain) else throw GeneralSecurityException("keystore busy")
+            override fun open(sealed: ByteArray) = if (answering) key.open(sealed) else throw GeneralSecurityException("keystore busy")
+        }
+        var now = 0L
+        val nextRun = EncryptedUserAddons(file, busy) { now }
+        val client = HttpAddonClient(OkHttpClient(), TestAddonHost(), TestAddonHost(firstParty = false), TestAddonHost(), LocalHttp)
+        val registry = InTreeAddonRegistry(NoDefaultAddons, nextRun, client, NoManifestStore)
+        val next = AddonLinks(client, nextRun, registry, LocalHttp, AddonRefs(client, refDao), NoAddonCatalog, PlayOrder(savedOrder, { savedOrder.value = it }, registry))
+
+        assertThat(nextRun.loadedEntries()).isEmpty()
+        assertThat(nextRun.unreadable.value).isTrue()
+        assertThat(refusal(next.add(ready(next, "b"), null, agreed = true))).isEqualTo(Refusal.COULD_NOT_SAVE)
+
+        // The key answers again: the list is back, with what was in it.
+        busy.answering = true
+        now += EncryptedUserAddons.RETRY_EVERY_MS
+        assertThat(nextRun.loadedEntries().map { it.manifestUrl }).containsExactly(link("a"))
+        assertThat(nextRun.unreadable.value).isFalse()
     }
 }

@@ -202,7 +202,9 @@ class AddonDownloadSeamTest {
         }
         fun sourceFor(addon: InstalledAddon) = AddonDownloadSources(Registry(listOf(addon)), refs(client()), AggregatorRateLimiter(), prefs).sources().single()
 
-        val mine = sourceFor(addon().copy(userAdded = true)).resolve(TrackQuery(artist = "A", title = "B"))!!
+        // Art is kept by trust level (a copy keeps the trust it was built with, so it is named here).
+        val mine = sourceFor(addon().copy(userAdded = true, trust = com.stash.core.addons.Trust.UNOFFICIAL))
+            .resolve(TrackQuery(artist = "A", title = "B"))!!
         assertThat(mine.downloadUrl).isEqualTo(flac.url)
         assertThat(mine.coverArtUrl).isNull()
 

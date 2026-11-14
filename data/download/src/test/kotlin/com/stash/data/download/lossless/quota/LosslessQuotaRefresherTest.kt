@@ -1,6 +1,8 @@
 package com.stash.data.download.lossless.quota
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.data.download.lossless.PlayOrder
+import com.stash.data.download.lossless.PlayOrderSwitches
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.RelaySigner
 import com.stash.data.download.lossless.relay.appVersionProvider
@@ -64,6 +66,27 @@ class LosslessQuotaRefresherTest {
         val mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec("k-secret".toByteArray(), "HmacSHA256")) }
         val expected = mac.doFinal("$INSTALL_ID:quota:1792238400".toByteArray()).joinToString("") { "%02x".format(it) }
         assertThat(req.getHeader("X-Stash-Auth")).isEqualTo(expected)
+    }
+
+    @Test fun `with Tidal switched off the start asks nothing, and back on it asks`() = runBlocking {
+        // review-885 M15: the switch stops every song lookup; the allowance was still asked for at each
+        // cold start, signed with the install id and the supporter token.
+        val off = MutableStateFlow(setOf(PlayOrder.TIDAL))
+        val switched = LosslessQuotaRefresher(
+            OkHttpClient(), config, RelaySigner(config, supporter { supporterToken }, appVersionProvider()), quota,
+            switches = PlayOrderSwitches(off) { _, _ -> },
+        ).also {
+            it.nowMs = { now }
+            it.configWaitMs = 200
+        }
+        tidal.value = TidalRelay(base(), null)
+        assertThat(switched.refreshIfStale()).isFalse()
+        assertThat(server.requestCount).isEqualTo(0)
+
+        off.value = emptySet()
+        server.enqueue(MockResponse().setBody("""{"used":1,"limit":500,"resetsAt":$RESET,"supporter":false}"""))
+        assertThat(switched.refreshIfStale()).isTrue()
+        assertThat(server.requestCount).isEqualTo(1)
     }
 
     @Test fun `a value from today makes no request`() = runBlocking {

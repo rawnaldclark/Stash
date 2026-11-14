@@ -1,5 +1,14 @@
 package com.stash.core.addons
 
+import com.stash.addons.contract.Delivery
+import com.stash.addons.contract.Manifest
+import com.stash.addons.contract.Resource
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
 import okhttp3.Request
 import okhttp3.Response
 
@@ -30,6 +39,9 @@ interface AddonRateGate {
 
     /** Timeout, network failure, an invalid answer, or `unavailable` without a `Retry-After`. */
     suspend fun onFailure(key: String)
+
+    /** Ends any pause now: the user replaced the add-on's link (add-ons plan phase 4 §2.9). */
+    suspend fun reset(key: String) = Unit
 }
 
 /**
@@ -160,6 +172,11 @@ interface AddonManifestStore {
 
     /** Forgets every manifest whose key is not in [keys]. */
     suspend fun retain(keys: Set<String>)
+
+    /** Forgets the manifests kept under [keys]. A store that can't delete one writes nothing in its place. */
+    suspend fun forget(keys: Set<String>) {
+        keys.forEach { write(it, "") }
+    }
 }
 
 /** Keeps nothing: for hand-built registries in tests. */
@@ -167,4 +184,181 @@ object NoManifestStore : AddonManifestStore {
     override suspend fun read(key: String): String? = null
     override suspend fun write(key: String, json: String) = Unit
     override suspend fun retain(keys: Set<String>) = Unit
+}
+
+/**
+ * Where an add-on stands with Stash (add-ons plan phase 4 §1.6). Decided only by the signed config
+ * and the signed index ([AddonCatalog]), never by anything an add-on says about itself.
+ */
+enum class Trust {
+    /** Stash's own: it gets the install signature ([AddonTrust]). Marked Official. */
+    FIRST_PARTY,
+
+    /** Run by Stash: a default of the signed config, or listed in the signed index. No sheet. */
+    OFFICIAL,
+
+    /** Everything else: "Not made by Stash". The sheet once, the base rules always. */
+    UNOFFICIAL,
+
+    /** The signed index turned it off: never loaded or asked. */
+    BLOCKED,
+}
+
+/**
+ * Why the signed index turned an add-on off. The app shows its own sentence for each, never text
+ * from the file. A reason this version doesn't know is [OTHER]: the add-on is blocked all the same,
+ * with a sentence that gives no reason. A newer list must never make an older app drop its blocks.
+ */
+enum class BlockReason(val wire: String?) {
+    HARMFUL("harmful"),
+    BROKEN("broken"),
+    IMPERSONATION("impersonation"),
+
+    /** A reason from a later list. */
+    OTHER(null);
+
+    companion object {
+        /** The reason an index wrote as [wire]; any word this version doesn't know is [OTHER]. */
+        fun of(wire: String): BlockReason = entries.firstOrNull { it.wire == wire } ?: OTHER
+    }
+}
+
+/**
+ * One add-on of the official list (the signed index's `addons`, phase 4 §1.3). [manifestUrl] null:
+ * an add-on Stash turns on by default, whose manifest comes from the signed config by [id].
+ */
+data class OfficialEntry(
+    val id: String,
+    val name: String,
+    val summary: String,
+    val icon: String? = null,
+    val manifestUrl: String? = null,
+)
+
+/**
+ * The official list and the blocklist (phase 4 §1.6), bound in `:data:download` to the signed index
+ * (`SignedIndexAddonCatalog`).
+ */
+interface AddonCatalog {
+    /**
+     * Where the add-on at [base] stands. [id]: its manifest id when known; a block can name one id
+     * on an origin, and with no id known only a block of the whole origin applies.
+     */
+    fun trustOf(base: String, id: String?): Trust
+
+    /** Why [trustOf] says [Trust.BLOCKED]; null otherwise. */
+    fun blockReason(base: String, id: String?): BlockReason?
+
+    /** The official add-ons a user can add (those with a manifest of their own); live. */
+    val official: StateFlow<List<OfficialEntry>>
+
+    /** Emits whenever what [trustOf] answers may have changed (a new index or config was applied). */
+    val changes: Flow<Any?>
+
+    /** Returns once the copy kept from the last run has been read, so a cold start never loads a blocked add-on. */
+    suspend fun awaitLoaded() = Unit
+}
+
+/** No index: nothing is official, nothing is blocked. For hand-built registries in tests. */
+object NoAddonCatalog : AddonCatalog {
+    override fun trustOf(base: String, id: String?): Trust = Trust.UNOFFICIAL
+    override fun blockReason(base: String, id: String?): BlockReason? = null
+    override val official: StateFlow<List<OfficialEntry>> = MutableStateFlow(emptyList<OfficialEntry>()).asStateFlow()
+    override val changes: Flow<Any?> = emptyFlow()
+}
+
+/**
+ * The add-ons Stash turns on by default that the user switched off in Settings › Add-ons, by
+ * manifest id (phase 4 §2.9: a default has only the switch). An add-on the user added carries its
+ * switch in its own entry ([UserAddonEntry.enabled]). Bound in `:data:download` (`PlayOrderSwitches`).
+ */
+interface AddonSwitches {
+    val defaultsOff: Flow<Set<String>>
+}
+
+/** Every default on: for hand-built registries in tests. */
+object AllDefaultsOn : AddonSwitches {
+    override val defaultsOff: Flow<Set<String>> = flowOf(emptySet())
+}
+
+/**
+ * What an add-on's server gets to see (phase 4 §2.7), read from its manifest's resources. The
+ * "Not made by Stash" sheet names these, and the user's agreement is kept as their names
+ * ([UserAddonEntry.consent]): an add-on that later wants more waits until the user agrees again.
+ * Every server add-on also sees the phone's internet address.
+ */
+enum class AddonSees {
+    /**
+     * "each song you play": Stash asks it about the song that is playing. It is a stream source
+     * ([streams]), or it gives lyrics.
+     */
+    PLAYS,
+
+    /**
+     * "the next song in your queue": a stream source is also asked about the song that is up next,
+     * whether or not it ends up played (the look-ahead). Lyrics are asked for the playing song only.
+     */
+    NEXT_UP,
+
+    /**
+     * "each song you save": Stash would take a song to keep from it ([keeps]), which is exactly when
+     * its preview and its page show "Downloads"; or it gives lyrics, which are fetched for a song
+     * once it is downloaded. A download from an add-on with no `/download` route goes through its
+     * `/resolve` and `/stream`, so its server learns of songs the user saves and never played
+     * (review-882 J3). Listing `download` is not what decides.
+     */
+    SAVES;
+
+    companion object {
+        /**
+         * What Stash will ask the add-on with manifest [m] about. Nothing here is "what you search
+         * for": nothing the user types in Search is ever sent to an add-on. An add-on's `/search`
+         * is asked for a song Stash is looking for, by its artist and title, as its `/resolve` is.
+         * [allowsDownloads]: false for an Eclipse-family manifest that says `allowDownloads: 0`.
+         */
+        fun of(m: Manifest, allowsDownloads: Boolean = true): Set<AddonSees> = buildSet {
+            val lyrics = m.offers(Resource.LYRICS)
+            if (streams(m) || lyrics) add(PLAYS)
+            if (streams(m)) add(NEXT_UP)
+            if (keeps(m, allowsDownloads) || lyrics) add(SAVES)
+        }
+
+        /**
+         * Stash would ask this add-on for a song to play: it lists `stream`, has a way to find a
+         * song (`resolve`, or `search` matched on the phone) and plays in a delivery the player
+         * takes. The stream chain's own rule (`:core:media` `AddonStreamRungs.canStream`).
+         */
+        fun streams(m: Manifest): Boolean {
+            if (!m.offers(Resource.STREAM)) return false
+            if (!m.offers(Resource.RESOLVE) && !m.offers(Resource.SEARCH)) return false
+            val caps = m.stream ?: return false
+            return caps.knownManifests.any { it == Delivery.NONE || it == Delivery.DASH }
+        }
+
+        /** [of] for a manifest as it was read, with what an Eclipse-family one says about downloads. */
+        fun of(read: AddonManifest): Set<AddonSees> = of(read.manifest, read.eclipse?.allowDownloads != false)
+
+        /** The names kept in a sealed entry. */
+        fun namesOf(m: Manifest, allowsDownloads: Boolean = true): Set<String> = of(m, allowsDownloads).map { it.name }.toSet()
+
+        fun namesOf(read: AddonManifest): Set<String> = of(read).map { it.name }.toSet()
+
+        /**
+         * Stash would ask this add-on for a song to keep: it finds songs, has a stream or a download
+         * to give, allows downloads, and can answer a lossless tier (or doesn't say which it has)
+         * in a delivery the downloader takes. The download seam's own rule
+         * (`:data:download` `AddonDownloadSources.canDownloadLossless`), kept here so what the
+         * user is told an add-on sees is what Stash will ask it. One condition for three things:
+         * "and save" on the sheet, the same words on the add-on's page, and the "Downloads" use.
+         */
+        fun keeps(m: Manifest, allowsDownloads: Boolean = true): Boolean {
+            if (!allowsDownloads) return false
+            if (!m.offers(Resource.RESOLVE) && !m.offers(Resource.SEARCH)) return false
+            if (!m.offers(Resource.DOWNLOAD) && !m.offers(Resource.STREAM)) return false
+            val caps = m.stream ?: return false
+            val tiers = caps.knownTiers
+            if (tiers.isNotEmpty() && tiers.none { it.isLossless }) return false
+            return caps.knownManifests.any { it == Delivery.NONE || it == Delivery.DASH }
+        }
+    }
 }

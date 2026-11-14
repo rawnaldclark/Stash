@@ -267,6 +267,10 @@ fun StashScaffold(
                     navController.navigate(ListenJoinRoute(code))
                 } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_MUSIC_LINK_PREFIX)) {
                     navController.navigate(LinkImportRoute(pendingDeepLink.removePrefix(com.stash.app.MainActivity.DEEP_LINK_MUSIC_LINK_PREFIX)))
+                } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_ADDON_LINK_PREFIX)) {
+                    // An add-on's link shared to Stash: Add from a link, at its preview. Nothing is added by this.
+                    val link = pendingDeepLink.removePrefix(com.stash.app.MainActivity.DEEP_LINK_ADDON_LINK_PREFIX)
+                    navController.navigate(SettingsAddonAddRoute(link = link)) { launchSingleTop = true }
                 } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_WEB_LINK_PREFIX)) {
                     val link = pendingDeepLink.removePrefix(com.stash.app.MainActivity.DEEP_LINK_WEB_LINK_PREFIX)
                     navController.navigate(WebLinkRoute(link))

@@ -24,6 +24,10 @@ import com.stash.addons.contract.Track
 import com.stash.addons.contract.Auth
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
@@ -175,11 +179,46 @@ class HttpAddonClient @Inject constructor(
 
     /**
      * The rules a call follows: [options], plus the base rules ([AddonValidator.Options.publicOnly])
-     * for an add-on the user added. The signed config's defaults are the owner's own choices.
+     * for an add-on Stash doesn't run ([Trust.UNOFFICIAL]). The signed config's defaults and the
+     * signed index's add-ons are Stash's own (add-ons plan phase 4 §2.6).
      */
     fun optionsFor(publicOnly: Boolean): AddonValidator.Options = options.copy(publicOnly = publicOnly)
 
-    private fun optionsFor(addon: InstalledAddon): AddonValidator.Options = optionsFor(publicOnly = addon.userAdded)
+    private fun optionsFor(addon: InstalledAddon): AddonValidator.Options = optionsFor(publicOnly = addon.trust == Trust.UNOFFICIAL)
+
+    private val unauthorizedIds = MutableStateFlow<Set<String>>(emptySet())
+
+    /**
+     * The add-ons whose last answer was a plain 401: the token in their link stopped working, and
+     * they are left alone for [UNAUTHORIZED_PAUSE_MS]. Their page says "Needs a new link" (add-ons
+     * plan phase 4 §2.9). An id leaves on its next good answer, or through [forgive]. Kept in
+     * memory only: after a restart the first refusal says it again.
+     */
+    val unauthorized: StateFlow<Set<String>> = unauthorizedIds.asStateFlow()
+
+    /**
+     * A play stopped waiting for [addonId] (the host's own budget for an add-on Stash doesn't run):
+     * a failure for its breaker, as a timeout is, so an add-on that is slow every time stops being
+     * asked instead of holding every play for that long.
+     */
+    suspend fun reportTooSlow(addonId: String) = rateGate.onFailure(rateKey(addonId))
+
+    private val onlyBitChordIds = MutableStateFlow<Set<String>>(emptySet())
+
+    /**
+     * The add-ons that answered a call with BitChord's own 401 (`WWW-Authenticate: BitChord`): they
+     * serve only the genuine BitChord, and Stash respects that by not asking them again (the
+     * registry holds them). An id leaves through [forgive].
+     */
+    val onlyBitChord: StateFlow<Set<String>> = onlyBitChordIds.asStateFlow()
+
+    /** The user replaced [addonId]'s link (or removed it): its pause ends now and the 401 is forgotten. */
+    suspend fun forgive(addonId: String) {
+        unauthorizedIds.update { it - addonId }
+        onlyBitChordIds.update { it - addonId }
+        rateGate.reset(rateKey(addonId))
+        rateGate.reset(meteredKey(addonId))
+    }
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -216,8 +255,8 @@ class HttpAddonClient @Inject constructor(
         }
 
     /** [manifest], with the dialect it came in and an Eclipse add-on's traits. */
-    suspend fun readManifest(base: String, publicOnly: Boolean = true): AddonResult<AddonManifest> =
-        when (val r = manifestWithJson(base, publicOnly)) {
+    suspend fun readManifest(base: String, publicOnly: Boolean = true, file: String = MANIFEST_FILE): AddonResult<AddonManifest> =
+        when (val r = manifestWithJson(base, publicOnly, file)) {
             is AddonResult.Ok -> AddonResult.Ok(r.value.first)
             is AddonResult.Failed -> r
         }
@@ -225,15 +264,19 @@ class HttpAddonClient @Inject constructor(
     /**
      * [readManifest], with the checked answer as JSON text too, for a host that keeps the last good
      * manifest across restarts ([AddonManifestStore]). The text holds no URL or token of ours.
+     * [file]: the manifest's file name under [base] ([manifestFileOf]); BitChord-style links may
+     * name it anything ending in `.json`.
      *
      * The text is the answer as it arrived, never the parsed tree written out again: the validator
      * ignores keys it doesn't know, so a valid manifest can carry a value nested tens of thousands
      * deep, and `JsonElement.toString()` recurses once per level (a `StackOverflowError`, which no
      * `catch (e: Exception)` above this call stops). A manifest is at most [MANIFEST_BYTES].
      */
-    suspend fun manifestWithJson(base: String, publicOnly: Boolean = true): AddonResult<Pair<AddonManifest, String>> {
+    suspend fun manifestWithJson(
+        base: String, publicOnly: Boolean = true, file: String = MANIFEST_FILE,
+    ): AddonResult<Pair<AddonManifest, String>> {
         val opts = optionsFor(publicOnly)
-        return exchange(null, base, Route.MANIFEST, listOf("manifest.json"), emptyList(), signPayload = null, opts) { element, text ->
+        return exchange(null, base, Route.MANIFEST, listOf(file), emptyList(), signPayload = null, opts) { element, text ->
             AddonValidator.readManifest(element, opts) to text
         }
     }
@@ -468,7 +511,10 @@ class HttpAddonClient @Inject constructor(
     private suspend fun report(addonId: String, result: AddonResult<*>) {
         val key = rateKey(addonId)
         when (val f = (result as? AddonResult.Failed)?.failure) {
-            null -> rateGate.onAnswer(key)
+            null -> {
+                rateGate.onAnswer(key)
+                if (addonId in unauthorizedIds.value) unauthorizedIds.update { it - addonId }
+            }
             is AddonFailure.Refused -> when (f.code) {
                 ErrorCode.RATE_LIMITED -> rateGate.onRateLimited(key, f.retryAfterSec?.let { it * 1000L })
                 // "Pauses metered calls until then": the add-on answered, and its other routes go on.
@@ -482,8 +528,12 @@ class HttpAddonClient @Inject constructor(
                     f.retryAfterSec != null -> rateGate.onRateLimited(key, f.retryAfterSec * 1000L)
                     else -> rateGate.onFailure(key)
                 }
-                // "Stops calling; asks the user": until there is a screen to ask on (phase 4), a long pause.
-                ErrorCode.UNAUTHORIZED -> rateGate.onRateLimited(key, UNAUTHORIZED_PAUSE_MS)
+                // "Stops calling; asks the user": a long pause, and its page says "Needs a new link"
+                // ([unauthorized]). An add-on that serves only BitChord is not waiting for a new link.
+                ErrorCode.UNAUTHORIZED -> {
+                    rateGate.onRateLimited(key, UNAUTHORIZED_PAUSE_MS)
+                    if (f.onlyBitChord) onlyBitChordIds.update { it + addonId } else unauthorizedIds.update { it + addonId }
+                }
                 ErrorCode.BAD_REQUEST, ErrorCode.NOT_FOUND, ErrorCode.QUALITY_UNAVAILABLE, ErrorCode.REGION_UNAVAILABLE ->
                     rateGate.onAnswer(key)
             }
@@ -789,16 +839,30 @@ class HttpAddonClient @Inject constructor(
         internal fun loggable(s: String): String =
             s.take(120).map { if (it < ' ' || it in '\u007f'..'\u009f') ' ' else it }.joinToString("")
 
-        /** The base of a manifest URL (SPEC.md 3): without the final `manifest.json`, ending in `/`. Null when not a manifest URL. */
+        /** The manifest's usual file name under an add-on's base (SPEC.md 3). */
+        const val MANIFEST_FILE = "manifest.json"
+
+        /**
+         * The base of a manifest URL (SPEC.md 3): without its final file name, ending in `/`. The
+         * file is `manifest.json`, or any other `*.json` (BitChord-style links, add-ons plan phase
+         * 4 §2.2). Null when not a manifest URL.
+         */
         fun baseOf(manifestUrl: String): String? {
             val u = manifestUrl.trim()
             val base = when {
-                u.endsWith("/manifest.json") -> u.removeSuffix("manifest.json")
                 u.endsWith("/") -> u
+                isJsonFile(u.substringAfterLast('/')) -> u.substringBeforeLast('/') + "/"
                 else -> return null
             }
             return base.takeIf { it.toHttpUrlOrNull() != null }
         }
+
+        /** The manifest's file name in [manifestUrl]: its last path part when that is a `*.json`, else [MANIFEST_FILE]. */
+        fun manifestFileOf(manifestUrl: String): String =
+            manifestUrl.trim().substringAfterLast('/').takeIf(::isJsonFile) ?: MANIFEST_FILE
+
+        private fun isJsonFile(name: String): Boolean =
+            name.length > ".json".length && name.endsWith(".json") && name.none { it == '?' || it == '#' }
 
         /** SPEC.md 4.1: drop `albumId` / `artistId` the manifest has no route for. */
         fun gateIds(manifest: Manifest, t: Track): Track {

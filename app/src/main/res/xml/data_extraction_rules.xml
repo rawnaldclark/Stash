@@ -6,6 +6,8 @@
     neither be used nor cleanly removed (link-sync spec §4.4).
     The user's own add-ons (user_addons: links, tokens and their own Tidal server) are sealed with the same keys and are
     logins all the same: a new phone adds them again (add-ons phase 4 §2.10).
+    What Stash keeps about add-ons goes with them: the manifests it kept (addon_manifests) name add-ons whose entries do
+    not come along and would never be cleaned up, and the signed list (addon_index) is fetched again on the new phone.
 -->
 <data-extraction-rules>
     <cloud-backup>
@@ -19,6 +21,8 @@
         <exclude domain="sharedpref" path="weblink_mirror.xml" />
         <exclude domain="root" path="no_backup/stash_mirror.json.gz" />
         <exclude domain="file" path="datastore/user_addons.preferences_pb" />
+        <exclude domain="file" path="datastore/addon_manifests.preferences_pb" />
+        <exclude domain="file" path="datastore/addon_index.preferences_pb" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="database" path="stash_sync.db" />
@@ -31,5 +35,7 @@
         <exclude domain="sharedpref" path="weblink_mirror.xml" />
         <exclude domain="root" path="no_backup/stash_mirror.json.gz" />
         <exclude domain="file" path="datastore/user_addons.preferences_pb" />
+        <exclude domain="file" path="datastore/addon_manifests.preferences_pb" />
+        <exclude domain="file" path="datastore/addon_index.preferences_pb" />
     </device-transfer>
 </data-extraction-rules>

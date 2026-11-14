@@ -2,18 +2,21 @@ package com.stash.data.download.lossless.addon
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import com.stash.core.addons.AddonCatalog
 import com.stash.core.addons.AddonHostOptions
 import com.stash.core.addons.AddonInstallSigner
 import com.stash.core.addons.AddonManifestStore
 import com.stash.core.addons.AddonMediaRefusals
 import com.stash.core.addons.MediaRefusal
 import com.stash.core.addons.AddonRateGate
+import com.stash.core.addons.AddonSwitches
 import com.stash.core.addons.AddonTrust
 import com.stash.core.addons.DefaultAddonEntry
 import com.stash.core.addons.DefaultAddons
 import com.stash.core.addons.HttpAddonClient
 import com.stash.core.addons.UserAddons
 import com.stash.data.download.lossless.AggregatorRateLimiter
+import com.stash.data.download.lossless.PlayOrderSwitches
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.RelaySigner
 import com.stash.data.download.lossless.tidal.TidalDebugSettings
@@ -66,6 +69,14 @@ abstract class AddonHostModule {
     @Binds @Singleton
     abstract fun bindHostOptions(impl: BuildAddonHostOptions): AddonHostOptions
 
+    /** The official list and the blocklist: the signed index (add-ons plan phase 4 §1.6). */
+    @Binds @Singleton
+    abstract fun bindCatalog(impl: SignedIndexAddonCatalog): AddonCatalog
+
+    /** The switches of Settings › Add-ons for the add-ons Stash turns on by default (phase 4 §2.9). */
+    @Binds @Singleton
+    abstract fun bindSwitches(impl: PlayOrderSwitches): AddonSwitches
+
     @Binds @Singleton
     abstract fun bindMediaRefusals(impl: RefsMediaRefusals): AddonMediaRefusals
 }
@@ -111,6 +122,8 @@ class RateLimiterAddonGate @Inject constructor(
     override suspend fun onRateLimited(key: String, retryAfterMs: Long?) = limiter.reportRateLimited(key, retryAfterMs)
 
     override suspend fun onFailure(key: String) = limiter.reportFailure(key)
+
+    override suspend fun reset(key: String) = limiter.reset(key)
 }
 
 /**

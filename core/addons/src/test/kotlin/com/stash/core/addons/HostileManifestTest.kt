@@ -92,9 +92,9 @@ class HostileManifestTest {
         val users = object : UserAddons {
             override val entries: StateFlow<List<UserAddonEntry>> = MutableStateFlow(
                 listOf(
-                    UserAddonEntry(base("hostile") + "manifest.json"),
-                    UserAddonEntry(base("deep") + "manifest.json"),
-                    UserAddonEntry(base("good") + "manifest.json"),
+                    UserAddonEntry(base("hostile") + "manifest.json", consent = setOf("PLAYS", "SAVES")),
+                    UserAddonEntry(base("deep") + "manifest.json", consent = setOf("PLAYS", "SAVES")),
+                    UserAddonEntry(base("good") + "manifest.json", consent = setOf("PLAYS", "SAVES")),
                 ),
             )
         }

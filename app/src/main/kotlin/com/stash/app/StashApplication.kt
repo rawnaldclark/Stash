@@ -247,6 +247,13 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var addonRegistry: com.stash.core.addons.InTreeAddonRegistry
 
     /**
+     * The signed add-on index (the official list and the blocklist, add-ons phase 4 §1.5): its kept
+     * copy at once, then a fetch after every applied config, at most once in 6 hours.
+     */
+    @Inject
+    lateinit var addonIndexFetcher: com.stash.data.download.lossless.addon.AddonIndexFetcher
+
+    /**
      * Android's Battery Saver (D19). A cold start while it is on skips the warm-ups and catch-up
      * passes below; they run at the next start without it, and the periodic jobs are left to Android.
      */
@@ -428,6 +435,7 @@ class StashApplication : Application(), Configuration.Provider {
         val saverAtStart = batterySaver.isOn.value
         if (saverAtStart) Log.i("StashStartup", "Battery Saver on: cold-start warm-ups skipped")
         startLosslessConfig()
+        addonIndexFetcher.start(applicationScope, losslessConfigFetcher)
         addonRegistry.start(applicationScope, losslessConfigFetcher.refreshedAt)
         losslessQuotaRefresher.start(applicationScope)
         // A restore whose user picked a different library folder than the

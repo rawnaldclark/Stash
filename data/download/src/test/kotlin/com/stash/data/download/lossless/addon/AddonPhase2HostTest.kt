@@ -189,7 +189,7 @@ class AddonPhase2HostTest {
         withTimeout(5_000) { nextRun.entries.first { it.size == 2 } }
         assertThat(nextRun.entries.value.first().token).isEqualTo("hdr-token")
         assertThat(nextRun.loadedEntries()).hasSize(2)
-        assertThat(nextRun.unreadable).isFalse()
+        assertThat(nextRun.unreadable.value).isFalse()
         // What a list that does not open reads as, and what may then be written: EncryptedUserAddonsReadTest.
     }
 }

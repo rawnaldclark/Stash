@@ -150,7 +150,12 @@ class TidalClient @Inject constructor(
         // AAC mode's own "no AAC" stamp: its retry sweep skips the song for free.
         if (aacOnly && aacOnlyMissed(key, now)) return TidalLookup.NoMatch
         if (quota.isSpent() && !wires.ownServerSet()) return TidalLookup.Spent(quota.resetsAtMs())
-        if (cacheOnly) return TidalLookup.NeedsRelay
+        // A look-ahead asks only what is cached. With no route at all (Tidal switched off in Settings ›
+        // Add-ons, or an applied config that names no server) the real play asks nothing either: that is
+        // Off, not "ask it later", or every look-ahead stops here and nothing behind Tidal is fetched
+        // ahead (review-885 M1). Before the cached config has loaded no route says nothing yet: "ask it
+        // later", and the real play asks (round 2, N1).
+        if (cacheOnly) return if (wires.route() == null && wires.offSettled()) TidalLookup.Off else TidalLookup.NeedsRelay
         val wire = wires.current { nowMs() } ?: return TidalLookup.Off
         appTooOldUntilMs[wire.serverKey]?.let { until ->
             if (now < until) return TidalLookup.Busy(until)

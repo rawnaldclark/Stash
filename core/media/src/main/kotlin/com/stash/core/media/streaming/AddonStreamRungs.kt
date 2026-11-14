@@ -9,11 +9,13 @@ import com.stash.addons.contract.StreamRequest
 import com.stash.addons.contract.Tier
 import com.stash.core.addons.AddonRegistry
 import com.stash.core.addons.InstalledAddon
+import com.stash.core.addons.Trust
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.addon.AddonRefs
 import com.stash.data.download.lossless.forLibrarySource
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -35,8 +37,8 @@ class AddonStreamRungs @Inject constructor(
     private val refs: AddonRefs,
 ) {
     /**
-     * The lossless rungs, in the registry's order (user-added first). Empty, with no work done,
-     * when none are on. The first-party Tidal add-on is never one: the Tidal rung plays it
+     * The lossless rungs, in the registry's order (user-added first); [StreamSourceRegistry] places
+     * them by the play order. Empty, with no work done, when none are on. The first-party Tidal add-on is never one: the Tidal rung plays it
      * ([AddonRegistry.generic]).
      */
     fun rungs(): List<AddonStreamRung> {
@@ -105,10 +107,7 @@ class AddonStreamRung internal constructor(
     /** The lossy pass's chain label: never counted as a lossless serve. */
     val lossyName: String = LOSSY_PREFIX + name
 
-    /**
-     * Added by the user: asked ahead of Qobuz on every play. Unlike the user's own Tidal server,
-     * which leads only above CD and only without the user's own Qobuz, there is no condition.
-     */
+    /** Added by the user. Where it is asked is the play order's call (`PlayOrder`). */
     val userAdded: Boolean get() = addon.userAdded
 
     /** A metered add-on (its manifest lists `quota`): a look-ahead never spends its allowance. */
@@ -131,7 +130,20 @@ class AddonStreamRung internal constructor(
             durationMs = track.durationMs,
             explicit = track.explicit,
         ).forLibrarySource(track.source, track.musicVideoType, hasVideoId = !track.youtubeId.isNullOrBlank())
-        val streamed = refs.stream(addon, q, pass, request) as? AddonRefs.Streamed.Ok ?: return null
+        // An add-on Stash doesn't run gets a short budget on a play: the contract's own timeouts
+        // (15 s to find a song, 15 s for its stream) would let one slow server hold every song for
+        // half a minute, and a slow answer never opens its breaker. Past the budget the play moves
+        // on, and the overrun counts against the add-on like a timeout.
+        val answer = if (addon.trust == Trust.UNOFFICIAL) {
+            withTimeoutOrNull(UNOFFICIAL_PLAY_BUDGET_MS) { refs.stream(addon, q, pass, request) } ?: run {
+                Log.i(TAG, "$name took over ${UNOFFICIAL_PLAY_BUDGET_MS / 1000} s; the play moves on")
+                refs.tooSlow(addon)
+                return null
+            }
+        } else {
+            refs.stream(addon, q, pass, request)
+        }
+        val streamed = answer as? AddonRefs.Streamed.Ok ?: return null
         val info = streamed.info
         if (!info.headers.isNullOrEmpty()) {
             Log.d(TAG, "$name answer needs request headers; not played yet")
@@ -151,6 +163,14 @@ class AddonStreamRung internal constructor(
 
         /** The lossy pass's chain label prefix (`lossy:addon:<id>`); its streams keep the [ORIGIN_PREFIX] origin. */
         const val LOSSY_PREFIX = "lossy:"
+
+        /**
+         * How long a play waits for an add-on Stash doesn't run, for finding the song and its
+         * stream together, in each pass. Long enough for a search, one "still preparing" wait
+         * (3 s) and the stream on a slow connection; short enough that the play goes on to the
+         * next source while the listener is still waiting for it.
+         */
+        const val UNOFFICIAL_PLAY_BUDGET_MS = 6_000L
 
         /** SPEC.md 5.3: with no `expiresAt`, a stream is good for 30 minutes. */
         private const val DEFAULT_TTL_MS = 30 * 60_000L

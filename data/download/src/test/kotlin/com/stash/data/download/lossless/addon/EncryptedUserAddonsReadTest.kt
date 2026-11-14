@@ -110,10 +110,10 @@ class EncryptedUserAddonsReadTest {
         // Two failures: the stored list, then the key's own check. The first read gives up for now.
         val users = EncryptedUserAddons(ds, Flaky(failures = 2))
         assertThat(users.loadedEntries()).isEmpty()
-        assertThat(users.unreadable).isTrue()
+        assertThat(users.unreadable.value).isTrue()
 
         users.setEnabled(a.manifestUrl, false)
-        assertThat(users.unreadable).isFalse()
+        assertThat(users.unreadable.value).isFalse()
         assertThat(users.entries.value).containsExactly(a.copy(enabled = false))
         assertThat(storedNow(ds)).containsExactly(a.copy(enabled = false))
     }
@@ -122,7 +122,7 @@ class EncryptedUserAddonsReadTest {
         val ds = storeHoldingA()
         val users = EncryptedUserAddons(ds, Down)
         assertThat(users.loadedEntries()).isEmpty()
-        assertThat(users.unreadable).isTrue()
+        assertThat(users.unreadable.value).isTrue()
 
         assertThat(thrownBy { users.put(b) }).isInstanceOf(EncryptedUserAddons.UnreadableException::class.java)
         assertThat(thrownBy { users.remove(a.manifestUrl) }).isInstanceOf(EncryptedUserAddons.UnreadableException::class.java)
@@ -150,14 +150,14 @@ class EncryptedUserAddonsReadTest {
         now += EncryptedUserAddons.RETRY_EVERY_MS
         assertThat(users.loadedEntries()).containsExactly(a)
         assertThat(users.entries.value).containsExactly(a)
-        assertThat(users.unreadable).isFalse()
+        assertThat(users.unreadable.value).isFalse()
     }
 
     @Test fun `a list sealed with a key that is gone reads as empty, and the next write replaces it`() = runBlocking<Unit> {
         val ds = storeHoldingA()
         val users = EncryptedUserAddons(ds, Key2)
         assertThat(users.loadedEntries()).isEmpty()
-        assertThat(users.unreadable).isFalse()
+        assertThat(users.unreadable.value).isFalse()
 
         users.put(b)
         assertThat(users.entries.value).containsExactly(b)
@@ -169,7 +169,7 @@ class EncryptedUserAddonsReadTest {
         val ds = newStore()
         val users = EncryptedUserAddons(ds, Flaky(failures = 0))
         assertThat(users.loadedEntries()).isEmpty()
-        assertThat(users.unreadable).isFalse()
+        assertThat(users.unreadable.value).isFalse()
         users.put(a)
         assertThat(storedNow(ds)).containsExactly(a)
     }

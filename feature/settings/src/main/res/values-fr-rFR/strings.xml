@@ -349,8 +349,6 @@
     <string name="settings_lossy_fallback_switch_label_aac">JioSaavn, puis YouTube, quand Tidal ne propose pas de format AAC</string>
     <string name="settings_advanced">Avancé</string>
     <string name="settings_url_placeholder">https://…</string>
-    <string name="settings_bitchord_server_label">Serveur Tidal personnalisé (facultatif)</string>
-    <string name="settings_access_token_label">Jeton d’accès (facultatif)</string>
     <string name="settings_equalizer_title">Égaliseur</string>
     <!-- Settings > Audio & Quality > Lossless tiers -->
     <string name="settings_lossless_tier_max">Max (24 bits/192 kHz)</string>

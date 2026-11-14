@@ -16,6 +16,7 @@ import com.stash.core.addons.AddonResult
 import com.stash.core.addons.HttpAddonClient
 import com.stash.core.addons.InstalledAddon
 import com.stash.core.addons.MediaRefusal
+import com.stash.core.addons.Trust
 import com.stash.core.data.db.dao.AddonRefDao
 import com.stash.core.data.db.entity.AddonRefEntity
 import com.stash.data.download.lossless.TrackQuery
@@ -236,6 +237,9 @@ class AddonRefs @Inject constructor(
             }
         }
     }
+
+    /** A play stopped waiting for [addon]: counted against it like a timeout ([HttpAddonClient.reportTooSlow]). */
+    suspend fun tooSlow(addon: InstalledAddon) = client.reportTooSlow(addon.id)
 
     // ---------------------------------------------------------------------------------------------- refused on the wire
 
@@ -555,12 +559,12 @@ class AddonRefs @Inject constructor(
          * on every later showing of the song, and, when the add-on serves art under its own
          * tokenised base, the user's token in the library database and every backup of it.
          *
-         * So art is taken only from add-ons Stash vouches for: the signed config's defaults. An
-         * add-on the user added from a link gives none; the song keeps the art it has. (Part 2 of
-         * phase 4 gives add-ons a trust level: this is then "not `Trust.UNOFFICIAL`".) The Tidal
-         * rung and the user's own Tidal server never come through here and keep theirs.
+         * So art is taken only from add-ons Stash vouches for ([Trust]): the signed config's
+         * defaults, and an add-on of the signed index, which is Official whoever added it. An
+         * add-on Stash doesn't run gives none; the song keeps the art it has. The Tidal rung and
+         * the user's own Tidal server never come through here and keep theirs.
          */
-        fun keepsArtwork(addon: InstalledAddon): Boolean = !addon.userAdded
+        fun keepsArtwork(addon: InstalledAddon): Boolean = addon.trust != Trust.UNOFFICIAL
 
         /**
          * Whether a lookup for [addon] may match by search (review-882 J3): always for a play; for

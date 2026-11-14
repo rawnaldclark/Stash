@@ -78,5 +78,18 @@
                 <action android:name="com.stash.debug.TIDAL_WIRE" />
             </intent-filter>
         </receiver>
+        <!--
+            Debug only: a staging add-on index (its address and the key it is verified with) from adb
+            (com.stash.app.debug.DebugAddonIndex). Same DUMP guard as above.
+        -->
+        <receiver
+            android:name="com.stash.app.debug.DebugAddonIndex"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.stash.debug.ADDON_INDEX" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

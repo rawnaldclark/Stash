@@ -1,7 +1,13 @@
 package com.stash.core.media.streaming
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.addons.contract.AddonKind
+import com.stash.addons.contract.Manifest
+import com.stash.core.addons.AddonRegistry
+import com.stash.core.addons.InstalledAddon
 import com.stash.core.data.prefs.DataSaver
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import org.junit.Test
 
 class StreamUrlCacheTest {
@@ -191,6 +197,49 @@ class StreamUrlCacheTest {
         assertThat(guarded.get(2L)).isEqualTo(aac)
         metered = false // back on Wi-Fi: it was dropped, so it resolves again
         assertThat(guarded.get(1L)).isNull()
+    }
+
+    private fun installed(id: String) = InstalledAddon(
+        base = "https://$id.example/",
+        manifest = Manifest(stash = 1, id = id, name = id, version = "1", kind = AddonKind.SERVER, resources = listOf("resolve", "stream")),
+        userAdded = true,
+    )
+
+    /**
+     * An add-on's link is served only while that add-on is on. Remove (or the switch, or a block by
+     * Stash) stops Stash asking the add-on; without this its link stayed here for up to an hour, and
+     * playing the song again fetched it from a host the add-on chose.
+     */
+    @Test
+    fun get_servesAnAddonsLinkOnlyWhileThatAddonIsOn() {
+        val on = MutableStateFlow(listOf(installed("mine"), installed("other")))
+        val registry = object : AddonRegistry {
+            override val addons: StateFlow<List<InstalledAddon>> = on
+        }
+        val gated = StreamUrlCache(DataSaver.Off, registry).apply {
+            nowMsProvider = { wall }
+            elapsedMsProvider = { mono }
+        }
+        val mine = StreamUrl("https://cdn.mine.example/a.flac", expiresAtMs = 1_000_000L, codec = "flac", origin = "addon:mine")
+        val other = StreamUrl("https://cdn.other.example/b.flac", expiresAtMs = 1_000_000L, codec = "flac", origin = "addon:other")
+        val tidal = StreamUrl("https://cdn/c.flac", expiresAtMs = 1_000_000L, codec = "flac", origin = "tidal")
+        gated.put(1L, mine)
+        gated.put(2L, other)
+        gated.put(3L, tidal)
+        assertThat(gated.get(1L)).isEqualTo(mine)
+
+        // "mine" is removed: it is no longer among the add-ons that are on.
+        on.value = listOf(installed("other"))
+        assertThat(gated.get(1L)).isNull()
+        assertThat(gated.get(2L)).isEqualTo(other)
+        assertThat(gated.get(3L)).isEqualTo(tidal)
+        // Dropped, not hidden: added again, the song resolves afresh.
+        on.value = listOf(installed("mine"), installed("other"))
+        assertThat(gated.get(1L)).isNull()
+
+        // A cache built without a registry (tests, hand-built graphs) serves every add-on's link.
+        cache.put(4L, mine)
+        assertThat(cache.get(4L)).isEqualTo(mine)
     }
 
     @Test

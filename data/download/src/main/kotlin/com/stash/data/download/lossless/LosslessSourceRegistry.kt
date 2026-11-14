@@ -18,16 +18,17 @@ import javax.inject.Singleton
  *      threshold — so the chain doesn't swap an AAC 128 for an AAC 128 from
  *      a different host.
  *
- * Sources that don't appear in [LosslessSourcePreferences.priorityOrder]
- * are appended at the end in registration-order — so a fresh install with
- * no priority configured still tries every available source.
+ * The order is the PLAY ORDER ([PlayOrder], add-ons plan phase 4 §2.8): the one order streaming
+ * follows too and Settings › Add-ons shows. Until the user drags it: the Qobuz source, the Tidal
+ * source, the user's add-ons in the order they were added, then the default add-ons. A source the
+ * order doesn't name goes last, in registration order.
  *
- * A user's own Tidal server, with none of their own Qobuz set up, is asked before
- * the Qobuz source above CD quality ([LosslessAvailability.ownTidalFirst]) — see [withOwnTidalFirst].
+ * While the order is automatic, a user's own Tidal server, with none of their own Qobuz set up,
+ * is asked before the Qobuz source above CD quality ([LosslessAvailability.ownTidalFirst]) — see
+ * [withOwnTidalFirst]. A saved order is followed as it is.
  *
- * Add-ons that hand over lossless files ([AddonDownloadSources]) join after the Hilt-bound
- * sources in [orderedSources], unless the priority list names them. With no add-on on (all of
- * phase 1) the list is exactly the Hilt-bound one.
+ * Add-ons that hand over lossless files ([AddonDownloadSources]) come from the registry at call
+ * time. With no add-on on the list is exactly the Hilt-bound one.
  */
 @Singleton
 class LosslessSourceRegistry @Inject constructor(
@@ -37,7 +38,11 @@ class LosslessSourceRegistry @Inject constructor(
     private val streamingPreference: StreamingPreference,
     private val availability: LosslessAvailability,
     private val addons: AddonDownloadSources,
+    private val playOrder: PlayOrder,
 ) {
+
+    /** Where the chain line goes; tests read it. */
+    internal var chainLog: (String) -> Unit = { Log.i(TAG, it) }
 
     /**
      * Walk sources in priority order, return the first match that meets
@@ -48,6 +53,8 @@ class LosslessSourceRegistry @Inject constructor(
      */
     suspend fun resolve(query: TrackQuery, bypassRateLimit: Boolean = false): SourceResult? {
         val ordered = chain()
+        // The order this download asks its sources in: the play order (Settings › Add-ons).
+        chainLog("chain [${ordered.joinToString(",") { it.id }}]")
         val minQuality = prefs.minQualityNow()
 
         for (source in ordered) {
@@ -110,14 +117,14 @@ class LosslessSourceRegistry @Inject constructor(
         // forced download exercises that source even when Tidal would answer. A miss
         // falls through to a normal null return (no quota to protect).
         if (streamingPreference.isForceQbdlxOnly()) {
-            orderedSources().filter { it.id == QBDLX_SOURCE_ID }
+            orderedSources().filter { it.id == PlayOrder.QBDLX_SOURCE_ID }
         } else {
             // qbdlx self-gates on LosslessAvailability.
-            withOwnTidalFirst(orderedSources()).let { normal ->
+            ordered().let { normal ->
                 // "Test: skip Qobuz (Tidal first)" — debug builds only (the accessor is
                 // gated). Leaves out the Qobuz source so a download goes to Tidal.
                 if (streamingPreference.isSkipQobuz()) {
-                    normal.filterNot { it.id == QBDLX_SOURCE_ID }.also { chain ->
+                    normal.filterNot { it.id == PlayOrder.QBDLX_SOURCE_ID }.also { chain ->
                         Log.i(TAG, "TEST skip-qobuz on → chain [${chain.joinToString(",") { it.id }}]")
                     }
                 } else {
@@ -127,14 +134,28 @@ class LosslessSourceRegistry @Inject constructor(
         }
 
     /**
+     * The sources in the order a download asks them: the play order, and while that is automatic,
+     * the own-server rule ([withOwnTidalFirst]).
+     */
+    private suspend fun ordered(): List<LosslessSource> {
+        val order = playOrder.now()
+        // A source switched off in Settings › Add-ons is not in the chain: never asked, and never
+        // named in the chain line.
+        val off = playOrder.switchedOffNow()
+        val sorted = sortedBy(order).let { all -> if (off.isEmpty()) all else all.filterNot { PlayOrder.keyOfSource(it.id) in off } }
+        return if (order.automatic) withOwnTidalFirst(sorted) else sorted
+    }
+
+    /**
      * [ordered] with the Tidal source moved to just ahead of the Qobuz one when the Tidal
      * server is the user's own, none of their own Qobuz is set up and the download tier is
      * above CD ([LosslessAvailability.ownTidalFirstNow]). The Qobuz source, which needs the
-     * user's own account, is off then anyway; nothing else moves.
+     * user's own account, is off then anyway; nothing else moves. Only while the play order is
+     * automatic: once the user has dragged it, their order is the order.
      */
     private suspend fun withOwnTidalFirst(ordered: List<LosslessSource>): List<LosslessSource> {
-        val qobuzAt = ordered.indexOfFirst { it.id == QBDLX_SOURCE_ID }
-        val tidalAt = ordered.indexOfFirst { it.id == TIDAL_SOURCE_ID }
+        val qobuzAt = ordered.indexOfFirst { it.id == PlayOrder.QBDLX_SOURCE_ID }
+        val tidalAt = ordered.indexOfFirst { it.id == PlayOrder.TIDAL_SOURCE_ID }
         if (qobuzAt < 0 || tidalAt < qobuzAt) return ordered // already ahead, or either one absent
         // The tier the Qobuz source asks for on downloads (QbdlxQobuzSource): Tidal has no tier.
         if (!availability.ownTidalFirstNow(prefs.qualityTierNow())) return ordered
@@ -142,32 +163,19 @@ class LosslessSourceRegistry @Inject constructor(
     }
 
     /**
-     * All registered sources, in user-configured priority order. Sources
-     * not mentioned in the prefs go last in registration order.
-     * Useful for the Settings → Lossless Sources screen rendering.
+     * All registered sources in the play order ([PlayOrder]): `qbdlx_qobuz` is its `qobuz`,
+     * `tidal_bitchord` its `tidal`, and an add-on's source its `addon:<id>`. Sources it doesn't
+     * name go last in registration order. Useful for the Settings → Lossless Sources screen
+     * rendering.
      */
-    suspend fun orderedSources(): List<LosslessSource> {
-        val priority = prefs.priorityOrderNow()
+    suspend fun orderedSources(): List<LosslessSource> = sortedBy(playOrder.now())
+
+    private fun sortedBy(order: PlayOrder.Order): List<LosslessSource> {
         // Add-on sources come from the registry at call time (they come and go while the app
         // runs). None on: `all` IS the Hilt-bound set, and nothing below changes.
         val dynamic = addons.sources()
         val all: Collection<LosslessSource> = if (dynamic.isEmpty()) sources else sources + dynamic
-        val byId = all.associateBy { it.id }
-        val ordered = mutableListOf<LosslessSource>()
-        val seen = mutableSetOf<String>()
-
-        for (id in priority) {
-            byId[id]?.let {
-                ordered.add(it)
-                seen.add(it.id)
-            }
-        }
-        // Append any registered source not in the priority list (e.g. a
-        // newly added source on app upgrade that the user hasn't ranked yet).
-        for (source in all) {
-            if (source.id !in seen) ordered.add(source)
-        }
-        return ordered
+        return order.sorted(all.toList()) { PlayOrder.keyOfSource(it.id) }
     }
 
     /** Convenience for diagnostics — used by Settings UI. */
@@ -189,11 +197,5 @@ class LosslessSourceRegistry @Inject constructor(
 
     companion object {
         private const val TAG = "LosslessRegistry"
-
-        /** [com.stash.data.download.lossless.qbdlx.QbdlxQobuzSource.SOURCE_ID]. */
-        private const val QBDLX_SOURCE_ID = "qbdlx_qobuz"
-
-        /** [com.stash.data.download.lossless.tidal.TidalLosslessSource.SOURCE_ID]. */
-        private const val TIDAL_SOURCE_ID = "tidal_bitchord"
     }
 }
