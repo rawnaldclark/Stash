@@ -1632,6 +1632,7 @@ class PlayerRepositoryImpl @Inject constructor(
         val controller = ensureController() ?: return AutoplayRadioOutcome.PlayerNotReady
         // A station is songs found online: Download mode plays only what is on the phone.
         if (!streamAllowed()) return AutoplayRadioOutcome.DownloadMode
+        if (mobileDataBlocksStreams()) return AutoplayRadioOutcome.MobileData
         val (session, generated) = try {
             radioGenerator.start(com.stash.core.data.radio.RadioSeed.Song(seed.title, seed.artist, seed.youtubeId))
         } catch (e: CancellationException) {
@@ -1647,6 +1648,12 @@ class PlayerRepositoryImpl @Inject constructor(
         val discoveries = generated.filter { trackIdentity(it.title, it.artist) != seedKey }.map { it.withQueueIdentity() }
         if (discoveries.isEmpty()) return AutoplayRadioOutcome.NoStation
         if (!streamAllowed()) return AutoplayRadioOutcome.DownloadMode
+        // The phone left Wi-Fi while the station was found. The try goes back, so back on Wi-Fi the next player event
+        // builds it again; on mobile data no new build starts (the check above, and the watcher's own once #896 is in).
+        if (mobileDataBlocksStreams()) {
+            if (autoplayTriedTrackId == seed.id) autoplayTriedTrackId = null
+            return AutoplayRadioOutcome.MobileData
+        }
         // No suspension from here to the append: the queue checked is the queue changed.
         if (!stationStillFollows(controller, seed)) {
             giveBackAutoplayTry(seed)
@@ -1683,6 +1690,13 @@ class PlayerRepositoryImpl @Inject constructor(
         val last = lastSlotInPlayOrder(controller, window)
         return last >= 0 && controller.getMediaItemAt(last).queueTrackId() == seed.id
     }
+
+    /**
+     * Mobile data with Stream on cellular off: a station's songs could not stream, so autoplay adds none (#896's rule,
+     * which the watcher also checks before a build; this reads it again when the station lands).
+     */
+    private suspend fun mobileDataBlocksStreams(): Boolean =
+        connectivity.isCellular() && !streamingPreference.streamOnCellular.first()
 
     /**
      * A station's [tracks] without the songs already in the queue, in the station's order: a station after an album

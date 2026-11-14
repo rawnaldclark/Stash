@@ -359,6 +359,28 @@ class PlayerRepositoryAutoplayRadioTest {
     }
 
     @Test
+    fun `mobile data with Stream on cellular off by the time the station is built adds none, and back on Wi-Fi it comes`() = runTest {
+        repo.setQueue(listOf(track(1), track(2)), startIndex = 1)
+        stationBuilds(station(2, 201, 202)) {
+            // Wi-Fi gone while the station was found: its songs could not stream now.
+            every { connectivity.isCellular() } returns true
+            every { streamingPreference.streamOnCellular } returns flowOf(false)
+        }
+
+        playerEvent()
+
+        assertThat(fake.ids()).containsExactly(1L, 2L).inOrder()
+        assertThat(repo.radioSeedLabel.value).isNull()
+
+        // Back on Wi-Fi, the next player event tries again.
+        every { connectivity.isCellular() } returns false
+        stationBuilds(station(2, 201, 202))
+        playerEvent()
+
+        assertThat(fake.ids()).containsExactly(1L, 2L, 201L, 202L).inOrder()
+    }
+
+    @Test
     fun `under shuffle the station plays after the last song of the play order`() = runTest {
         repo.setQueue(listOf(track(1), track(2)), startIndex = 0)
         fake.shuffle = true

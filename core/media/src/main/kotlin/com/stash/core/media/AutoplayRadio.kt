@@ -47,6 +47,9 @@ internal enum class AutoplayRadioOutcome {
     /** Download mode: a station streams, and Download mode plays only what is on the phone. */
     DownloadMode,
 
+    /** Mobile data with Stream on cellular off: the station's songs could not stream. */
+    MobileData,
+
     /** The station came after the queue changed (a song queued after the seed, repeat on, another station): not added. */
     QueueMovedOn,
 }
