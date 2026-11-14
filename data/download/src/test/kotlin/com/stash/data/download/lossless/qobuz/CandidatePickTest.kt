@@ -159,4 +159,25 @@ class CandidatePickTest {
         assertThat(QobuzCandidateMatcher.pickBest(video, listOf(albumCut to score(video, albumCut.sec), single to score(video, single.sec))) { it.sec }?.first)
             .isEqualTo(albumCut)
     }
+
+    @Test fun `a soundtrack title with a bracketed film note matches the catalog's own row`() {
+        // The owner's "Nightmare Before Christmas Special Edition" (2006), played from Search
+        // (2026-11-13): YouTube Music and Tidal both list "Overture - (The Nightmare Before
+        // Christmas)" by Danny Elfman, and Tidal's search put it first, but the lookup read the row as
+        // a song "(The Nightmare Before Christmas)" by "Overture" and every candidate scored 0. The
+        // song streamed from YouTube while the rest of the album played in FLAC.
+        val album = "Nightmare Before Christmas Special Edition"
+        fun row(title: String, artist: String, ms: Long) =
+            TrackQuery(artist = artist, title = title, album = album, durationMs = ms).forLibrarySource(MusicSource.YOUTUBE, null)
+        fun tidal(q: TrackQuery, title: String, artist: String, sec: Int) =
+            QobuzCandidateMatcher.confidence(q, title, artist, null, sec, true, candAlbum = album)
+
+        val overture = row("Overture - (The Nightmare Before Christmas)", "Danny Elfman", 109_000)
+        assertThat(overture.artist).isEqualTo("Danny Elfman")
+        assertThat(tidal(overture, "Overture - (The Nightmare Before Christmas)", "Danny Elfman", 108)).isEqualTo(1.0f)
+        val opening = row("Opening - (The Nightmare Before Christmas)", "Patrick Stewart", 58_000)
+        assertThat(tidal(opening, "Opening - (The Nightmare Before Christmas)", "Patrick Stewart", 57)).isEqualTo(1.0f)
+        // Still the length rule: another Danny Elfman "Overture", far longer, doesn't pass on words alone.
+        assertThat(tidal(overture, "Overture", "Danny Elfman", 240)).isLessThan(QobuzCandidateMatcher.MIN_CONFIDENCE)
+    }
 }
