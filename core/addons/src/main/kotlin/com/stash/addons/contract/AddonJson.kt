@@ -1,4 +1,4 @@
-// Vendored from stash-addon-spec types/kotlin at 5238551 (Stash Add-ons v1, draft 1). Edit the spec, then copy it here again.
+// Vendored from stash-addon-spec types/kotlin at 6de2370 (Stash Add-ons v1; these files last changed there in 43a5acc). Edit the spec, then copy it here again.
 package com.stash.addons.contract
 
 import kotlinx.serialization.json.Json
@@ -7,7 +7,7 @@ import kotlinx.serialization.json.Json
  * Stash Add-ons v1 (SPEC.md), as kotlinx.serialization data classes for the app.
  *
  * These classes carry shapes only. A host still checks every answer by the schema's rules (text caps, URL rule,
- * tier consistency, resolve strictness) before using it, and drops a message that breaks one: reject, don't
+ * tier consistency, the resolve length rule) before using it, and drops a message that breaks one: reject, don't
  * repair. Decode with [AddonJson], never with `coerceInputValues` or `isLenient`, which repair input.
  */
 public val AddonJson: Json = Json {

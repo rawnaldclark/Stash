@@ -29,7 +29,76 @@ export function buildConfig(input, liveUpdatedAt, nowSec) {
         if (input.tidal_relay_url === undefined) throw new Error("tidal_relay_token requires tidal_relay_url");
         cfg.tidal_relay_token = input.tidal_relay_token;
     }
+    if (input.default_addons !== undefined) cfg.default_addons = buildDefaultAddons(input.default_addons);
     return JSON.stringify(cfg);
+}
+
+/** At most this many `default_addons` entries (the app reads no more). */
+export const MAX_DEFAULT_ADDONS = 16;
+
+/**
+ * `default_addons` (add-ons phase 2, plan section 5.3): the add-ons every install turns on, in play order.
+ * Each entry is `{ manifest, enabled, first_party }`, written in that order with both booleans explicit:
+ *  - `manifest`: an https URL ending in `/manifest.json`, with no user, password, query or fragment, at most
+ *    2048 characters. It may carry a path token (`/v1/<token>/manifest.json`), so it is never printed.
+ *  - `enabled` (default true) and `first_party` (default false): booleans when given. A `first_party` add-on gets
+ *    the install signature; the Tidal one is the app's switch to the v1 wire (decision D9).
+ * Anything else in an entry, a duplicate manifest, or more than MAX_DEFAULT_ADDONS entries is an error, so a typo
+ * fails here and never reaches a phone. An empty list is allowed: it is the same as leaving the key out.
+ */
+export function buildDefaultAddons(raw) {
+    if (!Array.isArray(raw)) throw new Error("default_addons must be an array");
+    if (raw.length > MAX_DEFAULT_ADDONS) throw new Error(`default_addons holds at most ${MAX_DEFAULT_ADDONS} entries`);
+    const seen = new Set();
+    return raw.map((e, i) => {
+        const at = `default_addons[${i}]`;
+        if (!e || typeof e !== "object" || Array.isArray(e)) throw new Error(`${at} must be an object`);
+        const extra = Object.keys(e).filter((k) => !["manifest", "enabled", "first_party"].includes(k));
+        if (extra.length) throw new Error(`${at} has unknown keys: ${extra.join(", ")}`);
+        const manifest = normaliseManifestUrl(e.manifest);
+        // The URL can carry the add-on's token: never echo it.
+        if (!manifest) throw new Error(`${at}.manifest must be an https URL ending in /manifest.json, with no credentials, query or fragment`);
+        if (seen.has(manifest)) throw new Error(`${at}.manifest is listed twice`);
+        seen.add(manifest);
+        for (const k of ["enabled", "first_party"]) {
+            if (e[k] !== undefined && typeof e[k] !== "boolean") throw new Error(`${at}.${k} must be true or false`);
+        }
+        return { manifest, enabled: e.enabled ?? true, first_party: e.first_party ?? false };
+    });
+}
+
+/**
+ * The app's URL rule (SPEC.md 1.1; `AddonValidator.HTTPS_URL` in the app): https, a host of ASCII letters, digits, dots
+ * and hyphens, an optional port, then a path with no white space, control characters or backslashes. The URL parser
+ * takes more than that (a host with `_`, an IPv6 literal, an IDN), and the app's add-on client refuses to call what
+ * this rule refuses: such an entry would be published, signed, and then never load on any phone, with nothing said
+ * anywhere (review-881 N4). The same rule on both sides, so it fails here instead.
+ */
+const APP_URL = /^https:\/\/[A-Za-z0-9.\-]+(:[0-9]{1,5})?([/?#][^\u0000- \u007f-\u009f\\]*)?$/;
+
+/** An add-on manifest URL as the app takes it (SPEC.md 1.1 and 3), or null. */
+export function normaliseManifestUrl(raw) {
+    if (typeof raw !== "string") return null;
+    const text = raw.trim();
+    if (!text || text.length > 2048 || /[\s\\]/.test(text)) return null;
+    if (!APP_URL.test(text)) return null;
+    let u;
+    try { u = new URL(text); } catch { return null; }
+    if (u.protocol !== "https:" || !u.hostname || u.username || u.password || u.search || u.hash || text.includes("?") || text.includes("#")) return null;
+    if (!u.pathname.endsWith("/manifest.json")) return null;
+    // What is published is the parser's spelling of it (a lower-case host): that must pass the app's rule too.
+    return APP_URL.test(u.href) && u.href.length <= 2048 ? u.href : null;
+}
+
+/** What may be printed about `default_addons`: a count, and each entry's origin and flags (never its path). */
+export function describeDefaultAddons(list) {
+    if (!Array.isArray(list)) return "(unset)";
+    if (!list.length) return "[] (none)";
+    return list.map((e) => {
+        let origin = "(bad url)";
+        try { origin = new URL(e.manifest).origin; } catch { /* keep the placeholder */ }
+        return `${origin}${e.enabled ? "" : " (off)"}${e.first_party ? " first_party" : ""}`;
+    }).join(", ");
 }
 
 export function normaliseTidalOrigin(raw) {

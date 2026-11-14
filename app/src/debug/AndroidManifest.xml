@@ -65,5 +65,18 @@
                 <action android:name="com.stash.app.debug.NP_SPACING" />
             </intent-filter>
         </receiver>
+        <!--
+            Debug only: the Tidal wire instruments (force legacy or v1, owner server override origin) from adb
+            (com.stash.app.debug.DebugTidalWire). Same DUMP guard as above.
+        -->
+        <receiver
+            android:name="com.stash.app.debug.DebugTidalWire"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.stash.debug.TIDAL_WIRE" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

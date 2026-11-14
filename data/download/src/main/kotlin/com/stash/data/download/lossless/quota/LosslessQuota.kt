@@ -234,6 +234,33 @@ class LosslessQuota internal constructor(
     }
 
     /**
+     * A Stash Add-ons v1 `quota` (SPEC.md 4.8: `/quota`, or a stream answer's own after counting
+     * itself): [limit] null is no limit (a supporter). The v1 wire's view of the relay's
+     * `X-Stash-Lossless` headers and `/quota` body.
+     *
+     * A limit of zero or less is junk, as it is in the headers ([parseCount]): the answer is
+     * ignored. It used to read as "no limit", which lifted a free listener's cap on a server's
+     * slip (review-881 N3).
+     */
+    fun onQuota(used: Int, limit: Int?, resetsAtSec: Long) {
+        if (used < 0 || resetsAtSec <= 0) return
+        if (limit != null && limit <= 0) return
+        record(LosslessAllowance(used, limit, resetsAtSec))
+    }
+
+    /**
+     * A v1 `quota_exceeded` (SPEC.md 7): the allowance is spent until its reset, the v1 form of the
+     * relay's `daily_lossless_cap` body ([onCapBody], same rules). [unlimited]: the answer's `quota`
+     * said `limit: null`. Without a quota object: the free limit, spent, until the next UTC midnight.
+     */
+    fun onQuotaExceeded(used: Int?, limit: Int?, resetsAtSec: Long?, unlimited: Boolean = false) {
+        val l = if (unlimited) null else (limit?.takeIf { it > 0 } ?: DEFAULT_LIMIT)
+        val u = used ?: l ?: DEFAULT_LIMIT
+        val resetsAt = resetsAtSec?.takeIf { it > 0 } ?: nextUtcMidnightSec(nowMs())
+        record(LosslessAllowance(maxOf(u, l ?: u), l, resetsAt))
+    }
+
+    /**
      * Merges [next] in: a later day replaces; the same day keeps the higher count (answers can
      * land out of order) and takes the newer limit (a supporter claim lifts it mid-day).
      */

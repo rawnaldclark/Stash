@@ -1,8 +1,6 @@
-package com.stash.data.download.lossless.bitchord
+package com.stash.data.download.lossless.tidal
 
 import com.google.common.truth.Truth.assertThat
-import com.stash.core.data.db.dao.TidalMatchDao
-import com.stash.core.data.db.entity.TidalMatchEntity
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.quota.LosslessQuota
@@ -33,14 +31,8 @@ import org.junit.Test
  * mint (`<install>:td:<id>:<ts>`), `/search` never is, a user's own server never is, and a 401
  * naming the relay's clock re-signs once.
  */
-class BitchordClientSigningTest {
+class TidalClientSigningTest {
 
-    private class FakeDao : TidalMatchDao {
-        val rows = ConcurrentHashMap<String, TidalMatchEntity>()
-        override suspend fun get(key: String) = rows[key]
-        override suspend fun upsert(entity: TidalMatchEntity) { rows[entity.key] = entity }
-        override suspend fun deleteOlderThan(before: Long) = 0
-    }
 
     private val server = MockWebServer()
     private var now = 1_700_000_000_123L
@@ -48,7 +40,7 @@ class BitchordClientSigningTest {
     private val tidalRelay = MutableStateFlow<TidalRelay?>(null)
     private var userEndpoint: String? = null
     private var supporterToken: String? = null
-    private lateinit var client: BitchordClient
+    private lateinit var client: TidalClient
 
     private val query = TrackQuery(artist = "Daft Punk", title = "Get Lucky", isrc = "USQX91300108", durationMs = 248_000)
 
@@ -60,11 +52,11 @@ class BitchordClientSigningTest {
             coEvery { bitchordAccessTokenNow() } returns null
         }
         val config: LosslessConfigFetcher = mockk {
-            every { tidalRelay } returns this@BitchordClientSigningTest.tidalRelay
-            every { relayKey } returns this@BitchordClientSigningTest.relayKey
+            every { tidalRelay } returns this@TidalClientSigningTest.tidalRelay
+            every { relayKey } returns this@TidalClientSigningTest.relayKey
             coEvery { installId() } returns INSTALL_ID
         }
-        client = BitchordClient(OkHttpClient(), prefs, config, FakeDao(), RelaySigner(config, supporter { supporterToken }, appVersionProvider()), LosslessQuota.inMemory { now })
+        client = tidalClient(OkHttpClient(), prefs, config, FakeAddonRefDao(), RelaySigner(config, supporter { supporterToken }, appVersionProvider()), LosslessQuota.inMemory { now })
         client.nowMs = { now }
     }
 

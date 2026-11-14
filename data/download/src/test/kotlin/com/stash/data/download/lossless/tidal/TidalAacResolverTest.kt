@@ -5,9 +5,6 @@ import com.stash.data.download.lossless.AggregatorRateLimiter
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.RateLimitState
 import com.stash.data.download.lossless.TrackQuery
-import com.stash.data.download.lossless.bitchord.BitchordClient
-import com.stash.data.download.lossless.bitchord.BitchordStream
-import com.stash.data.download.lossless.bitchord.TidalLookup
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -17,14 +14,14 @@ import org.junit.Test
 
 class TidalAacResolverTest {
 
-    private val client: BitchordClient = mockk()
+    private val client: TidalClient = mockk()
     private val rateLimiter: AggregatorRateLimiter = mockk(relaxUnitFun = true)
     private val prefs: LosslessSourcePreferences = mockk()
     private val resolver = TidalAacResolver(client, rateLimiter, prefs)
     private val query = TrackQuery(artist = "Daft Punk", title = "Get Lucky")
     private val id = TidalAacResolver.SOURCE_ID
 
-    private val aac = BitchordStream(
+    private val aac = TidalStream(
         url = "https://sp-pr-cf.audio.tidal.com/x.mp4",
         isDash = false,
         bitDepth = 0,

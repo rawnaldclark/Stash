@@ -4,6 +4,7 @@ import android.util.Log
 import com.stash.addons.contract.Codec
 import com.stash.addons.contract.Delivery
 import com.stash.addons.contract.Descriptor
+import com.stash.addons.contract.ResolveQuery
 import com.stash.addons.contract.Resource
 import com.stash.addons.contract.StreamInfo
 import com.stash.addons.contract.StreamRequest
@@ -24,17 +25,21 @@ import javax.inject.Singleton
  * position. They come from [AddonRegistry] at resolve time, never from `@IntoSet`: add-ons come
  * and go while the app runs.
  *
- * Phase 1: the registry is empty, so [rungs] is always empty and the chain is the one the app
- * had before add-ons.
+ * With no add-on of the user's and no generic default, [rungs] is empty and the chain is the
+ * one the app had before add-ons.
  */
 @Singleton
 class AddonStreamRungs @Inject constructor(
     private val registry: AddonRegistry,
     private val client: HttpAddonClient,
 ) {
-    /** The add-on rungs, in the registry's order (user-added first). Empty, with no work done, when none are on. */
+    /**
+     * The add-on rungs, in the registry's order (user-added first). Empty, with no work done, when
+     * none are on. The first-party Tidal add-on is never one: the Tidal rung plays it
+     * ([AddonRegistry.generic]).
+     */
     fun rungs(): List<AddonStreamRung> {
-        val addons = registry.addons.value
+        val addons = registry.generic()
         if (addons.isEmpty()) return emptyList()
         return addons.filter(::canStreamLossless).map { AddonStreamRung(it, client) }
     }
@@ -93,7 +98,8 @@ class AddonStreamRung internal constructor(
             isrc = q.isrc,
             explicit = q.explicit,
         )
-        val item = when (val r = client.resolve(addon, descriptor)) {
+        // Rule 7: a lossless rung asks for a recording it can stream lossless, or none.
+        val item = when (val r = client.resolve(addon, ResolveQuery(descriptor, minTier = Tier.LOSSLESS))) {
             is AddonResult.Ok -> r.value ?: return null
             is AddonResult.Failed -> return null
         }
@@ -127,6 +133,22 @@ class AddonStreamRung internal constructor(
             manifest = listOf(Delivery.NONE, Delivery.DASH),
         )
 
+        /**
+         * The player's codec name. A lossy codec is named as such, never `flac` (plan §5.6): no rung
+         * asks below `lossless` yet, but one that does must not label AAC as FLAC. Unknown: `flac`,
+         * the only codec a v1 answer without one can be (SPEC.md 5.2 defaults it from the tier).
+         */
+        internal fun codecName(codec: Codec?): String = when (codec) {
+            Codec.ALAC -> "alac"
+            Codec.PCM -> "wav"
+            Codec.AAC, Codec.HE_AAC -> "aac"
+            Codec.MP3 -> "mp3"
+            Codec.OPUS -> "opus"
+            Codec.VORBIS -> "vorbis"
+            Codec.EAC3_JOC -> "eac3"
+            Codec.FLAC, null -> "flac"
+        }
+
         /** Null for an answer whose `expiresAt` has already passed: that URL is dead. */
         internal fun toStreamUrl(info: StreamInfo, coverArtUrl: String?, origin: String, nowMs: Long = System.currentTimeMillis()): StreamUrl? {
             val expiresAtSec = info.expiresAt
@@ -137,11 +159,7 @@ class AddonStreamRung internal constructor(
             return StreamUrl(
                 url = info.url,
                 expiresAtMs = expires.coerceIn(nowMs, nowMs + MAX_TTL_MS),
-                codec = when (info.codec) {
-                    Codec.ALAC -> "alac"
-                    Codec.PCM -> "wav"
-                    else -> "flac"
-                },
+                codec = codecName(info.codec),
                 bitsPerSample = info.bitDepth?.takeIf { it > 0 },
                 sampleRateHz = info.sampleRate?.takeIf { it > 0 },
                 bitrateKbps = info.bitrate?.let { it / 1000 }?.takeIf { it > 0 },

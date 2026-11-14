@@ -1,4 +1,4 @@
-// Vendored from stash-addon-spec types/kotlin at 5238551 (Stash Add-ons v1, draft 1). Edit the spec, then copy it here again.
+// Vendored from stash-addon-spec types/kotlin at 6de2370 (Stash Add-ons v1; these files last changed there in 43a5acc). Edit the spec, then copy it here again.
 package com.stash.addons.contract
 
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -70,12 +70,33 @@ public data class Descriptor(
     val title: String,
     val artist: String,
     val album: String? = null,
+    /** The recording's own length. Leave it out when only a music video's or a guessed length is known (SPEC.md 4.3). */
     val durationMs: Long? = null,
     val isrc: String? = null,
     val explicit: Boolean? = null,
 )
 
-/** `GET /resolve` (SPEC.md 4.3): the exact recording or null. */
+/**
+ * What the host asks of `/resolve` (SPEC.md 4.3): [song], and [minTier], the lowest tier it will accept
+ * from `stream` (rule 7). Null leaves `minTier` out: any tier will do.
+ */
+public data class ResolveQuery(
+    val song: Descriptor,
+    val minTier: Tier? = null,
+) {
+    /** Query parameters, in a stable order; fields the host doesn't know are left out. */
+    public fun queryParameters(): List<Pair<String, String>> = listOfNotNull(
+        "title" to song.title,
+        "artist" to song.artist,
+        song.album?.let { "album" to it },
+        song.durationMs?.let { "durationMs" to it.toString() },
+        song.isrc?.let { "isrc" to it },
+        song.explicit?.let { "explicit" to it.toString() },
+        minTier?.let { "minTier" to it.wire },
+    )
+}
+
+/** `GET /resolve` (SPEC.md 4.3): the add-on's item for the same song, or null. */
 @Serializable
 public data class ResolveResponse(val item: Track?)
 

@@ -107,7 +107,7 @@ import kotlinx.serialization.json.Json
         SyncUndoMembershipEntity::class,
         ArtistImageEntity::class,
         SharedMixEntity::class,
-        com.stash.core.data.db.entity.TidalMatchEntity::class,
+        com.stash.core.data.db.entity.AddonRefEntity::class,
         ScanFolderEntity::class,
         ScannedSongEntity::class,
         ArtistGenreEntity::class,
@@ -129,7 +129,7 @@ import kotlinx.serialization.json.Json
         com.stash.core.data.db.entity.DuplicateDismissalEntity::class,
         com.stash.core.data.db.entity.SpotifyAccountEntity::class,
     ],
-    version = 79,
+    version = 80,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -175,7 +175,7 @@ abstract class StashDatabase : RoomDatabase() {
 
     abstract fun spotifyResolutionDao(): SpotifyResolutionDao
 
-    abstract fun tidalMatchDao(): com.stash.core.data.db.dao.TidalMatchDao
+    abstract fun addonRefDao(): com.stash.core.data.db.dao.AddonRefDao
 
     abstract fun flacUpgradeQueueDao(): FlacUpgradeQueueDao
 
@@ -1506,7 +1506,7 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
-         * v55 -> v56 adds `tidal_match_cache` ([com.stash.core.data.db.entity.TidalMatchEntity]):
+         * v55 -> v56 adds `tidal_match_cache` (since v80 `addon_refs`, [MIGRATION_79_80]):
          * what the shared Tidal relay answered per song, so plays, syncs and upgrade sweeps stop
          * re-asking it. A new, empty table; no existing row changes.
          */
@@ -2047,6 +2047,37 @@ abstract class StashDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v79 -> v80: add-ons phase 2 (plan 2026-11-09 §5.2). `tidal_match_cache` becomes `addon_refs`,
+         * one table of add-on answers keyed by (add-on id, song key), which the Tidal rung's two wires
+         * (the legacy relay and the v1 add-on) share. Every row carries over unchanged under the add-on
+         * id `tidal`: the `td:<n>` ids, the `aaconly|` miss stamps, the backdated short misses and
+         * every timestamp, so a song matched before plays without a new search. The columns mirror
+         * [MIGRATION_55_56]'s, renamed (`key` -> `song_key`, `tidal_id` -> `remote_id`,
+         * `searched_at` -> `resolved_at`). One way: a rollback is by config, never by reinstalling
+         * an older build over v80.
+         */
+        val MIGRATION_79_80 = object : Migration(79, 80) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `addon_refs` (" +
+                        "`addon_id` TEXT NOT NULL, `song_key` TEXT NOT NULL, `remote_id` TEXT, " +
+                        "`title` TEXT NOT NULL, `artist` TEXT NOT NULL, `artwork` TEXT, `confidence` REAL NOT NULL, " +
+                        "`resolved_at` INTEGER NOT NULL, `lossless_miss_at` INTEGER, `aac_miss_at` INTEGER, " +
+                        "PRIMARY KEY(`addon_id`, `song_key`))",
+                )
+                if (db.hasTable("tidal_match_cache")) {
+                    db.execSQL(
+                        "INSERT OR IGNORE INTO `addon_refs` (`addon_id`, `song_key`, `remote_id`, `title`, `artist`, " +
+                            "`artwork`, `confidence`, `resolved_at`, `lossless_miss_at`, `aac_miss_at`) " +
+                            "SELECT 'tidal', `key`, `tidal_id`, `title`, `artist`, `artwork`, `confidence`, " +
+                            "`searched_at`, `lossless_miss_at`, `aac_miss_at` FROM `tidal_match_cache`",
+                    )
+                    db.execSQL("DROP TABLE `tidal_match_cache`")
+                }
+            }
+        }
+
         /** Edit order tables start empty, so existing playlists retain their native order. */
         val MIGRATION_73_74 = object : Migration(73, 74) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -2101,6 +2132,10 @@ abstract class StashDatabase : RoomDatabase() {
                     "`aac_miss_at` INTEGER, PRIMARY KEY(`key`))",
             )
         }
+
+        /** True when [table] exists. */
+        private fun SupportSQLiteDatabase.hasTable(table: String): Boolean =
+            query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", arrayOf<Any?>(table)).use { it.moveToFirst() }
 
         /** True when [table] has a column named [column] (false when the table doesn't exist). */
         private fun SupportSQLiteDatabase.hasColumn(table: String, column: String): Boolean =
@@ -2212,6 +2247,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_76_77,
                 MIGRATION_77_78,
                 MIGRATION_78_79,
+                MIGRATION_79_80,
             )
         }
     }
