@@ -15,6 +15,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
+import io.mockk.verify
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
@@ -184,5 +185,29 @@ class ReorganizeLibrarySafMoveTest {
             .isEqualTo("STUDIO".toByteArray())
         assertThat(tree.exists("artist/unplugged/song.m4a")).isTrue()
         coVerify(exactly = 0) { trackDao.healFilePath(2L, any()) }
+    }
+
+    /**
+     * What the listing cache is for: however many songs land in one folder,
+     * the folder is read from the provider once.
+     */
+    @Test
+    fun `a folder many songs land in is listed once`() = runBlocking {
+        val root = tree.seedDir("")
+        seed("artist/album-a/one.m4a", "ONE".toByteArray())
+        seed("artist/album-b/two.m4a", "TWO".toByteArray())
+        seed("artist/album-c/three.m4a", "THREE".toByteArray())
+        coEvery { trackDao.getDownloadedTrackRefs() } returns listOf(
+            safRef(1L, "artist/album-a/one.m4a", "Artist", "Album A", "One"),
+            safRef(2L, "artist/album-b/two.m4a", "Artist", "Album B", "Two"),
+            safRef(3L, "artist/album-c/three.m4a", "Artist", "Album C", "Three"),
+        )
+
+        coordinator.start()
+        val done = awaitDone()
+
+        assertThat(done.moved).isEqualTo(3)
+        assertThat(tree.written[tree.uriOf("artist-three.m4a")]).isEqualTo("THREE".toByteArray())
+        verify(exactly = 1) { root.listFiles() }
     }
 }

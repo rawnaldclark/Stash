@@ -36,8 +36,10 @@ internal class SafListingSession {
      */
     fun listingOf(dirKey: String, dir: DocumentFile): MutableMap<String, DocumentFile> =
         listings.getOrPut(dirKey) {
-            HashMap<String, DocumentFile>(dir.listFiles().size).apply {
-                for (child in dir.listFiles()) {
+            // Read once: every listFiles() is a children query of its own.
+            val children = dir.listFiles()
+            HashMap<String, DocumentFile>(children.size).apply {
+                for (child in children) {
                     child.name?.let { put(it, child) }
                 }
             }
