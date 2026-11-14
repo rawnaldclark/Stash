@@ -4,6 +4,7 @@ import android.util.Log
 import com.stash.core.common.ArtUrlSizer
 import com.stash.core.model.Track
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -12,6 +13,7 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -48,38 +50,66 @@ class AlbumArtCache @Inject constructor(
     private val scaler: EmbedArtScaler,
 ) {
     /**
+     * The covers being fetched right now, by stored URL; each entry completes when its fetch is
+     * over, however it ended. Eight downloads run at once and an album's songs start together,
+     * so without this each of them found the cache empty and downloaded the same cover.
+     */
+    private val inFlight = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
+
+    /**
      * Returns a local JPEG file for [track]'s album cover. Returns
      * null when the URL is missing, the response is non-2xx, the
      * response Content-Type isn't an image, the file body is empty,
      * or any IO/network error fires (for the bigger variant AND the
      * stored URL).
+     *
+     * A cover another call is fetching right now is waited for and then read from the cache,
+     * not fetched again. If that fetch brought nothing (it failed, or its download was
+     * cancelled), this call looks for itself, as every call used to.
      */
     suspend fun resolveArt(track: Track): File? = withContext(Dispatchers.IO) {
         val url = track.albumArtUrl?.takeIf { it.isNotBlank() } ?: return@withContext null
         val stored = canonicaliseUrl(url)
+        val mine = CompletableDeferred<Unit>()
+        val ahead = inFlight.putIfAbsent(stored, mine)
+        if (ahead != null) {
+            ahead.await()
+            return@withContext cachedOrFetched(stored)
+        }
+        try {
+            cachedOrFetched(stored)
+        } finally {
+            // Never left behind: a call waiting on an entry that is never completed waits for good.
+            inFlight.remove(stored, mine)
+            mine.complete(Unit)
+        }
+    }
+
+    /** The cover at [stored] (a canonical stored URL): from the cache, else fetched into it. */
+    private suspend fun cachedOrFetched(stored: String): File? {
         val embed = ArtUrlSizer.forSize(stored, EMBED_PX) ?: stored
         val embedFile = cached(embed)
-        if (embedFile.exists() && embedFile.length() > 0) return@withContext embedFile
+        if (embedFile.exists() && embedFile.length() > 0) return embedFile
 
         if (embed != stored) {
             val sized = load(embed)
             if (sized != null) {
                 val floorPx = ArtUrlSizer.storedPx(stored)
                 if (floorPx == null || sized.longSidePx == 0 || sized.longSidePx >= floorPx) {
-                    return@withContext write(embedFile, sized)
+                    return write(embedFile, sized)
                 }
                 // Smaller than the stored cover (a Last.fm original under its CDN's 770): that
                 // won't change, so the stored cover IS this album's embed, cached as such.
-                val floor = load(stored) ?: return@withContext null
-                return@withContext write(embedFile, floor)
+                val floor = load(stored) ?: return null
+                return write(embedFile, floor)
             }
             // The bigger variant failed (5xx, timeout, out of memory): maybe only this once. Keep
             // the stored cover under its OWN name, so the next download tries the big one again.
         }
         val storedFile = cached(stored)
-        if (storedFile.exists() && storedFile.length() > 0) return@withContext storedFile
-        val fitted = load(stored) ?: return@withContext null
-        write(storedFile, fitted)
+        if (storedFile.exists() && storedFile.length() > 0) return storedFile
+        val fitted = load(stored) ?: return null
+        return write(storedFile, fitted)
     }
 
     private fun cached(url: String) = File(fileOrganizer.getAlbumArtDir(), hashFilename(url))
