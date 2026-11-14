@@ -353,13 +353,19 @@ class StashMediaSourceFactory(
                         } else if (resolved?.isHls == true) {
                             streamingFactory.createHlsMediaSource(item, resolved)
                         } else if (resolved?.isDash == true) {
+                            // From here on the player shows the DASH child's item as the slot's: the manifest's URL.
+                            // It says which stream that is, as the look-ahead says it of a slot it swaps to a URL
+                            // (StreamStamp): without it the crossfade took the URL for an unresolved queue-fill one
+                            // and never faded into the song (#880), and the spare primed on the slot (or the new
+                            // master after a fade) sent an add-on's manifest to the default HTTP source.
+                            val stamped = StreamStamp.of(item, resolved)
                             if (AddonPlayback.isAddonOrigin(resolved.origin)) {
                                 // An add-on's manifest and segments on the add-on media client, or refused;
                                 // judged by what the manifest says before a segment plays.
-                                addonSourceFactory?.let { checked(streamingFactory.createDashMediaSource(item, resolved.url, it), resolved, item) }
+                                addonSourceFactory?.let { checked(streamingFactory.createDashMediaSource(stamped, resolved.url, it), resolved, stamped) }
                                     ?: unwiredAddonFactory.createMediaSource(item)
                             } else {
-                                streamingFactory.createDashMediaSource(item, resolved.url, null)
+                                streamingFactory.createDashMediaSource(stamped, resolved.url, null)
                             }
                         } else {
                             checkedLazy(item)

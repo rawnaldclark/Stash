@@ -1668,17 +1668,8 @@ class PlayerRepositoryImpl @Inject constructor(
         val item = controller.getMediaItemAt(timelineIndex)
         val itemTrackId = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID) ?: return false
         if (itemTrackId != next.id) return false
-        val newExtras = Bundle(item.mediaMetadata.extras ?: Bundle()).apply {
-            resolved.codec?.let { putString(EXTRA_STREAM_CODEC, it) }
-            resolved.bitsPerSample?.let { putInt(EXTRA_STREAM_BIT_DEPTH, it) }
-            resolved.sampleRateHz?.let { putInt(EXTRA_STREAM_SAMPLE_RATE, it) }
-            resolved.bitrateKbps?.let { putInt(EXTRA_STREAM_BITRATE, it) }
-            resolved.origin?.let { putString(EXTRA_STREAM_ORIGIN, it) }
-            // The slot's URL is a manifest, or no longer one (an earlier resolve's word must not stay).
-            if (resolved.isDash) putBoolean(EXTRA_STREAM_DASH, true) else remove(EXTRA_STREAM_DASH)
-            // The song's length as this stream's source knew it, for the add-on check; never an earlier stream's.
-            resolved.songMs?.let { putLong(EXTRA_STREAM_SONG_MS, it) } ?: remove(EXTRA_STREAM_SONG_MS)
-        }
+        // The same stamp a placeholder's DASH child gets when the player resolves the slot itself (#880).
+        val newExtras = com.stash.core.media.streaming.StreamStamp.onto(Bundle(item.mediaMetadata.extras ?: Bundle()), resolved)
         // #336 follow-up: upgrade artwork together with the stream metadata so
         // Now Playing cannot keep a stale video thumbnail after prefetch.
         val currentArt = item.mediaMetadata.artworkUri?.toString()
@@ -4633,10 +4624,7 @@ class PlayerRepositoryImpl @Inject constructor(
         private const val TAG = "StashPlayer"
 
         /** The extras that describe the stream a slot plays, for Now Playing's quality line. */
-        private val streamStampKeys = listOf(
-            EXTRA_STREAM_CODEC, EXTRA_STREAM_BIT_DEPTH, EXTRA_STREAM_SAMPLE_RATE, EXTRA_STREAM_BITRATE, EXTRA_STREAM_ORIGIN, EXTRA_STREAM_DASH,
-            EXTRA_STREAM_SONG_MS,
-        )
+        private val streamStampKeys = com.stash.core.media.streaming.StreamStamp.KEYS
 
         /**
          * Separate tag for the Now Playing quality stamp so its (chatty,
