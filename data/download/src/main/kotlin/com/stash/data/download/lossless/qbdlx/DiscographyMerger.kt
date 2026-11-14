@@ -9,12 +9,20 @@ import com.stash.data.ytmusic.model.AlbumSummary
  * newest-first. On a title collision the YouTube entry is kept and the Qobuz
  * duplicate dropped — Qobuz only ever ADDS albums YouTube is missing (e.g. My
  * Bloody Valentine's *Loveless*), never replaces one YouTube already lists.
+ *
+ * A title YouTube lists on its Singles shelf is no gap either (#755): a Qobuz CD
+ * single with bonus tracks passes the album-length check, but YouTube already
+ * filed it as a single, so it must not turn up in the Albums row.
  */
 object DiscographyMerger {
 
-    fun gapFill(yt: List<AlbumSummary>, qobuz: List<AlbumSummary>): List<AlbumSummary> {
+    fun gapFill(
+        yt: List<AlbumSummary>,
+        qobuz: List<AlbumSummary>,
+        ytSingles: List<AlbumSummary> = emptyList(),
+    ): List<AlbumSummary> {
         if (qobuz.isEmpty()) return yt
-        val ytTitles = yt.mapTo(HashSet()) { key(it.title) }
+        val ytTitles = (yt + ytSingles).mapTo(HashSet()) { key(it.title) }
         val gaps = qobuz.filter { key(it.title) !in ytTitles }
         if (gaps.isEmpty()) return yt
         return (yt + gaps).sortedWith(compareByDescending { yearInt(it.year) }) // nulls (Int.MIN) last

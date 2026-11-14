@@ -80,6 +80,24 @@ class QobuzDiscographyProviderTest {
         assertThat(out.albums.single { it.source == AlbumSource.QOBUZ }.trackCount).isEqualTo(9)
     }
 
+    /** #755: a CD single with bonus tracks passes the length check; YouTube's Singles shelf keeps it out of Albums. */
+    @Test
+    fun `a Qobuz CD single YouTube lists as a single stays out of Albums`() = runTest {
+        coEvery { apiClient.searchArtists(any(), any()) } returns
+            listOf(QbdlxArtistItem(1, "My Bloody Valentine"))
+        coEvery { apiClient.getArtistAlbums(any(), any()) } returns
+            listOf(qAlbum("Loveless", "1991"), qAlbum("m b v", "2013"), qAlbum("Soon", "1990", tracksCount = 6))
+
+        val out = provider().mergeInto(
+            "My Bloody Valentine",
+            listOf(ytAlbum("Loveless", "1991")),
+            listOf(ytAlbum("Soon", "1990")),
+        )
+
+        assertThat(out.albums.map { it.title }).containsExactly("m b v", "Loveless").inOrder()
+        assertThat(out.singles.map { it.title }).containsExactly("Soon")
+    }
+
     // (c2) cover-album filter ──────────────────────────────────────────────
     @Test
     fun `cover albums credited to other artists are filtered out`() = runTest {
