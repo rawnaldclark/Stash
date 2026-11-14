@@ -138,6 +138,15 @@ data class TrackExistenceRef(
     @androidx.room.ColumnInfo(name = "file_path") val filePath: String,
 )
 
+/**
+ * One row of [TrackDao.getFirstPlaylistNamesForTracks]: a track id and the
+ * name of the first sync-enabled playlist it belongs to.
+ */
+data class TrackPlaylistNameRow(
+    @androidx.room.ColumnInfo(name = "trackId") val trackId: Long,
+    @androidx.room.ColumnInfo(name = "playlistName") val playlistName: String,
+)
+
 /** Candidate projection for [AdoptExistingFilesUseCase] — everything
  *  needed to probe for a matching on-disk file via
  *  [FileOrganizer.resolveExistingSafFile]. */
@@ -556,6 +565,43 @@ interface TrackDao {
     """)
     suspend fun getFirstPlaylistNameForTrack(trackId: Long): String?
 
+    @Query("""
+        SELECT pt.track_id AS trackId, p.name AS playlistName
+        FROM playlist_tracks pt
+        INNER JOIN playlists p ON pt.playlist_id = p.id
+        WHERE pt.track_id IN (:trackIds)
+          AND pt.removed_at IS NULL
+          AND p.sync_enabled = 1
+        ORDER BY p.id ASC
+    """)
+    suspend fun getFirstPlaylistNamesForTracksRaw(trackIds: Collection<Long>): List<TrackPlaylistNameRow>
+
+    /**
+     * The batched form of [getFirstPlaylistNameForTrack]: the owning playlist
+     * name for every id in [trackIds], one query (per bind chunk) instead of
+     * one per track. Same selection rules (SYNC-ENABLED, lowest playlist id
+     * first, no removed memberships), so a track absent from the map means
+     * what a null from the single-track query means. The reorganize plan used
+     * to call the single-track form once per downloaded track when the layout
+     * is Per-playlist, an N+1 that dominated the Settings › Library &
+     * Storage entry cost on a big library.
+     *
+     * The raw query returns every enabled membership ordered by playlist id;
+     * keeping the FIRST row per track reproduces the single-track query's
+     * `LIMIT 1` pick. Chunked for SQLite's bind-variable cap (#337).
+     */
+    suspend fun getFirstPlaylistNamesForTracks(trackIds: Collection<Long>): Map<Long, String> {
+        if (trackIds.isEmpty()) return emptyMap()
+        // Rows arrive ordered by playlist id ascending, so the FIRST row a
+        // track id shows up in is its lowest-id playlist — associate() would
+        // keep the last; putIfAbsent keeps the first.
+        val byFirst = LinkedHashMap<Long, String>(trackIds.size)
+        trackIds.distinct()
+            .chunkedForBind { getFirstPlaylistNamesForTracksRaw(it) }
+            .forEach { byFirst.putIfAbsent(it.trackId, it.playlistName) }
+        return byFirst
+    }
+
     /** Reverts a track whose file no longer exists on disk back to
     *  "needs download" — clears is_downloaded, file_path, and the stale
     *  size so LibrarySizeHolder's next walk doesn't count phantom bytes —
@@ -902,6 +948,21 @@ interface TrackDao {
           AND file_path LIKE :pathPrefix || '%'
     """)
     suspend fun getDownloadedTracksWithPathPrefix(pathPrefix: String): List<TrackEntity>
+
+    /**
+     * How many rows [getDownloadedTracksWithPathPrefix] would return — the
+     * Settings gate for the "Move library" button. The full SELECT loads and
+     * deserialises every entity just to count them, which on a few-thousand-
+     * track library took most of the visible latency opening
+     * Settings › Library & Storage (the count runs there on every entry).
+     */
+    @Query("""
+        SELECT COUNT(*) FROM tracks
+        WHERE is_downloaded = 1
+          AND file_path IS NOT NULL
+          AND file_path LIKE :pathPrefix || '%'
+    """)
+    suspend fun countDownloadedTracksWithPathPrefix(pathPrefix: String): Int
 
     @Query("SELECT * FROM tracks WHERE is_downloaded = 1 ORDER BY date_added DESC LIMIT :limit")
     fun getRecentlyAdded(limit: Int): Flow<List<TrackEntity>>
