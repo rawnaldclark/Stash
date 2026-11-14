@@ -184,13 +184,16 @@ class MoveLibraryCoordinator @Inject constructor(
             // per SAF provider — on a moving target that fills up as we go,
             // the library-move becomes O(n²). Caching by cumulative relative
             // dir key ("<artistSlug>" / "<playlistSlug>" /
-            // "<artistSlug>/<albumSlug>") collapses the N² to O(n+unique-dirs)
-            // which is typically a 3-5× speedup on a 1000+ track library.
+            // "<artistSlug>/<albumSlug>") collapses the N² to O(n+unique-dirs).
             val dirCache = HashMap<String, DocumentFile>(256)
+            // One listing per directory for the whole move — see
+            // [SafListingSession]; createTarget()'s findFile was a full
+            // folder re-list per candidate name per track.
+            val listing = SafListingSession()
 
             for ((index, track) in tracks.withIndex()) {
                 _state.value = MoveLibraryState.Running(current = index, total = total)
-                val ok = runCatching { moveOne(track, root, layout, playlistNamesByTrackId[track.id], dirCache) }
+                val ok = runCatching { moveOne(track, root, layout, playlistNamesByTrackId[track.id], dirCache, listing) }
                 // runCatching swallows CancellationException too. Cancel works
                 // by cancelling activeJob, which surfaced here as one failed
                 // track: the loop copied the REST of the library (each copy
@@ -222,6 +225,7 @@ class MoveLibraryCoordinator @Inject constructor(
         layout: LibraryLayout,
         playlistName: String?,
         dirCache: MutableMap<String, DocumentFile>,
+        listing: SafListingSession,
     ) {
         val path = track.filePath ?: return
         val localFile = File(path)
@@ -250,7 +254,7 @@ class MoveLibraryCoordinator @Inject constructor(
         }
 
         val format = localFile.extension.ifBlank { "m4a" }
-        val target = createTarget(track, cursor, location, format)
+        val target = createTarget(track, cursor, location, format, listing, cumulativeKey)
 
         try {
             localFile.inputStream().use { input ->
@@ -266,6 +270,10 @@ class MoveLibraryCoordinator @Inject constructor(
             // be adopted as the download by the next reconciliation; the
             // internal file is still the real one.
             target.delete()
+            // The pass's file-name cache still thinks the name is taken by
+            // [target] — keep it true or the next track with the same base
+            // name would skip the suffix and hit the deleted document.
+            target.name?.let { listing.noteDeleted(cumulativeKey, it) }
             throw e
         }
 
@@ -299,24 +307,45 @@ class MoveLibraryCoordinator @Inject constructor(
         cursor: DocumentFile,
         location: LibraryLayoutResolver.ResolvedLocation,
         format: String,
+        listing: SafListingSession,
+        dirKey: String,
     ): DocumentFile {
         val album = FileOrganizerSlugs.slugify(track.album).ifEmpty { null }
         val suffixes = listOf(null, album, listOfNotNull(album, track.id.toString()).joinToString("-")).distinct()
         for (suffix in suffixes) {
             val filename = if (suffix == null) "${location.baseName}.$format" else "${location.baseName}-$suffix.$format"
-            // Still scanned per track: per-title dirs can't be cached (they'd
-            // explode the map). m = target dir size, usually <15.
-            val existing = cursor.findFile(filename)
+            // Listing cache: the old findFile re-listed this folder once per
+            // candidate name, per track — the O(n²) binder scans the move
+            // shares with the reorganize (see SafListingSession).
+            val existing = listing.find(dirKey, cursor, filename)
             if (existing != null) {
                 if (trackDao.countOtherTracksWithFilePath(existing.uri.toString(), track.id) > 0) continue
                 existing.delete()
+                listing.noteDeleted(dirKey, filename)
             }
             val target = cursor.createFile(mimeTypeFor(format), filename)
                 ?: error("Could not create SAF file for '${track.title}'")
+            // SAFENAME GUARD: the move trusts its listing cache, but
+            // downloads write to the same tree while it runs (the gate
+            // excludes only the other bulk pass), so a name that was free
+            // when the folder was listed can be taken by now; providers
+            // silently auto-rename ("song (1).opus" in the AOSP provider).
+            // A misfiled name breaks the on-disk layout contract, so the
+            // document is dropped and this suffix is given up — the source
+            // file is untouched and the next suffix / next run gets an
+            // honest chance at a free name.
+            if (target.name != null && target.name != filename) {
+                target.delete()
+                continue
+            }
+            listing.noteCreated(dirKey, filename, target)
             // Path-based providers hand a new document a deleted one's URI,
-            // which a track whose file went missing may still record.
+            // which a track whose file went missing may still record. Only
+            // probed for a freshly created name — after a delete the reused
+            // URI was already vetted by the check above.
             if (existing == null && trackDao.countOtherTracksWithFilePath(target.uri.toString(), track.id) > 0) {
                 target.delete()
+                listing.noteDeleted(dirKey, filename)
                 continue
             }
             return target
