@@ -32,3 +32,24 @@ internal fun shouldAutoplayRadio(
     if (state.queueSongsAfter > 0) return false
     return track.id != triedTrackId
 }
+
+/** What one autoplay try did (PlayerRepositoryImpl.autoplayRadioAfter), for the log. */
+internal enum class AutoplayRadioOutcome {
+    /** The station is after the last song, and runs. */
+    Started,
+
+    /** The player isn't connected. */
+    PlayerNotReady,
+
+    /** Nothing similar was found (or the search failed). */
+    NoStation,
+
+    /** Download mode: a station streams, and Download mode plays only what is on the phone. */
+    DownloadMode,
+
+    /** Mobile data with Stream on cellular off: the station's songs could not stream. */
+    MobileData,
+
+    /** The station came after the queue changed (a song queued after the seed, repeat on, another station): not added. */
+    QueueMovedOn,
+}
