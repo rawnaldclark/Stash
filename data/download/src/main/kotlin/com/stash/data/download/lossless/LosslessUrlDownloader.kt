@@ -117,6 +117,7 @@ class LosslessUrlDownloader @Inject constructor(
                 destination = destination,
                 maxBytes = source.maxBytes,
                 fetchTimeLimitMs = limitMs,
+                songMs = source.songMs,
                 onProgress = onProgress,
             )
         } else {
@@ -258,6 +259,14 @@ class LosslessUrlDownloader @Inject constructor(
 
     /** An add-on's fetch ran past its time limit ([timeLimitFor]). */
     class TookTooLongException : java.io.IOException("the fetch took longer than a file of its size may")
+
+    /**
+     * The source answered with a preview: its DASH manifest runs [lengthMs], far shorter than the
+     * song ([com.stash.data.download.isLosslessDurationDegraded]). Tidal answers a seat that may not
+     * play a track with a 30 s PREVIEW manifest ("Linger", 2026-11-13: 29.907 s of a 274.773 s song).
+     * Nothing of it was fetched. Names the length, never the URL.
+     */
+    class PreviewException(val lengthMs: Long) : java.io.IOException("the answer is a $lengthMs ms preview, not the song")
 
     companion object {
         private const val TAG = "LosslessUrlDownloader"

@@ -70,6 +70,37 @@ class DashFlacDownloaderTest {
         assertThat(dest.parentFile!!.listFiles()!!.map { it.name }).containsExactly("t.flac")
     }
 
+    /** Tidal's 30 s PREVIEW of "Linger" (2026-11-13): its timeline is 29.907 s of a 273 s song. */
+    private fun previewMpd(): String {
+        val init = server.url("/init.mp4")
+        val media = server.url("/seg/").toString() + "\$Number\$.mp4"
+        return """<MPD mediaPresentationDuration="PT29.907S"><SegmentTemplate timescale="44100" initialization="$init" media="$media" startNumber="1">
+            <SegmentTimeline><S d="176128" r="6"/><S d="86016"/></SegmentTimeline></SegmentTemplate></MPD>"""
+    }
+
+    @Test fun `a preview manifest is refused before a segment of it is fetched`() = runTest {
+        server.enqueue(MockResponse().setBody(previewMpd()))
+        val dest = dest()
+
+        val r = DashFlacDownloader(ffmpeg).download(OkHttpClient(), server.url("/m.mpd").toString(), emptyMap(), dest, songMs = 273_000L)
+
+        assertThat(r.exceptionOrNull()).isInstanceOf(LosslessUrlDownloader.PreviewException::class.java)
+        assertThat((r.exceptionOrNull() as LosslessUrlDownloader.PreviewException).lengthMs).isEqualTo(29_907L)
+        assertThat(server.requestCount).isEqualTo(1) // the manifest only
+        assertThat(remuxInput).isNull()
+        assertThat(dest.parentFile!!.listFiles()!!.toList()).isEmpty()
+    }
+
+    @Test fun `a short manifest of a song that short is fetched as before`() = runTest {
+        server.enqueue(MockResponse().setBody(previewMpd()))
+        repeat(9) { server.enqueue(MockResponse().setBody("$it")) }
+
+        // A 30 s song, or one whose length isn't known: nothing to hold the manifest to.
+        val r = DashFlacDownloader(ffmpeg).download(OkHttpClient(), server.url("/m.mpd").toString(), emptyMap(), dest(), songMs = 31_000L)
+        assertThat(r.isSuccess).isTrue()
+        assertThat(remuxInput).isEqualTo("012345678")
+    }
+
     @Test fun `a segment 404 fails the download and leaves nothing behind`() = runTest {
         server.enqueue(MockResponse().setBody(mpd(2)))
         server.enqueue(MockResponse().setBody("I"))

@@ -56,6 +56,9 @@ class DashFlacDownloader @Inject constructor(
      *   the remux after it (review-882 round 3, nit 5). Null = no limit (Stash's own Tidal). When it
      *   runs out the answer is `LosslessUrlDownloader.TookTooLongException`, not logged here: the
      *   caller says it once (nit 4).
+     * @param songMs      The song's length in ms; 0 = unknown. A manifest far shorter than it (a
+     *   preview, by the downloads' one rule) fails with [LosslessUrlDownloader.PreviewException]
+     *   before a segment is fetched.
      * @param onProgress  (segmentsDone, totalSegments) — the init counts as one.
      */
     suspend fun download(
@@ -65,11 +68,12 @@ class DashFlacDownloader @Inject constructor(
         destination: File,
         maxBytes: Long? = null,
         fetchTimeLimitMs: Long? = null,
+        songMs: Long = 0L,
         onProgress: (done: Long, total: Long) -> Unit = { _, _ -> },
     ): Result<File> = withContext(Dispatchers.IO) {
         val temp = File(destination.parentFile, "${destination.nameWithoutExtension}.dash.mp4")
         try {
-            withFetchTimeLimit(fetchTimeLimitMs) { fetchToTemp(client, mpdUrl, headers, destination, temp, maxBytes, onProgress) }
+            withFetchTimeLimit(fetchTimeLimitMs) { fetchToTemp(client, mpdUrl, headers, destination, temp, maxBytes, songMs, onProgress) }
                 ?: run {
                     runCatching { destination.delete() }
                     return@withContext Result.failure(LosslessUrlDownloader.TookTooLongException())
@@ -99,6 +103,7 @@ class DashFlacDownloader @Inject constructor(
         destination: File,
         temp: File,
         maxBytes: Long?,
+        songMs: Long,
         onProgress: (done: Long, total: Long) -> Unit,
     ) {
         // The MPD comes from our own Worker and may carry headers (token); the
@@ -106,6 +111,10 @@ class DashFlacDownloader @Inject constructor(
         val manifestLimit = if (maxBytes != null) MAX_ADDON_MANIFEST_BYTES else MAX_SEGMENT_BYTES
         val mpd = fetchBytes(client, mpdUrl, headers, manifestLimit, stream = mpdUrl).toString(Charsets.UTF_8)
         val plan = DashManifestParser.parse(mpd, mpdUrl, maxPlanChars = if (maxBytes != null) MAX_ADDON_PLAN_CHARS else null)
+        // A preview says so in its own timeline: refused here, before a byte of it is fetched.
+        plan.durationMs?.takeIf { com.stash.data.download.isLosslessDurationDegraded(it, songMs) }?.let {
+            throw LosslessUrlDownloader.PreviewException(it)
+        }
         val urls = listOf(plan.initUrl) + plan.mediaUrls
         val total = urls.size.toLong()
 

@@ -121,6 +121,9 @@ dependencies {
     // A real (test) WorkManager: LosslessRetryTidalSweepTest books Tidal sweeps against the
     // unique-work rules themselves, not a mock of them.
     testImplementation(libs.work.testing)
+    // An in-memory StashDatabase for ExistingClipCheckTest: :core:data keeps Room off this module's
+    // compile classpath (implementation), and the test builds the database itself.
+    testImplementation(libs.room.runtime)
 
     // Instrumented tests — MetadataEmbeddingIntegrationTest runs against the
     // ffmpeg .so bundled by youtubedl-android on a real device, since that

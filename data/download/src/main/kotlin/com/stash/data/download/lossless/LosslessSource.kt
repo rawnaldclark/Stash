@@ -293,6 +293,13 @@ data class SourceResult(
      * phone an endless "FLAC" (review-882 M11).
      */
     val maxBytes: Long? = null,
+
+    /**
+     * The song's length in ms, set by the download that fetches this match; 0 = unknown. A DASH
+     * answer states its own length, so one far shorter than the song (a source's 30 s preview) is
+     * refused before a segment is fetched ([LosslessUrlDownloader.PreviewException]).
+     */
+    val songMs: Long = 0L,
 )
 
 /**
