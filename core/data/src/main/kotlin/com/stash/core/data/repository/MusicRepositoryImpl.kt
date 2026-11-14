@@ -11,6 +11,7 @@ import androidx.work.WorkManager
 import androidx.work.await
 import com.stash.core.common.matchesArtistCredits
 import com.stash.core.data.album.toSavedAlbum
+import com.stash.core.data.db.chunkedForBind
 import com.stash.core.data.db.dao.AlbumSummary
 import com.stash.core.data.db.dao.ArtistSummary
 import com.stash.core.data.db.dao.PlaylistDao
@@ -87,6 +88,11 @@ class MusicRepositoryImpl @Inject constructor(
     private val downloadQueueState: com.stash.core.data.sync.DownloadQueueState? = null,
     /** The one-time pass over old cancels, which a playlist's Download waits for. Null only in tests that don't need it. */
     private val loneCancelBackfill: com.stash.core.data.db.LoneCancelBackfill? = null,
+    /**
+     * The one-time pass that puts hand downloads made before #761 in Your Downloads, which the
+     * orphan sweep waits for. Null only in tests that don't need it.
+     */
+    private val ownDownloadsBackfill: com.stash.core.data.db.OwnDownloadsBackfill? = null,
 ) : MusicRepository {
 
     // ── Deletion event plumbing ─────────────────────────────────────────
@@ -216,6 +222,12 @@ class MusicRepositoryImpl @Inject constructor(
         // 2026-05-12: tracks with FLAC quality + album art + no audible
         // playback because the file was missing.
         reconcileMissingDownloadedFiles()
+
+        // #761, once per install: hand downloads from before this build join Your Downloads,
+        // in either mode, while their "asked for" mark is still there (Downloads › Clear
+        // history erases it). Here so an Accumulate library gets it too: the sweep below
+        // waits for it as well, but returns before it when nothing may be deleted.
+        ownDownloadsBackfill?.ensureRan()
 
         // Clean up orphaned mix tracks — downloaded tracks whose playlist was
         // refreshed and that no longer belong to any playlist. Deletes their
@@ -756,13 +768,24 @@ class MusicRepositoryImpl @Inject constructor(
 
         // The song is already on the phone as another row (a hand download, or a copy synced from
         // the other service): a second download would only add a second file and a second row in
-        // Downloads. A tap has no playlist to link that copy into, so nothing changes but the
-        // answer; a playlist's Download switch and a sync link it (insertDownloadsForPlaylist,
-        // DiffWorker).
+        // Downloads. The tap links that copy where a download of it would go, Your Downloads
+        // (#761): told "Already on your phone", the user must not lose it when a mix it came
+        // from rotates it out under Refresh. A playlist's Download switch and a sync link it
+        // into their playlist instead (insertDownloadsForPlaylist, DiffWorker).
         libraryCopyFor(entity)?.let { copy ->
             android.util.Log.i("MusicRepository", "download of track $trackId skipped: already on the phone as track ${copy.id}")
+            keepInYourDownloads(copy.id)
             return DownloadRequestResult.ALREADY_ON_PHONE
         }
+
+        // #761: the song joins Your Downloads before anything downloads, the way Search links
+        // before its file lands, so it is never a downloaded song in no playlist, which Refresh
+        // cleanup deletes. Durable: Downloads › Clear history, which erases the queue row's
+        // user_requested mark the sweep also spares, leaves the link. At the tap rather than
+        // when the file lands, because only the tap knows it was the user's own choice (a Retry
+        // or Library Health marks a sync's rows the same way). No link, no download: the user
+        // taps again rather than getting a file that cleanup can take.
+        if (!keepInYourDownloads(trackId)) return DownloadRequestResult.NOT_QUEUED
 
         // Reuse an existing queue row if there is one; otherwise insert a fresh
         // manual (discovery-partition) row. A manual tap is an explicit
@@ -797,6 +820,22 @@ class MusicRepositoryImpl @Inject constructor(
         singleTrackDownloadEnqueuer.enqueue(queueId)
         return DownloadRequestResult.QUEUED
     }
+
+    /**
+     * [linkTrackToDownloadsMix], reporting failure instead of throwing: false (logged) when the
+     * link couldn't be written, a song deleted meanwhile included. A tap's callers launch it
+     * without a catch, so a throw here would crash the screen.
+     */
+    private suspend fun keepInYourDownloads(trackId: Long): Boolean =
+        try {
+            linkTrackToDownloadsMix(trackId)
+            true
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("MusicRepository", "Your Downloads: couldn't link track $trackId", e)
+            false
+        }
 
     /**
      * The phone's own copy of [entity]'s song in another row ([findLibraryCopy]), or null. A failed
@@ -1201,7 +1240,7 @@ class MusicRepositoryImpl @Inject constructor(
             // "Its songs stay", the dialog says: but the delete takes the playlist's song links
             // with it (CASCADE), and a downloaded song left in no playlist is what the orphan
             // sweep deletes under Refresh. Those go to Your Downloads first, as Search downloads do.
-            if (playlist.sourceId != DOWNLOADS_MIX_SOURCE_ID) {
+            if (playlist.sourceId != YourDownloadsPlaylist.SOURCE_ID) {
                 linkTracksToDownloadsMix(trackDao.downloadedSongsOnlyIn(playlist.id))
             }
             playlistDao.delete(playlist.toEntity())
@@ -1220,8 +1259,14 @@ class MusicRepositoryImpl @Inject constructor(
             }
         }
         playlistId?.let { id ->
-            playlistDao.updateTrackCount(id, trackDao.getByPlaylist(id, includeStreamable = true).first().size)
+            playlistDao.updateTrackCount(id, trackDao.countByPlaylist(id, includeStreamable = true))
         }
+    }
+
+    override suspend fun keepUnlistedInYourDownloads(trackIds: List<Long>): Int {
+        val unlisted = trackIds.distinct().chunkedForBind { trackDao.idsInNoPlaylistRaw(it) }
+        if (unlisted.isNotEmpty()) linkTracksToDownloadsMix(unlisted)
+        return unlisted.size
     }
 
     /**
@@ -1444,18 +1489,12 @@ class MusicRepositoryImpl @Inject constructor(
             playlist = downloadsMixEntity(),
             trackId = trackId,
         )
-        val count = trackDao.getByPlaylist(playlistId, includeStreamable = true).first().size
-        playlistDao.updateTrackCount(playlistId, count)
+        // A COUNT, not a load of every member: a multi-select Download of N songs links N
+        // times, and loading Your Downloads each time grew with every song it added.
+        playlistDao.updateTrackCount(playlistId, trackDao.countByPlaylist(playlistId, includeStreamable = true))
     }
 
-    private fun downloadsMixEntity() =
-        com.stash.core.data.db.entity.PlaylistEntity(
-            name = "Your Downloads",
-            source = com.stash.core.model.MusicSource.BOTH,
-            sourceId = DOWNLOADS_MIX_SOURCE_ID,
-            type = com.stash.core.model.PlaylistType.DOWNLOADS_MIX,
-            syncEnabled = false,
-        )
+    private fun downloadsMixEntity() = YourDownloadsPlaylist.entity()
 
     override suspend fun removeTrackFromPlaylist(trackId: Long, playlistId: Long) {
         playlistDao.softDeleteTrackFromPlaylist(playlistId, trackId)
@@ -1760,6 +1799,14 @@ class MusicRepositoryImpl @Inject constructor(
             android.util.Log.d("StashCleanup", "Skipped orphan sweep — accumulate mode active")
             return 0
         }
+        // #761: never before the one-time pass that puts hand downloads from before this build in
+        // Your Downloads. A sync's sweep can come first on the first launch, and some of those
+        // songs (taps from before v0.9.110 marked them) have nothing else sparing them. If the
+        // pass failed, this sweep is skipped: cleanup waits a launch, a song is never lost to it.
+        if (ownDownloadsBackfill != null && !ownDownloadsBackfill.ensureRan()) {
+            android.util.Log.w("StashCleanup", "Skipped orphan sweep — the one-time Your Downloads pass hasn't run")
+            return 0
+        }
         // Re-evaluate the orphan predicate (membership + active-discovery
         // exclusion) and delete the rows in ONE transaction, so a track
         // re-linked by DiffWorker / the mix materializer in the gap can't be
@@ -1795,8 +1842,6 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     companion object {
-        private const val DOWNLOADS_MIX_SOURCE_ID = "stash_downloads_mix"
-
         /** Prefs of playlist deletes started and not finished (last look L-N1). */
         private const val DELETE_JOURNAL = "playlist_deletes"
 

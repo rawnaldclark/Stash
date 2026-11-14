@@ -1038,6 +1038,14 @@ interface DownloadQueueDao {
      * [getAllPendingBySources] has always filtered it; this query was
      * simply missing it.
      *
+     * Never a row the user asked for (`user_requested`, #761): a tap on a song a sync
+     * once queued reuses the sync's row ([requeueForTap], [markUserRequested]), so it
+     * keeps its `sync_id`, and a Retry marks a sync's row the same way
+     * ([atomicallyClaimForRetry]). The download feeders take such a row ([TAKEN_BY_A_SYNC_DOWNLOAD]); this
+     * sweep deleting it at the next cold start dropped the tap without a word. The
+     * user's own Cancel ([markCancelledIfActive]) and Remove download
+     * ([deleteByTrackId]) still stop it.
+     *
      * Returns the number of queue rows deleted.
      */
     @Query(
@@ -1050,6 +1058,8 @@ interface DownloadQueueDao {
           -- made. Without this, tapping Download on a track that lives only in a
           -- mix silently produced nothing.
           AND sync_id IS NOT NULL
+          -- Nor a sync's row a tap or a Retry took over (#761).
+          AND user_requested = 0
           AND track_id NOT IN (
             SELECT DISTINCT pt.track_id
             FROM playlist_tracks pt
@@ -1389,6 +1399,11 @@ interface DownloadQueueDao {
      * cancelled row whose track is still in a sync-enabled playlist
      * survives here and keeps doing its job.)
      *
+     * Never a row the user asked for (`user_requested`, #761), in any of these states:
+     * see [cancelDownloadsWithNoEnabledPlaylist]. A tap waiting for lossless, or one
+     * that failed and waits for its Retry, was dropped by the next sync's reconcile.
+     * A cancelled one stays as History until Clear history, like a manual row.
+     *
      * @return Number of rows deleted.
      */
     @Query("""
@@ -1398,6 +1413,8 @@ interface DownloadQueueDao {
           -- manual (sync_id NULL) row is a download the user asked for; sweeping
           -- it is how search-tab downloads went missing on relaunch.
           AND sync_id IS NOT NULL
+          -- Nor a sync's row a tap or a Retry took over (#761).
+          AND user_requested = 0
           AND track_id NOT IN (
               SELECT pt.track_id FROM playlist_tracks pt
               INNER JOIN playlists p ON p.id = pt.playlist_id

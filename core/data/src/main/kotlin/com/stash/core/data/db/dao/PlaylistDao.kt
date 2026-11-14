@@ -222,6 +222,37 @@ interface PlaylistDao {
     }
 
     /**
+     * Adds each of [trackIds] to [playlist] (made if missing) after its last song, in ONE
+     * transaction, and leaves every link that exists as it is: one in it keeps its place, one
+     * the user took out stays out. Songs no longer in the library are skipped (read inside the
+     * transaction, so no delete can land between the check and the insert). Returns the
+     * playlist's id. For the one-time Your Downloads pass (#761), which can link hundreds of
+     * songs where [ensurePlaylistAndActiveCrossRef] would take five queries each.
+     */
+    @Transaction
+    suspend fun ensurePlaylistAndAddAbsent(playlist: PlaylistEntity, trackIds: List<Long>): Long {
+        val playlistId = ensurePlaylist(playlist)
+        val wanted = trackIds.distinct()
+        val present = wanted.chunkedForBind { existingTrackIdsRaw(it) }.toSet()
+        var position = getNextPosition(playlistId)
+        insertCrossRefsIfAbsent(
+            wanted.filter { it in present }.map { trackId ->
+                PlaylistTrackCrossRef(
+                    playlistId = playlistId,
+                    trackId = trackId,
+                    position = position++,
+                    locallyAdded = true,
+                )
+            },
+        )
+        return playlistId
+    }
+
+    /** The ids among [ids] that are still tracks. Route through [chunkedForBind]. */
+    @Query("SELECT id FROM tracks WHERE id IN (:ids)")
+    suspend fun existingTrackIdsRaw(ids: List<Long>): List<Long>
+
+    /**
      * Bulk counterpart to [insertCrossRef] — one INSERT statement covering
      * every row instead of N round-trips. Used by DiffWorker's batched
      * sync-diff pass to link (or re-link) many tracks to a playlist at once.

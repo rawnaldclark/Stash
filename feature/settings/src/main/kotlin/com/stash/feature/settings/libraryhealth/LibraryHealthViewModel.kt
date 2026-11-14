@@ -100,6 +100,16 @@ class LibraryHealthViewModel @Inject constructor(
                             )
                         },
                     )
+                    // The ones no playlist holds join Your Downloads (#761): asked back by the
+                    // user, they must not land as songs in no playlist, which Refresh deletes.
+                    // A failed link still leaves them queued (their mark spares them meanwhile).
+                    try {
+                        musicRepository.keepUnlistedInYourDownloads(ids)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Your Downloads link for the re-downloads failed", e)
+                    }
                     ids.size
                 }.onFailure { Log.w(TAG, "restoreMissingDownloads failed", it) }.getOrDefault(0)
             }

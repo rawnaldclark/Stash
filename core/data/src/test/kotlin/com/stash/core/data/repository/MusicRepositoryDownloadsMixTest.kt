@@ -23,7 +23,6 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -65,10 +64,8 @@ class MusicRepositoryDownloadsMixTest {
         val playlistDao = mockk<PlaylistDao>(relaxed = true)
         coEvery { playlistDao.ensurePlaylistAndActiveCrossRef(any(), 99L) } returns 42L
 
-        // addTrackToPlaylist calls trackDao.getByPlaylist(...).first() to update the
-        // track count — return an empty list so first() doesn't block.
+        // The recount is a COUNT (trackDao.countByPlaylist), which the relaxed mock answers 0.
         val trackDao = mockk<TrackDao>(relaxed = true)
-        coEvery { trackDao.getByPlaylist(42L, includeStreamable = true) } returns flowOf(emptyList())
 
         val repo = buildRepo(playlistDao = playlistDao, trackDao = trackDao)
         repo.linkTrackToDownloadsMix(trackId = 99L)
