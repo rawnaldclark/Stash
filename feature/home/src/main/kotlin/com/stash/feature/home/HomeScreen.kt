@@ -184,6 +184,7 @@ fun HomeScreen(
     // Task 7 wires the actual mix-browse destination; today a no-op from the host.
     onSeeAllMixes: (MixRail) -> Unit = {},
     onReportIssue: () -> Unit = {},
+    onOpenHomeLayout: () -> Unit = {},
     onShareMix: (Long) -> Unit = {},
     /** Community's section, from feature/community; the app fills it (spec 2026-09-26 §3). */
     communitySection: @Composable () -> Unit = {},
@@ -785,6 +786,10 @@ fun HomeScreen(
             }
         }
 
+        // ── Edit Home: the Home layout page, from the end of the feed ──
+        item(key = "edit_home") {
+            EditHomeButton(onClick = onOpenHomeLayout, modifier = Modifier.fillMaxWidth().padding(top = 28.dp, bottom = 8.dp))
+        }
     }
 
     // ── Shelf sheets (long-press a Because you like or New from your artists card) ──
