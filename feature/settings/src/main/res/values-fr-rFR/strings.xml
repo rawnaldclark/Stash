@@ -396,8 +396,6 @@
     <!-- Settings > Playback -->
     <string name="settings_stream_on_cellular_title">Streaming sur réseau mobile</string>
     <string name="settings_stream_on_cellular_desc">Utilise les données mobiles</string>
-    <string name="settings_stream_via_youtube_title">Lire via YouTube</string>
-    <string name="settings_stream_via_youtube_desc">Essayez ceci si les titres ne se lisent pas ou se coupent</string>
     <string name="settings_force_qobuz_debug_title">Forcer Qobuz uniquement (débogage)</string>
     <string name="settings_force_qobuz_debug_desc">Versions de débogage uniquement. Le streaming et les téléchargements passent par Qobuz, sans solution de repli via YouTube.</string>
     <string name="settings_streaming_unavailable">Le streaming n’est pas disponible dans cette version.</string>
