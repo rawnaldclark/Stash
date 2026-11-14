@@ -410,8 +410,9 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
   // seat 2 of its own (the isPreviewAnswer branch); with the flag off it is never consulted.
   const useV2 = (v2Manifests(env) || mse) && !aacOnly;
   let budget = { calls: 0 };
-  // Set when a seat answered with a preview (isPreviewAnswer): with no seat left to ask, busy, never the preview.
-  let previewed = false;
+  // The seat that answered with a preview (isPreviewAnswer), once one has: with no seat left to ask, busy, never the
+  // preview; a second, different seat's preview is the track's (see the isPreviewAnswer branch).
+  let previewedBy = null;
   for (let attempt = 0; attempt < STREAM_SEATS; attempt++) {
     if (useV2 && budget.calls >= 2) break;
     const account = await takeAccount(env, seatKind);
@@ -459,9 +460,19 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
     // album whole minutes later. So it is cooled like a 5xx and the next seat asked; with none left, busy (never
     // cached) and the app asks again later. v2 refuses its own previews (v2Stream).
     if (isPreviewAnswer(info)) {
+      if (previewedBy !== null && String(previewedBy) !== String(account.id)) {
+        // A second, different seat with only the preview of this track: the track's preview (Tidal plays 30 s of it to
+        // anyone), not a second lapsed seat. Resting seats for it would let one phone re-asking the song rest the whole
+        // pool, 2 seats a time, so this seat does not rest, and the answer is the track's short miss: not_available,
+        // cached 6 h here (NOT_AVAILABLE_TTL) and kept 6 h by the app (its non-definitive miss), which falls back once.
+        // Not lossless_unavailable: the app keeps that one 14 days, as a definitive answer about the song.
+        console.warn(`tidal_preview_track ${JSON.stringify({ track: String(trackId), accounts: [String(previewedBy).slice(-4), String(account.id).slice(-4)] })}`);
+        trace.reason = "preview_track";
+        return json({ error: "not_available" }, 404);
+      }
       console.warn(`tidal_preview ${JSON.stringify({ account: String(account.id).slice(-4), track: String(trackId) })}`);
       await coolAccount(env, account.id, 300); // the seat's own rest; takeAccount skips it for the rest of this request
-      previewed = true;
+      previewedBy = account.id;
       if (attempt + 1 < STREAM_SEATS) {
         // The next seat is a second ask for a seat, so it is paid from this network's fair share like one (the app
         // re-asks within seconds now, so an unpaid second seat would double what a network can take): over it, the
@@ -491,7 +502,7 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
   // A preview is one seat's answer, not the pool's: the short pacing wait while any other seat is free or only
   // waiting out its gap, so the app asks again in 15 s. Every seat resting or capped is the pool's own five minutes,
   // as when no seat could be taken at all.
-  if (previewed) return noSeat(env, seatKind.client);
+  if (previewedBy !== null) return noSeat(env, seatKind.client);
   // Both seats failed at seat level (Tidal 5xx, failed refresh) and rest; another seat may answer shortly. Without a
   // Retry-After the app paused Tidal for the whole phone for its five-minute default.
   return json({ error: "upstream_unavailable" }, 503, { "Retry-After": String(PACING_RETRY_AFTER) });
