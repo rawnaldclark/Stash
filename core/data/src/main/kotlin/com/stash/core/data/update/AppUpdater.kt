@@ -246,7 +246,9 @@ class AppUpdater internal constructor(
      */
     @Synchronized
     fun onReturnFromPermission() {
-        if (_state.value != UpdateState.NeedsPermission || job?.isActive == true) return
+        // The state alone guards a second resume (the first sets Installing). Not the job: it sets NeedsPermission a moment
+        // before it ends, and a resume in that moment must not be dropped.
+        if (_state.value != UpdateState.NeedsPermission) return
         val update = _available.value ?: return
         val apk = apkFile(update)
         if (!apk.exists() || !steps.canInstall()) return
@@ -352,8 +354,11 @@ class AppUpdater internal constructor(
         }
     }
 
-    /** A download or install under way (a confirm Android shows counts too). */
-    private fun busy() = job?.isActive == true || _state.value == UpdateState.Installing
+    /**
+     * A download or install under way (a confirm Android shows counts too). Read from the state, not from the job: a job
+     * sets its last state (NeedsPermission, Failed) a moment before it ends, and a tap then must still count.
+     */
+    private fun busy() = _state.value.let { it is UpdateState.Downloading || it == UpdateState.Installing }
 
     /** The install (or Android's permission step first), a failure of it (no space to stage the APK, the installer refusing) shown, never thrown. */
     private fun installOrFail(apk: File) {

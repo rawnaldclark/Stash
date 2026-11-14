@@ -18,8 +18,12 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
@@ -171,7 +175,6 @@ class AppUpdaterTest {
         val updater = updaterFor(steps)
         updater.update()
         assertThat(updater.awaitState { it == UpdateState.NeedsPermission }).isEqualTo(UpdateState.NeedsPermission)
-        idle() // the state is set a moment before the job ends; a resume while the job is still active is ignored
 
         steps.allowed = true
         repeat(3) { updater.onReturnFromPermission() }
@@ -187,7 +190,6 @@ class AppUpdaterTest {
         val updater = updaterFor(steps)
         updater.update()
         updater.awaitState { it == UpdateState.NeedsPermission }
-        idle() // the job ends a moment after it sets the state; Update now below is ignored while it is active
 
         updater.reset()
         assertThat(updater.state.value).isEqualTo(UpdateState.Idle)
@@ -454,6 +456,31 @@ class AppUpdaterTest {
     @Test
     fun `the installed version is read for the sheet`() {
         assertThat(updaterFor(FakeSteps()).installedVersion).isEqualTo("0.9.0")
+    }
+
+    @Test
+    fun `a resume or Update now in the moment after NeedsPermission is set, before its job ends, still counts`() {
+        val steps = FakeSteps(allowed = false)
+        val updater = updaterFor(steps)
+        // Runs on the job's own thread, inside the state change: the job has not ended yet.
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        var resumed = false
+        scope.launch {
+            updater.state.collect {
+                if (it == UpdateState.NeedsPermission && !resumed) {
+                    resumed = true
+                    steps.allowed = true
+                    updater.onReturnFromPermission()
+                }
+            }
+        }
+        updater.update()
+        idle()
+        scope.cancel()
+
+        assertThat(resumed).isTrue()
+        assertThat(steps.installs.get()).isEqualTo(1)
+        assertThat(steps.commits.get()).isEqualTo(1)
     }
 
     @Test
