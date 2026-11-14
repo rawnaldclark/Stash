@@ -16,7 +16,6 @@ import androidx.media3.test.utils.FakeMediaSource
 import androidx.media3.test.utils.FakeRenderer
 import androidx.media3.test.utils.FakeTimeline
 import androidx.media3.test.utils.TestExoPlayerBuilder
-import androidx.media3.test.utils.robolectric.RobolectricUtil
 import androidx.media3.test.utils.robolectric.TestPlayerRunHelper
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
@@ -174,11 +173,14 @@ class CrossfadeEngineRunOutTest {
         val fade = fadeOutOfA()
         fade.master.addMediaItem(1, song("x")) // "b" is no longer the next song
 
-        // "a" runs out (the hold), and the fade gives way to "x".
-        RobolectricUtil.runMainLooperUntil { !fade.master.playWhenReady || fade.master.currentMediaItemIndex == 1 }
-        advanceTimeBy(1_000)
-        runCurrent()
+        // "a" runs out (the hold), the fade gives way to "x", and "x" plays to its first second.
+        // One wait, asked for while "a" is still held back: "a" can't end without this thread (the
+        // engine hands back from a listener here). Asked for after "x" had started, the wait raced
+        // the playback thread, which plays on while this thread does anything else: once "x" was
+        // past its first second the position was never reported, and the test timed out (on CI).
         TestPlayerRunHelper.run(fade.master).untilPosition(1, 1_000)
+        advanceTimeBy(1_000) // a ramp left running would show here
+        runCurrent()
 
         assertThat(fade.swapped).isNull()
         assertThat(fade.engine.masterPlayer).isSameInstanceAs(fade.master)
