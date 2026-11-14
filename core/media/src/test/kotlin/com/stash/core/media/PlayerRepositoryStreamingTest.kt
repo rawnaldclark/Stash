@@ -13,6 +13,7 @@ import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.media.streaming.StreamSourceRegistry
 import com.stash.core.media.streaming.StreamUrl
 import com.stash.core.media.streaming.StreamUrlCache
+import com.stash.core.media.streaming.forThisPlayOnly
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -209,6 +210,80 @@ class PlayerRepositoryStreamingTest {
         verify {
             streamUrlCache.put(3L, match { it.url.contains("fresh?etsp=1234") })
         }
+    }
+
+    @Test
+    fun buildMediaItem_fallbackAnEarlierPlayKeptWhileTidalWasBusy_isNotReused() = runTest {
+        // 11-13 on the P5: Poor Jack fell to YouTube Opus while Tidal's relay said busy (503,
+        // Retry-After 15), and every play after it for the six hours that link lives played the Opus
+        // again. A link kept only for its own play is not this tap's: the tap asks again.
+        val track = streamable(id = 5L)
+        every { streamingPreference.streamOnCellular } returns flowOf(true)
+        coEvery { streamingPreference.current() } returns true
+        every { connectivity.isConnected() } returns true
+        every { connectivity.isCellular() } returns false
+        every { streamUrlCache.get(5L) } returns StreamUrl(
+            url = "https://yt.example/busy-fallback",
+            expiresAtMs = 9_999_000L,
+            origin = "youtube",
+            losslessBusyUntilMs = 1_000L,
+        )
+        coEvery { streamResolver.resolve(track) } returns StreamUrl(
+            url = "https://tidal.example/song.flac",
+            expiresAtMs = 9_999_000L,
+            codec = "flac",
+            origin = "tidal",
+        )
+
+        val result = repo.buildMediaItemForTrack(track)
+
+        val item = (result as StreamRoutingResult.Item).mediaItem
+        assertThat(item.localConfiguration?.uri?.toString()).isEqualTo("https://tidal.example/song.flac")
+        coVerify(exactly = 1) { streamResolver.resolve(track) }
+    }
+
+    @Test
+    fun buildMediaItem_tapWhileTidalIsBusy_playsTheFallbackNowForThisPlayOnly() = runTest {
+        // A tap never waits: the fallback plays at once and goes in the cache for this play's badge,
+        // marked, so the next play asks again.
+        val track = streamable(id = 6L)
+        every { streamingPreference.streamOnCellular } returns flowOf(true)
+        coEvery { streamingPreference.current() } returns true
+        every { connectivity.isConnected() } returns true
+        every { connectivity.isCellular() } returns false
+        every { streamUrlCache.get(6L) } returns null
+        coEvery { streamResolver.resolve(track) } returns StreamUrl(
+            url = "https://yt.example/busy-fallback",
+            expiresAtMs = 9_999_000L,
+            origin = "youtube",
+            losslessBusyUntilMs = 1_000L,
+        )
+
+        val result = repo.buildMediaItemForTrack(track)
+
+        val item = (result as StreamRoutingResult.Item).mediaItem
+        assertThat(item.localConfiguration?.uri?.toString()).isEqualTo("https://yt.example/busy-fallback")
+        verify { streamUrlCache.put(6L, match { it.forThisPlayOnly }) }
+    }
+
+    @Test
+    fun buildMediaItem_fallbackForASongWithNoLosslessVersion_isStillReused() = runTest {
+        val track = streamable(id = 7L)
+        every { streamingPreference.streamOnCellular } returns flowOf(true)
+        coEvery { streamingPreference.current() } returns true
+        every { connectivity.isConnected() } returns true
+        every { connectivity.isCellular() } returns false
+        every { streamUrlCache.get(7L) } returns StreamUrl(
+            url = "https://yt.example/only-on-youtube",
+            expiresAtMs = 9_999_000L,
+            origin = "youtube",
+        )
+
+        val result = repo.buildMediaItemForTrack(track)
+
+        val item = (result as StreamRoutingResult.Item).mediaItem
+        assertThat(item.localConfiguration?.uri?.toString()).isEqualTo("https://yt.example/only-on-youtube")
+        coVerify(exactly = 0) { streamResolver.resolve(any(), any(), any(), any()) }
     }
 
     /**

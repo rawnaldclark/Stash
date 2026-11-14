@@ -71,6 +71,10 @@ class TidalStreamResolver @Inject constructor(
         val lookup = client.lookup(track.toQuery(), allowAac = true, aacOnly = true)
         val s = (lookup as? com.stash.data.download.lossless.tidal.TidalLookup.Found)?.stream ?: run {
             Log.d(TAG, "aac_only no_result id=${track.id} (${lookup.javaClass.simpleName})")
+            // Busy is not "no AAC": the walk's lossy fallback is for this play only (see TidalClient.resolve).
+            if (lookup is com.stash.data.download.lossless.tidal.TidalLookup.Busy) {
+                com.stash.data.download.lossless.noteLosslessBusy(lookup.untilMs)
+            }
             return null
         }
         if (!s.codec.equals("aac", ignoreCase = true)) {

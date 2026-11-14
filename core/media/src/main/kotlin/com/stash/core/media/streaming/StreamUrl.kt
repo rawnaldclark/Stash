@@ -63,4 +63,22 @@ data class StreamUrl(
      * Never shown, and never the song's length elsewhere: it may be the add-on's word.
      */
     val songMs: Long? = null,
+    /**
+     * Set on a LOSSY stream (JioSaavn, YouTube, an add-on's lossy pass) served only because a
+     * lossless source was busy (Tidal's relay asked to be left alone until then): epoch-ms when
+     * that source may be asked again. Null for everything else, a fallback for a song with no
+     * lossless version included.
+     *
+     * Such a stream is for this play only ([forThisPlayOnly]). It stays in [StreamUrlCache] while
+     * it plays (the open, a seek, the quality badge read it there), but a new play never reuses it:
+     * the next tap, look-ahead or queue asks the lossless sources again. Without this, one busy
+     * minute left a song on YouTube Opus for the six hours its link lives.
+     */
+    val losslessBusyUntilMs: Long? = null,
 )
+
+/**
+ * A lossy fallback served because a lossless source was busy ([StreamUrl.losslessBusyUntilMs]):
+ * played this time, never picked up from [StreamUrlCache] by a later play.
+ */
+val StreamUrl.forThisPlayOnly: Boolean get() = losslessBusyUntilMs != null

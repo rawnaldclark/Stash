@@ -87,6 +87,12 @@ class StashMediaSourceFactory(
      * don't ask, and then nothing is judged.
      */
     private val addonCheck: AddonStreamCheck? = null,
+    /**
+     * The next song's look-ahead when a lossless source was busy: waits out its Retry-After once,
+     * while the current song plays, and asks it again ([BusyLookAhead]). Null in tests that don't
+     * ask, and then a busy fallback plays at once, as for a tapped song.
+     */
+    private val busyLookAhead: BusyLookAhead? = null,
 ) : MediaSource.Factory {
 
     private val resolver = resolver
@@ -189,6 +195,32 @@ class StashMediaSourceFactory(
         val first = resolver.resolve(entity, allowYouTube = true, allowYtDlp = true) ?: return null
         if (urlCache.isServable(first)) return first
         return resolver.resolve(entity, allowYouTube = true, allowYtDlp = true)?.takeIf { urlCache.isServable(it) }
+    }
+
+    /**
+     * What a [ResolveFirstMediaSource] for placeholder [trackId] plays, warmed into [urlCache] for its
+     * child to open: null for a downloaded file (the lazy child opens it), else the cached link or a
+     * fresh resolve. This is a NEW play of the song (a tap, the next song's look-ahead, a queue
+     * rebuilt), so a link an earlier play kept only for itself ([forThisPlayOnly]: a fallback while
+     * Tidal was busy) is not taken: the lossless sources are asked again. A busy fallback from this
+     * resolve is waited on by [busyLookAhead] when the song is resolved ahead of the playing one.
+     * Internal for tests; runs on [resolveScope].
+     */
+    internal suspend fun resolveForSource(trackId: Long, uri: android.net.Uri): StreamUrl? {
+        val row = trackDao.getById(trackId)
+        if (row?.usableDownload(context) != null) return null
+        val cached = urlCache.get(trackId)?.takeIf {
+            !it.forThisPlayOnly &&
+                ((row?.soundCloudId == null && row?.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud")
+        }
+        if (cached != null) return cached
+        val entity = (if (uri.getQueryParameter("sc") == "1" && row?.soundCloudId == null) null else placeholderEntity(trackDao, trackId, uri))
+            ?: return null
+        val first = resolveServable(entity)
+        val settled = busyLookAhead?.settle(trackId, first) {
+            resolver.resolveLosslessOnly(entity)?.takeIf { urlCache.isServable(it) }
+        } ?: first
+        return settled?.also { urlCache.put(trackId, it) }
     }
 
     /**
@@ -308,19 +340,7 @@ class StashMediaSourceFactory(
                 return ResolveFirstMediaSource(
                     mediaItem = mediaItem,
                     scope = resolveScope,
-                    resolve = {
-                        // A downloaded file needs no resolve: the lazy child opens it.
-                        val row = trackDao.getById(trackId)
-                        if (row?.usableDownload(context) != null) {
-                            null
-                        } else {
-                            urlCache.get(trackId)?.takeIf {
-                                (row?.soundCloudId == null && row?.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud"
-                            } ?: (if (uri.getQueryParameter("sc") == "1" && row?.soundCloudId == null) null else placeholderEntity(trackDao, trackId, uri))
-                                ?.let { resolveServable(it) }
-                                ?.also { urlCache.put(trackId, it) }
-                        }
-                    },
+                    resolve = { resolveForSource(trackId, uri) },
                     childFor = { item, resolved ->
                         // A manifest's segments are read by the DASH source, never by a placeholder's data
                         // source: which add-on answered is noted here (a progressive child notes it as it opens).
