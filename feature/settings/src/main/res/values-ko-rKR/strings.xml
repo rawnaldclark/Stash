@@ -392,8 +392,6 @@
     <!-- Settings > Playback -->
     <string name="settings_stream_on_cellular_title">모바일 데이터로 스트리밍</string>
     <string name="settings_stream_on_cellular_desc">모바일 데이터를 사용합니다</string>
-    <string name="settings_stream_via_youtube_title">YouTube를 통해 스트리밍</string>
-    <string name="settings_stream_via_youtube_desc">노래가 재생되지 않거나 끊기면 시도해 보세요</string>
     <string name="settings_force_qobuz_debug_title">Qobuz만 강제 사용 (디버그)</string>
     <string name="settings_force_qobuz_debug_desc">디버그 빌드 전용입니다. YouTube 대체 없이 Qobuz를 통해 스트리밍 및 다운로드를 라우팅합니다</string>
     <string name="settings_streaming_unavailable">이 빌드에서는 스트리밍을 사용할 수 없습니다</string>

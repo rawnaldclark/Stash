@@ -39,7 +39,7 @@ import kotlin.math.roundToInt
  *
  * This re-homes the original `StashConstants.STREAMING_ENGINE_ENABLED` block from
  * the monolithic `SettingsScreen.kt`: the Online/Offline mode picker plus the
- * streaming toggles (cellular, YouTube fallback, antra-only). This is a
+ * streaming toggles (cellular, plus the debug-only test switches). This is a
  * behavior-preserving relocation + restyle — every control calls the SAME
  * [SettingsViewModel] method the old screen used; no logic is changed.
  */
@@ -107,14 +107,6 @@ fun SettingsPlaybackScreen(
                             onCheckedChange = viewModel::onStreamOnCellularToggle,
                         )
                     }
-                    add {
-                        SettingsToggleRow(
-                            title = stringResource(R.string.settings_stream_via_youtube_title),
-                            subtitle = stringResource(R.string.settings_stream_via_youtube_desc),
-                            checked = forceYouTubeFallback,
-                            onCheckedChange = viewModel::setForceYouTubeFallback,
-                        )
-                    }
                     // Force-Qobuz is a DEVELOPER instrument and is debug-only below.
                     // Shipping one of these cost a real outage: a force toggle left on
                     // in a release install silently disabled lossless, and the hunt for
@@ -137,6 +129,15 @@ fun SettingsPlaybackScreen(
                                 subtitle = stringResource(R.string.settings_skip_qobuz_debug_desc),
                                 checked = skipQobuz,
                                 onCheckedChange = viewModel::setSkipQobuz,
+                            )
+                        }
+                        // Debug only (2026-11-13): as a user setting it was left on and cost people FLAC.
+                        add {
+                            SettingsToggleRow(
+                                title = stringResource(R.string.settings_force_youtube_debug_title),
+                                subtitle = stringResource(R.string.settings_force_youtube_debug_desc),
+                                checked = forceYouTubeFallback,
+                                onCheckedChange = viewModel::setForceYouTubeFallback,
                             )
                         }
                     }
