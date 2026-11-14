@@ -71,6 +71,13 @@ data class TrackPathRow(
     @androidx.room.ColumnInfo(name = "file_path") val filePath: String,
 )
 
+/** A downloaded FLAC and the song's known length, for the one-time check for clips ([TrackDao.downloadedFlacsAfter]). */
+data class DownloadedFlacRow(
+    val id: Long,
+    @androidx.room.ColumnInfo(name = "file_path") val filePath: String,
+    @androidx.room.ColumnInfo(name = "duration_ms") val durationMs: Long,
+)
+
 /**
  * #380 — the Library Songs feed projection: exactly the columns
  * `LibraryTrackRow.toDomain()` consumes, nothing else.
@@ -2767,6 +2774,31 @@ interface TrackDao {
         """
     )
     suspend fun restoreKeptFile(trackId: Long, keptPath: String): Int
+
+    /**
+     * The next [limit] songs Stash downloaded as FLAC, by id after [afterId]: the pages the one-time
+     * check for clips reads (0.9.125, `ExistingClipCheck` in `:data:download`). By id, so a run the
+     * system stopped carries on after the last page it finished.
+     *
+     * Not the person's own files: an imported file ('LOCAL') or a song from their cloud ('CLOUD')
+     * is what they gave Stash, never fetched again. All Songs scans have no row here. A FLAC is
+     * known by the format the download recorded or by the file's name; the check reads the file's
+     * first bytes as well, so a name that lies is passed over there.
+     */
+    @Query(
+        """
+        SELECT id, file_path, duration_ms FROM tracks
+        WHERE id > :afterId
+          AND is_downloaded = 1
+          AND file_path IS NOT NULL
+          AND file_path != ''
+          AND source NOT IN ('LOCAL', 'CLOUD')
+          AND (LOWER(file_format) = 'flac' OR LOWER(file_path) LIKE '%.flac')
+        ORDER BY id
+        LIMIT :limit
+        """
+    )
+    suspend fun downloadedFlacsAfter(afterId: Long, limit: Int): List<DownloadedFlacRow>
 
     /**
      * All `is_downloaded=1` rows with their stored `file_path`. Drives the

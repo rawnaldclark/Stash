@@ -552,6 +552,13 @@ class DownloadManager @Inject constructor(
             emitProgress(track.id, 0f, DownloadStatus.FAILED)
             return TrackDownloadResult.Failed("Downloaded file too small — discarded as a failed download")
         }
+        // No download is kept as the song when its audio is a clip of it (clipAt), from any source.
+        audioDurationExtractor.clipAt(downloadedFile.absolutePath, effectiveTrack.durationMs)?.let { clip ->
+            Log.w(TAG, "yt-dlp: '${effectiveTrack.artist} - ${effectiveTrack.title}' is a clip ($clip); not kept")
+            runCatching { downloadedFile.delete() }
+            emitProgress(track.id, 0f, DownloadStatus.FAILED)
+            return TrackDownloadResult.Failed("Downloaded file is a ${clip.playsMs / 1000} s clip of the song — discarded")
+        }
 
         // From here until the commit moves it into the library, the temp file
         // is this attempt's alone: every attempt names its own, so one that a
@@ -774,14 +781,17 @@ class DownloadManager @Inject constructor(
         val codecValid = metadata?.format == "aac"
         val bitrateValid = metadata != null &&
             metadata.bitrateKbps >= minJioSaavnBitrateKbps(match.format.bitrateKbps)
-        if (!codecValid || !bitrateValid || !durationValid) {
+        // The length above is the header's: a clip under the song's header passes it (clipAt).
+        val clip = audioDurationExtractor.clipAt(fetched.absolutePath, track.durationMs, headerMs = metadata?.durationMs)
+        if (!codecValid || !bitrateValid || !durationValid || clip != null) {
             Log.w(
                 TAG,
                 "$label media rejected for '${track.artist} - ${track.title}': " +
                     "format=${metadata?.format}, bitrate=${metadata?.bitrateKbps} " +
                     "(asked ${match.format.bitrateKbps}), " +
                     "duration=${metadata?.durationMs}, expected=${track.durationMs} " +
-                    "(${if (lengthReliable) "song length" else "video length"})",
+                    "(${if (lengthReliable) "song length" else "video length"})" +
+                    (clip?.let { ", a clip: $it" } ?: ""),
             )
             runCatching { fetched.delete() }
             return null
@@ -880,7 +890,9 @@ class DownloadManager @Inject constructor(
         val tempFile = File(fileOrganizer.getTempDir(), "lossless_${track.id}_${attemptTag()}.$ext")
 
         val fetched = losslessUrlDownloader.download(
-            source = match,
+            // The song's length goes with it: a DASH answer far shorter than the song (a preview) is
+            // refused before a segment of it is fetched.
+            source = match.copy(songMs = track.durationMs.coerceAtLeast(0L)),
             destination = tempFile,
             onProgress = { read, total ->
                 val frac = if (total > 0) read.toFloat() / total else 0f
@@ -897,7 +909,8 @@ class DownloadManager @Inject constructor(
             // The same for a fetch the add-on media client refused (it pointed at the user's own
             // network: asking again asks for the same refusal) and for one that outlasted its
             // time limit (round 2, F7 and F2).
-            if (e is LosslessUrlDownloader.NotTheStatedFormatException) {
+            // A preview answer (its DASH manifest is a clip of the song) is the same: not the song.
+            if (e is LosslessUrlDownloader.NotTheStatedFormatException || e is LosslessUrlDownloader.PreviewException) {
                 // Settings › Add-ons says this one: "Sent a file that wasn't what it said".
                 losslessHealthGate.recordWrongFile(match.sourceId)
                 return@repeat
@@ -917,14 +930,14 @@ class DownloadManager @Inject constructor(
         // inspector keys on. Probe the fetched file; if it's a sample-length
         // stub far short of the known duration, reject it, cool the source
         // down, and re-resolve so the registry fails over to the next source.
-        val probedMs = runCatching { audioDurationExtractor.extractMs(fetched.absolutePath) }
-            .getOrNull()
-        if (isLosslessDurationDegraded(probedMs, track.durationMs)) {
+        // Judged by what its frames run, not only its header: Tidal's preview of
+        // "Linger" kept the song's 4:35 header over 0:30 of audio, and passed (clipAt).
+        val clip = audioDurationExtractor.clipAt(fetched.absolutePath, track.durationMs)
+        if (clip != null) {
             Log.w(
                 TAG,
-                "duration backstop: ${match.sourceId} returned ${probedMs}ms vs expected " +
-                    "${track.durationMs}ms for '${track.artist} - ${track.title}' — " +
-                    "rejecting + failing over",
+                "duration backstop: ${match.sourceId} returned a clip ($clip) " +
+                    "for '${track.artist} - ${track.title}' — rejecting + failing over",
             )
             // A stub far shorter than the song is a file that wasn't what it was said to be.
             losslessHealthGate.recordWrongFile(match.sourceId)

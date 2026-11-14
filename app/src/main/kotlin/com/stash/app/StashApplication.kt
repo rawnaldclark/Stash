@@ -293,6 +293,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var duplicateCleanupState: com.stash.core.data.library.duplicates.DuplicateCleanupState
 
+    /** Gate for the one-time check of downloads for clips (0.9.125), see [maybeEnqueueExistingClipCheck]. */
+    @Inject
+    lateinit var existingClipCheckState: com.stash.data.download.clips.ExistingClipCheckState
+
     /** Only to cancel a lyrics upgrade the retired automatic pass queued before an update. */
     @Inject
     lateinit var lyricsUpgradeTrigger: LyricsUpgradeTrigger
@@ -713,6 +717,7 @@ class StashApplication : Application(), Configuration.Provider {
         maybeEnqueueBlocklistIntegrity()
         applicationScope.launch { maybeEnqueueCanonicalRecompute() }
         applicationScope.launch { maybeEnqueueDuplicateCleanup() }
+        applicationScope.launch { maybeEnqueueExistingClipCheck() }
         // Also fire a one-shot check on every cold start so a release pushed
         // between periodic-worker windows surfaces within seconds of the
         // next launch — the 24-hour periodic worker alone can leave users
@@ -1337,6 +1342,23 @@ class StashApplication : Application(), Configuration.Provider {
         }.onFailure {
             if (it is kotlinx.coroutines.CancellationException) throw it
             Log.w("StashMigration", "duplicate cleanup enqueue failed", it)
+        }
+    }
+
+    /**
+     * 0.9.125: the one-time check of downloaded FLACs for a clip saved as the song
+     * ([com.stash.data.download.clips.ExistingClipCheck]); a clip downloads again, its file kept
+     * until the new one lands. Enqueued on every start until it reaches the end, then this is a
+     * single DataStore read.
+     */
+    private suspend fun maybeEnqueueExistingClipCheck() {
+        runCatching {
+            if (com.stash.data.download.clips.ExistingClipCheckWorker.enqueueIfPending(this, existingClipCheckState)) {
+                Log.i("StashMigration", "maybeEnqueueExistingClipCheck: enqueued the one-time check for clips")
+            }
+        }.onFailure {
+            if (it is kotlinx.coroutines.CancellationException) throw it
+            Log.w("StashMigration", "clip check enqueue failed", it)
         }
     }
 

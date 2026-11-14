@@ -151,6 +151,10 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var duplicateCleanupState: com.stash.core.data.library.duplicates.DuplicateCleanupState
 
+    /** The one-time check for clips' "Downloading N songs again", shown once by [StashScaffold]. */
+    @Inject
+    lateinit var existingClipCheckState: com.stash.data.download.clips.ExistingClipCheckState
+
     /**
      * What every song Share sheet's "Stash link" uses to make a short link (via [LocalCreateTrackLink]). Null on any
      * failure: the sheet then shares the long link, so sharing still works.
@@ -319,6 +323,8 @@ class MainActivity : AppCompatActivity() {
                         losslessNotices = losslessQuota.noticeEvents,
                         tidyNotices = duplicateCleanupState.pendingNotice,
                         onTidyNoticeShown = duplicateCleanupState::noticeShown,
+                        clipNotices = existingClipCheckState.pendingNotice,
+                        onClipNoticeShown = existingClipCheckState::noticeShown,
                     )
                 }
             }
