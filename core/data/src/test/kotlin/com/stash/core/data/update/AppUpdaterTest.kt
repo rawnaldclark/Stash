@@ -15,12 +15,19 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -36,6 +43,29 @@ class AppUpdaterTest {
 
     private val context = ApplicationProvider.getApplicationContext<Context>()
     private lateinit var apk: File
+
+    /**
+     * AppUpdater's work runs on this one thread, so a test can wait for exactly that work to be done ([idle]) instead of
+     * polling a clock. Closed after each test.
+     */
+    private val worker = Executors.newSingleThreadExecutor()
+    private val dispatcher = worker.asCoroutineDispatcher()
+
+    private fun updaterFor(steps: FakeSteps) = AppUpdater(context, OkHttpClient(), steps, dispatcher)
+
+    /**
+     * Returns once everything AppUpdater has launched so far has run. Its jobs never suspend (files and the fake steps
+     * block), so a task queued behind them on the single worker thread runs only after they finish. The timeout is a
+     * safety net for a hang, not something a test depends on.
+     */
+    private fun idle() {
+        worker.submit {}.get(60, TimeUnit.SECONDS)
+    }
+
+    @After
+    fun tearDown() {
+        dispatcher.close()
+    }
 
     @Before
     fun setUp() {
@@ -105,14 +135,13 @@ class AppUpdaterTest {
 
     /** Until the [n]th session is committed: from then on its answers count. */
     private fun awaitCommits(steps: FakeSteps, n: Int) {
-        val until = System.currentTimeMillis() + 5_000
-        while (steps.commits.get() < n && System.currentTimeMillis() < until) Thread.sleep(10)
+        idle()
         assertThat(steps.commits.get()).isAtLeast(n)
     }
 
     /** Update now, then Android asks for the confirm while Stash is in the background: ready to install. */
     private fun readyToInstall(steps: FakeSteps): AppUpdater {
-        val updater = AppUpdater(context, OkHttpClient(), steps)
+        val updater = updaterFor(steps)
         updater.update()
         awaitCommits(steps, 1)
         steps.confirmOpens = false
@@ -123,12 +152,12 @@ class AppUpdaterTest {
     }
 
     private fun AppUpdater.awaitState(predicate: (UpdateState) -> Boolean): UpdateState =
-        runBlocking { withTimeout(5_000) { state.first(predicate) } }
+        runBlocking { withTimeout(60_000) { state.first(predicate) } }
 
     @Test
     fun `an install that throws is shown as a failure, not a crash`() {
         val steps = FakeSteps(onInstall = { throw IOException("No space left on device") })
-        val updater = AppUpdater(context, OkHttpClient(), steps)
+        val updater = updaterFor(steps)
 
         updater.update()
 
@@ -140,10 +169,10 @@ class AppUpdaterTest {
     fun `back from the permission screen, resumes in a row install once and a throwing install fails cleanly`() {
         val release = CountDownLatch(1)
         val steps = FakeSteps(allowed = false, onInstall = {
-            release.await(5, TimeUnit.SECONDS)
+            release.await(60, TimeUnit.SECONDS)
             throw SecurityException("installer refused")
         })
-        val updater = AppUpdater(context, OkHttpClient(), steps)
+        val updater = updaterFor(steps)
         updater.update()
         assertThat(updater.awaitState { it == UpdateState.NeedsPermission }).isEqualTo(UpdateState.NeedsPermission)
 
@@ -158,7 +187,7 @@ class AppUpdaterTest {
     @Test
     fun `Later at the permission step starts over next time and keeps the download`() {
         val steps = FakeSteps(allowed = false)
-        val updater = AppUpdater(context, OkHttpClient(), steps)
+        val updater = updaterFor(steps)
         updater.update()
         updater.awaitState { it == UpdateState.NeedsPermission }
 
@@ -179,7 +208,7 @@ class AppUpdaterTest {
     @Test
     fun `a confirm Android won't show in the background waits as ready to install, and Install now opens it`() {
         val steps = FakeSteps()
-        val updater = AppUpdater(context, OkHttpClient(), steps)
+        val updater = updaterFor(steps)
         updater.update()
         awaitCommits(steps, 1)
 
@@ -205,7 +234,7 @@ class AppUpdaterTest {
     @Test
     fun `in front, the confirm opens at once and the update stays installing`() {
         val steps = FakeSteps()
-        val updater = AppUpdater(context, OkHttpClient(), steps)
+        val updater = updaterFor(steps)
         updater.update()
         awaitCommits(steps, 1)
 
@@ -337,7 +366,7 @@ class AppUpdaterTest {
         val steps = FakeSteps(onInstall = {
             if (first != 0) updater.onInstallResult(first, PackageInstaller.STATUS_FAILURE_ABORTED, null)
         })
-        updater = AppUpdater(context, OkHttpClient(), steps)
+        updater = updaterFor(steps)
         updater.update()
         awaitCommits(steps, 1)
         first = steps.session
@@ -366,7 +395,7 @@ class AppUpdaterTest {
         val missing = File(context.filesDir, "gone.apk")
         store(1_000, missing)
         val steps = FakeSteps()
-        val updater = AppUpdater(context, OkHttpClient(), steps)
+        val updater = updaterFor(steps)
 
         updater.update()
 
@@ -377,7 +406,7 @@ class AppUpdaterTest {
 
     @Test
     fun `later holds the same release for a day, then it is due again`() {
-        val updater = AppUpdater(context, OkHttpClient(), FakeSteps())
+        val updater = updaterFor(FakeSteps())
         val update = updater.available.value!!
         val before = System.currentTimeMillis()
         updater.later()
@@ -388,7 +417,7 @@ class AppUpdaterTest {
 
     @Test
     fun `skip this version holds that release for good, the next one asks, and the worker hears of it`() {
-        val updater = AppUpdater(context, OkHttpClient(), FakeSteps())
+        val updater = updaterFor(FakeSteps())
         val update = updater.available.value!!
         updater.skip()
 
@@ -403,18 +432,18 @@ class AppUpdaterTest {
     fun `the notes are kept as written, and notes stored before them as plain text still read`() {
         val md = "Headline.\n\n## What's new\n- **One.** Two."
         AppUpdater.store(context, AvailableUpdate("v0.9.1", "0.9.1", apk.toURI().toString(), apk.length(), md))
-        assertThat(AppUpdater(context, OkHttpClient(), FakeSteps()).available.value!!.notes).isEqualTo(md)
+        assertThat(updaterFor(FakeSteps()).available.value!!.notes).isEqualTo(md)
 
         // An update stored by 0.9.122 (plain notes under the old key), then read by this version.
         val prefs = context.getSharedPreferences(AppUpdater.PREFS, Context.MODE_PRIVATE)
         prefs.edit().clear().putString("available_tag", "v0.9.1").putString("available_url", apk.toURI().toString())
             .putString("available_notes", "What's new").commit()
-        assertThat(AppUpdater(context, OkHttpClient(), FakeSteps()).available.value!!.notes).isEqualTo("What's new")
+        assertThat(updaterFor(FakeSteps()).available.value!!.notes).isEqualTo("What's new")
     }
 
     @Test
     fun `a check that changes only the notes or the apk reaches the open updater`() {
-        val updater = AppUpdater(context, OkHttpClient(), FakeSteps())
+        val updater = updaterFor(FakeSteps())
         val other = File(context.filesDir, "other.apk").apply { writeBytes(ByteArray(10)) }
         AppUpdater.store(context, AvailableUpdate("v0.9.1", "0.9.1", other.toURI().toString(), other.length(), "Edited notes."))
         shadowOf(Looper.getMainLooper()).idle()
@@ -426,14 +455,40 @@ class AppUpdaterTest {
 
     @Test
     fun `the installed version is read for the sheet`() {
-        assertThat(AppUpdater(context, OkHttpClient(), FakeSteps()).installedVersion).isEqualTo("0.9.0")
+        assertThat(updaterFor(FakeSteps()).installedVersion).isEqualTo("0.9.0")
+    }
+
+    @Test
+    fun `a resume or Update now in the moment after NeedsPermission is set, before its job ends, still counts`() {
+        val steps = FakeSteps(allowed = false)
+        val updater = updaterFor(steps)
+        // Runs on the job's own thread, inside the state change: the job has not ended yet.
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        var resumed = false
+        scope.launch {
+            updater.state.collect {
+                if (it == UpdateState.NeedsPermission && !resumed) {
+                    resumed = true
+                    steps.allowed = true
+                    updater.onReturnFromPermission()
+                }
+            }
+        }
+        updater.update()
+        idle() // the first job, which queues the resume's job before it ends
+        idle() // the resume's job: the first drain may have been queued before it
+        scope.cancel()
+
+        assertThat(resumed).isTrue()
+        assertThat(steps.installs.get()).isEqualTo(1)
+        assertThat(steps.commits.get()).isEqualTo(1)
     }
 
     @Test
     fun `a second tap while updating does nothing`() {
         val release = CountDownLatch(1)
-        val steps = FakeSteps(onInstall = { release.await(5, TimeUnit.SECONDS) })
-        val updater = AppUpdater(context, OkHttpClient(), steps)
+        val steps = FakeSteps(onInstall = { release.await(60, TimeUnit.SECONDS) })
+        val updater = updaterFor(steps)
 
         updater.update()
         updater.update()
@@ -441,7 +496,7 @@ class AppUpdaterTest {
         updater.update()
         release.countDown()
 
-        Thread.sleep(200)
+        idle()
         assertThat(steps.installs.get()).isEqualTo(1)
     }
 }
