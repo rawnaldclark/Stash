@@ -72,6 +72,11 @@ function fixture({ tidalResponse, account = liveAccount(), accounts = [account],
               const seat = accounts.find((a) => a.id === id);
               if (seat) bump(seat, hour, day);
             }
+            if (pool && sql.includes("SET cooling_until=? WHERE id=? AND state='live'")) { // coolAccount
+              const [until, id] = this.args;
+              const seat = accounts.find((a) => a.id === id && (a.state || "live") === "live");
+              if (seat) seat.cooling_until = until;
+            }
             if (sql.includes("INSERT INTO tidal_daily_quotas")) {
               const [day, key] = this.args;
               const mapKey = `${day}:${key}`;
@@ -605,6 +610,16 @@ function presentedInfo(assetPresentation, audioQuality, manifestMimeType, payloa
   }), { status: 200 });
 }
 const bearer = (options) => options.headers.authorization;
+/** A pool seat of its own (id, `<id>-token`), unused today and past its gap; `extra` overrides any field. */
+const poolSeat = (id, extra = {}) => ({ ...liveAccount(), id, access_token: `${id}-token`, hour_n: 0, day_n: 0, last_call_at: 0, last_used_at: 0, ...extra });
+const seatOf = (options) => bearer(options).slice("Bearer ".length).replace(/-token$/, "");
+/** Tidal stub answering per seat: `answers[id](url)` for the seat whose token made the call. */
+const perSeat = (answers) => async (url, options) => answers[seatOf(options)](url);
+/** A seat Tidal lets play only previews: v2 refuses (`v2`), and v1 hands out the 30 s PREVIEW. */
+const lapsed = (v2 = () => v2Answer({ attributes: { trackPresentation: "PREVIEW" } })) => (url) => (isV2(url) ? v2() : presentedInfo("PREVIEW", "LOSSLESS", "application/dash+xml", MPD));
+/** Each upstream call as "<seat>:<lane>", in order. */
+const seatsAsked = (f) => f.calls.map((c) => `${seatOf(c.options)}:${isV2(c.url) ? "v2" : "v1"}`);
+const nowS = () => Math.floor(Date.now() / 1000);
 
 test("a v1 PREVIEW answer is never served: that seat cools down and the next seat's whole track is", async () => {
   // td:575545 "Linger", 2026-11-13: one seat answered with the 30 s PREVIEW's manifest, which played and was saved as
@@ -644,6 +659,38 @@ test("when every seat asked has only the preview, the answer is busy and nothing
     assert.equal(f.responseCache.size, 0, `${path}: nothing cached`);
     assert.equal(f.manifests.size, 0, `${path}: no manifest stored`);
   }
+});
+
+test("v1 lanes (v2 off, ?aac=only): previews on both seats asked are busy Retry-After 15 while a seat waits out its gap, 300 when the pool rests", async () => {
+  for (const path of ["/stream/td:575545", "/stream/td:575545?aac=only"]) {
+    const preview = path.endsWith("aac=only")
+      ? () => presentedInfo("PREVIEW", "HIGH", "application/vnd.tidal.bts", AAC_BTS)
+      : () => presentedInfo("PREVIEW", "LOSSLESS", "application/dash+xml", MPD);
+    for (const [name, others, retryAfter] of [
+      ["a third seat inside its gap", [poolSeat("c", { last_call_at: nowS() })], "15"],
+      ["no other seat", [], "300"],
+    ]) {
+      const f = fixture({ pool: true, accounts: [poolSeat("a"), poolSeat("b"), ...others], tidalResponse: async () => preview() });
+      let limits = 0;
+      f.env.UPSTREAM_RL = { limit: async () => { limits++; return { success: true }; } };
+      await withFetch(null, f.fetchTidal, async () => {
+        const r = await worker.fetch(authorizedRequest(path), f.env);
+        assert.equal(r.status, 503, `${path}, ${name}`);
+        assert.deepEqual(await r.json(), { error: "busy" });
+        assert.equal(r.headers.get("retry-after"), retryAfter, `${path}, ${name}`);
+      });
+      assert.deepEqual(f.calls.map((c) => seatOf(c.options)), ["a", "b"], `${path}, ${name}: each seat once, two at most`);
+      assert.equal(limits, 2, `${path}, ${name}: the second seat is paid from the network's fair share`);
+    }
+  }
+  // Over the fair share, the second seat is not asked on these lanes either.
+  let n = 0;
+  const f = fixture({ pool: true, accounts: [poolSeat("a"), poolSeat("b")], tidalResponse: async () => presentedInfo("PREVIEW", "LOSSLESS", "application/dash+xml", MPD) });
+  f.env.UPSTREAM_RL = { limit: async () => ({ success: n++ === 0 }) };
+  await withFetch(null, f.fetchTidal, async () => {
+    assert.equal((await worker.fetch(authorizedRequest("/stream/td:575545"), f.env)).headers.get("retry-after"), "30");
+  });
+  assert.deepEqual(f.calls.map((c) => seatOf(c.options)), ["a"]);
 });
 
 test("a previewReason alone marks a preview; an answer that says FULL, or nothing, is the track as before", async () => {
@@ -1166,7 +1213,7 @@ test("v2 refusals fall back to v1 on the same seat: two calls, bumpSeat counts t
   });
 });
 
-test("v2 on: a preview v2 refuses is not served by v1 on the same seat either; busy within the two-call budget", async () => {
+test("v2 on: a preview v2 refuses is not served by v1 on the same seat either; the next seat gets two calls of its own", async () => {
   const f = v2Fixture({ accounts: [liveAccount(), liveAccount()], tidalResponse: tidalV2(
     () => v2Answer({ attributes: { trackPresentation: "PREVIEW" } }),
     () => presentedInfo("PREVIEW", "LOSSLESS", "application/dash+xml", MPD),
@@ -1176,10 +1223,98 @@ test("v2 on: a preview v2 refuses is not served by v1 on the same seat either; b
     assert.equal(r.status, 503);
     assert.deepEqual(await r.json(), { error: "busy" });
   });
-  assert.equal(f.calls.length, 2, "v2 then v1, one seat");
-  assert.equal(f.accountCaps.length, 1);
+  assert.deepEqual(f.calls.map((c) => (isV2(c.url) ? "v2" : "v1")), ["v2", "v1", "v2", "v1"], "v2 then v1 on each of two seats");
+  assert.equal(f.accountCaps.length, 2);
   assert.equal(f.responseCache.size, 0);
   assert.equal(f.manifests.size, 0);
+});
+
+test("v2 on: after a seat answers with a preview the next seat is asked (v2 first) and its whole track served, not busy 300", async () => {
+  for (const [name, lapsedV2] of [["v2 preview", undefined], ["v2 no FLAC", () => v2Answer({ formats: ["AACLC"] })]]) {
+    const f = v2Fixture({ pool: true, accounts: [poolSeat("lapsed"), poolSeat("whole")], tidalResponse: perSeat({
+      lapsed: lapsed(lapsedV2),
+      whole: (url) => (isV2(url) ? v2Answer() : aacResponse()),
+    }) });
+    const limits = [];
+    f.env.UPSTREAM_RL = { limit: async ({ key }) => { limits.push(key); return { success: true }; } };
+    const lines = [];
+    const original = console.log;
+    console.log = (line) => lines.push(String(line));
+    try {
+      await withFetch(null, f.fetchTidal, async () => {
+        const r = await worker.fetch(authorizedRequest("/stream/td:575545"), f.env);
+        assert.equal(r.status, 200, name);
+        const body = await r.json();
+        assert.equal(body.codec, "flac", name);
+        assert.equal(body.manifest, "dash", name);
+      });
+    } finally { console.log = original; }
+    assert.deepEqual(seatsAsked(f), ["lapsed:v2", "lapsed:v1", "whole:v2"], name);
+    assert.equal(limits.length, 2, `${name}: the second seat is paid from the network's fair share`);
+    assert.ok(f.accounts[0].cooling_until >= nowS() + 299, `${name}: the preview seat keeps its five-minute rest`);
+    assert.equal(f.accounts[1].cooling_until || 0, 0, name);
+    assert.deepEqual([...f.responseCache.keys()], ["stream:US:575545:aac=:web=app:v2"], `${name}: the whole track is cached as usual`);
+    const streams = lines.filter((l) => l.startsWith("tidal_stream ")).map((l) => JSON.parse(l.slice(13)));
+    assert.deepEqual(streams, [{ track: "575545", path: "v2", formats: ["FLAC"], bits: 16, rate: 44100, status: 200, codec: "flac" }],
+      `${name}: the log line is the seat that answered, nothing left over from the preview seat`);
+  }
+});
+
+test("v2 on: a preview seat is never asked twice in one request; two seats at most, then the pacing wait while a seat is free", async () => {
+  const accounts = [poolSeat("a"), poolSeat("b"), poolSeat("c")];
+  const f = v2Fixture({ pool: true, accounts, tidalResponse: perSeat({
+    // Once it has answered, seat a looks the most rested and past its gap: only its rest keeps it out.
+    a: (url) => { if (!isV2(url)) Object.assign(accounts[0], { last_call_at: 0, last_used_at: 0 }); return lapsed()(url); },
+    b: lapsed(),
+    c: (url) => (isV2(url) ? v2Answer() : aacResponse()),
+  }) });
+  await withFetch(null, f.fetchTidal, async () => {
+    const r = await worker.fetch(authorizedRequest("/stream/td:575545"), f.env);
+    assert.equal(r.status, 503);
+    assert.deepEqual(await r.json(), { error: "busy" });
+    assert.equal(r.headers.get("retry-after"), "15", "seat c is free: the app asks again shortly");
+  });
+  assert.deepEqual(seatsAsked(f), ["a:v2", "a:v1", "b:v2", "b:v1"], "each seat once, two calls each, never a third seat");
+  assert.ok(accounts[0].cooling_until > nowS() && accounts[1].cooling_until > nowS(), "both preview seats rest");
+  assert.equal(f.responseCache.size, 0);
+  assert.equal(f.manifests.size, 0);
+});
+
+test("v2 on: with no seat free for the second ask, a preview is busy Retry-After 15 while a seat waits out its gap, 300 when the pool rests", async () => {
+  for (const [name, other, retryAfter] of [
+    ["another seat inside its gap", poolSeat("other", { last_call_at: nowS() }), "15"],
+    ["every other seat resting", poolSeat("other", { cooling_until: nowS() + 120 }), "300"],
+  ]) {
+    const f = v2Fixture({ pool: true, accounts: [poolSeat("lapsed"), other], tidalResponse: perSeat({ lapsed: lapsed() }) });
+    await withFetch(null, f.fetchTidal, async () => {
+      const r = await worker.fetch(authorizedRequest("/stream/td:575545"), f.env);
+      assert.equal(r.status, 503, name);
+      assert.deepEqual(await r.json(), { error: "busy" }, name);
+      assert.equal(r.headers.get("retry-after"), retryAfter, name);
+    });
+    assert.deepEqual(seatsAsked(f), ["lapsed:v2", "lapsed:v1"], name);
+  }
+  // Both seats preview seats: the whole pool is resting after the request, so the pool's own five minutes.
+  const g = v2Fixture({ pool: true, accounts: [poolSeat("a"), poolSeat("b")], tidalResponse: perSeat({ a: lapsed(), b: lapsed() }) });
+  await withFetch(null, g.fetchTidal, async () => {
+    assert.equal((await worker.fetch(authorizedRequest("/stream/td:575545"), g.env)).headers.get("retry-after"), "300");
+  });
+  assert.equal(g.calls.length, 4);
+});
+
+test("v2 on: over the network's fair share, a preview's second seat is not asked: the limiter's own short busy (30), not 300", async () => {
+  let n = 0;
+  const f = v2Fixture({ pool: true, accounts: [poolSeat("lapsed"), poolSeat("whole")], tidalResponse: perSeat({ lapsed: lapsed(), whole: () => v2Answer() }) });
+  f.env.UPSTREAM_RL = { limit: async () => ({ success: n++ === 0 }) }; // the request's own ask passes, the second does not
+  await withFetch(null, f.fetchTidal, async () => {
+    const r = await worker.fetch(authorizedRequest("/stream/td:575545"), f.env);
+    assert.equal(r.status, 503);
+    assert.deepEqual(await r.json(), { error: "busy" });
+    assert.equal(r.headers.get("retry-after"), "30");
+  });
+  assert.deepEqual(seatsAsked(f), ["lapsed:v2", "lapsed:v1"]);
+  assert.equal(f.accounts[1].last_call_at, 0, "the whole seat was never taken");
+  assert.equal(f.responseCache.size, 0);
 });
 
 test("v2 429 cools the seat like a v1 429 and answers busy: no v1 call, nothing cached", async () => {

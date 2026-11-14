@@ -401,17 +401,18 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
   const mse = mseMode(new URL(request.url));
   const seatKind = mse ? { client: "pkce" } : {};
   // Upstream budget: one playbackinfo call per seat taken. A second seat is only tried
-  // after a seat-level failure (failed refresh, Tidal 5xx), never for a
+  // after a seat-level failure (failed refresh, Tidal 5xx, a preview), never for a
   // track-level answer: with this client ID CD-only tracks always come back HIGH (AAC),
   // and a 4005 is a track/rights refusal, so asking another seat just burns budget.
   // TIDAL_V2_MANIFESTS=1 (lossless modes only): v2 trackManifests first, v1 HI_RES_LOSSLESS (then the AAC handling
   // below) as the fallback on the same seat. `budget` counts real upstream calls (tidalFetch's refresh retry
-  // included) and holds a stream to 2 on this path; with the flag off it is never consulted.
+  // included) and holds a stream to 2 on this path, except that a seat answering with a preview hands the next
+  // seat 2 of its own (the isPreviewAnswer branch); with the flag off it is never consulted.
   const useV2 = (v2Manifests(env) || mse) && !aacOnly;
-  const budget = { calls: 0 };
+  let budget = { calls: 0 };
   // Set when a seat answered with a preview (isPreviewAnswer): with no seat left to ask, busy, never the preview.
   let previewed = false;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < STREAM_SEATS; attempt++) {
     if (useV2 && budget.calls >= 2) break;
     const account = await takeAccount(env, seatKind);
     if (!account) return noSeat(env, seatKind.client);
@@ -459,8 +460,22 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
     // cached) and the app asks again later. v2 refuses its own previews (v2Stream).
     if (isPreviewAnswer(info)) {
       console.warn(`tidal_preview ${JSON.stringify({ account: String(account.id).slice(-4), track: String(trackId) })}`);
-      await coolAccount(env, account.id, 300);
+      await coolAccount(env, account.id, 300); // the seat's own rest; takeAccount skips it for the rest of this request
       previewed = true;
+      if (attempt + 1 < STREAM_SEATS) {
+        // The next seat is a second ask for a seat, so it is paid from this network's fair share like one (the app
+        // re-asks within seconds now, so an unpaid second seat would double what a network can take): over it, the
+        // limiter's own short busy.
+        if (!await upstreamAllowed(request, env)) return busy(UPSTREAM_RL_RETRY_AFTER);
+        if (useV2) {
+          // The preview spent this request's two calls (v2, then v1) on a seat that cannot play the track, and the
+          // listener used to get busy Retry-After 300: five minutes of Opus (the app's busy pause is device-wide).
+          // The next seat gets its own two, as the first had (v2 first: v1 alone caps CD tracks at AAC), so a stream
+          // is still at most 2 seats x 2 calls, the ceiling the v1 path always had.
+          budget = { calls: 0 };
+          trace.reason = "preview"; // the log line's reason until the next seat's v2 lane writes its own
+        }
+      }
       continue;
     }
     if (aacOnly) return aacInfo(info, skipsHires(new URL(request.url), aac) ? undefined : await trackHires(trackId, env, request));
@@ -473,9 +488,15 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
     if (web) return await edgeInfo(trackId, info, env, web);
     return await streamInfo(trackId, request, env, info, allowAac);
   }
-  if (previewed) return busy();
+  // A preview is one seat's answer, not the pool's: the short pacing wait while any other seat is free or only
+  // waiting out its gap, so the app asks again in 15 s. Every seat resting or capped is the pool's own five minutes,
+  // as when no seat could be taken at all.
+  if (previewed) return noSeat(env, seatKind.client);
   return json({ error: "upstream_unavailable" }, 503);
 }
+
+/** Seats one /stream may take: a second only after a seat-level failure (failed refresh, Tidal 5xx, a preview). */
+const STREAM_SEATS = 2;
 
 /**
  * True when a v1 playbackinfo answer is a preview, not the track: its assetPresentation is anything but FULL, or it
@@ -503,6 +524,8 @@ const V2_DEFINITIVE = new Set(["no_flac", "drm", "preview", "not_found", "not_fl
  * fallback = why v1 should answer instead. Never throws.
  */
 async function v2Stream(trackId, request, env, seat, account, allowAac, budget, trace) {
+  // The trace is this seat's: after a preview on an earlier seat, none of that seat's fields may describe this one.
+  for (const field of ["reason", "formats", "bits", "rate", "transient"]) delete trace[field];
   trace.path = "v2";
   const fallback = (reason) => {
     trace.path = "v1";
