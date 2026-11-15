@@ -73,6 +73,20 @@ test("npm run deploy refuses to switch a live shim off, deploys when the redirec
   assert.match(other.out, /another account/);
 });
 
+test("npm run deploy passes its first argument on when --origin is not given (the 2026-11-15 cutover: --var was dropped)", async (t) => {
+  // The cutover's step 3 runs `deploy.mjs --var REDIRECT_ORIGIN:<new>` with no --origin. The filter that removes
+  // --origin and its value removed index 0 when --origin was absent (indexOf = -1, so "at + 1" = 0): --var was gone,
+  // the guard saw "no redirect", and wrangler took the value for an entry-point file and failed.
+  const off = await server(serving);
+  t.after(() => off.close());
+  const on = await deploy(["--var", `REDIRECT_ORIGIN:${NEW}`], { TIDAL_RELAY_LIVE_ORIGIN: off.origin });
+  assert.equal(on.code, 0, on.out);
+  assert.match(on.out, /turns the redirect ON/);
+  assert.deepEqual(on.call, { argv: ["deploy", "--var", `REDIRECT_ORIGIN:${NEW}`], logs: "false" });
+  const purpose = await deploy(["--shim-off-on-purpose", "--minify"], { TIDAL_RELAY_LIVE_ORIGIN: off.origin });
+  assert.deepEqual(purpose.call?.argv, ["deploy", "--minify"]);
+});
+
 test("npm run deploy refuses when the live Worker cannot be asked, unless --no-live-check", async () => {
   const gone = await server(serving);
   const origin = gone.origin;

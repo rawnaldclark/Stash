@@ -60,7 +60,8 @@ async function main(argv) {
   const own = new Set(["--shim-off-on-purpose", "--no-live-check"]);
   const at = argv.indexOf("--origin");
   const origin = at >= 0 ? argv[at + 1] : process.env.TIDAL_RELAY_LIVE_ORIGIN || LIVE_ORIGIN;
-  const pass = argv.filter((a, i) => !own.has(a) && i !== at && i !== at + 1);
+  // Without --origin, `at` is -1: only then compare indexes, or index 0 (at + 1) would be dropped with it.
+  const pass = argv.filter((a, i) => !own.has(a) && (at < 0 || (i !== at && i !== at + 1)));
   const account = (process.env.CLOUDFLARE_ACCOUNT_ID || "").trim().toLowerCase();
   if (account && account !== MAIN_ACCOUNT_ID) {
     console.error("deploy: REFUSED: CLOUDFLARE_ACCOUNT_ID in this shell is another account (cf-addons.env?); stash-tidal-relay lives on the main account.");
