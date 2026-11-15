@@ -238,7 +238,7 @@ class PlayerRepositoryGhostQueueTest {
             connectivity = mockk(relaxed = true),
             trackDao = trackDao,
             playbackResumer = PlaybackResumer(playbackStateStore, trackDao),
-            radioGenerator = radioGenerator,
+            radioEngines = radioEngines(radioGenerator),
             trackIdentityEvents = trackIdentityEvents,
             playbackSessionBus = PlaybackSessionBus(),
             listenTogether = together,

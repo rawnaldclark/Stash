@@ -59,7 +59,7 @@ class PlayerRepositorySetQueueSupersedeTest {
             connectivity = mockk<ConnectivityMonitor>(relaxed = true),
             trackDao = mockk<TrackDao>(relaxed = true),
             playbackResumer = mockk(relaxed = true),
-            radioGenerator = mockk(relaxed = true),
+            radioEngines = radioEngines(mockk(relaxed = true)),
             trackIdentityEvents = trackIdentityEvents,
             playbackSessionBus = PlaybackSessionBus(),
         )

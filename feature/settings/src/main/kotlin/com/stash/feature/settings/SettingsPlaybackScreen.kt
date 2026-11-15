@@ -1,5 +1,6 @@
 package com.stash.feature.settings
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,7 +14,9 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -23,8 +26,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.common.constants.StashConstants
+import com.stash.core.data.radio.RadioEngineId
 import com.stash.core.ui.R as UiR
 import com.stash.feature.settings.R
+import com.stash.feature.settings.components.SettingsChoice
+import com.stash.feature.settings.components.SettingsChoiceSheet
 import com.stash.feature.settings.components.SettingsGroupCard
 import com.stash.feature.settings.components.SettingsRowPadH
 import com.stash.feature.settings.components.SettingsRowPadV
@@ -32,6 +38,7 @@ import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
 import com.stash.feature.settings.components.SettingsSegmented
 import com.stash.feature.settings.components.SettingsToggleRow
+import com.stash.feature.settings.components.SettingsValueRow
 import kotlin.math.roundToInt
 
 /**
@@ -65,6 +72,8 @@ fun SettingsPlaybackScreen(
         context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
     }
     val autoplayRadioEnabled by viewModel.autoplayRadioEnabled.collectAsStateWithLifecycle()
+    val radioEngine by viewModel.radioEngine.collectAsStateWithLifecycle()
+    var radioEngineSheetOpen by remember { mutableStateOf(false) }
     val crossfadeEnabled by viewModel.crossfadeEnabled.collectAsStateWithLifecycle()
     val crossfadeDurationMs by viewModel.crossfadeDurationMs.collectAsStateWithLifecycle()
     val headphoneResumeOnReconnect by viewModel.headphoneResumeOnReconnect.collectAsStateWithLifecycle()
@@ -165,6 +174,16 @@ fun SettingsPlaybackScreen(
                         onCheckedChange = viewModel::onAutoplayRadioToggle,
                     )
                 }
+                // Which engine "Start radio" and autoplay use. Sits with autoplay because it
+                // shapes exactly the stations autoplay builds.
+                add {
+                    SettingsValueRow(
+                        title = stringResource(R.string.settings_radio_engine_title),
+                        subtitle = stringResource(R.string.settings_radio_engine_desc),
+                        value = stringResource(radioEngine.labelRes()),
+                        onClick = { radioEngineSheetOpen = true },
+                    )
+                }
                 add {
                     SettingsToggleRow(
                         title = stringResource(R.string.settings_crossfade_title),
@@ -246,6 +265,34 @@ fun SettingsPlaybackScreen(
             modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 12.dp),
         )
     }
+
+    if (radioEngineSheetOpen) {
+        SettingsChoiceSheet(
+            title = stringResource(R.string.settings_radio_engine_title),
+            choices = RadioEngineId.entries.map { id ->
+                SettingsChoice(
+                    value = id,
+                    title = stringResource(id.labelRes()),
+                    subtitle = stringResource(id.descriptionRes()),
+                )
+            },
+            selected = radioEngine,
+            onSelect = viewModel::onRadioEngineChange,
+            onDismiss = { radioEngineSheetOpen = false },
+        )
+    }
+}
+
+@StringRes
+private fun RadioEngineId.labelRes(): Int = when (this) {
+    RadioEngineId.STASH -> R.string.settings_radio_engine_stash
+    RadioEngineId.YOUTUBE_MUSIC -> R.string.settings_radio_engine_youtube_music
+}
+
+@StringRes
+private fun RadioEngineId.descriptionRes(): Int = when (this) {
+    RadioEngineId.STASH -> R.string.settings_radio_engine_stash_desc
+    RadioEngineId.YOUTUBE_MUSIC -> R.string.settings_radio_engine_youtube_music_desc
 }
 
 /**

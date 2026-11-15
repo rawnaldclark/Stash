@@ -635,6 +635,12 @@
     <string name="settings_streaming_unavailable">Streaming is unavailable in this build.</string>
     <string name="settings_autoplay_radio_title">Autoplay radio</string>
     <string name="settings_autoplay_radio_desc">A radio keeps playing when the queue ends</string>
+    <string name="settings_radio_engine_title">Radio engine</string>
+    <string name="settings_radio_engine_desc">Where Start radio and autoplay find their songs</string>
+    <string name="settings_radio_engine_youtube_music">YouTube Music</string>
+    <string name="settings_radio_engine_youtube_music_desc">YouTube Music\'s own station algorithm. Learns from your account\'s listening.</string>
+    <string name="settings_radio_engine_stash">Stash</string>
+    <string name="settings_radio_engine_stash_desc">A similarity graph from Last.fm. Works without a YouTube Music account.</string>
     <string name="settings_crossfade_title">Crossfade</string>
     <string name="settings_crossfade_desc">Blend into the next song. Skips still cut.</string>
     <!-- Settings > Playback, last line. Stash follows Android's Battery Saver on its own; there is no Stash switch for it. -->

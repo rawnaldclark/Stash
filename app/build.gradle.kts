@@ -330,6 +330,9 @@ dependencies {
     // data:ytmusic provides AlbumSummary, used by SearchScreen/ArtistProfileScreen
     // callback signatures that StashNavHost wires up for Album Discovery.
     implementation(project(":data:ytmusic"))
+    // The YouTube Music extension (radio). Drop this line, and its include in
+    // settings.gradle.kts, to build Stash without it.
+    implementation(project(":ext:ytmusic"))
     // data:lyrics exposes LyricsBackfillScheduler for the v0.9.36 once-per-version
     // auto-enqueue path wired in StashApplication.onCreate.
     implementation(project(":data:lyrics"))

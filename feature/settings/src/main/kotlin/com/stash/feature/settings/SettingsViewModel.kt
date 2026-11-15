@@ -131,6 +131,7 @@ class SettingsViewModel @Inject constructor(
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     private val crossfadePreference: com.stash.core.data.prefs.CrossfadePreference,
     private val autoplayRadioPreference: com.stash.core.data.prefs.AutoplayRadioPreference,
+    private val radioEnginePreference: com.stash.core.data.prefs.RadioEnginePreference,
     private val headphonePreference: com.stash.core.data.prefs.HeadphonePreference,
     private val databaseBackupManager: DatabaseBackupManager,
     private val listenBrainzPreference: com.stash.core.data.listenbrainz.ListenBrainzPreference,
@@ -436,6 +437,14 @@ class SettingsViewModel @Inject constructor(
             true,
         )
 
+    /** Which engine builds stations: Stash's Last.fm graph or YouTube Music. YouTube Music by default. */
+    val radioEngine: kotlinx.coroutines.flow.StateFlow<com.stash.core.data.radio.RadioEngineId> =
+        radioEnginePreference.engine.stateIn(
+            viewModelScope,
+            kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
+            com.stash.core.data.prefs.RadioEnginePreferencesManager.DEFAULT,
+        )
+
     val headphoneResumeOnReconnect: kotlinx.coroutines.flow.StateFlow<Boolean> =
         headphonePreference.resumeOnReconnect.stateIn(
             viewModelScope,
@@ -449,6 +458,10 @@ class SettingsViewModel @Inject constructor(
 
     fun onAutoplayRadioToggle(enabled: Boolean) {
         viewModelScope.launch { autoplayRadioPreference.setEnabled(enabled) }
+    }
+
+    fun onRadioEngineChange(engine: com.stash.core.data.radio.RadioEngineId) {
+        viewModelScope.launch { radioEnginePreference.setEngine(engine) }
     }
 
     val crossfadeEnabled: kotlinx.coroutines.flow.StateFlow<Boolean> =

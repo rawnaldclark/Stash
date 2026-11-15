@@ -61,7 +61,7 @@ class PlayerRepositoryRadioTest {
             connectivity = connectivity,
             trackDao = trackDao,
             playbackResumer = PlaybackResumer(playbackStateStore, trackDao),
-            radioGenerator = radioGenerator,
+            radioEngines = radioEngines(radioGenerator),
             trackIdentityEvents = trackIdentityEvents,
             playbackSessionBus = PlaybackSessionBus(),
         )
@@ -108,7 +108,7 @@ class PlayerRepositoryRadioTest {
             connectivity = connectivity,
             trackDao = trackDao,
             playbackResumer = PlaybackResumer(playbackStateStore, trackDao),
-            radioGenerator = radioGenerator,
+            radioEngines = radioEngines(radioGenerator),
             trackIdentityEvents = trackIdentityEvents,
             playbackSessionBus = PlaybackSessionBus(),
         )

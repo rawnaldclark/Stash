@@ -195,7 +195,7 @@ class PlayerRepositoryBigQueueTest {
             connectivity = connectivity,
             trackDao = trackDao,
             playbackResumer = PlaybackResumer(playbackStateStore, trackDao),
-            radioGenerator = mockk(relaxed = true),
+            radioEngines = radioEngines(mockk(relaxed = true)),
             trackIdentityEvents = trackIdentityEvents,
             // The service is up, as it always is while a window exists (the bus starts at false: no service).
             playbackSessionBus = PlaybackSessionBus().apply { onServiceCreated() },
