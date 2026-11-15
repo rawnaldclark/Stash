@@ -46,9 +46,11 @@ class StashMediaSourceFactory(
     urlCache: StreamUrlCache,
     trackDao: TrackDao,
     /**
-     * True while a Tidal (BitChord) server is configured: placeholders then
-     * resolve BEFORE choosing a media source ([ResolveFirstMediaSource]), since
-     * Tidal may answer with a DASH MPD. False keeps the lazy path exactly as it was.
+     * True while a Tidal (BitChord) server is configured or an add-on that is on can
+     * answer a DASH manifest ([AddonPlayback.resolveBeforeSourcePick]): placeholders then
+     * resolve BEFORE choosing a media source ([ResolveFirstMediaSource]), since either may
+     * answer with a DASH MPD. Read when an item's source is built. False keeps the lazy
+     * path exactly as it was.
      */
     private val resolveBeforeSourcePick: () -> Boolean = { false },
     /**
@@ -69,6 +71,28 @@ class StashMediaSourceFactory(
      */
     private val streamAllowed: () -> Boolean = { true },
     resolveDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
+    /**
+     * Add-on streams (`addon:` origins): the add-on media client's HTTP source, whose DNS and
+     * connection guard refuse the user's own network (add-ons plan phase 4 §2.6). Null in tests;
+     * such a stream is then refused, never played on the default path (review-882 B1).
+     */
+    addonDataSourceFactory: DataSource.Factory? = null,
+    /** An item whose stream an add-on answered (its origin extra starts `addon:`). */
+    private val isAddonOrigin: (MediaItem) -> Boolean = { false },
+    /** An item whose URL is a DASH manifest by its own word (its DASH extra), whatever its path. */
+    private val isDashStream: (MediaItem) -> Boolean = { false },
+    /**
+     * Judges every add-on's stream before a sound of it plays ([AddonCheckedMediaSource]): an item
+     * resolved to an add-on's URL, and a placeholder whose data source opens one. Null in tests that
+     * don't ask, and then nothing is judged.
+     */
+    private val addonCheck: AddonStreamCheck? = null,
+    /**
+     * The next song's look-ahead when a lossless source was busy: waits out its Retry-After once,
+     * while the current song plays, and asks it again ([BusyLookAhead]). Null in tests that don't
+     * ask, and then a busy fallback plays at once, as for a tapped song.
+     */
+    private val busyLookAhead: BusyLookAhead? = null,
 ) : MediaSource.Factory {
 
     private val resolver = resolver
@@ -95,6 +119,9 @@ class StashMediaSourceFactory(
         streamAllowed,
     )
     private val jioSaavnFactory = DefaultMediaSourceFactory(jioSaavnDataSourceFactory)
+
+    private val addonSourceFactory: DataSource.Factory? = addonDataSourceFactory?.let { DownloadModeGate.gate(it, streamAllowed) }
+    private val addonFactory: DefaultMediaSourceFactory? = addonSourceFactory?.let { DefaultMediaSourceFactory(it) }
 
     // Full-timeline placeholders: stash-resolve://track/<id> items resolve
     // their URL inside LazyResolvingDataSource.open() on the loader thread.
@@ -123,13 +150,109 @@ class StashMediaSourceFactory(
                 downloadedFile = { row -> row.usableDownload(context) },
                 localDelegate = { localDataSourceFactory.createDataSource() },
                 streamAllowed = streamAllowed,
+                addonDelegate = addonSourceFactory?.let { f -> { f.createDataSource() } },
+                onOpened = onOpenedFor(OpenedStream.beingCreated()),
             )
         }
+
+    /**
+     * What a placeholder's data source says when it opens a stream: to the period the add-on check
+     * is creating ([checkedLazy]), so it knows whose stream it judges, and to [addonCheck], so a song
+     * whose link an add-on handed out is found in the queue when that add-on leaves or is set aside.
+     */
+    private fun onOpenedFor(period: OpenedStream?): ((Long, StreamUrl) -> Unit)? {
+        val check = addonCheck
+        if (period == null && check == null) return null
+        return { trackId, stream ->
+            period?.stream = stream
+            check?.opened(trackId, stream.origin)
+        }
+    }
     private val lazyFactory = DefaultMediaSourceFactory(lazyDataSourceFactory)
+
+    /**
+     * A placeholder's lazy source, its periods judged by [addonCheck] once their data source has
+     * opened a stream: an add-on's stream is checked before it plays, any other is left alone.
+     */
+    private fun checkedLazy(item: MediaItem): MediaSource {
+        // A placeholder's stream is a file read through its data source, never a manifest (a manifest's
+        // answer gets a source of its own, [ResolveFirstMediaSource]). A slot put back from a manifest's
+        // item may still carry its MIME type (`application/dash+xml`), which would make this a DASH
+        // source that reads the file as a manifest and fails (review-888 M1).
+        val source = lazyFactory.createMediaSource(
+            if (item.localConfiguration?.mimeType == null) item else item.buildUpon().setMimeType(null).build(),
+        )
+        val check = addonCheck ?: return source
+        return AddonCheckedMediaSource(source, check) { opened -> opened?.let { AddonStreamCheck.claimOf(it, item) } }
+    }
+
+    /**
+     * A placeholder's resolve, whose answer may be played now: an add-on that left or was set aside
+     * while it answered ([StreamUrlCache.isServable]; an unofficial one may take 6 s) is asked past
+     * once, and its answer is never handed on (review-888 m1).
+     */
+    private suspend fun resolveServable(entity: com.stash.core.data.db.entity.TrackEntity): StreamUrl? {
+        val first = resolver.resolve(entity, allowYouTube = true, allowYtDlp = true) ?: return null
+        if (urlCache.isServable(first)) return first
+        return resolver.resolve(entity, allowYouTube = true, allowYtDlp = true)?.takeIf { urlCache.isServable(it) }
+    }
+
+    /**
+     * What a [ResolveFirstMediaSource] for placeholder [trackId] plays, warmed into [urlCache] for its
+     * child to open: null for a downloaded file (the lazy child opens it), else the cached link or a
+     * fresh resolve. This is a NEW play of the song (a tap, the next song's look-ahead, a queue
+     * rebuilt), so a link an earlier play kept only for itself ([forThisPlayOnly]: a fallback while
+     * Tidal was busy) is not taken: the lossless sources are asked again. A busy fallback from this
+     * resolve is waited on by [busyLookAhead] when the song is resolved ahead of the playing one.
+     * Internal for tests; runs on [resolveScope].
+     */
+    internal suspend fun resolveForSource(trackId: Long, uri: android.net.Uri): StreamUrl? {
+        val row = trackDao.getById(trackId)
+        if (row?.usableDownload(context) != null) return null
+        val cached = urlCache.get(trackId)?.takeIf {
+            !it.forThisPlayOnly &&
+                ((row?.soundCloudId == null && row?.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud")
+        }
+        if (cached != null) return cached
+        val entity = (if (uri.getQueryParameter("sc") == "1" && row?.soundCloudId == null) null else placeholderEntity(trackDao, trackId, uri))
+            ?: return null
+        val first = resolveServable(entity)
+        val settled = busyLookAhead?.settle(trackId, first) {
+            resolver.resolveLosslessOnly(entity)?.takeIf { urlCache.isServable(it) }
+        } ?: first
+        return settled?.also { urlCache.put(trackId, it) }
+    }
+
+    /**
+     * [source], for an item resolved to an add-on's stream, judged by [addonCheck] before it plays,
+     * and never opened again by a new period once its add-on left or was set aside ([isGone]).
+     */
+    private fun checked(source: MediaSource, item: MediaItem): MediaSource {
+        val check = addonCheck ?: return source
+        val claim = AddonStreamCheck.claimOf(item) ?: return source
+        return AddonCheckedMediaSource(source, check, isGone) { claim }
+    }
+
+    /** [source] for a placeholder that resolved to the add-on stream [resolved] before its source was picked. */
+    private fun checked(source: MediaSource, resolved: StreamUrl, item: MediaItem): MediaSource {
+        val check = addonCheck ?: return source
+        val claim = AddonStreamCheck.claimOf(resolved, item) ?: return source
+        return AddonCheckedMediaSource(source, check, isGone) { claim }
+    }
+
+    /**
+     * Whether an add-on's link may no longer be opened afresh: its add-on left or is set aside. A
+     * placeholder needs no such word: its link is dropped from [urlCache] then, and it resolves again.
+     */
+    private val isGone: (String) -> Boolean = { origin -> !urlCache.isServableOrigin(origin) }
 
     /** What a stream opens as in Download mode: an error, so the player skips it. */
     private val refusedDataSourceFactory = DataSource.Factory { DownloadModeRefusal() }
     private val refusedFactory = DefaultMediaSourceFactory(refusedDataSourceFactory)
+
+    /** What an add-on's stream opens as with no add-on source wired: an error that says so. */
+    private val unwiredAddonDataSourceFactory = DataSource.Factory { DownloadModeRefusal(ADDON_NOT_WIRED) }
+    private val unwiredAddonFactory = DefaultMediaSourceFactory(unwiredAddonDataSourceFactory)
 
     private val cloudSourceFactory: DataSource.Factory = cloudDataSourceFactory
         ?.let { DownloadModeGate.gate(it, streamAllowed, alwaysNetwork = true) }
@@ -145,7 +268,9 @@ class StashMediaSourceFactory(
         provider: DrmSessionManagerProvider,
     ): MediaSource.Factory {
         localFactory.setDrmSessionManagerProvider(provider)
+        addonFactory?.setDrmSessionManagerProvider(provider)
         refusedFactory.setDrmSessionManagerProvider(provider)
+        unwiredAddonFactory.setDrmSessionManagerProvider(provider)
         jioSaavnFactory.setDrmSessionManagerProvider(provider)
         lazyFactory.setDrmSessionManagerProvider(provider)
         cloudFactory.setDrmSessionManagerProvider(provider)
@@ -156,7 +281,9 @@ class StashMediaSourceFactory(
         policy: LoadErrorHandlingPolicy,
     ): MediaSource.Factory {
         localFactory.setLoadErrorHandlingPolicy(policy)
+        addonFactory?.setLoadErrorHandlingPolicy(policy)
         refusedFactory.setLoadErrorHandlingPolicy(policy)
+        unwiredAddonFactory.setLoadErrorHandlingPolicy(policy)
         jioSaavnFactory.setLoadErrorHandlingPolicy(policy)
         lazyFactory.setLoadErrorHandlingPolicy(policy)
         cloudFactory.setLoadErrorHandlingPolicy(CloudLoadErrorPolicy(policy))
@@ -180,6 +307,8 @@ class StashMediaSourceFactory(
         }
         streamingTrackId(mediaItem)?.let { return streamingFactory.createUncachedDataSourceFactory(it) }
         if (isJioSaavnOrigin(mediaItem)) return jioSaavnDataSourceFactory
+        // An add-on's URL on the add-on media client, or refused: never on the default source.
+        if (isAddonOrigin(mediaItem)) return addonSourceFactory ?: unwiredAddonDataSourceFactory
         return localDataSourceFactory
     }
 
@@ -211,37 +340,55 @@ class StashMediaSourceFactory(
                 return ResolveFirstMediaSource(
                     mediaItem = mediaItem,
                     scope = resolveScope,
-                    resolve = {
-                        // A downloaded file needs no resolve: the lazy child opens it.
-                        val row = trackDao.getById(trackId)
-                        if (row?.usableDownload(context) != null) {
-                            null
-                        } else {
-                            urlCache.get(trackId)?.takeIf {
-                                (row?.soundCloudId == null && row?.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud"
-                            } ?: (if (uri.getQueryParameter("sc") == "1" && row?.soundCloudId == null) null else placeholderEntity(trackDao, trackId, uri))
-                                ?.let { resolver.resolve(it, allowYouTube = true, allowYtDlp = true) }
-                                ?.also { urlCache.put(trackId, it) }
-                        }
-                    },
+                    resolve = { resolveForSource(trackId, uri) },
                     childFor = { item, resolved ->
-                        if (resolved?.isHls == true) {
+                        // A manifest's segments are read by the DASH source, never by a placeholder's data
+                        // source: which add-on answered is noted here (a progressive child notes it as it opens).
+                        if (resolved != null) addonCheck?.opened(trackId, resolved.origin)
+                        if (resolved != null && !urlCache.isServable(resolved)) {
+                            // Its add-on left or was set aside since it answered, and the note above may have come
+                            // too late for the queue to see (review-888 m1): the lazy child resolves again as it
+                            // opens, without it.
+                            checkedLazy(item)
+                        } else if (resolved?.isHls == true) {
                             streamingFactory.createHlsMediaSource(item, resolved)
                         } else if (resolved?.isDash == true) {
-                            streamingFactory.createDashMediaSource(item, resolved.url)
+                            // From here on the player shows the DASH child's item as the slot's: the manifest's URL.
+                            // It says which stream that is, as the look-ahead says it of a slot it swaps to a URL
+                            // (StreamStamp): without it the crossfade took the URL for an unresolved queue-fill one
+                            // and never faded into the song (#880), and the spare primed on the slot (or the new
+                            // master after a fade) sent an add-on's manifest to the default HTTP source.
+                            val stamped = StreamStamp.of(item, resolved)
+                            if (AddonPlayback.isAddonOrigin(resolved.origin)) {
+                                // An add-on's manifest and segments on the add-on media client, or refused;
+                                // judged by what the manifest says before a segment plays.
+                                addonSourceFactory?.let { checked(streamingFactory.createDashMediaSource(stamped, resolved.url, it), resolved, stamped) }
+                                    ?: unwiredAddonFactory.createMediaSource(item)
+                            } else {
+                                streamingFactory.createDashMediaSource(stamped, resolved.url, null)
+                            }
                         } else {
-                            lazyFactory.createMediaSource(item)
+                            checkedLazy(item)
                         }
                     },
                 )
             }
-            return lazyFactory.createMediaSource(mediaItem)
+            return checkedLazy(mediaItem)
         }
         // A resolved Tidal MPD (prefetch / foreground tap set the item's URI to it).
         // Keyed on the path, not an extra: the session strips local configuration,
         // and upstream serves every MPD at `/dash/td/<id>.mpd`.
-        if ((uri?.scheme == "https" || uri?.scheme == "http") && uri.path?.endsWith(".mpd") == true) {
-            return streamingFactory.createDashMediaSource(mediaItem, uri.toString())
+        // An add-on's manifest can sit at any path (`/dash?id=1`), so its item says it is one
+        // (review-882 N4): it went to the progressive source, which cannot read a manifest.
+        if (uri != null && (uri.scheme == "https" || uri.scheme == "http") &&
+            (uri.path?.endsWith(".mpd") == true || (isAddonOrigin(mediaItem) && isDashStream(mediaItem)))
+        ) {
+            if (isAddonOrigin(mediaItem)) {
+                // An add-on's manifest and segments on the add-on media client, or refused; judged before it plays.
+                return addonSourceFactory?.let { checked(streamingFactory.createDashMediaSource(mediaItem, uri.toString(), it), mediaItem) }
+                    ?: unwiredAddonFactory.createMediaSource(mediaItem)
+            }
+            return streamingFactory.createDashMediaSource(mediaItem, uri.toString(), null)
         }
         // Order matches existing precedence: YouTube-trackId refresh chain first,
         // then JioSaavn authed-HTTP, then local/default.
@@ -251,16 +398,27 @@ class StashMediaSourceFactory(
         if (isJioSaavnOrigin(mediaItem)) {
             return jioSaavnFactory.createMediaSource(mediaItem)
         }
+        // An add-on's URL on the add-on media client, or refused: never on the default source. Judged
+        // by what its bytes are before a sound of it plays (AddonStreamCheck).
+        if (isAddonOrigin(mediaItem)) {
+            return addonFactory?.let { checked(it.createMediaSource(mediaItem), mediaItem) } ?: unwiredAddonFactory.createMediaSource(mediaItem)
+        }
         return localFactory.createMediaSource(mediaItem)
     }
 }
 
-/** A stream's source in Download mode: it never opens, so the player skips the song. */
+/** What [StashMediaSourceFactory] says when an add-on's stream reaches it with no add-on source to read it on. */
+internal const val ADDON_NOT_WIRED = "add-on playback isn't wired"
+
+/**
+ * A source that never opens, so the player skips the song: a stream in Download mode, or, with
+ * [reason], whatever else may not be read (an add-on's stream with no add-on source wired).
+ */
 @OptIn(UnstableApi::class)
-private class DownloadModeRefusal : DataSource {
+private class DownloadModeRefusal(private val reason: String? = null) : DataSource {
     override fun addTransferListener(transferListener: androidx.media3.datasource.TransferListener) = Unit
     override fun open(dataSpec: androidx.media3.datasource.DataSpec): Long =
-        throw java.io.IOException("Download mode: ${dataSpec.uri.scheme} streams don't play")
+        throw java.io.IOException(reason ?: "Download mode: ${dataSpec.uri.scheme} streams don't play")
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int = throw java.io.IOException("not open")
     override fun getUri(): android.net.Uri? = null
     override fun close() = Unit

@@ -1,0 +1,7 @@
+{
+  "url": "https://media.example.org/a/track_123.mpd",
+  "manifest": "dash",
+  "drm": {
+    "scheme": "example"
+  }
+}

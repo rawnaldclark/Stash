@@ -22,19 +22,60 @@ class LosslessSourcePreferencesTest {
 
     /** The preferencesDataStore delegate is process-wide; start each test clean (codebase convention). */
     @Before fun clear() = runBlocking {
-        prefs.setBitchordEndpoint(null)
+        prefs.clearBitchordServer()
         prefs.setLosslessOfflineDismissed(false)
+        prefs.setPlayOrder(null)
+        prefs.writeRawForTest { it.remove(stringPreferencesKey("play_order_off")) }
     }
 
-    @Test fun `own Tidal server is null by default, normalised on set, cleared on blank`() = runTest {
+    /** The play order (add-ons phase 4 §2.8): nothing saved is automatic; a drag saves the whole order. */
+    @Test fun `the play order is null until it is saved, and saving null goes back to automatic`() = runTest {
+        assertThat(prefs.playOrderNow()).isNull()
+        prefs.setPlayOrder(listOf("addon:mine", "qobuz", "tidal", "qobuz"))
+        assertThat(prefs.playOrderNow()).containsExactly("addon:mine", "qobuz", "tidal").inOrder()
+        prefs.setPlayOrder(null)
+        assertThat(prefs.playOrderNow()).isNull()
+        prefs.setPlayOrder(emptyList())
+        assertThat(prefs.playOrder.first()).isNull()
+    }
+
+    @Test fun `the rows switched off are kept as a set, and the last one switched on leaves no key`() = runTest {
+        assertThat(prefs.playOrderOff.first()).isEmpty()
+        prefs.setPlayOrderOff("tidal", off = true)
+        prefs.setPlayOrderOff("addon:builtin", off = true)
+        prefs.setPlayOrderOff("tidal", off = true)
+        assertThat(prefs.playOrderOff.first()).containsExactly("tidal", "addon:builtin")
+        prefs.setPlayOrderOff("tidal", off = false)
+        prefs.setPlayOrderOff("addon:builtin", off = false)
+        assertThat(prefs.playOrderOff.first()).isEmpty()
+    }
+
+    /** The priority list no screen ever wrote is gone with the play order: the startup purge deletes a stored one. */
+    @Test fun `the retired priority list is purged`() = runTest {
+        var stored: String? = "x"
+        prefs.writeRawForTest { it[stringPreferencesKey("priority_order")] = "tidal_bitchord,qbdlx_qobuz" }
+        prefs.purgeRetiredSourceKeys()
+        prefs.writeRawForTest { stored = it[stringPreferencesKey("priority_order")] }
+        assertThat(stored).isNull()
+    }
+
+    /**
+     * The old Custom Tidal server keys (add-ons phase 4 §2.10): nothing writes them any more; they
+     * are read as an older build stored them, a blank one is none, and both go in one edit.
+     */
+    @Test fun `the old own Tidal server keys read as stored and are cleared together`() = runTest {
         assertThat(prefs.bitchordEndpoint.first()).isNull()
-        prefs.setBitchordEndpoint("  https://tidal.example.org/  ")
+        prefs.writeRawForTest {
+            it[stringPreferencesKey("bitchord_endpoint")] = "https://tidal.example.org"
+            it[stringPreferencesKey("bitchord_access_token")] = "   "
+        }
         assertThat(prefs.bitchordEndpointNow()).isEqualTo("https://tidal.example.org")
-        prefs.setBitchordEndpoint("http://insecure.example") // not https -> rejected
+        assertThat(prefs.bitchordAccessTokenNow()).isNull()
+        prefs.writeRawForTest { it[stringPreferencesKey("bitchord_access_token")] = "tok" }
+        assertThat(prefs.bitchordAccessTokenNow()).isEqualTo("tok")
+        prefs.clearBitchordServer()
         assertThat(prefs.bitchordEndpointNow()).isNull()
-        prefs.setBitchordEndpoint("https://tidal.example.org")
-        prefs.setBitchordEndpoint("   ")
-        assertThat(prefs.bitchordEndpointNow()).isNull()
+        assertThat(prefs.bitchordAccessTokenNow()).isNull()
     }
 
     /**

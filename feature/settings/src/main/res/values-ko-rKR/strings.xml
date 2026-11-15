@@ -345,11 +345,6 @@
     <string name="settings_lossy_fallback_switch_label_aac">Tidal에 ACC가 없을 경우, JioSaavn, 그다음 YouTube 순서로 재생 가능 여부를 확인한 후 재생합니다</string>
     <string name="settings_advanced">고급</string>
     <string name="settings_url_placeholder">https://…</string>
-    <string name="settings_bitchord_desc">선택 사항: Stash 대신 Tidal에 자체 BitChord 서버를 사용할 수 있습니다. 그렇지 않으면 비워 두세요</string>
-    <string name="settings_bitchord_server_label">사용자 정의 Tidal 서버 (선택 사항)</string>
-    <string name="settings_access_token_label">액세스 토큰 (선택 사항)</string>
-    <string name="settings_bitchord_token_saved">토큰이 저장되었습니다</string>
-    <string name="settings_bitchord_token_hint">자체 서버에서 ACCESS_TOKEN을 설정한 경우에만 가능합니다</string>
     <string name="settings_equalizer_title">이퀄라이저</string>
     <!-- Settings > Audio & Quality > Lossless tiers -->
     <string name="settings_lossless_tier_max">최대 (24-bit/192 kHz)</string>
@@ -397,8 +392,6 @@
     <!-- Settings > Playback -->
     <string name="settings_stream_on_cellular_title">모바일 데이터로 스트리밍</string>
     <string name="settings_stream_on_cellular_desc">모바일 데이터를 사용합니다</string>
-    <string name="settings_stream_via_youtube_title">YouTube를 통해 스트리밍</string>
-    <string name="settings_stream_via_youtube_desc">노래가 재생되지 않거나 끊기면 시도해 보세요</string>
     <string name="settings_force_qobuz_debug_title">Qobuz만 강제 사용 (디버그)</string>
     <string name="settings_force_qobuz_debug_desc">디버그 빌드 전용입니다. YouTube 대체 없이 Qobuz를 통해 스트리밍 및 다운로드를 라우팅합니다</string>
     <string name="settings_streaming_unavailable">이 빌드에서는 스트리밍을 사용할 수 없습니다</string>

@@ -2,6 +2,7 @@ package com.stash.core.media.recap
 
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.mapper.toEntity
+import com.stash.core.media.streaming.AddonStreamRung
 import com.stash.core.media.streaming.JioSaavnStreamResolver
 import com.stash.core.media.streaming.StreamUrl
 import com.stash.core.media.streaming.StreamUrlCache
@@ -25,6 +26,7 @@ import javax.inject.Singleton
  *  - **Never asks the registry** (StreamSourceRegistry): no qbdlx / Tidal relay request, so a
  *    preview never spends the shared daily lossless allowance, never runs JioSaavn or the hedged
  *    lanes, and a Qobuz miss never counts toward the Home "lossless offline" banner.
+ *  - **Never plays an add-on's stream**: a cached `addon:` URL is skipped (see [lookup]).
  *  - **Never writes [StreamUrlCache]**: the cache is keyed by track id and the main player trusts
  *    it, so a YouTube URL put there would make the user's next real tap of that song play
  *    YouTube instead of FLAC.
@@ -46,7 +48,10 @@ class RecapStreamLookup internal constructor(
 
     /** A playable URL for [track], or null (the card stays quiet). */
     suspend fun lookup(track: Track): RecapSource.Url? {
-        cached(track.id)?.let { hit ->
+        // An add-on's stream is never a Recap preview (review-882 B1): Recap fetches on its own
+        // plain HTTP source, which has none of the add-on base rules. Such a song previews from
+        // YouTube like one with nothing cached.
+        cached(track.id)?.takeUnless { it.origin?.startsWith(AddonStreamRung.ORIGIN_PREFIX) == true }?.let { hit ->
             if ((track.soundCloudId != null || track.source == com.stash.core.model.MusicSource.SOUNDCLOUD) && hit.origin != "soundcloud") return null
             if (hit.isHls) return null // Recap uses a progressive byte pipe, not the main HLS source.
             return RecapSource.Url(

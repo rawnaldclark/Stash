@@ -165,6 +165,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var losslessSourcePreferences: com.stash.data.download.lossless.LosslessSourcePreferences
 
+    /** Moves the old Custom Tidal server into the sealed add-on store (add-ons phase 4 §2.10). */
+    @Inject
+    lateinit var ownTidalServerMigration: com.stash.data.download.lossless.tidal.OwnTidalServerMigration
+
     /**
      * Only so [maybePurgeRetiredSourceArtifacts] can delete the retired token
      * pool's cached third-party credentials on upgrade — the lazy purge inside
@@ -235,6 +239,21 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var losslessQuotaRefresher: com.stash.data.download.lossless.quota.LosslessQuotaRefresher
 
     /**
+     * The add-ons the signed config turns on (`default_addons`) and the user's own: their kept
+     * manifests at once (an offline cold start keeps the Tidal add-on), then a read whenever
+     * either list changes and on every fresh config, at most every 10 minutes then.
+     */
+    @Inject
+    lateinit var addonRegistry: com.stash.core.addons.InTreeAddonRegistry
+
+    /**
+     * The signed add-on index (the official list and the blocklist, add-ons phase 4 §1.5): its kept
+     * copy at once, then a fetch after every applied config, at most once in 6 hours.
+     */
+    @Inject
+    lateinit var addonIndexFetcher: com.stash.data.download.lossless.addon.AddonIndexFetcher
+
+    /**
      * Android's Battery Saver (D19). A cold start while it is on skips the warm-ups and catch-up
      * passes below; they run at the next start without it, and the periodic jobs are left to Android.
      */
@@ -273,6 +292,10 @@ class StashApplication : Application(), Configuration.Provider {
     /** Gate for the one-time duplicate cleanup after schema 76, see [maybeEnqueueDuplicateCleanup]. */
     @Inject
     lateinit var duplicateCleanupState: com.stash.core.data.library.duplicates.DuplicateCleanupState
+
+    /** Gate for the one-time check of downloads for clips (0.9.125), see [maybeEnqueueExistingClipCheck]. */
+    @Inject
+    lateinit var existingClipCheckState: com.stash.data.download.clips.ExistingClipCheckState
 
     /** Only to cancel a lyrics upgrade the retired automatic pass queued before an update. */
     @Inject
@@ -416,6 +439,8 @@ class StashApplication : Application(), Configuration.Provider {
         val saverAtStart = batterySaver.isOn.value
         if (saverAtStart) Log.i("StashStartup", "Battery Saver on: cold-start warm-ups skipped")
         startLosslessConfig()
+        addonIndexFetcher.start(applicationScope, losslessConfigFetcher)
+        addonRegistry.start(applicationScope, losslessConfigFetcher.refreshedAt)
         losslessQuotaRefresher.start(applicationScope)
         // A restore whose user picked a different library folder than the
         // backup's: it could not be written before the restart (the live
@@ -692,6 +717,7 @@ class StashApplication : Application(), Configuration.Provider {
         maybeEnqueueBlocklistIntegrity()
         applicationScope.launch { maybeEnqueueCanonicalRecompute() }
         applicationScope.launch { maybeEnqueueDuplicateCleanup() }
+        applicationScope.launch { maybeEnqueueExistingClipCheck() }
         // Also fire a one-shot check on every cold start so a release pushed
         // between periodic-worker windows surfaces within seconds of the
         // next launch — the 24-hour periodic worker alone can leave users
@@ -707,6 +733,8 @@ class StashApplication : Application(), Configuration.Provider {
         applicationScope.launch { maybeBackfillCodecsFromExtension() }
         applicationScope.launch { maybeBackfillTrackAlbums() }
         applicationScope.launch { maybePurgeRetiredSourceArtifacts() }
+        // Every start until it has moved (a Keystore failure keeps the old keys for the next one).
+        applicationScope.launch { ownTidalServerMigration.run() }
         applicationScope.launch { relabelYouTubeRowsClaimingSpotify() }
         // One-shot: seed the streaming Wi-Fi quality tier from the user's
         // current download tier on first run, so existing users' streaming
@@ -1314,6 +1342,23 @@ class StashApplication : Application(), Configuration.Provider {
         }.onFailure {
             if (it is kotlinx.coroutines.CancellationException) throw it
             Log.w("StashMigration", "duplicate cleanup enqueue failed", it)
+        }
+    }
+
+    /**
+     * 0.9.125: the one-time check of downloaded FLACs for a clip saved as the song
+     * ([com.stash.data.download.clips.ExistingClipCheck]); a clip downloads again, its file kept
+     * until the new one lands. Enqueued on every start until it reaches the end, then this is a
+     * single DataStore read.
+     */
+    private suspend fun maybeEnqueueExistingClipCheck() {
+        runCatching {
+            if (com.stash.data.download.clips.ExistingClipCheckWorker.enqueueIfPending(this, existingClipCheckState)) {
+                Log.i("StashMigration", "maybeEnqueueExistingClipCheck: enqueued the one-time check for clips")
+            }
+        }.onFailure {
+            if (it is kotlinx.coroutines.CancellationException) throw it
+            Log.w("StashMigration", "clip check enqueue failed", it)
         }
     }
 

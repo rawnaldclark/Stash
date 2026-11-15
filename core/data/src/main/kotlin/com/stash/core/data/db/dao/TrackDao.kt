@@ -71,6 +71,13 @@ data class TrackPathRow(
     @androidx.room.ColumnInfo(name = "file_path") val filePath: String,
 )
 
+/** A downloaded FLAC and the song's known length, for the one-time check for clips ([TrackDao.downloadedFlacsAfter]). */
+data class DownloadedFlacRow(
+    val id: Long,
+    @androidx.room.ColumnInfo(name = "file_path") val filePath: String,
+    @androidx.room.ColumnInfo(name = "duration_ms") val durationMs: Long,
+)
+
 /**
  * #380 — the Library Songs feed projection: exactly the columns
  * `LibraryTrackRow.toDomain()` consumes, nothing else.
@@ -136,6 +143,15 @@ data class TrackExistenceRef(
     val album: String,
     val title: String,
     @androidx.room.ColumnInfo(name = "file_path") val filePath: String,
+)
+
+/**
+ * One row of [TrackDao.getFirstPlaylistNamesForTracks]: a track id and the
+ * name of the first sync-enabled playlist it belongs to.
+ */
+data class TrackPlaylistNameRow(
+    @androidx.room.ColumnInfo(name = "trackId") val trackId: Long,
+    @androidx.room.ColumnInfo(name = "playlistName") val playlistName: String,
 )
 
 /** Candidate projection for [AdoptExistingFilesUseCase] — everything
@@ -447,7 +463,8 @@ interface TrackDao {
     *
     * Leaves out tracks whose last lookup found no lossless version after
     * [retryBefore] ([TrackEntity.flacNoMatchAt]), and lists never-tried tracks
-    * first, then the oldest misses.
+    * first, then the oldest misses. Within each, the newest songs (highest id)
+    * come first: what was just added is what the listener is playing now.
     */
     @Query(
         """
@@ -465,7 +482,7 @@ interface TrackDao {
         AND t.soundcloud_id IS NULL
         AND bl.canonical_key IS NULL
         AND (t.flac_no_match_at IS NULL OR t.flac_no_match_at < :retryBefore)
-        ORDER BY t.flac_no_match_at IS NOT NULL, t.flac_no_match_at ASC, t.id ASC
+        ORDER BY t.flac_no_match_at IS NOT NULL, t.flac_no_match_at ASC, t.id DESC
         """
     )
     suspend fun getLosslessUpgradeCandidates(retryBefore: Long): List<TrackEntity>
@@ -555,6 +572,43 @@ interface TrackDao {
         ORDER BY p.id ASC LIMIT 1
     """)
     suspend fun getFirstPlaylistNameForTrack(trackId: Long): String?
+
+    @Query("""
+        SELECT pt.track_id AS trackId, p.name AS playlistName
+        FROM playlist_tracks pt
+        INNER JOIN playlists p ON pt.playlist_id = p.id
+        WHERE pt.track_id IN (:trackIds)
+          AND pt.removed_at IS NULL
+          AND p.sync_enabled = 1
+        ORDER BY p.id ASC
+    """)
+    suspend fun getFirstPlaylistNamesForTracksRaw(trackIds: Collection<Long>): List<TrackPlaylistNameRow>
+
+    /**
+     * The batched form of [getFirstPlaylistNameForTrack]: the owning playlist
+     * name for every id in [trackIds], one query (per bind chunk) instead of
+     * one per track. Same selection rules (SYNC-ENABLED, lowest playlist id
+     * first, no removed memberships), so a track absent from the map means
+     * what a null from the single-track query means. The reorganize plan used
+     * to call the single-track form once per downloaded track when the layout
+     * is Per-playlist, an N+1 that dominated the Settings › Library &
+     * Storage entry cost on a big library.
+     *
+     * The raw query returns every enabled membership ordered by playlist id;
+     * keeping the FIRST row per track reproduces the single-track query's
+     * `LIMIT 1` pick. Chunked for SQLite's bind-variable cap (#337).
+     */
+    suspend fun getFirstPlaylistNamesForTracks(trackIds: Collection<Long>): Map<Long, String> {
+        if (trackIds.isEmpty()) return emptyMap()
+        // Rows arrive ordered by playlist id ascending, so the FIRST row a
+        // track id shows up in is its lowest-id playlist — associate() would
+        // keep the last; putIfAbsent keeps the first.
+        val byFirst = LinkedHashMap<Long, String>(trackIds.size)
+        trackIds.distinct()
+            .chunkedForBind { getFirstPlaylistNamesForTracksRaw(it) }
+            .forEach { byFirst.putIfAbsent(it.trackId, it.playlistName) }
+        return byFirst
+    }
 
     /** Reverts a track whose file no longer exists on disk back to
     *  "needs download" — clears is_downloaded, file_path, and the stale
@@ -902,6 +956,21 @@ interface TrackDao {
           AND file_path LIKE :pathPrefix || '%'
     """)
     suspend fun getDownloadedTracksWithPathPrefix(pathPrefix: String): List<TrackEntity>
+
+    /**
+     * How many rows [getDownloadedTracksWithPathPrefix] would return — the
+     * Settings gate for the "Move library" button. The full SELECT loads and
+     * deserialises every entity just to count them, which on a few-thousand-
+     * track library took most of the visible latency opening
+     * Settings › Library & Storage (the count runs there on every entry).
+     */
+    @Query("""
+        SELECT COUNT(*) FROM tracks
+        WHERE is_downloaded = 1
+          AND file_path IS NOT NULL
+          AND file_path LIKE :pathPrefix || '%'
+    """)
+    suspend fun countDownloadedTracksWithPathPrefix(pathPrefix: String): Int
 
     @Query("SELECT * FROM tracks WHERE is_downloaded = 1 ORDER BY date_added DESC LIMIT :limit")
     fun getRecentlyAdded(limit: Int): Flow<List<TrackEntity>>
@@ -2028,12 +2097,11 @@ interface TrackDao {
      *
      * A song the user asked to download (a download_queue row with user_requested: Now
      * Playing, library, album, artist, multi-select and radio downloads, Library & Storage's
-     * Re-download) is never swept either. Those downloads join no playlist (only Search's join
-     * Your Downloads), so to this query they look exactly like a song a mix rotated out, and
-     * Refresh deleted them (#273 made that reach every one-account library). Erring on the
-     * kept side: a Re-download of a mix song that later rotates out is kept too. The marker
-     * goes with Downloads › "Clear history"; linking these downloads to Your Downloads, as
-     * Search does, is the durable fix (#761).
+     * Re-download) is never swept either. Erring on the kept side: a Re-download or a Retry of
+     * a mix song that later rotates out is kept too. That mark goes with Downloads › "Clear
+     * history", so it is the second guard: the durable one is Your Downloads, which every
+     * download the user chooses joins (#761: a tap, a Search download, Re-download's songs no
+     * playlist holds, and once [ownDownloadsOutsideYourDownloads]'s hand downloads from before).
      *
      * Not public API on its own — call [deleteOrphanedDownloadedTracks], which
      * evaluates this predicate and deletes inside one transaction so a
@@ -2082,6 +2150,78 @@ interface TrackDao {
         """
     )
     suspend fun downloadedSongsOnlyIn(playlistId: Long): List<Long>
+
+    /**
+     * The ids among [ids] that no playlist holds (no live membership anywhere): what
+     * [com.stash.core.data.repository.MusicRepository.keepUnlistedInYourDownloads] links.
+     * Route through [chunkedForBind]: Library & Storage's "Download N again" can pass a library.
+     */
+    @Query(
+        """
+        SELECT t.id FROM tracks t
+        WHERE t.id IN (:ids)
+          AND t.id NOT IN (SELECT pt.track_id FROM playlist_tracks pt WHERE pt.removed_at IS NULL)
+        """
+    )
+    suspend fun idsInNoPlaylistRaw(ids: List<Long>): List<Long>
+
+    /**
+     * The songs [com.stash.core.data.db.OwnDownloadsBackfill] puts in Your Downloads, once
+     * (#761): hand downloads from before every download the user chose joined it. Leaves out a
+     * song with any link to [yourDownloadsId], so it is idempotent and never brings back one the
+     * user took out (-1 when there is no Your Downloads yet). Two kinds:
+     *
+     * - A download the user asked for: a queue row with `user_requested`, which every tap has
+     *   written since v0.9.110 and a Search download that waited for lossless writes, never a
+     *   sync. On the phone, or still to land (waiting, running, failed: retries take it); a
+     *   cancel (SKIPPED) of a song not on the phone has nothing to keep. A Retry and Library &
+     *   Storage's Re-download mark a sync's rows the same way, and nothing tells those apart:
+     *   they are kept too, as the sweep already keeps them ([selectDeletableOrphans]).
+     * - Unclear, kept: a downloaded song the sweep could take (sweepable source, no live
+     *   membership, not a Stash Mix discovery) whose queue row no sync filed (`sync_id` NULL)
+     *   and is unmarked, from before [unmarkedBefore] (v0.9.110): a tap from before taps were
+     *   marked, or a "download this playlist" whose playlist is gone. After it, an unmarked
+     *   such row is a playlist's or a followed mix's own download, theirs to drop.
+     *
+     * A downloaded song in no playlist with no queue row left (Downloads › Clear history), or
+     * only a sync's, can't be told from a song a mix rotated out, which is what Refresh removes
+     * (#273): left as it is.
+     *
+     * One pass over tracks with indexed lookups ([DownloadQueueEntity] is indexed on track_id;
+     * the NOT IN subqueries run once).
+     */
+    @Query(
+        """
+        SELECT t.id FROM tracks t
+        WHERE t.id NOT IN (
+                SELECT yd.track_id FROM playlist_tracks yd WHERE yd.playlist_id = :yourDownloadsId
+              )
+          AND (
+              EXISTS (
+                  SELECT 1 FROM download_queue q
+                  WHERE q.track_id = t.id
+                    AND q.user_requested = 1
+                    AND (t.is_downloaded = 1 OR q.status != 'SKIPPED')
+              )
+              OR (
+                  t.is_downloaded = 1
+                  AND t.source NOT IN ('BOTH', 'LOCAL', 'CLOUD', 'SOUNDCLOUD')
+                  AND t.soundcloud_id IS NULL
+                  AND t.id NOT IN (SELECT pt.track_id FROM playlist_tracks pt WHERE pt.removed_at IS NULL)
+                  AND t.id NOT IN (SELECT dq.track_id FROM discovery_queue dq WHERE dq.track_id IS NOT NULL)
+                  AND EXISTS (
+                      SELECT 1 FROM download_queue q
+                      WHERE q.track_id = t.id
+                        AND q.sync_id IS NULL
+                        AND q.user_requested = 0
+                        AND q.created_at < :unmarkedBefore
+                  )
+              )
+          )
+        ORDER BY t.id
+        """
+    )
+    suspend fun ownDownloadsOutsideYourDownloads(yourDownloadsId: Long, unmarkedBefore: Long): List<Long>
 
     /**
      * Atomically re-evaluates the orphan predicate and deletes the matching
@@ -2767,6 +2907,31 @@ interface TrackDao {
         """
     )
     suspend fun restoreKeptFile(trackId: Long, keptPath: String): Int
+
+    /**
+     * The next [limit] songs Stash downloaded as FLAC, by id after [afterId]: the pages the one-time
+     * check for clips reads (0.9.125, `ExistingClipCheck` in `:data:download`). By id, so a run the
+     * system stopped carries on after the last page it finished.
+     *
+     * Not the person's own files: an imported file ('LOCAL') or a song from their cloud ('CLOUD')
+     * is what they gave Stash, never fetched again. All Songs scans have no row here. A FLAC is
+     * known by the format the download recorded or by the file's name; the check reads the file's
+     * first bytes as well, so a name that lies is passed over there.
+     */
+    @Query(
+        """
+        SELECT id, file_path, duration_ms FROM tracks
+        WHERE id > :afterId
+          AND is_downloaded = 1
+          AND file_path IS NOT NULL
+          AND file_path != ''
+          AND source NOT IN ('LOCAL', 'CLOUD')
+          AND (LOWER(file_format) = 'flac' OR LOWER(file_path) LIKE '%.flac')
+        ORDER BY id
+        LIMIT :limit
+        """
+    )
+    suspend fun downloadedFlacsAfter(afterId: Long, limit: Int): List<DownloadedFlacRow>
 
     /**
      * All `is_downloaded=1` rows with their stored `file_path`. Drives the

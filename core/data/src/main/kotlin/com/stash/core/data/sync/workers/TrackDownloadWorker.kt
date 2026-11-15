@@ -90,6 +90,7 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val syncNotificationManager: SyncNotificationManager,
     private val trackDownloader: TrackDownloader,
     private val tokenManager: com.stash.core.auth.TokenManager,
+    private val spotifyAccounts: com.stash.core.auth.spotify.SpotifyAccounts,
     private val audioDurationExtractor: AudioDurationExtractor,
     private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
@@ -306,7 +307,7 @@ class TrackDownloadWorker @AssistedInject constructor(
             syncHistoryDao.updateStatus(syncId, SyncState.DOWNLOADING)
 
             // Determine which services are connected so we only retry their tracks.
-            val connectedSources = connectedDownloadSources(tokenManager)
+            val connectedSources = connectedDownloadSources(tokenManager, spotifyAccounts)
             Log.d(TAG, "Connected sources for retry: $connectedSources")
 
             // Diagnostic: log the actual queue state before any changes
@@ -579,7 +580,7 @@ class TrackDownloadWorker @AssistedInject constructor(
         }
         // Claims no live job holds (a killed process, a stopped worker) go back to waiting first.
         downloadJobs.releaseDeadClaims(downloadQueueDao)
-        val items = collectSyncDownloads(connectedDownloadSources(tokenManager), fallbackSyncId = null)
+        val items = collectSyncDownloads(connectedDownloadSources(tokenManager, spotifyAccounts), fallbackSyncId = null)
         if (items.isEmpty()) {
             Log.i(TAG, "Resume: nothing waiting")
             return Result.success()

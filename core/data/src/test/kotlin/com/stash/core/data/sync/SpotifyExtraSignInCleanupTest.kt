@@ -1,6 +1,6 @@
 package com.stash.core.data.sync
 
-import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.auth.store.EncryptedTokenStore
 import com.stash.core.data.db.dao.SpotifyAccountDao
 import com.stash.core.data.db.entity.SpotifyAccountEntity
@@ -17,7 +17,7 @@ import org.junit.Test
 class SpotifyExtraSignInCleanupTest {
 
     private val tokenStore: EncryptedTokenStore = mockk()
-    private val tokenManager: TokenManager = mockk(relaxed = true)
+    private val tokenManager: SpotifyAccounts = mockk(relaxed = true)
     private val dao: SpotifyAccountDao = mockk()
 
     private fun row(id: Long, userId: String) = SpotifyAccountEntity(id = id, userId = userId, label = userId, addedAt = id)

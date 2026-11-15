@@ -4,7 +4,7 @@ import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.musicbrainz.MusicBrainzClient
 import com.stash.core.data.musicbrainz.mapSocials
 import com.stash.data.ytmusic.model.ArtistAbout
-import com.stash.data.spotify.SpotifyApiClient
+import com.stash.data.spotify.SpotifyLibrary
 import com.stash.data.ytmusic.model.SocialLink
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -27,7 +27,7 @@ class NoopArtistAboutEnricher : ArtistAboutEnricher {
 class RealArtistAboutEnricher @Inject constructor(
     private val lastFm: LastFmApiClient,
     private val mb: MusicBrainzClient,
-    private val spotify: SpotifyApiClient,
+    private val spotify: SpotifyLibrary,
 ) : ArtistAboutEnricher {
     override suspend fun enrich(artistName: String): ArtistAbout? = coroutineScope {
         // Spotify's photos and monthly listeners alongside the bio, on a leash of their own: a slow

@@ -1,8 +1,11 @@
 package com.stash.data.download.lossless.quota
 
 import android.util.Log
+import com.stash.data.download.lossless.PlayOrder
+import com.stash.data.download.lossless.PlayOrderSwitches
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.RelaySigner
+import com.stash.data.download.lossless.tidal.TidalDebugSettings
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -27,6 +30,10 @@ import okhttp3.Request
  * Only the owner's Tidal relay from the signed config is asked (a user's own server does not
  * keep the shared count), signed `"<install>:quota:<ts>"` by [RelaySigner]. No key or no Tidal
  * relay in the config → no request at all.
+ *
+ * Add-ons phase 2 keeps this on the legacy route for release N, whichever wire the Tidal rung
+ * uses: the Worker serves `/quota` there and on its v1 face from the same count, and a v1
+ * `/stream` answer carries the allowance too. Release N+1 moves it to v1 `/quota` (plan §5.4).
  */
 @Singleton
 class LosslessQuotaRefresher @Inject constructor(
@@ -34,6 +41,9 @@ class LosslessQuotaRefresher @Inject constructor(
     private val config: LosslessConfigFetcher,
     private val signer: RelaySigner,
     private val quota: LosslessQuota,
+    private val debug: TidalDebugSettings = TidalDebugSettings.off(),
+    /** The switches of Settings › Add-ons: with Tidal switched off, the start's refresh asks nothing. */
+    private val switches: PlayOrderSwitches = PlayOrderSwitches.allOn(),
 ) {
     /** Test seam; short timeouts like the relay client — this is a nicety, never a wait. */
     internal var httpClient: OkHttpClient = sharedClient.newBuilder()
@@ -70,11 +80,16 @@ class LosslessQuotaRefresher @Inject constructor(
         quota.awaitLoaded()
         val unconfirmedSupporter = signer.entitled() && quota.current()?.unlimited != true
         if (!force && !quota.needsColdRefresh() && !unconfirmedSupporter) return@withContext false
+        // Tidal switched off in Settings › Add-ons: Stash's Tidal is not asked for songs, so the start
+        // does not ask it for the allowance either (review-885 M15). The next start with Tidal on
+        // asks. A supporter claim (forced) is the user's own doing and still asks once.
+        if (!force && switches.isOff(PlayOrder.TIDAL)) return@withContext false
         // The signed config loads from its cache in parallel at startup: give it a moment.
         withTimeoutOrNull(configWaitMs) {
             combine(config.relayKey, config.tidalRelay) { key, tidal -> key != null && tidal != null }.first { it }
         } ?: return@withContext false
-        val tidal = config.tidalRelay.value ?: return@withContext false
+        // A debug build's owner server override stands in for the config's relay (signing kept).
+        val tidal = debug.relay(config.tidalRelay.value) ?: return@withContext false
         fetch("${tidal.base}/quota", tidal.token)
     }
 
@@ -90,7 +105,7 @@ class LosslessQuotaRefresher @Inject constructor(
             // The owner's relay: a supporter token makes the answer `supporter:true`.
             signer.entitle(b)
             try {
-                httpClient.newCall(b.build()).execute().use { r ->
+                TidalDebugSettings.clientFor(httpClient, parsed).newCall(b.build()).execute().use { r ->
                     if (r.code == 401 && mayRetrySkew && signer.adoptServerTime(r, nowMs())) {
                         mayRetrySkew = false
                         return@use

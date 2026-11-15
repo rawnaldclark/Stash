@@ -1,0 +1,35 @@
+{
+  "synced": [
+    {
+      "startMs": 0,
+      "endMs": 4200,
+      "text": "One more time",
+      "words": [
+        {
+          "startMs": 0,
+          "endMs": 900,
+          "text": "One"
+        },
+        {
+          "startMs": 900,
+          "endMs": 1700,
+          "text": "more"
+        },
+        {
+          "startMs": 1700,
+          "endMs": 4200,
+          "text": "time"
+        }
+      ]
+    },
+    {
+      "startMs": 4200,
+      "text": "We're gonna celebrate"
+    },
+    {
+      "startMs": 8100,
+      "text": "Oh yeah, all right, don't stop dancing"
+    }
+  ],
+  "plain": "One more time\nWe're gonna celebrate\nOh yeah, all right, don't stop dancing"
+}

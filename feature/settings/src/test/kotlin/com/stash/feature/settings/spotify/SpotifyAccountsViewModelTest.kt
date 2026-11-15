@@ -1,7 +1,7 @@
 package com.stash.feature.settings.spotify
 
 import com.google.common.truth.Truth.assertThat
-import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.model.SpotifyCookieCheck
 import com.stash.core.auth.model.UserInfo
@@ -59,7 +59,7 @@ class SpotifyAccountsViewModelTest {
     private val auth = MutableStateFlow<AuthState>(AuthState.Connected(UserInfo(id = "rawn", displayName = "Rawn")))
     private val rows = MutableStateFlow<List<SpotifyAccountEntity>>(emptyList())
 
-    private val tokenManager = mockk<TokenManager>(relaxed = true) {
+    private val tokenManager = mockk<SpotifyAccounts>(relaxed = true) {
         every { spotifyAuthState } returns auth
         coEvery { hasSpotifyExtraSignIn(any()) } returns true
     }
@@ -83,7 +83,7 @@ class SpotifyAccountsViewModelTest {
     private val webSession = mockk<SpotifyWebSession>(relaxed = true)
 
     private fun newVm() = SpotifyAccountsViewModel(
-        tokenManager = tokenManager,
+        spotifyAccounts = tokenManager,
         accountDao = accountDao,
         remover = remover,
         syncScheduler = syncScheduler,

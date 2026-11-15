@@ -52,6 +52,7 @@ class SyncViewModelTest {
     private val syncStateManager = mockk<com.stash.core.data.sync.SyncStateManager>(relaxed = true)
     private val prefs = mockk<com.stash.core.data.sync.SyncPreferencesManager>(relaxed = true)
     private val tokenManager = mockk<com.stash.core.auth.TokenManager>(relaxed = true)
+    private val spotifyAccounts = mockk<com.stash.core.auth.spotify.SpotifyAccounts>(relaxed = true)
     private val syncHistoryDao = mockk<com.stash.core.data.db.dao.SyncHistoryDao>(relaxed = true)
     private val playlistDao = mockk<com.stash.core.data.db.dao.PlaylistDao>(relaxed = true)
     private val syncUndoDao = mockk<com.stash.core.data.db.dao.SyncUndoDao>(relaxed = true)
@@ -81,7 +82,7 @@ class SyncViewModelTest {
         every { prefs.youtubeLikedStudioOnly } returns emptyFlow()
         every { prefs.syncSpotifySavedAlbums } returns emptyFlow()
         every { prefs.syncDays } returns emptyFlow()
-        every { tokenManager.spotifyAuthState } returns MutableStateFlow(AuthState.NotConnected)
+        every { spotifyAccounts.spotifyAuthState } returns MutableStateFlow(AuthState.NotConnected)
         every { tokenManager.youTubeAuthState } returns MutableStateFlow(AuthState.NotConnected)
         every { syncHistoryDao.getRecentSyncs(any()) } returns emptyFlow()
         // init collects the undo point eagerly; a relaxed mock's Flow stub throws
@@ -108,6 +109,7 @@ class SyncViewModelTest {
         syncStateManager = syncStateManager,
         syncPreferencesManager = prefs,
         tokenManager = tokenManager,
+        spotifyAccounts = spotifyAccounts,
         syncHistoryDao = syncHistoryDao,
         playlistDao = playlistDao,
         syncUndoDao = syncUndoDao,
@@ -555,7 +557,7 @@ class SyncViewModelTest {
     /** Save to this phone: Download mode, nothing pinned, and the playlists open to pick from. */
     @Test
     fun `Save to this phone picks Download mode and opens the playlists`() = runTest {
-        every { tokenManager.spotifyAuthState } returns MutableStateFlow(mockk<AuthState.Connected>(relaxed = true))
+        every { spotifyAccounts.spotifyAuthState } returns MutableStateFlow(mockk<AuthState.Connected>(relaxed = true))
         val vm = newVm()
 
         vm.onArrivalChosen(streamEverything = false)

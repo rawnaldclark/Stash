@@ -273,11 +273,6 @@
     <string name="settings_lossy_fallback_switch_label_aac">JioSaavn, depois YouTube, quando o Tidal não tem AAC</string>
     <string name="settings_advanced">Avançado</string>
     <string name="settings_url_placeholder">https://…</string>
-    <string name="settings_bitchord_desc">Opcional: use seu próprio servidor BitChord para Tidal em vez do Stash. Caso contrário, deixe em branco.</string>
-    <string name="settings_bitchord_server_label">Servidor Tidal personalizado (opcional)</string>
-    <string name="settings_access_token_label">Token de acesso (opcional)</string>
-    <string name="settings_bitchord_token_saved">Token salvo</string>
-    <string name="settings_bitchord_token_hint">Somente se o seu próprio servidor definir ACCESS_TOKEN</string>
     <string name="settings_equalizer_title">Equalizador</string>
     <!-- Settings > Audio & Quality > Lossless tiers -->
     <string name="settings_lossless_tier_max">Máx. (24 bits/192 kHz)</string>
@@ -325,8 +320,6 @@
     <!-- Settings > Playback -->
     <string name="settings_stream_on_cellular_title">Transmitir usando dados móveis</string>
     <string name="settings_stream_on_cellular_desc">Usa dados móveis</string>
-    <string name="settings_stream_via_youtube_title">Transmitir pelo YouTube</string>
-    <string name="settings_stream_via_youtube_desc">Tente isto se as músicas não tocarem ou forem interrompidas</string>
     <string name="settings_force_qobuz_debug_title">Forçar apenas Qobuz (depuração)</string>
     <string name="settings_force_qobuz_debug_desc">Somente em versões de depuração. Direciona o streaming e os downloads pelo Qobuz, sem recorrer ao YouTube.</string>
     <string name="settings_streaming_unavailable">O streaming não está disponível nesta versão.</string>

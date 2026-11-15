@@ -9,6 +9,7 @@ import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
 import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.auth.model.AuthService
 import com.stash.core.auth.spotify.SpotifyAuthManager
 import com.stash.core.data.blocklist.BlocklistGuard
@@ -90,8 +91,10 @@ class PlaylistFetchWorkerUnreadPlaylistTest {
     private val streamingPreference = mockk<StreamingPreference>()
     private val tokenManager = mockk<TokenManager> {
         coEvery { getSoundCloudToken() } returns "secret"
-        coEvery { isAuthenticated(AuthService.SPOTIFY) } returns true
         coEvery { isAuthenticated(AuthService.YOUTUBE_MUSIC) } returns false
+    }
+    private val spotifyAccounts = mockk<SpotifyAccounts> {
+        coEvery { isSpotifyAuthenticated() } returns true
         // What the real client's GraphQL calls ask for.
         coEvery { getSpotifyAccessToken() } returns "access-token"
         coEvery { getSpotifyClientId() } returns "client-id"
@@ -416,7 +419,7 @@ class PlaylistFetchWorkerUnreadPlaylistTest {
      */
     private fun useRealWalk(fetchPlaylist: String) {
         fetchPlaylistBody = fetchPlaylist
-        spotifyClient = spyk(SpotifyApiClient(http, tokenManager, authManager)).also { real ->
+        spotifyClient = spyk(SpotifyApiClient(http, spotifyAccounts, authManager)).also { real ->
             coEvery { real.getUserPlaylists(any(), any(), any()) } coAnswers {
                 spotify.getUserPlaylists(arg(0), arg(1), arg(2))
             }
@@ -437,7 +440,8 @@ class PlaylistFetchWorkerUnreadPlaylistTest {
                 ) = PlaylistFetchWorker(
                     appContext, workerParameters,
                     tokenManager = tokenManager,
-                    spotifyApiClient = spotifyClient,
+                    spotifyAccounts = spotifyAccounts,
+                    spotifyLibrary = spotifyClient,
                     ytMusicApiClient = mockk(relaxed = true),
                     innerTubeClient = mockk(relaxed = true),
                     playlistDao = db.playlistDao(),

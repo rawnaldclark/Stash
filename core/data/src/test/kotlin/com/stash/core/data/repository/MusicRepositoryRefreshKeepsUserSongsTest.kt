@@ -29,8 +29,9 @@ import org.robolectric.annotation.Config
 
 /**
  * With Refresh's cleanup open (every account that counts is on Refresh, #273), what the user
- * kept must survive it: a song they downloaded by hand that is in no playlist (Now Playing,
- * library, radio: these never join Your Downloads), and the downloaded songs of a playlist they
+ * kept must survive it: a song they downloaded by hand that is in no playlist, spared by its
+ * marked queue row alone (as before #761 linked hand downloads to Your Downloads; see
+ * MusicRepositoryOwnDownloadsTest for the link), and the downloaded songs of a playlist they
  * removed from the library ("its songs stay"). A song a mix rotated out still goes.
  * Real Room, real repository; only the Refresh/Accumulate gate is stubbed open.
  */

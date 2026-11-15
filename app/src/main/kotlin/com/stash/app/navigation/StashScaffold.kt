@@ -110,6 +110,8 @@ fun StashScaffold(
     losslessNotices: Flow<LosslessQuotaNotice> = emptyFlow(),
     tidyNotices: Flow<Int?> = emptyFlow(),
     onTidyNoticeShown: suspend () -> Unit = {},
+    clipNotices: Flow<Int?> = emptyFlow(),
+    onClipNoticeShown: suspend () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -267,6 +269,10 @@ fun StashScaffold(
                     navController.navigate(ListenJoinRoute(code))
                 } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_MUSIC_LINK_PREFIX)) {
                     navController.navigate(LinkImportRoute(pendingDeepLink.removePrefix(com.stash.app.MainActivity.DEEP_LINK_MUSIC_LINK_PREFIX)))
+                } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_ADDON_LINK_PREFIX)) {
+                    // An add-on's link shared to Stash: Add from a link, at its preview. Nothing is added by this.
+                    val link = pendingDeepLink.removePrefix(com.stash.app.MainActivity.DEEP_LINK_ADDON_LINK_PREFIX)
+                    navController.navigate(SettingsAddonAddRoute(link = link)) { launchSingleTop = true }
                 } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_WEB_LINK_PREFIX)) {
                     val link = pendingDeepLink.removePrefix(com.stash.app.MainActivity.DEEP_LINK_WEB_LINK_PREFIX)
                     navController.navigate(WebLinkRoute(link))
@@ -313,6 +319,20 @@ fun StashScaffold(
                     duration = SnackbarDuration.Long,
                 )
                 onTidyNoticeShown()
+            }
+        }
+    }
+    // The one-time check for clips found songs saved as a short clip and downloads them again: once, as above.
+    LaunchedEffect(lifecycleOwner, clipNotices) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            clipNotices.collect { n ->
+                if (n == null || n <= 0) return@collect
+                snackbarHostState.showSnackbar(
+                    message = context.resources.getQuantityString(com.stash.app.R.plurals.clips_downloading_again, n, n),
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Long,
+                )
+                onClipNoticeShown()
             }
         }
     }

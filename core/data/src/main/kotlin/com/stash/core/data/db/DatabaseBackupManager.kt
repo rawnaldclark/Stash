@@ -59,14 +59,64 @@ private const val COMMUNITY_KEY_FILE = "community_preference.preferences_pb"
  * download queue's Pause ([com.stash.core.data.sync.DownloadQueueState]), which restored onto a
  * new phone left it paused with no reason it could see. The install id and the day's lossless
  * count do ride along.
+ *
+ * And the add-ons' files (add-ons plan phase 4 §2.10): `user_addons`, the user's own add-ons
+ * with their links and tokens (sealed with this phone's Keystore, so useless elsewhere anyway, and
+ * a login all the same), `addon_manifests`, the registry's kept manifests, and `addon_index`, the
+ * official list's cache (phase 4 §1). A new phone adds its add-ons again, as with any sign-in.
  */
 private val NEVER_BACKED_UP = listOf(
     COMMUNITY_KEY_FILE,
     SupporterRepository.DATASTORE_FILE,
     com.stash.core.data.sync.DownloadQueueState.DATASTORE_FILE,
+    "user_addons.preferences_pb",
+    "addon_manifests.preferences_pb",
+    "addon_index.preferences_pb",
 )
 
 private fun neverBackedUp(fileName: String): Boolean = NEVER_BACKED_UP.any { fileName.startsWith(it) }
+
+/**
+ * The lossless sources' settings (`:data:download` `LosslessSourcePreferences`), matched by prefix
+ * so DataStore's leftover `.tmp` copy is treated the same. It rides along, but never with
+ * [LOGIN_KEYS].
+ */
+private const val LOSSLESS_PREFS_FILE = "lossless_source_preferences.preferences_pb"
+
+private const val BACKUP_TAG = "DatabaseBackup"
+
+/**
+ * The user's own Tidal server and its access token, as the Custom Tidal server field kept them
+ * before they moved into the sealed add-on store (add-ons plan phase 4 §2.10). A backup never
+ * carries them, and a restore never writes them, even from an archive made before the move: the
+ * app's start would otherwise move a restored token back in, which is a login restored from a
+ * backup.
+ */
+private val LOGIN_KEYS = setOf("bitchord_endpoint", "bitchord_access_token")
+
+private fun holdsLogins(fileName: String): Boolean = fileName.startsWith(LOSSLESS_PREFS_FILE)
+
+/** [bytes] without [LOGIN_KEYS]; null when they can't be read as a preferences file (the caller then leaves it out). */
+private fun withoutLogins(bytes: ByteArray): ByteArray? = try {
+    PreferencesFileScrubber.scrub(bytes, LOGIN_KEYS)
+} catch (e: IllegalArgumentException) {
+    null
+}
+
+/**
+ * A DataStore file a restore never writes although a backup carries it: the signed lossless
+ * config's cache (`:data:download` `LosslessConfigFetcher`, `lossless_relay_config`). The app
+ * trusts what that cache names: its Tidal relay and its `first_party` add-ons are sent the install
+ * signature and, when the user has one, the supporter token. A crafted "settings backup" could
+ * put any server there, and with a far-future `updated_at` keep the real config out for good
+ * (review-881 M9). The phone keeps its own copy, and fetches a fresh one at its next start anyway.
+ *
+ * The file also holds the install id, which so far rode along: after a restore this phone now
+ * keeps the id it has. Matched by prefix, like the others, for DataStore's leftover `.tmp` copy.
+ */
+private const val SIGNED_CONFIG_CACHE_FILE = "lossless_relay_config.preferences_pb"
+
+private fun neverRestored(fileName: String): Boolean = neverBackedUp(fileName) || fileName.startsWith(SIGNED_CONFIG_CACHE_FILE)
 
 /**
  * What the user chose to restore from a backup ZIP (issue #235). The classic
@@ -280,7 +330,19 @@ class DatabaseBackupManager @Inject constructor(
                         if (scope.includesSettings && datastoreDir.exists()) {
                             datastoreDir.listFiles()?.forEach { file ->
                                 if (file.isFile && !neverBackedUp(file.name)) {
-                                    addToZip(zipOut, file, "datastore/${file.name}")
+                                    if (holdsLogins(file.name)) {
+                                        // Without the own-server login; left out whole when it can't be read.
+                                        val clean = withoutLogins(file.readBytes())
+                                        if (clean != null) {
+                                            zipOut.putNextEntry(ZipEntry("datastore/${file.name}"))
+                                            zipOut.write(clean)
+                                            zipOut.closeEntry()
+                                        } else {
+                                            android.util.Log.w(BACKUP_TAG, "a lossless settings file was unreadable and left out of the backup")
+                                        }
+                                    } else {
+                                        addToZip(zipOut, file, "datastore/${file.name}")
+                                    }
                                 }
                             }
                         }
@@ -630,8 +692,8 @@ class DatabaseBackupManager @Inject constructor(
                                 }
 
                                 val finalFile = resolved.toFile()
-                                if (neverBackedUp(finalFile.name)) {
-                                    null // an archive from before these were left out: this phone keeps its own
+                                if (neverRestored(finalFile.name)) {
+                                    null // an archive from before these were left out, or the signed config's cache: this phone keeps its own
                                 } else {
                                     val tmp = File(finalFile.path + ".import-tmp")
                                     stagedDatastore.add(tmp to finalFile)
@@ -652,6 +714,21 @@ class DatabaseBackupManager @Inject constructor(
                     }
                 }
             } ?: throw IllegalStateException("Could not open input stream for URI: $sourceUri")
+
+            // 2b. No login from an archive (add-ons phase 4 §2.10): the lossless settings are
+            //     restored without the own-server keys, and not at all when they can't be read.
+            stagedDatastore.removeAll { (tmp, final) ->
+                if (!holdsLogins(final.name)) return@removeAll false
+                val clean = withoutLogins(tmp.readBytes())
+                if (clean != null) {
+                    tmp.writeBytes(clean)
+                    false
+                } else {
+                    android.util.Log.w(BACKUP_TAG, "a lossless settings file in the backup was unreadable and not restored")
+                    tmp.delete()
+                    true
+                }
+            }
 
             // 3. Verify the staged database opens and passes integrity_check
             //    BEFORE we touch anything live. Every scope that reads the
@@ -760,6 +837,7 @@ class DatabaseBackupManager @Inject constructor(
                 rearmDuplicateCleanup(runNow = false)
                 rearmMixPinCleanup(runNow = false)
                 rearmLoneCancelBackfill()
+                rearmOwnDownloadsBackfill()
                 rearmMixRecipeRetune()
             }
 
@@ -857,6 +935,20 @@ class DatabaseBackupManager @Inject constructor(
             LoneCancelBackfill.forContext(context, database.downloadQueueDao()).rearm()
         } catch (e: Exception) {
             android.util.Log.w("BackupManager", "Couldn't re-arm the lone-cancel backfill", e)
+        }
+    }
+
+    /**
+     * A swapped-in backup made before #761 brings back hand downloads that aren't in Your
+     * Downloads, and the one-time [OwnDownloadsBackfill] that links them has its done flag in
+     * SharedPreferences, which a restore leaves alone. Re-armed here, it runs at the restart; it
+     * only adds links and leaves out a song with any link to Your Downloads. Best-effort.
+     */
+    private fun rearmOwnDownloadsBackfill() {
+        try {
+            OwnDownloadsBackfill.rearm(context)
+        } catch (e: Exception) {
+            android.util.Log.w("BackupManager", "Couldn't re-arm the Your Downloads backfill", e)
         }
     }
 

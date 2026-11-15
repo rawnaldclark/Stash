@@ -1,0 +1,7 @@
+{
+  "status": 400,
+  "route": "search",
+  "body": {
+    "error": "missing q"
+  }
+}

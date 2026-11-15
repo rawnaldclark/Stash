@@ -105,6 +105,7 @@ class DownloadQueueResumer @Inject constructor(
     private val streamingPreference: StreamingPreference,
     private val syncPreferencesManager: SyncPreferencesManager,
     private val tokenManager: TokenManager,
+    private val spotifyAccounts: com.stash.core.auth.spotify.SpotifyAccounts,
     private val musicRepository: MusicRepository,
     private val syncScheduler: SyncScheduler,
     private val syncNotificationManager: SyncNotificationManager,
@@ -131,7 +132,7 @@ class DownloadQueueResumer @Inject constructor(
             return
         }
         if (!streamingPreference.current() &&
-            downloadQueueDao.hasResumableSyncDownload(connectedDownloadSources(tokenManager))
+            downloadQueueDao.hasResumableSyncDownload(connectedDownloadSources(tokenManager, spotifyAccounts))
         ) {
             enqueueResumeRun(trigger, initialDelay, rateLimitRound)
         }
@@ -184,7 +185,7 @@ class DownloadQueueResumer @Inject constructor(
     suspend fun retryClaimed(ids: List<Long>) {
         if (ids.isEmpty()) return
         // Read who takes what before anything starts: a run that claims a row first would hide it here.
-        val takenByResume = downloadQueueDao.getAllPendingBySources(connectedDownloadSources(tokenManager)).mapTo(HashSet()) { it.id }
+        val takenByResume = downloadQueueDao.getAllPendingBySources(connectedDownloadSources(tokenManager, spotifyAccounts)).mapTo(HashSet()) { it.id }
         val takenByDrain = downloadQueueDao.pendingDiscoveryDownloads().mapTo(HashSet()) { it.id }
         resume(ResumeTrigger.RETRY)
         ids.filterNot { it in takenByResume || it in takenByDrain }.forEach { singleTrackDownloadEnqueuer.enqueue(it) }

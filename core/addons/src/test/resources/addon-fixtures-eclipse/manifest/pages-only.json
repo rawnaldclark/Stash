@@ -1,0 +1,21 @@
+{
+  "id": "org.example.pages",
+  "name": "Pages",
+  "version": "1",
+  "resources": [
+    "search",
+    "catalog"
+  ],
+  "catalogs": [
+    {
+      "id": "new",
+      "type": "album",
+      "name": "New releases"
+    },
+    {
+      "id": "pl",
+      "type": "playlist",
+      "name": "Lists"
+    }
+  ]
+}

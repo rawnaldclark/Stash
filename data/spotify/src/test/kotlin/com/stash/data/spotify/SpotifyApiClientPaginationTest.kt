@@ -1,6 +1,6 @@
 package com.stash.data.spotify
 
-import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.auth.spotify.SpotifyAuthManager
 import com.stash.core.model.SyncResult
 import io.mockk.coEvery
@@ -37,7 +37,7 @@ class SpotifyApiClientPaginationTest {
     /** Web API `/v1/playlists/{id}/tracks` response per playlist id; unlisted answers HTTP 500. */
     private val webApiPages = mutableMapOf<String, Pair<Int, String>>()
 
-    private val tokenManager = mockk<TokenManager> {
+    private val tokenManager = mockk<SpotifyAccounts> {
         coEvery { getSpotifyAccessToken() } returns "access-token"
         coEvery { getSpotifyClientId() } returns "client-id"
         coEvery { forceRefreshSpotifyAccessToken() } returns null

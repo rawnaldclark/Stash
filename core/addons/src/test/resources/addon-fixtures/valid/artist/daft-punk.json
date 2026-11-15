@@ -1,0 +1,43 @@
+{
+  "id": "m1Dp",
+  "name": "Daft Punk",
+  "artwork": [
+    {
+      "url": "https://c.saavncdn.com/artists/Daft_Punk_500x500.jpg"
+    }
+  ],
+  "topTracks": [
+    {
+      "id": "Nn9Fq3uD",
+      "title": "One More Time",
+      "artist": "Daft Punk",
+      "album": "Discovery",
+      "durationMs": 320000,
+      "isrc": "GBDUW0000053",
+      "explicit": false,
+      "artwork": [
+        {
+          "url": "https://resources.tidal.com/images/b6f0bb36/1a6c/4f0e/8a12/0f5b1d2c3e4f/1280x1280.jpg",
+          "width": 1280,
+          "height": 1280
+        }
+      ],
+      "maxTier": "lossless"
+    }
+  ],
+  "albums": [
+    {
+      "id": "k3Lp0AqZ",
+      "title": "Discovery",
+      "year": 2001,
+      "trackCount": 14
+    },
+    {
+      "id": "r4Mm",
+      "title": "Random Access Memories",
+      "year": 2013
+    }
+  ],
+  "listenersText": "14M monthly listeners",
+  "listeners": 14000000
+}

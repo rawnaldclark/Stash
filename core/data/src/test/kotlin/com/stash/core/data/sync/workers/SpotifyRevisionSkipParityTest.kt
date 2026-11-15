@@ -9,6 +9,7 @@ import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.auth.model.AuthService
 import com.stash.core.data.blocklist.BlocklistGuard
 import com.stash.core.data.db.StashDatabase
@@ -261,8 +262,10 @@ class SpotifyRevisionSkipParityTest {
 
     private suspend fun Library.runFetch(playlistDao: PlaylistDao): Data {
         val tokenManager = mockk<TokenManager> {
-            coEvery { isAuthenticated(AuthService.SPOTIFY) } returns true
             coEvery { isAuthenticated(AuthService.YOUTUBE_MUSIC) } returns false
+        }
+        val spotifyAccounts = mockk<SpotifyAccounts> {
+            coEvery { isSpotifyAuthenticated() } returns true
         }
         val probe = mockk<SpotifyAuthHealthProbe> { coEvery { isExpired() } returns false }
         val streaming = mockk<StreamingPreference> { coEvery { current() } returns false }
@@ -272,7 +275,8 @@ class SpotifyRevisionSkipParityTest {
                     PlaylistFetchWorker(
                         appContext, workerParameters,
                         tokenManager = tokenManager,
-                        spotifyApiClient = spotify,
+                        spotifyAccounts = spotifyAccounts,
+                        spotifyLibrary = spotify,
                         ytMusicApiClient = mockk(relaxed = true),
                         innerTubeClient = mockk(relaxed = true),
                         playlistDao = playlistDao,

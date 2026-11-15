@@ -145,6 +145,8 @@ private fun StashNavGraph(
     ) {
         composable<HomeRoute> { homeEntry ->
             HomeScreen(
+                // Edit Home: only from Home itself, so a double tap opens one page.
+                onOpenHomeLayout = { if (navController.currentBackStackEntry === homeEntry) navController.navigate(SettingsHomeLayoutRoute) },
                 onNavigateToSettings = {
                     navController.navigate(SettingsRoute) {
                         // Clear top so repeated taps don't stack Settings entries.
@@ -425,6 +427,7 @@ private fun StashNavGraph(
                     navController.navigate(SettingsAudioQualityRoute)
                     navController.navigate(EqualizerRoute)
                 },
+                onOpenAddons = { navController.navigate(SettingsAddonsRoute) },
                 // Through Library & Storage, where its row is, so Back from a search hit lands there.
                 onOpenYourStash = if (com.stash.app.BuildConfig.WEB_LINK_ENABLED) {
                     {
@@ -465,6 +468,45 @@ private fun StashNavGraph(
                 onBack = { navController.popBackStack() },
                 viewModel = viewModel,
             )
+        }
+        // Settings › Add-ons (add-ons phase 4 §2.1): the list, an add-on's page, Add from a link. They
+        // keep their own view models, so a link shared to Stash can open them with no Settings below.
+        composable<SettingsAddonsRoute> {
+            com.stash.feature.settings.addons.AddonsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenAddon = { key -> navController.navigate(SettingsAddonRoute(key)) },
+                onAddFromLink = { link -> navController.navigate(SettingsAddonAddRoute(link = link)) },
+                // Your Qobuz account's row: its sign-in is on Lossless sources, which reads Settings' view model.
+                onOpenLosslessSources = { navController.openSettingsPage(SettingsLosslessSourcesRoute) },
+            )
+        }
+        composable<SettingsAddonRoute> { backStackEntry ->
+            com.stash.feature.settings.addons.AddonPageScreen(
+                addonKey = backStackEntry.toRoute<SettingsAddonRoute>().key,
+                onBack = { navController.popBackStack() },
+                onReplaceLink = { entryKey -> navController.navigate(SettingsAddonAddRoute(replace = entryKey)) },
+            )
+        }
+        composable<SettingsAddonAddRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<SettingsAddonAddRoute>()
+            // Its scanner fills the screen and its form sits above the keyboard: kept above the chrome.
+            AboveChrome {
+                com.stash.feature.settings.addons.AddFromLinkScreen(
+                    onBack = { navController.popBackStack() },
+                    onAdded = {
+                        when {
+                            // Replace link: back to the add-on's page.
+                            route.replace != null -> navController.popBackStack()
+                            // Added: back to the list under this screen, which shows the new row…
+                            navController.popBackStack<SettingsAddonsRoute>(inclusive = false) -> Unit
+                            // …or, opened by a share with no list below it, the list in this screen's place.
+                            else -> navController.navigate(SettingsAddonsRoute) { popUpTo<SettingsAddonAddRoute> { inclusive = true } }
+                        }
+                    },
+                    initialLink = route.link,
+                    replacingKey = route.replace,
+                )
+            }
         }
         composable<SettingsAccountsRoute> { backStackEntry ->
             // Its Spotify / YouTube Music / Discord sign-in WebViews replace the whole screen, and
@@ -526,9 +568,9 @@ private fun StashNavGraph(
             )
         }
         composable<SettingsHomeLayoutRoute> { backStackEntry ->
-            val settingsEntry = remember(backStackEntry) { navController.getBackStackEntry(SettingsRoute) }
-            val viewModel: com.stash.feature.settings.SettingsViewModel =
-                androidx.hilt.navigation.compose.hiltViewModel(settingsEntry)
+            // From Home's Edit Home there is no Settings below: the page keeps its own view model, and Back goes straight to Home.
+            val owner = remember(backStackEntry) { runCatching { navController.getBackStackEntry(SettingsRoute) }.getOrNull() ?: backStackEntry }
+            val viewModel: com.stash.feature.settings.SettingsViewModel = androidx.hilt.navigation.compose.hiltViewModel(owner)
             com.stash.feature.settings.SettingsHomeLayoutScreen(
                 onBack = { navController.popBackStack() },
                 viewModel = viewModel,

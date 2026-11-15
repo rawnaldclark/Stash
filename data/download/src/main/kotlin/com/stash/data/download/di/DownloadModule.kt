@@ -39,4 +39,8 @@ abstract class DownloadModule {
     @Binds
     @Singleton
     abstract fun bindUploadNaming(impl: com.stash.data.download.cloud.DriveUploadNaming): com.stash.data.cloud.upload.UploadNaming
+
+    /** The one-time check for clips reads each FLAC's end through the file's own path or document. */
+    @Binds
+    abstract fun bindFlacLengthsReader(impl: com.stash.data.download.clips.FlacTailReader): com.stash.data.download.clips.FlacLengthsReader
 }

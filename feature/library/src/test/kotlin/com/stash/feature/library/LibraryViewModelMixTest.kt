@@ -124,8 +124,11 @@ class LibraryViewModelMixTest {
         on { getRecentlyAdded(any()) } doReturn flowOf(emptyList())
     }
 
-    private fun tokenManagerMock(): TokenManager = mock {
+    private fun spotifyAccountsMock(): com.stash.core.auth.spotify.SpotifyAccounts = mock {
         on { spotifyAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected)
+    }
+
+    private fun tokenManagerMock(): TokenManager = mock {
         on { youTubeAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected)
     }
 
@@ -138,6 +141,7 @@ class LibraryViewModelMixTest {
         playerRepository: PlayerRepository = playerRepoMock(),
         musicRepository: MusicRepository,
         tokenManager: TokenManager = tokenManagerMock(),
+        spotifyAccounts: com.stash.core.auth.spotify.SpotifyAccounts = spotifyAccountsMock(),
         playlistImageHelper: PlaylistImageHelper = mock(),
         localImportCoordinator: LocalImportCoordinator = mock {
             on { state } doReturn MutableStateFlow<LocalImportState>(LocalImportState.Idle)
@@ -149,6 +153,7 @@ class LibraryViewModelMixTest {
         musicRepository = musicRepository,
         playerRepository = playerRepository,
         tokenManager = tokenManager,
+        spotifyAccounts = spotifyAccounts,
         playlistImageHelper = playlistImageHelper,
         localImportCoordinator = localImportCoordinator,
         streamingPreference = streamingPreference,

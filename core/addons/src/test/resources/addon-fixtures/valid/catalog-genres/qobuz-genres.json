@@ -1,0 +1,16 @@
+{
+  "genres": [
+    {
+      "id": "112",
+      "name": "Pop/Rock"
+    },
+    {
+      "id": "64",
+      "name": "Electronic"
+    },
+    {
+      "id": "80",
+      "name": "Jazz"
+    }
+  ]
+}

@@ -282,6 +282,7 @@ class SyncViewModel @Inject constructor(
     private val syncStateManager: SyncStateManager,
     private val syncPreferencesManager: SyncPreferencesManager,
     private val tokenManager: TokenManager,
+    private val spotifyAccounts: com.stash.core.auth.spotify.SpotifyAccounts,
     private val syncHistoryDao: SyncHistoryDao,
     private val playlistDao: com.stash.core.data.db.dao.PlaylistDao,
     private val syncUndoDao: com.stash.core.data.db.dao.SyncUndoDao,
@@ -1004,7 +1005,7 @@ class SyncViewModel @Inject constructor(
     private fun observeAuthStates() {
         viewModelScope.launch {
             combine(
-                tokenManager.spotifyAuthState,
+                spotifyAccounts.spotifyAuthState,
                 tokenManager.youTubeAuthState,
             ) { spotify, youtube ->
                 Pair(spotify is AuthState.Connected, youtube is AuthState.Connected)

@@ -1,0 +1,7 @@
+{
+  "url": "https://cdn.example.org/a.flac",
+  "manifest": "smooth",
+  "tier": "lossless",
+  "codec": "flac",
+  "cors": true
+}

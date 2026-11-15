@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "region_unavailable",
+    "message": "Not available in this region"
+  }
+}

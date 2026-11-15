@@ -74,6 +74,49 @@ class LyricsTtmlUpgradeWorkerTest {
     private fun ListenableWorker.Result.bailed() =
         (this as ListenableWorker.Result.Success).outputData.getBoolean(LyricsTtmlUpgradeWorker.OUT_BAILED, false)
 
+
+    /** Gives the test app a launcher activity, so "open Stash" has somewhere to go. */
+    private fun installLauncher(): android.content.ComponentName {
+        val launcher = android.content.ComponentName(context.packageName, "com.stash.app.MainActivity")
+        val pm = org.robolectric.Shadows.shadowOf(context.packageManager)
+        pm.addOrUpdateActivity(android.content.pm.ActivityInfo().apply { packageName = launcher.packageName; name = launcher.className })
+        pm.addIntentFilterForActivity(
+            launcher,
+            android.content.IntentFilter(android.content.Intent.ACTION_MAIN).apply { addCategory(android.content.Intent.CATEGORY_LAUNCHER) },
+        )
+        return launcher
+    }
+
+    private fun tapOpens(n: android.app.Notification?, launcher: android.content.ComponentName) {
+        assertTrue(n != null)
+        assertTrue(n!!.contentIntent != null)
+        assertEquals(launcher, org.robolectric.Shadows.shadowOf(n.contentIntent).savedIntents.single().component)
+    }
+
+    @Test fun `tapping the Fetching lyrics notification opens Stash`() {
+        val launcher = installLauncher()
+        // The notification's Cancel button asks WorkManager for its intent.
+        androidx.work.testing.WorkManagerTestInitHelper.initializeTestWorkManager(context)
+        runTest {
+            val worker = TestListenableWorkerBuilder<LyricsTtmlUpgradeWorker>(context)
+                .setWorkerFactory(object : WorkerFactory() {
+                    override fun createWorker(c: Context, name: String, p: WorkerParameters) =
+                        LyricsTtmlUpgradeWorker(c, p, mockk())
+                })
+                .build()
+            tapOpens(worker.getForegroundInfo().notification, launcher)
+        }
+    }
+
+    @Test fun `tapping the finished Lyrics notification opens Stash`() {
+        val launcher = installLauncher()
+        val repo = manualRepo(TtmlUpgradeResult.UPGRADED)
+        coEvery { repo.trackIdsMissingLyrics() } returns emptyList()
+        runWorker(repo, manual = true)
+        val nm = context.getSystemService(android.app.NotificationManager::class.java)
+        tapOpens(org.robolectric.Shadows.shadowOf(nm).getNotification(9272), launcher)
+    }
+
     @Test fun `a run the retired automatic pass queued asks nothing`() {
         val repo = mockk<LyricsRepository>()   // strict: any call fails the test
         val result = runWorker(repo, manual = false, recheck = false)

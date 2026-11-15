@@ -24,4 +24,9 @@
         <item quantity="one">Tidied %d duplicate song</item>
         <item quantity="other">Tidied %d duplicate songs</item>
     </plurals>
+    <!-- Once, after the one-time check found downloads that held only a short clip of the song. -->
+    <plurals name="clips_downloading_again">
+        <item quantity="one">Downloading %d song again: it saved as a short clip</item>
+        <item quantity="other">Downloading %d songs again: they saved as short clips</item>
+    </plurals>
 </resources>

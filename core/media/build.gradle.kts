@@ -60,6 +60,8 @@ dependencies {
     implementation(project(":core:auth"))
     implementation(project(":data:soundcloud"))
     implementation(project(":data:download"))
+    // Stash Add-ons v1: the add-on stream rungs (AddonStreamRungs).
+    implementation(project(":core:addons"))
     // Cloud storage (Dropbox / OneDrive): stash-cloud:// items resolve through data:cloud.
     implementation(project(":data:cloud"))
     // YT Music client for the streaming-fallback search-by-metadata path

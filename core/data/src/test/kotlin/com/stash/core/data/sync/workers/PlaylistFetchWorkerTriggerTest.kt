@@ -81,7 +81,8 @@ class PlaylistFetchWorkerTriggerTest {
                 ) = PlaylistFetchWorker(
                     appContext, workerParameters,
                     tokenManager = mockk(relaxed = true), // no accounts: returns right after the row
-                    spotifyApiClient = mockk(relaxed = true),
+                    spotifyAccounts = mockk(relaxed = true),
+                    spotifyLibrary = mockk(relaxed = true),
                     ytMusicApiClient = mockk(relaxed = true),
                     innerTubeClient = mockk(relaxed = true),
                     playlistDao = mockk(relaxed = true),

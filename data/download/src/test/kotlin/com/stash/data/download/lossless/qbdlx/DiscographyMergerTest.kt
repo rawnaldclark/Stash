@@ -35,4 +35,23 @@ class DiscographyMergerTest {
         )
         assertEquals(listOf("m b v", "Loveless", "Unknown"), out.map { it.title })
     }
+
+    @Test fun `a Qobuz title on YouTube's Singles shelf is not added to Albums`() {
+        val out = DiscographyMerger.gapFill(
+            yt = listOf(yt("m b v", "2013")),
+            qobuz = listOf(qb("Loveless", "1991"), qb("Creep", "1992")),
+            ytSingles = listOf(yt("Creep", "1992")),
+        )
+        assertEquals(setOf("m b v", "Loveless"), out.map { it.title }.toSet())
+    }
+
+    @Test fun `YouTube's own albums are never removed for being on the Singles shelf too`() {
+        val out = DiscographyMerger.gapFill(
+            yt = listOf(yt("Creep", "1992")),
+            qobuz = listOf(qb("Loveless", "1991")),
+            ytSingles = listOf(yt("Creep", "1992")),
+        )
+        assertEquals(listOf("Creep", "Loveless"), out.map { it.title })
+        assertEquals(AlbumSource.YOUTUBE, out.first { it.title == "Creep" }.source)
+    }
 }

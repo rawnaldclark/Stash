@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "quality_unavailable",
+    "message": "No lossless stream for this track"
+  }
+}

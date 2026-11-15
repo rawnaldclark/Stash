@@ -5,7 +5,9 @@ import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.media.diagnostics.PlaybackDiagnosticsLog
 import com.stash.data.download.lossless.LosslessAvailability
+import com.stash.data.download.lossless.LosslessBusyNote
 import com.stash.data.download.lossless.LosslessSourcePreferences
+import com.stash.data.download.lossless.PlayOrder
 import com.stash.data.download.lossless.quota.LosslessQuota
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -15,7 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -26,6 +28,12 @@ import javax.inject.Singleton
  * the first match. Each resolver internally handles its own enablement
  * (a connected account, circuit-breaker state for non-streaming paths, etc.)
  * — null from one resolver just means "try the next one".
+ *
+ * The lossless rungs (1, 1b, 1c) are asked in the PLAY ORDER ([PlayOrder], add-ons plan phase 4
+ * §2.8), the one order Settings › Add-ons shows and the download chain follows too. Until the user
+ * drags it, it is the order below. Whatever the order: Tidal placed ahead of Qobuz is asked for
+ * FLAC first and for its AAC only after Qobuz misses; a look-ahead stops at a metered add-on and
+ * never makes Stash's shared Tidal relay search; the lossy pass (1d) follows the lossless rungs.
  *
  * Current order:
  *   0. Opt-in only ("Prefer Tidal AAC while streaming", off by default):
@@ -49,6 +57,15 @@ import javax.inject.Singleton
  *   relay for neither FLAC nor AAC, since AAC counts toward the same allowance (a user's own
  *   server still serves, and so does a user's own Qobuz account). Playback falls to JioSaavn
  *   and YouTube.
+ *   1c. Add-ons ([AddonStreamRungs], Stash Add-ons v1) that stream lossless, after 1b: the
+ *      user's own in the order they were added, then the defaults. A new add-on therefore only
+ *      sees the songs Stash's own lossless sources miss, until the user drags it up. Same gates
+ *      as 1b; a metered one never spends its allowance on a look-ahead. With no add-on on, the
+ *      chain is exactly the one above.
+ *   1d. The add-ons' lossy pass (`lossy:addon:<id>`, add-ons plan phase 4 §2.4): each asked for
+ *      a lossy stream at [StreamQualityPolicy.lossyQuality], before JioSaavn, under JioSaavn's
+ *      gate. With Lossless off or Data saver on, only this pass of the add-ons runs. Never a
+ *      lossless serve for the Home banner.
  *   2. [YouTubeStreamResolver] — yt-dlp / InnerTube extraction. Last
  *      resort, reached only when the track genuinely isn't in the Qobuz
  *      catalog (Bandcamp re-uploads, region-exclusive, underground
@@ -98,6 +115,10 @@ class StreamSourceRegistry internal constructor(
      * tests (Qobuz first). Read with [qualityPolicy]'s tier: without a policy, Qobuz stays first too.
      */
     private val availability: LosslessAvailability? = null,
+    /** Stash Add-ons v1 lossless rungs; null in hand-built tests (none). Empty in phase 1. */
+    private val addons: AddonStreamRungs? = null,
+    /** The play order (add-ons phase 4 §2.8); null in hand-built tests (the automatic order). */
+    private val playOrder: PlayOrder? = null,
 ) {
     @Inject
     constructor(
@@ -114,11 +135,17 @@ class StreamSourceRegistry internal constructor(
         cloudCopies: CloudCopyFinder,
         soundCloud: SoundCloudStreamResolver,
         availability: LosslessAvailability,
+        addons: AddonStreamRungs,
+        playOrder: PlayOrder,
     ) : this(
         qbdlx, jiosaavn, youtube, streamingPreference,
         losslessSourceHealth, losslessPrefs, Dispatchers.IO, diagnosticsLog, tidal, losslessQuota,
-        qualityPolicy, cloudCopies, soundCloud, availability,
+        qualityPolicy, cloudCopies, soundCloud, availability, addons, playOrder,
     )
+
+    /** Where the chain line goes; tests read it. */
+    internal var chainLog: (String) -> Unit = { Log.i(TAG, it) }
+
     /**
      * The user's own lossless copy of [track] in their cloud storage, as a [StreamUrl] whose url is
      * its `stash-cloud://` address ([CloudCopyFinder.ORIGIN]); [LazyResolvingDataSource] opens it,
@@ -171,6 +198,19 @@ class StreamSourceRegistry internal constructor(
          * it is asked like any first rung.
          */
         speculative: Boolean = false,
+    ): StreamUrl? = resolveOnce(track, allowYouTube, allowYtDlp, speculative, secondAsk = false)
+
+    /**
+     * [resolve]'s work, single-flighted per song and flags. [secondAsk]: [resolveLosslessOnly]'s walk,
+     * the same song asked again after a busy answer. It counts no lossless miss for the Home banner;
+     * the walk before it already did.
+     */
+    private suspend fun resolveOnce(
+        track: TrackEntity,
+        allowYouTube: Boolean,
+        allowYtDlp: Boolean,
+        speculative: Boolean,
+        secondAsk: Boolean,
     ): StreamUrl? {
         // Last line of defence: a cloud song (the user's own file) is never looked up on the
         // lossless relays, JioSaavn or YouTube. Its player item streams from stash-cloud://.
@@ -191,7 +231,7 @@ class StreamSourceRegistry internal constructor(
         // Keyed on the FLAGS as well as the id: background fill calls with
         // allowYouTube/allowYtDlp = false deliberately accept a narrower source
         // set, and must never be handed a foreground result (or vice versa).
-        val key = resolveKey(track.id, allowYouTube, allowYtDlp, speculative)
+        val key = resolveKey(track.id, allowYouTube, allowYtDlp, speculative) + if (secondAsk) ":again" else ""
         inFlightResolves[key]?.let { return it.await() }
 
         val fresh = resolveScope.async(start = CoroutineStart.LAZY) {
@@ -213,7 +253,7 @@ class StreamSourceRegistry internal constructor(
             // find this track", and RefreshingDataSource's open() threw a
             // non-IOException Media3 never retries. doResolve still records it.
             withTimeoutOrNull(LazyResolvingDataSource.RESOLVE_DEADLINE_MS) {
-                doResolve(track, allowYouTube, allowYtDlp, speculative)
+                doResolve(track, allowYouTube, allowYtDlp, speculative, secondAsk)
             }
         }
         val existing = inFlightResolves.putIfAbsent(key, fresh)
@@ -253,6 +293,19 @@ class StreamSourceRegistry internal constructor(
         youtube.resolve(track, allowYtDlp = true)
 
     /**
+     * The lossless sources alone, asked again for [track]: the chain as [resolve] builds it now
+     * (the play order, the Lossless switch, Data saver, the daily allowance all as they are at
+     * this moment), without JioSaavn, YouTube or an add-on's lossy pass, and without the hedged
+     * lanes. Null when none serves (still busy, no match, switched off).
+     *
+     * For a look-ahead that got a lossy fallback because Tidal was busy and waited out its
+     * Retry-After ([BusyLookAhead]): it already holds that fallback, and only a lossless answer
+     * would change what it plays.
+     */
+    suspend fun resolveLosslessOnly(track: TrackEntity): StreamUrl? =
+        resolveOnce(track, allowYouTube = false, allowYtDlp = true, speculative = false, secondAsk = true)
+
+    /**
      * Shared scope for in-flight resolves. Mirrors
      * [com.stash.data.download.preview.PreviewUrlExtractor]'s `extractorScope`
      * deliberately: a resolve has to outlive any ONE caller's cancellation, or
@@ -273,6 +326,7 @@ class StreamSourceRegistry internal constructor(
         allowYouTube: Boolean,
         allowYtDlp: Boolean,
         speculative: Boolean,
+        secondAsk: Boolean,
     ): StreamUrl? {
         val startedNs = System.nanoTime()
         // The Lossless switch (Settings › Audio & Quality) governs streaming as well as
@@ -322,11 +376,15 @@ class StreamSourceRegistry internal constructor(
                 // download mode's request) ahead of Qobuz, for a listener saving data. Only
                 // where the Tidal rung itself runs (foreground, Lossless on, a relay set), and
                 // a miss, busy pool, spent day or error falls straight on to the lossless rungs
-                // below with no wait. Its own in-flight key and miss stamp in BitchordClient, so it never
+                // below with no wait. Its own in-flight key and miss stamp in TidalClient, so it never
                 // hides the Tidal FLAC lookup further down (or the other way round).
                 // Kept where Data saver applies: AAC 320 is not FLAC, and the user who turned
                 // this on chose to spend the daily allowance on it (Data saver alone never does).
-                val tidalAacRung = tidal
+                // Tidal switched off in Settings › Add-ons: its rungs are not in the chain at all, so
+                // it is never asked and never named in the chain line below (a switched-off source
+                // answered nothing anyway, but the line said it was in play).
+                val tidalOn = playOrder?.switchedOffNow()?.contains(PlayOrder.TIDAL) != true
+                val tidalAacRung = tidal?.takeIf { tidalOn }
                 if (preferTidalAac && allowYtDlp && lossless && tidalAacRung != null) {
                     // Speculative: like the Tidal rung, never make the relay search for a
                     // look-ahead. Stopping here (rather than skipping) keeps a Qobuz FLAC from
@@ -342,42 +400,95 @@ class StreamSourceRegistry internal constructor(
                 // signed config. Same gates as qbdlx (foreground only, Lossless switch
                 // on, Data saver not applying): it spends a Tidal account. Off (returns null at once) when no
                 // server is configured.
-                val tidalRung = tidal?.takeIf { allowYtDlp && losslessRungs }
-                // The user's own server, with none of their own Qobuz set up, goes
-                // BEFORE qbdlx (which is then off anyway: it needs the user's own
-                // account). Above CD only: Tidal serves its best (usually 24-bit)
-                // where qbdlx asks for this tier, so at CD (Save Data, mobile data by
-                // default) qbdlx keeps the lead. FLAC only there: Tidal's AAC for a
-                // CD-only song must not stand in for a FLAC Qobuz still has. Look-aheads
-                // ask it too: the stop further down spares Stash's shared relay, and in
-                // the lead it would leave every next-up song unprefetched.
-                val ownTidalFirst = tidalRung != null && availability != null &&
-                    qualityPolicy?.streamingTier()?.let { availability.ownTidalFirstNow(it) } == true
-                if (tidalRung != null && ownTidalFirst) {
-                    add("tidal" to { t: TrackEntity -> tidalRung.resolveLossless(t) })
+                val tidalRung = tidal?.takeIf { allowYtDlp && losslessRungs && tidalOn }
+                // The play order (add-ons plan phase 4 §2.8): ONE order for this chain and the
+                // download chain. Hand-built tests pass none: the automatic order.
+                val order = playOrder?.now() ?: PlayOrder.Order.AUTOMATIC
+                // Tidal in the lead, ahead of Qobuz. While the order is automatic that is the
+                // own-server rule: the user's own server, with none of their own Qobuz set up
+                // (qbdlx is then off anyway: it needs the user's own account), above CD only.
+                // Tidal serves its best (usually 24-bit) where qbdlx asks for this tier, so at CD
+                // (Save Data, mobile data by default) qbdlx keeps the lead. Once the user has
+                // dragged the order, it is the order: Tidal leads where they put it ahead.
+                // In the lead it is asked for FLAC only: Tidal's AAC for a CD-only song must not
+                // stand in for a FLAC Qobuz still has.
+                val tidalLeads = tidalRung != null && if (order.automatic) {
+                    availability != null && qualityPolicy?.streamingTier()?.let { availability.ownTidalFirstNow(it) } == true
+                } else {
+                    order.tidalBeforeQobuz
                 }
-                // qbdlx (direct Qobuz API) is the primary lossless source:
-                // plain Range-seekable FLAC, no proxy, no client-side decrypt —
-                // the fastest path. Foreground/next-up only (allowYtDlp = true),
-                // never the speculative background fill.
-                // qbdlx self-gates on LosslessAvailability (the user's own Qobuz
-                // account); no build gate.
-                if (allowYtDlp && losslessRungs && !skipQobuz) {
-                    add("qbdlx" to qbdlx::resolve)
-                }
-                if (tidalRung != null && ownTidalFirst) {
-                    // The same server's AAC 320 for a song with no lossless version
-                    // anywhere ("Tidal AAC when no FLAC"), now that Qobuz missed too.
-                    if (losslessPrefs.tidalAacFallbackNow()) add("tidal" to { t: TrackEntity -> tidalRung.resolve(t) })
-                } else if (tidalRung != null) {
-                    // The second lossless rung, for what Qobuz misses.
-                    // Speculative and Tidal would have to be asked: stop the walk here
-                    // (see [resolve]'s `speculative`), so no lossy URL is cached for a
-                    // track Tidal may serve when it is really played.
-                    if (speculative && tidalRung.needsRelay(track)) {
-                        add(TIDAL_DEFERRED to { _: TrackEntity -> null })
+                // Add-ons that stream lossless (Stash Add-ons v1): the tidal rung's gates. None
+                // on: empty, nothing else is read, and the chain is unchanged.
+                val addonRungs = if (allowYtDlp && losslessRungs) addons?.rungs().orEmpty() else emptyList()
+                val addonTier = if (addonRungs.isEmpty()) null else qualityPolicy?.streamingTier()
+                val addAddon = { rung: AddonStreamRung ->
+                    // A look-ahead stops at a metered add-on, as at Tidal: no allowance spent on
+                    // a song the user may never play, and no lossy URL cached ahead of it.
+                    if (speculative && rung.spendsQuota) {
+                        add(ADDON_DEFERRED to { _: TrackEntity -> null })
                     } else {
-                        add("tidal" to { t: TrackEntity -> tidalRung.resolve(t) })
+                        add(rung.name to { t: TrackEntity -> rung.resolve(t, addonTier) })
+                    }
+                }
+                // While automatic, the own-server rule moves Tidal to just ahead of Qobuz;
+                // nothing else moves.
+                val keys = if (order.automatic && tidalLeads) {
+                    listOf(PlayOrder.TIDAL) + (order.keys - PlayOrder.TIDAL)
+                } else {
+                    order.keys
+                }
+                val rungByKey = addonRungs.associateBy { it.name }
+                val placed = HashSet<String>()
+                for (key in keys) {
+                    when (key) {
+                        // qbdlx (direct Qobuz API): plain Range-seekable FLAC, no proxy, no
+                        // client-side decrypt, the fastest path. Foreground/next-up only
+                        // (allowYtDlp = true), never the speculative background fill. It
+                        // self-gates on LosslessAvailability (the user's own Qobuz account).
+                        PlayOrder.QOBUZ -> {
+                            if (allowYtDlp && losslessRungs && !skipQobuz) add("qbdlx" to qbdlx::resolve)
+                            // Tidal led, FLAC only: its AAC 320 for a song with no lossless version
+                            // anywhere ("Tidal AAC when no FLAC"), now that Qobuz missed too.
+                            if (tidalRung != null && tidalLeads && losslessPrefs.tidalAacFallbackNow()) {
+                                add("tidal" to { t: TrackEntity -> tidalRung.resolve(t) })
+                            }
+                        }
+                        PlayOrder.TIDAL -> if (tidalRung != null) {
+                            // A look-ahead never makes Stash's shared relay search (see [resolve]'s
+                            // `speculative`): the walk stops here, so no lossy URL is cached for a
+                            // track Tidal may serve when it is really played. The user's own server
+                            // in the lead is asked like any first rung: stopping there would leave
+                            // every next-up song unprefetched.
+                            val spare = speculative &&
+                                !(tidalLeads && (order.automatic || availability?.ownTidalServerNow() == true))
+                            when {
+                                spare && tidalRung.needsRelay(track) -> add(TIDAL_DEFERRED to { _: TrackEntity -> null })
+                                tidalLeads -> add("tidal" to { t: TrackEntity -> tidalRung.resolveLossless(t) })
+                                // The lossless rung for what the ones ahead of it miss.
+                                else -> add("tidal" to { t: TrackEntity -> tidalRung.resolve(t) })
+                            }
+                        }
+                        else -> rungByKey[key]?.let { rung ->
+                            addAddon(rung)
+                            placed += key
+                        }
+                    }
+                }
+                // An add-on the order doesn't name yet (it came on a moment ago): last.
+                addonRungs.filterNot { it.name in placed }.forEach { addAddon(it) }
+                // The lossy pass (add-ons plan phase 4 §2.4): add-ons that have only MP3 or AAC
+                // (or have a song only in lossy) are asked at the policy's LossyQuality, in play
+                // order, after the lossless rungs and before JioSaavn, under JioSaavn's gate. With Lossless off or
+                // Data saver on, only this pass runs. None on: empty, nothing else is read.
+                val lossyRungs = if (allowYouTube && allowYtDlp) order.sorted(addons?.lossyRungs().orEmpty()) { it.name } else emptyList()
+                if (lossyRungs.isNotEmpty()) {
+                    val lossyQuality = qualityPolicy?.lossyQuality() ?: LossyQuality.FULL
+                    lossyRungs.forEach { rung ->
+                        if (speculative && rung.spendsQuota) {
+                            add(ADDON_LOSSY_DEFERRED to { _: TrackEntity -> null })
+                        } else {
+                            add(rung.lossyName to { t: TrackEntity -> rung.resolveLossy(t, lossyQuality) })
+                        }
                     }
                 }
                 // AAC fallback at the policy's LossyQuality (320; 160 or 96 where Data saver
@@ -403,8 +514,7 @@ class StreamSourceRegistry internal constructor(
         if (skipQobuz && resolvers.none { it.first == "qbdlx" }) {
             Log.i(TAG, "TEST skip-qobuz on → chain [${resolvers.joinToString(",") { it.first }}]")
         }
-        Log.i(
-            TAG,
+        chainLog(
             "chain for ${track.id}: [${resolvers.joinToString(",") { it.first }}] " +
                 "allowYouTube=$allowYouTube allowYtDlp=$allowYtDlp lossless=$lossless" +
                 (if (preferTidalAac) " preferTidalAac=true" else "") +
@@ -420,13 +530,30 @@ class StreamSourceRegistry internal constructor(
         // only then the yt-dlp-capable rung. Foreground resolves only: the
         // speculative background fill keeps its cheap sequential chain.
         val hedged = allowYouTube && allowYtDlp && resolvers.size > 1 && resolvers.last().first == "youtube" &&
-            resolvers.none { it.first == TIDAL_DEFERRED }
+            resolvers.none { it.first == TIDAL_DEFERRED || it.first == ADDON_DEFERRED || it.first == ADDON_LOSSY_DEFERRED }
 
         // For the diagnostics bundle's "Recent resolves": the rung that served, set at each
         // exit below. Still null when the walk ends means every rung missed.
         var servedBy: String? = null
+        // A lossless source that serves nothing because it is BUSY (Tidal's relay: 503 / 429 with a
+        // Retry-After) writes here (TidalClient.resolve). A lossy fallback this walk serves is then
+        // marked for this play only ([forThisPlay]); a genuine "no lossless version" leaves it empty
+        // and the fallback is kept as before.
+        val busyNote = LosslessBusyNote()
+
+        /** [result], served by [rung]: marked for this play only when it is lossy and a lossless source was busy. */
+        fun forThisPlay(result: StreamUrl, rung: String): StreamUrl {
+            if (!busyNote.heard || isLosslessRung(rung)) return result
+            Log.i(
+                TAG,
+                "$rung served ${track.id} only because a lossless source is busy " +
+                    "(for ${((busyNote.untilMs - System.currentTimeMillis()) / 1000).coerceAtLeast(0)} s more): for this play only",
+            )
+            return result.copy(losslessBusyUntilMs = busyNote.untilMs)
+        }
         return try {
-            coroutineScope {
+            // The note rides on the walk's context, so every rung below (and the hedged lanes) can write it.
+            withContext(busyNote) {
                 val jioLane = if (hedged && resolvers.any { it.first == "jiosaavn" }) {
                     async { quietly("jiosaavn", track) { jiosaavn.resolve(track) } }
                 } else {
@@ -440,14 +567,19 @@ class StreamSourceRegistry internal constructor(
 
                 // The lossless rungs the banner signal reads (a deliberate Prefer Tidal AAC serve counts as neither).
                 // A walk stopped before Tidal (speculative) records nothing: Tidal wasn't asked.
-                val lastLossless = resolvers.indexOfLast { it.first in LOSSLESS_RUNGS || it.first == TIDAL_DEFERRED }
+                val lastLossless = resolvers.indexOfLast { isLosslessRung(it.first) || it.first == TIDAL_DEFERRED || it.first == ADDON_DEFERRED }
                 for ((index, rung) in resolvers.withIndex()) {
                     val (name, fn) = rung
                     if (hedged && (name == "jiosaavn" || name == "youtube")) continue // consulted below
                     if (name == TIDAL_DEFERRED) {
                         Log.i(TAG, "speculative resolve of ${track.id} stops before Tidal; the real play asks it")
                         servedBy = "none (speculative; Tidal waits for the play)"
-                        return@coroutineScope null
+                        return@withContext null
+                    }
+                    if (name == ADDON_DEFERRED || name == ADDON_LOSSY_DEFERRED) {
+                        Log.i(TAG, "speculative resolve of ${track.id} stops before a metered add-on; the real play asks it")
+                        servedBy = "none (speculative; an add-on waits for the play)"
+                        return@withContext null
                     }
                     val result = quietly(name, track) { fn(track) }
                     // Feed the Home lossless-offline banner signal: a serve by any lossless rung
@@ -455,9 +587,10 @@ class StreamSourceRegistry internal constructor(
                     // a miss (dead credential OR catalog gap; the streak threshold tells them
                     // apart). Not while the day's lossless allowance is spent: the relays are then
                     // skipped on purpose (no request), and lossless is not "offline".
-                    if (name in LOSSLESS_RUNGS && result != null) {
+                    if (isLosslessRung(name) && result != null) {
                         losslessSourceHealth.recordLosslessServed()
-                    } else if (index == lastLossless && result == null && losslessQuota?.isSpent() != true) {
+                    } else if (index == lastLossless && result == null && losslessQuota?.isSpent() != true && !secondAsk) {
+                        // Not for [resolveLosslessOnly]'s second ask: the walk before it counted this song's miss.
                         losslessSourceHealth.recordLosslessMiss()
                     }
                     if (result != null) {
@@ -467,24 +600,25 @@ class StreamSourceRegistry internal constructor(
                         servedBy = name
                         jioLane?.cancel()
                         fastLane?.cancel()
-                        return@coroutineScope result
+                        return@withContext forThisPlay(result, name)
                     }
                 }
                 jioLane?.await()?.let {
                     Log.i(TAG, "jiosaavn served ${track.id} '${track.title}' (hedged)")
                     servedBy = "jiosaavn"
                     fastLane?.cancel()
-                    return@coroutineScope it
+                    return@withContext forThisPlay(it, "jiosaavn")
                 }
                 fastLane?.await()?.let {
                     Log.i(TAG, "youtube served ${track.id} '${track.title}' (fast lane, hedged)")
                     servedBy = "youtube (fast lane)"
-                    return@coroutineScope it
+                    return@withContext forThisPlay(it, "youtube")
                 }
                 if (hedged) {
-                    quietly("youtube", track) { youtube.resolve(track, allowYtDlp = true) }?.also {
+                    quietly("youtube", track) { youtube.resolve(track, allowYtDlp = true) }?.let {
                         Log.i(TAG, "youtube served ${track.id} '${track.title}'")
                         servedBy = "youtube"
+                        forThisPlay(it, "youtube")
                     }
                 } else {
                     null
@@ -524,8 +658,16 @@ class StreamSourceRegistry internal constructor(
         private const val TIDAL_DEFERRED = "tidal-deferred"
         private const val TIDAL_AAC = "tidal-aac"
 
+        private const val ADDON_DEFERRED = "addon-deferred"
+
+        /** The lossy pass's stop before a metered add-on: not a lossless rung, so the banner's miss is unaffected. */
+        private const val ADDON_LOSSY_DEFERRED = "addon-lossy-deferred"
+
         /** The rungs whose serve is lossless, for the Home banner's signal ([LosslessSourceHealth]). */
         private val LOSSLESS_RUNGS = setOf("qbdlx", "tidal")
+
+        /** [LOSSLESS_RUNGS], plus the add-on rungs (all lossless: they ask `minTier=lossless`). */
+        private fun isLosslessRung(name: String) = name in LOSSLESS_RUNGS || name.startsWith(AddonStreamRung.ORIGIN_PREFIX)
         /** A cloud copy's StreamUrl lifetime: its address is stable, so a long one. */
         private const val CLOUD_COPY_TTL_MS = 6 * 60 * 60 * 1000L
     }

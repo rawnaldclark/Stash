@@ -3,7 +3,7 @@ package com.stash.feature.settings.spotify
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.model.SpotifyCookieCheck
 import com.stash.core.auth.model.ValidatedSpotifySignIn
@@ -149,7 +149,7 @@ data class OtherAccountsUiState(
  *
  * **Adding** never goes through the main account's connect, which would refuse another account
  * and writes the main sign-in. The cookie is checked without saving anything
- * ([TokenManager.validateSpotifyCookie]); the main account itself, an account Spotify won't name,
+ * ([com.stash.core.auth.spotify.SpotifyAccounts.validateSpotifyCookie]); the main account itself, an account Spotify won't name,
  * or one past the limit is refused with nothing saved. An account added already is signed in
  * again instead of copied. Otherwise its row goes in, then its sign-in, and a sign-in that won't
  * save takes the new row back out. Spotify's cookies in the WebView are cleared once more after
@@ -165,7 +165,7 @@ data class OtherAccountsUiState(
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class SpotifyAccountsViewModel @Inject constructor(
-    private val tokenManager: TokenManager,
+    private val spotifyAccounts: SpotifyAccounts,
     private val accountDao: SpotifyAccountDao,
     private val remover: SpotifyExtraAccountRemover,
     private val syncScheduler: SyncScheduler,
@@ -182,9 +182,9 @@ class SpotifyAccountsViewModel @Inject constructor(
     private val signInChanges = MutableStateFlow(0)
 
     /** The connected (main) account's name: the one hearts go to. Null while none is connected. */
-    val mainName: StateFlow<String?> = tokenManager.spotifyAuthState
+    val mainName: StateFlow<String?> = spotifyAccounts.spotifyAuthState
         .map { mainNameOf(it) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), mainNameOf(tokenManager.spotifyAuthState.value))
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), mainNameOf(spotifyAccounts.spotifyAuthState.value))
 
     /** The other accounts, in the order they were added. */
     val accounts: StateFlow<List<OtherSpotifyAccount>> = combine(accountDao.observeAll(), signInChanges) { rows, _ -> rows }
@@ -210,7 +210,7 @@ class SpotifyAccountsViewModel @Inject constructor(
      * behind it, and hearts need it) and there is room. False until the accounts are read, so the
      * row never flashes up at the limit.
      */
-    val canAdd: StateFlow<Boolean> = combine(tokenManager.spotifyAuthState, accountDao.observeAll()) { auth, rows ->
+    val canAdd: StateFlow<Boolean> = combine(spotifyAccounts.spotifyAuthState, accountDao.observeAll()) { auth, rows ->
         auth is AuthState.Connected && rows.size < MAX_EXTRA_SPOTIFY_ACCOUNTS
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
@@ -285,7 +285,7 @@ class SpotifyAccountsViewModel @Inject constructor(
         signInJob = viewModelScope.launch {
             _state.update { it.copy(validating = true, error = null) }
             val check = try {
-                tokenManager.validateSpotifyCookie(cookie.trim())
+                spotifyAccounts.validateSpotifyCookie(cookie.trim())
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -362,8 +362,8 @@ class SpotifyAccountsViewModel @Inject constructor(
      */
     private fun mainAccountRefusal(check: SpotifyCookieCheck.Valid): OtherAccountRefusal? = when {
         check.isMainAccount == true -> alreadyConnected()
-        check.isMainAccount == null && tokenManager.spotifyAuthState.value !is AuthState.NotConnected ->
-            OtherAccountRefusal.MainUnchecked(mainNameOf(tokenManager.spotifyAuthState.value))
+        check.isMainAccount == null && spotifyAccounts.spotifyAuthState.value !is AuthState.NotConnected ->
+            OtherAccountRefusal.MainUnchecked(mainNameOf(spotifyAccounts.spotifyAuthState.value))
         else -> null
     }
 
@@ -374,7 +374,7 @@ class SpotifyAccountsViewModel @Inject constructor(
      */
     private suspend fun save(row: SpotifyAccountEntity, signIn: ValidatedSpotifySignIn, isNew: Boolean): Outcome {
         val saved = try {
-            tokenManager.saveSpotifyExtra(SpotifyAccount(row.id, row.userId), signIn)
+            spotifyAccounts.saveSpotifyExtra(SpotifyAccount(row.id, row.userId), signIn)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -556,10 +556,10 @@ class SpotifyAccountsViewModel @Inject constructor(
         }
     }
 
-    private fun alreadyConnected() = OtherAccountRefusal.AlreadyConnected(mainNameOf(tokenManager.spotifyAuthState.value))
+    private fun alreadyConnected() = OtherAccountRefusal.AlreadyConnected(mainNameOf(spotifyAccounts.spotifyAuthState.value))
 
     private suspend fun hasSignIn(row: SpotifyAccountEntity): Boolean = try {
-        tokenManager.hasSpotifyExtraSignIn(SpotifyAccount(row.id, row.userId))
+        spotifyAccounts.hasSpotifyExtraSignIn(SpotifyAccount(row.id, row.userId))
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

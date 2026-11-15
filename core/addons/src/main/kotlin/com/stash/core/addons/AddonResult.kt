@@ -1,0 +1,94 @@
+package com.stash.core.addons
+
+import com.stash.addons.contract.ErrorCode
+import com.stash.addons.contract.Quota
+
+/** What one add-on call came to: the checked answer, or why there is none. */
+sealed interface AddonResult<out T> {
+    data class Ok<T>(val value: T) : AddonResult<T>
+    data class Failed(val failure: AddonFailure) : AddonResult<Nothing>
+
+    fun valueOrNull(): T? = (this as? Ok)?.value
+}
+
+/**
+ * Why an add-on call has no answer (SPEC.md 7, plus the host's own failures). Nothing here ever
+ * holds an add-on's URL or token: these values reach logs.
+ */
+sealed interface AddonFailure {
+    /**
+     * The add-on answered with an error. [code] is the one the host acts on (SPEC.md 7): a 5xx
+     * other than 503 is `unavailable` whatever its body says; otherwise the body's code when this
+     * host knows it, else by status.
+     */
+    data class Refused(
+        val code: ErrorCode,
+        val status: Int,
+        val retryAfterSec: Int?,
+        val quota: Quota?,
+        /**
+         * `quality_unavailable` for a stream outside the asked range: the answer itself, which a
+         * lower range in the same play may use without asking again (add-ons plan phase 4 §2.3).
+         */
+        val held: HeldStream? = null,
+        /**
+         * An Eclipse-family `503` with a short `Retry-After` on `/stream`: this song is still being
+         * prepared. It never pauses the add-on (phase 4 §2.3).
+         */
+        val preparing: Boolean = false,
+        /** A `401` with `WWW-Authenticate: BitChord`: the add-on serves only the genuine BitChord app. */
+        val onlyBitChord: Boolean = false,
+    ) : AddonFailure
+
+    /** No answer within the route's time (SPEC.md 3.1). */
+    data object Timeout : AddonFailure
+
+    /**
+     * No answer at all: refused connection, no route, a bad redirect, or a request that could not
+     * be built (a token or header value a request can't carry).
+     */
+    data object Network : AddonFailure
+
+    /** The answer broke the contract ([AddonValidator]) and was dropped whole. */
+    data class InvalidResponse(val path: String, val reason: String) : AddonFailure {
+        /**
+         * The refusals a host does something about, as a code. [reason] is text for logs; nothing
+         * should match on its words. Null for every other broken answer.
+         */
+        val code: Code? get() = Code.entries.firstOrNull { it.reason == reason }
+
+        /** Each is thrown with exactly its [reason], a constant, by the readers in this module. */
+        enum class Code(val reason: String) {
+            /** The manifest was written for a newer host. */
+            NEEDS_NEWER_STASH(AddonValidator.NEEDS_NEWER_STASH),
+
+            /** No `stash` field and nothing Eclipse-shaped: not an add-on at all. */
+            NOT_AN_ADDON(AddonValidator.NOT_AN_ADDON),
+
+            /** `bitchordAuth`: it serves only the genuine BitChord. */
+            ONLY_BITCHORD(AddonEclipse.ONLY_BITCHORD),
+
+            /** A URL on the user's own network, which the base rules refuse. */
+            PRIVATE_ADDRESS(AddonEclipse.PRIVATE_ADDRESS),
+        }
+    }
+
+    /** Not asked: the add-on (or, for metered routes, its allowance) is paused ([AddonRateGate]). */
+    data object Paused : AddonFailure
+
+    /** Not asked: the add-on's manifest doesn't list the resource. */
+    data object NotOffered : AddonFailure
+
+    /** A miss the host may remember (not_found, quality_unavailable, region_unavailable). Never a failure of the add-on. */
+    val isMiss: Boolean get() = this is Refused && code.isMiss
+
+    /**
+     * The add-on was asked and could not answer: a timeout, no connection, an invalid answer, or
+     * `unavailable`. A caller that files "nothing here" must not do so over one of these. Not
+     * asking at all ([Paused], [NotOffered]) and the add-on's own refusals (rate limits, quota,
+     * unauthorized, bad request) are not outages: the caller treats the add-on as absent.
+     */
+    val isOutage: Boolean
+        get() = this == Timeout || this == Network || this is InvalidResponse ||
+            (this is Refused && code == ErrorCode.UNAVAILABLE)
+}

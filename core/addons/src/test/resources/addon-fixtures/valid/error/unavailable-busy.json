@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "unavailable",
+    "message": "Tidal relay is busy",
+    "retryAfter": 15
+  }
+}

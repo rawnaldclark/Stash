@@ -37,6 +37,8 @@ import com.stash.core.ui.theme.StashTheme
  * @param onQueryChanged Called on every keystroke with the new text.
  * @param onClear        Called when the clear (X) button is tapped.
  * @param placeholder    Shown while the field is empty.
+ * @param autoFocus      Focus the field (and raise the keyboard) when first composed.
+ *                       Off for fields inside a sheet, where the keyboard would cover the list.
  */
 @Composable
 fun SearchFilterBar(
@@ -45,6 +47,7 @@ fun SearchFilterBar(
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
     placeholder: String = "Filter tracks...",
+    autoFocus: Boolean = true,
 ) {
     val extendedColors = StashTheme.extendedColors
     val focusRequester = remember { FocusRequester() }
@@ -99,7 +102,9 @@ fun SearchFilterBar(
         ),
     )
 
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+    if (autoFocus) {
+        LaunchedEffect(Unit) {
+            focusRequester.requestFocus()
+        }
     }
 }

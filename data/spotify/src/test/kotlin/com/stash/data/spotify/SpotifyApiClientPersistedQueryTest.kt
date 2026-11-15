@@ -1,6 +1,6 @@
 package com.stash.data.spotify
 
-import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.auth.spotify.SpotifyAuthConfig
 import com.stash.core.auth.spotify.SpotifyAuthManager
 import io.mockk.coEvery
@@ -28,7 +28,7 @@ class SpotifyApiClientPersistedQueryTest {
     private val hashesSent = mutableListOf<String>()
     private val variablesSent = mutableListOf<String>()
 
-    private val tokenManager = mockk<TokenManager> {
+    private val tokenManager = mockk<SpotifyAccounts> {
         coEvery { getSpotifyAccessToken() } returns "access-token"
         coEvery { getSpotifyClientId() } returns "client-id"
     }

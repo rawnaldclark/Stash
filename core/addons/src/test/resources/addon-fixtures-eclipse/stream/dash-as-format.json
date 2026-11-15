@@ -1,0 +1,7 @@
+{
+  "url": "https://cdn.example.org/a.mpd",
+  "format": "dash",
+  "codec": "flac",
+  "sampleRate": 44100,
+  "bitDepth": 16
+}

@@ -1,6 +1,10 @@
 package com.stash.data.download.lossless
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.addons.HttpAddonClient
+import com.stash.core.addons.NoFirstPartyAddons
+import com.stash.core.addons.OpenAddonRateGate
+import com.stash.core.addons.UnsignedAddons
 import java.io.File
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
@@ -26,7 +30,10 @@ class LosslessUrlDownloaderTest {
 
     @Before fun setUp() {
         server = MockWebServer().also { it.start() }
-        downloader = LosslessUrlDownloader(OkHttpClient(), io.mockk.mockk(relaxed = true))
+        val http = OkHttpClient()
+        // The add-on client is only reached for an `addon:` source (AddonFetchWiringTest); none here.
+        val addons = HttpAddonClient(http, OpenAddonRateGate, NoFirstPartyAddons, UnsignedAddons)
+        downloader = LosslessUrlDownloader(http, io.mockk.mockk(relaxed = true), addons)
     }
 
     @After fun tearDown() = server.shutdown()

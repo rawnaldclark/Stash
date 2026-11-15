@@ -14,7 +14,7 @@ import com.stash.core.model.StepStatus
 import com.stash.core.model.SyncMode
 import com.stash.core.model.SyncStepResult
 import com.stash.data.spotify.SpotifyAlbumTracklist
-import com.stash.data.spotify.SpotifyApiClient
+import com.stash.data.spotify.SpotifyLibrary
 import com.stash.data.spotify.SpotifySavedAlbum
 import com.stash.data.spotify.SpotifySavedAlbumsPage
 import kotlinx.coroutines.CancellationException
@@ -36,7 +36,7 @@ import javax.inject.Inject
  * switch off, so nothing downloads by itself.
  *
  * Scale (a library of thousands of albums):
- *  - the listing is read a page at a time, newest save first ([SpotifyApiClient.SAVED_ALBUMS_ORDER]),
+ *  - the listing is read a page at a time, newest save first ([SpotifyLibrary.SAVED_ALBUMS_ORDER]),
  *    and each page is handled in a batch before the next is asked for: its rows looked up together,
  *    the fingerprints of its stamped albums worked out together, its snapshots written in one
  *    transaction. Only the albums' ids are kept for the whole walk;
@@ -57,7 +57,7 @@ import javax.inject.Inject
  * Removal: this step only LISTS. An album gone from every account's listing is hidden after every
  * account's pass by the sync's one joint hide ([hideWhatNoSpotifyAccountListed], plan 2026-11-04
  * §2.4), by the same rule a playlist gone from Spotify is (Refresh mode, and listings that are
- * provably whole: here, every page by date saved, [SpotifyApiClient.SAVED_ALBUMS_ORDER]), and only
+ * provably whole: here, every page by date saved, [SpotifyLibrary.SAVED_ALBUMS_ORDER]), and only
  * ever a row a sync filed (source SPOTIFY). A row under the same key from anywhere else (a pasted
  * Spotify link, source BOTH) is the listener's own: this step neither reads, rewrites nor hides it,
  * and when the listener removed it (Remove hides such a copy) it stays out, unless they save it on
@@ -71,7 +71,7 @@ import javax.inject.Inject
  * of accounts.
  */
 class SpotifySavedAlbumsFetcher @Inject constructor(
-    private val spotify: SpotifyApiClient,
+    private val spotify: SpotifyLibrary,
     private val database: StashDatabase,
     private val syncPreferences: SyncPreferencesManager,
     private val syncLog: SyncLog,
@@ -157,7 +157,7 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
         var total: Int? = null
         var offset = 0
         var pages = 0
-        var order: String? = SpotifyApiClient.SAVED_ALBUMS_ORDER
+        var order: String? = SpotifyLibrary.SAVED_ALBUMS_ORDER
         var listingComplete = true
         // Every page by date saved. In any other order (Spotify's default, "Recents", should it have
         // refused ours, moves an album up each time it's played) an album can slip between two pages,
@@ -182,7 +182,7 @@ class SpotifySavedAlbumsFetcher @Inject constructor(
             }
             pages++
             if (!page.isComplete) listingComplete = false
-            if (page.sortOrder != SpotifyApiClient.SAVED_ALBUMS_ORDER) byDateSaved = false
+            if (page.sortOrder != SpotifyLibrary.SAVED_ALBUMS_ORDER) byDateSaved = false
             // The rest of the walk goes in the order the first page came in (Spotify's default, should
             // it have refused ours); a page in another order is a different listing.
             if (pages == 1) order = page.sortOrder ?: order else if (page.sortOrder != null && page.sortOrder != order) listingComplete = false

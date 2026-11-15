@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "quota_exceeded",
+    "message": "Daily lossless allowance used",
+    "retryAfter": 21600,
+    "quota": {
+      "used": 300,
+      "limit": 300,
+      "resetsAt": 1893484800
+    }
+  }
+}

@@ -19,7 +19,9 @@ private val Context.autoplayRadioDataStore: DataStore<Preferences> by preference
     corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
 )
 
-/** DataStore-backed [AutoplayRadioPreference]; one boolean, off by default. */
+/** DataStore-backed [AutoplayRadioPreference]; one boolean, on by default (owner, 2026-11-13);
+ * a stored value, the user's tap, always wins.
+ */
 @Singleton
 class AutoplayRadioPreferencesManager @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -28,7 +30,7 @@ class AutoplayRadioPreferencesManager @Inject constructor(
     private val enabledKey = booleanPreferencesKey("autoplay_radio_enabled")
 
     override val enabled: Flow<Boolean> = context.autoplayRadioDataStore.data.map { prefs ->
-        prefs[enabledKey] ?: false
+        prefs[enabledKey] ?: true
     }
 
     override suspend fun setEnabled(value: Boolean) {

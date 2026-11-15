@@ -1,0 +1,10 @@
+{
+  "url": "https://cdn.example.org/a.flac",
+  "manifest": "none",
+  "tier": "lossless",
+  "codec": "flac",
+  "cors": true,
+  "headers": {
+    "Referer": "https://a.example.org/\r\nX-Evil: 1"
+  }
+}

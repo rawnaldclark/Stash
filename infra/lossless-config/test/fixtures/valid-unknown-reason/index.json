@@ -1,0 +1,16 @@
+{
+  "type": "stash-addon-index",
+  "v": 1,
+  "updated_at": 1794355200,
+  "addons": [],
+  "blocked": [
+    {
+      "origin": "https://bad.example",
+      "reason": "harmful"
+    },
+    {
+      "origin": "https://spam.example",
+      "reason": "spam"
+    }
+  ]
+}

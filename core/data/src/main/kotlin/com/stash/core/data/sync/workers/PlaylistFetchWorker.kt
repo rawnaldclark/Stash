@@ -41,7 +41,7 @@ import com.stash.core.model.SyncResult
 import com.stash.core.model.SyncState
 import com.stash.core.model.SyncStepResult
 import com.stash.core.model.SyncTrigger
-import com.stash.data.spotify.SpotifyApiClient
+import com.stash.data.spotify.SpotifyLibrary
 import com.stash.data.spotify.SpotifyApiException
 import com.stash.data.spotify.SpotifyLibraryPage
 import com.stash.data.spotify.sortLikedSongsByAddedAtDesc
@@ -197,7 +197,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
     private val tokenManager: TokenManager,
-    private val spotifyApiClient: SpotifyApiClient,
+    private val spotifyAccounts: com.stash.core.auth.spotify.SpotifyAccounts,
+    private val spotifyLibrary: SpotifyLibrary,
     private val ytMusicApiClient: YTMusicApiClient,
     private val innerTubeClient: InnerTubeClient,
     private val playlistDao: PlaylistDao,
@@ -423,7 +424,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
             // Step 2: Authenticating phase.
             syncStateManager.onAuthenticating()
 
-            val isSpotifyAuthenticated = tokenManager.isAuthenticated(AuthService.SPOTIFY)
+            val isSpotifyAuthenticated = spotifyAccounts.isSpotifyAuthenticated()
             val isYouTubeAuthenticated = tokenManager.isAuthenticated(AuthService.YOUTUBE_MUSIC)
 
             val soundCloudSession = if (soundCloudLikes != null) try {
@@ -631,14 +632,14 @@ class PlaylistFetchWorker @AssistedInject constructor(
 
         // Spotify's 429s so far: each of the main's reads swallows its own into a failed page, so
         // the count says whether the main's pass met any. Read only with an extra to protect.
-        val rateLimitedBefore = if (extras.isNotEmpty()) spotifyApiClient.rateLimitedAnswers else 0
+        val rateLimitedBefore = if (extras.isNotEmpty()) spotifyLibrary.rateLimitedAnswers else 0
         fetchSpotifyAccount(SpotifyPass.main(discoverMixes), run, diagnostics)
         // Spotify turning the main's requests away: the extras would only add to it, and get the
         // same answers. They wait for the next sync, their rows left as they are, and nothing of a
         // kind they sync is hidden this time ([holdBackHides]).
         val extrasHeldBack = when {
             extras.isEmpty() -> null
-            spotifyApiClient.rateLimitedAnswers > rateLimitedBefore ->
+            spotifyLibrary.rateLimitedAnswers > rateLimitedBefore ->
                 "not read this sync: Spotify was turning requests away (HTTP 429) while the main account synced (read on the next sync)"
             run.albumBudget.failedInARow >= SpotifySavedAlbumsFetcher.FAILURES_TO_STOP ->
                 "not read this sync: the main account's album reads kept failing, as when Spotify turns requests away (read on the next sync)"
@@ -719,7 +720,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
         try {
             val acting = SpotifyAccount(row.id, row.userId)
             withSpotifyAccount(acting) {
-                val token = tokenManager.getSpotifyAccessToken()
+                val token = spotifyAccounts.getSpotifyAccessToken()
                 if (token == null) {
                     noteExtraSignedOut(row)
                     Log.w(TAG, "fetchSpotifyPlaylists: $label — sign-in no longer works, not read")
@@ -988,7 +989,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
         } else try {
             // The home feed is a read of its own: an extra out of time stops before it.
             stopIfOutOfTime(pass, run)
-            when (val result = spotifyApiClient.getDailyMixes()) {
+            when (val result = spotifyLibrary.getDailyMixes()) {
                 is SyncResult.Success -> {
                     // Fold in the yearly recaps ("Your Top Songs 2024", "Your
                     // All-Time Top Songs"). They only appear on the home feed for
@@ -999,7 +1000,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     // Additive and best-effort: anything but Success is ignored,
                     // so a change on Spotify's side costs these extra playlists,
                     // never the mixes the home feed already found.
-                    val yearly = when (val y = spotifyApiClient.getYearlyMixes()) {
+                    val yearly = when (val y = spotifyLibrary.getYearlyMixes()) {
                         is SyncResult.Success -> y.data
                         else -> emptyList()
                     }
@@ -1034,7 +1035,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                             // delete its downloads.
                             // Track fetching uses client_credentials (Prong 1) -- reliable
                             var fetchFailed = false
-                            val fetched = when (val tracksResult = spotifyApiClient.getPlaylistTracks(mix.id)) {
+                            val fetched = when (val tracksResult = spotifyLibrary.getPlaylistTracks(mix.id)) {
                                 // A mix with no songs isn't a real answer, and nothing here
                                 // could catch a wrong one: the home feed rarely gives a mix a
                                 // count, so the diff's listing check sees 0 and would mirror
@@ -1160,7 +1161,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     Log.w(TAG, "fetchSpotifyPlaylists: liked songs hit the $LIKED_SONGS_PAGE_CAP-page cap, marking partial")
                     break
                 }
-                when (val result = spotifyApiClient.getLikedSongs(limit = likedPageSize, offset = likedOffset)) {
+                when (val result = spotifyLibrary.getLikedSongs(limit = likedPageSize, offset = likedOffset)) {
                     is SyncResult.Success -> {
                         val page = result.data
                         likedPagesFetched++
@@ -1314,7 +1315,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 while (pagesFetched < pageCap) {
                     // Up to 40 pages: an extra out of time stops between two, its listing not whole.
                     stopIfOutOfTime(pass, run)
-                    val page = spotifyApiClient.getUserPlaylists(
+                    val page = spotifyLibrary.getUserPlaylists(
                         limit = pageSize,
                         offset = offset,
                         folderUri = folderUri,
@@ -1437,7 +1438,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     // The revision the walk itself started from, to cross-check the listing's.
                     var fetchedRevision: String? = null
                     val fetchedItems = try {
-                        when (val tracksResult = spotifyApiClient.getPlaylistTracks(playlist.id)) {
+                        when (val tracksResult = spotifyLibrary.getPlaylistTracks(playlist.id)) {
                             is SyncResult.Success -> {
                                 if (tracksResult.data.partial) {
                                     fetchPartial = true

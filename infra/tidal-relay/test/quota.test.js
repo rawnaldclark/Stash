@@ -278,7 +278,10 @@ const FORGED = () => [
   signed("td:1", { key: "bogus" }), signed("td:2"), { "X-Stash-Install": INSTALL }, { ...signed("td:1"), "X-Stash-Install": "someone-else-1" },
   signed("quota"), { ...signed("td:1"), "X-Stash-Auth": "zz" }, signed("td:1", { key: "bogus", ts: now() - 3600 }),
 ];
-const SKEWED = () => [signed("td:1", { ts: now() - 301 }), signed("td:1", { ts: now() + 301 })];
+// Well outside ±MAX_SKEW_S, not one second outside: these are stamped from the wall clock, and the
+// relay reads the clock again a moment later. When a second turned in between, +301 was +300 and
+// was accepted. The exact edge is pinned with a fixed clock in the fixed-vectors test above.
+const SKEWED = () => [signed("td:1", { ts: now() - 330 }), signed("td:1", { ts: now() + 330 })];
 
 /** Runs `fn` with console.warn captured; returns the warnings. */
 async function warnings(fn) {

@@ -57,7 +57,7 @@ import com.stash.feature.settings.R
  * in-WebView challenge entirely.
  *
  * The extracted cookie value is passed to [onCookieExtracted] which feeds it
- * into the existing [TokenManager.connectSpotifyWithCookie] validation flow.
+ * into the existing [com.stash.core.auth.spotify.SpotifyAccounts.connectSpotifyWithCookie] validation flow.
  *
  * @param onCookieExtracted Called with the raw sp_dc cookie value once login succeeds.
  * @param onDismiss Called when the user taps "Cancel" or presses back.

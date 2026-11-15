@@ -73,6 +73,8 @@ dependencies {
     implementation(project(":data:spotify"))
     // Cloud songs (Dropbox / OneDrive) download from the user's own cloud: CloudTrackDownloader.
     implementation(project(":data:cloud"))
+    // Stash Add-ons v1: add-on download sources (lossless/addon) and the client's host ports.
+    implementation(project(":core:addons"))
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.android.compiler)
@@ -116,6 +118,12 @@ dependencies {
     // EqStoreTest setup in :core:media.
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
+    // A real (test) WorkManager: LosslessRetryTidalSweepTest books Tidal sweeps against the
+    // unique-work rules themselves, not a mock of them.
+    testImplementation(libs.work.testing)
+    // An in-memory StashDatabase for ExistingClipCheckTest: :core:data keeps Room off this module's
+    // compile classpath (implementation), and the test builds the database itself.
+    testImplementation(libs.room.runtime)
 
     // Instrumented tests — MetadataEmbeddingIntegrationTest runs against the
     // ffmpeg .so bundled by youtubedl-android on a real device, since that

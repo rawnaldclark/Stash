@@ -9,6 +9,8 @@ import android.content.Intent
 import com.stash.core.data.R
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import com.stash.core.common.notification.OpenStashRequest
+import com.stash.core.common.notification.openStashPendingIntent
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -363,6 +365,7 @@ class SyncNotificationManager @Inject constructor(
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setAutoCancel(true)
+            .setContentIntent(openStashPendingIntent(context, OpenStashRequest.SYNC_COMPLETE))
             .build()
 
         notificationManager.notify(NOTIFICATION_ID_SUMMARY, notification)
@@ -399,6 +402,7 @@ class SyncNotificationManager @Inject constructor(
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setAutoCancel(true)
+            .setContentIntent(openStashPendingIntent(context, OpenStashRequest.FLAC_UPGRADE_SUMMARY))
             .build()
         notificationManager.notify(NOTIFICATION_ID_FLAC_SUMMARY, notification)
     }

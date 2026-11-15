@@ -1,7 +1,7 @@
 package com.stash.core.data.social.spotify
 
 import android.util.Log
-import com.stash.data.spotify.SpotifyApiClient
+import com.stash.data.spotify.SpotifyLibrary
 import com.stash.data.spotify.SpotifyLibraryWriteResult
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -20,7 +20,7 @@ class SpotifyApiException(val code: Int, val body: String?) :
  * (removed in Spotify's Feb-2026 Web API change, and hard-429'd for sp_dc
  * web-player tokens — the reason Spotify likes never actually synced) onto
  * the web player's own GraphQL `addToLibrary` / `removeFromLibrary`
- * mutations via [SpotifyApiClient], using the same sp_dc token + client
+ * mutations via [SpotifyLibrary], using the same sp_dc token + client
  * token the app already reads the library with.
  *
  * This stays the seam the [com.stash.core.data.social.LikeDestinationDispatcher]
@@ -32,18 +32,18 @@ class SpotifyApiException(val code: Int, val body: String?) :
  */
 @Singleton
 class SpotifyLibraryApiClient @Inject constructor(
-    private val spotifyApiClient: SpotifyApiClient,
+    private val spotifyLibrary: SpotifyLibrary,
 ) {
     suspend fun saveTracks(spotifyUris: List<String>) {
         require(spotifyUris.isNotEmpty()) { "saveTracks: empty list" }
         require(spotifyUris.size <= MAX_URIS) { "Spotify caps at $MAX_URIS URIs per call (got ${spotifyUris.size})" }
-        map("saveTracks", spotifyApiClient.addToLibrary(spotifyUris))
+        map("saveTracks", spotifyLibrary.addToLibrary(spotifyUris))
     }
 
     suspend fun removeTracks(spotifyUris: List<String>) {
         require(spotifyUris.isNotEmpty()) { "removeTracks: empty list" }
         require(spotifyUris.size <= MAX_URIS) { "Spotify caps at $MAX_URIS URIs per call (got ${spotifyUris.size})" }
-        map("removeTracks", spotifyApiClient.removeFromLibrary(spotifyUris))
+        map("removeTracks", spotifyLibrary.removeFromLibrary(spotifyUris))
     }
 
     private fun map(verb: String, result: SpotifyLibraryWriteResult) {

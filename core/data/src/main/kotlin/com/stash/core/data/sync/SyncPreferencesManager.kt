@@ -91,6 +91,7 @@ class SyncPreferencesManager @Inject constructor(
     @ApplicationContext private val context: Context,
     // Only for anyAccumulate(): which accounts' modes count for deleting downloads.
     private val tokenManager: TokenManager,
+    private val spotifyAccounts: com.stash.core.auth.spotify.SpotifyAccounts,
     private val playlistDao: PlaylistDao,
 ) {
     private object Keys {
@@ -302,7 +303,7 @@ class SyncPreferencesManager @Inject constructor(
     suspend fun anyAccumulate(): Boolean {
         val counted = try {
             SWEPT_ACCOUNTS.filter { (source, service) ->
-                tokenManager.isAuthenticated(service) || playlistDao.hasLibraryPlaylists(source)
+                isSignedIn(service) || playlistDao.hasLibraryPlaylists(source)
             }
         } catch (e: CancellationException) {
             throw e
@@ -367,6 +368,10 @@ class SyncPreferencesManager @Inject constructor(
         MusicSource.SOUNDCLOUD -> soundCloudSyncMode
         MusicSource.LOCAL, MusicSource.BOTH, MusicSource.CLOUD -> spotifySyncMode
     }
+
+    /** [service]'s stored sign-in: Spotify's through [spotifyAccounts], the others' through [tokenManager]. */
+    private suspend fun isSignedIn(service: AuthService): Boolean =
+        if (service == AuthService.SPOTIFY) spotifyAccounts.isSpotifyAuthenticated() else tokenManager.isAuthenticated(service)
 
     private companion object {
         const val TAG = "SyncPreferences"

@@ -170,6 +170,23 @@ class LosslessQuotaTest {
         assertThat(q4.current()).isNull()
     }
 
+    /** review-881 N3: a v1 quota with a limit of zero or less is junk, never "no limit". */
+    @Test fun `a v1 quota with a non-positive limit is ignored, null is no limit`() {
+        quota.onQuota(used = 5, limit = 0, resetsAtSec = RESET)
+        assertThat(quota.current()).isNull()
+        quota.onQuota(used = 5, limit = -3, resetsAtSec = RESET)
+        assertThat(quota.current()).isNull()
+
+        quota.onQuota(used = 5, limit = 300, resetsAtSec = RESET)
+        assertThat(quota.current()).isEqualTo(LosslessAllowance(5, 300, RESET))
+        // Junk after a good value changes nothing.
+        quota.onQuota(used = 9, limit = 0, resetsAtSec = RESET)
+        assertThat(quota.current()).isEqualTo(LosslessAllowance(5, 300, RESET))
+        // A supporter's answer says null.
+        quota.onQuota(used = 9, limit = null, resetsAtSec = RESET)
+        assertThat(quota.current()?.limit).isNull()
+    }
+
     @Test fun `needsColdRefresh only when nothing is stored for today`() {
         assertThat(quota.needsColdRefresh()).isTrue()
         quota.onHeaders("1/500", "$RESET")

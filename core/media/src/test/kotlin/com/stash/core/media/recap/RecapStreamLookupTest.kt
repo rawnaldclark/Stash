@@ -67,6 +67,28 @@ class RecapStreamLookupTest {
             .isEqualTo(RecapSource.Url("https://aac.saavncdn.com/x.mp4", noRedirects = true))
     }
 
+    /** review-882 B1: Recap reads on its own plain HTTP source, which has none of the add-on base rules. */
+    @Test
+    fun `a cached add-on stream is never a Recap preview - the song previews from YouTube`() = runTest {
+        coEvery { youtube.resolve(any(), allowYtDlp = false) } returns url("https://yt/opus", origin = "youtube")
+        for (cached in listOf(
+            url("https://media.stranger.example/a.flac", origin = "addon:stranger"),
+            url("https://media.stranger.example/a.mpd", origin = "addon:stranger", isDash = true),
+        )) {
+            cache.put(42, cached)
+            assertThat(lookup.lookup(track)).isEqualTo(RecapSource.Url("https://yt/opus"))
+            // The main player's entry is left as it is.
+            assertThat(cache.get(42)).isEqualTo(cached)
+        }
+    }
+
+    @Test
+    fun `a cached add-on stream and no YouTube answer - the card stays quiet`() = runTest {
+        coEvery { youtube.resolve(any(), allowYtDlp = false) } returns null
+        cache.put(42, url("https://media.stranger.example/a.flac", origin = "addon:stranger"))
+        assertThat(lookup.lookup(track)).isNull()
+    }
+
     @Test
     fun `no cached URL - YouTube's fast lane only, and the cache is never written`() = runTest {
         coEvery { youtube.resolve(any(), allowYtDlp = false) } returns url("https://yt/opus", origin = "youtube")

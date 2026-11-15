@@ -1,0 +1,21 @@
+{
+  "tracks": [
+    {
+      "id": "5048735",
+      "title": "One More Time",
+      "artist": "Daft Punk",
+      "album": "Discovery",
+      "durationMs": 320000,
+      "isrc": "GB-DUW-00-00053",
+      "explicit": false,
+      "artwork": [
+        {
+          "url": "https://resources.tidal.com/images/b6f0bb36/1a6c/4f0e/8a12/0f5b1d2c3e4f/1280x1280.jpg",
+          "width": 1280,
+          "height": 1280
+        }
+      ],
+      "maxTier": "lossless"
+    }
+  ]
+}

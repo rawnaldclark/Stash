@@ -76,7 +76,7 @@ class ArtistProfileViewModel @Inject constructor(
     val delegate: TrackActionsDelegate,
     val losslessPrefetcher: LosslessUrlPrefetcher,
     /** Whether Spotify is signed in: its monthly listeners count only then (see [monthlyListenersOf]). */
-    private val tokenManager: com.stash.core.auth.TokenManager,
+    private val spotifyAccounts: com.stash.core.auth.spotify.SpotifyAccounts,
     /** Data saver: the photo gallery waits for Wi-Fi. Never applies in hand-built tests. */
     private val dataSaver: DataSaver = DataSaver.Off,
 ) : ViewModel() {
@@ -409,7 +409,7 @@ class ArtistProfileViewModel @Inject constructor(
         // back to what is on screen for any field the profile lacks.
         val currentHero = _uiState.value.hero
         val spotifyConnected =
-            tokenManager.spotifyAuthState.value is com.stash.core.auth.model.AuthState.Connected
+            spotifyAccounts.spotifyAuthState.value is com.stash.core.auth.model.AuthState.Connected
         val listeners = if (enriched || !spotifyConnected) monthlyListenersOf(profile, spotifyConnected) else null
         _uiState.value = _uiState.value.copy(
             hero = HeroState(

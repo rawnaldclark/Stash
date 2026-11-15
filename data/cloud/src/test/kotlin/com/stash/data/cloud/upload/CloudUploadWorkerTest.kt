@@ -69,6 +69,26 @@ class CloudUploadWorkerTest {
         )
         .build()
 
+
+    /** Gives the test app a launcher activity, so "open Stash" has somewhere to go. */
+    private fun installLauncher(): android.content.ComponentName {
+        val launcher = android.content.ComponentName(context.packageName, "com.stash.app.MainActivity")
+        val pm = org.robolectric.Shadows.shadowOf(context.packageManager)
+        pm.addOrUpdateActivity(android.content.pm.ActivityInfo().apply { packageName = launcher.packageName; name = launcher.className })
+        pm.addIntentFilterForActivity(
+            launcher,
+            android.content.IntentFilter(android.content.Intent.ACTION_MAIN).apply { addCategory(android.content.Intent.CATEGORY_LAUNCHER) },
+        )
+        return launcher
+    }
+
+    @Test fun `tapping the Saving to Google Drive notification opens Stash`() = runTest {
+        val launcher = installLauncher()
+        val tap = worker().getForegroundInfo().notification.contentIntent
+        assertThat(tap).isNotNull()
+        assertThat(org.robolectric.Shadows.shadowOf(tap).savedIntents.single().component).isEqualTo(launcher)
+    }
+
     @Test fun `a lost connection asks WorkManager for another run`() = runTest {
         coEvery { uploader.upload(any(), any()) } throws IOException("gone")
 

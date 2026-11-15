@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.test.core.app.ApplicationProvider
 import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.auth.model.AuthService
 import com.stash.core.data.db.dao.OrphanSweep
 import com.stash.core.data.db.dao.PlaylistDao
@@ -36,6 +37,7 @@ import org.robolectric.RobolectricTestRunner
 class MusicRepositoryRefreshCleanupTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
     private val tokenManager = mockk<TokenManager>()
+    private val spotifyAccounts = mockk<SpotifyAccounts>()
     private val playlistDao = mockk<PlaylistDao>(relaxed = true)
     private val trackDao = mockk<TrackDao>(relaxed = true)
     private lateinit var prefs: SyncPreferencesManager
@@ -46,7 +48,7 @@ class MusicRepositoryRefreshCleanupTest {
         runBlocking { context.syncPrefsDataStore.edit { it.clear() } }
         coEvery { trackDao.deleteOrphanedDownloadedTracks() } returns
             OrphanSweep(deleted = listOf(rotatedOut(1L)), undownloaded = emptyList())
-        prefs = SyncPreferencesManager(context, tokenManager, playlistDao)
+        prefs = SyncPreferencesManager(context, tokenManager, spotifyAccounts, playlistDao)
         repo = MusicRepositoryImpl(
             context = context,
             trackDao = trackDao,
@@ -72,7 +74,7 @@ class MusicRepositoryRefreshCleanupTest {
     /** YouTube Music is the only account: signed in, with its playlists here. Spotify was never connected. */
     private fun youTubeOnly(spotifyPlaylistsStillHere: Boolean = false) {
         coEvery { tokenManager.isAuthenticated(AuthService.YOUTUBE_MUSIC) } returns true
-        coEvery { tokenManager.isAuthenticated(AuthService.SPOTIFY) } returns false
+        coEvery { spotifyAccounts.isSpotifyAuthenticated() } returns false
         coEvery { playlistDao.hasLibraryPlaylists(MusicSource.YOUTUBE) } returns true
         coEvery { playlistDao.hasLibraryPlaylists(MusicSource.SPOTIFY) } returns spotifyPlaylistsStillHere
     }

@@ -100,7 +100,7 @@ class ArtistProfileViewModelTest {
         streamingPreference = mock(),
         delegate = delegate,
         losslessPrefetcher = mock(),
-        tokenManager = mock {
+        spotifyAccounts = mock {
             on { spotifyAuthState } doReturn MutableStateFlow(
                 if (spotifyConnected) {
                     com.stash.core.auth.model.AuthState.Connected(com.stash.core.auth.model.UserInfo("u", "User"))

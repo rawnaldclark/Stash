@@ -146,6 +146,35 @@ class SearchDownloadCoordinatorDeferTest {
         coVerify { downloadQueueDao.deferForTap(99L, "wait:lossless") }
     }
 
+    /**
+     * #761: a search download that waits lands later through the queue's own download run, which
+     * links nothing, so the song joins Your Downloads when it starts waiting, as a tap's does.
+     * Otherwise Downloads › Clear history (which erases the row's mark) left it for Refresh
+     * cleanup to delete once it landed.
+     */
+    @Test
+    fun `a search download that waits for lossless joins Your Downloads`() = runTest {
+        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.LOSSLESS
+        coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns false
+        coEvery { registry.resolve(any()) } returns null
+        coEvery { trackDao.findByYoutubeId("vid42abcdef") } returns TrackEntity(
+            id = 7L,
+            title = "Sample",
+            artist = "Sample Artist",
+            youtubeId = "vid42abcdef",
+            canonicalTitle = "sample",
+            canonicalArtist = "sample artist",
+            durationMs = 200_000L,
+            source = MusicSource.YOUTUBE,
+        )
+        coEvery { downloadQueueDao.getByTrackId(7L) } returns null
+
+        newSubject().download(stubTrack()).toList()
+
+        coVerify { downloadQueueDao.insert(match { it.trackId == 7L && it.userRequested }) }
+        coVerify(exactly = 1) { musicRepository.linkTrackToDownloadsMix(7L) }
+    }
+
     @Test
     fun `lossless disabled skips the registry and never defers (goes straight to yt-dlp)`() = runTest {
         // Master lossless switch OFF: the search path must NOT consult the

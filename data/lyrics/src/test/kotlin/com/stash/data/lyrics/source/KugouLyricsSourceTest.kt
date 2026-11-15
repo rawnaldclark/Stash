@@ -102,6 +102,33 @@ class KugouLyricsSourceTest {
         assertThat(dl).contains("accesskey=KEY7")
     }
 
+    /** Board #359: an instrumental's file is only KuGou's note "纯音乐，请欣赏"; that is a miss, so the next source is asked. */
+    @Test
+    fun `an instrumental's pure music note is a miss, not lyrics`() = runTest {
+        server.enqueue(songSearch(Hit("H1", 279)))
+        server.enqueue(candidates(7L))
+        server.enqueue(download(lrc("[00:00.00]纯音乐，请欣赏")))
+
+        assertThat(source.resolve(query())).isNull()
+    }
+
+    @Test
+    fun `the note is a miss with credits around it and in its other wordings`() {
+        val credits = "[00:00.00]作曲 : Someone\n[00:01.00]"
+        assertThat(KugouLyricsSource.isPureMusicPlaceholder("[00:00.00] 纯音乐 请欣赏 ")).isTrue()
+        assertThat(KugouLyricsSource.isPureMusicPlaceholder("[00:00.00]纯音乐，请您欣赏！")).isTrue()
+        assertThat(KugouLyricsSource.isPureMusicPlaceholder("[00:00.00]此歌曲为没有填词的纯音乐，请您欣赏")).isTrue()
+        assertThat(KugouLyricsSource.isPureMusicPlaceholder("[00:00.00]纯音乐，请欣赏\n[00:30.00]纯音乐，请欣赏")).isTrue()
+        assertThat(KugouLyricsSource.isPureMusicPlaceholder(KugouLyricsSource.normalizeLrc(credits + "纯音乐，请欣赏"))).isTrue()
+    }
+
+    @Test
+    fun `real lyrics are not taken for the note`() {
+        assertThat(KugouLyricsSource.isPureMusicPlaceholder("")).isFalse()
+        assertThat(KugouLyricsSource.isPureMusicPlaceholder("[00:01.00]纯音乐\n[00:05.00]I been off the grid")).isFalse()
+        assertThat(KugouLyricsSource.isPureMusicPlaceholder("[00:01.00]我爱纯音乐，请欣赏我")).isFalse()
+    }
+
     @Test
     fun `a song outside the duration tolerance is skipped and the keyword search answers`() = runTest {
         server.enqueue(songSearch(Hit("H1", 100)))       // 179 s off: skipped, no hash lookup

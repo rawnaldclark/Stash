@@ -1,0 +1,6 @@
+{
+  "url": "https://cdn.example.org/a.flac",
+  "tier": "lossless",
+  "codec": "flac",
+  "cors": true
+}

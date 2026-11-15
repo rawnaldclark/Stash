@@ -90,7 +90,11 @@ class QobuzDiscographyProvider @Inject constructor(
         // Gap-fill the ALBUMS lane only; singles/EPs stay 100% YouTube (we don't
         // supplement them — that's where most of the Qobuz noise lives).
         MergedDiscography(
-            albums = DiscographyMerger.gapFill(ytAlbums, ownAlbums.map { it.toAlbumSummary(best.name) }),
+            albums = DiscographyMerger.gapFill(
+                ytAlbums,
+                ownAlbums.map { it.toAlbumSummary(best.name) },
+                ytSingles = ytSingles, // a CD single YouTube shelves as a single stays out of Albums (#755)
+            ),
             singles = ytSingles,
             releaseDates = recentReleaseDates(
                 artistId = best.id,

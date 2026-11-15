@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "not_found",
+    "message": "No Tidal stream is available"
+  }
+}

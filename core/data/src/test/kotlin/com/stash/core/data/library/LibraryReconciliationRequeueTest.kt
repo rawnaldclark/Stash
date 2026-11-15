@@ -3,7 +3,7 @@ package com.stash.core.data.library
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.stash.core.auth.TokenManager
-import com.stash.core.auth.model.AuthService
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.data.db.LoneCancelBackfill
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.dao.KEPT_OUT_MARK
@@ -46,6 +46,7 @@ class LibraryReconciliationRequeueTest {
         coEvery { isAuthenticated(any()) } returns false
         coEvery { hasSoundCloudConnection() } returns false
     }
+    private val spotify = mockk<SpotifyAccounts> { coEvery { isSpotifyAuthenticated() } returns false }
 
     @Before fun setUp() {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), StashDatabase::class.java)
@@ -137,7 +138,7 @@ class LibraryReconciliationRequeueTest {
         val pass = LoneCancelBackfill(dao, prefs, now = { LoneCancelBackfill.MARK_SINCE_MS + DAY })
         val run = db.syncHistoryDao().insert(SyncHistoryEntity())
 
-        val result = LibraryReconciliationUseCase(dao, db.trackDao(), tokens, db.playlistDao(), DownloadJobRegistry(), pass)
+        val result = LibraryReconciliationUseCase(dao, db.trackDao(), tokens, spotify, db.playlistDao(), DownloadJobRegistry(), pass)
             .reconcile(syncId = run)
 
         assertEquals("the Clear queue's songs come back", 2, result.unqueuedRequeued)
@@ -235,9 +236,9 @@ class LibraryReconciliationRequeueTest {
     @Test fun `Spotify only, Download mode, a liked YouTube stream is relabelled and still requeued and downloaded`() = runTest {
         val spotifyOnly = mockk<TokenManager> {
             coEvery { isAuthenticated(any()) } returns false
-            coEvery { isAuthenticated(AuthService.SPOTIFY) } returns true
             coEvery { hasSoundCloudConnection() } returns false
         }
+        val spotifySignedIn = mockk<SpotifyAccounts> { coEvery { isSpotifyAuthenticated() } returns true }
         val likedSongs = db.playlistDao().insert(
             PlaylistEntity(
                 name = "Liked Songs", source = MusicSource.BOTH, sourceId = "stash_liked_songs",
@@ -260,7 +261,7 @@ class LibraryReconciliationRequeueTest {
         assertEquals(MusicSource.YOUTUBE, db.trackDao().getById(liked)!!.source)
         val run = db.syncHistoryDao().insert(SyncHistoryEntity())
 
-        val result = LibraryReconciliationUseCase(db.downloadQueueDao(), db.trackDao(), spotifyOnly, db.playlistDao(), DownloadJobRegistry())
+        val result = LibraryReconciliationUseCase(db.downloadQueueDao(), db.trackDao(), spotifyOnly, spotifySignedIn, db.playlistDao(), DownloadJobRegistry())
             .reconcile(syncId = run)
 
         assertEquals(1, result.unqueuedRequeued)
@@ -273,9 +274,9 @@ class LibraryReconciliationRequeueTest {
     @Test fun `Spotify only, a YouTube song only in a YouTube playlist still waits for YouTube`() = runTest {
         val spotifyOnly = mockk<TokenManager> {
             coEvery { isAuthenticated(any()) } returns false
-            coEvery { isAuthenticated(AuthService.SPOTIFY) } returns true
             coEvery { hasSoundCloudConnection() } returns false
         }
+        val spotifySignedIn = mockk<SpotifyAccounts> { coEvery { isSpotifyAuthenticated() } returns true }
         val youtubePlaylist = db.playlistDao().insert(
             PlaylistEntity(name = "Yt", source = MusicSource.YOUTUBE, sourceId = "PLyt", type = PlaylistType.CUSTOM, syncEnabled = true)
         )
@@ -288,7 +289,7 @@ class LibraryReconciliationRequeueTest {
         db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = youtubePlaylist, trackId = song, position = 0))
         val run = db.syncHistoryDao().insert(SyncHistoryEntity())
 
-        val result = LibraryReconciliationUseCase(db.downloadQueueDao(), db.trackDao(), spotifyOnly, db.playlistDao(), DownloadJobRegistry())
+        val result = LibraryReconciliationUseCase(db.downloadQueueDao(), db.trackDao(), spotifyOnly, spotifySignedIn, db.playlistDao(), DownloadJobRegistry())
             .reconcile(syncId = run)
 
         assertEquals(0, result.unqueuedRequeued)
@@ -315,7 +316,7 @@ class LibraryReconciliationRequeueTest {
         assertEquals(run, db.downloadQueueDao().getByTrackId(song)!!.syncId)
     }
 
-    private fun reconciler() = LibraryReconciliationUseCase(db.downloadQueueDao(), db.trackDao(), tokens, db.playlistDao(), DownloadJobRegistry())
+    private fun reconciler() = LibraryReconciliationUseCase(db.downloadQueueDao(), db.trackDao(), tokens, spotify, db.playlistDao(), DownloadJobRegistry())
 
     private companion object {
         const val DAY = 86_400_000L

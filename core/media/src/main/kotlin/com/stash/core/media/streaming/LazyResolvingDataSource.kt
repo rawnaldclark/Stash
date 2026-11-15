@@ -84,6 +84,39 @@ private const val ROW_OVERRIDE_PARAM = "pin"
  */
 fun Uri.withRowOverride(): Uri = buildUpon().appendQueryParameter(ROW_OVERRIDE_PARAM, "1").build()
 
+/** Query param marking a placeholder put back to be resolved again from the start ([resolvedAgain]). Read only by [isPutBack]. */
+private const val AGAIN_PARAM = "again"
+
+/**
+ * The next [AGAIN_PARAM] value. It starts at the wall clock and only grows, so no put-back's URI is
+ * one an earlier put-back made, in this process or a past one whose queue was restored.
+ */
+private val againSeq = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
+
+/**
+ * [this] placeholder as a new item to the player: the same song, its source built afresh.
+ *
+ * Media3 keeps a media source whose new item has the same URI (`canUpdateMediaItem`), with the
+ * period it already prepared and every byte it already loaded: a placeholder put back in its own
+ * slot plays what its first open read. A song whose link must not play any more (its add-on left
+ * or was set aside) needs a new source, which opens and resolves again; a URI that differs only in
+ * [AGAIN_PARAM] is that. Its value is new each time, not one more than this URI's: a slot's item
+ * does not always show its source's own URI (a [ResolveFirstMediaSource] shows its DASH child's
+ * manifest), so "one more" than the queue's placeholder could be the source's own URI again, which
+ * it would keep (review-888 M1). Every other param is kept, so the resolve reads the same inputs.
+ */
+fun Uri.resolvedAgain(): Uri {
+    val builder = buildUpon().clearQuery()
+    for (name in queryParameterNames) {
+        if (name == AGAIN_PARAM) continue
+        for (value in getQueryParameters(name)) builder.appendQueryParameter(name, value)
+    }
+    return builder.appendQueryParameter(AGAIN_PARAM, againSeq.incrementAndGet().toString()).build()
+}
+
+/** True for a placeholder put back to be resolved again ([resolvedAgain]): its slot's link was dropped. */
+fun Uri.isPutBack(): Boolean = scheme == STASH_RESOLVE_SCHEME && getQueryParameter(AGAIN_PARAM) != null
+
 /**
  * DataSource that turns a `stash-resolve://track/<id>` placeholder into a
  * playable stream at open time: [StreamUrlCache] first (the next-up
@@ -126,6 +159,20 @@ class LazyResolvingDataSource(
     private val localDelegate: (() -> DataSource)? = null,
     /** False in Download mode: nothing is resolved, the open fails and the song is skipped. */
     private val streamAllowed: () -> Boolean = { true },
+    /**
+     * Opens an add-on's stream (`addon:` origins) on the add-on media client, whose guard, DNS
+     * filter and connection check refuse the user's own network (add-ons plan phase 4 §2.6).
+     * Null in tests: such a stream is then refused, never opened on [httpDelegate] (review-882 B1).
+     */
+    private val addonDelegate: (() -> DataSource)? = null,
+    /**
+     * Told each stream this source opens for a song (its track id; never a downloaded file), on the
+     * loader thread: as a first open picks it, before any byte is asked for ([servable]), and once it
+     * is open. The player's check of an add-on's stream reads it to know whose
+     * stream its period plays ([AddonCheckedMediaSource], [OpenedStream]), and which queued songs an
+     * add-on's links are in ([AddonStreamCheck.opened]). Null: nobody asks.
+     */
+    private val onOpened: ((trackId: Long, stream: StreamUrl) -> Unit)? = null,
 ) : DataSource {
 
     private var active: DataSource? = null
@@ -190,11 +237,13 @@ class LazyResolvingDataSource(
             val next = (if (overridesRow(uri)) null else urlCache.get(trackId))
                 ?: resolveBlocking(trackId, uri)
                 ?: throw IOException("stream resolve failed for track $trackId")
-            // A DASH MPD (Tidal Hi-Res) cannot be byte-piped into the progressive
-            // extractor this source feeds. ResolveFirstMediaSource routes those to a
-            // DASH source up front; reaching here means it was bypassed (an override
-            // item, or a server configured after this item was built). The URL is
-            // cached, so the player's retry of this item builds the DASH source.
+            // A DASH MPD (Tidal Hi-Res, an add-on's) cannot be byte-piped into the
+            // progressive extractor this source feeds. ResolveFirstMediaSource routes
+            // those to a DASH source up front; reaching here means it was bypassed: an
+            // override item, or an item built before a Tidal server was set or a
+            // DASH-capable add-on was switched on. The player's retry evicts the cached
+            // answer and opens this same source again, which asks again and fails here
+            // the same way; the song is then skipped (review-882 round 3, nit 1).
             if (next.isDash || next.isHls) {
                 throw IOException("track $trackId resolved to a DASH manifest; needs a DASH media source")
             }
@@ -207,7 +256,8 @@ class LazyResolvingDataSource(
             next
         }
 
-        var stream = fresh
+        // A first open: the stream is noted as this song's, then its add-on is asked about ([servable]).
+        var stream = if (pin == null) servable(fresh, trackId, uri) else fresh
         val length = try {
             openStream(stream, dataSpec)
         } catch (e: IOException) {
@@ -219,11 +269,14 @@ class LazyResolvingDataSource(
             runCatching { active?.close() }
             active = null
             urlCache.invalidate(trackId)
-            stream = resolveBlocking(trackId, uri)?.takeIf { it.origin != CloudCopyFinder.ORIGIN }
+            val fallback = resolveBlocking(trackId, uri)?.takeIf { it.origin != CloudCopyFinder.ORIGIN }
                 ?: throw IOException("stream resolve failed for track $trackId after its cloud copy failed", e)
-            if (stream.isDash || stream.isHls) {
+            if (fallback.isDash || fallback.isHls) {
                 throw IOException("track $trackId resolved to a DASH manifest; needs a DASH media source", e)
             }
+            // An answer like any first open's: noted, then its add-on asked, so one removed while it
+            // answered (an unofficial one may take 6 s) is never opened (review-888 R2-m2).
+            stream = servable(fallback, trackId, uri)
             openStream(stream, dataSpec)
         }
         if (dataSpec.length == C.LENGTH_UNSET.toLong() && length != C.LENGTH_UNSET.toLong()) {
@@ -238,7 +291,28 @@ class LazyResolvingDataSource(
             pinnedTotalLength = total
         }
         if (stream !== pin) pinStream(stream)
+        onOpened?.invoke(trackId, stream)
         return length
+    }
+
+    /**
+     * [stream], told to [onOpened] before it opens, unless the add-on that answered it left or was set
+     * aside meanwhile ([StreamUrlCache.isServable]): an unofficial add-on may take its whole 6 s budget
+     * to answer, and one removed in that time must not be played (review-888 m1). The note comes
+     * first, so a leave either finds this song by it (the queue puts its slot back) or is seen here.
+     * Then the song is resolved once more, now without that add-on.
+     */
+    private fun servable(stream: StreamUrl, trackId: Long, uri: Uri): StreamUrl {
+        onOpened?.invoke(trackId, stream)
+        if (urlCache.isServable(stream)) return stream
+        urlCache.invalidate(trackId)
+        val again = resolveBlocking(trackId, uri)?.takeIf { urlCache.isServable(it) }
+            ?: throw IOException("track $trackId: the add-on that answered is no longer on, and no other source answered")
+        if (again.isDash || again.isHls) {
+            throw IOException("track $trackId resolved to a DASH manifest; needs a DASH media source")
+        }
+        onOpened?.invoke(trackId, again)
+        return again
     }
 
     /** Opens [stream] at [dataSpec]'s position with the delegate its origin needs. */
@@ -246,7 +320,13 @@ class LazyResolvingDataSource(
         val delegate = when (stream.origin) {
             JioSaavnStreamResolver.ORIGIN -> jioSaavnDelegate()
             CloudCopyFinder.ORIGIN -> cloudDelegate?.invoke() ?: throw IOException("cloud playback isn't wired")
-            else -> httpDelegate()
+            // An add-on's URL opens on the add-on media client or not at all (review-882 B1): never
+            // on the plain HTTP source, which follows redirects and resolves names unguarded.
+            else -> if (stream.origin?.startsWith(AddonStreamRung.ORIGIN_PREFIX) == true) {
+                addonDelegate?.invoke() ?: throw IOException("add-on playback isn't wired")
+            } else {
+                httpDelegate()
+            }
         }
         return delegateTo(delegate, dataSpec.buildUpon().setUri(Uri.parse(stream.url)).build())
     }

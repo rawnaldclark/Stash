@@ -9,6 +9,7 @@ import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
 import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.auth.model.AuthService
 import com.stash.core.data.blocklist.BlocklistGuard
 import com.stash.core.data.db.StashDatabase
@@ -75,8 +76,10 @@ class PlaylistFetchWorkerRevisionSkipTest {
     private val streamingPreference = mockk<StreamingPreference>()
     private val tokenManager = mockk<TokenManager> {
         coEvery { getSoundCloudToken() } returns "secret"
-        coEvery { isAuthenticated(AuthService.SPOTIFY) } returns true
         coEvery { isAuthenticated(AuthService.YOUTUBE_MUSIC) } returns false
+    }
+    private val spotifyAccounts = mockk<SpotifyAccounts> {
+        coEvery { isSpotifyAuthenticated() } returns true
     }
     private val spotifyProbe = mockk<SpotifyAuthHealthProbe> {
         coEvery { isExpired() } returns false
@@ -473,6 +476,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     /** Runs the fetch step; returns its output data. */
     @Test fun `public SoundCloud profile enters the real fetch worker without Spotify or YouTube auth`() = runBlocking {
         coEvery { tokenManager.isAuthenticated(any()) } returns false
+        coEvery { spotifyAccounts.isSpotifyAuthenticated() } returns false
         val session = com.stash.core.auth.soundcloud.SoundCloudSession("7", "Public", connectionId = "current")
         every { tokenManager.soundCloudSession } returns kotlinx.coroutines.flow.flowOf(session)
         val fetcher = mockk<com.stash.core.data.sync.SoundCloudLikesFetcher>()
@@ -484,6 +488,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     @Test fun `authenticated SoundCloud runs likes playlists and mix fetches from the real worker`() = runBlocking {
         every { syncPreferencesManager.discoverAutoMixes } returns flowOf(true)
         coEvery { tokenManager.isAuthenticated(any()) } returns false
+        coEvery { spotifyAccounts.isSpotifyAuthenticated() } returns false
         val session = com.stash.core.auth.soundcloud.SoundCloudSession("7", "Listener", oauthToken = "secret", connectionId = "current")
         every { tokenManager.soundCloudSession } returns kotlinx.coroutines.flow.flowOf(session)
         val likes = mockk<com.stash.core.data.sync.SoundCloudLikesFetcher>()
@@ -499,6 +504,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     @Test fun `healthy SoundCloud playlists continue when likes and one playlist fail`() = runBlocking {
         every { syncPreferencesManager.discoverAutoMixes } returns flowOf(true)
         coEvery { tokenManager.isAuthenticated(any()) } returns false
+        coEvery { spotifyAccounts.isSpotifyAuthenticated() } returns false
         val session = com.stash.core.auth.soundcloud.SoundCloudSession("7", "Listener", oauthToken = "secret", connectionId = "current")
         every { tokenManager.soundCloudSession } returns kotlinx.coroutines.flow.flowOf(session)
         val likes = mockk<com.stash.core.data.sync.SoundCloudLikesFetcher>()
@@ -513,6 +519,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     @Test fun `discovery off skips SoundCloud Home mixes but still fetches owned playlists and likes`() = runBlocking {
         every { syncPreferencesManager.discoverAutoMixes } returns flowOf(false)
         coEvery { tokenManager.isAuthenticated(any()) } returns false
+        coEvery { spotifyAccounts.isSpotifyAuthenticated() } returns false
         val session = com.stash.core.auth.soundcloud.SoundCloudSession("7", "Listener", oauthToken = "secret", connectionId = "current")
         every { tokenManager.soundCloudSession } returns kotlinx.coroutines.flow.flowOf(session)
         val likes = mockk<com.stash.core.data.sync.SoundCloudLikesFetcher>()
@@ -535,7 +542,8 @@ class PlaylistFetchWorkerRevisionSkipTest {
                 ) = PlaylistFetchWorker(
                     appContext, workerParameters,
                     tokenManager = tokenManager,
-                    spotifyApiClient = spotify,
+                    spotifyAccounts = spotifyAccounts,
+                    spotifyLibrary = spotify,
                     ytMusicApiClient = mockk(relaxed = true),
                     innerTubeClient = mockk(relaxed = true),
                     playlistDao = db.playlistDao(),

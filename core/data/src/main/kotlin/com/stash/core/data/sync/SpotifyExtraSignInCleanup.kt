@@ -1,7 +1,7 @@
 package com.stash.core.data.sync
 
 import android.util.Log
-import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.auth.store.EncryptedTokenStore
 import com.stash.core.data.db.dao.SpotifyAccountDao
 import javax.inject.Inject
@@ -27,7 +27,7 @@ import javax.inject.Singleton
 @Singleton
 class SpotifyExtraSignInCleanup @Inject constructor(
     private val tokenStore: EncryptedTokenStore,
-    private val tokenManager: TokenManager,
+    private val spotifyAccounts: SpotifyAccounts,
     private val spotifyAccountDao: SpotifyAccountDao,
 ) {
 
@@ -48,7 +48,7 @@ class SpotifyExtraSignInCleanup @Inject constructor(
         val rows = spotifyAccountDao.getAll().mapTo(HashSet()) { it.id }
         val orphans = stored - rows
         // Logs the count only: a row id names nobody, but there is nothing more to say.
-        orphans.forEach { tokenManager.clearSpotifyExtra(it) }
+        orphans.forEach { spotifyAccounts.clearSpotifyExtra(it) }
         if (orphans.isNotEmpty()) Log.i(TAG, "forgot ${orphans.size} extra Spotify sign-in(s) with no account row")
         return orphans
     }

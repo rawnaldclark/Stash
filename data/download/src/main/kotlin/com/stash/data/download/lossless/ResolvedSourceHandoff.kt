@@ -1,5 +1,9 @@
 package com.stash.data.download.lossless
 
+import com.stash.core.addons.AddonRegistry
+import com.stash.core.addons.InstalledAddon
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -15,7 +19,17 @@ import javax.inject.Singleton
  * that), taken once, and only by the same [Kind] of lookup.
  */
 @Singleton
-class ResolvedSourceHandoff @Inject constructor() {
+class ResolvedSourceHandoff @Inject constructor(
+    /** The add-ons that are on. */
+    private val addons: AddonRegistry,
+) {
+    /**
+     * Built without the registry (hand-built wiring in tests of other things): nothing is held back.
+     * A constructor of its own, not a default value: with every parameter defaulted Kotlin also
+     * emits a no-argument constructor, and Dagger then finds two to inject.
+     */
+    constructor() : this(NoAddonGate)
+
 
     /** Which lookup found it: a lossless one never stands in for AAC, or the other way. */
     enum class Kind { LOSSLESS, TIDAL_AAC }
@@ -36,10 +50,28 @@ class ResolvedSourceHandoff @Inject constructor() {
         val entry = entries[trackId] ?: return null
         if (entry.kind != kind) return null
         entries.remove(trackId, entry)
+        if (!addonIsOn(entry.source)) return null
         return entry.source.takeIf { nowMs() - entry.atMs < TTL_MS }
+    }
+
+    /**
+     * A match an add-on found is handed over only while that add-on is on. Removed, switched off or
+     * turned off by Stash since the sweep found it, its link is a fetch from a host the add-on chose,
+     * after the user (or Stash) said stop: it is dropped, and the download asks afresh, without that
+     * add-on (review-885 M6).
+     */
+    private fun addonIsOn(source: SourceResult): Boolean {
+        if (addons === NoAddonGate) return true
+        val id = PlayOrder.addonIdOf(source.sourceId) ?: return true
+        return addons.generic().any { it.id == id }
     }
 
     companion object {
         internal const val TTL_MS = 10 * 60_000L
     }
+}
+
+/** No registry given: no add-on's match is held back. */
+private object NoAddonGate : AddonRegistry {
+    override val addons: StateFlow<List<InstalledAddon>> = MutableStateFlow(emptyList())
 }

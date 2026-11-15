@@ -132,9 +132,13 @@ abstract class SyncDebugNetworkConfigTask : DefaultTask() {
     @TaskAction
     fun write() {
         val host = cleartextHost.get()
-        val domain = if (host.isEmpty()) "" else """
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">$host</domain>
+        // Plus SPEC.md 1.1's development hosts for add-ons: an add-on under `wrangler dev` on the
+        // PC, reached over `adb reverse` (add-ons phase 2 phone runs). Debug builds only.
+        val hosts = (listOf(host).filter { it.isNotEmpty() } + listOf("127.0.0.1", "localhost")).distinct()
+        val domain = """
+    <domain-config cleartextTrafficPermitted="true">""" +
+            hosts.joinToString("") { """
+        <domain includeSubdomains="false">$it</domain>""" } + """
     </domain-config>"""
         val dir = outputDir.get().asFile.resolve("xml").apply { mkdirs() }
         dir.resolve("network_security_config_debug.xml").writeText(
@@ -164,8 +168,8 @@ android {
         applicationId = "com.stash.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 160
-        versionName = "0.9.124"
+        versionCode = 161
+        versionName = "0.9.125"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Cloud storage sign-in. OneDrive redirects to `${applicationId}://oauth/onedrive` (the
         // data:cloud manifest declares it, so debug and release each get their own); Dropbox to
@@ -309,6 +313,8 @@ dependencies {
     implementation(project(":core:data"))
     implementation(project(":core:media"))
     implementation(project(":core:network"))
+    // Stash Add-ons v1 host (registry + client); Hilt needs it on the app's classpath.
+    implementation(project(":core:addons"))
     implementation(project(":feature:home"))
     implementation(project(":feature:library"))
     implementation(project(":feature:nowplaying"))

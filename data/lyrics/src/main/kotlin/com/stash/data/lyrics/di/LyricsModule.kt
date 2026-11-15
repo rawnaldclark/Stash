@@ -3,6 +3,7 @@ package com.stash.data.lyrics.di
 import android.content.Context
 import com.stash.core.common.Clock
 import com.stash.core.common.SystemClock
+import com.stash.data.lyrics.source.AddonLyricsSource
 import com.stash.data.lyrics.source.AppleMusicIdResolver
 import com.stash.data.lyrics.source.AppleTtmlLyricsSource
 import com.stash.data.lyrics.source.InnerTubeLyricsGateway
@@ -71,8 +72,9 @@ abstract class LyricsModule {
         /**
          * Ordered source chain consumed by `LyricsRepository`. The order
          * defines fallback priority: Apple TTML (word-synced), Spicy Lyrics
-         * (word- or line-synced), LRCLIB (synced LRC), KuGou, InnerTube (plain
-         * text), then lrc.red and Binimum.
+         * (word- or line-synced), LRCLIB (synced LRC), KuGou, the add-ons that offer
+         * lyrics ([AddonLyricsSource]: none in phase 1, so it answers null at once and
+         * asks nothing), InnerTube (plain text), then lrc.red and Binimum.
          *
          * Spicy Lyrics, lrc.red and Binimum are on-demand-only (see
          * `LyricsSource.onDemandOnly`): asked only for a track being played or
@@ -94,6 +96,7 @@ abstract class LyricsModule {
             kugou: KugouLyricsSource,
             ytmusic: YtMusicLyricsSource,
             spicy: SpicyLyricsSource,
+            addons: AddonLyricsSource,
             okHttpClient: OkHttpClient,
             @ApplicationContext context: Context,
             isrcResolver: IsrcResolver,
@@ -105,6 +108,7 @@ abstract class LyricsModule {
                 spicy,
                 lrclib,
                 kugou,
+                addons, // Stash Add-ons v1 (empty in phase 1)
                 ytmusic,
                 IsrcTtmlLyricsSource(
                     okHttpClient, versionName, IsrcTtmlLyricsSource.LRC_RED_ID,

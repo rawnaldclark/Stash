@@ -1,0 +1,621 @@
+package com.stash.core.addons
+
+import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
+import com.stash.addons.contract.AddonKind
+import com.stash.addons.contract.Auth
+import com.stash.addons.contract.Delivery
+import com.stash.addons.contract.Descriptor
+import com.stash.addons.contract.ErrorCode
+import com.stash.addons.contract.Manifest
+import com.stash.addons.contract.ResolveQuery
+import com.stash.addons.contract.StreamCapabilities
+import com.stash.addons.contract.StreamRequest
+import com.stash.addons.contract.Tier
+import com.stash.addons.contract.TokenPlacement
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
+import okhttp3.Dispatcher
+import okhttp3.Interceptor
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import org.junit.After
+import org.junit.Before
+import org.junit.Test
+import java.net.InetAddress
+import java.util.concurrent.TimeUnit
+
+/**
+ * [HttpAddonClient] against a MockWebServer add-on on 127.0.0.1 (http allowed there for tests, SPEC.md 1.1).
+ * `runBlocking`, not `runTest`: the client's deadline is a coroutine timeout, and under `runTest`'s
+ * virtual time it would end every call that waits on the real server at once.
+ */
+class HttpAddonClientTest {
+
+    private lateinit var server: MockWebServer
+    private val gate = RecordingGate()
+    private val signer = RecordingSigner()
+    private var firstParty = false
+    private val sharedSaw = mutableListOf<String>()
+
+    /** The app's shared client carries interceptors (debug logging prints URLs): the add-on client must drop them. */
+    private val shared = OkHttpClient.Builder()
+        .addInterceptor(Interceptor { chain -> sharedSaw += "app"; chain.proceed(chain.request()) })
+        .build()
+
+    private lateinit var client: HttpAddonClient
+
+    @Before fun setUp() {
+        server = MockWebServer().apply { start(InetAddress.getByName("127.0.0.1"), 0) }
+        client = HttpAddonClient(shared, gate, object : AddonTrust { override fun isFirstParty(base: String) = firstParty }, signer)
+        client.options = AddonValidator.Options(allowLocalHttp = true)
+    }
+
+    @After fun tearDown() {
+        server.shutdown()
+    }
+
+    private fun base(prefix: String = "") = "http://127.0.0.1:${server.port}/$prefix"
+
+    private fun manifest(
+        resources: List<String> = listOf("search", "resolve", "stream", "download"),
+        auth: Auth? = null,
+    ) = Manifest(
+        stash = 1, id = "test-addon", name = "Test", version = "1.0", kind = AddonKind.SERVER,
+        resources = resources,
+        stream = StreamCapabilities(cors = false, manifests = listOf("none", "dash"), tiers = listOf("lossless", "hires")),
+        auth = auth,
+    )
+
+    private fun addon(
+        resources: List<String> = listOf("search", "resolve", "stream", "download"),
+        token: String? = null,
+        prefix: String = "",
+        settings: Map<String, String> = emptyMap(),
+    ) = InstalledAddon(
+        base = base(prefix),
+        manifest = manifest(resources, auth = token?.let { Auth(TokenPlacement.HEADER) }),
+        token = token,
+        settings = settings,
+    )
+
+    private fun json(body: String, code: Int = 200) =
+        MockResponse().setResponseCode(code).setHeader("Content-Type", "application/json").setBody(body)
+
+    private val flacCd = """{"url":"https://cdn.example/a.flac","manifest":"none","tier":"lossless","cors":false,"codec":"flac","bitDepth":16,"sampleRate":44100}"""
+    private val lossless = StreamRequest(Tier.HIRES, Tier.LOSSLESS, listOf(Delivery.NONE, Delivery.DASH))
+
+    // ------------------------------------------------------------------------------------------ routes
+
+    @Test fun `manifest is read from base, without the app's interceptors`() = runBlocking<Unit> {
+        server.enqueue(json("""{"stash":1,"id":"x","name":"X","version":"1","kind":"server","resources":["search"]}"""))
+        val r = client.manifest(base("tok123/"))
+        assertThat((r as AddonResult.Ok).value.id).isEqualTo("x")
+        assertThat(server.takeRequest().path).isEqualTo("/tok123/manifest.json")
+        assertThat(sharedSaw).isEmpty()
+    }
+
+    @Test fun `search sends q, limit and settings, and a header token goes in X-Access-Token`() = runBlocking<Unit> {
+        server.enqueue(json("""{"tracks":[{"id":"1","title":"T","artist":"A","albumId":"al","artistId":"ar"}]}"""))
+        val r = client.search(addon(token = "s3cret", settings = mapOf("region" to "us")), "daft punk", limit = 5)
+        val req = server.takeRequest()
+        assertThat(req.requestUrl!!.encodedPath).isEqualTo("/search")
+        assertThat(req.requestUrl!!.queryParameter("q")).isEqualTo("daft punk")
+        assertThat(req.requestUrl!!.queryParameter("limit")).isEqualTo("5")
+        assertThat(req.requestUrl!!.queryParameter("region")).isEqualTo("us")
+        assertThat(req.getHeader(Auth.HEADER_NAME)).isEqualTo("s3cret")
+        // No album or artist route in the manifest: those ids are dropped (SPEC.md 4.1).
+        val t = (r as AddonResult.Ok).value.tracks.single()
+        assertThat(t.albumId).isNull()
+        assertThat(t.artistId).isNull()
+        assertThat(gate.events).containsExactly("admit addon_test-addon false", "answer addon_test-addon")
+    }
+
+    @Test fun `the manifest is never asked with the header token`() = runBlocking<Unit> {
+        server.enqueue(json("""{"stash":1,"id":"x","name":"X","version":"1","kind":"server","resources":["search"]}"""))
+        client.manifest(base())
+        assertThat(server.takeRequest().getHeader(Auth.HEADER_NAME)).isNull()
+    }
+
+    @Test fun `resolve answers the add-on's item, and null for no match`() = runBlocking<Unit> {
+        server.enqueue(json("""{"item":{"id":"td:1","title":"One More Time","artist":"Daft Punk","isrc":"GBDUW0000059","durationMs":320000}}"""))
+        server.enqueue(json("""{"item":null}"""))
+        val q = ResolveQuery(Descriptor("One More Time", "Daft Punk", isrc = "GBDUW0000059", durationMs = 320_357), minTier = Tier.LOSSLESS)
+        assertThat((client.resolve(addon(), q) as AddonResult.Ok).value!!.id).isEqualTo("td:1")
+        assertThat((client.resolve(addon(), q) as AddonResult.Ok).value).isNull()
+        val sent = server.takeRequest().requestUrl!!
+        assertThat(sent.queryParameter("isrc")).isEqualTo("GBDUW0000059")
+        assertThat(sent.queryParameter("durationMs")).isEqualTo("320357")
+        assertThat(sent.queryParameter("minTier")).isEqualTo("lossless")
+        // Without a minTier, none is sent (any tier will do).
+        server.enqueue(json("""{"item":null}"""))
+        client.resolve(addon(), ResolveQuery(Descriptor("T", "A")))
+        server.takeRequest()
+        assertThat(server.takeRequest().requestUrl!!.queryParameter("minTier")).isNull()
+    }
+
+    /** SPEC.md 4.3 draft 2, rule 2: another release of the same song carries its own ISRC; hosts never reject for it. */
+    @Test fun `a resolve answer with another ISRC is kept`() = runBlocking<Unit> {
+        server.enqueue(json("""{"item":{"id":"1","title":"T","artist":"A","isrc":"USAAA0000001","durationMs":200000}}"""))
+        val r = client.resolve(addon(), ResolveQuery(Descriptor("T", "A", isrc = "GBBBB0000002", durationMs = 201_000)))
+        assertThat((r as AddonResult.Ok).value!!.isrc).isEqualTo("USAAA0000001")
+    }
+
+    @Test fun `a resolve answer outside rule 3's length is rejected`() = runBlocking<Unit> {
+        server.enqueue(json("""{"item":{"id":"1","title":"T","artist":"A","durationMs":200000}}"""))
+        server.enqueue(json("""{"item":{"id":"1","title":"T","artist":"A","durationMs":208000}}"""))
+        val r = client.resolve(addon(), ResolveQuery(Descriptor("T", "A", durationMs = 191_000)))
+        assertThat(((r as AddonResult.Failed).failure as AddonFailure.InvalidResponse).path).isEqualTo("/item/durationMs")
+        assertThat(gate.events.last()).isEqualTo("failure addon_test-addon")
+        // max(8 s, 3 %) of 200 s is 8 s: 208 s against 200 s is still the same recording.
+        assertThat(client.resolve(addon(), ResolveQuery(Descriptor("T", "A", durationMs = 200_000)))).isInstanceOf(AddonResult.Ok::class.java)
+    }
+
+    @Test fun `a resolve answer below the asked minTier is rejected (rule 7)`() = runBlocking<Unit> {
+        server.enqueue(json("""{"item":{"id":"1","title":"T","artist":"A","maxTier":"high"}}"""))
+        server.enqueue(json("""{"item":{"id":"2","title":"T","artist":"A","maxTier":"hires"}}"""))
+        server.enqueue(json("""{"item":{"id":"3","title":"T","artist":"A"}}"""))
+        val q = ResolveQuery(Descriptor("T", "A"), minTier = Tier.LOSSLESS)
+        assertThat(((client.resolve(addon(), q) as AddonResult.Failed).failure as AddonFailure.InvalidResponse).path).isEqualTo("/item/maxTier")
+        assertThat((client.resolve(addon(), q) as AddonResult.Ok).value!!.id).isEqualTo("2")
+        // No maxTier: the host can't check rule 7, so the item stands.
+        assertThat((client.resolve(addon(), q) as AddonResult.Ok).value!!.id).isEqualTo("3")
+    }
+
+    @Test fun `stream asks tier, minTier and manifest`() = runBlocking<Unit> {
+        server.enqueue(json(flacCd))
+        val r = client.stream(addon(), "td:1", lossless)
+        assertThat((r as AddonResult.Ok).value.tier).isEqualTo(Tier.LOSSLESS)
+        val req = server.takeRequest().requestUrl!!
+        assertThat(req.encodedPath).isEqualTo("/stream/td:1")
+        assertThat(req.queryParameter("tier")).isEqualTo("hires")
+        assertThat(req.queryParameter("minTier")).isEqualTo("lossless")
+        assertThat(req.queryParameter("manifest")).isEqualTo("none,dash")
+    }
+
+    @Test fun `a stream outside the asked range is a quality miss holding the answer, and encrypted is rejected`() = runBlocking<Unit> {
+        // Phase 4 §2.3: out of range is `quality_unavailable` for that range in every dialect, never
+        // an invalid answer (which counts toward the breaker); the answer is held for a lower range.
+        server.enqueue(json("""{"url":"https://cdn.example/a.m4a","manifest":"none","tier":"high","cors":false,"codec":"aac","bitrate":320000}"""))
+        server.enqueue(json("""{"url":"https://cdn.example/a.mpd","manifest":"hls","tier":"lossless","cors":false}"""))
+        server.enqueue(json(flacCd.dropLast(1) + ""","encrypted":true}"""))
+        val high = (client.stream(addon(), "1", lossless) as AddonResult.Failed).failure as AddonFailure.Refused
+        assertThat(high.code).isEqualTo(ErrorCode.QUALITY_UNAVAILABLE)
+        assertThat(high.held!!.info.tier).isEqualTo(Tier.HIGH)
+        assertThat(high.toString()).doesNotContain("cdn.example")
+        val hls = (client.stream(addon(), "1", lossless) as AddonResult.Failed).failure as AddonFailure.Refused
+        assertThat(hls.code).isEqualTo(ErrorCode.QUALITY_UNAVAILABLE)
+        assertThat(((client.stream(addon(), "1", lossless) as AddonResult.Failed).failure as AddonFailure.InvalidResponse).path).isEqualTo("/encrypted")
+        // Two answers were misses, not failures: the breaker heard answers.
+        assertThat(gate.events.count { it.startsWith("failure") }).isEqualTo(1)
+    }
+
+    @Test fun `an answer that breaks the contract is dropped whole`() = runBlocking<Unit> {
+        server.enqueue(json("""{"url":"http://cdn.example/a.flac","manifest":"none","tier":"lossless","cors":false}"""))
+        val r = client.stream(addon(), "1", lossless)
+        assertThat(((r as AddonResult.Failed).failure as AddonFailure.InvalidResponse).path).isEqualTo("/url")
+    }
+
+    @Test fun `not JSON is an invalid response`() = runBlocking<Unit> {
+        server.enqueue(MockResponse().setBody("<html>"))
+        val r = client.search(addon(), "x")
+        assertThat((r as AddonResult.Failed).failure).isInstanceOf(AddonFailure.InvalidResponse::class.java)
+    }
+
+    @Test fun `a body over 2 MiB is rejected`() = runBlocking<Unit> {
+        server.enqueue(json("""{"tracks":[],"pad":"${"x".repeat(2 * 1024 * 1024)}"}"""))
+        val r = client.search(addon(), "x")
+        assertThat(((r as AddonResult.Failed).failure as AddonFailure.InvalidResponse).reason).contains("2 MiB")
+    }
+
+    // ------------------------------------------------------------------------------------------ errors and the circuit
+
+    @Test fun `429 pauses the add-on for the body's retryAfter`() = runBlocking<Unit> {
+        server.enqueue(json("""{"error":{"code":"rate_limited","message":"slow down","retryAfter":30}}""", 429).setHeader("Retry-After", "120"))
+        val f = (client.search(addon(), "x") as AddonResult.Failed).failure as AddonFailure.Refused
+        assertThat(f.code).isEqualTo(ErrorCode.RATE_LIMITED)
+        assertThat(f.retryAfterSec).isEqualTo(30)
+        assertThat(gate.events.last()).isEqualTo("rateLimited addon_test-addon 30000")
+    }
+
+    @Test fun `503 with only a Retry-After header pauses for the header`() = runBlocking<Unit> {
+        server.enqueue(MockResponse().setResponseCode(503).setHeader("Retry-After", "45").setBody("busy"))
+        val f = (client.search(addon(), "x") as AddonResult.Failed).failure as AddonFailure.Refused
+        assertThat(f.code).isEqualTo(ErrorCode.UNAVAILABLE)
+        assertThat(gate.events.last()).isEqualTo("rateLimited addon_test-addon 45000")
+    }
+
+    @Test fun `503 without Retry-After counts toward the breaker`() = runBlocking<Unit> {
+        server.enqueue(MockResponse().setResponseCode(503))
+        client.search(addon(), "x")
+        assertThat(gate.events.last()).isEqualTo("failure addon_test-addon")
+    }
+
+    @Test fun `not_found is a miss and an answer, never a failure`() = runBlocking<Unit> {
+        server.enqueue(json("""{"error":{"code":"not_found","message":"no"}}""", 404))
+        val f = (client.stream(addon(), "1", lossless) as AddonResult.Failed).failure
+        assertThat(f.isMiss).isTrue()
+        assertThat(gate.events.last()).isEqualTo("answer addon_test-addon")
+    }
+
+    @Test fun `an unknown error code is read by its status`() = runBlocking<Unit> {
+        server.enqueue(json("""{"error":{"code":"brand_new_code","message":"?"}}""", 451))
+        val f = (client.search(addon(), "x") as AddonResult.Failed).failure as AddonFailure.Refused
+        assertThat(f.code).isEqualTo(ErrorCode.REGION_UNAVAILABLE)
+    }
+
+    @Test fun `401 leaves the add-on alone for an hour`() = runBlocking<Unit> {
+        server.enqueue(json("""{"error":{"code":"unauthorized","message":"bad token"}}""", 401))
+        client.search(addon(), "x")
+        assertThat(gate.events.last()).isEqualTo("rateLimited addon_test-addon ${HttpAddonClient.UNAUTHORIZED_PAUSE_MS}")
+    }
+
+    @Test fun `a 5xx other than 503 is unavailable whatever its body says`() = runBlocking<Unit> {
+        // SPEC.md 7. A 500 whose body says not_found is the add-on failing: never a miss to remember,
+        // and it counts toward the breaker instead of resetting it.
+        server.enqueue(json("""{"error":{"code":"not_found","message":"no"}}""", 500))
+        server.enqueue(json("""{"error":{"code":"bad_request","message":"?"}}""", 502))
+        val first = (client.stream(addon(), "1", lossless) as AddonResult.Failed).failure as AddonFailure.Refused
+        assertThat(first.code).isEqualTo(ErrorCode.UNAVAILABLE)
+        assertThat(first.isMiss).isFalse()
+        assertThat(first.isOutage).isTrue()
+        assertThat(gate.events.last()).isEqualTo("failure addon_test-addon")
+        val second = (client.search(addon(), "x") as AddonResult.Failed).failure as AddonFailure.Refused
+        assertThat(second.code).isEqualTo(ErrorCode.UNAVAILABLE)
+        assertThat(gate.events.last()).isEqualTo("failure addon_test-addon")
+    }
+
+    @Test fun `quota_exceeded pauses stream and download only`() = runBlocking<Unit> {
+        // SPEC.md 7: "pauses metered calls until then". Search, lyrics and the rest go on.
+        gate.pauses = true
+        server.enqueue(json("""{"error":{"code":"quota_exceeded","message":"spent","retryAfter":600}}""", 429))
+        server.enqueue(json("""{"tracks":[]}"""))
+        val f = (client.stream(addon(), "1", lossless) as AddonResult.Failed).failure as AddonFailure.Refused
+        assertThat(f.code).isEqualTo(ErrorCode.QUOTA_EXCEEDED)
+        assertThat(f.isOutage).isFalse()
+        assertThat(gate.events.takeLast(2))
+            .containsExactly("answer addon_test-addon", "rateLimited addon_test-addon_metered 600000").inOrder()
+        assertThat(gate.paused).containsExactly(HttpAddonClient.meteredKey("test-addon"))
+
+        assertThat(client.search(addon(), "x")).isInstanceOf(AddonResult.Ok::class.java)
+        assertThat((client.stream(addon(), "1", lossless) as AddonResult.Failed).failure).isEqualTo(AddonFailure.Paused)
+        assertThat((client.download(addon(), "1", lossless) as AddonResult.Failed).failure).isEqualTo(AddonFailure.Paused)
+        assertThat(server.requestCount).isEqualTo(2)
+    }
+
+    @Test fun `rate_limited pauses the whole add-on`() = runBlocking<Unit> {
+        gate.pauses = true
+        server.enqueue(json("""{"error":{"code":"rate_limited","message":"slow down","retryAfter":30}}""", 429))
+        client.stream(addon(), "1", lossless)
+        assertThat(gate.paused).containsExactly(HttpAddonClient.rateKey("test-addon"))
+        assertThat((client.search(addon(), "x") as AddonResult.Failed).failure).isEqualTo(AddonFailure.Paused)
+        assertThat(server.requestCount).isEqualTo(1)
+    }
+
+    @Test fun `a paused add-on is not asked`() = runBlocking<Unit> {
+        gate.admitResult = false
+        val r = client.search(addon(), "x")
+        assertThat((r as AddonResult.Failed).failure).isEqualTo(AddonFailure.Paused)
+        assertThat(server.requestCount).isEqualTo(0)
+    }
+
+    @Test fun `a route the manifest doesn't list is not asked`() = runBlocking<Unit> {
+        val r = client.lyrics(addon(resources = listOf("search")), Descriptor("T", "A"))
+        assertThat((r as AddonResult.Failed).failure).isEqualTo(AddonFailure.NotOffered)
+        assertThat(server.requestCount).isEqualTo(0)
+        assertThat(gate.events).isEmpty()
+    }
+
+    @Test fun `downloads are paced, playback only checks the circuit`() = runBlocking<Unit> {
+        server.enqueue(json(flacCd))
+        server.enqueue(json(flacCd))
+        client.download(addon(), "1", lossless)
+        client.stream(addon(), "1", lossless)
+        assertThat(gate.events.filter { it.startsWith("admit") })
+            .containsExactly(
+                "admit addon_test-addon true", "admit addon_test-addon_metered false",
+                "admit addon_test-addon false", "admit addon_test-addon_metered false",
+            ).inOrder()
+    }
+
+    @Test fun `no answer within the route's time is a timeout`() = runBlocking<Unit> {
+        // The deadline is read from the clock once; the call gets what is left: 300 ms here.
+        var reads = 0
+        client.nowMs = { if (reads++ == 0) 0L else HttpAddonClient.Route.SEARCH.timeoutMs - 300 }
+        server.enqueue(json("""{"tracks":[]}""").setHeadersDelay(3, TimeUnit.SECONDS))
+        val r = client.search(addon(), "x")
+        assertThat((r as AddonResult.Failed).failure).isEqualTo(AddonFailure.Timeout)
+        assertThat(gate.events.last()).isEqualTo("failure addon_test-addon")
+    }
+
+    @Test fun `the deadline also bounds the wait for a connection slot`() = runBlocking<Unit> {
+        // OkHttp starts a call's timeout only when its dispatcher runs the call (the app shares it,
+        // at most 5 per host). Here the only slot is held by a slow call: the second call must still
+        // end at its own deadline, not when the slot frees.
+        val oneSlot = OkHttpClient.Builder().dispatcher(Dispatcher().apply { maxRequests = 1 }).build()
+        val c = HttpAddonClient(oneSlot, gate, object : AddonTrust { override fun isFirstParty(base: String) = false }, signer)
+        c.options = AddonValidator.Options(allowLocalHttp = true)
+        // Each call reads the clock for its deadline, then for what is left: 8 s, then 300 ms.
+        val t = HttpAddonClient.Route.SEARCH.timeoutMs
+        val clock = ArrayDeque(listOf(0L, t - 8_000, 0L, t - 300))
+        c.nowMs = { clock.removeFirstOrNull() ?: t }
+        server.enqueue(json("""{"tracks":[]}""").setHeadersDelay(5, TimeUnit.SECONDS))
+        server.enqueue(json("""{"tracks":[]}"""))
+
+        val slow = async(start = CoroutineStart.UNDISPATCHED) { c.search(addon(), "slow") }
+        val started = System.nanoTime()
+        val r = c.search(addon(), "queued")
+        val tookMs = (System.nanoTime() - started) / 1_000_000
+        slow.cancel()
+
+        assertThat((r as AddonResult.Failed).failure).isEqualTo(AddonFailure.Timeout)
+        assertThat(tookMs).isLessThan(3_000L)
+    }
+
+    @Test fun `a refused connection is a network failure`() = runBlocking<Unit> {
+        val dead = addon().copy(base = "http://127.0.0.1:1/")
+        val r = client.search(dead, "x")
+        assertThat((r as AddonResult.Failed).failure).isEqualTo(AddonFailure.Network)
+    }
+
+    // ------------------------------------------------------------------------------------------ signing
+
+    @Test fun `install headers go to first-party add-ons only, on stream and download`() = runBlocking<Unit> {
+        firstParty = true
+        server.enqueue(json(flacCd))
+        server.enqueue(json("""{"tracks":[]}"""))
+        client.stream(addon(), "td:9", lossless)
+        client.search(addon(), "x")
+        assertThat(server.takeRequest().getHeader("X-Stash-Auth")).isEqualTo("sig:td:9")
+        assertThat(server.takeRequest().getHeader("X-Stash-Auth")).isNull()
+        assertThat(signer.signed).containsExactly("td:9")
+    }
+
+    @Test fun `a first-party quota is signed over the word quota`() = runBlocking<Unit> {
+        firstParty = true
+        server.enqueue(json("""{"used":3,"limit":300,"resetsAt":1893456000,"label":"Tidal plays"}"""))
+        val r = client.quota(addon(resources = listOf("search", "stream", "quota")))
+        assertThat((r as AddonResult.Ok).value.used).isEqualTo(3)
+        val req = server.takeRequest()
+        assertThat(req.requestUrl!!.encodedPath).isEqualTo("/quota")
+        assertThat(req.getHeader("X-Stash-Auth")).isEqualTo("sig:quota")
+        assertThat(signer.signed).containsExactly("quota")
+    }
+
+    @Test fun `circuit false asks past a paused gate and tells it nothing`() = runBlocking<Unit> {
+        gate.admitResult = false
+        server.enqueue(json("""{"error":{"code":"unavailable","message":"busy","retryAfter":30}}""", 503))
+        val r = client.search(addon(), "x", circuit = false)
+        assertThat(((r as AddonResult.Failed).failure as AddonFailure.Refused).retryAfterSec).isEqualTo(30)
+        assertThat(gate.events).isEmpty()
+        assertThat((client.search(addon(), "x") as AddonResult.Failed).failure).isEqualTo(AddonFailure.Paused)
+    }
+
+    @Test fun `a v0 add-on's stream is read as v1, and a derived tier outside the range is a quality miss`() = runBlocking<Unit> {
+        val v0 = InstalledAddon(
+            base = base(),
+            manifest = manifest().copy(stash = 0, stream = StreamCapabilities(cors = true, manifests = listOf("none"))),
+        )
+        server.enqueue(json("""{"url":"https://cdn.example/a.flac","cors":true,"mime":"audio/flac","bitDepth":24,"sampleRate":96000.0}"""))
+        server.enqueue(json("""{"url":"https://cdn.example/a.m4a","cors":true,"mime":"audio/mp4; codecs=\"mp4a.40.2\"","bitrate":320000}"""))
+        val flac = (client.stream(v0, "1", lossless) as AddonResult.Ok).value
+        assertThat(flac.tier).isEqualTo(Tier.HIRES)
+        assertThat(flac.manifest).isEqualTo(Delivery.NONE)
+        assertThat(flac.sampleRate).isEqualTo(96_000)
+        val aac = client.stream(v0, "1", lossless) as AddonResult.Failed
+        assertThat((aac.failure as AddonFailure.Refused).code).isEqualTo(ErrorCode.QUALITY_UNAVAILABLE)
+    }
+
+    @Test fun `a third-party add-on is never signed`() = runBlocking<Unit> {
+        firstParty = false
+        server.enqueue(json(flacCd))
+        client.stream(addon(), "td:9", lossless)
+        assertThat(server.takeRequest().getHeader("X-Stash-Auth")).isNull()
+        assertThat(signer.signed).isEmpty()
+    }
+
+    @Test fun `a signed 401 naming the server's clock is signed again once`() = runBlocking<Unit> {
+        firstParty = true
+        signer.adopt = true
+        server.enqueue(json("""{"error":{"code":"unauthorized","message":"skew"}}""", 401).setHeader("X-Stash-Server-Time", "1893456000"))
+        server.enqueue(json(flacCd))
+        val r = client.stream(addon(), "td:9", lossless)
+        assertThat(r).isInstanceOf(AddonResult.Ok::class.java)
+        assertThat(server.requestCount).isEqualTo(2)
+        assertThat(signer.signed).containsExactly("td:9", "td:9")
+    }
+
+    // The Tidal add-on's three signature answers on /v1/ (stash-addon-tidal f0c2014, SPEC.md 6 and 7).
+
+    @Test fun `signature case 1 - a skew 401 is signed again at the server's time and the call goes on`() = runBlocking<Unit> {
+        firstParty = true
+        signer.adopt = true
+        server.enqueue(json("""{"error":{"code":"unauthorized","message":"Install clock is off"}}""", 401).setHeader("X-Stash-Server-Time", "1893456000"))
+        server.enqueue(json("""{"used":3,"limit":300,"resetsAt":1893456000,"label":"Tidal plays"}"""))
+        val r = client.quota(addon(resources = listOf("search", "stream", "quota")))
+        assertThat(r).isInstanceOf(AddonResult.Ok::class.java)
+        assertThat(signer.adopted).isEqualTo(1)
+        assertThat(signer.signed).containsExactly("quota", "quota")
+        assertThat(gate.events.none { it.startsWith("rateLimited") }).isTrue()
+    }
+
+    @Test fun `signature case 1b - a skew 401 that persists after the one re-sign fails the call, never pauses the add-on`() = runBlocking<Unit> {
+        firstParty = true
+        signer.adopt = true
+        repeat(2) {
+            server.enqueue(json("""{"error":{"code":"unauthorized","message":"Install clock is off"}}""", 401).setHeader("X-Stash-Server-Time", "1893456000"))
+        }
+        val f = (client.stream(addon(), "td:9", lossless) as AddonResult.Failed).failure as AddonFailure.Refused
+        assertThat(f.code).isEqualTo(ErrorCode.BAD_REQUEST)
+        assertThat(f.status).isEqualTo(401)
+        assertThat(server.requestCount).isEqualTo(2)
+        assertThat(gate.events.last()).isEqualTo("answer addon_test-addon")
+        assertThat(gate.events.none { it.startsWith("rateLimited") }).isTrue()
+    }
+
+    @Test fun `signature case 2 - any other signature failure is a 400 for this call only`() = runBlocking<Unit> {
+        firstParty = true
+        server.enqueue(json("""{"error":{"code":"bad_request","message":"Install signature refused"}}""", 400))
+        server.enqueue(json(flacCd))
+        val f = (client.stream(addon(), "td:9", lossless) as AddonResult.Failed).failure as AddonFailure.Refused
+        assertThat(f.code).isEqualTo(ErrorCode.BAD_REQUEST)
+        assertThat(server.requestCount).isEqualTo(1) // not signed again
+        assertThat(gate.events.last()).isEqualTo("answer addon_test-addon")
+        assertThat(gate.events.none { it.startsWith("rateLimited") }).isTrue()
+        // And the next call goes out.
+        assertThat(client.stream(addon(), "td:9", lossless)).isInstanceOf(AddonResult.Ok::class.java)
+    }
+
+    @Test fun `signature case 3 - a 401 without the server's time is a wrong token and pauses the add-on`() = runBlocking<Unit> {
+        firstParty = true
+        signer.adopt = true
+        server.enqueue(json("""{"error":{"code":"unauthorized","message":"Missing or wrong token"}}""", 401))
+        val f = (client.stream(addon(), "td:9", lossless) as AddonResult.Failed).failure as AddonFailure.Refused
+        assertThat(f.code).isEqualTo(ErrorCode.UNAUTHORIZED)
+        assertThat(server.requestCount).isEqualTo(1)
+        assertThat(signer.adopted).isEqualTo(1) // asked, and the signer found no time to adopt
+        assertThat(gate.events.last()).isEqualTo("rateLimited addon_test-addon ${HttpAddonClient.UNAUTHORIZED_PAUSE_MS}")
+    }
+
+    @Test fun `an unsigned add-on's 401 never moves the signing clock`() = runBlocking<Unit> {
+        firstParty = false
+        signer.adopt = true
+        server.enqueue(json("""{"error":{"code":"unauthorized","message":"no"}}""", 401).setHeader("X-Stash-Server-Time", "1"))
+        client.stream(addon(), "1", lossless)
+        assertThat(signer.adopted).isEqualTo(0)
+        assertThat(server.requestCount).isEqualTo(1)
+    }
+
+    // ------------------------------------------------------------------------------------------ redirects
+
+    @Test fun `a header token and the signature never follow a redirect to another origin`() = runBlocking<Unit> {
+        val other = MockWebServer().apply { start(InetAddress.getByName("127.0.0.1"), 0) }
+        try {
+            firstParty = true
+            server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "http://127.0.0.1:${other.port}/stream/1"))
+            other.enqueue(json(flacCd))
+            val r = client.stream(addon(token = "s3cret"), "1", lossless)
+            assertThat(r).isInstanceOf(AddonResult.Ok::class.java)
+            assertThat(server.takeRequest().getHeader(Auth.HEADER_NAME)).isEqualTo("s3cret")
+            val moved = other.takeRequest()
+            assertThat(moved.getHeader(Auth.HEADER_NAME)).isNull()
+            assertThat(moved.getHeader("X-Stash-Auth")).isNull()
+        } finally {
+            other.shutdown()
+        }
+    }
+
+    @Test fun `a redirect to plain http elsewhere is refused`() = runBlocking<Unit> {
+        server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "http://example.com/x"))
+        val r = client.search(addon(), "x")
+        assertThat((r as AddonResult.Failed).failure).isEqualTo(AddonFailure.Network)
+    }
+
+    @Test fun `at most 3 redirects`() = runBlocking<Unit> {
+        repeat(4) { server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "/search?q=x")) }
+        val r = client.search(addon(), "x")
+        assertThat((r as AddonResult.Failed).failure).isEqualTo(AddonFailure.Network)
+        assertThat(server.requestCount).isEqualTo(4)
+    }
+
+    // ------------------------------------------------------------------------------------------ secrets
+
+    @Test fun `an installed add-on never prints its base or token`() {
+        val a = addon(token = "s3cret", prefix = "pathtoken/")
+        assertThat(a.toString()).doesNotContain("s3cret")
+        assertThat(a.toString()).doesNotContain("pathtoken")
+        assertThat(a.toString()).doesNotContain("127.0.0.1")
+    }
+
+    @Test fun `a token a request can't carry is refused when the add-on is made, without repeating it`() {
+        for (bad in listOf("s3cret\nX-Evil: 1", "s3cret\r", "s3cret\u0000", "tökén-s3cret", "")) {
+            val e = runCatching { addon(token = bad) }.exceptionOrNull()
+            assertWithMessage("token %s", bad.length).that(e).isInstanceOf(IllegalArgumentException::class.java)
+            if (bad.isNotEmpty()) assertThat(e!!.stackTraceToString()).doesNotContain("s3cret")
+        }
+        assertThat(addon(token = "ok-Token_1.2~3").token).isEqualTo("ok-Token_1.2~3")
+    }
+
+    @Test fun `a header value a request can't carry is a network failure that never repeats it`() = runBlocking<Unit> {
+        // Why the client never logs that exception: OkHttp's message names the value, and neither
+        // X-Access-Token nor X-Stash-* is on its list of sensitive headers.
+        val raw = runCatching { Request.Builder().header(Auth.HEADER_NAME, "SECRET\nx") }.exceptionOrNull()
+        assertThat(raw!!.message).contains("SECRET")
+
+        // A token can't get this far any more (InstalledAddon refuses it); a signer's header still can.
+        val lines = mutableListOf<String>()
+        for (secret in listOf("SECRET\nX-Evil: 1", "SECRÉT")) {
+            val leaky = object : AddonInstallSigner {
+                override suspend fun sign(builder: Request.Builder, payload: String): Boolean {
+                    builder.header("X-Stash-Supporter", secret)
+                    return true
+                }
+                override fun adoptServerTime(response: Response): Boolean = false
+            }
+            val c = HttpAddonClient(shared, gate, object : AddonTrust { override fun isFirstParty(base: String) = true }, leaky)
+            c.options = AddonValidator.Options(allowLocalHttp = true)
+            c.logHook = { lines += it }
+            val r = runCatching { c.stream(addon(), "1", lossless) }
+            assertThat(r.exceptionOrNull()).isNull()
+            val f = (r.getOrThrow() as AddonResult.Failed).failure
+            assertThat(f).isEqualTo(AddonFailure.Network)
+            assertThat(f.toString()).doesNotContain("SECR")
+            assertThat(gate.events.last()).isEqualTo("failure addon_test-addon")
+        }
+        assertThat(lines).hasSize(2)
+        lines.forEach { assertThat(it).doesNotContain("SECR") }
+        assertThat(server.requestCount).isEqualTo(0)
+    }
+
+    @Test fun `add-on text is logged cut short and without control characters`() {
+        assertThat(HttpAddonClient.loggable("/headers/X-A\nforged line\u0000\u0085end")).isEqualTo("/headers/X-A forged line  end")
+        assertThat(HttpAddonClient.loggable("k".repeat(500))).hasLength(120)
+    }
+
+    @Test fun `baseOf strips manifest json`() {
+        assertThat(HttpAddonClient.baseOf("https://relay.example/tok/manifest.json")).isEqualTo("https://relay.example/tok/")
+        assertThat(HttpAddonClient.baseOf("https://relay.example/tok/")).isEqualTo("https://relay.example/tok/")
+        assertThat(HttpAddonClient.baseOf("https://relay.example/tok")).isNull()
+        assertThat(HttpAddonClient.baseOf("not a url/")).isNull()
+    }
+
+    // ------------------------------------------------------------------------------------------ fakes
+
+    /** Records what the client tells the circuit. [pauses]: also refuses a key once it was rate limited. */
+    class RecordingGate : AddonRateGate {
+        var admitResult = true
+        var pauses = false
+        val paused = mutableSetOf<String>()
+        val events = mutableListOf<String>()
+        override suspend fun admit(key: String, paced: Boolean): Boolean {
+            events += "admit $key $paced"
+            return admitResult && !(pauses && key in paused)
+        }
+        override suspend fun onAnswer(key: String) { events += "answer $key" }
+        override suspend fun onRateLimited(key: String, retryAfterMs: Long?) {
+            events += "rateLimited $key $retryAfterMs"
+            paused += key
+        }
+        override suspend fun onFailure(key: String) { events += "failure $key" }
+    }
+
+    class RecordingSigner : AddonInstallSigner {
+        val signed = mutableListOf<String>()
+        var adopt = false
+        var adopted = 0
+        override suspend fun sign(builder: Request.Builder, payload: String): Boolean {
+            signed += payload
+            builder.header("X-Stash-Auth", "sig:$payload")
+            return true
+        }
+        /** As RelaySigner: asked on every signed 401, adopts only a named server time. */
+        override fun adoptServerTime(response: Response): Boolean {
+            adopted++
+            return adopt && response.header(HttpAddonClient.SERVER_TIME_HEADER) != null
+        }
+    }
+}

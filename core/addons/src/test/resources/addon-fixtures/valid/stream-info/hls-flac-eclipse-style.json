@@ -1,0 +1,12 @@
+{
+  "url": "https://cdn.example.org/hls/track_123/master.m3u8",
+  "manifest": "hls",
+  "tier": "lossless",
+  "codec": "flac",
+  "container": "fmp4",
+  "encrypted": false,
+  "sampleRate": 44100,
+  "bitDepth": 16,
+  "cors": true,
+  "quality": "lossless"
+}

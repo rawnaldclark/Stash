@@ -61,6 +61,57 @@ class AudioDurationExtractor @Inject constructor(
     }
 
     /**
+     * How long the file's audio really runs, in milliseconds, measured from its frames rather than
+     * read from its header ([extractMs]): where a FLAC's last frame ends ([FlacAudioEnd]), or, for
+     * any other format, the time of its last packet (the platform extractor walks the packets
+     * without decoding one). The two differ when a file is a clip under a whole song's header:
+     * Tidal's 30 s preview remuxed to FLAC keeps the song's STREAMINFO (Linger, 2026-11-13: header
+     * 4:34.77, audio 0:29.91), and the download checks read only the header.
+     *
+     * Null when it can't be measured: a `content://` document, a FLAC whose end the scan can't
+     * settle (never decoded whole to find out), a file the extractor can't open. An unknown is never
+     * a reason to refuse a file. Never throws. Reads the file, so call it off the main thread.
+     */
+    fun extractFramesMs(filePath: String): Long? {
+        if (filePath.startsWith("content://")) return null
+        val file = java.io.File(filePath)
+        if (!file.isFile) return null
+        if (FlacAudioEnd.isFlac(file)) return FlacAudioEnd.read(file)?.framesMs
+        return lastPacketMs(filePath)
+    }
+
+    /**
+     * The time of the last packet of [filePath]'s first audio track, in ms; null when there is none.
+     * Packets only: a track the extractor decodes itself ("audio/raw": Android's FLAC and WAV) is not
+     * walked, as that would decode the whole song.
+     */
+    private fun lastPacketMs(filePath: String): Long? {
+        val extractor = MediaExtractor()
+        return try {
+            extractor.setDataSource(filePath)
+            val track = (0 until extractor.trackCount).firstOrNull {
+                extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+            } ?: return null
+            if (extractor.getTrackFormat(track).getString(MediaFormat.KEY_MIME) == MediaFormat.MIMETYPE_AUDIO_RAW) return null
+            extractor.selectTrack(track)
+            var lastUs = -1L
+            var packets = 0
+            while (packets++ < MAX_PACKETS) {
+                val us = extractor.sampleTime
+                if (us < 0) break
+                if (us > lastUs) lastUs = us
+                if (!extractor.advance()) break
+            }
+            lastUs.takeIf { it >= 0 }?.let { it / 1_000L }
+        } catch (e: Exception) {
+            Log.w(TAG, "lastPacketMs failed for $filePath: ${e.javaClass.simpleName}")
+            null
+        } finally {
+            runCatching { extractor.release() }
+        }
+    }
+
+    /**
      * Reads duration + codec + bitrate from the file in a single retriever
      * pass. Used by the download path to populate `file_format` and
      * `quality_kbps` (which the sync writer historically left at defaults)
@@ -147,6 +198,12 @@ class AudioDurationExtractor @Inject constructor(
 
     companion object {
         private const val TAG = "AudioDurationExtractor"
+
+        /**
+         * The most packets [lastPacketMs] walks: hours of any lossy codec (Opus's 20 ms packets make
+         * 180,000 an hour), so it stops only on a file that never ends.
+         */
+        private const val MAX_PACKETS = 2_000_000
 
         /**
          * Maps a MIME string (the audio track's codec MIME, else the

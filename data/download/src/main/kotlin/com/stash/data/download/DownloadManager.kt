@@ -46,6 +46,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.relay.LosslessDownloadPurpose
 import javax.inject.Inject
@@ -85,8 +86,12 @@ internal const val LOSSLESS_SAMPLE_FRACTION = 0.5
  * below the track's known duration (< [LOSSLESS_SAMPLE_FRACTION] of expected).
  * Requires a known expected duration (> 0) and a readable probe; otherwise
  * returns false — never reject on missing data (that's the yt-dlp path's job).
+ *
+ * Public: the player's check of an add-on's stream (`AddonStreamCheck` in `:core:media`) applies
+ * this same rule to the stream's length before a sound of it plays, so a download and a stream
+ * agree on what is too short.
  */
-internal fun isLosslessDurationDegraded(probedMs: Long?, expectedMs: Long): Boolean {
+fun isLosslessDurationDegraded(probedMs: Long?, expectedMs: Long): Boolean {
     if (probedMs == null || probedMs <= 0L) return false
     if (expectedMs <= 0L) return false
     return probedMs <= LOSSLESS_SAMPLE_MAX_MS && probedMs < expectedMs * LOSSLESS_SAMPLE_FRACTION
@@ -198,6 +203,24 @@ class DownloadManager @Inject constructor(
 
     /** Emits real-time progress snapshots for all in-flight downloads. */
     val progress: SharedFlow<DownloadProgress> = _progress.asSharedFlow()
+
+    /**
+     * The manager's own scope for album-art fetches started in
+     * [downloadFromYouTube]. App-lifetime, instantiated inline like
+     * BitchordClient's lookupScope (no Hilt ApplicationScope qualifier
+     * exists in this codebase). The art deferred deliberately does NOT
+     * become a child of the downloading coroutine: the async fires next
+     * to the yt-dlp download so the fetch overlaps it instead of adding
+     * its own network round-trip between download and embed, but the
+     * attempt's early failure returns must not block on a fetch whose
+     * blocking OkHttp call ignores coroutine cancellation. The success path
+     * awaits the fetch at the embed; every way out of the attempt (saved,
+     * failed, thrown, cancelled) then [Deferred.cancel]s it in one `finally`,
+     * so it never outlives the attempt that started it.
+     */
+    private val artworkScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
+    )
 
     companion object {
         private const val TAG = "DownloadManager"
@@ -508,6 +531,48 @@ class DownloadManager @Inject constructor(
         val qualityTier = qualityPrefs.qualityTier.first()
         val qualityArgs = if (opusOnly) qualityTier.toOpusYtDlpArgs() else qualityTier.toYtDlpArgs()
 
+        // Album art runs concurrently with the download. It used to sit
+        // BETWEEN download and embed, adding its own network round-trip to
+        // the track's wall-clock time; the embed needs it only once the
+        // download has finished, so it now overlaps the whole download
+        // instead. A failure inside the art job resolves to null exactly as
+        // before — we never block a download on the art server.
+        //
+        // Runs on [artworkScope], not as a child of this attempt (see the
+        // scope's doc), so nothing ties its life to this attempt but the
+        // `finally` below. A request already on the wire still finishes into
+        // [AlbumArtCache] — pure atomic cacheDir bytes, there for the retry
+        // and for the album's other songs. The success path awaits the
+        // deferred at the metadata embed, by which time it usually finished
+        // during the download.
+        val artDeferred = artworkScope.async {
+            runCatching { albumArtCache.resolveArt(effectiveTrack) }
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                .getOrNull()
+        }
+        // One place for every way out: a failed download, a throw, and a
+        // cancel (the user's Stop, or WorkManager stopping the worker when
+        // Wi-Fi is lost) all end the fetch with the attempt. Cancelling a
+        // fetch that already finished does nothing.
+        return try {
+            ytDlpDownloadAndFile(track, effectiveTrack, youtubeUrl, qualityArgs, artDeferred)
+        } finally {
+            artDeferred.cancel()
+        }
+    }
+
+    /**
+     * [downloadFromYouTube]'s download, tagging and filing. [artDeferred] is the
+     * cover fetch started alongside it: awaited at the embed, and ended by the
+     * caller however this returns or throws.
+     */
+    private suspend fun ytDlpDownloadAndFile(
+        track: Track,
+        effectiveTrack: Track,
+        youtubeUrl: String,
+        qualityArgs: List<String>,
+        artDeferred: kotlinx.coroutines.Deferred<File?>,
+    ): TrackDownloadResult {
         // Step 3: Download via yt-dlp
         val tempDir = fileOrganizer.getTempDir()
         val tempFilename = "dl_${track.id}_${attemptTag()}"
@@ -548,6 +613,13 @@ class DownloadManager @Inject constructor(
             emitProgress(track.id, 0f, DownloadStatus.FAILED)
             return TrackDownloadResult.Failed("Downloaded file too small — discarded as a failed download")
         }
+        // No download is kept as the song when its audio is a clip of it (clipAt), from any source.
+        audioDurationExtractor.clipAt(downloadedFile.absolutePath, effectiveTrack.durationMs)?.let { clip ->
+            Log.w(TAG, "yt-dlp: '${effectiveTrack.artist} - ${effectiveTrack.title}' is a clip ($clip); not kept")
+            runCatching { downloadedFile.delete() }
+            emitProgress(track.id, 0f, DownloadStatus.FAILED)
+            return TrackDownloadResult.Failed("Downloaded file is a ${clip.playsMs / 1000} s clip of the song — discarded")
+        }
 
         // From here until the commit moves it into the library, the temp file
         // is this attempt's alone: every attempt names its own, so one that a
@@ -563,9 +635,7 @@ class DownloadManager @Inject constructor(
             // Spotify/YT-Music identity already on the Track row. Failure is
             // non-fatal: the file remains playable and yt-dlp's fallback tags
             // stay in place. A cancel is not a failure: it propagates.
-            val art = runCatching { albumArtCache.resolveArt(effectiveTrack) }
-                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
-                .getOrNull()
+            val art = artDeferred.await()
             runCatching { metadataEmbedder.embedMetadata(downloadedFile, effectiveTrack, art) }
                 .onFailure {
                     if (it is kotlinx.coroutines.CancellationException) throw it
@@ -770,14 +840,17 @@ class DownloadManager @Inject constructor(
         val codecValid = metadata?.format == "aac"
         val bitrateValid = metadata != null &&
             metadata.bitrateKbps >= minJioSaavnBitrateKbps(match.format.bitrateKbps)
-        if (!codecValid || !bitrateValid || !durationValid) {
+        // The length above is the header's: a clip under the song's header passes it (clipAt).
+        val clip = audioDurationExtractor.clipAt(fetched.absolutePath, track.durationMs, headerMs = metadata?.durationMs)
+        if (!codecValid || !bitrateValid || !durationValid || clip != null) {
             Log.w(
                 TAG,
                 "$label media rejected for '${track.artist} - ${track.title}': " +
                     "format=${metadata?.format}, bitrate=${metadata?.bitrateKbps} " +
                     "(asked ${match.format.bitrateKbps}), " +
                     "duration=${metadata?.durationMs}, expected=${track.durationMs} " +
-                    "(${if (lengthReliable) "song length" else "video length"})",
+                    "(${if (lengthReliable) "song length" else "video length"})" +
+                    (clip?.let { ", a clip: $it" } ?: ""),
             )
             runCatching { fetched.delete() }
             return null
@@ -876,15 +949,35 @@ class DownloadManager @Inject constructor(
         val tempFile = File(fileOrganizer.getTempDir(), "lossless_${track.id}_${attemptTag()}.$ext")
 
         val fetched = losslessUrlDownloader.download(
-            source = match,
+            // The song's length goes with it: a DASH answer far shorter than the song (a preview) is
+            // refused before a segment of it is fetched.
+            source = match.copy(songMs = track.durationMs.coerceAtLeast(0L)),
             destination = tempFile,
             onProgress = { read, total ->
                 val frac = if (total > 0) read.toFloat() / total else 0f
                 emitProgress(track.id, 0.1f + frac * 0.7f, DownloadStatus.DOWNLOADING)
             },
         ).getOrElse { e ->
-            Log.w(TAG, "lossless fetch failed for '${track.artist} - ${track.title}': ${e.message}")
+            // An add-on's failure by class only: its message can name the media host.
+            val why = if (LosslessUrlDownloader.isAddonSource(match.sourceId)) e.javaClass.simpleName else e.message
+            Log.w(TAG, "lossless fetch failed for '${track.artist} - ${track.title}': $why")
             runCatching { tempFile.delete() }
+            // The file was not the format its add-on said it was (a lossy file under "lossless",
+            // review-882 M9): cooled down like a source that served a sample, and the next
+            // lossless source gets its turn.
+            // The same for a fetch the add-on media client refused (it pointed at the user's own
+            // network: asking again asks for the same refusal) and for one that outlasted its
+            // time limit (round 2, F7 and F2).
+            // A preview answer (its DASH manifest is a clip of the song) is the same: not the song.
+            if (e is LosslessUrlDownloader.NotTheStatedFormatException || e is LosslessUrlDownloader.PreviewException) {
+                // Settings › Add-ons says this one: "Sent a file that wasn't what it said".
+                losslessHealthGate.recordWrongFile(match.sourceId)
+                return@repeat
+            }
+            if (e is LosslessUrlDownloader.TookTooLongException || LosslessUrlDownloader.isGuardRefusal(e)) {
+                losslessHealthGate.recordDegraded(match.sourceId)
+                return@repeat
+            }
             return null
         }
         // A junk body probes as "unknown length", which the duration backstop
@@ -896,16 +989,17 @@ class DownloadManager @Inject constructor(
         // inspector keys on. Probe the fetched file; if it's a sample-length
         // stub far short of the known duration, reject it, cool the source
         // down, and re-resolve so the registry fails over to the next source.
-        val probedMs = runCatching { audioDurationExtractor.extractMs(fetched.absolutePath) }
-            .getOrNull()
-        if (isLosslessDurationDegraded(probedMs, track.durationMs)) {
+        // Judged by what its frames run, not only its header: Tidal's preview of
+        // "Linger" kept the song's 4:35 header over 0:30 of audio, and passed (clipAt).
+        val clip = audioDurationExtractor.clipAt(fetched.absolutePath, track.durationMs)
+        if (clip != null) {
             Log.w(
                 TAG,
-                "duration backstop: ${match.sourceId} returned ${probedMs}ms vs expected " +
-                    "${track.durationMs}ms for '${track.artist} - ${track.title}' — " +
-                    "rejecting + failing over",
+                "duration backstop: ${match.sourceId} returned a clip ($clip) " +
+                    "for '${track.artist} - ${track.title}' — rejecting + failing over",
             )
-            losslessHealthGate.recordDegraded(match.sourceId)
+            // A stub far shorter than the song is a file that wasn't what it was said to be.
+            losslessHealthGate.recordWrongFile(match.sourceId)
             runCatching { fetched.delete() }
             return@repeat
         }

@@ -811,7 +811,7 @@ class StreamSourceRegistryTest {
             config = mockk<LosslessConfigFetcher> {
                 every { tidalRelay } returns MutableStateFlow<TidalRelay?>(TidalRelay("https://tidal.stash.example", null))
             },
-            prefs = losslessPrefs,
+            own = com.stash.data.download.lossless.tidal.OwnTidalServer(com.stash.core.addons.NoUserAddons, losslessPrefs),
         )
         return StreamSourceRegistry(
             qbdlx, jiosaavn, youtube, streamingPreference,

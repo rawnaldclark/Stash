@@ -285,6 +285,21 @@ data class SourceResult(
      * itself; [LosslessUrlDownloader] then fetches the segments and remuxes.
      */
     val isDash: Boolean = false,
+
+    /**
+     * The most bytes the file at [downloadUrl] may be; the downloader stops there and fails the
+     * fetch. Null = no ceiling (Stash's own sources). An add-on's source sets it from the song's
+     * length and the stated format, so a server Stash doesn't run cannot hand every syncing
+     * phone an endless "FLAC" (review-882 M11).
+     */
+    val maxBytes: Long? = null,
+
+    /**
+     * The song's length in ms, set by the download that fetches this match; 0 = unknown. A DASH
+     * answer states its own length, so one far shorter than the song (a source's 30 s preview) is
+     * refused before a segment is fetched ([LosslessUrlDownloader.PreviewException]).
+     */
+    val songMs: Long = 0L,
 )
 
 /**
@@ -325,7 +340,9 @@ data class AudioFormat(
 /**
  * Snapshot of a source's rate-limit state. [tokensAvailable] under 1.0
  * means the next call will wait; [isCircuitBroken] true means the source
- * has been temporarily disabled because of repeated failures.
+ * is blocked for [msUntilUnblock]: paused after a rate limit (a 429, or a
+ * busy relay's own Retry-After), or held out because its breaker tripped
+ * on repeated failures ([breakerTripped]).
  *
  * Settings UI uses this to render a per-source status row.
  */
@@ -335,4 +352,10 @@ data class RateLimitState(
     val isCircuitBroken: Boolean,
     val msUntilUnblock: Long,
     val recentFailures: Int,
+    /**
+     * True while the block is a tripped breaker's (repeated failures), false while it is only a
+     * pause the source asked for. A caller booking a retry can wait out a pause to the moment it
+     * ends; a breaker says the source is failing ([com.stash.data.download.lossless.tidal.TidalAacResolver]).
+     */
+    val breakerTripped: Boolean = false,
 )

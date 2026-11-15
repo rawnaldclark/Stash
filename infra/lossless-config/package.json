@@ -6,7 +6,8 @@
   "description": "Signs and publishes lossless.json, the config the Stash app fetches at cold start (Tidal relay url/token, relay_key, relay list). Not a Worker.",
   "scripts": {
     "test": "node --no-warnings --test",
-    "verify": "node scripts/publish-config.mjs verify"
+    "verify": "node scripts/publish-config.mjs verify",
+    "verify-index": "node scripts/publish-index.mjs verify"
   },
   "devDependencies": {
     "wrangler": "^4.147.0"

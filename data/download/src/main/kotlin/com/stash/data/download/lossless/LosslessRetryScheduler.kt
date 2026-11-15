@@ -1,9 +1,11 @@
 package com.stash.data.download.lossless
 
 import android.content.Context
+import android.util.Log
 import androidx.work.BackoffPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.stash.data.download.lossless.quota.LosslessQuota
@@ -12,6 +14,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -39,12 +42,14 @@ import kotlinx.coroutines.flow.onEach
  *     turned over, whose downloads came back capped, gets another for the reset
  *     it reports. The wait is on the relay's clock ([LosslessQuota.nowSec]).
  *  3. The Download quality changed.
- *  4. Tidal was busy, paced or failing for a download that then waited.
+ *  4. Tidal was busy, paced or failing for a download that then waited: a Tidal sweep that only
+ *     re-queues the downloads that waited for Tidal ([LosslessRetryWorker.KEY_TIDAL_BUSY_ONLY]).
  *
  * No periodic polling — these signals cover every state transition
  * that matters. Worker is enqueued under a unique work name with
  * [ExistingWorkPolicy.KEEP] so multiple triggers within a short window
- * collapse to a single sweep.
+ * collapse to a single sweep; the Tidal sweep keeps one too, but never
+ * one that is running or about to start ([tidalPolicy]).
  *
  * Lives in `:data:download` rather than `:core:data` because
  * [LosslessRetryWorker] is module-local here and `:data:download` →
@@ -86,6 +91,9 @@ class LosslessRetryScheduler @Inject constructor(
         WorkManager.getInstance(context)
     }
 
+    /** Wall clock for the Tidal sweep's booking (WorkManager's own clock is the system's too); tests drive it. */
+    internal var nowMs: () -> Long = System::currentTimeMillis
+
     private val losslessPrefsRef = losslessPrefs
     private val rateLimiterRef = rateLimiter
 
@@ -120,7 +128,7 @@ class LosslessRetryScheduler @Inject constructor(
         )
             .onEach { resetsAtSec ->
                 val waitSec = (resetsAtSec - quota.nowSec()).coerceAtLeast(0) + RESET_SLACK_SEC
-                enqueue(initialDelaySec = waitSec, name = RESET_WORK_NAME, atReset = true)
+                enqueue(initialDelayMs = waitSec * 1000L, name = RESET_WORK_NAME, atReset = true)
             }
             .launchIn(scope)
 
@@ -135,30 +143,69 @@ class LosslessRetryScheduler @Inject constructor(
             .launchIn(scope)
 
         // 4. Tidal was busy, paced or failing for a download that then waited (whatever the
-        // fallback): one sweep for when it should be free again. Its own name, KEEP: a sweep
-        // already booked for this covers every song that waited for it.
+        // fallback): a Tidal sweep for when it should be free again, which only re-queues the
+        // downloads that waited for Tidal. Its own name; a sweep already booked covers every song
+        // that waits before it starts, but one running or about to start does not ([tidalPolicy]).
         tidalAacResolver.retryEvents
             .onEach { atMs ->
-                val waitSec = ((atMs - System.currentTimeMillis()) / 1000).coerceAtLeast(0)
-                enqueue(initialDelaySec = waitSec, name = TIDAL_WORK_NAME)
+                val now = nowMs()
+                enqueue(
+                    initialDelayMs = (atMs - now).coerceAtLeast(0),
+                    name = TIDAL_WORK_NAME,
+                    tidalBusyOnly = true,
+                    policy = tidalPolicy(now),
+                )
             }
             .launchIn(scope)
     }
 
+    /**
+     * How a Tidal sweep is booked, from WorkManager's own record of [TIDAL_WORK_NAME].
+     *
+     * KEEP while a booked sweep has not started and won't for more than [TIDAL_KEEP_MARGIN_MS]: it
+     * re-queues every song waiting for Tidal when it starts, and the download that asked writes
+     * its row back as waiting well before then (its time is at least the resolver's 15 s out).
+     * A sweep BLOCKED behind a running one counts as ahead: it waits its own delay after that one.
+     *
+     * Otherwise APPEND_OR_REPLACE: a new sweep, after the current one if there is one. Under KEEP,
+     * a sweep that was RUNNING (or about to start) swallowed the booking: it had already read the
+     * waiting rows, so the song that asked was not among them, and nothing else brought it back.
+     * Each booking still waits for the time the resolver asked (never under its 15 s floor), and
+     * at most one sweep waits behind another, as the next booking sees it ahead and keeps it.
+     */
+    private fun tidalPolicy(now: Long): ExistingWorkPolicy {
+        val sweeps = try {
+            workManagerProvider().getWorkInfosForUniqueWork(TIDAL_WORK_NAME).get()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Unreadable: booking behind whatever is there costs at most one extra sweep.
+            Log.w(TAG, "Tidal sweep state unreadable (${e.javaClass.simpleName}); booking after it")
+            return ExistingWorkPolicy.APPEND_OR_REPLACE
+        }
+        val oneAhead = sweeps.any {
+            it.state == WorkInfo.State.BLOCKED ||
+                (it.state == WorkInfo.State.ENQUEUED && it.nextScheduleTimeMillis - now > TIDAL_KEEP_MARGIN_MS)
+        }
+        return if (oneAhead) ExistingWorkPolicy.KEEP else ExistingWorkPolicy.APPEND_OR_REPLACE
+    }
+
     private fun enqueue(
-        initialDelaySec: Long = 0,
+        initialDelayMs: Long = 0,
         name: String = LosslessRetryWorker.UNIQUE_WORK_NAME,
         atReset: Boolean = false,
+        tidalBusyOnly: Boolean = false,
         policy: ExistingWorkPolicy = ExistingWorkPolicy.KEEP,
     ) {
         val request = OneTimeWorkRequestBuilder<LosslessRetryWorker>()
-            .setInitialDelay(initialDelaySec, TimeUnit.SECONDS)
+            .setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)
             .apply {
                 if (atReset) {
                     setInputData(workDataOf(LosslessRetryWorker.KEY_AT_RESET to true))
                     // Still spent when it runs (the relay's day not yet over): look again soon.
                     setBackoffCriteria(BackoffPolicy.LINEAR, RESET_RETRY_BACKOFF_SEC, TimeUnit.SECONDS)
                 }
+                if (tidalBusyOnly) setInputData(workDataOf(LosslessRetryWorker.KEY_TIDAL_BUSY_ONLY to true))
             }
             .build()
         workManagerProvider().enqueueUniqueWork(name, policy, request)
@@ -179,5 +226,14 @@ class LosslessRetryScheduler @Inject constructor(
 
         /** A reset sweep that found the day still spent retries after this (linear: 5, 10, 15 min, …). */
         const val RESET_RETRY_BACKOFF_SEC = 300L
+
+        /**
+         * A booked Tidal sweep due sooner than this may read the waiting rows before the download
+         * that just asked has written its own back (a few ms after asking), so a new one is booked
+         * behind it instead of keeping it ([tidalPolicy]). Well under the resolver's 15 s floor.
+         */
+        const val TIDAL_KEEP_MARGIN_MS = 5_000L
+
+        private const val TAG = "LosslessRetryScheduler"
     }
 }

@@ -31,6 +31,8 @@ dependencies {
     // the SAF directory layout (<artist>/<album>/<title>.lrc) identical
     // to the download pipeline — no slug-semantics drift between the two.
     implementation(project(":data:download"))
+    // Stash Add-ons v1: AddonLyricsSource reads the add-on registry.
+    implementation(project(":core:addons"))
 
     implementation(libs.hilt.android)
     implementation(libs.okhttp.dnsoverhttps)

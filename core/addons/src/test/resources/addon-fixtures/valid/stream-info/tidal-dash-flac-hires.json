@@ -1,0 +1,13 @@
+{
+  "url": "https://tidal-addon.example.org/dash/td/77646170.mpd?exp=1893456000&sig=3f9a0c2b7d1e4f6a8b5c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c",
+  "manifest": "dash",
+  "tier": "hires",
+  "codec": "flac",
+  "container": "fmp4",
+  "bitDepth": 24,
+  "sampleRate": 96000,
+  "bitrate": 4608000,
+  "cors": false,
+  "expiresAt": 1893456000,
+  "quality": "Hi-Res 24/96"
+}

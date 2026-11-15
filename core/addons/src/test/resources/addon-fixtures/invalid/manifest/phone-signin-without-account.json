@@ -1,0 +1,28 @@
+{
+  "stash": 1,
+  "id": "x",
+  "name": "X",
+  "version": "1.0.0",
+  "kind": "phone",
+  "resources": [
+    "search"
+  ],
+  "phone": {
+    "bundle": {
+      "path": "main.js",
+      "sha256": "a3f1c2d4e5b6978877665544332211ffeeddccbbaa99887766554433221100aa"
+    },
+    "domains": [
+      "example.org"
+    ],
+    "signIn": {
+      "title": "Sign in",
+      "url": "https://example.org/login",
+      "domain": "example.org",
+      "cookieNames": [
+        "sid"
+      ],
+      "accounts": "one"
+    }
+  }
+}

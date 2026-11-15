@@ -3,6 +3,7 @@ package com.stash.core.data.sync
 import androidx.datastore.preferences.core.edit
 import androidx.test.core.app.ApplicationProvider
 import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.auth.model.AuthService
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.model.MusicSource
@@ -24,6 +25,7 @@ import org.robolectric.RobolectricTestRunner
 class SyncPreferencesManagerTest {
     private lateinit var mgr: SyncPreferencesManager
     private val tokenManager = mockk<TokenManager>()
+    private val spotifyAccounts = mockk<SpotifyAccounts>()
     private val playlistDao = mockk<PlaylistDao>()
 
     @Before fun setUp() {
@@ -36,11 +38,11 @@ class SyncPreferencesManagerTest {
         // Both accounts signed in unless a test says otherwise: every mode counts.
         signedIn(spotify = true, youtube = true)
         playlistsHere(spotify = false, youtube = false)
-        mgr = SyncPreferencesManager(ctx, tokenManager, playlistDao)
+        mgr = SyncPreferencesManager(ctx, tokenManager, spotifyAccounts, playlistDao)
     }
 
     private fun signedIn(spotify: Boolean, youtube: Boolean) {
-        coEvery { tokenManager.isAuthenticated(AuthService.SPOTIFY) } returns spotify
+        coEvery { spotifyAccounts.isSpotifyAuthenticated() } returns spotify
         coEvery { tokenManager.isAuthenticated(AuthService.YOUTUBE_MUSIC) } returns youtube
     }
 

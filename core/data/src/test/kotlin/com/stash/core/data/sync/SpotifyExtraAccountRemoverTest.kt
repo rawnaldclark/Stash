@@ -2,7 +2,7 @@ package com.stash.core.data.sync
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
-import com.stash.core.auth.TokenManager
+import com.stash.core.auth.spotify.SpotifyAccounts
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.PlaylistEntity
@@ -37,7 +37,7 @@ import org.robolectric.annotation.Config
 class SpotifyExtraAccountRemoverTest {
 
     private lateinit var db: StashDatabase
-    private val tokenManager = mockk<TokenManager>(relaxed = true)
+    private val tokenManager = mockk<SpotifyAccounts>(relaxed = true)
     private lateinit var remover: SpotifyExtraAccountRemover
 
     private val userB = "userb"

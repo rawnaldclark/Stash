@@ -51,6 +51,7 @@ class LibraryReconciliationUseCase @Inject constructor(
     private val downloadQueueDao: DownloadQueueDao,
     private val trackDao: TrackDao,
     private val tokenManager: TokenManager,
+    private val spotifyAccounts: com.stash.core.auth.spotify.SpotifyAccounts,
     private val playlistDao: PlaylistDao,
     /** Which rows a job in this process is downloading right now: their claims stay. */
     private val downloadJobs: DownloadJobRegistry,
@@ -88,7 +89,7 @@ class LibraryReconciliationUseCase @Inject constructor(
     ): ReconciliationResult {
         onProgress(0, TOTAL_STEPS)
 
-        val connectedSources = connectedDownloadSources(tokenManager)
+        val connectedSources = connectedDownloadSources(tokenManager, spotifyAccounts)
 
         // Leftovers too (#532): Verify reports them as stale entries cleaned up, and
         // a sync clears one before its requeue below, so the song it was hiding

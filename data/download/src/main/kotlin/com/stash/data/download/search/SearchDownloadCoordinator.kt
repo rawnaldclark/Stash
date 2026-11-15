@@ -22,6 +22,7 @@ import com.stash.core.model.TrackItem
 import com.stash.core.model.YouTubeVideoId
 import com.stash.data.download.DownloadExecutor
 import com.stash.data.download.DownloadResult
+import com.stash.data.download.clipAt
 import com.stash.data.download.DownloadManager
 import com.stash.data.download.jiosaavn.JioSaavnResolver
 import com.stash.data.download.jiosaavn.toJioSaavnKbps
@@ -358,9 +359,20 @@ class SearchDownloadCoordinator @Inject constructor(
                     ),
                 )
             }
+            trackId
         }.onFailure { e ->
             if (e is CancellationException) throw e
             Log.w(TAG, "WAITING_FOR_LOSSLESS DAO write failed for ${track.videoId}: ${e.message}")
+        }.getOrNull()?.let { trackId ->
+            // The file lands later, through the queue's own download run, which links nothing: the
+            // song joins Your Downloads now, as a tap's does (#761). Otherwise, once Downloads ›
+            // Clear history erased its row's mark, Refresh cleanup could delete it. After the
+            // wait is written, so a failed link costs the link (the mark still spares it), never
+            // the wait.
+            runCatching { musicRepository.linkTrackToDownloadsMix(trackId) }.onFailure { e ->
+                if (e is CancellationException) throw e
+                Log.w(TAG, "Your Downloads link failed for waiting ${track.videoId}: ${e.message}")
+            }
         }
         return DownloadJobResult.Deferred(reason)
     }
@@ -521,7 +533,10 @@ class SearchDownloadCoordinator @Inject constructor(
         // Lossy AAC rungs: fetched by the downloader and checked as AAC, not FLAC.
         val isLossyAac = match.sourceId == JioSaavnResolver.SOURCE_ID ||
             match.sourceId == com.stash.data.download.lossless.tidal.TidalAacResolver.SOURCE_ID
-        if (isLossyAac || match.isDash) {
+        // An add-on chose this URL: only the downloader fetches it, on the add-on media client
+        // (review-882 B1). The cached HTTP source below has none of the base rules.
+        val fromAddon = com.stash.data.download.lossless.LosslessUrlDownloader.isAddonSource(match.sourceId)
+        if (isLossyAac || match.isDash || fromAddon) {
             // Use the shared OkHttp downloader rather than Media3's redirect-
             // following HTTP source. The Jio transport disables redirects so
             // the trusted aac.saavncdn.com URL cannot pivot to another host.
@@ -532,7 +547,8 @@ class SearchDownloadCoordinator @Inject constructor(
                 if (error is CancellationException) throw error
                 runCatching { tempFile.delete() }
                 return SourceFinalizeAttempt.BeforeCommitFailure(
-                    "${match.sourceId} fetch failed: ${error.message}",
+                    // An add-on's failure by class only: its message can name the media host.
+                    "${match.sourceId} fetch failed: ${if (fromAddon) error.javaClass.simpleName else error.message}",
                     transient = true,
                 )
             }
@@ -577,27 +593,32 @@ class SearchDownloadCoordinator @Inject constructor(
         if (isLossyAac) {
             val metadata = audioDurationExtractor.extract(tempFile.absolutePath)
             val length = aacLength ?: AacLength(expectedMs = (track.durationSeconds * 1_000).toLong(), reliable = true)
-            if (!isValidLossyAac(metadata, length, match.format.bitrateKbps)) {
+            // The length checked above is the header's: a clip under the song's header passes it (clipAt).
+            val clip = audioDurationExtractor.clipAt(tempFile.absolutePath, length.expectedMs, headerMs = metadata?.durationMs)
+            if (!isValidLossyAac(metadata, length, match.format.bitrateKbps) || clip != null) {
                 runCatching { tempFile.delete() }
                 return SourceFinalizeAttempt.BeforeCommitFailure(
                     "${match.sourceId} media failed AAC quality validation: format=${metadata?.format}, " +
                         "bitrate=${metadata?.bitrateKbps} (asked ${match.format.bitrateKbps}), " +
                         "duration=${metadata?.durationMs}, " +
-                        "expected=${length.expectedMs} (${if (length.reliable) "song length" else "video length"})",
+                        "expected=${length.expectedMs} (${if (length.reliable) "song length" else "video length"})" +
+                        (clip?.let { ", a clip: $it" } ?: ""),
                 )
             }
         } else {
             // The checks DownloadManager's lossless path has: a short copy, a file
             // that isn't the codec asked for, or a preview-length stub never commits.
             val metadata = audioDurationExtractor.extract(tempFile.absolutePath)
+            val expectedMs = (track.durationSeconds * 1_000).toLong()
             val problem = SearchLosslessFile.problem(
                 expectedCodec = match.format.codec,
                 bytesWritten = bytesWritten,
                 expectedBytes = expectedBytes,
                 probedFormat = metadata?.format,
                 probedMs = metadata?.durationMs,
-                expectedMs = (track.durationSeconds * 1_000).toLong(),
-            )
+                expectedMs = expectedMs,
+            ) ?: audioDurationExtractor.clipAt(tempFile.absolutePath, expectedMs, headerMs = metadata?.durationMs)
+                ?.let { "a clip of the song: $it" }
             if (problem != null) {
                 Log.w(TAG, "lossless file from ${match.sourceId} rejected for ${track.videoId}: $problem")
                 runCatching { tempFile.delete() }
@@ -762,6 +783,12 @@ class SearchDownloadCoordinator @Inject constructor(
         // at the same name before upsertSearchTrack rejected it.
         if (!localFileOps.acceptDownloadOrDelete(tempFile.absolutePath)) {
             return TrackFinalizer.FinalizeResult.Failed("Downloaded file failed validation")
+        }
+        // Nor is a clip of the song kept as the song (clipAt), whatever its header says.
+        audioDurationExtractor.clipAt(tempFile.absolutePath, (track.durationSeconds * 1_000).toLong())?.let { clip ->
+            Log.w(TAG, "yt-dlp file for ${track.videoId} is a clip ($clip); not kept")
+            runCatching { tempFile.delete() }
+            return TrackFinalizer.FinalizeResult.Failed("Downloaded file is a clip of the song")
         }
 
         // opus/0 are placeholder values — TrackFinalizer probes the real codec

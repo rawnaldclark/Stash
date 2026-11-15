@@ -102,6 +102,7 @@ class LibraryViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
     private val tokenManager: TokenManager,
+    private val spotifyAccounts: com.stash.core.auth.spotify.SpotifyAccounts,
     private val playlistImageHelper: PlaylistImageHelper,
     private val localImportCoordinator: LocalImportCoordinator,
     private val streamingPreference: StreamingPreference,
@@ -305,7 +306,7 @@ class LibraryViewModel @Inject constructor(
      * Derives a pair of (spotifyConnected, youTubeConnected) from TokenManager.
      */
     private val authStateFlow = combine(
-        tokenManager.spotifyAuthState,
+        spotifyAccounts.spotifyAuthState,
         tokenManager.youTubeAuthState,
     ) { spotify, youtube ->
         Pair(spotify is AuthState.Connected, youtube is AuthState.Connected)

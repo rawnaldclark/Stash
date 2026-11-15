@@ -56,6 +56,11 @@ class DownloadManagementViewModelTest {
 
     @After fun tearDown() = Dispatchers.resetMain()
 
+    @Test fun `the mode chip switches to Offline from Downloads`() = runTest {
+        newVm().setStreamingEnabled(false)
+        coVerify { streaming.setEnabled(false) }
+    }
+
     @Test fun `active rows are partitioned into downloading queued and waiting`() = runTest {
         every { dao.observeActiveDownloadRows() } returns flowOf(
             listOf(

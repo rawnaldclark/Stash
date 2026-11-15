@@ -13,7 +13,7 @@ import com.stash.core.data.weblibrary.WebLibraryFile
 import com.stash.core.data.weblibrary.WebLibraryImporter
 import com.stash.core.data.weblink.handoff.WireSong
 import com.stash.core.model.SyncResult
-import com.stash.data.spotify.SpotifyApiClient
+import com.stash.data.spotify.SpotifyLibrary
 import com.stash.data.spotify.SpotifyEmbedClient
 import com.stash.data.spotify.SpotifyEmbedEntity
 import com.stash.data.spotify.model.SpotifyTrackItem
@@ -75,13 +75,13 @@ data class LinkAdded(val playlistId: Long, val songsAdded: Int)
  *   ([com.stash.core.data.playlistfile.PlaylistFileImport], `custom_link_file_<its name's hash>`) and added here like a link's.
  *
  * Nothing needs a login: Spotify's embed pages and YouTube Music's own pages are read anonymously. A Spotify playlist
- * longer than its embed page's 100 songs comes whole only through [SpotifyApiClient.getPlaylistTracks] (a Spotify login, or
+ * longer than its embed page's 100 songs comes whole only through [SpotifyLibrary.getPlaylistTracks] (a Spotify login, or
  * the Web API when it isn't rate-limited); otherwise its first 100, and the preview says so.
  */
 @Singleton
 class LinkImporter @Inject constructor(
     private val spotifyEmbed: SpotifyEmbedClient,
-    private val spotifyApi: SpotifyApiClient,
+    private val spotifyApi: SpotifyLibrary,
     private val youtube: YTMusicApiClient,
     private val importer: WebLibraryImporter,
     private val playlists: PlaylistDao,
