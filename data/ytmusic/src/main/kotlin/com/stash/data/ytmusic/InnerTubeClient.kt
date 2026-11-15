@@ -378,6 +378,39 @@ class InnerTubeClient @Inject constructor(
     }
 
     /**
+     * The `next` action with a station's extra fields, which is what turns it into a radio.
+     *
+     * [playlistId] is what makes the answer a *station*: the web player sends
+     * `RDAMVM<videoId>` for a song's own radio and an `RDEM…` id for an artist's, and the
+     * response then carries a `playlistPanelRenderer` instead of a single up-next row.
+     * [params] scopes a station (an artist's header offers one). [continuation] asks for
+     * the next page of a station already running; the body then carries only the context
+     * and the token, the same shape `browse` uses for its own continuations.
+     *
+     * A separate method rather than more defaults on [next]: that one is stubbed by
+     * `getRelatedSongs`'s tests, and widening its parameter list would have made every one
+     * of their matchers wrong for no behavioural gain.
+     *
+     * @return The parsed JSON response, or null on failure.
+     */
+    suspend fun nextQueue(
+        videoId: String? = null,
+        playlistId: String? = null,
+        params: String? = null,
+        continuation: String? = null,
+    ): JsonObject? = withContext(Dispatchers.IO) {
+        val variant = InnerTubeVariant.WEB_REMIX
+        val body = buildJsonObject {
+            put("context", buildContext(variant))
+            videoId?.takeIf { it.isNotBlank() }?.let { put("videoId", it) }
+            playlistId?.takeIf { it.isNotBlank() }?.let { put("playlistId", it) }
+            params?.takeIf { it.isNotBlank() }?.let { put("params", it) }
+            continuation?.takeIf { it.isNotBlank() }?.let { put("continuation", it) }
+        }
+        executeRequest("$BASE_URL/next", body, null, variant)
+    }
+
+    /**
      * Calls the InnerTube `browse` action with a continuation token.
      *
      * Continuation requests fetch the next page of a previously-browsed surface

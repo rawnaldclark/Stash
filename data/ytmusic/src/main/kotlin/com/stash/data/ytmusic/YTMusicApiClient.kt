@@ -1107,6 +1107,49 @@ class YTMusicApiClient @Inject constructor(
     }
 
     /**
+     * Starts a YouTube Music station from [videoId] and returns its first page
+     * ([RadioQueueParser]). `playlistId` defaults to `RDAMVM<videoId>`, the id the web
+     * player uses for a song's own radio; an artist's station passes the `RDEM…` id and
+     * its `params` from [artistRadioEndpoint] instead.
+     *
+     * Null when YouTube didn't answer or the answer had no queue panel. An *empty* page
+     * is a normal answer (a station that offers nothing); the caller decides what to tell
+     * the listener. Personalised by the account when one is connected, generic when not.
+     */
+    suspend fun startRadio(
+        videoId: String,
+        playlistId: String = "RDAMVM$videoId",
+        params: String? = null,
+    ): RadioQueuePage? {
+        val response = innerTubeClient.nextQueue(videoId = videoId, playlistId = playlistId, params = params)
+            ?: return null
+        return RadioQueueParser.page(response).takeIf { it.tracks.isNotEmpty() || it.continuation != null }
+    }
+
+    /**
+     * The next page of a station already running ([RadioQueuePage.continuation]). Null
+     * when YouTube didn't answer; a page with no tracks and no continuation is the
+     * station's end.
+     */
+    suspend fun continueRadio(continuation: String): RadioQueuePage? {
+        val response = innerTubeClient.nextQueue(continuation = continuation) ?: return null
+        return RadioQueueParser.page(response)
+    }
+
+    /**
+     * An artist's own station: the "Radio" play button on their page carries the `RDEM…`
+     * playlist id and often a `params` that scopes it. Read from a plain
+     * [getArtistPage] answer, so a station built from an artist profile costs one call.
+     *
+     * @return the seed the station needs (videoId, playlistId, params), or null when the
+     *   page offers no radio button.
+     */
+    suspend fun artistRadioEndpoint(browseId: String): ArtistRadioEndpoint? {
+        val response = innerTubeClient.browse(browseId) ?: return null
+        return ArtistRadioEndpoint.from(response)
+    }
+
+    /**
      * The songs YouTube Music relates to [videoId] (its watch page's "Related" tab, "You might also like" first):
      * `next(videoId)`, then a browse of the tab found by its `MPTRt_` id ([RelatedResponseParser]). Works signed out;
      * signed in, the request carries the account like every other and the answer may be personal. Null when either
