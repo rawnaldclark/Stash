@@ -50,7 +50,14 @@ class RadioEnginePreferencesManager @Inject constructor(
     }
 
     companion object {
-        /** YouTube Music (owner 2026-11-15); see [RadioEnginePreference] for why it's safe as a default. */
-        val DEFAULT: RadioEngineId = RadioEngineId.YOUTUBE_MUSIC
+        /**
+         * The Stash engine, so the second one ships opt-in.
+         *
+         * The built-in engine is the default on purpose: a station is the app's own promise,
+         * and a listener who never opens Settings should get the behaviour the release notes
+         * describe rather than a different recommender. Reaching for YouTube Music is one tap
+         * away in Settings ▸ Playback.
+         */
+        val DEFAULT: RadioEngineId = RadioEngineId.STASH
     }
 }

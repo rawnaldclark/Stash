@@ -437,7 +437,7 @@ class SettingsViewModel @Inject constructor(
             true,
         )
 
-    /** Which engine builds stations: Stash's Last.fm graph or YouTube Music. YouTube Music by default. */
+    /** Which engine builds stations: Stash's Last.fm graph, or YouTube Music. Stash by default. */
     val radioEngine: kotlinx.coroutines.flow.StateFlow<com.stash.core.data.radio.RadioEngineId> =
         radioEnginePreference.engine.stateIn(
             viewModelScope,
