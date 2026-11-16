@@ -60,7 +60,7 @@ internal data class TidalTokensDto(
 internal data class TidalErrorDto(val error: String = "")
 
 /**
- * A listener's own Tidal sign-in (device code), through Stash's relay (`/user/tidal/*`): the OAuth client id stays a
+ * A listener's own Tidal sign-in (device code), through Stash's relay (its user/tidal routes): the OAuth client id stays a
  * Worker secret. The relay stores nothing; the tokens come back here and [TidalLoginStore] keeps them.
  * Never logs a body, a code or a token.
  */
