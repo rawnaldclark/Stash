@@ -156,6 +156,7 @@ internal fun AddonPageContent(
         // What it does.
         val about = when {
             row.kind == AddonOverview.Kind.TIDAL && row.ownServer -> stringResource(R.string.settings_addons_tidal_own_desc)
+            row.kind == AddonOverview.Kind.TIDAL && live.tidalLogin -> stringResource(R.string.settings_addons_tidal_login_desc)
             row.kind == AddonOverview.Kind.TIDAL -> stringResource(R.string.settings_addons_tidal_stash_desc)
             row.kind == AddonOverview.Kind.QOBUZ -> stringResource(R.string.settings_addons_qobuz_desc)
             else -> row.summary

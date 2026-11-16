@@ -8,6 +8,7 @@ import com.stash.core.addons.Trust
 import com.stash.data.download.lossless.addon.AddonLinks
 import com.stash.data.download.lossless.addon.AddonOverview
 import com.stash.data.download.lossless.tidal.OwnTidalServer
+import com.stash.data.download.lossless.tidal.TidalLoginStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -90,13 +91,14 @@ class AddonsViewModel @Inject constructor(
 class AddonPageViewModel @Inject constructor(
     private val overview: AddonOverview,
     private val own: OwnTidalServer,
+    private val login: TidalLoginStore,
 ) : ViewModel() {
 
     val state: StateFlow<AddonOverview.State> =
         overview.state.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AddonOverview.State())
 
     /** What only the open page asks. [paused]: it failed or asked to be left alone, so it isn't being asked right now. */
-    data class Live(val paused: Boolean = false, val quota: Quota? = null, val ownTokenSaved: Boolean = false)
+    data class Live(val paused: Boolean = false, val quota: Quota? = null, val ownTokenSaved: Boolean = false, val tidalLogin: Boolean = false)
 
     private val liveState = MutableStateFlow(Live())
     val live: StateFlow<Live> = liveState.asStateFlow()
@@ -109,6 +111,7 @@ class AddonPageViewModel @Inject constructor(
                     paused = overview.paused(row),
                     quota = if (row.metered && row.status == AddonOverview.Status.WORKING) overview.quota(row) else null,
                     ownTokenSaved = row.ownServer && own.now()?.token != null,
+                    tidalLogin = row.kind == AddonOverview.Kind.TIDAL && !row.ownServer && login.hasLoginNow(),
                 )
             } catch (e: CancellationException) {
                 throw e

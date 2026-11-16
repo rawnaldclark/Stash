@@ -7,6 +7,7 @@ import com.stash.data.download.lossless.relay.TidalRelay
 import com.stash.data.download.lossless.tidal.TidalCandidate
 import com.stash.data.download.lossless.tidal.TidalClient
 import com.stash.data.download.lossless.tidal.TidalDebugSettings
+import com.stash.data.download.lossless.tidal.TidalLoginStore
 import com.stash.data.download.lossless.tidal.TidalStreamMode
 import com.stash.data.download.lossless.tidal.TidalWire
 import com.stash.data.download.lossless.tidal.TidalWireStream
@@ -96,6 +97,7 @@ class LegacyRelayWire @Inject constructor(
     sharedClient: OkHttpClient,
     private val signer: RelaySigner,
     private val quota: LosslessQuota,
+    private val login: TidalLoginStore,
 ) {
     /**
      * Short timeouts: the server itself caps `/stream` at 7 s, and a self-hosted box that is down
@@ -155,7 +157,7 @@ class LegacyRelayWire @Inject constructor(
                 .build()
             // Only the owner's relay (from the signed config) verifies install headers; a user's
             // own server never sees our install id.
-            val sign = if (owner) "td:${id.removePrefix("td:")}" else null
+            val sign = if (owner && !relay.login) "td:${id.removePrefix("td:")}" else null
             return when (val r = get(url, signPayload = sign)) {
                 is WireReply.Ok -> {
                     val s = json.decodeFromString<BitchordStreamResponse>(r.value)
@@ -188,10 +190,14 @@ class LegacyRelayWire @Inject constructor(
          */
         private suspend fun get(url: HttpUrl, signPayload: String?): WireReply<String> {
             var mayRetrySkew = true
+            var mayRefresh = true
             while (true) {
+                // Their own Tidal login: their access token is the seat (the relay skips its pool and the install counter).
+                val userToken = if (relay.login) (login.accessToken() ?: return WireReply.Error(401)) else null
                 val b = Request.Builder().url(url).get()
                     .header("Accept", "application/json")
                     .apply { if (relay.token != null) header("X-Access-Token", relay.token) }
+                    .apply { if (userToken != null) header("X-Tidal-User-Token", userToken) }
                 if (url.encodedPath.startsWith("/stream/")) signer.appBuild(b)
                 val signed = signPayload != null && signer.sign(b, signPayload, clock())
                 if (signPayload != null && owner) signer.entitle(b)
@@ -204,7 +210,17 @@ class LegacyRelayWire @Inject constructor(
                     return WireReply.Unreachable
                 }
                 val reply = response.use { r ->
-                    if (r.code == 401 && signed && mayRetrySkew && signer.adoptServerTime(r, clock())) null else reply(r)
+                    when {
+                        r.code == 401 && relay.login -> when {
+                            errorCode(r) != "user_token_expired" || !mayRefresh -> WireReply.Error(401)
+                            else -> {
+                                mayRefresh = false
+                                if (login.refreshNow(userToken)) null else WireReply.Error(401)
+                            }
+                        }
+                        r.code == 401 && signed && mayRetrySkew && signer.adoptServerTime(r, clock()) -> null
+                        else -> reply(r)
+                    }
                 }
                 if (reply != null) return reply
                 mayRetrySkew = false
@@ -222,6 +238,8 @@ class LegacyRelayWire @Inject constructor(
                 return when (r.code) {
                     404 -> WireReply.NotFound(definitive = errorCode(r) == "lossless_unavailable")
                     RelaySigner.APP_TOO_OLD -> WireReply.AppTooOld
+                    // Their Tidal account can't play it in full (no subscription): about the account, so a short miss.
+                    403 -> if (relay.login) WireReply.NotFound(definitive = false) else WireReply.Error(403)
                     // The relay says how long: 15 s when only seat pacing blocks, 30 s for its
                     // per-network limiter, 300 / 600 s when capped or paused.
                     503 -> WireReply.Busy(now + retryAfterMs(r, TidalClient.BUSY_MIN_RETRY_AFTER_MS, TidalClient.BUSY_MAX_RETRY_AFTER_MS))

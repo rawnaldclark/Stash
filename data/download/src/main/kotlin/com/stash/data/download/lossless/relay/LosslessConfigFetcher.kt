@@ -43,7 +43,7 @@ import okhttp3.OkHttpClient
  * server from Settings rather than the owner-hosted one from the signed config; only the
  * owner's relay gets install headers and counts the daily lossless allowance.
  */
-data class TidalRelay(val base: String, val token: String?, val userOwned: Boolean = false)
+data class TidalRelay(val base: String, val token: String?, val userOwned: Boolean = false, val login: Boolean = false)
 
 /**
  * The signed runtime config. A config from before 2026-11 may still carry `relays` (the retired
