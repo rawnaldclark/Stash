@@ -289,6 +289,19 @@ jobs:
       - name: Install NDK and CMake
         run: echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" "cmake;3.22.1" > /dev/null
 
+      - name: Override R8 version
+        run: |
+          sed -i '/pluginManagement {/a\
+              buildscript {\
+                  repositories {\
+                      google()\
+                      mavenCentral()\
+                  }\
+                  dependencies {\
+                      classpath("com.android.tools:r8:8.13.19")\
+                  }\
+              }' settings.gradle.kts
+
       # A 6 GB Gradle heap, as release.yml uses: building from cold on the runner with gradle.properties' 4 GB, R8
       # ran for over 20 minutes without finishing. The runner has 16 GB.
       - name: Assemble release APK
