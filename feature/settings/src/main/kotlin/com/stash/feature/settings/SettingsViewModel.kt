@@ -2044,6 +2044,28 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** Connect with a pasted Qobuz user_auth_token instead of email + password. */
+    fun onConnectQobuzToken(token: String) {
+        if (token.isBlank()) {
+            _qobuzConnectError.value = "Paste your Qobuz user auth token."
+            return
+        }
+        viewModelScope.launch {
+            _qobuzConnecting.value = true
+            _qobuzConnectError.value = null
+            when (qobuzAccountConnector.connectWithToken(token)) {
+                is QobuzLoginResult.Success -> Unit
+                QobuzLoginResult.InvalidCredentials ->
+                    _qobuzConnectError.value = "That token was rejected. It may be expired or from a different app."
+                QobuzLoginResult.FreeAccount ->
+                    _qobuzConnectError.value = "That account has no lossless subscription — Qobuz only serves FLAC to paid plans."
+                QobuzLoginResult.Error ->
+                    _qobuzConnectError.value = "Couldn't reach Qobuz. Check your connection and try again."
+            }
+            _qobuzConnecting.value = false
+        }
+    }
+
     /** Disconnect the connected Qobuz account. */
     fun onDisconnectQobuz() {
         viewModelScope.launch {

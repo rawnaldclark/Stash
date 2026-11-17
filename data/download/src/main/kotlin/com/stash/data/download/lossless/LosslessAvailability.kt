@@ -5,6 +5,7 @@ import com.stash.core.addons.InstalledAddon
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.tidal.OwnTidalServer
+import com.stash.data.download.lossless.tidal.TidalLoginStore
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -48,6 +49,8 @@ class LosslessAvailability(
     private val switchedOff: Flow<Set<String>> = flowOf(emptySet()),
     /** The add-ons that are on; none in hand-built tests. */
     private val addons: Flow<List<InstalledAddon>> = flowOf(emptyList()),
+    /** The user's own Tidal login is stored; false in hand-built tests. */
+    private val tidalLogin: Flow<Boolean> = flowOf(false),
 ) {
     @Inject constructor(
         credentialStore: QbdlxCredentialStore,
@@ -56,7 +59,8 @@ class LosslessAvailability(
         playOrder: PlayOrder,
         switches: PlayOrderSwitches,
         registry: AddonRegistry,
-    ) : this(credentialStore, config, own, playOrder.order, switches.off, registry.addons)
+        login: TidalLoginStore,
+    ) : this(credentialStore, config, own, playOrder.order, switches.off, registry.addons, login.hasLogin)
 
     val qbdlxEnabled: Flow<Boolean> = credentialStore.hasLogin
 
@@ -93,8 +97,8 @@ class LosslessAvailability(
      * mean anything to them.
      */
     val stashTidalRelayInUse: Flow<Boolean> =
-        combine(config.tidalRelay, own.endpoint, switchedOff) { stashTidal, ownTidal, off ->
-            stashTidal != null && ownTidal == null && PlayOrder.TIDAL !in off
+        combine(config.tidalRelay, own.endpoint, switchedOff, tidalLogin) { stashTidal, ownTidal, off, login ->
+            stashTidal != null && ownTidal == null && !login && PlayOrder.TIDAL !in off
         }
 
     val anyUserOwned: Flow<Boolean> = credentialStore.hasLogin
@@ -152,7 +156,8 @@ class LosslessAvailability(
             credentialStore.connectedEmailFlow,
             own.endpoint,
             config.tidalRelay,
-        ) { hasLogin, email, ownTidal, stashTidal -> Named(hasLogin, email, ownTidal, stashTidal != null) },
+            tidalLogin,
+        ) { hasLogin, email, ownTidal, stashTidal, login -> Named(hasLogin, email, ownTidal, stashTidal != null, login) },
         order,
         switchedOff,
         addons,
@@ -168,7 +173,11 @@ class LosslessAvailability(
             else -> RoutingRow(
                 id = PlayOrder.TIDAL,
                 label = "Tidal",
-                detail = if (named.stashTidal) "configured" else "not configured",
+                detail = when {
+                    named.stashTidal && named.tidalLogin -> "your account"
+                    named.stashTidal -> "configured"
+                    else -> "not configured"
+                },
                 state = if (named.stashTidal) RoutingState.CONFIGURED else RoutingState.NOT_CONFIGURED,
             )
         }
@@ -190,7 +199,7 @@ class LosslessAvailability(
     }
 
     /** The two named rows' facts, as one value for [routingRows]' combine. */
-    private data class Named(val hasLogin: Boolean, val email: String?, val ownTidal: String?, val stashTidal: Boolean)
+    private data class Named(val hasLogin: Boolean, val email: String?, val ownTidal: String?, val stashTidal: Boolean, val tidalLogin: Boolean = false)
 
     private companion object {
         /** [ownTidalFirst]'s ownership rule, shared with [routingRows] so the list and the chains agree. */

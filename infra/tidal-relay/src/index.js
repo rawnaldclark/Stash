@@ -51,6 +51,9 @@ export default {
         const { success } = await env.REQUEST_RL.limit({ key: networkOf(request.headers.get("CF-Connecting-IP")) });
         if (!success) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
       }
+      if (url.pathname === "/user/tidal/start" && request.method === "POST") return userDeviceStart(request, env);
+      if (url.pathname === "/user/tidal/poll" && request.method === "POST") return userDevicePoll(request, env);
+      if (url.pathname === "/user/tidal/refresh" && request.method === "POST") return userRefresh(request, env);
       if (url.pathname === "/admin/device/start" && request.method === "POST") return startDeviceAuth(request, env);
       if (url.pathname === "/admin/device/poll" && request.method === "POST") return pollDeviceAuth(request, env);
       if (url.pathname === "/admin/seats/pkce" && request.method === "POST") return addPkceSeat(request, env);
@@ -73,9 +76,10 @@ export default {
         const buildDenial = appBuildDenial(request, env, webRequest);
         if (buildDenial) return buildDenial;
         if (env.TIDAL_RELAY_PAUSED === "1") return paused();
-        const caller = installOf(request, env, `td:${streamMatch[1]}`, !webRequest);
+        const own = ownSeat(request);
+        const caller = own ? { none: "own" } : installOf(request, env, `td:${streamMatch[1]}`, !webRequest);
         if (caller.denial) return caller.denial;
-        const quota = await admitStream(request, env);
+        const quota = own ? {} : await admitStream(request, env);
         if (quota.denial) return quota.denial;
         // The daily counter, shared with the Qobuz relay. Tidal's AAC (?aac=1, ?aac=only) counts like FLAC, and past
         // the cap every mode gets the 429: no uncounted AAC after it.
@@ -84,10 +88,10 @@ export default {
         if (mseMode(url) && aac) return json({ error: "bad_request", message: "web=mse takes no aac" }, 400);
         const standing = caller.subject ? await readStanding(request, env, caller.subject, now()) : null;
         if (standing?.over) { const cap = capAnswer(standing, now()); return json(cap.body, cap.status, cap.headers); }
-        const { response, upstream } = await stream(streamMatch[1], request, env, quota, aac);
+        const { response, upstream } = await stream(streamMatch[1], request, env, quota, aac, own);
         // Like Qobuz's answered-mint quota: successful streams and definitive
         // track misses count once per caller request; upstream/account failures do not.
-        if (response.status === 200 || response.status === 404) await spendStream(request, env, quota, upstream);
+        if (!own && (response.status === 200 || response.status === 404)) await spendStream(request, env, quota, upstream);
         if (standing) await meterLossless(response, standing);
         return response;
       }
@@ -100,6 +104,78 @@ export default {
     }
   },
 };
+
+// ---- A listener's own Tidal login ----
+// Nothing is stored: start/poll/refresh forward to Tidal under the shared OAuth client and hand the tokens back.
+// The app sends its access token as X-Tidal-User-Token, which /search and /stream use as the seat instead of the pool.
+
+/** The caller's own Tidal access token as a seat, or null. id "own" matches no D1 row, so cool/strike/bump on it are no-ops. */
+function ownSeat(request) {
+  const t = request.headers.get("X-Tidal-User-Token") || "";
+  return t ? { id: "own", access_token: t, refresh_token: "", token_expires_at: now() + 3600, generation: 0, client: "device", own: true } : null;
+}
+
+function userTokenExpired() { return json({ error: "user_token_expired" }, 401); }
+
+function userTokens(data, extra = {}) {
+  return {
+    ...extra,
+    access_token: data.access_token,
+    refresh_token: data.refresh_token || "",
+    expires_in: Number(data.expires_in || 604800),
+    user_id: String(data.user?.userId || data.user?.id || data.user_id || ""),
+  };
+}
+
+async function userDeviceStart(request, env) {
+  if (!authorized(request, env.ACCESS_TOKEN)) return unauthorized();
+  const form = new URLSearchParams({ client_id: env.TIDAL_CLIENT_ID, scope: SCOPE });
+  const r = await fetch(`${AUTH}/device_authorization`, { method: "POST", headers: oauthHeaders(), body: form });
+  if (!r.ok) return json({ error: "device_authorization_failed" }, 502);
+  const d = await r.json().catch(() => ({}));
+  const deviceCode = d.deviceCode || d.device_code;
+  const userCode = d.userCode || d.user_code;
+  if (!deviceCode || !userCode) return json({ error: "invalid_device_authorization" }, 502);
+  return json({
+    device_code: deviceCode,
+    user_code: userCode,
+    verification_uri: `https://link.tidal.com/${encodeURIComponent(userCode)}`,
+    expires_in: Number(d.expiresIn || d.expires_in || 300),
+    interval: Math.max(Number(d.interval || 5), 4),
+  });
+}
+
+async function userDevicePoll(request, env) {
+  if (!authorized(request, env.ACCESS_TOKEN)) return unauthorized();
+  const body = await request.json().catch(() => ({}));
+  const deviceCode = typeof body.device_code === "string" ? body.device_code : "";
+  if (!deviceCode || deviceCode.length > 512) return json({ error: "bad_request" }, 400);
+  const form = new URLSearchParams({ client_id: env.TIDAL_CLIENT_ID, device_code: deviceCode, grant_type: "urn:ietf:params:oauth:grant-type:device_code", scope: SCOPE });
+  if (env.TIDAL_CLIENT_SECRET) form.set("client_secret", env.TIDAL_CLIENT_SECRET);
+  const r = await fetch(`${AUTH}/token`, { method: "POST", headers: oauthHeaders(), body: form });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    if (["expired_token", "invalid_grant", "access_denied"].includes(data.error)) return json({ status: "expired" }, 410);
+    return json({ status: "pending" }, 202);
+  }
+  return json(userTokens(data, { status: "authorized" }));
+}
+
+async function userRefresh(request, env) {
+  if (!authorized(request, env.ACCESS_TOKEN)) return unauthorized();
+  const body = await request.json().catch(() => ({}));
+  const refresh = typeof body.refresh_token === "string" ? body.refresh_token : "";
+  if (!refresh || refresh.length > 4096 || /\s/.test(refresh)) return json({ error: "bad_request" }, 400);
+  const r = await fetch(`${AUTH}/token`, { method: "POST", headers: oauthHeaders(), body: refreshForm({ client: "device", refresh_token: refresh }, env) }).catch(() => null);
+  if (!r) return json({ error: "upstream_unavailable" }, 503);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    return (r.status === 400 || r.status === 401) && data.error === "invalid_grant"
+      ? json({ error: "login_expired" }, 401)
+      : json({ error: "upstream_error" }, 502);
+  }
+  return json(userTokens({ ...data, refresh_token: data.refresh_token || refresh }));
+}
 
 function paused() {
   return json({ error: "tidal_relay_paused" }, 503, { "Retry-After": "600" });
@@ -366,11 +442,12 @@ async function search(url, request, env) {
   const cached = await cachedJson(env, key);
   if (cached) return cached;
   // Cache hits are free; a miss is the only search that costs Tidal, so only a miss is metered.
-  const quota = await admitSearch(request, env);
+  const own = ownSeat(request);
+  const quota = own ? {} : await admitSearch(request, env);
   if (quota.denial) return quota.denial;
-  if (await softOpenBlocks(env)) return busy();
-  if (!await upstreamAllowed(request, env)) return busy(UPSTREAM_RL_RETRY_AFTER);
-  const response = await searchUncached(query, country, request, env, () => spendSearch(env, quota));
+  if (!own && await softOpenBlocks(env)) return busy();
+  if (!own && !await upstreamAllowed(request, env)) return busy(UPSTREAM_RL_RETRY_AFTER);
+  const response = await searchUncached(query, country, request, env, () => spendSearch(env, quota), own);
   if (response.status === 200) await cacheJson(env, key, response, RESPONSE_CACHE_TTL);
   return response;
 }
@@ -409,14 +486,14 @@ async function upstreamAllowed(request, env) {
 }
 
 /** @param onSeat called once, when the first seat is taken: the search now reaches Tidal. */
-async function searchUncached(query, cc, request, env, onSeat = async () => {}) {
+async function searchUncached(query, cc, request, env, onSeat = async () => {}, own = null) {
   let data;
   let charged = false;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const selected = await takeAccount(env);
+    const selected = own || await takeAccount(env);
     if (!selected) return noSeat(env);
     if (!charged) { charged = true; await onSeat(); }
-    const account = await refreshIfNeeded(selected, env);
+    const account = own || await refreshIfNeeded(selected, env);
     if (!account) { await coolAccount(env, selected.id, 300); continue; }
     const r = await tidalFetch(`/search/tracks?query=${encodeURIComponent(query)}&limit=30&offset=0&countryCode=${cc}`, account, env);
     if (r.status === 429) {
@@ -426,6 +503,7 @@ async function searchUncached(query, cc, request, env, onSeat = async () => {}) 
     if (r.status === 401) {
       const denial = await r.clone().json().catch(() => ({}));
       if (denial.subStatus === 4005) return searchError();
+      if (own) return userTokenExpired();
       await onSessionRefused(env, selected, "search");
       return busy();
     }
@@ -471,7 +549,7 @@ function searchError() { return json({ error: "upstream_error" }, 502); }
  * @returns {{response: Response, upstream: boolean}} upstream = the answer cost Tidal a call
  * (a cache miss), the only kind the global daily cap is charged for.
  */
-async function stream(trackId, request, env, quota = {}, aac = aacMode(new URL(request.url))) {
+async function stream(trackId, request, env, quota = {}, aac = aacMode(new URL(request.url)), own = null) {
   const url = new URL(request.url);
   const mse = mseMode(url);
   const web = mse ? "mse" : url.searchParams.get("web") === "1" ? "web" : "app";
@@ -483,16 +561,18 @@ async function stream(trackId, request, env, quota = {}, aac = aacMode(new URL(r
   const key = keyFor(noHires ? "only-nohires" : aac);
   // ?aac=only&hires=0 (the app's AAC downloads) is served by the full ?aac=only entry when that is
   // warm: the same AAC, with a hires field the app ignores.
-  const cached = await cachedJson(env, key) || (noHires ? await cachedJson(env, keyFor("only")) : null);
+  const cached = own ? null : await cachedJson(env, key) || (noHires ? await cachedJson(env, keyFor("only")) : null);
   if (cached) return { response: cached, upstream: false };
   if (quota.globalFull) return { response: globalCapped(), upstream: false };
   // No live web seat at all: the player's cue to stay on AAC (a 503 would make it retry). Never cached, so a seat
   // added through /admin/seats/pkce serves on the next ask.
   if (mse && !await hasLivePkceSeat(env)) return { response: webFlacUnavailable(), upstream: false };
-  if (await softOpenBlocks(env)) return { response: busy(), upstream: false };
-  if (!await upstreamAllowed(request, env)) return { response: busy(UPSTREAM_RL_RETRY_AFTER), upstream: false };
+  if (!own && await softOpenBlocks(env)) return { response: busy(), upstream: false };
+  if (!own && !await upstreamAllowed(request, env)) return { response: busy(UPSTREAM_RL_RETRY_AFTER), upstream: false };
   const trace = {};
-  const response = await streamUncached(trackId, request, env, aac, trace);
+  const response = await streamUncached(trackId, request, env, aac, trace, own);
+  // Their own seat: answers are never written to the shared cache.
+  if (own) return { response, upstream: false };
   let body;
   try { body = await response.clone().json(); } catch { return { response, upstream: true }; }
   if (trace.path) logV2Stream(trackId, trace, response, body);
@@ -547,7 +627,7 @@ function aacMode(url) {
 }
 
 /** @param trace filled for stream()'s log line and cache TTL when the v2 path runs: path, reason, formats, bits, rate, transient. */
-async function streamUncached(trackId, request, env, aac = aacMode(new URL(request.url)), trace = {}) {
+async function streamUncached(trackId, request, env, aac = aacMode(new URL(request.url)), trace = {}, own = null) {
   // ?aac=1: when no account can play the track losslessly, answer with Tidal's AAC
   // stream (labelled codec "aac") instead of lossless_unavailable. Opt-in so the
   // download path, which must never save AAC as FLAC, keeps the lossless-only answer.
@@ -572,10 +652,11 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
   // preview; a second, different seat's preview is the track's (see the isPreviewAnswer branch).
   let previewedBy = null;
   for (let attempt = 0; attempt < STREAM_SEATS; attempt++) {
+    if (own && attempt > 0) break; // one seat only: never retried on another
     if (useV2 && budget.calls >= 2) break;
-    const account = await takeAccount(env, seatKind);
+    const account = own || await takeAccount(env, seatKind);
     if (!account) return noSeat(env, seatKind.client);
-    const fresh = await refreshIfNeeded(account, env);
+    const fresh = own || await refreshIfNeeded(account, env);
     if (!fresh) {
       await coolAccount(env, account.id, 300);
       continue;
@@ -597,6 +678,7 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
     if (data.status === 401) {
       const denial = await data.clone().json().catch(() => ({}));
       if (denial.subStatus === 4005) return json({ error: "not_available" }, 404);
+      if (own) return userTokenExpired();
       await onSessionRefused(env, account, "playbackinfo");
       return busy();
     }
@@ -618,6 +700,8 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
     // album whole minutes later. So it is cooled like a 5xx and the next seat asked; with none left, busy (never
     // cached) and the app asks again later. v2 refuses its own previews (v2Stream).
     if (isPreviewAnswer(info)) {
+      // Their account can't play it in full (no subscription): about the account, not the song, so not cached as a miss.
+      if (own) return json({ error: "own_account_preview" }, 403);
       if (previewedBy !== null && String(previewedBy) !== String(account.id)) {
         // A second, different seat with only the preview of this track: the track's preview (Tidal plays 30 s of it to
         // anyone), not a second lapsed seat. Resting seats for it would let one phone re-asking the song rest the whole
@@ -725,6 +809,10 @@ async function v2Stream(trackId, request, env, seat, account, allowAac, budget, 
     }
     if (r.status === 401) { // survived tidalFetch's refresh + retry: the same strike v1 gives
       trace.reason = "401";
+      if (seat.own) {
+        const d = await r.clone().json().catch(() => ({}));
+        return { response: d.subStatus === 4005 ? json({ error: "not_available" }, 404) : userTokenExpired() };
+      }
       await onSessionRefused(env, seat, "trackmanifests");
       return { response: busy() };
     }

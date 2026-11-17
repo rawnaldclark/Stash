@@ -1515,4 +1515,18 @@
     <string name="settings_addons_sheet_more_title">Wants to see more</string>
     <string name="settings_addons_sheet_more_intro">%1$s, on %2$s, now asks for more than you agreed to. Stash doesn\'t run it or check it.</string>
     <string name="settings_addons_sheet_allow">Allow</string>
+
+    <!-- Qobuz token -->
+    <string name="settings_qobuz_use_token">Use a token instead</string>
+    <string name="settings_qobuz_token_label">User auth token</string>
+    <string name="settings_qobuz_token_hint">From play.qobuz.com or open.qobuz.com (user_auth_token)</string>
+
+    <!-- Tidal account -->
+    <string name="settings_tidal_account_title">Your Tidal account</string>
+    <string name="settings_tidal_account_desc">Sign in with your own Tidal subscription. Songs play from your account, with no daily limit.</string>
+    <string name="settings_tidal_account_sign_in">Sign in with Tidal</string>
+    <string name="settings_tidal_account_connected">Connected. Songs play from your Tidal account.</string>
+    <string name="settings_tidal_account_waiting">Open Tidal, sign in and approve. Code: %1$s</string>
+    <string name="settings_tidal_account_open_link">Open Tidal</string>
+    <string name="settings_addons_tidal_login_desc">Tidal plays through your own Tidal account, with no daily limit. Sign out under Lossless sources.</string>
 </resources>

@@ -22,6 +22,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import java.util.concurrent.ConcurrentHashMap
+import io.mockk.mockk
 
 /** In-memory [AddonRefDao] for the Tidal rung: [rows] keyed by song key (addon `tidal` only). */
 class FakeAddonRefDao : AddonRefDao {
@@ -92,8 +93,9 @@ fun tidalClient(
     addonClient: HttpAddonClient = HttpAddonClient(http, TestAddonHost(), TestAddonHost(), TestAddonHost(), LocalHttp),
     debug: TidalDebugSettings = TidalDebugSettings.off(),
 ): TidalClient {
-    val legacy = LegacyRelayWire(http, signer, quota)
-    val wires = TidalWires(config, registry, legacy, AddonV1Wire(addonClient, quota), debug, OwnTidalServer(NoUserAddons, prefs))
+    val login: TidalLoginStore = mockk(relaxed = true)
+    val legacy = LegacyRelayWire(http, signer, quota, login)
+    val wires = TidalWires(config, registry, legacy, AddonV1Wire(addonClient, quota), debug, OwnTidalServer(NoUserAddons, prefs), login)
     return TidalClient(prefs, dao, quota, wires)
 }
 
