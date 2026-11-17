@@ -46,7 +46,10 @@ class TidalWiresRouteTest {
 
     private val firstPartyTidal = InstalledAddon(base = ADDON_BASE, manifest = manifest(), firstParty = true)
 
-    private fun wires(debug: TidalDebugSettings = TidalDebugSettings.off()): TidalWires {
+    private fun wires(
+        debug: TidalDebugSettings = TidalDebugSettings.off(),
+        login: TidalLoginStore = mockk(relaxed = true),
+    ): TidalWires {
         val prefs: LosslessSourcePreferences = mockk {
             every { bitchordEndpoint } returns ownEndpoint
             coEvery { bitchordEndpointNow() } answers { ownEndpoint.value }
@@ -61,7 +64,6 @@ class TidalWiresRouteTest {
         val quota = LosslessQuota.inMemory()
         val http = OkHttpClient()
         val addonClient = HttpAddonClient(http, TestAddonHost(), TestAddonHost(), TestAddonHost(), LocalHttp)
-        val login: TidalLoginStore = mockk(relaxed = true)
         val legacy = LegacyRelayWire(http, RelaySigner(config, supporter(), appVersionProvider()), quota, login)
         return TidalWires(config, registry, legacy, AddonV1Wire(addonClient, quota), debug, OwnTidalServer(NoUserAddons, prefs), login)
     }
