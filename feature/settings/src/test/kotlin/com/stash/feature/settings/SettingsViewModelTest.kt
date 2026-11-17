@@ -47,6 +47,7 @@ class SettingsViewModelTest {
 
     private val autoplayRadioPreference = mockk<com.stash.core.data.prefs.AutoplayRadioPreference>(relaxed = true)
     private val homeSectionsPreference = mockk<HomeSectionsPreference>(relaxed = true)
+    private val radioEnginePreference = mockk<com.stash.core.data.prefs.RadioEnginePreference>(relaxed = true)
     private val storagePreference = mockk<com.stash.core.data.prefs.StoragePreference>(relaxed = true)
 
     private val likePreferences = mockk<com.stash.core.data.prefs.LikePreferences>(relaxed = true)
@@ -98,6 +99,7 @@ class SettingsViewModelTest {
         streamingPreference = mockk(relaxed = true),
         crossfadePreference = mockk(relaxed = true),
         autoplayRadioPreference = autoplayRadioPreference,
+        radioEnginePreference = radioEnginePreference,
         headphonePreference = mockk(relaxed = true),
         databaseBackupManager = mockk(relaxed = true),
         sleepTimerController = mockk(relaxed = true),
@@ -192,6 +194,15 @@ class SettingsViewModelTest {
         newVm().onAutoplayRadioToggle(true)
         advanceUntilIdle()
         coVerify { autoplayRadioPreference.setEnabled(true) }
+    }
+
+    // -- Radio engine (2026-11-15) -------------------------------------------------------
+
+    @Test
+    fun `choosing a radio engine persists the choice`() = runTest {
+        newVm().onRadioEngineChange(com.stash.core.data.radio.RadioEngineId.STASH)
+        advanceUntilIdle()
+        coVerify { radioEnginePreference.setEngine(com.stash.core.data.radio.RadioEngineId.STASH) }
     }
 
     // -- Open Stash on (#428) ------------------------------------------------------------

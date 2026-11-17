@@ -57,7 +57,7 @@ class PlayerRepositoryDiskCheckThreadTest {
             connectivity = mockk<ConnectivityMonitor>(relaxed = true),
             trackDao = trackDao,
             playbackResumer = mockk(relaxed = true),
-            radioGenerator = mockk(relaxed = true),
+            radioEngines = radioEngines(mockk(relaxed = true)),
             trackIdentityEvents = trackIdentityEvents,
             playbackSessionBus = PlaybackSessionBus(),
         )

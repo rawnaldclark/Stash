@@ -86,7 +86,7 @@ class PlayerRepositoryListenTogetherTest {
             connectivity = connectivity,
             trackDao = mockk(relaxed = true),
             playbackResumer = playbackResumer,
-            radioGenerator = radioGenerator,
+            radioEngines = radioEngines(radioGenerator),
             trackIdentityEvents = trackIdentityEvents,
             playbackSessionBus = PlaybackSessionBus(),
             autoplayRadioPreference = autoplay,

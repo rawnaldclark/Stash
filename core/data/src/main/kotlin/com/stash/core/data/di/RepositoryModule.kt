@@ -8,7 +8,11 @@ import com.stash.core.data.prefs.CrossfadePreference
 import com.stash.core.data.prefs.CrossfadePreferencesManager
 import com.stash.core.data.prefs.HiResOutputPreference
 import com.stash.core.data.prefs.HiResOutputPreferencesManager
+import com.stash.core.data.prefs.RadioEnginePreference
+import com.stash.core.data.prefs.RadioEnginePreferencesManager
 import com.stash.core.data.prefs.StoragePreference
+import com.stash.core.data.radio.LastFmRadioEngine
+import com.stash.core.data.radio.RadioEngine
 import com.stash.core.data.prefs.StoragePreferencesManager
 import com.stash.core.data.prefs.ThemePreference
 import com.stash.core.data.prefs.ThemePreferencesManager
@@ -22,6 +26,8 @@ import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import dagger.multibindings.IntoSet
+import dagger.multibindings.Multibinds
 import javax.inject.Singleton
 
 /**
@@ -59,6 +65,23 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindAutoplayRadioPreference(impl: AutoplayRadioPreferencesManager): AutoplayRadioPreference
+
+    @Binds
+    @Singleton
+    abstract fun bindRadioEnginePreference(impl: RadioEnginePreferencesManager): RadioEnginePreference
+
+    /** The Stash engine is always in the graph: it is what [RadioEngines.active] falls back to. */
+    @Binds
+    @IntoSet
+    abstract fun bindLastFmRadioEngine(impl: LastFmRadioEngine): RadioEngine
+
+    /**
+     * Declares the radio engines as a possibly-empty set on top of the Stash engine bound
+     * below, so a build that drops the module contributing [RadioEngine] (the YouTube
+     * Music extension) still assembles its graph.
+     */
+    @Multibinds
+    abstract fun radioEngines(): Set<RadioEngine>
 
     @Binds
     @Singleton

@@ -116,7 +116,7 @@ class PlayerRepositoryImpl @Inject constructor(
     private val connectivity: ConnectivityMonitor,
     private val trackDao: TrackDao,
     private val playbackResumer: PlaybackResumer,
-    private val radioGenerator: com.stash.core.data.radio.RadioStationGenerator,
+    private val radioEngines: com.stash.core.data.radio.RadioEngines,
     private val trackIdentityEvents: com.stash.core.data.sync.TrackIdentityEvents,
     private val playbackSessionBus: PlaybackSessionBus,
     // Off unless Hilt binds the real store: existing tests build the repository by hand.
@@ -588,13 +588,14 @@ class PlayerRepositoryImpl @Inject constructor(
     private var librarySnapshot: List<Track> = emptyList()
 
     /** Radio station state. `radioActive` arms the radio grow watcher; the
-     *  session holds the generator's cursor/no-repeat state. Mutually exclusive
-     *  with library shuffle — startRadio disarms shuffle and vice-versa. */
+     *  station holds whichever engine is running it (the Last.fm session, or a
+     *  YouTube Music continuation). Mutually exclusive with library shuffle —
+     *  startRadio disarms shuffle and vice-versa. */
     @Volatile
     private var radioActive: Boolean = false
 
     @Volatile
-    private var radioSession: com.stash.core.data.radio.RadioSession? = null
+    private var radioStation: com.stash.core.data.radio.RadioStation? = null
 
     private val _radioSeedLabel = MutableStateFlow<String?>(null)
     override val radioSeedLabel: StateFlow<String?> = _radioSeedLabel.asStateFlow()
@@ -955,7 +956,7 @@ class PlayerRepositoryImpl @Inject constructor(
         libraryShuffleActive = false
         librarySnapshot = emptyList()
         radioActive = false
-        radioSession = null
+        radioStation = null
         _radioSeedLabel.value = null
         // A new queue has a new end: its last song may seed a station even if it did before (an album played again).
         autoplayTriedTrackId = null
@@ -1768,7 +1769,7 @@ class PlayerRepositoryImpl @Inject constructor(
         libraryShuffleActive = true
         // Mutually exclusive with radio: shuffling the library ends any station.
         radioActive = false
-        radioSession = null
+        radioStation = null
         _radioSeedLabel.value = null
         // setQueueInternal owns the logical-queue bookkeeping and playback
         // start; the pre-shuffled list IS the playback order, so Media3's
@@ -1789,12 +1790,12 @@ class PlayerRepositoryImpl @Inject constructor(
         val controller = ensureController() ?: return RadioStartResult.PlayerNotReady
         // A station is songs found online: Download mode plays only what is on the phone.
         if (!streamAllowed()) return RadioStartResult.DownloadMode
-        val (session, generated) = radioGenerator.start(seed)
+        val (station, generated) = radioEngines.active().start(seed)
         if (generated.isEmpty()) return RadioStartResult.NoStation
         // Library ids before queueing: the generator's ids are videoId hashes with no row, so a
         // saved radio queue resumed into nothing after the app was closed (withQueueIdentity).
         val firstBatch = generated.map { it.withQueueIdentity() }
-        radioSession = session
+        radioStation = station
         radioActive = true
         // Only ONE grower may run: startRadio bypasses setQueueInternal (which is
         // what normally disarms library shuffle), so disarm it here explicitly —
@@ -1854,7 +1855,7 @@ class PlayerRepositoryImpl @Inject constructor(
 
     override fun stopRadio() {
         radioActive = false
-        radioSession = null
+        radioStation = null
         _radioSeedLabel.value = null
         currentSource = com.stash.core.model.PlaybackSource.Unknown
     }
@@ -1875,8 +1876,8 @@ class PlayerRepositoryImpl @Inject constructor(
         // A station is songs found online: Download mode plays only what is on the phone.
         if (!streamAllowed()) return AutoplayRadioOutcome.DownloadMode
         if (mobileDataBlocksStreams()) return AutoplayRadioOutcome.MobileData
-        val (session, generated) = try {
-            radioGenerator.start(com.stash.core.data.radio.RadioSeed.Song(seed.title, seed.artist, seed.youtubeId))
+        val (station, generated) = try {
+            radioEngines.active().start(com.stash.core.data.radio.RadioSeed.Song(seed.title, seed.artist, seed.youtubeId))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -1904,7 +1905,7 @@ class PlayerRepositoryImpl @Inject constructor(
         val fresh = notQueuedYet(controller, discoveries)
         if (fresh.isEmpty()) return AutoplayRadioOutcome.NoStation
         appendStationSongs(controller, fresh)
-        radioSession = session
+        radioStation = station
         radioActive = true
         // Only one grower (see startRadio): library shuffle was off, or no station would have been wanted.
         libraryShuffleActive = false
@@ -2014,8 +2015,8 @@ class PlayerRepositoryImpl @Inject constructor(
             if (!radioActive) return
             // An empty player has no station queue to extend: appending would make the batch a new queue.
             val controller = controllerDeferred?.takeIf { it.mediaItemCount > 0 } ?: return
-            val session = radioSession ?: return
-            val batch = radioGenerator.nextBatch(session)
+            val station = radioStation ?: return
+            val batch = station.nextBatch()
             if (batch.isEmpty()) return
             if (!radioActive || !streamAllowed()) {
                 stopRadio()
@@ -3723,7 +3724,7 @@ class PlayerRepositoryImpl @Inject constructor(
         libraryShuffleActive = false
         librarySnapshot = emptyList()
         radioActive = false
-        radioSession = null
+        radioStation = null
         _radioSeedLabel.value = null
         autoplayTriedTrackId = null // a new queue, as in setQueueBuilding
         val controller = ensureController() ?: return

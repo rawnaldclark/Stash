@@ -74,7 +74,7 @@ class PlayerRepositoryBrowserTest {
         connectivity = connectivity,
         trackDao = trackDao,
         playbackResumer = PlaybackResumer(playbackStateStore, trackDao),
-        radioGenerator = mockk(relaxed = true),
+        radioEngines = radioEngines(mockk(relaxed = true)),
         trackIdentityEvents = trackIdentityEvents,
         playbackSessionBus = PlaybackSessionBus(),
         browserOutputs = browserOutputs,

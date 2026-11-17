@@ -4,8 +4,8 @@ import android.util.Log
 import androidx.media3.common.MediaItem
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.mapper.toDomain
+import com.stash.core.data.radio.RadioEngines
 import com.stash.core.data.radio.RadioSeed
-import com.stash.core.data.radio.RadioStationGenerator
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_DURATION_MS
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_ID
@@ -35,7 +35,7 @@ import kotlinx.coroutines.withContext
 class DefaultSessionCatalog @Inject constructor(
     private val musicRepository: MusicRepository,
     private val trackDao: TrackDao,
-    private val radioGenerator: RadioStationGenerator,
+    private val radioEngines: com.stash.core.data.radio.RadioEngines,
 ) : SessionCatalog {
 
     /**
@@ -114,7 +114,7 @@ class DefaultSessionCatalog @Inject constructor(
     }
 
     override suspend fun radioAfter(track: SharedTrack): List<SharedTrack> = try {
-        val (_, batch) = radioGenerator.start(RadioSeed.Song(track.title, track.artist, track.youtubeId))
+        val (_, batch) = radioEngines.active().start(RadioSeed.Song(track.title, track.artist, track.youtubeId))
         // Drop the seed itself, matched by title and artist like PlayerRepositoryImpl.startRadio's keepCurrent.
         val seed = trackIdentity(track.title, track.artist)
         batch.filter { trackIdentity(it.title, it.artist) != seed }.map { it.toSharedTrackWithArt() }.take(MAX_STATION)

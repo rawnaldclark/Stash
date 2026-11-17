@@ -207,7 +207,7 @@ class PlayerRepositoryAutoplayRadioTest {
             connectivity = connectivity,
             trackDao = trackDao,
             playbackResumer = PlaybackResumer(playbackStateStore, trackDao),
-            radioGenerator = radioGenerator,
+            radioEngines = radioEngines(radioGenerator),
             trackIdentityEvents = trackIdentityEvents,
             playbackSessionBus = PlaybackSessionBus().apply { onServiceCreated() },
             autoplayRadioPreference = autoplayOn,

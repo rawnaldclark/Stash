@@ -72,7 +72,7 @@ class PlayerRepositorySessionBusTest {
             connectivity = connectivity,
             trackDao = trackDao,
             playbackResumer = playbackResumer,
-            radioGenerator = mockk(relaxed = true),
+            radioEngines = radioEngines(mockk(relaxed = true)),
             trackIdentityEvents = trackIdentityEvents,
             playbackSessionBus = bus,
         )

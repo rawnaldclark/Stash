@@ -57,7 +57,7 @@ class PlayerRepositoryPlaybackSpeedTest {
             connectivity = mockk(relaxed = true),
             trackDao = mockk(relaxed = true),
             playbackResumer = mockk(relaxed = true),
-            radioGenerator = mockk(),
+            radioEngines = radioEngines(mockk()),
             trackIdentityEvents = trackIdentityEvents,
             playbackSessionBus = PlaybackSessionBus(),
             autoplayRadioPreference = AutoplayRadioPreference.Off,

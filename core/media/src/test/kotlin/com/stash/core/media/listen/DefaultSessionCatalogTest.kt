@@ -8,6 +8,7 @@ import com.stash.core.data.radio.RadioSeed
 import com.stash.core.data.radio.RadioSession
 import com.stash.core.data.radio.RadioStationGenerator
 import com.stash.core.data.repository.MusicRepository
+import com.stash.core.media.radioEngines
 import com.stash.core.model.Track
 import com.stash.core.model.share.SharedTrack
 import io.mockk.coEvery
@@ -24,7 +25,7 @@ class DefaultSessionCatalogTest {
     private val musicRepository: MusicRepository = mockk()
     private val trackDao: TrackDao = mockk()
     private val radio: RadioStationGenerator = mockk()
-    private val catalog = DefaultSessionCatalog(musicRepository, trackDao, radio)
+    private val catalog = DefaultSessionCatalog(musicRepository, trackDao, radioEngines(radio))
     private val descriptor = SharedTrack("Avril 14th", "Aphex Twin", youtubeId = "yt1")
 
     @Test fun `a listener plays the exact-persisted row, streamed when its download has gone`() = runTest {

@@ -40,6 +40,11 @@ include(":data:download")
 include(":data:lyrics")
 include(":data:cloud")
 
+// The YouTube Music extension: radio, and later Home's shelves. Detachable — it only
+// implements hooks in :core, so this include plus one dependency line in
+// app/build.gradle.kts is the whole of its footprint on the project.
+include(":ext:ytmusic")
+
 include(":feature:home")
 include(":feature:library")
 include(":feature:nowplaying")
