@@ -61,7 +61,11 @@ class SettingsViewModelTest {
     private val spotifyAccountDao = mockk<com.stash.core.data.db.dao.SpotifyAccountDao>(relaxed = true)
     private val spotifyExtraAccountRemover = mockk<com.stash.core.data.sync.SpotifyExtraAccountRemover>(relaxed = true)
 
-    private fun newVm(losslessConfigured: Boolean = true) = SettingsViewModel(
+    private fun newVm(
+        losslessConfigured: Boolean = true,
+        rows: List<com.stash.data.download.lossless.RoutingRow> = emptyList(),
+        probe: com.stash.data.download.lossless.SourceProbe = mockk(relaxed = true),
+    ) = SettingsViewModel(
         appContext = mockk(relaxed = true),
         tokenManager = tokenManager,
         spotifyAccounts = spotifyAccounts,
@@ -88,9 +92,10 @@ class SettingsViewModelTest {
         qbdlxCredentialStore = qbdlxStore,
         losslessAvailability = mockk<LosslessAvailability> {
             every { anySourceConfigured } returns flowOf(losslessConfigured)
-            every { routingRows } returns flowOf(emptyList())
+            every { routingRows } returns flowOf(rows)
         },
         qobuzAccountConnector = mockk(relaxed = true),
+        sourceProbe = probe,
         likePreferences = likePreferences,
         trackDao = mockk(relaxed = true),
         settingsDeepLinkController = mockk(relaxed = true),
@@ -583,5 +588,28 @@ class SettingsViewModelTest {
         assertThat(vm.spotifyDisconnectStopped.value).isEqualTo(SpotifyDisconnectStopped(null))
         coVerify(exactly = 0) { spotifyAccounts.clearSpotifyAuth() }
         coVerify(exactly = 0) { tokenManager.clearAuth(any()) }
+    }
+
+    @Test fun `Check again records a result for every routing row`() = runTest {
+        val rows = listOf(
+            com.stash.data.download.lossless.RoutingRow(
+                "qobuz", "Your Qobuz account", "connected",
+                com.stash.data.download.lossless.RoutingState.CONNECTED,
+            ),
+        )
+        val probe = mockk<com.stash.data.download.lossless.SourceProbe> {
+            coEvery { probeAll(rows) } returns mapOf("qobuz" to com.stash.data.download.lossless.ProbeState.Ready)
+        }
+        val vm = newVm(rows = rows, probe = probe)
+        val job = launch { vm.losslessRouting.collect {} }
+        advanceUntilIdle()
+
+        vm.onCheckSources()
+        advanceUntilIdle()
+
+        assertThat(vm.sourceProbeResults.value)
+            .containsExactly("qobuz", com.stash.data.download.lossless.ProbeState.Ready)
+        assertThat(vm.sourceProbing.value).isFalse()
+        job.cancel()
     }
 }
