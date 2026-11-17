@@ -69,6 +69,7 @@ fun SettingsLosslessSourcesScreen(
     val qobuzConnecting by viewModel.qobuzConnecting.collectAsStateWithLifecycle()
     val qobuzConnectError by viewModel.qobuzConnectError.collectAsStateWithLifecycle()
     val quotaViewModel: LosslessQuotaViewModel = hiltViewModel()
+    val losslessToday by quotaViewModel.line.collectAsStateWithLifecycle()
     val sourceProbe by viewModel.sourceProbeResults.collectAsStateWithLifecycle()
     val sourceProbing by viewModel.sourceProbing.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { viewModel.onCheckSources() }

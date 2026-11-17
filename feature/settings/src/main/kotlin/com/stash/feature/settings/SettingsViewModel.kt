@@ -125,6 +125,7 @@ class SettingsViewModel @Inject constructor(
     private val losslessPrefs: LosslessSourcePreferences,
     private val streamingQualityPrefs: StreamingQualityPreferences,
     private val qbdlxCredentialStore: QbdlxCredentialStore,
+    private val losslessAvailability: LosslessAvailability,
     private val sourceProbe: SourceProbe,
     private val qobuzAccountConnector: QobuzAccountConnector,
     private val likePreferences: LikePreferences,
@@ -538,9 +539,9 @@ class SettingsViewModel @Inject constructor(
         qbdlxCredentialStore.connectedEmailFlow
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /** True while a connect attempt is in flight (spinner + disabled button). */
-    private val _qobuzConnecting = MutableStateFlow(false)
-    val qobuzConnecting: StateFlow<Boolean> = _qobuzConnecting
+    /** Last connect error to show, or null. Cleared on a new attempt / disconnect. */
+    private val _qobuzConnectError = MutableStateFlow<String?>(null)
+    val qobuzConnectError: StateFlow<String?> = _qobuzConnectError
 
     /** Settings › Lossless sources › Check again: the last check's verdict per ROUTING row id. */
     private val _probe = MutableStateFlow<Map<String, ProbeState>>(emptyMap())
