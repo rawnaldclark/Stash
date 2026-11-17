@@ -144,8 +144,9 @@ class TidalV1WirePolicyTest {
         val quota = LosslessQuota.inMemory { now }
         val http = OkHttpClient()
         val addonClient = HttpAddonClient(http, TestAddonHost(), TestAddonHost(), TestAddonHost(), LocalHttp)
-        val legacy = LegacyRelayWire(http, RelaySigner(config, supporter(), appVersionProvider()), quota)
-        wires = TidalWires(config, registry, legacy, AddonV1Wire(addonClient, quota), TidalDebugSettings.off(), OwnTidalServer(NoUserAddons, prefs))
+        val login: TidalLoginStore = mockk(relaxed = true)
+        val legacy = LegacyRelayWire(http, RelaySigner(config, supporter(), appVersionProvider()), quota, login)
+        wires = TidalWires(config, registry, legacy, AddonV1Wire(addonClient, quota), TidalDebugSettings.off(), OwnTidalServer(NoUserAddons, prefs), login)
         client = TidalClient(prefs, FakeAddonRefDao(), quota, wires).also { it.nowMs = { now } }
     }
 
