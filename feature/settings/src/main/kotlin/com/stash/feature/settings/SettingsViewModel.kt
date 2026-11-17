@@ -50,6 +50,9 @@ import com.stash.data.download.lossless.RoutingRow
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
 import com.stash.data.download.lossless.qbdlx.QobuzAccountConnector
 import com.stash.data.download.lossless.qbdlx.QobuzLoginResult
+import com.stash.data.download.lossless.ProbeState
+import com.stash.data.download.lossless.SourceProbe
+import kotlinx.coroutines.flow.drop
 import com.stash.data.download.prefs.StreamingQualityPreferences
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.QualityTier
@@ -123,6 +126,7 @@ class SettingsViewModel @Inject constructor(
     private val streamingQualityPrefs: StreamingQualityPreferences,
     private val qbdlxCredentialStore: QbdlxCredentialStore,
     private val losslessAvailability: LosslessAvailability,
+    private val sourceProbe: SourceProbe,
     private val qobuzAccountConnector: QobuzAccountConnector,
     private val likePreferences: LikePreferences,
     private val trackDao: TrackDao,
@@ -543,6 +547,13 @@ class SettingsViewModel @Inject constructor(
     private val _qobuzConnectError = MutableStateFlow<String?>(null)
     val qobuzConnectError: StateFlow<String?> = _qobuzConnectError
 
+    /** Settings › Lossless sources › Check again: the last check's verdict per ROUTING row id. */
+    private val _probe = MutableStateFlow<Map<String, ProbeState>>(emptyMap())
+    val sourceProbeResults: StateFlow<Map<String, ProbeState>> = _probe.asStateFlow()
+
+    private val _probing = MutableStateFlow(false)
+    val sourceProbing: StateFlow<Boolean> = _probing.asStateFlow()
+
     init {
         // Refresh on construction so the Diagnostics card shows the
         // correct enabled/disabled state on first frame. Cheap (a
@@ -550,6 +561,10 @@ class SettingsViewModel @Inject constructor(
         // Must follow _localState declaration: Kotlin initializes properties
         // top-to-bottom and refreshDiagnostics() writes to _localState.
         refreshDiagnostics()
+        // A switch flipped or an account connected makes the last check describe a list that is gone.
+        viewModelScope.launch {
+            losslessRouting.drop(1).collect { if (!_probing.value) _probe.value = emptyMap() }
+        }
     }
 
     /**
@@ -2050,6 +2065,19 @@ class SettingsViewModel @Inject constructor(
             qobuzAccountConnector.disconnect()
             // The email clears itself — disconnect() removes the DataStore key.
             _qobuzConnectError.value = null
+        }
+    }
+
+    /** Settings › Lossless sources › Check again. */
+    fun onCheckSources() {
+        if (_probing.value) return
+        viewModelScope.launch {
+            _probing.value = true
+            val rows = losslessRouting.value
+            _probe.value = rows.associate { it.id to ProbeState.Checking }
+            _probe.value = runCatching { sourceProbe.probeAll(rows) }
+                .getOrDefault(rows.associate { it.id to ProbeState.NotAnswering })
+            _probing.value = false
         }
     }
 
