@@ -6,6 +6,7 @@ import com.stash.core.addons.Trust
 import com.stash.data.download.lossless.addon.AddonLinks
 import com.stash.data.download.lossless.addon.AddonOverview
 import com.stash.data.download.lossless.tidal.OwnTidalServer
+import com.stash.data.download.lossless.tidal.TidalLoginStore
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -278,11 +279,12 @@ class AddonsViewModelsTest {
     // ------------------------------------------------------------------------------------------ the page
 
     private val own: OwnTidalServer = mockk(relaxed = true)
+    private val tidalLogin: TidalLoginStore = mockk(relaxed = true)
 
     @Test fun `the open page asks whether the add-on is paused, and for its allowance only when it has one and is working`() {
         coEvery { overview.paused(any()) } returns true
         coEvery { overview.quota(any()) } returns Quota(used = 12, limit = 300, resetsAt = 0L)
-        val vm = AddonPageViewModel(overview, own)
+        val vm = AddonPageViewModel(overview, own, tidalLogin)
         vm.look(relay)
         assertThat(vm.live.value.paused).isTrue()
         assertThat(vm.live.value.quota).isNull()
@@ -305,7 +307,7 @@ class AddonsViewModelsTest {
         coEvery { overview.nudge(any(), any(), any()) } returns true
         coEvery { overview.remove(any()) } returns true
         coEvery { overview.agree(any()) } returns false
-        val vm = AddonPageViewModel(overview, own)
+        val vm = AddonPageViewModel(overview, own, tidalLogin)
         vm.onSwitched(relay, false)
         vm.onNudged(relay, up = true)
         vm.onRemove(relay)
@@ -316,5 +318,15 @@ class AddonsViewModelsTest {
         coVerify(exactly = 1) { overview.nudge(any(), "addon:hifi", true) }
         coVerify(exactly = 1) { overview.remove(relay) }
         coVerify(exactly = 1) { overview.agree(relay) }
+    }
+
+    @Test fun `the Tidal row says it is the user's own account when a login is stored, and not for their own server`() {
+        coEvery { tidalLogin.hasLoginNow() } returns true
+        val vm = AddonPageViewModel(overview, own, tidalLogin)
+        vm.look(tidal)
+        assertThat(vm.live.value.tidalLogin).isTrue()
+        // Their own server outranks the login, so the row is not "their Tidal account".
+        vm.look(tidal.copy(ownServer = true, host = "my.example.org"))
+        assertThat(vm.live.value.tidalLogin).isFalse()
     }
 }
