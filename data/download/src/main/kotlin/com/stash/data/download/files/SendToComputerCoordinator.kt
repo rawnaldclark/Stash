@@ -108,8 +108,11 @@ class SendToComputerCoordinator @Inject constructor(
         _state.value = SendToComputerState.Idle
     }
 
+    /** Puts away the result. A send the computer stopped partway stays in the folder, to be taken when it carries on. */
     fun dismiss() {
         if (_state.value is SendToComputerState.Finished || _state.value is SendToComputerState.Error) {
+            activeJob?.cancel()
+            activeJob = null
             _state.value = SendToComputerState.Idle
         }
     }
@@ -146,8 +149,10 @@ class SendToComputerCoordinator @Inject constructor(
     }
 
     /**
-     * Counts what the computer has taken, every second, until it has all of it (the folder is empty) or it stops: a
-     * minute with nothing more taken, once it has started. Waiting for it to start has no end but [cancel].
+     * Counts what the computer has taken, every second, until it has all of it (the folder is empty). Once it has
+     * started, a minute with nothing more taken shows it stopped ([Finished] with some left), and the count goes on: a
+     * computer that carries on (the phone plugged back in) is shown taking again. Ends with all taken, [cancel] or
+     * [dismiss].
      */
     @RequiresApi(Build.VERSION_CODES.Q)
     private suspend fun watch(total: Int) {
@@ -166,11 +171,11 @@ class SendToComputerCoordinator @Inject constructor(
                 changedAt = System.currentTimeMillis()
             }
             if (taken == 0) continue
-            if (System.currentTimeMillis() - changedAt > STOPPED_AFTER_MS) {
-                _state.value = SendToComputerState.Finished(taken, total)
-                return
+            _state.value = if (System.currentTimeMillis() - changedAt > STOPPED_AFTER_MS) {
+                SendToComputerState.Finished(taken, total)
+            } else {
+                SendToComputerState.Taking(taken, total)
             }
-            _state.value = SendToComputerState.Taking(taken, total)
         }
     }
 
