@@ -42,6 +42,12 @@ class SendToComputerViewModel @Inject constructor(
     private val coordinator: SendToComputerCoordinator,
 ) : ViewModel() {
     val state = coordinator.state
+
+    init {
+        // A send the computer has not finished taking is shown where it is.
+        coordinator.resume()
+    }
+
     suspend fun count(): Pair<Int, Long> = coordinator.count()
     fun start() = coordinator.start()
     fun cancel() = coordinator.cancel()

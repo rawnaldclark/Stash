@@ -100,6 +100,38 @@ class SendToComputerCoordinator @Inject constructor(
         }
     }
 
+    /**
+     * A send still in the folder from before (the app was closed while the computer took it, or the computer stopped
+     * partway): watched again, so the phone shows where it is. Nothing when idle with no send there.
+     */
+    fun resume() {
+        if (_state.value !is SendToComputerState.Idle || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        activeJob = scope.launch {
+            val total = runCatching { sentBefore() }.getOrNull() ?: return@launch
+            if (_state.value !is SendToComputerState.Idle) return@launch
+            _state.value = SendToComputerState.Waiting(total, 0)
+            runCatching { watch(total) }
+        }
+    }
+
+    /** How many songs the list in the folder names, when this app's list is there. */
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun sentBefore(): Int? {
+        val resolver = context.contentResolver
+        val id = resolver.query(
+            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.Downloads._ID),
+            "${MediaStore.Downloads.RELATIVE_PATH} = ? AND ${MediaStore.Downloads.DISPLAY_NAME} = ?",
+            arrayOf(RELATIVE_PATH, LIST_NAME),
+            null,
+        )?.use { c -> if (c.moveToFirst()) c.getLong(0) else null } ?: return null
+        val uri = android.content.ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)
+        val text = resolver.openInputStream(uri)?.use { it.readBytes().decodeToString() } ?: return null
+        val songs = kotlinx.serialization.json.Json.parseToJsonElement(text)
+            .let { it as? JsonObject }?.get("songs") as? kotlinx.serialization.json.JsonArray
+        return songs?.size?.takeIf { it > 0 }
+    }
+
     /** Stops: a copy under way, or the wait for the computer. The copies left in the folder are deleted. */
     fun cancel() {
         activeJob?.cancel()
