@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,11 +29,19 @@ import java.io.InputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** State of "Send to computer" (Settings › Library & storage). */
+/**
+ * State of "Send to computer" (Settings › Library & storage), one step at a time: the songs being copied out
+ * ([Copying]), waiting for Stash on the computer to start ([Waiting]), the computer taking them ([Taking]: it deletes
+ * each file once it has it, so what is left in the folder is what is still to go), and the end ([Finished]).
+ */
 sealed interface SendToComputerState {
     data object Idle : SendToComputerState
-    data class Running(val current: Int, val total: Int) : SendToComputerState
-    data class Done(val sent: Int, val failed: Int, val bytes: Long) : SendToComputerState
+    data class Copying(val current: Int, val total: Int) : SendToComputerState
+    /** [total] songs ready in the folder ([notCopied] could not be copied); the computer has taken none yet. */
+    data class Waiting(val total: Int, val notCopied: Int) : SendToComputerState
+    data class Taking(val taken: Int, val total: Int) : SendToComputerState
+    /** The computer took [taken] of [total]: all of them (the folder is gone), or it stopped with some left. */
+    data class Finished(val taken: Int, val total: Int) : SendToComputerState
     data class Error(val message: String) : SendToComputerState
 }
 
@@ -40,13 +49,16 @@ sealed interface SendToComputerState {
  * "Send to computer": copies every downloaded song into `Download/Stash transfer/`, where a computer sees it over USB
  * ("File transfer"), with `stash-transfer.json` saying which song each file is. Stash for desktop, with the phone
  * plugged in, takes the files into its library as downloaded songs (matched by ISRC, YouTube id, then title and
- * artist) and deletes the folder after.
+ * artist), deleting each from the phone once it has it, and the folder at the end.
  *
  * Downloads live in the app's private storage (or a picked folder), which a computer cannot reach; this copy is the
  * one way across that needs no developer options. It goes through MediaStore's Downloads collection, so it needs no
  * storage permission (Android 10 and later). An earlier send's files, if the computer never took them, are deleted
  * first, so the folder only ever holds one send. The list is written last: a computer that finds no list finds no
  * finished send.
+ *
+ * After the copy it watches the folder (its own files, which MediaStore lists without any permission) and counts
+ * what the computer has taken, so the phone says how far along it is. Cancelling deletes the copies.
  *
  * Runs on an app-scoped [scope] (it survives leaving Settings), not a process death; it is a manual, restartable action.
  * Nothing in the library changes: the phone keeps its downloads.
@@ -69,58 +81,116 @@ class SendToComputerCoordinator @Inject constructor(
     }
 
     fun start() {
-        if (_state.value is SendToComputerState.Running) return
+        val now = _state.value
+        if (now is SendToComputerState.Copying || now is SendToComputerState.Waiting || now is SendToComputerState.Taking) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             _state.value = SendToComputerState.Error("Send to computer needs Android 10 or newer.")
             return
         }
         activeJob = scope.launch {
-            _state.value = try {
-                send()
+            try {
+                val (total, notCopied) = send() ?: return@launch
+                _state.value = SendToComputerState.Waiting(total, notCopied)
+                watch(total)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                SendToComputerState.Error(e.message ?: "The songs could not be copied.")
+                _state.value = SendToComputerState.Error(e.message ?: "The songs could not be copied.")
             }
         }
     }
 
+    /** Stops: a copy under way, or the wait for the computer. The copies left in the folder are deleted. */
     fun cancel() {
         activeJob?.cancel()
         activeJob = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) scope.launch { runCatching { clearEarlierSend() } }
         _state.value = SendToComputerState.Idle
     }
 
     fun dismiss() {
-        if (_state.value is SendToComputerState.Done || _state.value is SendToComputerState.Error) {
+        if (_state.value is SendToComputerState.Finished || _state.value is SendToComputerState.Error) {
             _state.value = SendToComputerState.Idle
         }
     }
 
+    /** Copies the songs out and writes the list; how many are in the folder and how many could not be copied. */
     @RequiresApi(Build.VERSION_CODES.Q)
-    private suspend fun send(): SendToComputerState {
+    private suspend fun send(): Pair<Int, Int>? {
         val songs = trackDao.getAllDownloaded().filter { !it.filePath.isNullOrBlank() }
-        if (songs.isEmpty()) return SendToComputerState.Error("There are no downloaded songs to send.")
+        if (songs.isEmpty()) {
+            _state.value = SendToComputerState.Error("There are no downloaded songs to send.")
+            return null
+        }
         clearEarlierSend()
         val entries = mutableListOf<JsonObject>()
         var failed = 0
-        var bytes = 0L
         songs.forEachIndexed { i, track ->
             currentCoroutineContext().ensureActive()
-            _state.value = SendToComputerState.Running(i, songs.size)
+            _state.value = SendToComputerState.Copying(i, songs.size)
             val name = fileName(track)
             val written = runCatching { copy(track, name) }.getOrNull()
             if (written == null || written <= 0L) {
                 failed++
             } else {
-                bytes += written
                 entries += entry(track, name, written)
             }
         }
         currentCoroutineContext().ensureActive()
-        if (entries.isEmpty()) return SendToComputerState.Error("None of the songs could be copied.")
+        if (entries.isEmpty()) {
+            _state.value = SendToComputerState.Error("None of the songs could be copied.")
+            return null
+        }
         writeList(entries)
-        return SendToComputerState.Done(sent = entries.size, failed = failed, bytes = bytes)
+        return entries.size to failed
+    }
+
+    /**
+     * Counts what the computer has taken, every second, until it has all of it (the folder is empty) or it stops: a
+     * minute with nothing more taken, once it has started. Waiting for it to start has no end but [cancel].
+     */
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private suspend fun watch(total: Int) {
+        var taken = 0
+        var changedAt = System.currentTimeMillis()
+        while (true) {
+            delay(WATCH_EVERY_MS)
+            val (songsLeft, listLeft) = left()
+            if (songsLeft == 0 && !listLeft) {
+                _state.value = SendToComputerState.Finished(total, total)
+                return
+            }
+            val nowTaken = (total - songsLeft).coerceIn(0, total)
+            if (nowTaken != taken) {
+                taken = nowTaken
+                changedAt = System.currentTimeMillis()
+            }
+            if (taken == 0) continue
+            if (System.currentTimeMillis() - changedAt > STOPPED_AFTER_MS) {
+                _state.value = SendToComputerState.Finished(taken, total)
+                return
+            }
+            _state.value = SendToComputerState.Taking(taken, total)
+        }
+    }
+
+    /** The songs still in the folder, and whether the list still is. */
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun left(): Pair<Int, Boolean> {
+        var songs = 0
+        var list = false
+        context.contentResolver.query(
+            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.Downloads.DISPLAY_NAME),
+            "${MediaStore.Downloads.RELATIVE_PATH} = ?",
+            arrayOf(RELATIVE_PATH),
+            null,
+        )?.use { c ->
+            while (c.moveToNext()) {
+                if (c.getString(0) == LIST_NAME) list = true else songs++
+            }
+        }
+        return songs to list
     }
 
     /** The file's name in the folder: the song's row id (unique) and its own extension. */
@@ -217,5 +287,8 @@ class SendToComputerCoordinator @Inject constructor(
         const val RELATIVE_PATH = "Download/Stash transfer/"
         const val LIST_NAME = "stash-transfer.json"
         private const val BUFFER = 256 * 1024
+        private const val WATCH_EVERY_MS = 1_000L
+        /** Once the computer has started, this long with nothing more taken means it has stopped. */
+        private const val STOPPED_AFTER_MS = 60_000L
     }
 }
