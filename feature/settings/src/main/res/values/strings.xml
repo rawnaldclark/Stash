@@ -787,6 +787,20 @@
 
     <!-- Settings > Library & Storage > Reorganize Library -->
     <string name="settings_storage_reorganize_title">Reorganize existing tracks</string>
+    <!-- Send to computer: downloads copied to Download/Stash transfer for Stash for desktop to take over USB -->
+    <string name="settings_send_computer_title">Send to computer</string>
+    <plurals name="settings_send_computer_desc">
+        <item quantity="one">Copies your %1$d download (%2$s) to Download › Stash transfer, so Stash on your computer can take it over USB.</item>
+        <item quantity="other">Copies your %1$d downloads (%2$s) to Download › Stash transfer, so Stash on your computer can take them over USB.</item>
+    </plurals>
+    <string name="settings_send_computer_button">Send to computer</string>
+    <string name="settings_send_computer_progress">Copying %1$d of %2$d…</string>
+    <plurals name="settings_send_computer_done">
+        <item quantity="one">%1$d song ready (%2$s).</item>
+        <item quantity="other">%1$d songs ready (%2$s).</item>
+    </plurals>
+    <string name="settings_send_computer_failed">" %1$d could not be copied."</string>
+    <string name="settings_send_computer_next">Plug your phone into the computer, choose File transfer when your phone asks, and open Stash there. It takes the songs and clears the copy off your phone.</string>
     <plurals name="settings_storage_reorganize_desc">
         <item quantity="one">%1$d downloaded track doesn\'t follow the \"%2$s\" structure yet. Move them now? New downloads already use it.</item>
         <item quantity="other">%1$d downloaded tracks don\'t follow the \"%2$s\" structure yet. Move them now? New downloads already use it.</item>

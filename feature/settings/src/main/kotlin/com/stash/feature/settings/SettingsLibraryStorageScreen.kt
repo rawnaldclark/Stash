@@ -770,6 +770,13 @@ fun SettingsLibraryStorageScreen(
             ) }
         }
 
+        // Send to computer: the downloads copied where a computer finds them over USB, for Stash for desktop.
+        storageRows += {
+            Column(modifier = Modifier.padding(horizontal = SettingsRowPadH, vertical = SettingsRowPadV)) {
+                SendToComputerSection()
+            }
+        }
+
         SettingsGroupCard(rows = storageRows)
         if (showLayoutSheet) {
             SettingsChoiceSheet(
