@@ -1,0 +1,27 @@
+name = "stash-home"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# Where phones reach it. TODO(owner): pick the address before the first deploy (README.md, "Deploy"); without a
+# route it answers on its workers.dev address.
+# routes = [{ pattern = "<host>", custom_domain = true }]
+
+# One Durable Object per home (a Stash desktop), named by the id the desktop made up.
+[[durable_objects.bindings]]
+name = "HOME"
+class_name = "Home"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Home"]
+
+[vars]
+# The tip jar's supporter tokens are checked with its production public key (infra/tipjar-worker/README.md,
+# "Supporter claim"); the same value as infra/tidal-relay/wrangler.toml.
+ENTITLEMENT_PUBLIC_KEY = "IbghbSB8gJcuHbpSEf8tRKfCwzBfB14eBPew3nVkQFQ="
+
+# Withdrawn supporter tokens (revoked_tokens; infra/lossless-quota). Read only, by primary key, once per connect.
+[[d1_databases]]
+binding = "QUOTA_DB"
+database_name = "stash-quota"
+database_id = "f5c12428-cd59-4181-bbcf-9d368a11c495"
