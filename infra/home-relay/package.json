@@ -1,0 +1,19 @@
+{
+  "name": "stash-home",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker + Durable Object that lets a supporter's phone play the library on their Stash desktop from anywhere.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "test": "node --no-warnings --test test/*.test.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.149.0"
+  }
+}
