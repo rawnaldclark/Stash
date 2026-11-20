@@ -46,8 +46,8 @@ large files applies to the plain CDN.
 
 ## Deploy (owner)
 
-1. Pick the address phones will use, for example a custom domain on the account. Set it in `wrangler.toml`
-   `routes`. Without one, it answers on its workers.dev address.
+1. The address phones use is `home.stashfm.app`, set in `wrangler.toml` `routes` as a custom domain. Desktops carry
+   it from their build, so changing it strands the addresses phones already use.
 2. Deploy:
    ```
    npm install

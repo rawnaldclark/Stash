@@ -2,9 +2,10 @@ name = "stash-home"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 
-# Where phones reach it. TODO(owner): pick the address before the first deploy (README.md, "Deploy"); without a
-# route it answers on its workers.dev address.
-# routes = [{ pattern = "<host>", custom_domain = true }]
+# Where phones reach it. `custom_domain = true` makes `wrangler deploy` create the DNS record and certificate for
+# home.stashfm.app, as for sync.stashfm.app (infra/sync-worker). Desktops are built with this address
+# (README.md, "Deploy"), so changing it strands the addresses phones already use.
+routes = [{ pattern = "home.stashfm.app", custom_domain = true }]
 
 # One Durable Object per home (a Stash desktop), named by the id the desktop made up.
 [[durable_objects.bindings]]
