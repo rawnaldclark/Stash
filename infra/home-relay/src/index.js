@@ -18,6 +18,10 @@ import { MOST_FORM, answerOf, homeKeyOf, requestMessage, routeOf, sameText, sha2
 const MOST_WAITING = 24;
 /** How long the desktop has to start answering. */
 const ANSWER_START_MS = 45_000;
+/** The most one part of an answer may be. */
+const MOST_PART = 1024 * 1024;
+/** How long an answer in parts may go without its next part. */
+const PART_GAP_MS = 60_000;
 
 const text = (status, body) =>
     new Response(body, { status, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
@@ -50,6 +54,8 @@ export class Home extends DurableObject {
         super(ctx, env);
         /** Requests waiting for their answer: id → { resolve, timer, head }. */
         this.waiting = new Map();
+        /** Answers coming in parts: id → { writer, next, timer }. */
+        this.streams = new Map();
         this.count = 0;
         /** The home key's hash, once read. */
         this.keyHash = undefined;
@@ -131,7 +137,13 @@ export class Home extends DurableObject {
         waiting.resolve(response);
     }
 
-    /** The desktop's answer to request `rid`: its body streams to the phone as it comes. */
+    /**
+     * The desktop's answer to request `rid`. Cloudflare hands a Worker an upload only once all of it has arrived, so
+     * the desktop sends the body in parts (`X-Stash-Part: 0, 1, …`, the last with `X-Stash-Last: 1`), each passed on
+     * to the phone as it comes; the first carries the status and headers. A part is answered once the phone has taken
+     * it, so a phone that reads slowly slows the desktop, and one that stopped listening stops it (410). An answer
+     * without `X-Stash-Part` is one upload, passed on as it is (Stash builds before parts).
+     */
     async answer(request, rid) {
         const key = homeKeyOf(request.headers);
         const kept = await this.storedHash();
@@ -139,6 +151,8 @@ export class Home extends DurableObject {
             await request.body?.cancel();
             return json(403, { error: "not_yours" });
         }
+        const part = request.headers.get("X-Stash-Part");
+        if (part !== null) return this.answerPart(request, rid, part);
         const waiting = this.waiting.get(rid);
         if (!waiting) {
             await request.body?.cancel();
@@ -171,6 +185,86 @@ export class Home extends DurableObject {
         return new Response(null, { status: 204 });
     }
 
+    /** One part of an answer (see `answer`). */
+    async answerPart(request, rid, part) {
+        const n = /^\d{1,7}$/.test(part) ? Number(part) : -1;
+        if (n < 0 || Number(request.headers.get("content-length") || 0) > MOST_PART) {
+            await request.body?.cancel();
+            this.endStream(rid);
+            return json(400, { error: "bad_part" });
+        }
+        let stream;
+        if (n === 0) {
+            const waiting = this.waiting.get(rid);
+            if (!waiting) {
+                await request.body?.cancel();
+                return json(410, { error: "nobody_waiting" });
+            }
+            this.waiting.delete(rid);
+            clearTimeout(waiting.timer);
+            const answer = answerOf(request.headers);
+            if (!answer) {
+                await request.body?.cancel();
+                waiting.resolve(text(502, "Your Stash at home answered something this relay can't read."));
+                return json(400, { error: "bad_answer" });
+            }
+            const headers = new Headers(answer.headers);
+            headers.set("X-Content-Type-Options", "nosniff");
+            if (waiting.head) {
+                await request.body?.cancel();
+                if (answer.length != null) headers.set("Content-Length", String(answer.length));
+                waiting.resolve(new Response(null, { status: answer.status, headers }));
+                return json(410, { stopped: true });
+            }
+            const pipe = answer.length != null ? new FixedLengthStream(answer.length) : new TransformStream();
+            stream = { writer: pipe.writable.getWriter(), next: 0, timer: null };
+            this.streams.set(rid, stream);
+            waiting.resolve(new Response(pipe.readable, { status: answer.status, headers }));
+        } else {
+            stream = this.streams.get(rid);
+            if (!stream || stream.next !== n) {
+                await request.body?.cancel();
+                this.endStream(rid);
+                return json(410, { stopped: true });
+            }
+        }
+        clearTimeout(stream.timer);
+        if (request.headers.get("X-Stash-Abort") === "1") {
+            await request.body?.cancel();
+            this.endStream(rid);
+            return json(410, { stopped: true });
+        }
+        const bytes = new Uint8Array(await request.arrayBuffer());
+        if (bytes.length > MOST_PART) {
+            this.endStream(rid);
+            return json(400, { error: "bad_part" });
+        }
+        try {
+            if (bytes.length) await stream.writer.write(bytes);
+            if (request.headers.get("X-Stash-Last") === "1") {
+                this.streams.delete(rid);
+                await stream.writer.close();
+                return new Response(null, { status: 204 });
+            }
+        } catch {
+            // The phone stopped listening (skipped, seeked).
+            this.endStream(rid);
+            return json(410, { stopped: true });
+        }
+        stream.next = n + 1;
+        stream.timer = setTimeout(() => this.endStream(rid), PART_GAP_MS);
+        return new Response(null, { status: 204 });
+    }
+
+    /** An answer in parts that will not finish: the phone's response ends in an error. */
+    endStream(rid) {
+        const stream = this.streams.get(rid);
+        if (!stream) return;
+        this.streams.delete(rid);
+        clearTimeout(stream.timer);
+        stream.writer.abort(new Error("the answer stopped")).catch(() => {});
+    }
+
     /** `{"t":"fail","id":...}`: the desktop could not answer a request at all. */
     async webSocketMessage(ws, message) {
         if (typeof message !== "string") return;
@@ -187,6 +281,7 @@ export class Home extends DurableObject {
 
     async webSocketClose() {
         for (const id of [...this.waiting.keys()]) this.settle(id, text(503, "Your Stash at home disconnected."));
+        // Answers in parts carry on over their own requests; one whose desktop is gone ends at its gap timer.
     }
 
     async webSocketError() {
