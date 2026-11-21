@@ -644,3 +644,15 @@ test("a private room never writes to the directory, nor wakes for it", () => {
     assert.equal(step(playing.state, { type: "alarm" }, T0 + 10 + LIVE_BEAT_MS).live, undefined);
     assert.equal(send(playing.state, "h", { t: "end" }).live, undefined);
 });
+
+// ── The load check's finding: a reaction doesn't rewrite a session ────────────
+
+test("in a session a reaction reaches everyone and leaves the room as it was: nothing to store", () => {
+    const s = session();
+    const r = send(s, "a", { t: "react", emoji: "\u{1F525}" }, T0 + 5);
+    assert.deepEqual(r.out, [{ to: "all", msg: { t: "reaction", from: "a", emoji: "\u{1F525}" } }]);
+    assert.equal(r.state, s, "the same state: the shell stores nothing");
+    assert.deepEqual(send(s, "a", { t: "react", emoji: "x" }).out, [], "still one of the six");
+    // The once-a-second limit is the shell's (src/listen-room.js) in a session: the room passes each one on.
+    assert.equal(send(r.state, "a", { t: "react", emoji: "\u{1F525}" }, T0 + 6).out.length, 1);
+});

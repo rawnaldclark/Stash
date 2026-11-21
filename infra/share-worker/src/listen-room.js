@@ -3,7 +3,7 @@
  * pure src/room.js: it keeps the room in storage (hibernation drops memory), binds each socket to its
  * member with serializeAttachment, sends what step() says to send, and arms the single alarm.
  */
-import { step, preview, capacity } from "./room.js";
+import { step, preview, capacity, EMOJI, REACT_GAP_MS } from "./room.js";
 import { removeLive, writeLive } from "./stations-api.js";
 import { sameHex, sha256Hex } from "./store.js";
 import { validEditKey } from "./validate.js";
@@ -43,6 +43,7 @@ export class ListenRoom {
         // ponytail: per-socket message counters live in memory and reset when the room hibernates (spec §2 allows it).
         this.rates = new WeakMap();
         this.edits = new WeakMap();
+        this.reacts = new WeakMap();
     }
 
     /** Internal routes, called by the Worker through the ROOMS binding. */
@@ -114,6 +115,15 @@ export class ListenRoom {
             if (msg.t === "add") this.send(from, { t: "added", by: from, next: msg.next === true, count: 0 });
             if (msg.t === "request") this.send(from, { t: "requestAnswer", state: "full" });
             return;
+        }
+        // A reaction a REACT_GAP_MS a socket, held here in memory: a session's room keeps no clock for them (it would have to
+        // store the room for every one). A private room still keeps its own, which allows exactly what this does.
+        if (msg.t === "react") {
+            if (!EMOJI.includes(msg.emoji)) return;
+            const now = this.now();
+            const last = this.reacts.get(ws);
+            if (last !== undefined && now - last < REACT_GAP_MS) return;
+            this.reacts.set(ws, now);
         }
         // A suggestion's id; an `add` may become suggestions too (guest adds off, or an older host); a session's request.
         const newId = msg.t === "suggest" || msg.t === "add" || msg.t === "request" ? randomCode(8) : undefined;

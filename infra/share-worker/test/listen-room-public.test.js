@@ -246,3 +246,25 @@ test("requests share the edit limit with add: with Auto-accept on each one sends
     await request("later");
     assert.equal(queues(), EDIT_BURST + 1, "and it comes back at the steady rate");
 });
+
+test("a reaction a second a socket, held by the shell; in a session no reaction stores the room", async () => {
+    const clock = { t: 1_000 };
+    const { ctx, room } = await openSession(clock);
+    const host = await connect(ctx, room, { name: "Rawn", hostKey: "KEY" });
+    const sam = await connect(ctx, room, { name: "Sam", communityKey: communityKey(4) });
+    let puts = 0;
+    const put = ctx.storage.put;
+    ctx.storage.put = async (...a) => { puts++; return put(...a); };
+    const react = (emoji = "\u{1F525}") => room.webSocketMessage(sam, JSON.stringify({ t: "react", emoji }));
+    const reactions = () => host.sent.filter((m) => m.t === "reaction").length;
+    await react();
+    assert.equal(reactions(), 1);
+    clock.t += 999;
+    await react();
+    assert.equal(reactions(), 1, "under a second since the last");
+    await react("x");
+    clock.t += 1;
+    await react();
+    assert.equal(reactions(), 2, "a second on; the bad emoji didn't count as one");
+    assert.equal(puts, 0, "nothing stored for any of them");
+});

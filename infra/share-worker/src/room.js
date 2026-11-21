@@ -929,6 +929,12 @@ const MESSAGES = {
     react(ctx) {
         const { s, msg, event, now } = ctx;
         if (!EMOJI.includes(msg.emoji)) return false;
+        // A session keeps no reaction clock: 53 listeners reacting once a second would store the whole room 53 times a
+        // second (the load check). The shell holds each socket to REACT_GAP_MS instead (src/listen-room.js).
+        if (s.pub) {
+            ctx.out.push({ to: "all", msg: { t: "reaction", from: event.from, emoji: msg.emoji } });
+            return false;
+        }
         const last = s.reactAt[event.from];
         if (last !== undefined && now - last < REACT_GAP_MS) return false;
         s.reactAt[event.from] = now;
