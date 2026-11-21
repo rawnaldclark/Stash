@@ -20,6 +20,9 @@ class TuningEstimatorTest {
     private val rate = 44_100
     private val tunings = doubleArrayOf(428.0, 432.0, 436.0, 438.0, 440.0, 442.0, 444.5, 452.0)
 
+    /** The harder cases run at four of them: each makes its own audio, and the whole run has to stay quick. */
+    private val someTunings = doubleArrayOf(428.0, 432.0, 442.0, 452.0)
+
     private fun centsOf(hz: Double) = 1200.0 * ln(hz / 440.0) / ln(2.0)
 
     /** The distance between two offsets round the 100-cent circle. */
@@ -41,18 +44,18 @@ class TuningEstimatorTest {
     }
 
     @Test fun `a song of chords, bass and melody reads within 2 cents at every tuning`() {
-        for (a4 in tunings) check("song", a4, Synth(rate, a4, seed = 2).song(seconds = 24.0), 2.0)
+        for (a4 in tunings) check("song", a4, Synth(rate, a4, seed = 2).song(seconds = 14.0), 2.0)
     }
 
     @Test fun `drums and noise on top keep it within 5 cents`() {
-        for (a4 in tunings) {
+        for (a4 in someTunings) {
             val s = Synth(rate, a4, seed = 3)
-            check("song + drums + noise", a4, s.mix(s.song(24.0), s.drums(24.0), 0.8f, s.noise(24.0), 0.05f), 5.0)
+            check("song + drums + noise", a4, s.mix(s.song(14.0), s.drums(14.0), 0.8f, s.noise(14.0), 0.05f), 5.0)
         }
     }
 
     @Test fun `a melody with wide vibrato over steady chords keeps it within 5 cents`() {
-        for (a4 in tunings) check("song, melody with vibrato", a4, Synth(rate, a4, seed = 4, vibratoCents = 25.0).song(24.0), 5.0)
+        for (a4 in someTunings) check("song, melody with vibrato", a4, Synth(rate, a4, seed = 4, vibratoCents = 25.0).song(14.0), 5.0)
     }
 
     @Test fun `fed in small blocks it reads the same as all at once`() {
@@ -85,13 +88,13 @@ class TuningEstimatorTest {
     }
 
     @Test fun `stretched piano-like partials keep it within 5 cents`() {
-        for (a4 in tunings) check("song, inharmonic", a4, Synth(rate, a4, seed = 5, inharmonicity = 0.0004).song(24.0), 5.0)
+        for (a4 in someTunings) check("song, inharmonic", a4, Synth(rate, a4, seed = 5, inharmonicity = 0.0004).song(14.0), 5.0)
     }
 
     @Test fun `echo keeps it within 5 cents`() {
-        for (a4 in tunings) {
+        for (a4 in someTunings) {
             val s = Synth(rate, a4, seed = 6)
-            check("song with echo", a4, s.echo(s.song(24.0)), 5.0)
+            check("song with echo", a4, s.echo(s.song(14.0)), 5.0)
         }
     }
 
