@@ -196,6 +196,59 @@ class AddonScreensTest {
         rule.runOnUiThread { action.action() }
     }
 
+    // ------------------------------------------------------------------------------------------ Stash's Tidal's quick check
+
+    private var checks = 0
+
+    private fun showCheck(check: TidalCheck?) = rule.setContent {
+        MaterialTheme {
+            AddonsContent(
+                state = state(),
+                highlightedEntry = null,
+                onBack = {},
+                onOpen = {},
+                onAddFromLink = {},
+                onDropped = { _, _ -> },
+                onNudged = { _, _ -> },
+                onSwitched = { _, _ -> },
+                onRemove = {},
+                tidalCheck = check,
+                onTidalCheck = { checks++ },
+            )
+        }
+    }
+
+    @Test fun `no check to pass, no card`() {
+        showCheck(null)
+        rule.onAllNodesWithText("One quick check").assertCountEquals0()
+    }
+
+    @Test fun `the quick check's card says what it is, and Check opens it`() {
+        showCheck(TidalCheck.Idle)
+        rule.onNodeWithText("One quick check").assertExists()
+        rule.onNodeWithText("Before this phone can play from Stash's Tidal, it needs to pass a quick check. It takes a few seconds and is only asked once.").assertExists()
+        rule.onNodeWithTag("tidal_check").assertIsEnabled().performClick()
+        assertThat(checks).isEqualTo(1)
+    }
+
+    @Test fun `while the check is handed in, Check waits - a failure says why`() {
+        var check by mutableStateOf<TidalCheck>(TidalCheck.Sending)
+        rule.setContent {
+            MaterialTheme {
+                AddonsContent(
+                    state = state(), highlightedEntry = null, onBack = {}, onOpen = {}, onAddFromLink = {},
+                    onDropped = { _, _ -> }, onNudged = { _, _ -> }, onSwitched = { _, _ -> }, onRemove = {},
+                    tidalCheck = check, onTidalCheck = { checks++ },
+                )
+            }
+        }
+        rule.onNodeWithText("Checking…").assertExists()
+        rule.onNodeWithTag("tidal_check").assertIsNotEnabled()
+        check = TidalCheck.Failed("Too many phones were added from this network today. Try again tomorrow.")
+        rule.onNodeWithText("Too many phones were added from this network today. Try again tomorrow.").assertExists()
+        rule.onNodeWithTag("tidal_check").assertIsEnabled()
+    }
+
     @Test fun `a long address on the list is never cut - its line wraps`() {
         // review-885 M13: one line with an ellipsis at its end showed "stashfm.app.login…" for an
         // address that ends in someone else's domain.

@@ -20,6 +20,7 @@ import com.stash.data.download.lossless.PlayOrderSwitches
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.RelaySigner
 import com.stash.data.download.lossless.tidal.TidalDebugSettings
+import com.stash.data.download.lossless.tidal.TidalInstallPass
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -131,17 +132,33 @@ class RateLimiterAddonGate @Inject constructor(
  * `first_party` Tidal entry switches the Tidal rung to the v1 wire). On a debug build with an
  * owner server override set ([TidalDebugSettings]), that override's v1 manifest stands in for the
  * config's first-party entries, in memory.
+ *
+ * This install's own pass ([TidalInstallPass], anti-leech step 3) takes the access token's place in a first-party
+ * entry's link on the add-on that gave it ([TidalInstallPass.withPass]). The add-on registry keys a default's switch by
+ * manifest id, so the changed link keeps the Tidal row's place and switch; its manifest is read once at the new link.
  */
 @Singleton
 class SignedConfigDefaultAddons @Inject constructor(
     config: LosslessConfigFetcher,
     debug: TidalDebugSettings,
+    pass: TidalInstallPass? = null,
 ) : DefaultAddons {
-    override val entries: StateFlow<List<DefaultAddonEntry>> =
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** The entries before the pass goes in: what [TidalInstallPass] registers against. */
+    val unpassed: StateFlow<List<DefaultAddonEntry>> =
         combine(config.defaultAddons, config.tidalRelay, debug.state) { list, relay, _ ->
             val override = debug.addonEntry(relay) ?: return@combine list
             listOf(override) + list.filterNot { it.firstParty }
-        }.stateIn(CoroutineScope(SupervisorJob() + Dispatchers.IO), SharingStarted.Eagerly, config.defaultAddons.value)
+        }.stateIn(scope, SharingStarted.Eagerly, config.defaultAddons.value)
+
+    override val entries: StateFlow<List<DefaultAddonEntry>> = if (pass == null) {
+        unpassed
+    } else {
+        combine(unpassed, pass.held) { list, held ->
+            if (held == null) list else list.map { e -> if (e.firstParty) e.copy(manifestUrl = TidalInstallPass.withPass(e.manifestUrl, held)) else e }
+        }.stateIn(scope, SharingStarted.Eagerly, unpassed.value)
+    }
 }
 
 /**
@@ -150,7 +167,8 @@ class SignedConfigDefaultAddons @Inject constructor(
  *  - served from the relay the config names (`tidal_relay_url`): the rule `RelaySigner.isOwnerRelay`
  *    applied before #871 (same scheme, host and port, and a path at or under the relay's);
  *  - or the base of an enabled `default_addons` entry marked `first_party` (phase 2), the debug
- *    override's stand-in included.
+ *    override's stand-in included, with the access token or with this install's pass in its place
+ *    (the pass only ever on the origin of the entry it was registered against).
  * Only first-party add-ons get the install signature and the supporter token.
  */
 @Singleton
@@ -160,8 +178,11 @@ class SignedConfigAddonTrust @Inject constructor(
     private val defaults: DefaultAddons,
 ) : AddonTrust {
     override fun isFirstParty(base: String): Boolean {
-        val listed = defaults.entries.value.any { e ->
-            e.enabled && e.firstParty && HttpAddonClient.baseOf(e.manifestUrl)?.let { sameBase(it, base) } == true
+        // The config's own links count too, before this install's pass went in: a call already on its way at the
+        // access token's link while the pass arrives (or after it is let go) is still Stash's own.
+        val lists = listOfNotNull(defaults.entries.value, (defaults as? SignedConfigDefaultAddons)?.unpassed?.value)
+        val listed = lists.any { list ->
+            list.any { e -> e.enabled && e.firstParty && HttpAddonClient.baseOf(e.manifestUrl)?.let { sameBase(it, base) } == true }
         }
         if (listed) return true
         val relay = config.tidalRelay.value?.takeIf { !it.userOwned }?.base ?: return false
