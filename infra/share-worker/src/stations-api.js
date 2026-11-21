@@ -61,6 +61,8 @@ function liveOf(row, withCrowd = false) {
 export async function stationsRoute(request, env, path, method, now) {
     if (!sessionsOn(env)) return json({ error: "sessions_off" }, 503);
     if (path === "/v1/community/stations") return method === "POST" ? createStation(request, env, now) : notAllowed();
+    if (path === "/v1/community/live") return method === "GET" ? liveNow(request, env, now) : notAllowed();
+    if (path === "/v1/community/upcoming") return method === "GET" ? upcoming(request, env, now) : notAllowed();
     if (path === "/v1/community/stations/mine") return method === "GET" ? mine(request, env, now) : notAllowed();
     if (path === "/v1/community/stations/following") return method === "GET" ? followed(request, env, now) : notAllowed();
     const m = STATION_API.exec(path);
@@ -314,4 +316,66 @@ async function followed(request, env, now) {
         || (a.next && b.next ? a.next.start - b.next.start : 0)
         || a.name.localeCompare(b.name));
     return json({ stations }, 200, NO_STORE);
+}
+
+/** `?limit=` for the lists: [fallback] when absent or not a number, held to 1..50. */
+function limitOf(request, fallback) {
+    const asked = Number.parseInt(new URL(request.url).searchParams.get("limit"), 10);
+    return Math.min(Math.max(Number.isNaN(asked) ? fallback : asked, 1), 50);
+}
+
+/**
+ * GET live?limit=N: the sessions on the air, best first. Each listener in a session right now counts as one vote, so a
+ * new station with people in it surfaces and a well-voted one leads (spec §3); the `1.0` is the constant to tune. Rows
+ * whose room hasn't written for LIVE_STALE_MS are a room that died without saying so, and are left out.
+ */
+async function liveNow(request, env, now) {
+    const who = await identity(request);
+    if (who.bad) return json({ error: "bad_key" }, 401);
+    const me = who.id ?? null;
+    const { results } = await env.COMMUNITY_DB.prepare(
+        `SELECT ${COLUMNS}, ${MY_COLUMNS}, l.room, l.track, l.listeners, l.paused, l.crowd, l.started_at
+         FROM live l JOIN stations s ON s.id = l.station_id
+         ${MY_JOINS}
+         WHERE l.seen_at > ?2 AND ${SHOWN_SQL}
+         ORDER BY (s.up - s.down) + l.listeners * 1.0 DESC, l.started_at ASC
+         LIMIT ?3`,
+    ).bind(me ?? "", now - LIVE_STALE_MS, limitOf(request, 10)).all();
+    const sessions = results.map((row) => {
+        const { room, track, listeners, paused, full, crowd } = liveOf(row, true);
+        return { station: summaryOfStation(row, me), room, track, listeners, paused, full, crowd, startedAt: row.started_at };
+    });
+    return json({ sessions }, 200, NO_STORE);
+}
+
+/**
+ * Upcoming's choice, pure: of scheduled station [rows], those whose next window starts after [now] and within a day,
+ * soonest first, cut to [limit]. A window already in progress isn't upcoming: its station is live, or its host isn't
+ * playing.
+ */
+export function pickUpcoming(rows, now, limit, me) {
+    return rows
+        .map((row) => ({ row, next: nextWindow(scheduleOf(row), now) }))
+        .filter(({ next }) => next && next.start > now && next.start <= now + DAY)
+        .sort((a, b) => a.next.start - b.next.start)
+        .slice(0, limit)
+        .map(({ row, next }) => ({ ...summaryOfStation(row, me), next }));
+}
+
+/**
+ * GET upcoming?limit=N: stations on a schedule that aren't on the air now, next on within 24 hours, soonest first.
+ * Every scheduled station is read and its window worked out here (the time zones make it awkward in SQL); fine at this
+ * size. Not cached: on the stashfm.app zone the Cache API ignores the query string, so ?limit= answers would mix.
+ */
+async function upcoming(request, env, now) {
+    const who = await identity(request);
+    if (who.bad) return json({ error: "bad_key" }, 401);
+    const me = who.id ?? null;
+    const { results } = await env.COMMUNITY_DB.prepare(
+        `SELECT ${COLUMNS}, ${MY_COLUMNS} FROM stations s
+         ${MY_JOINS}
+         WHERE s.auto_live = 'schedule' AND s.schedule IS NOT NULL AND ${SHOWN_SQL}
+           AND NOT EXISTS (SELECT 1 FROM live l WHERE l.station_id = s.id AND l.seen_at > ?2)`,
+    ).bind(me ?? "", now - LIVE_STALE_MS).all();
+    return json({ stations: pickUpcoming(results, now, limitOf(request, 10), me) }, 200, NO_STORE);
 }
