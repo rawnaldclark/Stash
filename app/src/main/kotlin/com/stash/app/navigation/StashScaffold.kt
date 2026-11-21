@@ -270,7 +270,9 @@ fun StashScaffold(
                 } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_STATION_PREFIX)) {
                     // A station's link: its page, which says so itself when Sessions isn't available.
                     val id = pendingDeepLink.removePrefix(com.stash.app.MainActivity.DEEP_LINK_STATION_PREFIX)
-                    navController.navigate(StationRoute(id)) { launchSingleTop = true }
+                    // In place of a station page already open: launchSingleTop would keep that page's own station
+                    // (its ViewModel read the id when it was made), and Tune in there would join the wrong one.
+                    navController.navigate(StationRoute(id)) { popUpTo<StationRoute> { inclusive = true } }
                 } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_MUSIC_LINK_PREFIX)) {
                     navController.navigate(LinkImportRoute(pendingDeepLink.removePrefix(com.stash.app.MainActivity.DEEP_LINK_MUSIC_LINK_PREFIX)))
                 } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_ADDON_LINK_PREFIX)) {
