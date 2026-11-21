@@ -132,7 +132,7 @@ Going live asks for the vibe line once ("What's playing tonight?", optional, 60 
 - **D1:** `station_follows (station_id, follower, at)`; `station_regulars (station_id, listener, sessions, last_at)`; `stations.vibe` (≤ 60 characters, checked like the name); follower count on `StationSummary`. `GET stations?ids=…` for Your stations.
 - **Room messages:** `say {phrase}`, `saved {trackKey}` (counts only), `decks {open}`, `deckJoin {track}`, `deckLeave`, `deckPick {track}`, `deckRemove {memberId}`, `lastSong`, `presence {booth|away}`, and the room's `feed` lines, `songStats {trackKey, reactions, saves, favourite}`, `decksState`.
 - **Feed and stats** live in the room's state only and go with it.
-- **Build order** (replaces the system spec's §9): 1 server; 2 listen, go live, the room, Live now, follow; 3 requests, co-hosts, booting, presence; 4 phrases, feed, saves, crowd favourites, animated reactions; 5 last song, recap, regulars; 6 auto-live and Upcoming; 7 open decks.
+- **Build order** (replaces the system spec's §9): 1 server; 2 listen, go live, the room, Live now, follow; 3 requests, co-hosts, booting, presence; 4 phrases, feed, saves, crowd favourites, animated reactions; 5 last song, recap, regulars; 6 auto-live and Upcoming; 7 open decks. The build plan (`docs/superpowers/plans/2026-11-20-sessions.md`) splits step 1 into two PRs and ships the server parts of steps 4, 5 and 7 with those steps.
 
 ## 10. Measuring it (the scoreboard)
 
