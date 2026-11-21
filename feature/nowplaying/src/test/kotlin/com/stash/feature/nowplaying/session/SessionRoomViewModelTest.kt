@@ -2,7 +2,13 @@ package com.stash.feature.nowplaying.session
 
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.community.CommunityResult
+import com.stash.core.data.community.CommunityRepository
 import com.stash.core.data.community.StationsRepository
+import com.stash.core.data.community.VoteCounts
+import com.stash.core.media.listen.ListenTogetherController.Command
+import com.stash.core.ui.components.VotePillUi
+import com.stash.feature.nowplaying.session.SessionRoomViewModel.Note
+import io.mockk.verify
 import com.stash.core.media.listen.ListenTogetherController
 import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.media.listen.SessionRole
@@ -57,12 +63,16 @@ class SessionRoomViewModelTest {
     @Before fun setUp() {
         Dispatchers.setMain(dispatcher)
         every { controller.state } returns state
+        every { repo.heardIds } returns heardIds
         coEvery { repo.station("MAYA0001") } returns CommunityResult.Ok(StationPage(maya))
     }
 
     @After fun tearDown() { Dispatchers.resetMain() }
 
-    private fun vm() = SessionRoomViewModel(repo, controller)
+    private val heardIds = MutableStateFlow<Set<String>>(emptySet())
+    private var now = 1_000_000L
+
+    private fun vm() = SessionRoomViewModel(repo, controller).also { it.clock = { now } }
 
     // ── The station's details ───────────────────────────────────────────────────
 
@@ -143,6 +153,141 @@ class SessionRoomViewModelTest {
         state.value = room(station = "MINE0001"); advanceUntilIdle()
         vm.follow(); advanceUntilIdle()
         coVerify(exactly = 0) { repo.follow("MINE0001", any()) }
+    }
+
+    // ── The vote ────────────────────────────────────────────────────────────────
+
+    private val heard = maya.copy(heard = true)
+
+    @Test fun `the pill is dimmed until the station is heard, by the server's word or this phone's own mark`() = runTest(dispatcher) {
+        val vm = vm()
+        state.value = room(); advanceUntilIdle()
+        assertThat(vm.votePill()).isEqualTo(VotePillUi(23, upLit = false, downLit = false, enabled = true, listenFirst = true, upDimmed = true, downDimmed = true))
+        // Two minutes in its sessions, counted on this phone before the server knows.
+        heardIds.value = setOf("MAYA0001"); advanceUntilIdle()
+        assertThat(vm.votePill()).isEqualTo(VotePillUi(23, upLit = false, downLit = false, enabled = true))
+        // Or the server already has it.
+        heardIds.value = emptySet()
+        coEvery { repo.station("DILLA001") } returns CommunityResult.Ok(StationPage(Station(id = "DILLA001", name = "Dilla", up = 4, heard = true)))
+        state.value = room(station = "DILLA001"); advanceUntilIdle()
+        assertThat(vm.votePill()!!.listenFirst).isFalse()
+    }
+
+    @Test fun `a dimmed arrow says to listen first and sends nothing`() = runTest(dispatcher) {
+        val vm = vm()
+        state.value = room(); advanceUntilIdle()
+        vm.vote(1); advanceUntilIdle()
+        assertThat(vm.state.value.note).isEqualTo(Note.LISTEN_FIRST)
+        coVerify(exactly = 0) { repo.vote(any(), any()) }
+    }
+
+    @Test fun `a vote shows at once, then takes the server's counts`() = runTest(dispatcher) {
+        coEvery { repo.station("MAYA0001") } returns CommunityResult.Ok(StationPage(heard))
+        val answer = CompletableDeferred<CommunityResult<VoteCounts>>()
+        coEvery { repo.vote("MAYA0001", 1) } coAnswers { answer.await() }
+        val vm = vm()
+        state.value = room(); advanceUntilIdle()
+        vm.vote(1); runCurrent()
+        assertThat(vm.state.value.station).isEqualTo(heard.copy(up = 32, myVote = 1))
+        answer.complete(CommunityResult.Ok(VoteCounts(up = 40, down = 8, myVote = 1))); advanceUntilIdle()
+        assertThat(vm.state.value.station).isEqualTo(heard.copy(up = 40, myVote = 1))
+    }
+
+    @Test fun `tapping your vote again takes it back, heard or not`() = runTest(dispatcher) {
+        coEvery { repo.station("MAYA0001") } returns CommunityResult.Ok(StationPage(maya.copy(myVote = -1)))
+        coEvery { repo.vote("MAYA0001", 0) } returns CommunityResult.Ok(VoteCounts(up = 31, down = 7, myVote = 0))
+        val vm = vm()
+        state.value = room(); advanceUntilIdle()
+        vm.vote(-1); advanceUntilIdle()
+        coVerify { repo.vote("MAYA0001", 0) }
+        assertThat(vm.state.value.station!!.myVote).isEqualTo(0)
+        assertThat(vm.state.value.station!!.down).isEqualTo(7)
+    }
+
+    @Test fun `a refused vote flips back and says why`() = runTest(dispatcher) {
+        coEvery { repo.station("MAYA0001") } returns CommunityResult.Ok(StationPage(heard))
+        coEvery { repo.vote(any(), any()) } returns CommunityResult.Failed("offline")
+        val vm = vm()
+        state.value = room(); advanceUntilIdle()
+        vm.vote(-1); advanceUntilIdle()
+        assertThat(vm.state.value.station).isEqualTo(heard)
+        assertThat(vm.state.value.message).isEqualTo("Couldn't reach Community. Try again.")
+    }
+
+    @Test fun `the server wanting a listen dims the pill again, and a listen that couldn't be sent says try again`() = runTest(dispatcher) {
+        coEvery { repo.station("MAYA0001") } returns CommunityResult.Ok(StationPage(heard))
+        coEvery { repo.vote(any(), any()) } returns CommunityResult.Rejected(CommunityRepository.LISTEN_FIRST)
+        val vm = vm()
+        state.value = room(); advanceUntilIdle()
+        vm.vote(1); advanceUntilIdle()
+        assertThat(vm.state.value.note).isEqualTo(Note.LISTEN_FIRST)
+        assertThat(vm.votePill()!!.listenFirst).isTrue()
+        assertThat(vm.state.value.station!!.myVote).isEqualTo(0)
+
+        vm.noteShown()
+        coEvery { repo.station("DILLA001") } returns CommunityResult.Ok(StationPage(Station(id = "DILLA001", name = "Dilla", heard = true)))
+        coEvery { repo.vote("DILLA001", 1) } returns CommunityResult.Rejected(CommunityRepository.VOTE_NOT_NOW)
+        state.value = room(station = "DILLA001"); advanceUntilIdle()
+        vm.vote(1); advanceUntilIdle()
+        assertThat(vm.state.value.note).isEqualTo(Note.TRY_AGAIN)
+        assertThat(vm.votePill()!!.listenFirst).isFalse()
+    }
+
+    // ── Leaving ─────────────────────────────────────────────────────────────────
+
+    @Test fun `leaving within 2 minutes just leaves`() = runTest(dispatcher) {
+        val vm = vm()
+        state.value = room(); advanceUntilIdle()
+        now += 119_000
+        vm.leave(); advanceUntilIdle()
+        verify(exactly = 1) { controller.send(Command.Leave) }
+        assertThat(vm.state.value.parting).isNull()
+    }
+
+    @Test fun `leaving after 2 minutes leaves, then asks about the station, once for that session`() = runTest(dispatcher) {
+        val vm = vm()
+        state.value = room(); advanceUntilIdle()
+        now += 120_000
+        vm.leave(); advanceUntilIdle()
+        verify(exactly = 1) { controller.send(Command.Leave) }
+        assertThat(vm.state.value.parting).isEqualTo(maya)
+        // The room is gone, the sheet stays with its station until it's closed.
+        state.value = ListenTogetherState.Idle; advanceUntilIdle()
+        assertThat(vm.state.value.station).isNull()
+        assertThat(vm.state.value.parting).isEqualTo(maya)
+        vm.partingDone()
+        assertThat(vm.state.value.parting).isNull()
+        // Back in the same session and out again: it doesn't ask twice.
+        state.value = room(); advanceUntilIdle()
+        now += 300_000
+        vm.leave(); advanceUntilIdle()
+        assertThat(vm.state.value.parting).isNull()
+    }
+
+    @Test fun `the sheet's vote and Follow work after the room is gone`() = runTest(dispatcher) {
+        coEvery { repo.station("MAYA0001") } returns CommunityResult.Ok(StationPage(heard))
+        coEvery { repo.vote("MAYA0001", 1) } returns CommunityResult.Ok(VoteCounts(up = 32, down = 8, myVote = 1))
+        coEvery { repo.follow("MAYA0001", true) } returns CommunityResult.Ok(FollowState(following = true, followers = 39))
+        val vm = vm()
+        state.value = room(); advanceUntilIdle()
+        now += 200_000
+        vm.leave()
+        state.value = ListenTogetherState.Idle; advanceUntilIdle()
+        vm.vote(1); advanceUntilIdle()
+        assertThat(vm.state.value.parting!!.myVote).isEqualTo(1)
+        vm.follow(); advanceUntilIdle()
+        assertThat(vm.state.value.parting!!.following).isTrue()
+        assertThat(vm.state.value.parting!!.followers).isEqualTo(39)
+    }
+
+    @Test fun `a host's Leave, and your own station, never ask`() = runTest(dispatcher) {
+        coEvery { repo.station("MINE0001") } returns CommunityResult.Ok(StationPage(Station(id = "MINE0001", name = "Mine", mine = true)))
+        val vm = vm()
+        state.value = room(station = "MINE0001").copy(isHost = true, hostId = "ME000001", role = SessionRole.HOST); advanceUntilIdle()
+        now += 600_000
+        vm.leave(); advanceUntilIdle()
+        verify(exactly = 1) { controller.send(Command.Leave) }
+        assertThat(vm.state.value.parting).isNull()
     }
 
     // ── Whose pick ──────────────────────────────────────────────────────────────

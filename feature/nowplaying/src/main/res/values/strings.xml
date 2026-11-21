@@ -171,7 +171,6 @@
         <item quantity="one">%d follower</item>
         <item quantity="other">%d followers</item>
     </plurals>
-    <string name="room_about_votes">▲ %1$d ▼ %2$d</string>
     <string name="room_close">Close</string>
     <!-- A station\'s one line about what it plays, in quotation marks. %1$s: the line -->
     <string name="room_vibe">“%1$s”</string>
@@ -219,4 +218,15 @@
         <item quantity="other">%d people are listening. Your own queue comes back as you left it.</item>
     </plurals>
     <string name="room_end_body_empty">Your station goes off the air. Your own queue comes back as you left it.</string>
+    <!-- Under a station\'s vote arrows until you\'ve listened to its sessions for 2 minutes; also shown when a dimmed arrow is tapped -->
+    <string name="room_vote_listen_first">Listen 2 minutes to vote</string>
+    <!-- A vote that couldn\'t go for now. Nothing was lost. -->
+    <string name="room_vote_try_again">Couldn\'t vote right now. Try again.</string>
+    <!-- The small sheet after you leave a session. %1$s: the station\'s name -->
+    <string name="room_parting_title">How was %1$s?</string>
+    <string name="room_parting_follow">Follow this station</string>
+    <string name="room_parting_done">Done</string>
+    <!-- The mini player in a session, under the song: the station and that it\'s live. %1$s: the station; %2$d: how many are listening -->
+    <string name="mini_session_live">%1$s · LIVE</string>
+    <string name="mini_session_live_count">%1$s · LIVE · %2$d</string>
 </resources>

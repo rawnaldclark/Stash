@@ -353,6 +353,8 @@ fun StashScaffold(
     // Sessions: one Go live for the Sessions screen, Your station and Now Playing, with its first-time sheet over
     // them all. On the air, the player opens on the session.
     com.stash.feature.nowplaying.session.GoLiveHost(onOpened = { playerSheet.expand() }) {
+    // The sheet after leaving a session, and the room's lines, once for the app.
+    com.stash.feature.nowplaying.session.SessionLeaveHost()
     CompositionLocalProvider(
         LocalChromeHazeState provides hazeState,
         LocalPlayerSheet provides playerSheet,

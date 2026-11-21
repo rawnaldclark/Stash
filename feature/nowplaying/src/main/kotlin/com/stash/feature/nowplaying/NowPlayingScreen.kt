@@ -1179,7 +1179,6 @@ fun NowPlayingScreen(
                     onRejoin = together::rejoin,
                     onLike = viewModel::onLikeTap,
                     onSeek = viewModel::onSeekTo,
-                    onLeave = together::leave,
                     onEnd = together::end,
                     hostControls = {
                         PlaybackControls(

@@ -1,7 +1,6 @@
 package com.stash.feature.nowplaying.session
 
 import android.content.Intent
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -42,7 +41,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -122,7 +120,6 @@ internal fun SessionRoom(
     onRejoin: () -> Unit,
     onLike: () -> Unit,
     onSeek: (Long) -> Unit,
-    onLeave: () -> Unit,
     onEnd: () -> Unit,
     hostControls: @Composable () -> Unit,
     modifier: Modifier = Modifier,
@@ -134,9 +131,7 @@ internal fun SessionRoom(
     val chrome = LocalAlbumChrome.current
     val ink = npInk()
     val muted = ink.copy(alpha = 0.66f)
-    LaunchedEffect(state.message) {
-        state.message?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show(); viewModel.messageShown() }
-    }
+    // Why a follow or a vote didn't go is said by SessionLeaveHost, once for the app.
     var showEveryone by remember { mutableStateOf(false) }
     var showUpNext by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
@@ -189,7 +184,7 @@ internal fun SessionRoom(
                             onClick = { menu = false; confirmEnd = true },
                         )
                     } else {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.room_leave)) }, onClick = { menu = false; onLeave() })
+                        DropdownMenuItem(text = { Text(stringResource(R.string.room_leave)) }, onClick = { menu = false; viewModel.leave() })
                     }
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.room_share)) },
@@ -325,7 +320,7 @@ internal fun SessionRoom(
 
     if (showEveryone) EveryoneSheet(room, crowd, onDismiss = { showEveryone = false })
     if (showUpNext) UpNextSheet(room, onDismiss = { showUpNext = false })
-    if (showAbout && station != null) AboutStation(station, onDismiss = { showAbout = false })
+    if (showAbout && station != null) AboutStation(station, viewModel, onDismiss = { showAbout = false })
     if (confirmEnd) {
         AlertDialog(
             onDismissRequest = { confirmEnd = false },
@@ -579,7 +574,7 @@ private const val UP_NEXT_SHOWN = 30
 
 /** About this station: who hosts it, its line, and how it stands. */
 @Composable
-private fun AboutStation(station: Station, onDismiss: () -> Unit) {
+private fun AboutStation(station: Station, viewModel: SessionRoomViewModel, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(station.name) },
@@ -587,11 +582,13 @@ private fun AboutStation(station: Station, onDismiss: () -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 station.hostName?.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.room_about_host, it)) }
                 station.vibe?.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.room_vibe, it)) }
+                // The pill under it has the score: this line is the followers alone.
                 Text(
-                    pluralStringResource(R.plurals.room_about_followers, station.followers, station.followers) +
-                        " · " + stringResource(R.string.room_about_votes, station.up, station.down),
+                    pluralStringResource(R.plurals.room_about_followers, station.followers, station.followers),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // The station's vote: dimmed until you've listened 2 minutes in its sessions.
+                StationVote(viewModel, Modifier.fillMaxWidth().padding(top = 10.dp))
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.room_close)) } },
