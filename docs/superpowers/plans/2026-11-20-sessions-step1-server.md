@@ -616,3 +616,19 @@ SELECT room FROM live WHERE station_id = ?1;
   - **a private Listen Together room on the Pixel 5 and the Pixel 6** (create, join, skip, a guest's Play next, reactions): exactly as before.
 - [ ] Merge 1a, then 1b (retarget 1b to master before squash-merging 1a; memory `infra_stacked_pr_squash_merge`).
 - [ ] Update the Sessions memory: step 1 done, live and dark, PR numbers, the load numbers.
+
+### 1b as built (2026-11-21)
+
+PR #932, on #931. Where the build differs from the tasks above, the code and `infra/share-worker/README.md` "Sessions protocol" (the app's contract) win:
+
+- **The directory hears of a change at most once every 5 s** (`LIVE_GAP_MS`): a new song, pause or play inside the gap waits for its end and goes as one write of how things are then. Otherwise a host's phone could make D1 write at its message rate (20 a second). The first song still writes at once, and the heartbeat stays a minute.
+- **`step()`'s `live` is `{upsert: row}` or `{remove: {stationId, room}}`**; the song in the row goes without `by`.
+- **`last_live_at` is stamped only while the row is this session's** (task 18's statement 3 gained `AND EXISTS (… room = ?2)`), so a session refused or replaced doesn't move the 7-day clock, and a removed station's dying room can't hold off its cleanup.
+- **A session's reactions don't store the room.** The load check showed each one rewrote the whole room (~60 KB, 53 times a second at 53 listeners). In a session the room passes a reaction on without a clock, and the shell holds each socket to one a second in memory. A private room keeps its own stored clock, which allows exactly the same.
+- **`request` is under the edit limit** with `add` and `unqueue` (with Auto-accept on, each is an add that sends every phone the queue); over it, `requestAnswer {state: "full"}`.
+- **Requests that fit:** taking one checks the queue's 200 adds and `MAX_QUEUE_CHARS` (30 waiting requests could otherwise carry it past a frame); one that doesn't fit stays waiting and the taker hears `refused {what: "request", reason: "queue_full"}`. Auto-accept also holds a listener to a guest's 20 in the queue; past that a request waits.
+- **A pass** tells the requester alone, `requestPassed {track, by}`; every request is answered `requestAnswer {state}`.
+- **A co-host gone for good frees the place:** when no member holds their key hash any more (the 60 s prune), it leaves `cohosts`. Booting one is refused (`refused {what: "boot", reason: "cohost"}`), and a boot takes every slot on that key.
+- **Opening a session** also refuses a station hidden by votes (404 `gone`), since its first directory write would end it, and takes the station's DJ name when the app sends none. Deleting a station reads its room from `live` and ends the session at once (the room's internal `/station-gone`); if the room can't be reached, it ends at its next write.
+- **Directory initials are whole graphemes** (a flag stays a flag), and a name with none is `null`.
+- **The load check** (`scripts/room-load.mjs`) measures the stored room offline as well: a full session is 61 KB as JSON; 20,000 seeded random moves with the longest songs reach 723 KB (866 KB in a 40,000-move search), under the 1 MB bar. Live against `wrangler dev`, 54 sockets: round trips p50 56 ms, max 291 ms with every listener reacting once a second; 545 ms at worst with all 53 in the same instant. Numbers in PR #932.
