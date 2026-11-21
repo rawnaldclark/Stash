@@ -549,3 +549,35 @@ Where 2a differs from its tasks above:
   - Both ways, a guest's Play next went straight in, and reactions crossed. Skip, End for everyone and Leave worked as before. Each time, the user's own queue came back paused, at the place it was left.
   - The command-line session against the local Worker worked by the run book in the PR.
   - Seen, not from 2a: the script adds Dreams with no YouTube id, so the rig had to find it by search. Tidal served it 3 s after the prepare, but the player still wasn't ready at 20 s. The host's 20 s limit (`HOST_PREPARE_MS`) moved the room to the next song. A phone's add carries the YouTube id and art.
+
+## As built: 2b (2026-11-21, `feat/sessions-listen`)
+
+2a merged first (#933), so 2b's branch was cut from master, not stacked. Where 2b differs from its tasks above:
+
+- **Follow isn't in `SessionsViewModel` (task 16).** Its buttons are in the room and on a station's page, so `SessionRoomViewModel` and `StationViewModel` carry it, each shown at once and rolled back with the reason. The lists reload when a follow happens anywhere (`StationsRepository.revision`).
+- **Live now doesn't hide when nobody is live (task 17).** It stays as one line, "Nobody's live right now", with its way to every session. Otherwise a new install would never see that Sessions exists. The posts under the rows get a small label of their own ("TOP THIS WEEK").
+- **While this phone is on the air, a card says "End your session first".** Tuning in leaves the room the phone is in, and a session's host leaving ends it for everyone.
+- **The Sessions screen has no tabs (task 18).** Upcoming waits for step 6, so one list needs none. Go live and your station's face are in the top bar, as in the mockup, not a row.
+- **One Go live for the whole app (task 20).** `GoLiveHost` in the scaffold serves Now Playing's action, the Sessions screen and Your station, and hosts the first-time sheet once. The sheet also asks for the name you go by. Going live loads the saved queue first, as starting a private room does.
+- **A station that goes live paused isn't listed until it plays.** The room writes its directory row at its first song. The booth says "Paused. Press play to go on the air."
+- **The room replaces the player's content whole (task 21).** `SessionRoom` takes the place of Now Playing's column inside the same sheet; the host keeps the player's own controls there. Full art is off in a session. Listen Together's sheet and its action aren't offered inside one: that sheet shows a room code, and a session has none to give.
+- **The vote is in About this station and on the leave sheet (task 22),** not on the room itself: the mockup's room has no pill, and the song has the heart there.
+- **Leave leaves at once; the sheet comes after.** A listener who was in 2 minutes or more is then asked "How was Maya's Desk Radio?". `SessionRoomViewModel` serves the room, the mini player's close and the sheet (`SessionLeaveHost` in the scaffold).
+- **The mini player keeps play and pause for a listener (task 23),** and the close takes the skip button's place. The mockup had the close alone.
+- **The first tune-in's line is in `feature/community` (task 24),** where the lists that tune in are. Tasks 24 and 25 are one commit: they share the lists' view model, the strings and the routes.
+- **A debug build couldn't reach the Worker on this PC.** 2a's `share.baseUrl` override never worked on a phone: the app's HTTP client speaks TLS only. The share clients now also allow cleartext when the base is a plain-http address, which only the debug override is. Without one they stay TLS only (tested).
+
+**Task 26's phone check,** on the Pixel 5 without the Pixel 6:
+
+- Against a Worker on this PC with Sessions on, and `session-peer.mjs` hosts and listeners:
+  - Home's cards in dark and light, against the mockup's sizes; the round Your stations card; the Sessions screen; a tap that tunes in.
+  - Go live the first time (the sheet, the station made) and after (one tap); the booth; End session; Your station.
+  - The room as a listener in a session of 12: a reaction rising from "+6", Follow, the crowd list, Leave.
+  - The vote dimmed on a station not heard, awake on one heard 2 minutes earlier (2a's listening time reached the heard mark), and a vote the server took.
+  - The leave sheet after 2 minutes; the mini player's line and close.
+  - A station link from outside the app; the first tune-in's line, once.
+  - A host dropped: 62 s later the listener's phone said "Kai's session ended" and its own queue was back.
+- Against production, with the override out: Home's Community section as it was, no Go live in the menu, one `live?limit=1` asked (503), and a private room hosted on the rig with a v2 guest, exactly as before.
+- Found there and fixed: a second station link kept the first station's page, so Tune in joined the wrong one.
+- Not checked: two real phones playing in sync (one phone only), and the 15-minute pause ending a session (the server's own tests cover it).
+- With a YouTube id on the guest's add, the song that stalled in 2a's check started in 4 s.
