@@ -30,6 +30,8 @@ CREATE TABLE station_votes (
   at         INTEGER NOT NULL,
   PRIMARY KEY (station_id, voter)
 );
+-- The per-network count and the recount walk this, as votes_net does for posts.
+CREATE INDEX station_votes_net ON station_votes (station_id, ip_hash, value);
 
 -- The app sends one after 2 minutes listening to the station's sessions, in total. Only the hash and the station.
 CREATE TABLE station_heard (

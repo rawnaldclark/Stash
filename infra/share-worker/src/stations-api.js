@@ -6,7 +6,10 @@
  */
 import { json } from "./http.js";
 import { newId } from "./store.js";
-import { NO_STORE, gone, hiddenByVotes, identity, network, notAllowed, rateLimited, readJson } from "./community-shared.js";
+import {
+    NO_STORE, VOTES_PER_NETWORK, VOTE_ROWS_PER_NETWORK, gone, hiddenByVotes, identity, network, networkHash, notAllowed, rateLimited,
+    readJson,
+} from "./community-shared.js";
 import { cleanStationFields, nextWindow, summaryOfStation } from "./stations.js";
 
 const DAY = 86_400_000;
@@ -55,6 +58,8 @@ export async function stationsRoute(request, env, path, method, now) {
             if (method === "DELETE") return deleteStation(request, env, id);
             return notAllowed();
         }
+        if (m[2] === "/vote") return method === "PUT" ? voteStation(request, env, id, now) : notAllowed();
+        if (m[2] === "/heard") return method === "PUT" ? heardStation(request, env, id, now) : notAllowed();
     }
     return json({ error: "not_found" }, 404);
 }
@@ -168,5 +173,77 @@ async function deleteStation(request, env, id) {
     await db.batch(["station_votes", "station_heard", "station_follows", "live"]
         .map((t) => db.prepare(`DELETE FROM ${t} WHERE station_id = ?1`).bind(id))
         .concat(db.prepare("DELETE FROM stations WHERE id = ?1").bind(id)));
+    return new Response(null, { status: 204 });
+}
+
+/** Station `s`'s counted votes, the per-network cap applied: the post recount (src/community.js RECOUNT_SQL) on stations. */
+export const STATION_RECOUNT_SQL = `UPDATE stations SET
+    up = (SELECT COALESCE(SUM(MIN(n, ${VOTES_PER_NETWORK})), 0) FROM (SELECT COUNT(*) AS n FROM station_votes WHERE station_id = ?1 AND value = 1 GROUP BY ip_hash)),
+    down = (SELECT COALESCE(SUM(MIN(n, ${VOTES_PER_NETWORK})), 0) FROM (SELECT COUNT(*) AS n FROM station_votes WHERE station_id = ?1 AND value = -1 GROUP BY ip_hash))
+    WHERE id = ?1 RETURNING up, down`;
+
+/**
+ * The station a vote or heard mark is about, as the caller sees it: null when it's missing, removed, hidden by votes, or
+ * its phone is blocked (all "gone" to a voter). ?2 is the caller.
+ */
+async function votable(env, id, me) {
+    const st = await env.COMMUNITY_DB.prepare(
+        `SELECT s.owner, s.up, s.down, s.vouched, s.removed_at,
+            EXISTS (SELECT 1 FROM blocked b WHERE b.poster = s.owner) AS owner_blocked,
+            EXISTS (SELECT 1 FROM blocked b WHERE b.poster = ?2) AS blocked,
+            EXISTS (SELECT 1 FROM station_heard h WHERE h.station_id = ?1 AND h.voter = ?2) AS heard
+         FROM stations s WHERE s.id = ?1`,
+    ).bind(id, me).first();
+    return !st || st.removed_at !== null || hiddenByVotes(st) || st.owner_blocked ? null : st;
+}
+
+/**
+ * PUT stations/{id}/vote {value: -1 | 0 | 1}: the post vote's rules on a station (one per phone, each network counted at
+ * most twice each way, VOTE_ROWS_PER_NETWORK rows kept per network), except that a +1 or -1 always needs the caller's
+ * heard mark: no app ever voted on a station without sending one, so there is no HEARD_REQUIRED switch to wait for.
+ */
+async function voteStation(request, env, id, now) {
+    if (!(await env.COMMUNITY_VOTE_RL.limit({ key: network(request, env) })).success) return rateLimited();
+    const who = await identity(request);
+    if (!who.id) return json({ error: "bad_key" }, 401);
+    const { body, tooBig } = await readJson(request);
+    const value = body?.value;
+    if (tooBig || ![-1, 0, 1].includes(value)) return json({ error: "bad_request" }, 400);
+    const st = await votable(env, id, who.id);
+    if (!st) return gone();
+    if (st.owner === who.id) return json({ error: "own_station" }, 403);
+    if (st.blocked) return json({ error: "blocked" }, 403);
+    if (value !== 0 && !st.heard) return json({ error: "listen_first" }, 403);
+    const net = await networkHash(request, env);
+    const db = env.COMMUNITY_DB;
+    // SELECT … FROM stations, as the post vote does: a station deleted since the check above keeps no vote row.
+    const write = value === 0
+        ? db.prepare("DELETE FROM station_votes WHERE station_id = ?1 AND voter = ?2").bind(id, who.id)
+        : db.prepare(
+            `INSERT INTO station_votes (station_id, voter, ip_hash, value, at) SELECT ?1, ?2, ?3, ?4, ?5 FROM stations WHERE id = ?1
+             AND ((SELECT COUNT(*) FROM station_votes WHERE station_id = ?1 AND ip_hash = ?3) < ${VOTE_ROWS_PER_NETWORK}
+               OR EXISTS (SELECT 1 FROM station_votes WHERE station_id = ?1 AND voter = ?2))
+             ON CONFLICT (station_id, voter) DO UPDATE SET value = excluded.value, ip_hash = excluded.ip_hash, at = excluded.at`,
+        ).bind(id, who.id, net, value, now);
+    const [, counted] = await db.batch([write, db.prepare(STATION_RECOUNT_SQL).bind(id)]);
+    if (!counted.results[0]) return gone();
+    const { up, down } = counted.results[0];
+    return json({ up, down, myVote: value });
+}
+
+/**
+ * PUT stations/{id}/heard: the caller's app has played 2 minutes of this station's sessions, in total. Stored once
+ * (station, the key's hash, when); again changes nothing and still answers 204. Counted with the votes.
+ */
+async function heardStation(request, env, id, now) {
+    if (!(await env.COMMUNITY_VOTE_RL.limit({ key: network(request, env) })).success) return rateLimited();
+    const who = await identity(request);
+    if (!who.id) return json({ error: "bad_key" }, 401);
+    const st = await votable(env, id, who.id);
+    if (!st) return gone();
+    if (st.owner === who.id) return json({ error: "own_station" }, 403);
+    await env.COMMUNITY_DB.prepare(
+        "INSERT INTO station_heard (station_id, voter, at) SELECT ?1, ?2, ?3 FROM stations WHERE id = ?1 ON CONFLICT (station_id, voter) DO NOTHING",
+    ).bind(id, who.id, now).run();
     return new Response(null, { status: 204 });
 }
