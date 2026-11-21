@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
     step, preview, MAX_MEMBERS, MAX_PUBLIC_MEMBERS, PUBLIC_V, PREPARE_MS, HOST_WAIT_CAP_MS, PAUSE_END_MS, HANDOVER_MS, MAX_AGE_MS,
+    MAX_QUEUE_CHARS,
 } from "../src/room.js";
 
 const T0 = 1_000_000;
@@ -231,4 +232,152 @@ test("loading a song counts as playing: one picked just before the 15 minutes ke
     const loaded = send(paused, "h", { t: "load", track: TRACK }, T0 + 1_000 + PAUSE_END_MS - 1);
     assert.equal(loaded.state.pub.pausedSince, null);
     assert.equal(step(loaded.state, { type: "alarm" }, T0 + 1_000 + PAUSE_END_MS).closed, undefined);
+});
+
+// ── Task 15: requests ─────────────────────────────────────────────────────────
+
+const A = { t: "Pink + White", a: "Frank Ocean" };
+const B = { t: "Redbone", a: "Childish Gambino" };
+const C = { t: "Nights", a: "Frank Ocean" };
+/** [s] with member [id] made a co-host, as `cohost` does (task 16). */
+function withCohost(s, id) {
+    const c = structuredClone(s);
+    c.pub.cohosts.push(c.members.find((m) => m.id === id).kh);
+    return c;
+}
+const request = (s, from, track, id, at = T0) => send(s, from, { t: "request", track }, at, { newId: id });
+/** Who got a `requests` frame, and which ids it held. */
+const views = (r) => Object.fromEntries(sent(r, "requests").map((o) => [o.to, o.msg.requests.map((x) => x.id)]));
+
+test("a listener's request waits, seen by the host and co-hosts, and by its requester alone", () => {
+    const s = withCohost(hello(session(), "c", { at: T0 + 3 }).state, "b");
+    const r = request(s, "a", A, "r1", T0 + 10);
+    assert.deepEqual(sent(r, "requestAnswer").map((o) => [o.to, o.msg.state]), [["a", "waiting"]]);
+    assert.deepEqual(views(r), { h: ["r1"], b: ["r1"], a: ["r1"] });
+    assert.deepEqual(sent(r, "requests").find((o) => o.to === "h").msg.requests, [{ id: "r1", from: "a", track: A }]);
+    const r2 = request(r.state, "c", B, "r2", T0 + 11);
+    assert.deepEqual(views(r2), { h: ["r1", "r2"], b: ["r1", "r2"], c: ["r2"] });
+    assert.deepEqual(sent(r2, "suggestions"), [], "never the old suggestions broadcast");
+    const late = hello(r2.state, "d", { at: T0 + 12 });
+    assert.deepEqual(sent(late, "welcome")[0].msg.state.suggestions, [], "the state everyone gets has none");
+    assert.deepEqual(views(late), { d: [] });
+});
+
+test("the host and co-hosts add songs: a request from them does nothing", () => {
+    const s = withCohost(session(), "b");
+    for (const who of ["h", "b"]) {
+        const r = request(s, who, A, "r1");
+        assert.equal(r.state, s, who);
+        assert.deepEqual(r.out, [], who);
+    }
+});
+
+test("a 4th waiting from one listener, or a 31st in all, is full", () => {
+    let s = session();
+    for (let i = 0; i < 3; i++) s = request(s, "a", { t: `Song ${i}`, a: "A" }, `a${i}`).state;
+    const fourth = request(s, "a", { t: "Song 3", a: "A" }, "a3");
+    assert.deepEqual(fourth.out, [{ to: "a", msg: { t: "requestAnswer", state: "full" } }]);
+    assert.equal(fourth.state, s);
+    let t = hello(pub(), "h", { host: true }).state;
+    for (let i = 0; i < 11; i++) t = hello(t, `m${i}`).state;
+    for (let i = 0; i < 10; i++) for (let j = 0; j < 3; j++) t = request(t, `m${i}`, { t: `S${i}-${j}`, a: "A" }, `m${i}-${j}`).state;
+    assert.equal(t.suggestions.length, 30);
+    assert.equal(sent(request(t, "m10", A, "late"), "requestAnswer")[0].msg.state, "full");
+});
+
+test("taken requests land where Play next and Add to queue put them, as their requester's", () => {
+    let s = onAir();
+    s = send(s, "h", { t: "queue", queue: [{ t: "Album 1", a: "Host" }, { t: "Album 2", a: "Host" }], qv: s.qv }).state;
+    s = request(s, "a", A, "r1").state;
+    s = request(s, "b", B, "r2").state;
+    let r = send(s, "h", { t: "requestAction", id: "r1", action: "queue" });
+    r = send(r.state, "h", { t: "requestAction", id: "r2", action: "next" });
+    assert.deepEqual(r.state.queue.map((t) => [t.t, t.by]), [["Redbone", "b"], ["Pink + White", "a"], ["Album 1", "h"], ["Album 2", "h"]]);
+    assert.equal(sent(r, "queue")[0].to, "all");
+    assert.deepEqual(r.state.suggestions, []);
+    assert.deepEqual(views(r), { h: [], b: [] });
+});
+
+test("a pass reaches its requester alone, saying who passed", () => {
+    const s = request(withCohost(session(), "b"), "a", A, "r1").state;
+    const r = send(s, "b", { t: "requestAction", id: "r1", action: "pass" });
+    assert.deepEqual(sent(r, "requestPassed"), [{ to: "a", msg: { t: "requestPassed", track: A, by: "b" } }]);
+    assert.deepEqual(sent(r, "queue"), []);
+    assert.deepEqual(r.state.suggestions, []);
+    assert.deepEqual(views(r), { h: [], b: [], a: [] });
+});
+
+test("listeners can't act on requests, and nobody can on one that isn't there", () => {
+    const s = request(session(), "a", A, "r1").state;
+    for (const [from, msg] of [["b", { id: "r1", action: "next" }], ["h", { id: "nope", action: "next" }], ["h", { id: "r1", action: "play" }]]) {
+        const r = send(s, from, { t: "requestAction", ...msg });
+        assert.equal(r.state, s);
+        assert.deepEqual(r.out, []);
+    }
+});
+
+test("Auto-accept lets the waiting requests in, in order, and each later one straight in", () => {
+    let s = onAir();
+    s = request(s, "a", A, "r1").state;
+    s = request(s, "b", B, "r2").state;
+    s = request(s, "a", C, "r3").state;
+    const r = send(s, "h", { t: "autoAccept", on: true });
+    assert.deepEqual(r.state.queue.map((t) => [t.t, t.by]), [["Pink + White", "a"], ["Redbone", "b"], ["Nights", "a"]]);
+    assert.deepEqual(r.state.suggestions, []);
+    assert.equal(sent(r, "session")[0].msg.autoAccept, true);
+    assert.deepEqual(views(r), { h: [], a: [], b: [] });
+    const next = request(r.state, "b", { t: "Ivy", a: "Frank Ocean" }, "r4");
+    assert.deepEqual(sent(next, "requestAnswer")[0].msg.state, "queued");
+    assert.equal(next.state.queue.at(-1).t, "Ivy");
+    assert.equal(send(r.state, "a", { t: "autoAccept", on: false }).state, r.state, "the host's switch alone");
+});
+
+test("Auto-accept holds a listener to 20 songs in the queue, as a guest's adds are; past that the request waits", () => {
+    let s = send(onAir(), "h", { t: "autoAccept", on: true }).state;
+    for (let i = 0; i < 20; i++) s = request(s, "a", { t: `S${i}`, a: "A" }, `r${i}`).state;
+    assert.equal(s.queue.length, 20);
+    const r = request(s, "a", { t: "S20", a: "A" }, "r20");
+    assert.equal(sent(r, "requestAnswer")[0].msg.state, "waiting");
+    const taken = send(r.state, "h", { t: "requestAction", id: "r20", action: "queue" });
+    assert.equal(taken.state.queue.length, 21, "the host's own choice isn't held to that");
+});
+
+test("a request the queue has no room left for stays waiting, and the one taking it is told", () => {
+    const longSong = (t) => ({ t: `${t}-${"x".repeat(480)}`, a: "a".repeat(490), al: "b".repeat(490) });
+    let s = onAir();
+    s = send(s, "h", { t: "add", tracks: Array.from({ length: 200 }, (_, i) => longSong(`H${i}`)), next: false }).state;
+    s = request(s, "a", longSong("req"), "r1").state;
+    const r = send(s, "h", { t: "requestAction", id: "r1", action: "next" });
+    assert.deepEqual(r.out, [{ to: "h", msg: { t: "refused", what: "request", reason: "queue_full" } }]);
+    assert.equal(r.state, s);
+    assert.ok(JSON.stringify(s.queue).length <= MAX_QUEUE_CHARS);
+});
+
+test("a requester gone 60 s takes their requests with them, and the host and co-hosts hear", () => {
+    let s = request(withCohost(session(), "b"), "a", A, "r1").state;
+    s = step(s, { type: "close", from: "a" }, T0 + 10).state;
+    const r = step(s, { type: "alarm" }, T0 + 10 + HANDOVER_MS);
+    assert.deepEqual(r.state.suggestions, []);
+    assert.deepEqual(views(r), { h: [], b: [] });
+    assert.deepEqual(sent(r, "suggestions"), []);
+});
+
+test("in a session suggestions are off, and a listener's add is answered with nothing added", () => {
+    const s = session();
+    assert.equal(send(s, "a", { t: "suggest", track: A }, T0, { newId: "x" }).state, s);
+    const add = send(s, "a", { t: "add", tracks: [A], next: true }, T0, { newId: "y" });
+    assert.equal(add.state, s);
+    assert.deepEqual(add.out, [{ to: "a", msg: { t: "added", by: "a", next: true, count: 0 } }]);
+    assert.equal(send(s, "h", { t: "add", tracks: [A], next: true }).state.queue[0].t, A.t, "the host adds straight in");
+});
+
+test("a private room knows nothing of requests or Auto-accept", () => {
+    let p = privateRoom();
+    p = step(p, { type: "hello", msg: { t: "hello", v: 2 }, hostKeyOk: true, newId: "h", newToken: "th" }, T0).state;
+    p = step(p, { type: "hello", msg: { t: "hello", v: 2 }, hostKeyOk: false, newId: "g", newToken: "tg" }, T0).state;
+    for (const [from, msg] of [["g", { t: "request", track: A }], ["h", { t: "requestAction", id: "x", action: "next" }], ["h", { t: "autoAccept", on: true }]]) {
+        const r = send(p, from, msg, T0, { newId: "n" });
+        assert.equal(r.state, p, msg.t);
+        assert.deepEqual(r.out, [], msg.t);
+    }
 });

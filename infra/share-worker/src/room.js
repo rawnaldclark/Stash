@@ -99,7 +99,7 @@ export const MAX_REQUESTS = 30;
 export const MAX_BOOTED = 200;
 export const capacity = (s) => (s.pub ? MAX_PUBLIC_MEMBERS : MAX_MEMBERS);
 
-const HOST_ONLY =new Set(["load", "play", "pause", "seek", "queue", "suggestion", "makeHost", "end", "settings"]);
+const HOST_ONLY = new Set(["load", "play", "pause", "seek", "queue", "suggestion", "makeHost", "end", "settings", "autoAccept"]);
 /** Phone status → stored member status (`ready` is stored as `ok`, spec §3). */
 const STATUSES = { ready: "ok", buffering: "buffering", unavailable: "unavailable", drifting: "drifting" };
 
@@ -498,6 +498,41 @@ function switchChanged(ctx, before, announce) {
     ctx.out.push({ to: "all", msg: { t: "settings", guestsAdd: now } });
 }
 
+/*
+ * A session's requests: listeners' songs waiting for the host or a co-host (UX spec §4.2). They're kept in
+ * `s.suggestions`, which a session never broadcasts: the host and co-hosts get the whole list, a listener only their own
+ * (`requests`).
+ */
+
+/** The waiting requests to the host and every co-host, and to each listener in [touched] (whose own list changed). */
+function pushRequests(ctx, touched = []) {
+    const { s } = ctx;
+    for (const m of connected(s)) if (isStaff(s, m.id)) ctx.out.push(requestsMsg(s, m.id));
+    for (const id of new Set(touched)) if (!isStaff(s, id) && findConnected(s, id)) ctx.out.push(requestsMsg(s, id));
+}
+
+/** One more waiting request, within MAX_REQUESTS_EACH a listener and MAX_REQUESTS in all; false when it doesn't fit. */
+function pushRequest(s, x) {
+    if (s.suggestions.length >= MAX_REQUESTS) return false;
+    if (s.suggestions.filter((y) => y.from === x.from).length >= MAX_REQUESTS_EACH) return false;
+    s.suggestions.push(x);
+    return true;
+}
+
+/**
+ * Whether request [x] fits in the queue now: the room's MAX_QUEUE adds and its MAX_QUEUE_CHARS (30 waiting requests
+ * could otherwise carry the queue past what a frame holds). [byRoom]: nobody chose it (Auto-accept), so its requester's
+ * MAX_GUEST_WAITING counts too, as for a guest's add; the host's or a co-host's pick isn't held to that, as a suggestion
+ * the host accepts isn't.
+ */
+function fitsQueue(s, x, byRoom) {
+    if (s.adds.length >= MAX_QUEUE || (byRoom && room(s, x.from) <= 0)) return false;
+    return JSON.stringify(s.queue).length + JSON.stringify({ ...x.track, by: x.from }).length + 1 <= MAX_QUEUE_CHARS;
+}
+
+/** Request [x] into the queue, its requester's, by Play next ([next]) or Add to queue. The caller bumps qv and settles. */
+const queueRequest = (s, x, next) => insertAdds(s, [{ ...x.track, by: x.from }], next);
+
 /** Closes the room, everyone told why. */
 function endRoom(ctx, reason) {
     ctx.out.push({ to: "all", msg: { t: "ended", reason } });
@@ -626,7 +661,10 @@ const EVENTS = {
                 ctx.out.push(stateMsg(s));
             } else {
                 ctx.out.push(membersMsg(s));
-                if (s.suggestions.length !== pending) ctx.out.push(suggestionsMsg(s));
+                if (s.suggestions.length !== pending) {
+                    if (s.pub) pushRequests(ctx); // a session's requests, to the host and co-hosts only
+                    else ctx.out.push(suggestionsMsg(s));
+                }
             }
             changed = true;
         }
@@ -733,6 +771,11 @@ const MESSAGES = {
         const next = msg.next === true;
         const tracks = msg.tracks.slice(0, MAX_QUEUE).map(cleanTrack).filter(Boolean);
         if (!tracks.length) { answerAdd(ctx, next); return false; }
+        // In a session the host and co-hosts add straight in; a listener's songs go through `request`.
+        if (s.pub) {
+            if (!isStaff(s, event.from)) { answerAdd(ctx, next); return false; }
+            return addSongs(ctx, tracks, next);
+        }
         if (event.from === s.host || guestsCanAdd(s)) return addSongs(ctx, tracks, next);
         if (!event.newId) return false;
         let suggested = 0;
@@ -744,6 +787,7 @@ const MESSAGES = {
 
     suggest(ctx) {
         const { s, msg, event } = ctx;
+        if (s.pub) return false; // a session's listeners request instead
         const track = cleanTrack(msg.track);
         if (!track || s.host === event.from) return false;
         // An older app's Suggest is its Play next: with guest adds on, it goes straight in (owner decision 5).
@@ -756,6 +800,7 @@ const MESSAGES = {
 
     suggestion(ctx) {
         const { s, msg } = ctx;
+        if (s.pub) return false; // requests are taken with `requestAction`
         const i = s.suggestions.findIndex((x) => x.id === msg.id);
         if (i < 0 || (msg.action !== "add" && msg.action !== "dismiss")) return false;
         const [picked] = s.suggestions.splice(i, 1);
@@ -836,6 +881,91 @@ const MESSAGES = {
     end(ctx) {
         ctx.out.push({ to: "all", msg: { t: "ended", reason: "host_ended" } });
         ctx.closed = true;
+        return true;
+    },
+
+    // ── Sessions only: each of these does nothing in a private room ──────────
+
+    /**
+     * `{ track }`, a listener asking for a song (the host and co-hosts add songs instead). With Auto-accept on it goes
+     * in as Add to queue, as a guest's add would; otherwise, or when it doesn't fit, it waits for the host or a co-host.
+     * The requester always hears what became of it: `requestAnswer {state: "queued" | "waiting" | "full"}`.
+     */
+    request(ctx) {
+        const { s, msg, event } = ctx;
+        if (!s.pub || isStaff(s, event.from)) return false;
+        const track = cleanTrack(msg.track);
+        if (!track) return false;
+        const x = { id: event.newId, from: event.from, track };
+        const answer = (state) => ctx.out.push({ to: event.from, msg: { t: "requestAnswer", state } });
+        if (s.pub.autoAccept && fitsQueue(s, x, true)) {
+            s.qv++;
+            queueRequest(s, x, false);
+            settle(s);
+            s.rev++;
+            ctx.out.push(queueMsg(s));
+            answer("queued");
+            return true;
+        }
+        if (!event.newId || !pushRequest(s, x)) { answer("full"); return false; }
+        s.rev++;
+        answer("waiting");
+        pushRequests(ctx, [event.from]);
+        return true;
+    },
+
+    /**
+     * `{ id, action }` from the host or a co-host, on a waiting request: Play next ("next"), Add to queue ("queue"), or
+     * "pass", which only its requester hears of (UX spec §4.2), with who passed. One that no longer fits the queue stays
+     * waiting, and the sender hears `refused`.
+     */
+    requestAction(ctx) {
+        const { s, msg, event } = ctx;
+        if (!s.pub || !isStaff(s, event.from)) return false;
+        const i = s.suggestions.findIndex((x) => x.id === msg.id);
+        if (i < 0 || !["next", "queue", "pass"].includes(msg.action)) return false;
+        const x = s.suggestions[i];
+        if (msg.action !== "pass" && !fitsQueue(s, x, false)) {
+            ctx.out.push({ to: event.from, msg: { t: "refused", what: "request", reason: "queue_full" } });
+            return false;
+        }
+        s.suggestions.splice(i, 1);
+        if (msg.action === "pass") {
+            if (findConnected(s, x.from)) ctx.out.push({ to: x.from, msg: { t: "requestPassed", track: x.track, by: event.from } });
+        } else {
+            s.qv++;
+            queueRequest(s, x, msg.action === "next");
+            settle(s);
+            ctx.out.push(queueMsg(s));
+        }
+        s.rev++;
+        pushRequests(ctx, [x.from]);
+        return true;
+    },
+
+    /**
+     * `{ on }`, the host's Auto-accept: requests go straight in as Add to queue. Turning it on lets in the ones waiting, in
+     * the order they came; one that doesn't fit stays waiting rather than being lost.
+     */
+    autoAccept(ctx) {
+        const { s, msg } = ctx;
+        if (!s.pub || typeof msg.on !== "boolean" || s.pub.autoAccept === msg.on) return false;
+        s.pub.autoAccept = msg.on;
+        const taken = [];
+        if (msg.on) {
+            const waiting = s.suggestions;
+            s.suggestions = [];
+            for (const x of waiting) {
+                if (!fitsQueue(s, x, true)) { s.suggestions.push(x); continue; }
+                if (!taken.length) s.qv++;
+                queueRequest(s, x, false);
+                taken.push(x.from);
+            }
+            if (taken.length) { settle(s); ctx.out.push(queueMsg(s)); }
+        }
+        s.rev++;
+        ctx.out.push(sessionMsg(s));
+        if (taken.length) pushRequests(ctx, taken);
         return true;
     },
 };
