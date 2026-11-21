@@ -119,8 +119,18 @@ function ownView(row, me) {
         ...summaryOfStation(row, me),
         autoLive: row.auto_live, schedule: scheduleOf(row),
         hidden: hiddenByVotes(row), removed: row.removed_at !== null, lastLiveAt: row.last_live_at ?? null,
-        deleteAt: (row.last_live_at ?? row.created_at) + STATION_IDLE_MS,
+        deleteAt: deleteAtOf(row),
     };
+}
+
+/**
+ * From when the daily cleanup deletes [row] (cleanupStations' rules): 7 days after it was last on the air, or made; for
+ * one the owner removed, a day after the removal (or after its last time on the air, if later) when that's sooner.
+ */
+function deleteAtOf(row) {
+    const active = row.last_live_at ?? row.created_at;
+    const idle = active + STATION_IDLE_MS;
+    return row.removed_at === null ? idle : Math.min(idle, Math.max(row.removed_at, active) + DAY);
 }
 
 const readOwn = (env, who) => env.COMMUNITY_DB.prepare(
@@ -181,8 +191,10 @@ async function deleteStation(request, env, id) {
     const { who, refusal } = await writer(request, env);
     if (refusal) return refusal;
     const db = env.COMMUNITY_DB;
-    const row = await db.prepare("SELECT owner FROM stations WHERE id = ?1").bind(id).first();
-    if (!row) return gone();
+    const row = await db.prepare("SELECT owner, removed_at FROM stations WHERE id = ?1").bind(id).first();
+    // A station the owner removed is gone to its phone too, as a removed post is: deleting it to start a new one at
+    // once would skip the day it can be restored in. The cleanup deletes it after that day.
+    if (!row || row.removed_at !== null) return gone();
     if (row.owner !== who.id) return json({ error: "not_yours" }, 403);
     await db.batch(["station_votes", "station_heard", "station_follows", "live"]
         .map((t) => db.prepare(`DELETE FROM ${t} WHERE station_id = ?1`).bind(id))

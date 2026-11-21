@@ -139,8 +139,14 @@ test("a removed station is gone, and its owner is told so", async () => {
     const id = await station(e);
     await e.COMMUNITY_DB.prepare("UPDATE stations SET removed_at = 1, removed_by = 'owner' WHERE id = ?1").bind(id).run();
     assert.equal((await get(e, id, KEY_A)).status, 404);
-    assert.equal((await mine(e)).removed, true);
+    const own = await mine(e);
+    assert.equal(own.removed, true);
+    assert.ok(Math.abs(own.deleteAt - (Date.now() + DAY)) < 60_000, "made just now, removed: deleted a day from now, not in 7");
     assert.equal((await patch(e, id, { name: "Back" })).status, 404);
+    // As a post: the owner's removal stands. Deleting it and starting over at once would skip the day to restore it.
+    assert.equal((await call(e, "DELETE", `/v1/community/stations/${id}`, { key: KEY_A })).status, 404);
+    assert.equal(await count(e, "stations"), 1);
+    assert.equal((await create(e, { name: "A fresh start" })).status, 409);
 });
 
 test("only its owner deletes a station, and it goes with its votes, heard marks, follows and live row", async () => {
