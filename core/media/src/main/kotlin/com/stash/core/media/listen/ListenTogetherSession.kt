@@ -16,6 +16,7 @@ import com.stash.core.model.listen.ClientMessage
 import com.stash.core.model.listen.RoomMember
 import com.stash.core.model.listen.RoomPhase
 import com.stash.core.model.listen.RoomProtocol
+import com.stash.core.model.listen.RoomRequest
 import com.stash.core.model.listen.RoomState
 import com.stash.core.model.listen.RoomTimeline
 import com.stash.core.model.listen.ServerMessage
@@ -134,6 +135,10 @@ class ListenTogetherSession(
     private val heldAdds = mutableListOf<Pair<List<SharedTrack>, Boolean>>()
     /** Batches sent and not fully answered, oldest first. The room answers every `add`, in order, and the toast waits for that. */
     private val awaitingAdds = ArrayDeque<AddsOnTheirWay>()
+    /** A session's waiting requests this phone may see (`requests`): all of them for the host and co-hosts, a listener's own. */
+    private var requests: List<RoomRequest> = emptyList()
+    /** A listener's requests sent and not fully answered, oldest first: the room answers each `request` in order. */
+    private val awaitingRequests = ArrayDeque<RequestsOnTheirWay>()
 
     // Named notices (SessionEvent): who's been seen, their names (kept after they leave), and
     // leaves waiting out a grace period so a network blip doesn't read as goodbye and hello.
@@ -325,6 +330,7 @@ class ListenTogetherSession(
                 reconnecting = true
                 welcomed = false
                 awaitingAdds.clear() // their answers went with the socket; the welcome's queue shows what got in
+                awaitingRequests.clear() // likewise: the next `requests` shows which wait
                 publish()
             }
             is RoomEvent.Closed -> teardown(
@@ -414,9 +420,38 @@ class ListenTogetherSession(
             is ServerMessage.Reaction -> controller.reaction(m)
             is ServerMessage.Ended -> teardown("Session ended")
             // Sessions' own frames: only a session sends them.
-            is ServerMessage.Session, is ServerMessage.Requests, is ServerMessage.RequestAnswer,
-            is ServerMessage.RequestPassed, is ServerMessage.Refused, is ServerMessage.Command -> Unit
+            is ServerMessage.Session -> { room = room?.copy(session = m.info); publish() }
+            is ServerMessage.Requests -> { requests = m.requests; publish() }
+            is ServerMessage.RequestAnswer -> onRequestAnswered(m.state)
+            is ServerMessage.RequestPassed -> {
+                val by = memberNames[m.by]
+                if (by != null) controller.message(R.string.session_request_passed, by, m.track.title)
+                else controller.message(R.string.session_request_passed_unnamed, m.track.title)
+            }
+            // Answers to what the host and co-hosts do with requests, co-hosts and skips: Sessions step 3.
+            is ServerMessage.Refused, is ServerMessage.Command -> Unit
         }
+    }
+
+    /** This phone's part in a session ([ListenTogetherState.InRoom.role]); null in a private room or before the welcome. */
+    private fun role(): SessionRole? {
+        val s = room?.session ?: return null
+        val id = myId ?: return null
+        return when {
+            isHost -> SessionRole.HOST
+            id in s.cohosts -> SessionRole.COHOST
+            else -> SessionRole.LISTENER
+        }
+    }
+
+    /**
+     * In a session, the room's song is playing on this phone: the room plays it, this phone has it ready and hasn't
+     * paused it, and the socket is up. What a listener's time toward the station's vote counts.
+     */
+    private fun onAir(): Boolean {
+        if (stationId == null) return false
+        val t = timeline ?: return false
+        return t.playing && !pausedLocally && !reconnecting && t.trackKey == readyKey && readyKey != unavailableKey
     }
 
     private suspend fun applyState(s: RoomState) {
@@ -799,8 +834,11 @@ class ListenTogetherSession(
         }
         override fun onSet(items: List<MediaItem>, startIndex: Int) {
             if (!isHost) {
-                if (canAddDirectly()) controller.message(R.string.lt_only_host_changes_song)
-                else controller.message("Leave the session to play something else")
+                when {
+                    role() == SessionRole.LISTENER -> controller.message(R.string.session_only_host_changes_song)
+                    canAddDirectly() -> controller.message(R.string.lt_only_host_changes_song)
+                    else -> controller.message("Leave the session to play something else")
+                }
                 return
             }
             hostChoseToMove()
@@ -921,10 +959,13 @@ class ListenTogetherSession(
         }
     }
 
-    /** A room that knows guest adds takes this phone's adds straight in: it hosts, or the host lets guests add. */
+    /**
+     * A room that knows guest adds takes this phone's adds straight in: it hosts, the host lets guests add, or (in a
+     * session) it co-hosts.
+     */
     private fun canAddDirectly(): Boolean {
         val r = room ?: return false
-        return r.v >= RoomProtocol.ADDS_VERSION && (isHost || r.guestsAdd)
+        return r.v >= RoomProtocol.ADDS_VERSION && (isHost || r.guestsAdd || role() == SessionRole.COHOST)
     }
 
     /**
@@ -955,8 +996,10 @@ class ListenTogetherSession(
     private fun deliver(runs: List<Pair<List<SharedTrack>, Boolean>>, beyond: Int = 0) {
         val r = room
         if (r == null || !welcomed) return hold(runs)
+        // A session's listener can't add: the room answers `added {count: 0}`. Their Play next asks the host instead.
+        if (role() == SessionRole.LISTENER) return request(runs.flatMap { it.first }, beyond)
         if (r.v < RoomProtocol.ADDS_VERSION) return deliverToOlderRoom(r, runs)
-        val direct = isHost || r.guestsAdd
+        val direct = canAddDirectly()
         // Not sending what can't go in: the room enforces these too, so this only saves the messages.
         var left = when {
             !direct -> MAX_SUGGESTIONS
@@ -1019,14 +1062,67 @@ class ListenTogetherSession(
     }
 
     private fun suggestedMessage(r: RoomState) {
-        val host = r.members.firstOrNull { it.id == r.host }?.name ?: r.host?.let { memberNames[it] }
+        val host = hostName(r)
         if (host != null) controller.message(R.string.lt_suggested_to, host) else controller.message(R.string.lt_suggested)
     }
 
-    /** A guest takes their own song out (the host edits through [Command.SetQueue]); shown at once, like the host's swipe. */
+    private fun hostName(r: RoomState): String? = r.members.firstOrNull { it.id == r.host }?.name ?: r.host?.let { memberNames[it] }
+
+    /**
+     * A session listener's Play next or Add to queue (Sessions protocol): a request, which the host or a co-host takes in
+     * or passes, or which goes straight in as Add to queue while Auto-accept is on. The room keeps
+     * [MAX_REQUESTS_WAITING] waiting from each listener, so only as many as fit are sent; the toast waits for the room's
+     * answers. [beyond]: songs selected past what was looked up.
+     */
+    private fun request(tracks: List<SharedTrack>, beyond: Int = 0) {
+        val mine = requests.count { it.from == myId }
+        val batch = RequestsOnTheirWay(wanted = tracks.size + beyond, waitingBefore = mine)
+        val unsent = mutableListOf<SharedTrack>()
+        for (track in tracks.take((MAX_REQUESTS_WAITING - mine).coerceAtLeast(0))) {
+            if (unsent.isEmpty() && connection?.send(ClientMessage.Request(track)) == true) batch.unanswered++
+            else unsent += track
+        }
+        batch.wanted -= unsent.size
+        if (batch.unanswered > 0) awaitingRequests.addLast(batch)
+        else if (unsent.isEmpty()) confirmRequests(batch) // none could go: this listener's are all waiting already
+        if (unsent.isNotEmpty()) hold(listOf(unsent to false))
+    }
+
+    private fun onRequestAnswered(state: String) {
+        val batch = awaitingRequests.firstOrNull() ?: return
+        when (state) {
+            REQUEST_QUEUED -> batch.queued++
+            REQUEST_WAITING -> batch.waiting++
+        }
+        if (--batch.unanswered > 0) return
+        awaitingRequests.removeFirst()
+        confirmRequests(batch)
+    }
+
+    private fun confirmRequests(batch: RequestsOnTheirWay) {
+        val r = room ?: return
+        val taken = batch.queued + batch.waiting
+        when {
+            taken >= batch.wanted && batch.waiting == 0 -> controller.message(R.string.lt_added_queue) // Auto-accept took them all
+            taken >= batch.wanted -> {
+                val host = hostName(r)
+                if (host != null) controller.quantityMessage(R.plurals.session_requests_sent_to, taken, taken, host)
+                else controller.quantityMessage(R.plurals.session_requests_sent, taken, taken)
+            }
+            batch.waitingBefore + batch.waiting >= MAX_REQUESTS_WAITING ->
+                controller.quantityMessage(R.plurals.session_requests_cap, MAX_REQUESTS_WAITING, MAX_REQUESTS_WAITING)
+            else -> controller.message(R.string.session_requests_full)
+        }
+    }
+
+    /**
+     * A guest takes their own song out (the host edits through [Command.SetQueue]); shown at once, like the host's swipe.
+     * A session's co-hosts take out any song.
+     */
     private fun unqueue(track: SharedTrack, at: Int) {
         val r = room ?: return
-        if (r.v < RoomProtocol.ADDS_VERSION || (!isHost && track.addedBy != myId)) return
+        val anySong = isHost || role() == SessionRole.COHOST
+        if (r.v < RoomProtocol.ADDS_VERSION || (!anySong && track.addedBy != myId)) return
         val i = if (r.queue.getOrNull(at) == track) at else r.queue.indexOf(track)
         if (i >= 0) room = r.copy(queue = r.queue.filterIndexed { j, _ -> j != i })
         send(ClientMessage.Unqueue(track, at))
@@ -1036,7 +1132,8 @@ class ListenTogetherSession(
     /** The host's switch. The caller remembers it; the room hears it now while this phone hosts, else in the next hello. */
     private fun setGuestsAdd(on: Boolean) {
         myGuestsAdd = on
-        if (isHost && (room?.v ?: 1) >= RoomProtocol.ADDS_VERSION) send(ClientMessage.Settings(on))
+        // A session has no such switch: its settings do nothing.
+        if (isHost && stationId == null && (room?.v ?: 1) >= RoomProtocol.ADDS_VERSION) send(ClientMessage.Settings(on))
         publish()
     }
 
@@ -1116,6 +1213,7 @@ class ListenTogetherSession(
         code = null; url = null; myId = null; token = null; room = null; isHost = false; pendingLoad = null; loadsInFlight = 0
         stationId = null; listenerKey = null
         welcomed = false; unplayableInARow = 0; skipNoticeKey = NONE; heldAdds.clear(); awaitingAdds.clear()
+        requests = emptyList(); awaitingRequests.clear()
         timeline = null; applied = null; loadedKey = NONE; itemKey = NONE; readyKey = NONE; unavailableKey = NONE; lastStatus = null
         roomPreparingKey = NONE; preparedAt = 0L; prepareLimitJob = null // the job died with sessionScope
         reconnecting = false; versionMismatch = false; history.clear(); radioTriedKey = NONE
@@ -1178,11 +1276,16 @@ class ListenTogetherSession(
                 queue = r.queue,
                 qv = r.qv,
                 names = memberNames.toMap(),
-                roomKnowsAdds = r.v >= RoomProtocol.ADDS_VERSION,
+                // A session has no guests-add switch to show: its listeners request, its co-hosts add.
+                roomKnowsAdds = r.v >= RoomProtocol.ADDS_VERSION && r.session == null,
                 guestsAdd = r.v >= RoomProtocol.ADDS_VERSION && r.guestsAdd,
                 myGuestsAdd = myGuestsAdd,
                 hostAppOutdated = r.v >= RoomProtocol.ADDS_VERSION &&
                     r.members.firstOrNull { it.id == r.host }?.let { (it.v ?: 1) < RoomProtocol.ADDS_VERSION } == true,
+                session = r.session,
+                role = role(),
+                requests = requests,
+                onAir = onAir(),
             ),
         )
     }
@@ -1198,11 +1301,22 @@ class ListenTogetherSession(
         var suggested: Int? = null
     }
 
+    /** One batch of a listener's requests on its way: how many were wanted, how many of theirs already waited, the answers so far. */
+    private class RequestsOnTheirWay(var wanted: Int, val waitingBefore: Int) {
+        var unanswered = 0
+        var queued = 0
+        var waiting = 0
+    }
+
     private companion object {
         const val TAG = "ListenTogether"
         const val NONE = -1
         const val MAX_QUEUE = 200
         const val MAX_SUGGESTIONS = 3
+        /** A session's waiting requests from one listener (room.js MAX_REQUESTS_EACH). */
+        const val MAX_REQUESTS_WAITING = 3
+        const val REQUEST_QUEUED = "queued"
+        const val REQUEST_WAITING = "waiting"
         const val MAX_UNPLAYABLE_IN_A_ROW = 3
         const val END_SLOP_MS = 1_000L
         /** One guest's songs waiting in the room's queue (owner decision 7); keep in sync with MAX_GUEST_WAITING in room.js. */

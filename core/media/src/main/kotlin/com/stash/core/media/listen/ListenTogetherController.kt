@@ -6,8 +6,10 @@ import androidx.annotation.PluralsRes
 import androidx.annotation.StringRes
 import com.stash.core.media.service.StashPlaybackService
 import com.stash.core.model.listen.RoomMember
+import com.stash.core.model.listen.RoomRequest
 import com.stash.core.model.listen.RoomSuggestion
 import com.stash.core.model.listen.ServerMessage
+import com.stash.core.model.listen.SessionInfo
 import com.stash.core.model.share.SharedTrack
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -60,8 +62,19 @@ sealed interface ListenTogetherState {
         val myGuestsAdd: Boolean = true,
         /** The host's app is older than guest adds: "Rawn's Stash needs an update to let you add songs." */
         val hostAppOutdated: Boolean = false,
+        /** A session's state (its station, listeners, co-hosts, Auto-accept, presence); null in a private room. */
+        val session: SessionInfo? = null,
+        /** This phone's part in the session; null in a private room. */
+        val role: SessionRole? = null,
+        /** The waiting requests this phone may see: all of them for the host and co-hosts, a listener's own. */
+        val requests: List<RoomRequest> = emptyList(),
+        /** In a session, the room's song is playing on this phone now: what a listener's time toward a station's vote counts. */
+        val onAir: Boolean = false,
     ) : ListenTogetherState
 }
+
+/** A phone's part in a session: who plays the music, who helps (adds straight in, takes songs out), who listens. */
+enum class SessionRole { HOST, COHOST, LISTENER }
 
 /**
  * Something a person did in the room, for a short named notice: "Maya joined", "Rawn skipped", "Sam added Xtal".

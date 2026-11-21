@@ -72,4 +72,28 @@
     <string name="session_slow_down">Slow down a moment, then try again</string>
     <string name="session_live_failed">Couldn\'t go live. Try again.</string>
     <string name="session_live_offline">Couldn\'t go live. Check your connection and try again.</string>
+
+    <!-- A session listener tapped a song to play it now. Their Play next is Request: it asks the host for the song. -->
+    <string name="session_only_host_changes_song">Only the host can change the song. Request it instead.</string>
+    <!-- A listener's requests reached the host, waiting for them. %1$d: how many, %2$s: the host's name. -->
+    <plurals name="session_requests_sent_to">
+        <item quantity="one">%1$d request sent to %2$s</item>
+        <item quantity="other">%1$d requests sent to %2$s</item>
+    </plurals>
+    <!-- The same, when the host's name isn't known. %1$d: how many. -->
+    <plurals name="session_requests_sent">
+        <item quantity="one">%1$d request sent</item>
+        <item quantity="other">%1$d requests sent</item>
+    </plurals>
+    <!-- A listener may have this many requests waiting (3). %1$d: the limit. -->
+    <plurals name="session_requests_cap">
+        <item quantity="one">You have %1$d request waiting</item>
+        <item quantity="other">You have %1$d requests waiting</item>
+    </plurals>
+    <!-- The session holds 30 waiting requests in all, or this listener sent too many at once. -->
+    <string name="session_requests_full">The session can\'t take more requests right now</string>
+    <!-- To the requester alone: the host or a co-host passed on their request. %1$s: who, %2$s: the song. -->
+    <string name="session_request_passed">%1$s passed on %2$s</string>
+    <!-- The same, when their name isn't known. %1$s: the song. -->
+    <string name="session_request_passed_unnamed">The host passed on %1$s</string>
 </resources>

@@ -6,11 +6,13 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.community.CommunityResult
 import com.stash.core.data.listen.RoomApiClient
 import com.stash.core.data.listen.RoomEvent
+import com.stash.core.media.PlayNext
 import com.stash.core.media.listen.ListenTogetherController.Command
 import com.stash.core.media.listen.ListenTogetherSessionTest.FakeConnection
 import com.stash.core.media.listen.ListenTogetherSessionTest.FakePlayer
 import com.stash.core.model.listen.ClientMessage
 import com.stash.core.model.listen.RoomMember
+import com.stash.core.model.listen.RoomRequest
 import com.stash.core.model.listen.RoomState
 import com.stash.core.model.listen.RoomTimeline
 import com.stash.core.model.listen.ServerMessage
@@ -23,6 +25,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -235,6 +238,171 @@ class StationSessionTest {
         assertThat(notices).isEmpty()
         assertThat(connections).hasSize(1)
         coVerify(exactly = 1) { api.createSession(any(), any(), any()) }
+    }
+
+    // ── What the app knows about a session (task 11) ──────────────────────────
+
+    fun inRoom() = controller.state.value as ListenTogetherState.InRoom
+    fun TestScope.gathered() { advanceTimeBy(400); runCurrent() }
+    fun playNext(id: String): MediaItem = PlayNext.tag(item(id))
+    fun requests() = connection.sent.filterIsInstance<ClientMessage.Request>()
+
+    /** Tuned in and welcomed as a listener, with nothing sent yet. */
+    fun TestScope.listening(state: RoomState = state()) {
+        tuneIn()
+        receive(ServerMessage.Welcome("me", "tok", state))
+        connection.sent.clear()
+    }
+
+    @Test fun `the welcome's session and each session frame reach the room`() = runTest {
+        listening()
+        assertThat(inRoom().session).isEqualTo(SessionInfo(STATION, listeners = 1))
+        receive(ServerMessage.Session(STATION, listeners = 5, autoAccept = true, presence = SessionInfo.AWAY))
+        assertThat(inRoom().session).isEqualTo(SessionInfo(STATION, 5, emptyList(), true, SessionInfo.AWAY))
+        assertThat(inRoom().roomKnowsAdds).isFalse() // no guests-add switch in a session
+    }
+
+    @Test fun `a private room has no session, role, requests or on air, and the rest is as before`() = runTest {
+        session()
+        controller.send(Command.Join("ABCDEFGH")); runCurrent()
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("me", "tok", state(timeline = RoomTimeline(0, 0, true), session = null).copy(v = 2, guestsAdd = true)))
+        player.events!!.onReady(); runCurrent()
+        val room = inRoom()
+        assertThat(room.session).isNull()
+        assertThat(room.role).isNull()
+        assertThat(room.requests).isEmpty()
+        assertThat(room.onAir).isFalse()
+        assertThat(room.roomKnowsAdds).isTrue()
+        assertThat(room.guestsAdd).isTrue()
+    }
+
+    @Test fun `the role follows this phone's id - the host, a co-host, else a listener`() = runTest {
+        listening()
+        assertThat(inRoom().role).isEqualTo(SessionRole.LISTENER)
+        receive(ServerMessage.Session(STATION, listeners = 1, cohosts = listOf("me")))
+        assertThat(inRoom().role).isEqualTo(SessionRole.COHOST)
+        receive(ServerMessage.Session(STATION, listeners = 1))
+        assertThat(inRoom().role).isEqualTo(SessionRole.LISTENER)
+    }
+
+    @Test fun `going live makes this phone the session's host`() = runTest {
+        goLive()
+        assertThat(inRoom().role).isEqualTo(SessionRole.HOST)
+    }
+
+    @Test fun `the requests this phone may see are kept`() = runTest {
+        listening()
+        val mine = RoomRequest("r1", "me", next)
+        receive(ServerMessage.Requests(listOf(mine)))
+        assertThat(inRoom().requests).containsExactly(mine)
+    }
+
+    @Test fun `a listener's Play next is a request, never an add or a suggestion, and the toast waits for the answer`() = runTest {
+        val notices = notices()
+        listening()
+        player.interceptor!!.onAdd(listOf(playNext("2"))); gathered()
+        assertThat(requests()).containsExactly(ClientMessage.Request(next))
+        assertThat(connection.sent.filterIsInstance<ClientMessage.Add>()).isEmpty()
+        assertThat(connection.sent.filterIsInstance<ClientMessage.Suggest>()).isEmpty()
+        assertThat(notices).isEmpty()
+        receive(ServerMessage.RequestAnswer("waiting"))
+        assertThat(notices).containsExactly("1 request sent to Maya")
+    }
+
+    @Test fun `with Auto-accept a listener's Add to queue goes straight in`() = runTest {
+        val notices = notices()
+        listening()
+        player.interceptor!!.onAdd(listOf(item("2"))); gathered()
+        assertThat(requests()).containsExactly(ClientMessage.Request(next))
+        receive(ServerMessage.RequestAnswer("queued"))
+        assertThat(notices).containsExactly("Added to the session queue")
+    }
+
+    @Test fun `only as many requests as can wait are sent, and the toast says how many can`() = runTest {
+        val notices = notices()
+        listening()
+        receive(ServerMessage.Requests(listOf(RoomRequest("r1", "me", track), RoomRequest("r2", "me", track))))
+        player.interceptor!!.onAdd(listOf(playNext("1"), playNext("2"))); gathered()
+        assertThat(requests()).containsExactly(ClientMessage.Request(track))
+        receive(ServerMessage.RequestAnswer("waiting"))
+        assertThat(notices).containsExactly("You have 3 requests waiting")
+    }
+
+    @Test fun `a listener with 3 waiting sends nothing and hears why at once`() = runTest {
+        val notices = notices()
+        listening()
+        receive(ServerMessage.Requests(List(3) { RoomRequest("r$it", "me", track) }))
+        player.interceptor!!.onAdd(listOf(playNext("2"))); gathered()
+        assertThat(requests()).isEmpty()
+        assertThat(notices).containsExactly("You have 3 requests waiting")
+    }
+
+    @Test fun `a session that can't take the request says so`() = runTest {
+        val notices = notices()
+        listening()
+        player.interceptor!!.onAdd(listOf(playNext("2"))); gathered()
+        receive(ServerMessage.RequestAnswer("full"))
+        assertThat(notices).containsExactly("The session can't take more requests right now")
+    }
+
+    @Test fun `a pass reaches its requester with who passed`() = runTest {
+        val notices = notices()
+        listening()
+        receive(ServerMessage.RequestPassed(next, by = "h"))
+        assertThat(notices).containsExactly("Maya passed on Xtal")
+    }
+
+    @Test fun `a request made while the socket is down goes after the next welcome`() = runTest {
+        val notices = notices()
+        listening()
+        connection.up = false
+        player.interceptor!!.onAdd(listOf(playNext("2"))); gathered()
+        assertThat(notices).containsExactly("Not connected right now. It'll go in when you're back.")
+        connection.up = true
+        connection.incoming.trySend(RoomEvent.Reconnecting); runCurrent()
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("me", "tok", state()))
+        assertThat(requests()).containsExactly(ClientMessage.Request(next))
+    }
+
+    @Test fun `a listener's tap on a song points to Request, and a co-host's adds go straight in`() = runTest {
+        val notices = notices()
+        listening()
+        player.interceptor!!.onSet(listOf(item("2")), 0)
+        assertThat(notices).containsExactly("Only the host can change the song. Request it instead.")
+        receive(ServerMessage.Session(STATION, listeners = 1, cohosts = listOf("me")))
+        player.interceptor!!.onAdd(listOf(playNext("2"))); gathered()
+        assertThat(connection.sent.filterIsInstance<ClientMessage.Add>()).containsExactly(ClientMessage.Add(listOf(next), next = true))
+        assertThat(requests()).isEmpty()
+    }
+
+    @Test fun `a co-host takes out anyone's song, a listener only their own`() = runTest {
+        val theirs = next.copy(addedBy = "h")
+        listening(state(queue = listOf(theirs)))
+        controller.send(Command.Unqueue(theirs, 0)); runCurrent()
+        assertThat(connection.sent.filterIsInstance<ClientMessage.Unqueue>()).isEmpty()
+        receive(ServerMessage.Session(STATION, listeners = 1, cohosts = listOf("me")))
+        controller.send(Command.Unqueue(theirs, 0)); runCurrent()
+        assertThat(connection.sent.filterIsInstance<ClientMessage.Unqueue>()).containsExactly(ClientMessage.Unqueue(theirs, 0))
+    }
+
+    @Test fun `on air while the room's song plays here - not before it's ready, paused here, reconnecting or paused`() = runTest {
+        listening(state(timeline = RoomTimeline(0, 0, true)))
+        assertThat(inRoom().onAir).isFalse() // still loading
+        player.events!!.onReady(); runCurrent()
+        assertThat(inRoom().onAir).isTrue()
+        player.interceptor!!.onPause(); runCurrent() // a listener pauses only their own phone
+        assertThat(inRoom().onAir).isFalse()
+        controller.rejoin(); runCurrent()
+        assertThat(inRoom().onAir).isTrue()
+        connection.incoming.trySend(RoomEvent.Reconnecting); runCurrent()
+        assertThat(inRoom().onAir).isFalse()
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("me", "tok", state(timeline = RoomTimeline(0, 0, true))))
+        assertThat(inRoom().onAir).isTrue()
+        receive(ServerMessage.TimelineUpdate(rev = 2, trackKey = 1, positionMs = 5_000, atRoomMs = 0, playing = false, by = "h"))
+        assertThat(inRoom().onAir).isFalse()
     }
 
     companion object {
