@@ -99,7 +99,7 @@ export const MAX_REQUESTS = 30;
 export const MAX_BOOTED = 200;
 export const capacity = (s) => (s.pub ? MAX_PUBLIC_MEMBERS : MAX_MEMBERS);
 
-const HOST_ONLY = new Set(["load", "play", "pause", "seek", "queue", "suggestion", "makeHost", "end", "settings", "autoAccept"]);
+const HOST_ONLY = new Set(["load", "play", "pause", "seek", "queue", "suggestion", "makeHost", "end", "settings", "autoAccept", "cohost"]);
 /** Phone status → stored member status (`ready` is stored as `ok`, spec §3). */
 const STATUSES = { ready: "ok", buffering: "buffering", unavailable: "unavailable", drifting: "drifting" };
 
@@ -648,6 +648,11 @@ const EVENTS = {
             const before = guestsCanAdd(s);
             const gone = new Set(expired.map((m) => m.id));
             s.members = s.members.filter((m) => !gone.has(m.id));
+            if (s.pub) {
+                // A co-host gone for good frees the place; one back on another socket still holds their key hash.
+                const held = new Set(s.members.map((m) => m.kh).filter(Boolean));
+                s.pub.cohosts = s.pub.cohosts.filter((k) => held.has(k));
+            }
             const pending = s.suggestions.length;
             s.suggestions = s.suggestions.filter((x) => !gone.has(x.from));
             for (const id of gone) delete s.reactAt[id];
@@ -830,7 +835,9 @@ const MESSAGES = {
         const at = Number.isSafeInteger(msg.at) && msg.at >= 0 && msg.at < s.queue.length && addKey(s.queue[msg.at]) === k
             ? msg.at
             : s.queue.findIndex((t) => addKey(t) === k);
-        if (at < 0 || (event.from !== s.host && s.queue[at].by !== event.from)) return false;
+        // The host takes out any song, and in a session so do co-hosts; anyone else only one of theirs.
+        const anySong = s.pub ? isStaff(s, event.from) : event.from === s.host;
+        if (at < 0 || (!anySong && s.queue[at].by !== event.from)) return false;
         s.queue.splice(at, 1);
         s.qv++;
         s.removed.push({ k, qv: s.qv });
@@ -967,5 +974,40 @@ const MESSAGES = {
         ctx.out.push(sessionMsg(s));
         if (taken.length) pushRequests(ctx, taken);
         return true;
+    },
+
+    /**
+     * `{ memberId, on }`, the host making a listener a co-host or not, at most MAX_COHOSTS. Kept by key hash, so a co-host
+     * back on a new socket is still one; one gone for good frees the place (the alarm's prune).
+     */
+    cohost(ctx) {
+        const { s, msg, event } = ctx;
+        if (!s.pub || typeof msg.on !== "boolean") return false;
+        const m = findConnected(s, msg.memberId);
+        if (!m || m.id === s.host || !m.kh || s.pub.cohosts.includes(m.kh) === msg.on) return false;
+        if (msg.on && s.pub.cohosts.length >= MAX_COHOSTS) {
+            ctx.out.push({ to: event.from, msg: { t: "refused", what: "cohost", reason: "max_cohosts" } });
+            return false;
+        }
+        s.pub.cohosts = msg.on ? [...s.pub.cohosts, m.kh] : s.pub.cohosts.filter((k) => k !== m.kh);
+        s.rev++;
+        ctx.out.push(sessionMsg(s), requestsMsg(s, m.id));
+        return true;
+    },
+
+    /**
+     * `{ action: "skip" }` from a co-host, passed on to the host's phone, which plays the room (build plan, decision 4),
+     * with who asked and the song it was for, so a host already past that song ignores it. Refused at once while the
+     * host's phone is away. The room itself doesn't change: it follows the host, as always.
+     */
+    command(ctx) {
+        const { s, msg, event } = ctx;
+        if (!s.pub || !isCohost(s, event.from) || msg.action !== "skip") return false;
+        if (!findConnected(s, s.host)) {
+            ctx.out.push({ to: event.from, msg: { t: "refused", what: "skip", reason: "host_reconnecting" } });
+            return false;
+        }
+        ctx.out.push({ to: s.host, msg: { t: "command", action: "skip", from: event.from, trackKey: s.trackKey } });
+        return false;
     },
 };

@@ -381,3 +381,82 @@ test("a private room knows nothing of requests or Auto-accept", () => {
         assert.deepEqual(r.out, [], msg.t);
     }
 });
+
+// ── Task 16: co-hosts ─────────────────────────────────────────────────────────
+
+const cohost = (s, memberId, on = true) => send(s, "h", { t: "cohost", memberId, on });
+
+test("the host makes a listener a co-host and back; everyone hears, and their view of the requests follows", () => {
+    let s = request(session(), "b", A, "r1").state;
+    const made = cohost(s, "a");
+    assert.deepEqual(sent(made, "session")[0].msg.cohosts, ["a"]);
+    assert.deepEqual(views(made), { a: ["r1"] }, "now every request");
+    assert.deepEqual(made.state.pub.cohosts, [kh("a")], "kept by key hash");
+    const unmade = cohost(made.state, "a", false);
+    assert.deepEqual(sent(unmade, "session")[0].msg.cohosts, []);
+    assert.deepEqual(views(unmade), { a: [] }, "back to their own");
+    assert.equal(cohost(unmade.state, "a", false).state, unmade.state, "already not one: nothing");
+    assert.equal(cohost(s, "h").state, s, "never the host");
+    assert.equal(send(s, "a", { t: "cohost", memberId: "b", on: true }).state, s, "the host's call alone");
+});
+
+test("a 4th co-host is refused", () => {
+    let s = hello(hello(session(), "c", { at: T0 + 3 }).state, "d", { at: T0 + 4 }).state;
+    for (const id of ["a", "b", "c"]) s = cohost(s, id).state;
+    const r = cohost(s, "d");
+    assert.deepEqual(r.out, [{ to: "h", msg: { t: "refused", what: "cohost", reason: "max_cohosts" } }]);
+    assert.equal(r.state, s);
+});
+
+test("a co-host who comes back is still one, even on a new socket without their token; gone 60 s, the place is free", () => {
+    let s = cohost(session(), "a").state;
+    s = step(s, { type: "close", from: "a" }, T0 + 10).state;
+    const back = hello(s, "a2", { listenerHash: kh("a"), at: T0 + 20 });
+    assert.deepEqual(sent(back, "session")[0].msg.cohosts, ["a2"]);
+    const kept = step(back.state, { type: "alarm" }, T0 + 10 + HANDOVER_MS).state;
+    assert.deepEqual(kept.pub.cohosts, [kh("a")], "the old slot went, the key hash is still held");
+    s = step(kept, { type: "close", from: "a2" }, T0 + 100_000).state;
+    const freed = step(s, { type: "alarm" }, T0 + 100_000 + HANDOVER_MS).state;
+    assert.deepEqual(freed.pub.cohosts, []);
+    assert.equal(sent(hello(freed, "a3", { listenerHash: kh("a"), at: T0 + 200_000 }), "session")[0].msg.cohosts.length, 0);
+});
+
+test("co-hosts add straight in and take out any song; a listener takes out only their own", () => {
+    let s = cohost(onAir(), "a").state;
+    s = send(s, "h", { t: "queue", queue: [{ t: "Album 1", a: "Host" }], qv: s.qv }).state;
+    s = send(s, "a", { t: "add", tracks: [A], next: true }).state;
+    assert.deepEqual(s.queue.map((t) => [t.t, t.by]), [["Pink + White", "a"], ["Album 1", "h"]]);
+    s = request(s, "b", B, "r1").state;
+    s = send(s, "a", { t: "requestAction", id: "r1", action: "queue" }).state;
+    // Songs are named as phones see them in the queue, adder and all.
+    const queued = (t) => s.queue.find((q) => q.t === t);
+    assert.equal(send(s, "b", { t: "unqueue", track: queued("Album 1") }).state, s, "not the host's");
+    const own = send(s, "b", { t: "unqueue", track: queued("Redbone") });
+    assert.ok(!own.state.queue.some((t) => t.t === "Redbone"), "their own taken request");
+    const any = send(s, "a", { t: "unqueue", track: queued("Album 1") });
+    assert.ok(!any.state.queue.some((t) => t.t === "Album 1"));
+});
+
+test("a co-host's Skip goes to the host's phone with the song it was for; with the host away it's refused", () => {
+    const s = cohost(onAir(), "a").state;
+    const r = send(s, "a", { t: "command", action: "skip" });
+    assert.deepEqual(r.out, [{ to: "h", msg: { t: "command", action: "skip", from: "a", trackKey: s.trackKey } }]);
+    assert.equal(r.state, s, "the room itself doesn't change: the host's phone moves it");
+    const away = step(s, { type: "close", from: "h" }, T0 + 5_000).state;
+    assert.deepEqual(send(away, "a", { t: "command", action: "skip" }, T0 + 6_000).out,
+        [{ to: "a", msg: { t: "refused", what: "skip", reason: "host_reconnecting" } }]);
+});
+
+test("a listener's command, an unknown one, and any in a private room do nothing", () => {
+    const s = cohost(onAir(), "a").state;
+    for (const [from, action] of [["b", "skip"], ["a", "seek"], ["h", "skip"]]) {
+        const r = send(s, from, { t: "command", action });
+        assert.equal(r.state, s);
+        assert.deepEqual(r.out, []);
+    }
+    let p = privateRoom();
+    p = step(p, { type: "hello", msg: { t: "hello", v: 2 }, hostKeyOk: true, newId: "h", newToken: "th" }, T0).state;
+    p = step(p, { type: "hello", msg: { t: "hello", v: 2 }, hostKeyOk: false, newId: "g", newToken: "tg" }, T0).state;
+    assert.equal(send(p, "h", { t: "cohost", memberId: "g", on: true }).state, p);
+    assert.deepEqual(send(p, "g", { t: "command", action: "skip" }).out, []);
+});
