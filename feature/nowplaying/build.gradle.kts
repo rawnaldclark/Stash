@@ -56,6 +56,8 @@ dependencies {
     // fix.
     testImplementation("app.cash.turbine:turbine:1.1.0")
     testImplementation(libs.mockk)
+    // GoLiveViewModelTest, and the session tests after it, read as the other Sessions tests do.
+    testImplementation(libs.truth)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.robolectric)
     // The player sheet's back-order test composes on Robolectric.

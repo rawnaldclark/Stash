@@ -141,6 +141,8 @@ private fun StashNavGraph(
     startDestination: Any,
 ) {
     val playerSheet = LocalPlayerSheet.current
+    // Sessions: the app's one Go live (GoLiveHost, in the scaffold).
+    val goLive = com.stash.feature.nowplaying.session.LocalGoLive.current
     NavHost(
         navController = navController,
         startDestination = startDestination,
@@ -695,8 +697,7 @@ private fun StashNavGraph(
             com.stash.feature.community.sessions.SessionsScreen(
                 onBack = { navController.popBackStack() },
                 onOpenPlayer = { playerSheet?.expand() },
-                // Go live arrives with its own task (Sessions step 2, task 20).
-                onGoLive = {},
+                onGoLive = { goLive?.begin?.invoke() },
                 onYourStation = { navController.navigate(YourStationRoute) { launchSingleTop = true } },
             )
         }
@@ -704,7 +705,7 @@ private fun StashNavGraph(
         composable<YourStationRoute> {
             com.stash.feature.community.sessions.YourStationScreen(
                 onBack = { navController.popBackStack() },
-                onGoLive = {},
+                onGoLive = { goLive?.begin?.invoke() },
                 onOpenPlayer = { playerSheet?.expand() },
             )
         }

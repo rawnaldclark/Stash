@@ -613,9 +613,17 @@ fun NowPlayingScreen(
     val isCloudSong = track?.source == com.stash.core.model.MusicSource.CLOUD
     val isSoundCloudSong = track?.soundCloudId != null || track?.source == com.stash.core.model.MusicSource.SOUNDCLOUD
     val isPreview = track?.soundCloudPreview == true && !isDownloaded
-    val actionCtx = remember(room != null, casting, postToCommunity != null, isDownloaded, castSupported, hasBrowser, onBrowser, isScannedSong, isCloudSong, isSoundCloudSong, isPreview, streams) {
+    // Sessions: Go live is offered while the Worker says Sessions is on (GoLiveHost knows), from outside a room.
+    val goLive = com.stash.feature.nowplaying.session.LocalGoLive.current
+    val sessionsOn = goLive?.available == true
+    val inSession = room?.session != null
+    val hostingSession = inSession && room?.isHost == true
+    val actionCtx = remember(room != null, inSession, hostingSession, sessionsOn, casting, postToCommunity != null, isDownloaded, castSupported, hasBrowser, onBrowser, isScannedSong, isCloudSong, isSoundCloudSong, isPreview, streams) {
         ActionContext(
             inRoom = room != null,
+            inSession = inSession,
+            hostingSession = hostingSession,
+            sessionsOn = sessionsOn,
             casting = casting,
             communityAvailable = postToCommunity != null,
             isDownloaded = isDownloaded,
@@ -639,8 +647,19 @@ fun NowPlayingScreen(
     val castLabel = com.stash.feature.nowplaying.cast.playOnLine(playOn)
         ?: androidx.compose.ui.res.stringResource(R.string.play_on_title)
     val tuningMark = tuningMark(tuningHz)
-    val visualState = remember(radioLabel != null, radioTuning, radioPlaying, reading, togetherState, playbackSpeed, tuningHz, tuningMark, isDownloaded, castConnectingTo, castingTo, castLabel) {
+    // Go live's words: how many are listening while on the air, "Going live…" while the session opens.
+    val listeners = room?.session?.listeners ?: 0
+    val goingLive = goLive?.busy == true || (togetherState as? ListenTogetherState.Connecting)?.let { it.hosting && it.station != null } == true
+    val goLiveLabel = when {
+        hostingSession && listeners > 0 -> androidx.compose.ui.res.stringResource(R.string.go_live_on_air_count, listeners)
+        hostingSession -> androidx.compose.ui.res.stringResource(R.string.go_live_on_air)
+        goingLive -> androidx.compose.ui.res.stringResource(R.string.go_live_going)
+        else -> androidx.compose.ui.res.stringResource(R.string.go_live_title)
+    }
+    val visualState = remember(radioLabel != null, radioTuning, radioPlaying, reading, togetherState, playbackSpeed, tuningHz, tuningMark, isDownloaded, castConnectingTo, castingTo, castLabel, goLiveLabel, hostingSession) {
         ActionVisualState(
+            goLiveLabel = goLiveLabel,
+            onAir = hostingSession,
             radioActive = radioLabel != null,
             radioTuning = radioTuning,
             lyricsOpen = reading,
@@ -662,7 +681,7 @@ fun NowPlayingScreen(
     val rowFit = remember(pins, actionCtx, rowWidthDp, hasArt) {
         fitTopRow(topRowActions(pins, actionCtx), rowWidthDp, extraSlots = if (hasArt) 1 else 0)
     }
-    val onAction: (NowPlayingAction) -> Unit = remember(radioTuning, radioLabel, togetherState, track, postToCommunity) {
+    val onAction: (NowPlayingAction) -> Unit = remember(radioTuning, radioLabel, togetherState, track, postToCommunity, goLive, hostingSession) {
         { action ->
             when (action) {
                 // The speaker sheet the Cast button opens: pick a speaker, or control / disconnect.
@@ -681,6 +700,9 @@ fun NowPlayingScreen(
                     is ListenTogetherState.Connecting -> Unit
                     ListenTogetherState.Idle -> showStartTogether = true
                 }
+                // The first time, the sheet that names the station; after that, one tap. On the air it opens the
+                // session's sheet (End session).
+                NowPlayingAction.GO_LIVE -> if (hostingSession) showSession = true else goLive?.begin?.invoke()
                 NowPlayingAction.SAVE_TO_PLAYLIST -> showSaveSheet = true
                 NowPlayingAction.SHARE -> shareRequested = viewModel.onShareCurrent()
                 NowPlayingAction.POST_TO_COMMUNITY ->

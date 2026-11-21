@@ -122,4 +122,25 @@
     <string name="np_tuning_cents_standard">Standard pitch, as recorded</string>
     <string name="np_tuning_set">Set</string>
     <string name="np_tuning_cancel">Cancel</string>
+
+    <!-- Sessions: going live. Your "station" is your own radio; going live plays it for anyone in Community who tunes in. -->
+    <!-- The action in Now Playing's menu, the sheet's title and its main button -->
+    <string name="go_live_title">Go live</string>
+    <!-- The action while your session is opening -->
+    <string name="go_live_going">Going live…</string>
+    <!-- The action while your station is on the air. %d: how many people are listening -->
+    <string name="go_live_on_air_count">On the air · %d</string>
+    <string name="go_live_on_air">On the air</string>
+    <!-- The first-time sheet: what going live shares, in one sentence -->
+    <string name="go_live_shares">Going live shares each song you play, your station\'s name and your name with anyone who tunes in.</string>
+    <string name="go_live_name_label">Name your station</string>
+    <string name="go_live_name_hint">Like Rawn\'s Basement</string>
+    <!-- Over the field for the name listeners see for you -->
+    <string name="go_live_host_label">Your name</string>
+    <string name="go_live_vibe_label">What\'s playing tonight?</string>
+    <!-- Beside "What's playing tonight?": the line is optional, then how many characters are typed, of how many allowed -->
+    <string name="go_live_vibe_count">optional · %1$d / %2$d</string>
+    <string name="go_live_vibe_hint">90s house, requests open</string>
+    <string name="go_live_vibe_note">Shown on your Live now card and in your session. Kept for next time.</string>
+    <string name="go_live_not_now">Not now</string>
 </resources>

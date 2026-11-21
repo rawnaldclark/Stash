@@ -280,7 +280,8 @@ private fun StationBody(
         }
         GoLiveButton(onAir = onAir, enabled = !busy && !station.removed, onClick = onGoLive)
         Spacer(Modifier.height(8.dp))
-        deleteDay(station.deleteAt, ZoneId.systemDefault(), config.locales[0])?.let { day ->
+        // Not while it's on the air: being live is what keeps it.
+        deleteDay(station.deleteAt.takeIf { !onAir }, ZoneId.systemDefault(), config.locales[0])?.let { day ->
             Text(
                 stringResource(R.string.station_delete_note, day),
                 style = MaterialTheme.typography.bodySmall,

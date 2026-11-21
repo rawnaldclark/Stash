@@ -350,6 +350,9 @@ fun StashScaffold(
     ) {
     // "Save to Google Drive" in every song, album and playlist menu while Drive is connected.
     CloudSaveHost {
+    // Sessions: one Go live for the Sessions screen, Your station and Now Playing, with its first-time sheet over
+    // them all. On the air, the player opens on the session.
+    com.stash.feature.nowplaying.session.GoLiveHost(onOpened = { playerSheet.expand() }) {
     CompositionLocalProvider(
         LocalChromeHazeState provides hazeState,
         LocalPlayerSheet provides playerSheet,
@@ -583,6 +586,7 @@ fun StashScaffold(
     }
     }
     }
+    } // GoLiveHost
     }
     }
     }
