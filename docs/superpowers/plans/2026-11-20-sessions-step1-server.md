@@ -215,7 +215,7 @@ export const STATION_RECOUNT_SQL = `UPDATE stations SET
 - [ ] Tests (the post tests' cases, on stations):
   - own station → 403 `own_station`;
   - blocked → 403;
-  - with `HEARD_REQUIRED = "1"`, a vote without a heard mark → 403 `listen_first`, and `0` always allowed;
+  - a vote without a heard mark → 403 `listen_first` whatever `HEARD_REQUIRED` says (system spec §3: no app ever voted on a station without one; the switch is only for posts' older votes), and `0` always allowed;
   - 3 voters behind one network count 2;
   - `VOTE_ROWS_PER_NETWORK` holds;
   - voting on a removed or hidden station → 404;
@@ -312,6 +312,20 @@ LIMIT ?3
   - README "Sessions": the routes, the switch, the commands, the cleanup;
   - a contract block for the app (request and response shapes of every route above).
 - [ ] `npm test` all green, then `gh pr create` "Sessions 1a: stations (dark)". No deploy yet: 1a and 1b deploy together (task 21).
+
+### 1a as built (2026-11-21)
+
+Where the build differs from the tasks above, the code and `infra/share-worker/README.md` "Sessions" (the app's contract) win:
+
+- **Heard is always required** for a +1 or −1 on a station (task 5 said "behind `HEARD_REQUIRED`"). The switch exists because older apps voted on posts without heard marks; no app ever voted on a station, so there's nothing to wait for. This is the system spec's own rule (§3).
+- **`station_votes_net`**, an index on `station_votes (station_id, ip_hash, value)`, is in 0007, as `votes_net` is for posts: the per-network count and the recount walk it.
+- **Stopping a follow always works**, even for a station hidden or removed since: it only deletes the caller's row. Otherwise a station hidden after you followed it would hold one of your 200 places with no way to free it.
+- **A station the owner removed stays removed:** its phone's `DELETE` is 404 `gone`, as for a removed post, so deleting it to start a fresh station at once can't skip the day it can be restored in. `mine.deleteAt` follows the cleanup (a day after a removal).
+- **The cleanup does nothing while `SESSIONS` is off**, so the Worker can be deployed before 0007 is applied, and no host loses a station while nobody can go live. README "Sessions" gives the one-line reset for coming back after more than a week off.
+- **A removal's day is measured on the Worker's clock too:** a station removed over a day ago goes only once it also hasn't been made or on the air in that day, as posts use `created_at`, because `removed_at` comes from the PC running the command line.
+- **The station page** shows the status as one line ("Live now · 12 listening · full · paused", "On the air: Weekdays 9:00–17:00 (New York time)", "Not live right now.", plus "It goes live whenever Rawn plays music in Stash." when always on). The room's code is not on the page: Open in Stash hands the app `/s/{id}`, and the app joins. `stashfm.app/s/*` was free: on 2026-11-21 the site answered `/s/…` with its own 404.
+- **`station-list [n]`** takes a count as `list` does (50 if not given). After `station-block` and `unblock` the station stays down until `station-restore`; a phone blocked from a post with `block` keeps its station, hidden while the block lasts.
+- Found in task 17's SQL while building 1a: `last_live_at` takes `?8` (`seen_at`), not `?2` (the room code). Fixed above.
 
 ---
 
@@ -538,7 +552,7 @@ ON CONFLICT (station_id) DO UPDATE SET room = excluded.room, track = excluded.tr
 DELETE FROM live WHERE station_id = ?1 AND NOT EXISTS (SELECT 1 FROM stations s WHERE s.id = ?1 AND s.removed_at IS NULL
    AND ((s.up - s.down) > -3 OR s.vouched = 1) AND NOT EXISTS (SELECT 1 FROM blocked b WHERE b.poster = s.owner));
 -- 3
-UPDATE stations SET last_live_at = ?2 WHERE id = ?1;
+UPDATE stations SET last_live_at = ?8 WHERE id = ?1;   -- ?8 = seen_at, now (not ?2, the room code)
 -- 4: whose row it is now
 SELECT room FROM live WHERE station_id = ?1;
 ```

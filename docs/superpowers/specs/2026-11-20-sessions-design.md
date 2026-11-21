@@ -11,6 +11,8 @@ Status: owner's brief on 2026-11-20, decisions below agreed in chat that day. Th
 
 **The room's experience** (why people stay: phrases and the feed, saves, follows, open decks, last song and recap, regulars, the vibe line, crowd favourites) is in `2026-11-20-sessions-ux.md`. Where the two differ, that one wins; its §9 lists what it adds here.
 
+**Built with these refinements.** The build plan (`docs/superpowers/plans/2026-11-20-sessions.md`, decisions 1–11) and step 1's plan (`2026-11-20-sessions-step1-server.md`, "1a as built") record what building settled differently from this spec: among them hyphenated moderation commands (`station-list`, …), Upcoming not cached (the stashfm.app zone's Cache API ignores the query), `next: {start, end}` in place of `nextStart`/`nextEnd`, the summaries' `vibe`, `followers`, `heard` and `following`, and stopping a follow always working. Where they differ from this spec, they win. The server's contract for the app is in `infra/share-worker/README.md`, "Sessions".
+
 ## 1. Decisions
 
 | Question | Decision | Why |
