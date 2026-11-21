@@ -6,6 +6,7 @@ import com.stash.core.data.community.CommunityResult
 import com.stash.core.data.community.StationsRepository
 import com.stash.core.data.community.communityMessage
 import com.stash.core.data.prefs.HomeSectionsPreference
+import com.stash.core.data.share.SharePreference
 import com.stash.core.media.listen.ListenTogetherController
 import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.model.community.LiveSession
@@ -36,6 +37,7 @@ class SessionsViewModel @Inject constructor(
     private val stations: StationsRepository,
     homeSections: HomeSectionsPreference,
     private val controller: ListenTogetherController,
+    private val share: SharePreference,
 ) : ViewModel() {
     /** A line this screen says in its own words (the engine's refusals arrive as its own toasts). */
     enum class Note {
@@ -62,6 +64,11 @@ class SessionsViewModel @Inject constructor(
         val note: Note? = null,
         /** The station being tuned in to: its card shows progress, and other taps wait. */
         val tuningIn: String? = null,
+        /**
+         * Before the first tune-in ever: "Everyone in a session sees your name", with the name as it stands (blank
+         * when none is set). Null when it isn't being asked.
+         */
+        val naming: String? = null,
     )
 
     private val communityOn = homeSections.communityOn
@@ -165,7 +172,7 @@ class SessionsViewModel @Inject constructor(
      * session that refuses (ended, full by now, an app too old) says why in the engine's own toast, and the lists reload.
      */
     private fun tuneIn(room: String, stationId: String, full: Boolean, onOpened: () -> Unit) {
-        if (full || _state.value.tuningIn != null) return
+        if (full || _state.value.tuningIn != null || _state.value.naming != null) return
         val now = controller.state.value
         if (now is ListenTogetherState.InRoom) {
             if (now.code == room) return onOpened()
@@ -175,6 +182,42 @@ class SessionsViewModel @Inject constructor(
                 return
             }
         }
+        // Set before anything suspends, so a second tap finds it.
+        _state.update { it.copy(tuningIn = stationId) }
+        viewModelScope.launch {
+            // The first tune-in ever says who sees your name first, once (UX: one line, then Tune in).
+            if (!share.tuneInNameSeen()) {
+                afterNaming = { join(room, stationId, onOpened) }
+                _state.update { it.copy(tuningIn = null, naming = share.displayName().orEmpty()) }
+            } else {
+                join(room, stationId, onOpened)
+            }
+        }
+    }
+
+    /** The join waiting on the first tune-in's name line. Main thread only. */
+    private var afterNaming: (() -> Unit)? = null
+
+    /** The name line's Tune in: [name] is kept as the display name if it changed, the line never shows again, and the join goes. */
+    fun confirmName(name: String) {
+        val go = afterNaming ?: return
+        afterNaming = null
+        viewModelScope.launch {
+            val wanted = name.trim()
+            if (wanted != share.displayName().orEmpty()) share.setDisplayName(wanted)
+            share.setTuneInNameSeen()
+            _state.update { it.copy(naming = null) }
+            go()
+        }
+    }
+
+    /** Backed out of the name line: nothing is joined, and the next tune-in asks again. */
+    fun cancelName() {
+        afterNaming = null
+        _state.update { it.copy(naming = null) }
+    }
+
+    private fun join(room: String, stationId: String, onOpened: () -> Unit) {
         _state.update { it.copy(tuningIn = stationId) }
         viewModelScope.launch {
             controller.send(ListenTogetherController.Command.TuneIn(room, stationId))

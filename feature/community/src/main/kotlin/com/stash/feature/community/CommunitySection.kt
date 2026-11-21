@@ -21,6 +21,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.ui.components.SectionHeader
+import com.stash.feature.community.sessions.FirstTuneIn
 import com.stash.feature.community.sessions.RowLabel
 import com.stash.feature.community.sessions.SessionsRows
 import com.stash.feature.community.sessions.SessionsViewModel
@@ -64,6 +65,7 @@ fun CommunitySection(
     CommunitySnackbar(voteNoteText(state.voteNote), viewModel::voteNoteShown)
     CommunitySnackbar(sessionsState.message, sessions::messageShown)
     CommunitySnackbar(sessionsNoteText(sessionsState.note), sessions::noteShown)
+    FirstTuneIn(sessionsState.naming, onTuneIn = sessions::confirmName, onDismiss = sessions::cancelName)
     val gutter = Modifier.padding(horizontal = 20.dp)
     Column(Modifier.fillMaxWidth()) {
         // Home's rail rhythm (CardRail): 16 dp, then the header.

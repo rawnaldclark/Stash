@@ -30,6 +30,7 @@ private val Context.shareDataStore: DataStore<Preferences> by preferencesDataSto
 class SharePreference @Inject constructor(@ApplicationContext private val context: Context) {
     private val nameKey = stringPreferencesKey("display_name")
     private val guestsAddKey = booleanPreferencesKey("listen_guests_add")
+    private val tuneInNameSeenKey = booleanPreferencesKey("session_name_seen")
 
     /** The host's "Let guests add songs": on until they turn it off (owner decision 1, 2026-11-04). */
     val guestsAdd: Flow<Boolean> = context.shareDataStore.data.map { it[guestsAddKey] ?: true }.catch { emit(true) }
@@ -38,6 +39,16 @@ class SharePreference @Inject constructor(@ApplicationContext private val contex
 
     suspend fun setGuestsAdd(on: Boolean) {
         context.shareDataStore.edit { it[guestsAddKey] = on }
+    }
+
+    /**
+     * Sessions: this phone has been told, before its first tune-in, that everyone in a session sees its name. Asked
+     * once; a read that fails counts as seen, so a broken store never puts the question in front of every tune-in.
+     */
+    suspend fun tuneInNameSeen(): Boolean = runCatching { context.shareDataStore.data.map { it[tuneInNameSeenKey] ?: false }.first() }.getOrDefault(true)
+
+    suspend fun setTuneInNameSeen() {
+        context.shareDataStore.edit { it[tuneInNameSeenKey] = true }
     }
 
     suspend fun displayName(): String? =

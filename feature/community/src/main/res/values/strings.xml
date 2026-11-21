@@ -201,6 +201,22 @@
     <string name="station_hidden">Hidden by votes: only you see it.</string>
     <!-- Your station was taken down by a moderator -->
     <string name="station_removed">Taken down by a moderator. It will be deleted within a day.</string>
+    <!-- A station\'s page: where its link lands -->
+    <string name="station_title">Station</string>
+    <string name="station_unavailable">This station isn\'t available</string>
+    <string name="station_unavailable_body">It may have been deleted, or Sessions isn\'t available right now.</string>
+    <!-- %1$s: the name the host goes by -->
+    <string name="station_hosted_by">Hosted by %1$s</string>
+    <string name="station_off_air">Off the air</string>
+    <string name="station_off_air_body">Follow it to see it on Home when it\'s live.</string>
+    <!-- %1$s: a time, like "8:30 AM" or "Fri 9:00 PM" -->
+    <string name="station_next_on">Next on the air: %1$s</string>
+    <string name="station_follow">Follow</string>
+    <!-- Before your first tune-in ever. %1$s: the name other listeners will see for you -->
+    <string name="sessions_name_line">Everyone in a session sees your name: %1$s</string>
+    <string name="sessions_name_line_bare">Everyone in a session sees your name.</string>
+    <string name="sessions_name_change">Change</string>
+    <string name="sessions_name_field">Show my name as</string>
     <!-- Shown when you tap another station while your own is on the air -->
     <string name="sessions_end_yours_first">End your session first</string>
 </resources>

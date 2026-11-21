@@ -99,7 +99,7 @@ fun StashNavHost(
         if (communityOn == false) {
             while (navController.currentDestination?.let {
                     it.hasRoute<CommunityRoute>() || it.hasRoute<CommunityPostRoute>() || it.hasRoute<SessionsRoute>() ||
-                        it.hasRoute<YourStationRoute>()
+                        it.hasRoute<YourStationRoute>() || it.hasRoute<StationRoute>()
                 } == true &&
                 navController.popBackStack()) Unit
         }
@@ -219,6 +219,7 @@ private fun StashNavGraph(
                         // Sessions: a Live now card is the join, and the player opens on the room.
                         onOpenPlayer = { playerSheet?.expand() },
                         onOpenSessions = { navController.navigate(SessionsRoute) { launchSingleTop = true } },
+                        onOpenStation = { id -> navController.navigate(StationRoute(id)) },
                     )
                 },
                 yourListeningSection = {
@@ -698,6 +699,14 @@ private fun StashNavGraph(
                 onBack = { navController.popBackStack() },
                 onOpenPlayer = { playerSheet?.expand() },
                 onGoLive = { goLive?.begin?.invoke() },
+                onYourStation = { navController.navigate(YourStationRoute) { launchSingleTop = true } },
+            )
+        }
+
+        composable<StationRoute> {
+            com.stash.feature.community.sessions.StationScreen(
+                onBack = { navController.popBackStack() },
+                onOpenPlayer = { playerSheet?.expand() },
                 onYourStation = { navController.navigate(YourStationRoute) { launchSingleTop = true } },
             )
         }

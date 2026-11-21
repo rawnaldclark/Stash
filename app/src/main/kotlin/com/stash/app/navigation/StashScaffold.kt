@@ -267,6 +267,10 @@ fun StashScaffold(
                 } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_LISTEN_PREFIX)) {
                     val code = pendingDeepLink.removePrefix(com.stash.app.MainActivity.DEEP_LINK_LISTEN_PREFIX)
                     navController.navigate(ListenJoinRoute(code))
+                } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_STATION_PREFIX)) {
+                    // A station's link: its page, which says so itself when Sessions isn't available.
+                    val id = pendingDeepLink.removePrefix(com.stash.app.MainActivity.DEEP_LINK_STATION_PREFIX)
+                    navController.navigate(StationRoute(id)) { launchSingleTop = true }
                 } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_MUSIC_LINK_PREFIX)) {
                     navController.navigate(LinkImportRoute(pendingDeepLink.removePrefix(com.stash.app.MainActivity.DEEP_LINK_MUSIC_LINK_PREFIX)))
                 } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_ADDON_LINK_PREFIX)) {

@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.community.CommunityResult
 import com.stash.core.data.community.StationsRepository
 import com.stash.core.data.prefs.HomeSectionsPreference
+import com.stash.core.data.share.SharePreference
 import com.stash.core.media.listen.ListenTogetherController
 import com.stash.core.media.listen.ListenTogetherController.Command
 import com.stash.core.media.listen.ListenTogetherState
@@ -57,7 +58,9 @@ class SessionsViewModelTest {
         coEvery { repo.mine() } returns CommunityResult.Ok(mine)
     }
 
-    private fun vm() = SessionsViewModel(repo, homeSections, controller).also { it.clock = { now } }
+    private val share = mockk<SharePreference>(relaxed = true)
+
+    private fun vm() = SessionsViewModel(repo, homeSections, controller, share).also { it.clock = { now } }
 
     @Before fun setUp() {
         Dispatchers.setMain(dispatcher)
@@ -65,6 +68,9 @@ class SessionsViewModelTest {
         every { repo.sessionsOn } returns sessionsOn
         every { repo.revision } returns revision
         every { controller.state } returns room
+        // Past its first tune-in, unless a test says otherwise.
+        coEvery { share.tuneInNameSeen() } returns true
+        coEvery { share.displayName() } returns "Rawn"
     }
 
     @After fun tearDown() { Dispatchers.resetMain() }
@@ -202,6 +208,48 @@ class SessionsViewModelTest {
         room.value = inRoom(s.room, station = "AAAAAAAA", role = SessionRole.LISTENER); runCurrent()
         assertThat(opened).isEqualTo(1)
         assertThat(vm.state.value.tuningIn).isNull()
+    }
+
+    @Test fun `the first tune-in says who sees your name, and tunes in once that's settled`() = runTest(dispatcher) {
+        coEvery { share.tuneInNameSeen() } returns false
+        val s = session("AAAAAAAA")
+        serverOn(live = listOf(s))
+        val vm = vm()
+        vm.onShown(); advanceUntilIdle()
+        var opened = 0
+        vm.tuneIn(s) { opened++ }; runCurrent()
+        // The name as it stands, and nothing sent yet.
+        assertThat(vm.state.value.naming).isEqualTo("Rawn")
+        verify(exactly = 0) { controller.send(any()) }
+
+        vm.confirmName("DJ Rawn"); runCurrent()
+        coVerify { share.setDisplayName("DJ Rawn") }
+        coVerify { share.setTuneInNameSeen() }
+        assertThat(vm.state.value.naming).isNull()
+        verify(exactly = 1) { controller.send(Command.TuneIn(s.room, "AAAAAAAA")) }
+        room.value = ListenTogetherState.Connecting(hosting = false, station = "AAAAAAAA"); runCurrent()
+        room.value = inRoom(s.room, station = "AAAAAAAA", role = SessionRole.LISTENER); runCurrent()
+        assertThat(opened).isEqualTo(1)
+    }
+
+    @Test fun `an unchanged name isn't saved again, and backing out sends nothing and asks next time`() = runTest(dispatcher) {
+        coEvery { share.tuneInNameSeen() } returns false
+        val s = session("AAAAAAAA")
+        serverOn(live = listOf(s))
+        val vm = vm()
+        vm.onShown(); advanceUntilIdle()
+        vm.tuneIn(s) {}; runCurrent()
+        vm.cancelName()
+        assertThat(vm.state.value.naming).isNull()
+        verify(exactly = 0) { controller.send(any()) }
+        coVerify(exactly = 0) { share.setTuneInNameSeen() }
+
+        vm.tuneIn(s) {}; runCurrent()
+        assertThat(vm.state.value.naming).isEqualTo("Rawn")
+        vm.confirmName(" Rawn "); runCurrent()
+        coVerify(exactly = 0) { share.setDisplayName(any()) }
+        coVerify(exactly = 1) { share.setTuneInNameSeen() }
+        verify(exactly = 1) { controller.send(any()) }
     }
 
     @Test fun `a second tap while tuning in sends nothing more`() = runTest(dispatcher) {

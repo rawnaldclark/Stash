@@ -117,6 +117,26 @@ class ShareLinksTest {
         assertThat(ShareLinks.stationUrl("Ab3dEf9h")).isEqualTo("$base/s/Ab3dEf9h")
     }
 
+    @Test fun `a station link parses on both hosts, with or without a trailing slash or a query`() {
+        val station = ShareLinks.Parsed.Station("Ab3dEf9h")
+        assertThat(ShareLinks.parse(ShareLinks.stationUrl("Ab3dEf9h"))).isEqualTo(station)
+        assertThat(ShareLinks.parse("$base/s/Ab3dEf9h/")).isEqualTo(station)
+        assertThat(ShareLinks.parse("$base/s/Ab3dEf9h?utm_source=chat")).isEqualTo(station)
+        assertThat(ShareLinks.parse("${ShareConfig.LEGACY_BASE_URL}/s/Ab3dEf9h")).isEqualTo(station)
+    }
+
+    @Test fun `a station's id keeps its case`() {
+        // Unlike a room code, which is read in capitals: "Ab3dEf9h" and "AB3DEF9H" are two stations.
+        assertThat(ShareLinks.parse("$base/s/ab3def9h")).isEqualTo(ShareLinks.Parsed.Station("ab3def9h"))
+        assertThat(ShareLinks.parse("$base/s/AB3DEF9H")).isEqualTo(ShareLinks.Parsed.Station("AB3DEF9H"))
+    }
+
+    @Test fun `anything but 8 letters or digits isn't a station link`() {
+        for (bad in listOf("$base/s/", "$base/s/Ab3dEf9", "$base/s/Ab3dEf9hX", "$base/s/Ab3d-f9h", "$base/s/Ab3dEf9h/extra", "https://evil.example/s/Ab3dEf9h", "http://stashfm.app/s/Ab3dEf9h")) {
+            assertThat(ShareLinks.parse(bad)).isNull()
+        }
+    }
+
     @Test fun `room codes that are the wrong length, use ambiguous characters or come from another host are rejected`() {
         assertThat(ShareLinks.parse("$base/l/K7QA2PX")).isNull()
         assertThat(ShareLinks.parse("$base/l/K7QA2P")).isNull() // the old 6-character length

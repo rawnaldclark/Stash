@@ -93,6 +93,7 @@ fun SessionsScreen(
     LifecycleResumeEffect(Unit) { viewModel.onShown(all = true); onPauseOrDispose {} }
     CommunitySnackbar(state.message, viewModel::messageShown)
     CommunitySnackbar(sessionsNoteText(state.note), viewModel::noteShown)
+    FirstTuneIn(state.naming, onTuneIn = viewModel::confirmName, onDismiss = viewModel::cancelName)
     val ui = sessionsList(state)
     val onAir = (room as? ListenTogetherState.InRoom)?.let { it.session != null && it.isHost } == true
 
