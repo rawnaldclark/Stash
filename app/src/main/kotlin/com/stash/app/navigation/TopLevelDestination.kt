@@ -75,6 +75,8 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 /** Community's See all (spec 2026-09-26 §3); [mine] opens it on Mine (after a live_limit). */
 @Serializable data class CommunityRoute(val mine: Boolean = false)
 @Serializable data class CommunityPostRoute(val postId: String)
+/** Sessions: every station on the air (Sessions step 2). One of Community's routes. */
+@Serializable data object SessionsRoute
 
 /**
  * History (Pick 3). [day] = an epoch-day to open on (a later Stats "busiest day" tap), or

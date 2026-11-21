@@ -74,7 +74,7 @@ class SessionsViewModelTest {
         serverOn(live = listOf(session("AAAAAAAA")))
         val vm = vm()
         vm.onShown(); advanceUntilIdle()
-        assertThat(vm.state.value).isEqualTo(SessionsViewModel.UiState())
+        assertThat(vm.state.value).isEqualTo(SessionsViewModel.UiState(off = true))
         coVerify(exactly = 0) { repo.live(any()) }
         coVerify(exactly = 0) { repo.following() }
     }
@@ -85,7 +85,7 @@ class SessionsViewModelTest {
         vm.onShown(); advanceUntilIdle()
         now += 60_000
         vm.onShown(); advanceUntilIdle()
-        assertThat(vm.state.value).isEqualTo(SessionsViewModel.UiState())
+        assertThat(vm.state.value).isEqualTo(SessionsViewModel.UiState(off = true))
         coVerify(exactly = 1) { repo.live(any()) }
         coVerify(exactly = 0) { repo.following() }
     }
@@ -95,7 +95,10 @@ class SessionsViewModelTest {
         val vm = vm()
         vm.onShown(); advanceUntilIdle()
         assertThat(vm.state.value.on).isFalse()
+        assertThat(vm.state.value.off).isFalse()
         assertThat(vm.state.value.live).isNull()
+        // The Sessions screen offers a retry; Home shows nothing either way.
+        assertThat(vm.state.value.failed).isTrue()
         serverOn(live = listOf(session("AAAAAAAA")))
         vm.onShown(); advanceUntilIdle()
         assertThat(vm.state.value.on).isTrue()
@@ -179,7 +182,7 @@ class SessionsViewModelTest {
         val vm = vm()
         vm.onShown(); advanceUntilIdle()
         communityOn.value = false; advanceUntilIdle()
-        assertThat(vm.state.value).isEqualTo(SessionsViewModel.UiState())
+        assertThat(vm.state.value).isEqualTo(SessionsViewModel.UiState(off = true))
     }
 
     // ── Tuning in ───────────────────────────────────────────────────────────────

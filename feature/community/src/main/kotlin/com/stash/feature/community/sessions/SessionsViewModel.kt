@@ -46,13 +46,15 @@ class SessionsViewModel @Inject constructor(
     data class UiState(
         /** Community is on and the Worker has said Sessions is. Until then nothing about Sessions shows. */
         val on: Boolean = false,
+        /** Community is off, or the Worker has said Sessions is: the Sessions screen says it isn't available. */
+        val off: Boolean = false,
         /** Live now, in the Worker's order (best first); null until it loads. */
         val live: List<LiveSession>? = null,
         /** The stations this phone follows, as the Worker sends them: on the air first, then the soonest on. */
         val following: List<Station> = emptyList(),
         /** This phone's own station (the Sessions screen only), or null without one. */
         val mine: Station? = null,
-        /** Nothing loaded and the last try failed. */
+        /** Nothing loaded and the last try failed (also before the Worker could say whether Sessions is on). */
         val failed: Boolean = false,
         /** A pull-to-refresh is loading. */
         val refreshing: Boolean = false,
@@ -78,8 +80,14 @@ class SessionsViewModel @Inject constructor(
     init {
         // Community switched off, or the Worker's switch: everything shown goes.
         viewModelScope.launch {
-            combine(communityOn, stations.sessionsOn) { community, sessions -> community && sessions == true }
-                .collect { on -> if (!on) _state.value = UiState() }
+            combine(communityOn, stations.sessionsOn) { community, sessions -> community to sessions }
+                .collect { (community, sessions) ->
+                    if (community && sessions == true) return@collect
+                    val off = !community || sessions == false
+                    // Only a change clears the screen: this first report can land after the first load has already
+                    // said "couldn't tell" (failed), which must stay.
+                    _state.update { if (it.on || it.off != off) UiState(off = off) else it }
+                }
         }
         // A follow, or a station made, changed or deleted (the room, a station's page, Your station) reloads the lists.
         viewModelScope.launch { stations.revision.drop(1).collect { load() } }
@@ -111,10 +119,16 @@ class SessionsViewModel @Inject constructor(
             val asked = clock()
             // Live now first: its answer is also what says whether Sessions is on at all.
             val live = stations.live(if (all) ALL_LIVE else HOME_LIVE)
-            if (stations.sessionsOn.value != true) {
-                // Off, or it couldn't say (offline): nothing shows, and the next visit asks again.
-                _state.update { it.copy(refreshing = false) }
-                return@launch
+            when (stations.sessionsOn.value) {
+                true -> Unit
+                // Off: the collector above has said so, and this Worker isn't asked again.
+                false -> return@launch
+                // It couldn't say (offline): nothing shows on Home, the Sessions screen offers a retry, and the next
+                // visit asks again.
+                null -> {
+                    _state.update { it.copy(failed = true, refreshing = false) }
+                    return@launch
+                }
             }
             val (following, mine) = coroutineScope {
                 val f = async { stations.following() }
@@ -176,6 +190,12 @@ class SessionsViewModel @Inject constructor(
             if (outcome is ListenTogetherState.InRoom) onOpened() else load()
         }
     }
+
+    /** This phone's room, for the Sessions screen: while it's on the air, Go live reads "On the air" and opens the booth. */
+    val room: StateFlow<ListenTogetherState> get() = controller.state
+
+    /** The Sessions screen's Retry. */
+    fun retry() = load()
 
     fun messageShown() = _state.update { it.copy(message = null) }
 

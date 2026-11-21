@@ -148,6 +148,23 @@
     <string name="sessions_tune_in">Tune in</string>
     <!-- TalkBack: what tapping a followed station that isn't on the air does -->
     <string name="sessions_open_station">Open station</string>
+    <!-- The Sessions screen: every station on the air right now -->
+    <string name="sessions_title">Sessions</string>
+    <!-- A button: start playing your station for others to tune in to -->
+    <string name="sessions_go_live">Go live</string>
+    <!-- The same button while your station is on the air: opens your session -->
+    <string name="sessions_on_air">On the air</string>
+    <!-- TalkBack: the round button that opens your own station's page -->
+    <string name="sessions_your_station">Your station</string>
+    <!-- The Sessions screen, over the stations you follow that are on the air. Shown in capitals. -->
+    <string name="sessions_you_follow">Stations you follow</string>
+    <!-- The Sessions screen, over every other station on the air. Shown in capitals. -->
+    <string name="sessions_everyone">Everyone live</string>
+    <!-- The Sessions screen when the server has Sessions turned off -->
+    <string name="sessions_off_title">Sessions isn\'t available right now</string>
+    <string name="sessions_off_body">Check back later.</string>
+    <!-- The Sessions screen when no station is on the air, under "Nobody's live right now" -->
+    <string name="sessions_empty_body">Go live and be the first on the air.</string>
     <!-- Shown when you tap another station while your own is on the air -->
     <string name="sessions_end_yours_first">End your session first</string>
 </resources>

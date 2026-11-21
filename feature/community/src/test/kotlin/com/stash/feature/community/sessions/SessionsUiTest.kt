@@ -44,6 +44,37 @@ class SessionsUiTest {
         assertThat(sessionsRows(state(live = nine + session("STATION9")), asked = 10)!!.liveCount).isNull()
     }
 
+    // ── The Sessions screen ─────────────────────────────────────────────────────
+
+    private fun followed(id: String) = session(id).let { it.copy(station = it.station.copy(following = true)) }
+
+    @Test fun `the screen is loading until something is known`() {
+        assertThat(sessionsList(SessionsViewModel.UiState())).isEqualTo(SessionsListUi.Loading)
+        assertThat(sessionsList(state(live = null))).isEqualTo(SessionsListUi.Loading)
+    }
+
+    @Test fun `off, failed and empty each say so`() {
+        assertThat(sessionsList(SessionsViewModel.UiState(off = true))).isEqualTo(SessionsListUi.Off)
+        assertThat(sessionsList(SessionsViewModel.UiState(failed = true))).isEqualTo(SessionsListUi.Failed)
+        assertThat(sessionsList(state(live = null).copy(failed = true))).isEqualTo(SessionsListUi.Failed)
+        assertThat(sessionsList(state(live = emptyList()))).isEqualTo(SessionsListUi.Empty)
+    }
+
+    @Test fun `the stations you follow come first, then everyone else as ranked`() {
+        val live = listOf(session("TOP00001"), followed("MINEFOL1"), session("TOP00002"), followed("MINEFOL2"), session("TOP00003"))
+        val ui = sessionsList(state(live = live)) as SessionsListUi.Ready
+        // Both keep the server's order; the ranks count everyone else only.
+        assertThat(ui.following.map { it.station.id }).containsExactly("MINEFOL1", "MINEFOL2").inOrder()
+        assertThat(ui.everyone.map { it.rank to it.session.station.id })
+            .containsExactly(1 to "TOP00001", 2 to "TOP00002", 3 to "TOP00003").inOrder()
+    }
+
+    @Test fun `with only followed stations live, there is no empty list under them`() {
+        val ui = sessionsList(state(live = listOf(followed("MINEFOL1")))) as SessionsListUi.Ready
+        assertThat(ui.following).hasSize(1)
+        assertThat(ui.everyone).isEmpty()
+    }
+
     @Test fun `the song is one line, and a song without an artist has no stray dot`() {
         assertThat(SharedTrack("Pink + White", "Frank Ocean").nowLine()).isEqualTo("Pink + White · Frank Ocean")
         assertThat(SharedTrack("Untitled", "").nowLine()).isEqualTo("Untitled")

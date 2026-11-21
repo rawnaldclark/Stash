@@ -97,7 +97,9 @@ fun StashNavHost(
     val top by navController.currentBackStackEntryAsState()
     LaunchedEffect(communityOn, top) {
         if (communityOn == false) {
-            while (navController.currentDestination?.let { it.hasRoute<CommunityRoute>() || it.hasRoute<CommunityPostRoute>() } == true &&
+            while (navController.currentDestination?.let {
+                    it.hasRoute<CommunityRoute>() || it.hasRoute<CommunityPostRoute>() || it.hasRoute<SessionsRoute>()
+                } == true &&
                 navController.popBackStack()) Unit
         }
     }
@@ -213,6 +215,7 @@ private fun StashNavGraph(
                         onPost = posting.pick,
                         // Sessions: a Live now card is the join, and the player opens on the room.
                         onOpenPlayer = { playerSheet?.expand() },
+                        onOpenSessions = { navController.navigate(SessionsRoute) { launchSingleTop = true } },
                     )
                 },
                 yourListeningSection = {
@@ -684,6 +687,16 @@ private fun StashNavGraph(
                 onBack = { navController.popBackStack() },
                 onOpenPost = { id -> navController.navigate(CommunityPostRoute(id)) },
                 onPost = posting.pick,
+            )
+        }
+
+        composable<SessionsRoute> {
+            com.stash.feature.community.sessions.SessionsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenPlayer = { playerSheet?.expand() },
+                // Go live and Your station arrive with their own tasks (Sessions step 2, tasks 19 and 20).
+                onGoLive = {},
+                onYourStation = {},
             )
         }
 

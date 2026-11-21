@@ -76,7 +76,7 @@ internal val LiveRed = Color(0xFFF05252)
 private val LivePink = Color(0xFFF472B6)
 
 /** Dark ink on a person's colour, as a room's faces. */
-private val FaceInk = Color(0xFF10101A)
+internal val FaceInk = Color(0xFF10101A)
 
 /** "LIVE" as words on the page: soft red on the dark themes, a deep one on the light theme (4.5:1 on both). */
 @Composable
