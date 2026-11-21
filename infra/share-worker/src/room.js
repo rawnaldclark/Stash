@@ -392,12 +392,14 @@ function hostSettled(s) {
 const hostDeadline = (s) => s.phase.hostDeadlineMs ?? s.phase.deadlineMs;
 /**
  * A song's handshake is over: every phone is settled; or the guests' time is up and the host is settled (a slow guest
- * joins late, the host is never left behind); or the room has waited for its host as long as it will.
+ * joins late, the host is never left behind); or the room has waited for its host as long as it will. A session waits
+ * for its host alone (build plan, decision 1): 50 strangers' phones must never add silence to every song, and a listener
+ * who isn't ready joins mid-song, as a late joiner does.
  */
 function startDue(s, now) {
     if (s.phase.kind !== "preparing") return false;
     if (now >= hostDeadline(s)) return true;
-    return hostSettled(s) && (allSettled(s) || now >= s.phase.deadlineMs);
+    return hostSettled(s) && (!!s.pub || allSettled(s) || now >= s.phase.deadlineMs);
 }
 /** Starts the song if its handshake is over: after anything that may settle it (a status, a leave, a new host, the alarm). */
 function startIfDue(ctx) {
@@ -573,6 +575,7 @@ const EVENTS = {
         if (connected(s).length === 0) s.lastLeftAt = now;
         s.rev++;
         ctx.out.push(membersMsg(s));
+        if (s.pub) ctx.out.push(sessionMsg(s));
         startIfDue(ctx); // the last phone waited for left, or the host did: the guests aren't held for it
         return true;
     },
@@ -638,6 +641,9 @@ const MESSAGES = {
 
     status(ctx) {
         const { s, msg, event } = ctx;
+        // In a session only the host's status counts (decision 1), and listeners' stay quiet (decision 2): no write,
+        // no `members` to 54 phones for each buffering change.
+        if (s.pub && event.from !== s.host) return false;
         const value = Object.hasOwn(STATUSES, msg.status) ? STATUSES[msg.status] : null;
         if (!value) return false;
         // A report for an earlier song must not count toward this song's handshake.

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { step, preview, MAX_MEMBERS, MAX_PUBLIC_MEMBERS, PUBLIC_V } from "../src/room.js";
+import { step, preview, MAX_MEMBERS, MAX_PUBLIC_MEMBERS, PUBLIC_V, PREPARE_MS, HOST_WAIT_CAP_MS } from "../src/room.js";
 
 const T0 = 1_000_000;
 const TRACK = { t: "Avril 14th", a: "Aphex Twin", d: 125000, isrc: "GBBPW0100025" };
@@ -99,4 +99,51 @@ test("each member keeps its key hash, and no frame ever carries one", () => {
     assert.ok(frames.length > 0);
     assert.ok(!JSON.stringify(frames).includes("kh-"), "never a key hash on the wire");
     assert.ok(!JSON.stringify(preview(s)).includes("kh-"));
+});
+
+// ── Task 13: listeners never hold up the music ────────────────────────────────
+
+test("the host's ready starts the song at once, however many listeners are still buffering", () => {
+    let s = hello(pub(), "h", { host: true }).state;
+    for (let i = 1; i <= 50; i++) s = hello(s, `m${i}`).state;
+    s = send(s, "h", { t: "load", track: TRACK }, T0 + 10).state;
+    const r = send(s, "h", { t: "status", status: "ready", trackKey: s.trackKey }, T0 + 20);
+    assert.equal(sent(r, "timeline")[0].msg.playing, true);
+    assert.equal(r.state.phase.kind, "playing");
+});
+
+test("a listener's status changes nothing and sends nothing", () => {
+    let s = session();
+    s = send(s, "h", { t: "load", track: TRACK }, T0 + 10).state;
+    const r = send(s, "a", { t: "status", status: "ready", trackKey: s.trackKey }, T0 + 20);
+    assert.equal(r.state, s);
+    assert.deepEqual(r.out, []);
+});
+
+test("a session waits for its host alone: not at the guests' 8 s, but still at the host's cap", () => {
+    let s = session();
+    s = send(s, "h", { t: "load", track: TRACK }, T0 + 10).state;
+    let r = step(s, { type: "alarm" }, T0 + 10 + PREPARE_MS);
+    assert.equal(r.state.phase.kind, "preparing");
+    r = step(r.state, { type: "alarm" }, T0 + 10 + HOST_WAIT_CAP_MS);
+    assert.equal(r.state.phase.kind, "playing");
+});
+
+test("a private room still waits for its guests, and still shares every status", () => {
+    let s = privateRoom();
+    s = step(s, { type: "hello", msg: { t: "hello", v: 2 }, hostKeyOk: true, newId: "h", newToken: "th" }, T0).state;
+    s = step(s, { type: "hello", msg: { t: "hello", v: 2 }, hostKeyOk: false, newId: "g", newToken: "tg" }, T0).state;
+    s = send(s, "h", { t: "load", track: TRACK }, T0 + 10).state;
+    let r = send(s, "h", { t: "status", status: "ready", trackKey: s.trackKey }, T0 + 20);
+    assert.equal(r.state.phase.kind, "preparing");
+    assert.equal(sent(r, "members").length, 1);
+    r = send(r.state, "g", { t: "status", status: "ready", trackKey: s.trackKey }, T0 + 30);
+    assert.equal(r.state.phase.kind, "playing");
+});
+
+test("arrivals and departures update the session's count", () => {
+    let r = hello(session(), "c", { at: T0 + 3 });
+    assert.equal(sent(r, "session")[0].msg.listeners, 3);
+    r = step(r.state, { type: "close", from: "a" }, T0 + 4);
+    assert.equal(sent(r, "session")[0].msg.listeners, 2);
 });
