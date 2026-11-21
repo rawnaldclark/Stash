@@ -96,4 +96,11 @@
     <string name="session_request_passed">%1$s passed on %2$s</string>
     <!-- The same, when their name isn't known. %1$s: the song. -->
     <string name="session_request_passed_unnamed">The host passed on %1$s</string>
+
+    <!-- To a listener: the session they were in has ended. %1$s: the host's name. -->
+    <string name="session_ended_named">%1$s\'s session ended</string>
+    <!-- The same, when the host's name isn't known. -->
+    <string name="session_ended">The session ended</string>
+    <!-- To a listener: the station was removed, hidden by votes, or its phone blocked, so its session ended. -->
+    <string name="session_off_air">This station is off the air</string>
 </resources>

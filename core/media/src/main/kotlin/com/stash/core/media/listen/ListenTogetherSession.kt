@@ -13,6 +13,7 @@ import com.stash.core.media.PlayNext
 import com.stash.core.media.R
 import com.stash.core.media.listen.ListenTogetherController.Command
 import com.stash.core.model.listen.ClientMessage
+import com.stash.core.model.listen.EndedReason
 import com.stash.core.model.listen.RoomMember
 import com.stash.core.model.listen.RoomPhase
 import com.stash.core.model.listen.RoomProtocol
@@ -57,6 +58,8 @@ class ListenTogetherSession(
      * listener says it in every hello; going live opens the session under it.
      */
     private val communityKey: suspend () -> String? = { null },
+    /** The room code of station [String]'s session on the air now (its page's `live.room`); null when none, or on any failure. */
+    private val stationRoom: suspend (String) -> String? = { null },
 ) {
     private var connection: RoomConnection? = null
     /**
@@ -78,6 +81,14 @@ class ListenTogetherSession(
     private var stationId: String? = null
     /** A session listener's Community key: the room checks it in every hello, a resume's too. */
     private var listenerKey: String? = null
+    /** The name this phone's hellos carry, kept for a move to the station's newer session. */
+    private var helloName: String? = null
+    /**
+     * Between a station's sessions: the old room has ended and [moveJob] is finding or opening the newer one. No room
+     * ([code] is null), but the player stays in session mode and the user's queue stays aside.
+     */
+    private var moving = false
+    private var moveJob: Job? = null
     /**
      * A host Load the room hasn't got yet: the first one (sent on the welcome) or one dropped while the socket
      * was down. Built on the flush, so the first Load reads where the song is then, not before the handshake.
@@ -164,6 +175,10 @@ class ListenTogetherSession(
     fun shutdown() = teardown(message = null, restore = false)
 
     private suspend fun handle(command: Command) {
+        // A move to the station's newer session gives way to anything that starts a room: that begins from the user's queue.
+        if (moving && (command == Command.Host || command is Command.Join || command is Command.TuneIn || command is Command.GoLive)) {
+            teardown(message = null)
+        }
         when (command) {
             Command.Host -> if (code == null) host()
             is Command.Join -> {
@@ -181,7 +196,8 @@ class ListenTogetherSession(
             Command.End -> end()
             is Command.React -> send(ClientMessage.React(command.emoji))
             is Command.Suggestion -> send(ClientMessage.SuggestionAction(command.id, if (command.add) "add" else "dismiss"))
-            is Command.MakeHost -> send(ClientMessage.MakeHost(command.memberId))
+            // A session is never handed on.
+            is Command.MakeHost -> if (stationId == null) send(ClientMessage.MakeHost(command.memberId))
             // Shown at once, so a swiped or dragged row doesn't flick back while the room's echo is on its way.
             is Command.SetQueue -> if (isHost && room != null) {
                 setQueue(command.queue.take(MAX_QUEUE), command.qv ?: room?.qv)
@@ -288,19 +304,25 @@ class ListenTogetherSession(
             null
         }
 
-    private suspend fun enter(code: String, url: String, name: String?, hostKey: String?, asHost: Boolean) {
+    /**
+     * [moved]: from a station's ended session to its newer one. The user's queue is already aside and the player still
+     * holds the last session's song, so nothing is saved: that would write the session's place over the user's.
+     */
+    private suspend fun enter(code: String, url: String, name: String?, hostKey: String?, asHost: Boolean, moved: Boolean = false) {
         this.code = code
         this.url = url
+        helloName = name
         isHost = asHost
         sessionStartClock = clock()
         controller.setActive(true) // gates PlayerRepositoryImpl's saves before anything moves
         myGuestsAdd = guestsAddPreference()
-        player.saveUserPosition()
+        if (!moved) player.saveUserPosition()
         player.events = playerEvents
         player.enterSession(asHost, interceptor)
         player.pause()
         val inSession = stationId != null
-        Log.i(TAG, "entering ${if (inSession) "a session" else "room"} ${code.take(2)}… as ${if (asHost) "host" else "listener"}")
+        val what = if (inSession) "a session" else "room"
+        Log.i(TAG, "entering $what ${code.take(2)}… as ${if (asHost) "host" else "listener"}${if (moved) " (moved)" else ""}")
         val session = CoroutineScope(scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job]))
         sessionScope = session
         val key = listenerKey
@@ -336,7 +358,7 @@ class ListenTogetherSession(
             is RoomEvent.Closed -> teardown(
                 when (event.reason) {
                     // No welcome yet: the room was already closed when we joined (spec §6).
-                    CloseReason.ENDED -> if (myId == null) "This session has ended" else "Session ended"
+                    CloseReason.ENDED -> if (myId == null) "This session has ended" else endedWords()
                     CloseReason.FULL -> "This session is full"
                     CloseReason.GAVE_UP -> "Lost connection to the session"
                     CloseReason.REPLACED -> "You rejoined this session somewhere else"
@@ -418,7 +440,7 @@ class ListenTogetherSession(
             }
             is ServerMessage.SettingsUpdate -> { room = room?.copy(guestsAdd = m.guestsAdd); publish() }
             is ServerMessage.Reaction -> controller.reaction(m)
-            is ServerMessage.Ended -> teardown("Session ended")
+            is ServerMessage.Ended -> onEnded(m.reason)
             // Sessions' own frames: only a session sends them.
             is ServerMessage.Session -> { room = room?.copy(session = m.info); publish() }
             is ServerMessage.Requests -> { requests = m.requests; publish() }
@@ -1183,6 +1205,8 @@ class ListenTogetherSession(
     // ── Leaving ───────────────────────────────────────────────────────────────
 
     private fun leave() {
+        // A session is never handed on: its host's Leave ends it.
+        if (stationId != null && isHost) return end()
         val r = room
         if (isHost && r != null) {
             // Hand the room to the longest-joined listener instead of leaving it hostless for 60 s.
@@ -1196,9 +1220,120 @@ class ListenTogetherSession(
         teardown("Session ended")
     }
 
+    /**
+     * `ended {reason}`. A private room says "Session ended" whatever the reason. A session (Sessions protocol, "How it
+     * ends") tells its host and its listeners apart, and some endings move a listener on to the station's newer session.
+     */
+    private fun onEnded(reason: String) {
+        val station = stationId ?: return teardown("Session ended")
+        val oldCode = code ?: return
+        if (isHost) {
+            return when (reason) {
+                EndedReason.MAX_AGE -> goLiveAgain(station)
+                EndedReason.STATION_REMOVED -> teardown(controller.text(R.string.session_your_station_off_air))
+                else -> teardown("Session ended")
+            }
+        }
+        val ended = endedWords()
+        when (reason) {
+            EndedReason.BOOTED -> teardown(controller.text(R.string.session_removed))
+            EndedReason.STATION_REMOVED -> teardown(controller.text(R.string.session_off_air))
+            // A newer session takes over: the host's at 12 hours, or another of the station's.
+            EndedReason.MAX_AGE, EndedReason.REPLACED -> moveToNewerSession(station, oldCode, ended, MOVE_ASKS)
+            // The host's phone was gone 60 s: one look, in case its app came back and went live again.
+            EndedReason.HOST_LEFT -> moveToNewerSession(station, oldCode, ended, asks = 1)
+            else -> teardown(ended)
+        }
+    }
+
+    /** How a room's end reads here: "Maya's session ended" to a session's listener, else "Session ended". */
+    private fun endedWords(): String {
+        if (stationId == null || isHost) return "Session ended"
+        val host = room?.let(::hostName)
+        return if (host != null) controller.text(R.string.session_ended_named, host) else controller.text(R.string.session_ended)
+    }
+
+    /**
+     * A listener whose session ended for a newer one: looks for the station's room [asks] times, [MOVE_ASK_GAP_MS]
+     * apart (the new room is listed once its first song is ready), and tunes in there quietly. Nothing new by then:
+     * [ended], and the user's queue comes back.
+     */
+    private fun moveToNewerSession(station: String, oldCode: String, ended: String, asks: Int) {
+        Log.i(TAG, "session ended; looking for the station's newer one")
+        startMove(hosting = false, station)
+        moveJob = scope.launch {
+            repeat(asks) { i ->
+                if (i > 0) delay(MOVE_ASK_GAP_MS)
+                val newer = try { stationRoom(station) } catch (e: CancellationException) { throw e } catch (e: Exception) { null }
+                if (newer != null && newer != oldCode) {
+                    moving = false
+                    enter(newer, ShareLinks.stationUrl(station), helloName, hostKey = null, asHost = false, moved = true)
+                    return@launch
+                }
+            }
+            teardown(ended)
+        }
+    }
+
+    /**
+     * The host's session reached its 12 hours. Still playing, the phone goes live again at once and carries the song, where
+     * it is in it, and the queue into the new session; its listeners follow ([moveToNewerSession]). Otherwise it ended.
+     */
+    private fun goLiveAgain(station: String) {
+        val r = room
+        val song = r?.track
+        if (song == null || timeline?.playing != true || pausedLocally) return teardown("Session ended")
+        // The adders were the old room's members: nobody in the new one.
+        val queue = r.queue.map { it.copy(addedBy = null) }
+        val name = helloName
+        Log.i(TAG, "session reached its age; going live again")
+        startMove(hosting = true, station)
+        moveJob = scope.launch {
+            val key = readCommunityKey()
+            val result = if (key == null) CommunityResult.Failed("no Community key") else api.createSession(station, name, key)
+            if (result !is CommunityResult.Ok) {
+                Log.w(TAG, "going live again refused: $result")
+                return@launch teardown("Session ended")
+            }
+            moving = false
+            pendingLoad = { ClientMessage.Load(song.copy(addedBy = null), player.positionMs, queue) }
+            enter(result.value.code, ShareLinks.stationUrl(station), name, result.value.hostKey, asHost = true, moved = true)
+        }
+    }
+
+    /** Lets go of the ended room and holds the player, in session mode, until the newer room's first song. */
+    private fun startMove(hosting: Boolean, station: String) {
+        dropRoom()
+        moving = true
+        player.pause()
+        player.setPlayIntent(false)
+        controller.publish(ListenTogetherState.Connecting(hosting = hosting, station = station))
+    }
+
+    /** Ends the session here: the room, or a move between a station's sessions. */
     private fun teardown(message: String?, restore: Boolean = true) {
-        if (code == null) return
+        if (code == null && !moving) return
         Log.i(TAG, "leaving the room${message?.let { " ($it)" }.orEmpty()}")
+        moveJob?.cancel()
+        moveJob = null
+        moving = false
+        if (code != null) dropRoom()
+        player.events = null
+        player.exitSession()
+        stationId = null; listenerKey = null; helloName = null; pausedLocally = false
+        // exitSession has already stopped and emptied the player. With restore, PlayerRepositoryImpl puts the
+        // user's queue back, paused, and saves nothing until then (restorePending).
+        controller.setActive(false, restore)
+        controller.publish(ListenTogetherState.Idle)
+        message?.let(controller::message)
+    }
+
+    /**
+     * Lets go of the room: its socket, everything its scope runs, and all that's known about it. The player stays in
+     * session mode with the user's queue aside: [teardown] goes on to end the session, a move to the station's newer room.
+     * [pausedLocally] stays too: a listener who paused here is still paused after a move.
+     */
+    private fun dropRoom() {
         // Close before cancelling: RoomClient runs in sessionScope and aborts its socket when that is cancelled,
         // which would drop the End or MakeHost frame queued a moment ago.
         connection?.close()
@@ -1208,23 +1343,15 @@ class ListenTogetherSession(
         addInbox?.close()
         addInbox = null
         stopDrift()
-        player.events = null
-        player.exitSession()
+        player.events = null // the player's events are for a song no room holds now; enter() listens again
         code = null; url = null; myId = null; token = null; room = null; isHost = false; pendingLoad = null; loadsInFlight = 0
-        stationId = null; listenerKey = null
         welcomed = false; unplayableInARow = 0; skipNoticeKey = NONE; heldAdds.clear(); awaitingAdds.clear()
         requests = emptyList(); awaitingRequests.clear()
         timeline = null; applied = null; loadedKey = NONE; itemKey = NONE; readyKey = NONE; unavailableKey = NONE; lastStatus = null
         roomPreparingKey = NONE; preparedAt = 0L; prepareLimitJob = null // the job died with sessionScope
         reconnecting = false; versionMismatch = false; history.clear(); radioTriedKey = NONE
         seenMembers.clear(); memberNames.clear(); pendingLeaves.clear() // their jobs died with sessionScope
-        pausedLocally = false
         clockSync.reset()
-        // exitSession has already stopped and emptied the player. With restore, PlayerRepositoryImpl puts the
-        // user's queue back, paused, and saves nothing until then (restorePending).
-        controller.setActive(false, restore)
-        controller.publish(ListenTogetherState.Idle)
-        message?.let(controller::message)
     }
 
     private fun send(message: ClientMessage) {
@@ -1317,6 +1444,9 @@ class ListenTogetherSession(
         const val MAX_REQUESTS_WAITING = 3
         const val REQUEST_QUEUED = "queued"
         const val REQUEST_WAITING = "waiting"
+        /** A move to the station's newer session asks for its room every 3 s for 30 s (11 asks, the first at once). */
+        const val MOVE_ASK_GAP_MS = 3_000L
+        const val MOVE_ASKS = 11
         const val MAX_UNPLAYABLE_IN_A_ROW = 3
         const val END_SLOP_MS = 1_000L
         /** One guest's songs waiting in the room's queue (owner decision 7); keep in sync with MAX_GUEST_WAITING in room.js. */

@@ -4,6 +4,7 @@ import androidx.media3.common.MediaItem
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.community.CommunityResult
+import com.stash.core.data.listen.CloseReason
 import com.stash.core.data.listen.RoomApiClient
 import com.stash.core.data.listen.RoomEvent
 import com.stash.core.media.PlayNext
@@ -54,6 +55,9 @@ class StationSessionTest {
     val controller = ListenTogetherController(ApplicationProvider.getApplicationContext()).apply { serviceAttached = true }
     var key: String? = KEY
     var keyReads = 0
+    /** The station's room on the air, as its page says; every ask counted. */
+    var liveRoom: () -> String? = { null }
+    var liveRoomAsks = 0
 
     fun TestScope.session() = ListenTogetherSession(
         scope = backgroundScope,
@@ -66,6 +70,7 @@ class StationSessionTest {
         displayName = { "Rawn" },
         clock = { testScheduler.currentTime },
         communityKey = { keyReads++; key },
+        stationRoom = { station -> check(station == STATION); liveRoomAsks++; liveRoom() },
     ).also { it.start() }
 
     /** A session as its room describes it: v 3, Maya hosting ([host] "h"), this phone "me". */
@@ -403,6 +408,262 @@ class StationSessionTest {
         assertThat(inRoom().onAir).isTrue()
         receive(ServerMessage.TimelineUpdate(rev = 2, trackKey = 1, positionMs = 5_000, atRoomMs = 0, playing = false, by = "h"))
         assertThat(inRoom().onAir).isFalse()
+    }
+
+    // ── How a session ends (task 12) ──────────────────────────────────────────
+
+    /** Each time the user's own queue is put back (PlayerRepositoryImpl restores on it). */
+    fun TestScope.restores(): MutableList<Unit> {
+        val out = mutableListOf<Unit>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { controller.sessionEnds.collect { out += it } }
+        return out
+    }
+
+    /** On the engine already running: tune in again and be welcomed, as a listener. */
+    fun TestScope.tuneInAgain(state: RoomState = state()) {
+        controller.send(Command.TuneIn("K7QA2PXM", STATION)); runCurrent()
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("me", "tok", state))
+    }
+
+    /** On the engine already running: go live again and be welcomed, as the host of a playing room. */
+    fun TestScope.goLiveAgain(state: RoomState = state(host = "me", timeline = RoomTimeline(0, 0, true))) {
+        controller.send(Command.GoLive(STATION, "Rawn")); runCurrent()
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("me", "tok", state))
+    }
+
+    @Test fun `a listener hears whose session ended, and gets their queue back`() = runTest {
+        val notices = notices()
+        val restores = restores()
+        session()
+        val reasons = listOf("host_ended", "paused", "closed", "something_new")
+        for (reason in reasons) {
+            tuneInAgain()
+            receive(ServerMessage.Ended(reason))
+            assertThat(controller.state.value).isEqualTo(ListenTogetherState.Idle)
+            assertThat(player.calls.last()).isEqualTo("exit")
+        }
+        assertThat(notices).containsExactlyElementsIn(reasons.map { "Maya's session ended" })
+        assertThat(restores).hasSize(reasons.size)
+        assertThat(liveRoomAsks).isEqualTo(0)
+    }
+
+    @Test fun `without the host's name it's the session that ended`() = runTest {
+        val notices = notices()
+        session()
+        tuneInAgain(state().copy(members = listOf(RoomMember("h", null, 1, "ok", v = 3), RoomMember("me", "Rawn", 2, "ok", v = 3))))
+        receive(ServerMessage.Ended("host_ended"))
+        assertThat(notices).containsExactly("The session ended")
+    }
+
+    @Test fun `removed, or off the air, a listener hears which`() = runTest {
+        val notices = notices()
+        val restores = restores()
+        session()
+        tuneInAgain()
+        receive(ServerMessage.Ended("booted"))
+        tuneInAgain()
+        receive(ServerMessage.Ended("station_removed"))
+        assertThat(notices).containsExactly("You were removed from this session", "This station is off the air").inOrder()
+        assertThat(restores).hasSize(2)
+    }
+
+    @Test fun `the host hears that the session ended, or that their station is off the air`() = runTest {
+        val notices = notices()
+        val restores = restores()
+        coEvery { api.createSession(STATION, "Rawn", KEY) } returns created()
+        session()
+        val reasons = listOf("host_ended", "paused", "closed", "replaced", "host_left", "station_removed")
+        for (reason in reasons) {
+            goLiveAgain()
+            receive(ServerMessage.Ended(reason))
+            assertThat(controller.state.value).isEqualTo(ListenTogetherState.Idle)
+        }
+        assertThat(notices).containsExactlyElementsIn(List(5) { "Session ended" } + "Your station is off the air").inOrder()
+        assertThat(restores).hasSize(reasons.size)
+        coVerify(exactly = reasons.size) { api.createSession(any(), any(), any()) } // none of these goes live again
+    }
+
+    @Test fun `a room's close after the welcome reads as its end`() = runTest {
+        val notices = notices()
+        session()
+        tuneInAgain()
+        connection.incoming.trySend(RoomEvent.Closed(CloseReason.ENDED)); runCurrent()
+        assertThat(notices).containsExactly("Maya's session ended")
+    }
+
+    @Test fun `a full session says so before letting anyone in`() = runTest {
+        val notices = notices()
+        tuneIn()
+        connection.incoming.trySend(RoomEvent.Closed(CloseReason.FULL)); runCurrent()
+        assertThat(notices).containsExactly("This session is full")
+        assertThat(controller.active.value).isFalse()
+    }
+
+    @Test fun `a session's host can't hand it over - their Leave ends it, and Make host is never sent`() = runTest {
+        val notices = notices()
+        goLive()
+        controller.send(Command.MakeHost("h")); runCurrent()
+        controller.send(Command.Leave); runCurrent()
+        assertThat(connection.sent.filterIsInstance<ClientMessage.MakeHost>()).isEmpty()
+        assertThat(connection.sent).contains(ClientMessage.End)
+        assertThat(notices).containsExactly("Session ended")
+        assertThat(controller.state.value).isEqualTo(ListenTogetherState.Idle)
+    }
+
+    @Test fun `a listener's Leave just leaves`() = runTest {
+        val restores = restores()
+        listening()
+        controller.send(Command.Leave); runCurrent()
+        assertThat(connection.sent).doesNotContain(ClientMessage.End)
+        assertThat(connection.closed).isTrue()
+        assertThat(restores).hasSize(1)
+    }
+
+    @Test fun `at 12 hours a listener moves to the station's newer session quietly, the user's queue still aside`() = runTest {
+        val notices = notices()
+        val restores = restores()
+        // Nothing listed yet, then the old room still listed, then the new one.
+        val answers = ArrayDeque(listOf(null, "K7QA2PXM", "M8RB3QYN"))
+        liveRoom = { answers.removeFirstOrNull() }
+        listening()
+        receive(ServerMessage.Ended("max_age"))
+        assertThat(controller.state.value).isEqualTo(ListenTogetherState.Connecting(hosting = false, station = STATION))
+        assertThat(controller.active.value).isTrue()
+        assertThat(player.calls.last()).isEqualTo("pause")
+        assertThat(player.intent).isFalse()
+        advanceTimeBy(6_001); runCurrent() // asks at once, at 3 s and at 6 s
+        assertThat(liveRoomAsks).isEqualTo(3)
+        assertThat(connections.map { it.first }).containsExactly("K7QA2PXM", "M8RB3QYN").inOrder()
+        assertThat(connection.hello!!()).isEqualTo(ClientMessage.Hello(name = "Rawn", v = 3, communityKey = KEY))
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("me", "tok2", state()))
+        assertThat(inRoom().code).isEqualTo("M8RB3QYN")
+        assertThat(inRoom().url).isEqualTo("https://stashfm.app/s/$STATION")
+        assertThat(notices).isEmpty()
+        assertThat(restores).isEmpty()
+        assertThat(player.calls.count { it == "save" }).isEqualTo(1) // the session's song is never saved as the user's
+        assertThat(player.calls).doesNotContain("exit")
+    }
+
+    @Test fun `replaced, a listener moves at once when the newer session is already listed`() = runTest {
+        liveRoom = { "M8RB3QYN" }
+        listening()
+        receive(ServerMessage.Ended("replaced"))
+        assertThat(connections.map { it.first }).containsExactly("K7QA2PXM", "M8RB3QYN").inOrder()
+        assertThat(liveRoomAsks).isEqualTo(1)
+    }
+
+    @Test fun `a move that finds no newer session in 30 s ends it, with the user's queue back`() = runTest {
+        val notices = notices()
+        val restores = restores()
+        listening()
+        receive(ServerMessage.Ended("replaced"))
+        advanceTimeBy(29_999); runCurrent()
+        assertThat(notices).isEmpty()
+        advanceTimeBy(2); runCurrent()
+        assertThat(liveRoomAsks).isEqualTo(11)
+        assertThat(notices).containsExactly("Maya's session ended")
+        assertThat(restores).hasSize(1)
+        assertThat(controller.state.value).isEqualTo(ListenTogetherState.Idle)
+        assertThat(connections).hasSize(1)
+    }
+
+    @Test fun `when the host's phone is gone, one look - a newer session is followed, none means it ended`() = runTest {
+        val notices = notices()
+        liveRoom = { "M8RB3QYN" }
+        session()
+        tuneInAgain()
+        receive(ServerMessage.Ended("host_left"))
+        assertThat(connections.last().first).isEqualTo("M8RB3QYN")
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("me", "tok2", state()))
+        liveRoom = { "M8RB3QYN" } // still this one listed: nothing newer
+        receive(ServerMessage.Ended("host_left"))
+        advanceTimeBy(30_000); runCurrent()
+        assertThat(liveRoomAsks).isEqualTo(2)
+        assertThat(notices).containsExactly("Maya's session ended")
+    }
+
+    @Test fun `leaving while moving stops looking and puts the user's queue back`() = runTest {
+        val notices = notices()
+        val restores = restores()
+        listening()
+        receive(ServerMessage.Ended("max_age"))
+        controller.send(Command.Leave); runCurrent()
+        assertThat(controller.state.value).isEqualTo(ListenTogetherState.Idle)
+        assertThat(restores).hasSize(1)
+        advanceTimeBy(30_001); runCurrent()
+        assertThat(liveRoomAsks).isEqualTo(1)
+        assertThat(notices).isEmpty()
+    }
+
+    @Test fun `a tune-in while moving starts from the user's queue`() = runTest {
+        val restores = restores()
+        listening()
+        receive(ServerMessage.Ended("max_age"))
+        controller.send(Command.TuneIn("P9SC4RZQ", STATION)); runCurrent()
+        assertThat(restores).hasSize(1)
+        assertThat(connections.last().first).isEqualTo("P9SC4RZQ")
+        advanceTimeBy(30_001); runCurrent()
+        assertThat(liveRoomAsks).isEqualTo(1) // the move stopped
+    }
+
+    @Test fun `at 12 hours a playing host goes live again at once, carrying the song, its place and the queue`() = runTest {
+        val notices = notices()
+        val restores = restores()
+        coEvery { api.createSession(STATION, "Rawn", KEY) } returnsMany listOf(created("K7QA2PXM"), created("M8RB3QYN"))
+        session()
+        goLiveAgain(state(host = "me", timeline = RoomTimeline(10_000, 0, true), queue = listOf(next.copy(addedBy = "h"))))
+        player.positionMs = 42_000
+        receive(ServerMessage.Ended("max_age"))
+        coVerify(exactly = 2) { api.createSession(STATION, "Rawn", KEY) }
+        assertThat(connections.map { it.first }).containsExactly("K7QA2PXM", "M8RB3QYN").inOrder()
+        assertThat(connection.hello!!()).isEqualTo(ClientMessage.Hello(name = "Rawn", hostKey = "HOSTKEY", v = 3))
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("me", "tok2", state(host = "me", track = null, key = 0)))
+        val load = connection.sent.filterIsInstance<ClientMessage.Load>().single()
+        assertThat(load.track).isEqualTo(track)
+        assertThat(load.positionMs).isEqualTo(42_000)
+        assertThat(load.queue).containsExactly(next) // its adders were the old room's members
+        assertThat(inRoom().isHost).isTrue()
+        assertThat(notices).isEmpty()
+        assertThat(restores).isEmpty()
+        assertThat(player.calls.count { it == "save" }).isEqualTo(1)
+    }
+
+    @Test fun `at 12 hours a paused host's session just ends`() = runTest {
+        val notices = notices()
+        coEvery { api.createSession(STATION, "Rawn", KEY) } returns created()
+        session()
+        goLiveAgain(state(host = "me", timeline = RoomTimeline(10_000, 0, false)))
+        receive(ServerMessage.Ended("max_age"))
+        assertThat(notices).containsExactly("Session ended")
+        coVerify(exactly = 1) { api.createSession(any(), any(), any()) }
+    }
+
+    @Test fun `a host that can't go live again says the session ended`() = runTest {
+        val notices = notices()
+        val restores = restores()
+        coEvery { api.createSession(STATION, "Rawn", KEY) } returnsMany listOf(created(), CommunityResult.Failed("timeout"))
+        session()
+        goLiveAgain()
+        receive(ServerMessage.Ended("max_age"))
+        assertThat(notices).containsExactly("Session ended")
+        assertThat(restores).hasSize(1)
+        assertThat(controller.state.value).isEqualTo(ListenTogetherState.Idle)
+    }
+
+    @Test fun `a private room's end reads as before, whatever the reason`() = runTest {
+        val notices = notices()
+        session()
+        controller.send(Command.Join("ABCDEFGH")); runCurrent()
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("me", "tok", state(session = null).copy(v = 2)))
+        receive(ServerMessage.Ended("max_age"))
+        assertThat(notices).containsExactly("Session ended")
+        assertThat(liveRoomAsks).isEqualTo(0)
     }
 
     companion object {
