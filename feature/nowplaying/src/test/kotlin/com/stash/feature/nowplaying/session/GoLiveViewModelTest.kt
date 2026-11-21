@@ -58,7 +58,9 @@ class GoLiveViewModelTest {
 
     @After fun tearDown() { Dispatchers.resetMain() }
 
-    private fun vm() = GoLiveViewModel(repo, homeSections, share, controller)
+    private val player = mockk<com.stash.core.media.PlayerRepository>(relaxed = true)
+
+    private fun vm() = GoLiveViewModel(repo, homeSections, share, controller, player)
 
     private fun onAir(stationId: String = "Ab3dEf9h", listeners: Int = 0) = ListenTogetherState.InRoom(
         code = "MYROOM01", url = "https://stashfm.app/s/$stationId", myId = "ME000001", isHost = true, hostId = "ME000001",
@@ -165,7 +167,12 @@ class GoLiveViewModelTest {
         val vm = vm(); advanceUntilIdle()
         var opened = 0
         vm.begin { opened++ }; runCurrent()
-        verify(exactly = 1) { controller.send(Command.GoLive("Ab3dEf9h", "Rawn")) }
+        // The saved queue first (a cold start only shows it), then the go-live.
+        coVerifyOrder {
+            player.loadRestoredQueue()
+            controller.send(Command.GoLive("Ab3dEf9h", "Rawn"))
+        }
+        verify(exactly = 1) { controller.send(any()) }
         assertThat(vm.state.value.step).isEqualTo(Step.Going)
         coVerify(exactly = 0) { repo.create(any()) }
         engineGoesLive(); advanceUntilIdle()

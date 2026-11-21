@@ -8,6 +8,7 @@ import com.stash.core.data.community.StationsRepository
 import com.stash.core.data.community.stationMessage
 import com.stash.core.data.prefs.HomeSectionsPreference
 import com.stash.core.data.share.SharePreference
+import com.stash.core.media.PlayerRepository
 import com.stash.core.media.listen.ListenTogetherController
 import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.model.community.Station
@@ -35,6 +36,7 @@ class GoLiveViewModel @Inject constructor(
     homeSections: HomeSectionsPreference,
     private val share: SharePreference,
     private val controller: ListenTogetherController,
+    private val player: PlayerRepository,
 ) : ViewModel() {
     sealed interface Step {
         data object Idle : Step
@@ -161,6 +163,9 @@ class GoLiveViewModel @Inject constructor(
      */
     private suspend fun goLive(station: Station, fromForm: Boolean) {
         _state.update { it.copy(step = Step.Going) }
+        // A cold start only shows the last queue; load it, so the session starts from that song and not from nothing
+        // (as starting a private room does).
+        player.loadRestoredQueue()
         controller.send(ListenTogetherController.Command.GoLive(station.id, station.hostName))
         var connecting = false
         val outcome = withTimeoutOrNull(GO_LIVE_TIMEOUT_MS) {

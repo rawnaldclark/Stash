@@ -592,7 +592,8 @@ fun NowPlayingScreen(
             }
         }
     }
-    val fullArtOn = fullArtPref == true && fullArtPages.isNotEmpty()
+    // Not in a station's session: the room has its own, smaller cover (Sessions).
+    val fullArtOn = fullArtPref == true && fullArtPages.isNotEmpty() && room?.session == null
     // The square art's pages and full art's line up (front, back, inside) when the back is known.
     val pagesLineUp = coverArt?.back != null
     // The holder only (no colour read here): each reader takes its colour where it draws, so the
@@ -1155,7 +1156,49 @@ fun NowPlayingScreen(
                 }
             }
 
-            Column(modifier = Modifier.fillMaxSize().padding(bottom = navBarInset)) {
+            // Sessions: a station's session has its own room in place of the player's content (UX spec 2026-11-20 §4).
+            // The host keeps the player's own controls there.
+            if (room?.session != null) {
+                com.stash.feature.nowplaying.session.SessionRoom(
+                    room = room,
+                    song = com.stash.feature.nowplaying.session.RoomSong(
+                        title = track?.title ?: room.track?.title.orEmpty(),
+                        artist = track?.artist ?: room.track?.artist.orEmpty(),
+                        art = artModel,
+                        durationMs = uiState.durationMs,
+                        playing = uiState.playWhenReady || uiState.isPlaying,
+                        progress = { progressFraction(playerPosition.value, uiState.durationMs) },
+                        elapsedMs = { playerPosition.value },
+                        // An All Songs file can't be liked (no library row): no heart.
+                        liked = track?.takeUnless { it.isScannedSong }?.let { it.stashLikedAt != null },
+                    ),
+                    reactions = together.reactions,
+                    animate = ambientAnimationEnabled,
+                    onCollapse = onDismiss,
+                    onReact = together::react,
+                    onRejoin = together::rejoin,
+                    onLike = viewModel::onLikeTap,
+                    onSeek = viewModel::onSeekTo,
+                    onLeave = together::leave,
+                    onEnd = together::end,
+                    hostControls = {
+                        PlaybackControls(
+                            isPlaying = uiState.playWhenReady || uiState.isPlaying,
+                            isBuffering = uiState.isBuffering && (uiState.playWhenReady || uiState.isPlaying),
+                            shuffleEnabled = uiState.shuffleEnabled,
+                            repeatMode = uiState.repeatMode,
+                            onPlayPauseClick = viewModel::onPlayPauseClick,
+                            onSkipNext = viewModel::onSkipNext,
+                            onSkipPrevious = viewModel::onSkipPrevious,
+                            onToggleShuffle = viewModel::onToggleShuffle,
+                            onCycleRepeatMode = viewModel::onCycleRepeatMode,
+                            onReact = together::react,
+                            canSkip = true,
+                        )
+                    },
+                    modifier = Modifier.then(controlsLayer).statusBarsPadding().padding(bottom = navBarInset),
+                )
+            } else Column(modifier = Modifier.fillMaxSize().padding(bottom = navBarInset)) {
                 // -- Top row: dismiss, then cast, the pinned actions, ⋮ and (pinned) queue. It stays
                 // put while the art and the lyrics swap beneath it. --
                 Column(
@@ -1552,7 +1595,7 @@ fun NowPlayingScreen(
                     }
                 }
             }
-            if (room != null) com.stash.feature.nowplaying.listen.FloatingReactions(together.reactions, animate = ambientAnimationEnabled, modifier = Modifier.fillMaxSize().then(controlsLayer))
+            if (room != null && room.session == null) com.stash.feature.nowplaying.listen.FloatingReactions(together.reactions, animate = ambientAnimationEnabled, modifier = Modifier.fillMaxSize().then(controlsLayer))
             com.stash.feature.nowplaying.ui.PageZoomLayer(pageZoom)
         }
     }
