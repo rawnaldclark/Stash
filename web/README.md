@@ -428,7 +428,8 @@ The site is a Worker named `stashfm-site`: `dist/` served with Workers Static As
       `stashfm.app/t*` covers short song links (`/t/<id>`) and the older long ones (`/t?t=…`).
       Cloudflare matches a route against the whole URL, query included, so a pattern without a final
       `*`, like `stashfm.app/t`, misses every `/t?…` link. The flip side: no site page may start with
-      `/t` (such as `/terms`), because the share Worker would get it.
+      `/t` (such as `/terms`), because the share Worker would get it. Since Sessions (2026-11) the share
+      Worker also owns `stashfm.app/s/*`, its station pages, so no site page may live under `/s/` either.
       Change the toml, not the dashboard: `wrangler deploy` replaces the Worker's routes with the
       toml's list, so a dashboard edit is undone by the next deploy.
    2. **Deploy it** from `infra/share-worker`: `npm test`, then `npx wrangler deploy`. The output
