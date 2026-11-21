@@ -7,8 +7,9 @@
  * host-key check, so `node --test` covers every rule without the Workers runtime.
  *
  * Events:
- *   { type: "create", code, hostName, keyHash }
- *   { type: "hello", msg, hostKeyOk, newId, newToken }  a socket's first message
+ *   { type: "create", code, hostName, keyHash, stationId? }  with stationId, a session (Sessions: a public room)
+ *   { type: "hello", msg, hostKeyOk, listenerHash?, newId, newToken }  a socket's first message; listenerHash is the
+ *                                                       SHA-256 of the Community key it sent, worked out by the shell
  *   { type: "msg", from, msg, newId? }                  any later message from member `from`
  *   { type: "close", from }                             member `from`'s socket closed
  *   { type: "alarm" }
@@ -75,7 +76,29 @@ export const MAX_REMOVED = 50;
  */
 export const MAX_QUEUE_CHARS = 170_000;
 
-const HOST_ONLY = new Set(["load", "play", "pause", "seek", "queue", "suggestion", "makeHost", "end", "settings"]);
+/*
+ * Sessions (spec docs/superpowers/specs/2026-11-20-sessions-design.md §4; build plan
+ * docs/superpowers/plans/2026-11-20-sessions.md and its step 1): a room opened for a station is public. Everything a
+ * session does differently is behind `s.pub`, so a private room behaves exactly as before.
+ */
+export const MAX_LISTENERS = 50;
+export const MAX_COHOSTS = 3;
+/** The host, 3 co-hosts and 50 listeners. */
+export const MAX_PUBLIC_MEMBERS = 1 + MAX_COHOSTS + MAX_LISTENERS;
+/** What a session speaks, and the least an app must say in its hello to join one (build plan, decision 5). */
+export const PUBLIC_V = 3;
+/** Paused this long, a session ends. */
+export const PAUSE_END_MS = 15 * 60_000;
+/** How often a session on the air rewrites its live directory row when nothing else has. */
+export const LIVE_BEAT_MS = 60_000;
+/** Requests one listener may have waiting, and a session in all. */
+export const MAX_REQUESTS_EACH = 3;
+export const MAX_REQUESTS = 30;
+/** Key hashes a session remembers as booted. */
+export const MAX_BOOTED = 200;
+export const capacity = (s) => (s.pub ? MAX_PUBLIC_MEMBERS : MAX_MEMBERS);
+
+const HOST_ONLY =new Set(["load", "play", "pause", "seek", "queue", "suggestion", "makeHost", "end", "settings"]);
 /** Phone status → stored member status (`ready` is stored as `ok`, spec §3). */
 const STATUSES = { ready: "ok", buffering: "buffering", unavailable: "unavailable", drifting: "drifting" };
 
@@ -92,7 +115,7 @@ export function positionAt(tl, now) {
     return tl.playing ? tl.positionMs + Math.max(0, now - tl.atRoomMs) : tl.positionMs;
 }
 
-export function createRoom({ code, hostName, keyHash }, now) {
+export function createRoom({ code, hostName, keyHash, stationId }, now) {
     return {
         code, keyHash, createdAt: now, hostName: cleanName(hostName),
         rev: 0, host: null, track: null, trackKey: 0,
@@ -100,6 +123,12 @@ export function createRoom({ code, hostName, keyHash }, now) {
         queue: [], members: [], suggestions: [], phase: { kind: "playing" },
         reactAt: {}, lastLeftAt: now, hostless: false, accepted: [],
         qv: 0, adds: [], removed: [],
+        // A session: the station it's on the air for, and its own state. Co-hosts and the booted are kept by key hash,
+        // never by member id, so both hold across a reconnect (build plan, decision 3). `pausedSince`: a session ends
+        // after PAUSE_END_MS without playing, and it starts with nothing playing. `liveAt`/`liveKey`: its last live row.
+        ...(stationId ? {
+            pub: { stationId, cohosts: [], booted: [], autoAccept: false, presence: "booth", pausedSince: now, liveAt: null, liveKey: null },
+        } : {}),
     };
 }
 
@@ -123,12 +152,38 @@ function upgrade(s) {
 /** `v` only for an app that sent one (2 = it knows guest adds), so older members read exactly as before. */
 const publicMembers = (s) => connected(s).map(({ id, name, joinedAt, status, v }) => ({ id, name, joinedAt, status, ...(v ? { v } : {}) }));
 
+const memberById = (s, id) => s.members.find((m) => m.id === id);
+/** In a session, a member whose key hash the host made a co-host. */
+function isCohost(s, id) {
+    if (!s.pub) return false;
+    const kh = memberById(s, id)?.kh;
+    return !!kh && s.pub.cohosts.includes(kh);
+}
+/** The host or a co-host: who sees every request, and may add, take out and accept songs. */
+const isStaff = (s, id) => id === s.host || isCohost(s, id);
+/** Everyone connected but the host: a session's "12 listening". */
+const listenerCount = (s) => connected(s).filter((m) => m.id !== s.host).length;
+/** What every phone in a session knows about it, as `session` and in `state`. Member ids only, never a key hash. */
+function sessionInfo(s) {
+    return {
+        station: s.pub.stationId, listeners: listenerCount(s),
+        cohosts: connected(s).filter((m) => isCohost(s, m.id)).map((m) => m.id),
+        autoAccept: s.pub.autoAccept, presence: s.pub.presence,
+    };
+}
+const sessionMsg = (s) => ({ to: "all", msg: { t: "session", ...sessionInfo(s) } });
+/** The waiting requests member [id] may see: all of them for the host and co-hosts, a listener's own for a listener. */
+const requestsFor = (s, id) => (isStaff(s, id) ? s.suggestions : s.suggestions.filter((x) => x.from === id));
+const requestsMsg = (s, id) => ({ to: id, msg: { t: "requests", requests: requestsFor(s, id) } });
+
 /**
  * Guests' Play next and Add to queue go straight in: the host's app knows guest adds (`v` ≥ 2 in its hello) and its
  * "Let guests add songs" switch is on (`ga`, on unless it said otherwise). Read from whoever hosts now, so a new host's
- * own switch takes over with them; an older host keeps the approvals it knows.
+ * own switch takes over with them; an older host keeps the approvals it knows. Never in a session: there, listeners'
+ * songs are requests, which wait for the host or a co-host.
  */
 export function guestsCanAdd(s) {
+    if (s.pub) return false;
     const host = s.members.find((m) => m.id === s.host);
     return !!host && (host.v ?? 1) >= 2 && host.ga !== false;
 }
@@ -137,22 +192,25 @@ export function guestsCanAdd(s) {
 export function publicState(s) {
     return {
         rev: s.rev, host: s.host, track: s.track, trackKey: s.trackKey, timeline: s.timeline, queue: s.queue,
-        members: publicMembers(s), suggestions: s.suggestions,
+        // A session's requests go to the host and co-hosts alone (`requests`), never in what everyone gets.
+        members: publicMembers(s), suggestions: s.pub ? [] : s.suggestions,
         // The guests' deadline only, as always: the host's is the room's business.
         phase: s.phase.kind === "preparing"
             ? { kind: "preparing", trackKey: s.phase.trackKey, deadlineMs: s.phase.deadlineMs }
             : { kind: "playing" },
-        v: PROTOCOL_V, guestsAdd: guestsCanAdd(s), qv: s.qv ?? 0,
+        v: s.pub ? PUBLIC_V : PROTOCOL_V, guestsAdd: guestsCanAdd(s), qv: s.qv ?? 0,
+        ...(s.pub ? { session: sessionInfo(s) } : {}),
     };
 }
 
-/** The Join screen's view (GET /v1/rooms/{code}). */
+/** The Join screen's view (GET /v1/rooms/{code}); a session's also names its station and audience. */
 export function preview(s) {
     const host = s.members.find((m) => m.id === s.host);
     return {
         hostName: host?.name ?? s.hostName,
         memberCount: connected(s).length,
-        full: s.members.length >= MAX_MEMBERS,
+        full: s.members.length >= capacity(s),
+        ...(s.pub ? { station: s.pub.stationId, listeners: listenerCount(s) } : {}),
         ...(s.track ? { track: s.track } : {}),
     };
 }
@@ -465,13 +523,22 @@ export function step(state, event, now) {
 const EVENTS = {
     hello(ctx) {
         const { s, now, event, msg } = ctx;
+        if (s.pub) {
+            // A session takes an app that speaks it (build plan, decision 5), known by its Community key's hash, which the
+            // shell works out (decision 3), or the host by the host key. Whoever the host booted stays out.
+            if (!(Number.isSafeInteger(msg.v) && msg.v >= PUBLIC_V)) { ctx.reject = { code: 4426, reason: "update" }; return false; }
+            if (!event.hostKeyOk && !event.listenerHash) { ctx.reject = { code: 4401, reason: "key" }; return false; }
+            if (event.listenerHash && s.pub.booted.includes(event.listenerHash)) { ctx.reject = { code: 4403, reason: "booted" }; return false; }
+        }
         const name = cleanName(msg.name);
         const before = guestsCanAdd(s);
         // Only the private token rejoins a slot: every member can see every memberId (spec §3).
         let m = typeof msg.resumeToken === "string" ? s.members.find((x) => x.token === msg.resumeToken) : undefined;
         if (!m) {
-            if (s.members.length >= MAX_MEMBERS) { ctx.reject = { code: 4409, reason: "full" }; return false; }
+            if (s.members.length >= capacity(s)) { ctx.reject = { code: 4409, reason: "full" }; return false; }
             m = { id: event.newId, token: event.newToken, name, joinedAt: now, status: "buffering", leftAt: null };
+            // A session member's key hash: what co-hosting and booting go by. Kept on resume; it never leaves the room.
+            if (s.pub) m.kh = event.listenerHash ?? null;
             s.members.push(m);
         } else {
             m.leftAt = null;
@@ -493,6 +560,8 @@ const EVENTS = {
         ctx.bind = m.id;
         ctx.out.push({ to: m.id, msg: { t: "welcome", memberId: m.id, token: m.token, state: publicState(s) } });
         ctx.out.push(membersMsg(s));
+        // In a session, the requests this member may see, and everyone hears the new count.
+        if (s.pub) ctx.out.push(requestsMsg(s, m.id), sessionMsg(s));
         return true;
     },
 
