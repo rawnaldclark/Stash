@@ -519,3 +519,33 @@ Nothing in 2a can open a session from the UI yet. Its phone check is that privat
 - **The override in a release build:** it's read only in debug builds, from a file CI doesn't have. Check the release APK's `BuildConfig` in the PR.
 - **A busy room on a phone:** about 50 reaction frames a second in a full one (decision 6). Watch the frame rate on the rig with `session-peer.mjs` listeners reacting.
 - **A host whose app dies:** as in a private room, only the resume token takes back a held slot. The app keeps it in memory, so a restarted app can't reclaim its session, which ends `host_left` after 60 s. Going live again from the restarted app is how a host gets back: the old session then ends `replaced` or `host_left`, whichever comes first, and its listeners move over either way (task 12). Fine for v1; restoring sessions after the process dies would need the token kept.
+
+---
+
+## As built: 2a (2026-11-21, `feat/sessions-engine`)
+
+Where 2a differs from its tasks above:
+
+- **A session checks who's knocking on every hello, resumes included.** room.js's `hello` closes 4401 without the host key or a valid Community key. So a session's host sends its host key in every hello, and a listener its Community key. A private room's hello is unchanged: the host key only until the room hands back a token. Task 10's tests pin both.
+- **Decision 5 changed: a session listener's Play next is Request.** `playNextLabel` puts Play next in about 10 menus with no role check, so hiding it meant editing 7 files that step 3 would undo. The listener's half of step 3's requests is here instead:
+  - `SESSION_LISTENER`'s Play next reads "Request" and sends `request`. It sends at most the 3 the listener may have waiting, and holds them while the socket is down.
+  - The toast comes from the room's `requestAnswer`s.
+  - A pass says "Maya passed on Xtal".
+  - Add to queue is hidden for them (`canQueue` is false).
+
+  The host's and co-hosts' half (Play next, Add to queue or Pass on a waiting request) is still step 3.
+- **Co-hosts add straight in and take out any song**, since `cohosts` already arrives in `session`. Making one is still step 3.
+- **Sessions' engine tests are their own class:** `StationSessionTest` in core:media, reusing `ListenTogetherSessionTest`'s fakes. That file still covers private rooms. Its only changes are the hello's `v: 3` and one test that pins the version split. Without the split, guest adds silently became suggestions in private rooms: 87 of its tests failed.
+- **Moves (task 12) split `teardown`:**
+  - `dropRoom` lets go of the room. The player stays in session mode, and the user's queue stays aside.
+  - The exit then ends the session.
+  - `enter(moved = true)` never saves the player's position, which would write the session's song over the user's.
+  - A move publishes `Connecting(hosting, station)`. Leave, or anything that starts a room, stops it.
+- **`CommunityHttp`** is `CommunityApiClient`'s request code, now shared with `StationsApiClient` and `RoomApiClient.createSession`. They read a 503 `sessions_off` as a refusal (`CommunityResult.SESSIONS_OFF`), not as a network failure.
+- **`StationHeard`** reuses `CommunityHeard`'s marks under its own pref names (`station_heard`, `station_heard_waiting`).
+- **The menus' role** moved out of `MainActivity` into `listenTogetherRole()` in the app module, which a JVM test pins.
+- **Task 14's phone check** ran on the rig against production, without the Pixel 6:
+  - The rig hosted and `session-peer.mjs private-guest` joined. Then the rig joined `private-host`'s room from its `/l/` link. The rig said `v: 3`; both rooms stayed `v: 2`.
+  - Both ways, a guest's Play next went straight in, and reactions crossed. Skip, End for everyone and Leave worked as before. Each time, the user's own queue came back paused, at the place it was left.
+  - The command-line session against the local Worker worked by the run book in the PR.
+  - Seen, not from 2a: the script adds Dreams with no YouTube id, so the rig had to find it by search. Tidal served it 3 s after the prepare, but the player still wasn't ready at 20 s. The host's 20 s limit (`HOST_PREPARE_MS`) moved the room to the next song. A phone's add carries the YouTube id and art.
