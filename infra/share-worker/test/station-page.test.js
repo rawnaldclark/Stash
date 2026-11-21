@@ -86,7 +86,8 @@ test("everything the host typed, and the song, is escaped", async () => {
     await seedStation(e, { id: "EVIL0001", name: "<script>alert(1)</script>", hostName: "\"><img src=x onerror=alert(1)>", vibe: "</p><script>x</script>" });
     await seedLive(e, { station: "EVIL0001", track: { t: "<b>t</b>", a: "<i>a</i>", art: "javascript:alert(1)" } });
     const body = await (await page(e, "/s/EVIL0001")).text();
-    assert.doesNotMatch(body, /<script>|<img src=x|<b>t<\/b>|<i>a<\/i>|javascript:/);
+    // Any case and any attributes: the page itself has no scripts, so no `<script` at all may get through.
+    assert.doesNotMatch(body, /<script|<img src=x|<b>t<\/b>|<i>a<\/i>|javascript:/i);
     assert.match(body, /<h1>&lt;script&gt;alert\(1\)&lt;\/script&gt;<\/h1>/);
     assert.match(body, /Hosted by &quot;&gt;&lt;img src=x onerror=alert\(1\)&gt;/);
 });
