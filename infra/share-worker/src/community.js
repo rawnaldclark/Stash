@@ -3,10 +3,16 @@
  * D1 tables: posts, votes, blocked, heard (migrations/). A phone is sha256(its key);
  * a network is sha256(COMMUNITY_SALT | IPv4, or IPv6 /56). Every error body is {error: "<code>"}.
  */
-import { ip, json, readCapped } from "./http.js";
-import { validEditKey } from "./validate.js";
-import { newId, sha256Hex } from "./store.js";
+import { json } from "./http.js";
+import { newId } from "./store.js";
 import { cleanPost, summaryOf } from "./community-post.js";
+import {
+    HIDE_AT, VOTES_PER_NETWORK, VOTE_ROWS_PER_NETWORK, gone, heardRequired, hiddenByVotes, identity, network, networkHash,
+    notAllowed, rateLimited, readJson,
+} from "./community-shared.js";
+
+// The vote rules and request helpers live in community-shared.js (stations use them too); re-exported for old importers.
+export { HIDE_AT, MAX_REQUEST_BYTES, VOTES_PER_NETWORK, VOTE_ROWS_PER_NETWORK, hiddenByVotes } from "./community-shared.js";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -14,15 +20,6 @@ export const POST_TTL_MS = 30 * DAY;
 export const DAILY_POSTS = 2;
 export const LIVE_POSTS = 5;
 export const NETWORK_DAILY_POSTS = 10;
-export const HIDE_AT = -3; // up - down at or below this hides a post, unless the owner vouched for it
-export const VOTES_PER_NETWORK = 2; // counted votes per network per post, in each direction
-/**
- * Stored vote rows per network per post. A voter is sha256(any key), so without this a script behind one network
- * stored a fresh row on every vote (60/min), and since every vote recounts all of the post's rows, D1 reads grew
- * with the square of that. Well above VOTES_PER_NETWORK, so a counted vote taken back still leaves real ones to count.
- */
-export const VOTE_ROWS_PER_NETWORK = 20;
-export const MAX_REQUEST_BYTES = 256 * 1024;
 /**
  * 3.6 h per net vote: 10 more votes keep a post above a newer one for 36 h (spec §2 Ordering).
  * The posts_hot index holds this number: changing it needs a migration that rebuilds posts_hot,
@@ -31,19 +28,8 @@ export const MAX_REQUEST_BYTES = 256 * 1024;
 export const MS_PER_VOTE = 12_960_000;
 
 const POST_API = /^\/v1\/community\/posts\/([A-Za-z0-9]{8})(\/vote|\/heard)?$/;
-const KEY_HEADER = "X-Stash-Community-Key";
-const rateLimited = () => json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
-const notAllowed = () => json({ error: "method_not_allowed" }, 405);
-const gone = () => json({ error: "gone" }, 404);
 /** A post that's missing, taken down or removed, or expired. Hidden is checked separately: its poster still sees it. */
 const isGone = (post, now) => !post || post.removed_at !== null || post.expires_at <= now;
-/**
- * HEARD_REQUIRED = "1" (a [vars] entry in wrangler.toml): a +1 or -1 vote needs the voter's heard mark on the post
- * (contract 2026-11-03). Off by default, so app versions that never send heard can still vote until the owner turns it on.
- */
-const heardRequired = (env) => env.HEARD_REQUIRED === "1";
-/** At or below HIDE_AT, unless the owner vouched for it (`restore`): votes never hide a vouched post. The feed's WHERE is the same rule in SQL. */
-export const hiddenByVotes = (p) => p.up - p.down <= HIDE_AT && !p.vouched;
 
 /** Routes every /v1/community/* request. [method] has HEAD folded into GET. */
 export async function communityRoute(request, env, path, method) {
@@ -62,33 +48,6 @@ export async function communityRoute(request, env, path, method) {
         return notAllowed();
     }
     return json({ error: "not_found" }, 404);
-}
-
-/** The caller's poster id: {id} with a valid key, {none} without one, {bad} with a malformed one. */
-async function identity(request) {
-    const key = request.headers.get(KEY_HEADER);
-    if (key === null) return { none: true };
-    if (!validEditKey(key)) return { bad: true };
-    return { id: await sha256Hex(key) };
-}
-
-/**
- * The caller's network (an IPv4 address, or an IPv6 /56): http.js's ip(), so a web listener behind the player's proxy
- * is their own network when the proxy vouches for them (SHARE_PROXY_KEY). The per-minute limits count by it too
- * (spec §2), so hopping /64s inside one /56 doesn't dodge them; the stored form is salted and hashed.
- */
-const network = (request, env) => ip(request, env);
-const networkHash = (request, env) => {
-    // Unsalted, the stored IPv4 hashes could be reversed by trying every address (spec §2): refuse instead.
-    if (!env.COMMUNITY_SALT) throw new Error("COMMUNITY_SALT is not set");
-    return sha256Hex(`${env.COMMUNITY_SALT}|${network(request, env)}`);
-};
-
-async function readJson(request) {
-    if (Number(request.headers.get("content-length")) > MAX_REQUEST_BYTES) return { tooBig: true };
-    const buf = await readCapped(request, MAX_REQUEST_BYTES); // streamed: a body without Content-Length isn't buffered whole
-    if (buf === null) return { tooBig: true };
-    try { return { body: JSON.parse(new TextDecoder().decode(buf)) }; } catch { return { body: null }; }
 }
 
 /**
