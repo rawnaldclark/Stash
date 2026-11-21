@@ -158,7 +158,49 @@ Crowd     [{i, id}]: up to 4 faces, host first. i is the initial (null without a
 - Lengths are counted in UTF-16 units, as Kotlin's `String.length` counts, after trimming: name 1 to 40, hostName up to 40, vibe up to 60. Unknown fields are dropped.
 - Limits: `POST`, `PATCH` and `DELETE` count against `COMMUNITY_WRITE_RL`; `heard`, `vote` and `follow` against `COMMUNITY_VOTE_RL`; reads against `COMMUNITY_READ_RL`. Over one: 429 `rate_limited` with `Retry-After: 60`.
 - Votes are the post rules on a station: one per phone, each network counted at most twice each way, at most 20 stored rows per network. At up minus down of -3 or below, a station is hidden from everyone but its owner until `station-restore` vouches for it. A blocked phone's station is hidden while the block lasts. Unlike posts, the heard mark is always required, whatever `HEARD_REQUIRED` says: no app ever voted on a station without sending one.
-- Going live (a public room for a station, with `POST /v1/rooms`) comes with step 1b of the plan, which also writes the `live` rows. Until then nothing writes them.
+- Going live is a session: a Listen Together room opened for the station (below), which writes its `live` row itself.
+
+### Sessions protocol
+
+A session is a Listen Together room opened for a station: the same socket (`GET /v1/rooms/{code}/ws`) and messages as a private room, with the differences below. They're all behind `s.pub` in `src/room.js`, so a private room behaves exactly as before.
+
+**Opening one.** `POST /v1/rooms` `{public: true, stationId, hostName?}` with the owner's `X-Stash-Community-Key`: 201 `{code, hostKey, url}`, `url` being the station's page (`/s/{stationId}`). Without `hostName` the room takes the station's DJ name. 503 `sessions_off`, 401 `bad_key`, 400 `bad_request` (no `stationId`, or a malformed one), 404 `gone` (missing, removed, or hidden by votes), 403 `not_yours`, 403 `blocked`, 429 `rate_limited` (`ROOM_RL`, as for a private room). A body without `public: true` is a private room. A newer session of a station takes the older one's place in the directory, and the older one ends `replaced`.
+
+**hello.** `{t: "hello", v: 3, name?, resumeToken?}`, plus the host's `hostKey` or a listener's `communityKey` (the phone's Community key: the room keeps only its SHA-256 and never sends even that). Without a welcome, the socket closes with:
+
+| Code | Reason | When |
+|---|---|---|
+| 4426 | `update` | `v` under 3: an app from before Sessions |
+| 4401 | `key` | neither the host key nor a valid `communityKey` |
+| 4403 | `booted` | the host booted this key from the session |
+| 4409 | `full` | 54 members: the host, 3 co-hosts and 50 listeners (a dropped member's slot is held 60 s) |
+
+The welcome's `state` has `v: 3`, `session` and `suggestions: []`. Then that member gets their `requests`, and everyone gets `session`. Only the host's `status` counts: the host's ready starts a song, listeners never hold it up, and their statuses aren't kept or sent on.
+
+**Session** `{station, listeners, cohosts, autoAccept, presence}`: `listeners` counts everyone connected but the host, `cohosts` are member ids, `presence` is `"booth"` or `"away"`. Sent to everyone as `session` when it changes.
+
+| Message | Who | What it does |
+|---|---|---|
+| `load`, `play`, `pause`, `seek`, `queue`, `end` | host | as in a private room |
+| `autoAccept {on}` | host | requests go straight in as Add to queue (a listener still holds at most 20 songs in the queue); turning it on lets in the waiting ones, in order |
+| `cohost {memberId, on}` | host | at most 3: the 4th is `refused {what: "cohost", reason: "max_cohosts"}` |
+| `boot {memberId}` | host | they get `ended {reason: "booted"}`, their socket closes 4403, and their key stays out. A co-host first stops being one: `refused {what: "boot", reason: "cohost"}` |
+| `presence {state}` | host | `"booth"` or `"away"`, in `session` |
+| `add {tracks, next}` | host, co-hosts | straight in, a co-host holding at most 20 waiting, as a guest does. A listener's is answered `added {count: 0}` |
+| `unqueue {track}` | host and co-hosts any song; listeners their own | as in a private room |
+| `requestAction {id, action}` | host, co-hosts | `next` (Play next), `queue` (Add to queue) or `pass`. One the queue no longer has room for stays waiting: `refused {what: "request", reason: "queue_full"}` |
+| `command {action: "skip"}` | co-hosts | goes to the host's phone as `command {action: "skip", from, trackKey}`, to ignore if that song has already changed. While the host's phone is away: `refused {what: "skip", reason: "host_reconnecting"}` |
+| `request {track}` | listeners | answered `requestAnswer {state}`: `queued` (Auto-accept), `waiting`, or `full` (3 waiting each, 30 in all) |
+| `react {emoji}`, `ping {c}`, `status` | everyone | as in a private room (only the host's `status` counts) |
+| `settings`, `makeHost`, `suggest`, `suggestion` | | no effect |
+
+New frames: `session`; `requests {requests: [{id, from, track}]}` after any change, all of them to the host and co-hosts and a listener's own to them; `requestAnswer`; `requestPassed {track, by}` to its requester alone; `refused {what, reason}`; and `command` to the host.
+
+**How it ends.** `ended {reason}`, then every socket closes 4000. `host_ended`: End. `host_left`: the host's phone gone 60 s (a session is never handed on). `paused`: 15 minutes without playing (a song on its way counts as playing). `max_age`: 12 hours. `station_removed`: the station deleted, removed, hidden by votes, or its phone blocked. `replaced`: a newer session of the station. `closed`: 5 minutes with nobody in it.
+
+**Limits.** A private room's: 20 messages a second a socket, and a reaction a second each. `add`, `unqueue` and `request` share 10 at once, then 2 a second; past that an add is answered `added {count: 0}` and a request `requestAnswer {state: "full"}`.
+
+**The directory.** The room writes its `live` row (`writeLive` in `src/stations-api.js`): at its first song, each new song, pause or play (at most once every 5 s), and every minute, which keeps it fresh. The end takes it down. The app only reads it (`GET live`).
 
 ### The station page and the cleanup
 
@@ -175,7 +217,7 @@ npm run community -- station-restore <stationId> # undo your removal or a vote a
 npm run community -- station-block <stationId>   # block its phone (no going live, voting or posting) and remove its station and posts
 ```
 
-They work as the post commands do (see "Community moderation"). `unblock <prefix>` undoes a block from either kind (`station-list` shows the `owner` prefix). After `station-block` and `unblock`, the station stays down until `station-restore`, within its day; a phone blocked from a post with `block` keeps its station, hidden while the block lasts. A session already on the air ends within a minute, when its room's next directory write is refused (step 1b).
+They work as the post commands do (see "Community moderation"). `unblock <prefix>` undoes a block from either kind (`station-list` shows the `owner` prefix). After `station-block` and `unblock`, the station stays down until `station-restore`, within its day; a phone blocked from a post with `block` keeps its station, hidden while the block lasts. A session already on the air ends within a minute, when its room's next directory write is refused; deleting a station from the app ends its session at once.
 
 ## Adding another host
 
