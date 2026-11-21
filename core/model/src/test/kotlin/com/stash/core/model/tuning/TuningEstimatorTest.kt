@@ -51,8 +51,37 @@ class TuningEstimatorTest {
         }
     }
 
-    @Test fun `vibrato keeps it within 5 cents`() {
-        for (a4 in tunings) check("song with vibrato", a4, Synth(rate, a4, seed = 4, vibratoCents = 25.0).song(24.0), 5.0)
+    @Test fun `a melody with wide vibrato over steady chords keeps it within 5 cents`() {
+        for (a4 in tunings) check("song, melody with vibrato", a4, Synth(rate, a4, seed = 4, vibratoCents = 25.0).song(24.0), 5.0)
+    }
+
+    @Test fun `fed in small blocks it reads the same as all at once`() {
+        val audio = Synth(rate, 436.0, seed = 12).song(12.0)
+        val whole = TuningEstimator.estimate(audio, rate)
+        val meter = TuningEstimator.Meter(rate)
+        var at = 0
+        val block = FloatArray(1_000)
+        while (at < audio.size) {
+            val count = minOf(block.size, audio.size - at)
+            audio.copyInto(block, 0, at, at + count)
+            meter.add(block, count)
+            at += count
+        }
+        assertThat(meter.result()).isEqualTo(whole)
+    }
+
+    @Test fun `a meter can be read while audio is still arriving`() {
+        val audio = Synth(rate, 444.5, seed = 13).song(20.0)
+        val meter = TuningEstimator.Meter(rate)
+        assertThat(meter.result().measured).isFalse()
+        meter.add(audio, rate * 10)
+        val early = meter.result()
+        meter.add(audio.copyOfRange(rate * 10, audio.size))
+        val late = meter.result()
+        assertThat(early.measured).isTrue()
+        assertThat(apart(early.cents, centsOf(444.5))).isLessThan(2.0)
+        assertThat(apart(late.cents, centsOf(444.5))).isLessThan(2.0)
+        assertThat(late.peaks).isGreaterThan(early.peaks)
     }
 
     @Test fun `stretched piano-like partials keep it within 5 cents`() {
@@ -118,7 +147,7 @@ class TuningEstimatorTest {
     }
 }
 
-/** Made audio on an equal-tempered grid at [a4]. */
+/** Made audio on an equal-tempered grid at [a4]; [vibratoCents] is the melody's, as a singer's would be. */
 private class Synth(
     private val rate: Int,
     private val a4: Double,
@@ -133,7 +162,10 @@ private class Synth(
     private fun buffer(seconds: Double) = FloatArray((seconds * rate).toInt())
 
     /** One note with [partials] harmonics, a soft attack and a decay, added into [out] from [at] seconds. */
-    private fun note(out: FloatArray, hz: Double, at: Double, length: Double, gain: Double, partials: Int = 6, decay: Double = 1.5) {
+    private fun note(
+        out: FloatArray, hz: Double, at: Double, length: Double, gain: Double,
+        partials: Int = 6, decay: Double = 1.5, vibratoCents: Double = 0.0,
+    ) {
         val from = (at * rate).toInt()
         val count = (length * rate).toInt()
         val vibratoRate = 5.0 + random.nextDouble()
@@ -175,7 +207,7 @@ private class Synth(
             for (b in 0 until 4) note(out, midi(key - 12 + root), t + b * beat, beat * 0.9, 0.2, partials = 4)
             for (b in 0 until 8) {
                 if (random.nextInt(4) == 0) continue
-                note(out, midi(key + 24 + scale[random.nextInt(7)]), t + b * beat / 2, beat / 2, 0.1, partials = 5)
+                note(out, midi(key + 24 + scale[random.nextInt(7)]), t + b * beat / 2, beat / 2, 0.1, partials = 5, vibratoCents = vibratoCents)
             }
             t += 4 * beat
             bar++

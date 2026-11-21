@@ -14,10 +14,12 @@ import kotlin.math.sqrt
  * Measures a song's own tuning from its audio (true tuning, spec 2026-11-21 §3.1): how far its notes sit from the
  * standard 12-note grid at A = 440 Hz, in cents, and how sure that is.
  *
- * How: through the song, the steady spectral peaks of each short frame are found to a fraction of a hertz. Each
- * peak's distance from the nearest note of the 440 grid (-50 to +50 cents) goes into a circular histogram, weighted
- * by its strength. Pitched music piles up at one offset, the song's tuning; drums, speech and noise spread evenly.
- * The histogram's peak is the answer, and how much of the weight sits at it is the confidence.
+ * How: the audio is brought down to about 11 kHz, then the spectral peaks of each short frame are found to a
+ * fraction of a hertz. Only the steady ones count: a peak that holds its pitch for about half a second, which is
+ * what a played note does and what drums, speech and a singer's slides don't. Each steady peak's distance from the
+ * nearest note of the 440 grid (-50 to +50 cents) goes into a circular histogram. Pitched music piles up at one
+ * offset, the song's tuning; everything else spreads evenly. The histogram's peak is the answer. How far it stands
+ * above the rest, and whether a second peak rivals it, is the confidence.
  *
  * A tuning is only known within a semitone: a song a whole semitone down reads as on the grid, which it is.
  *
@@ -27,9 +29,9 @@ object TuningEstimator {
 
     /**
      * @param cents the song's offset from the 440 grid, -50 (inclusive) to +50; 432 Hz is -31.77.
-     * @param confidence 0 to 1: how much of the pitched energy agrees on that offset. Under [MIN_CONFIDENCE] the
-     *   song counts as not measured.
-     * @param peaks how many spectral peaks the answer rests on.
+     * @param confidence 0 to 1: how clearly the steady notes agree on that offset. Under [MIN_CONFIDENCE] the song
+     *   counts as not measured.
+     * @param peaks how many steady spectral peaks the answer rests on.
      */
     data class Result(val cents: Double, val confidence: Double, val peaks: Int) {
         /** The song's concert pitch: the A nearest 440 on its own grid (427.5 to 452.9 Hz). */
@@ -38,15 +40,22 @@ object TuningEstimator {
         val measured: Boolean get() = confidence >= MIN_CONFIDENCE
     }
 
-    /** Below this a song counts as not measured: unpitched, drifting, or too short. Set from the accuracy report. */
+    /** Below this a song counts as not measured: unpitched, drifting, two tunings at once, or too short. */
     const val MIN_CONFIDENCE = 0.35
 
     private const val LOW_HZ = 110.0
     private const val HIGH_HZ = 2_000.0
 
+    /** The audio is analysed at about this rate: everything under [HIGH_HZ] is kept, at a quarter of the work. */
+    private const val WORK_RATE = 11_025
+
     /** A peak must be within this of its frame's strongest (about -30 dB) to count. */
     private const val PEAK_FLOOR = 0.03
     private const val PEAKS_PER_FRAME = 16
+
+    /** A steady peak has one within [STEADY_CENTS] of it in each of the [STEADY_FRAMES] frames before and after. */
+    private const val STEADY_FRAMES = 2
+    private const val STEADY_CENTS = 4.0
 
     /** Histogram bins a cent: 0.25-cent steps round the circle. */
     private const val BINS_PER_CENT = 4
@@ -56,12 +65,23 @@ object TuningEstimator {
     private const val SMOOTH_CENTS = 1.5
     private const val WINDOW_CENTS = 6.0
 
-    /** The share of weight within [WINDOW_CENTS] that reads as fully confident; an even spread has 0.12. */
-    private const val FULL_SHARE = 0.55
-    private const val EVEN_SHARE = 2 * WINDOW_CENTS / 100.0
+    /**
+     * How far the peak stands above the histogram's median. Speech and noise read about 1; the real songs measured
+     * for the accuracy report read 5.7 to 70.
+     */
+    private const val RATIO_NONE = 2.0
+    private const val RATIO_FULL = 6.0
 
-    /** Fewer frames with sound than this (about 4 seconds) and the confidence is scaled down: too little to trust. */
-    private const val ENOUGH_FRAMES = 40
+    /**
+     * A second peak, more than [RIVAL_CENTS] from the first: at [RIVAL_FULL] of the first's height the song has two
+     * tunings and neither is trusted; under [RIVAL_NONE] it doesn't count against the first.
+     */
+    private const val RIVAL_CENTS = 15.0
+    private const val RIVAL_NONE = 0.6
+    private const val RIVAL_FULL = 0.9
+
+    /** Fewer frames with steady notes than this (about 4 seconds) and the confidence is scaled down. */
+    private const val ENOUGH_FRAMES = 80
 
     /** Harmonics that sit off the 12-note grid (the 3rd is 2 cents sharp, the 5th 14 flat, the 7th 31 flat). */
     private val OFF_GRID_HARMONICS = intArrayOf(3, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15)
@@ -70,31 +90,86 @@ object TuningEstimator {
      * The tuning of [samples] (mono, -1 to 1) at [sampleRate]. Silence, or less than one frame, comes back with
      * confidence 0.
      */
-    fun estimate(samples: FloatArray, sampleRate: Int): Result {
-        val n = Integer.highestOneBit((sampleRate * 0.4).toInt().coerceAtLeast(1024))
-        if (samples.size < n) return Result(0.0, 0.0, 0)
-        val hop = n / 4
-        val window = DoubleArray(n) { 0.5 - 0.5 * cos(2 * PI * it / n) }
-        val re = DoubleArray(n)
-        val im = DoubleArray(n)
-        val mag = DoubleArray(n / 2)
-        val lowBin = (LOW_HZ * n / sampleRate).toInt().coerceAtLeast(2)
-        val highBin = (HIGH_HZ * n / sampleRate).toInt().coerceAtMost(n / 2 - 2)
-        val histogram = DoubleArray(BINS)
-        var peakCount = 0
-        var soundingFrames = 0
-        // The loudest frame sets what counts as silence for the rest.
-        var loudest = 0.0
-        val frames = ArrayList<List<DoubleArray>>() // per frame: [frequency, strength] of each peak
+    fun estimate(samples: FloatArray, sampleRate: Int): Result =
+        Meter(sampleRate).apply { add(samples, samples.size) }.result()
 
-        var start = 0
-        val frameMax = ArrayList<Double>()
-        while (start + n <= samples.size) {
-            for (i in 0 until n) { re[i] = samples[start + i] * window[i]; im[i] = 0.0 }
+    /**
+     * Measures audio as it arrives, so a file is never held whole and a stream can be read while it plays: [add]
+     * each block of mono samples, then ask for the [result] (as often as wanted; more audio can follow).
+     * It keeps about 3 KB for each second heard. Not thread-safe.
+     */
+    class Meter(sampleRate: Int) {
+        private val step = (sampleRate.coerceAtLeast(1) / WORK_RATE).coerceAtLeast(1)
+        private val rate = sampleRate.coerceAtLeast(1).toDouble() / step
+        private val n = Integer.highestOneBit((rate * 0.4).toInt().coerceAtLeast(1024))
+        private val hop = n / 8
+        private val window = DoubleArray(n) { 0.5 - 0.5 * cos(2 * PI * it / n) }
+        private val re = DoubleArray(n)
+        private val im = DoubleArray(n)
+        private val mag = DoubleArray(n / 2)
+        private val lowBin = (LOW_HZ * n / rate).toInt().coerceAtLeast(2)
+        private val highBin = (HIGH_HZ * n / rate).toInt().coerceAtMost(n / 2 - 2)
+
+        // The low-pass before every [step]th sample is kept: a windowed sinc that keeps what is under HIGH_HZ and
+        // removes what would fold back onto it.
+        private val half = 8 * step
+        private val taps = DoubleArray(2 * half + 1) { i ->
+            val cutoff = 0.4 / step // of the sample rate: 80% of the new band's edge
+            val x = (i - half).toDouble()
+            val sinc = if (x == 0.0) 2 * cutoff else sin(2 * PI * cutoff * x) / (PI * x)
+            sinc * (0.42 - 0.5 * cos(2 * PI * i / (2 * half)) + 0.08 * cos(4 * PI * i / (2 * half)))
+        }.let { t -> val gain = t.sum(); DoubleArray(t.size) { t[it] / gain } }
+
+        /** The last [taps]' worth of input, a ring; [heard] counts every sample given. */
+        private val recent = FloatArray(taps.size)
+        private var heard = 0L
+
+        /** The frame being filled with low-rate samples. */
+        private val frame = FloatArray(n)
+        private var filled = 0
+
+        // Per frame: its strongest peaks' strength over the frame's maximum, their pitch in cents, whether each is
+        // an off-grid harmonic, and that maximum.
+        private val strengths = ArrayList<FloatArray>()
+        private val pitches = ArrayList<DoubleArray>()
+        private val harmonic = ArrayList<BooleanArray>()
+        private val frameMax = ArrayList<Double>()
+
+        /** Adds the first [length] of [samples]: mono, -1 to 1. */
+        fun add(samples: FloatArray, length: Int = samples.size) {
+            for (i in 0 until length) {
+                if (step == 1) { push(samples[i]); continue }
+                recent[(heard % recent.size).toInt()] = samples[i]
+                heard++
+                // An output for every [step]th input, once the filter has that sample at its centre.
+                if (heard >= recent.size && (heard - 1 - half) % step == 0L) {
+                    var v = 0.0
+                    var at = (heard % recent.size).toInt() // the oldest
+                    for (t in taps.indices) {
+                        v += recent[at] * taps[t]
+                        if (++at == recent.size) at = 0
+                    }
+                    push(v.toFloat())
+                }
+            }
+        }
+
+        private fun push(sample: Float) {
+            frame[filled++] = sample
+            if (filled < n) return
+            analyse()
+            System.arraycopy(frame, hop, frame, 0, n - hop)
+            filled = n - hop
+        }
+
+        private fun analyse() {
+            for (i in 0 until n) { re[i] = frame[i] * window[i]; im[i] = 0.0 }
             fft(re, im)
             var top = 0.0
-            for (k in 0 until n / 2) { mag[k] = sqrt(re[k] * re[k] + im[k] * im[k]); if (k in lowBin..highBin && mag[k] > top) top = mag[k] }
-            if (top > loudest) loudest = top
+            for (k in lowBin - 1..highBin + 1) {
+                mag[k] = sqrt(re[k] * re[k] + im[k] * im[k])
+                if (k in lowBin..highBin && mag[k] > top) top = mag[k]
+            }
             val peaks = ArrayList<DoubleArray>()
             if (top > 0.0) {
                 for (k in lowBin..highBin) {
@@ -104,47 +179,59 @@ object TuningEstimator {
                     val la = ln(mag[k - 1] + 1e-12); val lb = ln(b + 1e-12); val lc = ln(mag[k + 1] + 1e-12)
                     val denom = la - 2 * lb + lc
                     val delta = if (denom == 0.0) 0.0 else (0.5 * (la - lc) / denom).coerceIn(-0.5, 0.5)
-                    peaks += doubleArrayOf((k + delta) * sampleRate / n, b)
+                    peaks += doubleArrayOf((k + delta) * rate / n, b)
                 }
             }
-            frames += peaks
-            frameMax += top
-            start += hop
-        }
-        if (loudest <= 0.0) return Result(0.0, 0.0, 0)
-
-        for ((f, peaks) in frames.withIndex()) {
-            val top = frameMax[f]
-            // A frame far quieter than the song's loudest is a gap or a tail: its peaks are mostly noise.
-            if (top < loudest * 0.02) continue
-            soundingFrames++
             val strongest = peaks.sortedByDescending { it[1] }.take(PEAKS_PER_FRAME)
-            for (p in strongest) {
-                if (isOffGridHarmonic(p, strongest)) continue
-                val cents = 1200.0 * ln(p[0] / 440.0) / ln(2.0)
-                val offset = cents - 100.0 * floor(cents / 100.0 + 0.5) // -50 until +50
-                var bin = floor((offset + 50.0) * BINS_PER_CENT).toInt()
-                if (bin >= BINS) bin = BINS - 1
-                if (bin < 0) bin = 0
-                histogram[bin] += sqrt(p[1] / top)
-                peakCount++
-            }
+            strengths += FloatArray(strongest.size) { (strongest[it][1] / top).toFloat() }
+            pitches += DoubleArray(strongest.size) { 1200.0 * ln(strongest[it][0] / 440.0) / ln(2.0) }
+            harmonic += BooleanArray(strongest.size) { isOffGridHarmonic(strongest[it], strongest) }
+            frameMax += top
         }
-        val total = histogram.sum()
-        if (total <= 0.0 || peakCount == 0) return Result(0.0, 0.0, 0)
 
-        // The peak of the smoothed histogram, round the circle.
+        /** What the audio heard so far reads as. */
+        fun result(): Result {
+            val none = Result(0.0, 0.0, 0)
+            val loudest = frameMax.maxOrNull() ?: return none
+            if (loudest <= 0.0) return none
+
+            val histogram = DoubleArray(BINS)
+            var peakCount = 0
+            var steadyFrames = 0
+            for (f in STEADY_FRAMES until pitches.size - STEADY_FRAMES) {
+                // A frame far quieter than the song's loudest is a gap or a tail: its peaks are mostly noise.
+                if (frameMax[f] < loudest * 0.02) continue
+                var counted = false
+                for ((i, cents) in pitches[f].withIndex()) {
+                    if (harmonic[f][i] || !isSteady(cents, f, pitches)) continue
+                    val offset = cents - 100.0 * floor(cents / 100.0 + 0.5) // -50 until +50
+                    val bin = floor((offset + 50.0) * BINS_PER_CENT).toInt().coerceIn(0, BINS - 1)
+                    histogram[bin] += sqrt(strengths[f][i].toDouble())
+                    peakCount++
+                    counted = true
+                }
+                if (counted) steadyFrames++
+            }
+            if (peakCount == 0) return none
+            return read(histogram, peakCount, steadyFrames)
+        }
+    }
+
+    /** The histogram's peak, and how far it stands above the rest. */
+    private fun read(histogram: DoubleArray, peakCount: Int, steadyFrames: Int): Result {
+        // The smoothed histogram, round the circle, and its peak.
         val sigma = SMOOTH_CENTS * BINS_PER_CENT
         val reach = (3 * sigma).toInt()
         val kernel = DoubleArray(2 * reach + 1) { exp(-0.5 * ((it - reach) / sigma).pow(2)) }
-        var best = 0
-        var bestValue = -1.0
-        for (b in 0 until BINS) {
+        val smooth = DoubleArray(BINS) { b ->
             var v = 0.0
             for (j in -reach..reach) v += histogram[Math.floorMod(b + j, BINS)] * kernel[j + reach]
-            if (v > bestValue) { bestValue = v; best = b }
+            v
         }
-        // Refined: the weighted mean of the raw histogram around that peak; and how much of the weight is there.
+        var best = 0
+        for (b in 1 until BINS) if (smooth[b] > smooth[best]) best = b
+
+        // Refined: the weighted mean of the raw histogram around that peak.
         val half = (WINDOW_CENTS * BINS_PER_CENT).toInt()
         var weight = 0.0
         var moment = 0.0
@@ -157,10 +244,26 @@ object TuningEstimator {
         var cents = (centre + 0.5) / BINS_PER_CENT - 50.0
         if (cents >= 50.0) cents -= 100.0
         if (cents < -50.0) cents += 100.0
-        val share = weight / total
-        val agreement = ((share - EVEN_SHARE) / (FULL_SHARE - EVEN_SHARE)).coerceIn(0.0, 1.0)
-        val enough = (soundingFrames.toDouble() / ENOUGH_FRAMES).coerceAtMost(1.0)
-        return Result(cents, agreement * enough, peakCount)
+
+        // How far the peak stands above the rest, and whether another rivals it.
+        val median = smooth.sorted()[BINS / 2]
+        val ratio = if (median > 0) smooth[best] / median else Double.MAX_VALUE
+        val standing = ((ratio - RATIO_NONE) / (RATIO_FULL - RATIO_NONE)).coerceIn(0.0, 1.0)
+        val away = (RIVAL_CENTS * BINS_PER_CENT).toInt()
+        var rival = 0.0
+        for (j in away..BINS - away) rival = maxOf(rival, smooth[Math.floorMod(best + j, BINS)])
+        val alone = ((RIVAL_FULL - rival / smooth[best]) / (RIVAL_FULL - RIVAL_NONE)).coerceIn(0.0, 1.0)
+        val enough = (steadyFrames.toDouble() / ENOUGH_FRAMES).coerceAtMost(1.0)
+        return Result(cents, standing * alone * enough, peakCount)
+    }
+
+    /** Whether a peak at [cents] in frame [f] holds its pitch through the frames either side. */
+    private fun isSteady(cents: Double, f: Int, pitches: List<DoubleArray>): Boolean {
+        for (d in 1..STEADY_FRAMES) {
+            if (pitches[f - d].none { abs(it - cents) < STEADY_CENTS }) return false
+            if (pitches[f + d].none { abs(it - cents) < STEADY_CENTS }) return false
+        }
+        return true
     }
 
     /**
