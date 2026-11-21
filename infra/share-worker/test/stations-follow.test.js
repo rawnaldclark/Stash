@@ -45,9 +45,19 @@ test(`a phone follows at most ${MAX_FOLLOWS} stations`, async () => {
     const r = await follow(e, "STATION1", true);
     assert.equal(r.status, 409);
     assert.deepEqual(await r.json(), { error: "too_many" });
-    assert.equal((await follow(e, "S0xxxxxx", false)).status, 404, "a follow of a station that's gone can't be read back");
-    await e.COMMUNITY_DB.prepare("DELETE FROM station_follows WHERE station_id = 'S0xxxxxx'").run();
+    // Stopping always works, even for a station that isn't there any more, and frees a place.
+    assert.deepEqual(await (await follow(e, "S0xxxxxx", false)).json(), { following: false, followers: 0 });
     assert.equal((await follow(e, "STATION1", true)).status, 200);
+});
+
+test("a station hidden since you followed it: you can still stop following it", async () => {
+    const e = sess();
+    await seedStation(e, { id: "STATION1", key: KEY_A });
+    assert.equal((await follow(e, "STATION1", true)).status, 200);
+    await e.COMMUNITY_DB.prepare("UPDATE stations SET down = 3 WHERE id = 'STATION1'").run();
+    assert.equal((await follow(e, "STATION1", true)).status, 404, "no new follows of a hidden station");
+    assert.deepEqual(await (await follow(e, "STATION1", false)).json(), { following: false, followers: 0 });
+    assert.equal(await e.COMMUNITY_DB.prepare("SELECT COUNT(*) AS n FROM station_follows").first("n"), 0);
 });
 
 test("follows are counted with the votes' limit", async () => {

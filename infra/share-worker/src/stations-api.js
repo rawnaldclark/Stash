@@ -275,8 +275,10 @@ async function heardStation(request, env, id, now) {
 }
 
 /**
- * PUT stations/{id}/follow {on}: follow a station or stop. Not your own; not a gone or hidden one; at most MAX_FOLLOWS a
- * phone. Counted with the votes. Answers the caller's state and the station's follower count.
+ * PUT stations/{id}/follow {on}: follow a station or stop. Following: not your own, not a gone or hidden one, at most
+ * MAX_FOLLOWS a phone. Stopping always works, whatever became of the station: it only deletes the caller's own row, and
+ * a station hidden since would otherwise hold one of their places with no way to free it. Counted with the votes.
+ * Answers the caller's state and the station's follower count.
  */
 async function followStation(request, env, id, now) {
     if (!(await env.COMMUNITY_VOTE_RL.limit({ key: network(request, env) })).success) return rateLimited();
@@ -284,22 +286,27 @@ async function followStation(request, env, id, now) {
     if (!who.id) return json({ error: "bad_key" }, 401);
     const { body, tooBig } = await readJson(request);
     if (tooBig || typeof body?.on !== "boolean") return json({ error: "bad_request" }, 400);
+    const db = env.COMMUNITY_DB;
+    const followers = db.prepare("SELECT COUNT(*) AS n FROM station_follows WHERE station_id = ?1").bind(id);
+    if (!body.on) {
+        const [, counted] = await db.batch([
+            db.prepare("DELETE FROM station_follows WHERE station_id = ?1 AND follower = ?2").bind(id, who.id), followers]);
+        return json({ following: false, followers: counted.results[0].n });
+    }
     const st = await votable(env, id, who.id);
     if (!st) return gone();
     if (st.owner === who.id) return json({ error: "own_station" }, 403);
-    const db = env.COMMUNITY_DB;
-    if (body.on) {
-        const c = await db.prepare(
-            `SELECT COUNT(*) AS n, EXISTS (SELECT 1 FROM station_follows WHERE station_id = ?2 AND follower = ?1) AS already
-             FROM station_follows WHERE follower = ?1`,
-        ).bind(who.id, id).first();
-        if (!c.already && c.n >= MAX_FOLLOWS) return json({ error: "too_many" }, 409);
-    }
-    const write = body.on
-        ? db.prepare("INSERT INTO station_follows (station_id, follower, at) SELECT ?1, ?2, ?3 FROM stations WHERE id = ?1 ON CONFLICT DO NOTHING").bind(id, who.id, now)
-        : db.prepare("DELETE FROM station_follows WHERE station_id = ?1 AND follower = ?2").bind(id, who.id);
-    const [, counted] = await db.batch([write, db.prepare("SELECT COUNT(*) AS n FROM station_follows WHERE station_id = ?1").bind(id)]);
-    return json({ following: body.on, followers: counted.results[0].n });
+    const c = await db.prepare(
+        `SELECT COUNT(*) AS n, EXISTS (SELECT 1 FROM station_follows WHERE station_id = ?2 AND follower = ?1) AS already
+         FROM station_follows WHERE follower = ?1`,
+    ).bind(who.id, id).first();
+    if (!c.already && c.n >= MAX_FOLLOWS) return json({ error: "too_many" }, 409);
+    const [, counted] = await db.batch([
+        db.prepare("INSERT INTO station_follows (station_id, follower, at) SELECT ?1, ?2, ?3 FROM stations WHERE id = ?1 ON CONFLICT DO NOTHING")
+            .bind(id, who.id, now),
+        followers,
+    ]);
+    return json({ following: true, followers: counted.results[0].n });
 }
 
 /**
