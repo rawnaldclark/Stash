@@ -9,6 +9,8 @@ Status: owner's brief on 2026-11-20, decisions below agreed in chat that day. Th
 - Community (`2026-09-26-stash-community-design.md`): the community key and poster id, network-capped votes, the "heard" gate (`0006_heard.sql`), hiding at −3, the owner's moderation commands.
 - "Show my name as".
 
+**The room's experience** (why people stay: phrases and the feed, saves, follows, open decks, last song and recap, regulars, the vibe line, crowd favourites) is in `2026-11-20-sessions-ux.md`. Where the two differ, that one wins; its §9 lists what it adds here.
+
 ## 1. Decisions
 
 | Question | Decision | Why |
@@ -171,6 +173,9 @@ Twelve short animations in the app (animated WebP, under 40 KB each): applause, 
 - **Being blocked** (owner): no going live, no voting, no posting.
 
 ## 9. Build order (each a PR, each tested on two phones before the next)
+
+Superseded by `2026-11-20-sessions-ux.md` §9 (seven steps). The original order:
+
 
 1. **Server:** stations, votes, heard, `live`, routes, cron, moderation commands; public rooms with roles, the 50-listener cap, host-gone and pause endings, the directory writes. `SESSIONS = "0"` until the app is ready.
 2. **App, listen and go live:** Community Live now + Sessions screen, tune in, Go live now, your station, the LIVE pill, votes after 2 minutes, station links.
