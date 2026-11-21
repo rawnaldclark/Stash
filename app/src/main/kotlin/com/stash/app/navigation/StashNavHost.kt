@@ -98,7 +98,8 @@ fun StashNavHost(
     LaunchedEffect(communityOn, top) {
         if (communityOn == false) {
             while (navController.currentDestination?.let {
-                    it.hasRoute<CommunityRoute>() || it.hasRoute<CommunityPostRoute>() || it.hasRoute<SessionsRoute>()
+                    it.hasRoute<CommunityRoute>() || it.hasRoute<CommunityPostRoute>() || it.hasRoute<SessionsRoute>() ||
+                        it.hasRoute<YourStationRoute>()
                 } == true &&
                 navController.popBackStack()) Unit
         }
@@ -694,9 +695,17 @@ private fun StashNavGraph(
             com.stash.feature.community.sessions.SessionsScreen(
                 onBack = { navController.popBackStack() },
                 onOpenPlayer = { playerSheet?.expand() },
-                // Go live and Your station arrive with their own tasks (Sessions step 2, tasks 19 and 20).
+                // Go live arrives with its own task (Sessions step 2, task 20).
                 onGoLive = {},
-                onYourStation = {},
+                onYourStation = { navController.navigate(YourStationRoute) { launchSingleTop = true } },
+            )
+        }
+
+        composable<YourStationRoute> {
+            com.stash.feature.community.sessions.YourStationScreen(
+                onBack = { navController.popBackStack() },
+                onGoLive = {},
+                onOpenPlayer = { playerSheet?.expand() },
             )
         }
 

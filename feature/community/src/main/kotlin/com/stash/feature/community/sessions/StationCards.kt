@@ -384,7 +384,9 @@ internal fun Faces(crowd: List<CrowdFace>, size: Dp, modifier: Modifier = Modifi
                 Modifier.size(size).border(2.dp, gap, CircleShape).padding(1.dp).clip(CircleShape).background(personColor(face.id)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(face.i?.take(1)?.uppercase() ?: "?", color = FaceInk, fontWeight = FontWeight.Bold, fontSize = (size.value * 0.42f).sp, maxLines = 1)
+                // Its own line height: the theme's (24 sp) is taller than a small face, and pushed the letter down and out.
+                val letter = (size.value * 0.42f).sp
+                Text(face.i?.take(1)?.uppercase() ?: "?", color = FaceInk, fontWeight = FontWeight.Bold, fontSize = letter, lineHeight = letter * 1.2f, maxLines = 1)
             }
         }
     }

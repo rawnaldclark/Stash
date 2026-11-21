@@ -77,6 +77,8 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data class CommunityPostRoute(val postId: String)
 /** Sessions: every station on the air (Sessions step 2). One of Community's routes. */
 @Serializable data object SessionsRoute
+/** Your station: this phone's own station (Sessions step 2). One of Community's routes. */
+@Serializable data object YourStationRoute
 
 /**
  * History (Pick 3). [day] = an epoch-day to open on (a later Stats "busiest day" tap), or

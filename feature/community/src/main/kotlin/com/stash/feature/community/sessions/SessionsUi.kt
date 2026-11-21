@@ -3,6 +3,7 @@ package com.stash.feature.community.sessions
 import com.stash.core.model.community.LiveSession
 import com.stash.core.model.community.OnAirWindow
 import com.stash.core.model.community.Station
+import com.stash.core.model.share.ShareLinks
 import com.stash.core.model.share.SharedTrack
 import java.time.Instant
 import java.time.ZoneId
@@ -90,3 +91,33 @@ internal fun onAirLabel(next: OnAirWindow?, now: Long, zone: ZoneId, locale: Loc
     val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
     return if (start.toLocalDate() == today) time else "${DateTimeFormatter.ofPattern("EEE", locale).format(start)} $time"
 }
+
+// ── Your station ──────────────────────────────────────────────────────────────
+
+/**
+ * The day in "Go live by Sat 28 Nov or this station and its votes are deleted": when the daily cleanup deletes a
+ * station that hasn't been on the air for 7 days ([deleteAt], ms), in the phone's [zone] and [locale]. Null when the
+ * Worker didn't say.
+ */
+internal fun deleteDay(deleteAt: Long?, zone: ZoneId, locale: Locale): String? =
+    deleteAt?.let { DateTimeFormatter.ofPattern("EEE d MMM", locale).format(Instant.ofEpochMilli(it).atZone(zone)) }
+
+/** How a station stands with Community, as its owner sees it. */
+internal enum class StationStanding {
+    FINE,
+
+    /** Hidden from everyone else by votes: "Hidden by votes: only you see it". */
+    HIDDEN,
+
+    /** Taken down by a moderator; deleted a day later. */
+    REMOVED,
+}
+
+internal fun stationStanding(station: Station): StationStanding = when {
+    station.removed -> StationStanding.REMOVED
+    station.hidden -> StationStanding.HIDDEN
+    else -> StationStanding.FINE
+}
+
+/** A station's link as its page shows it: "stashfm.app/s/Ab3dEf9h" (the scheme is in what Share sends). */
+internal fun stationLinkText(stationId: String): String = ShareLinks.stationUrl(stationId).substringAfter("://")

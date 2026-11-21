@@ -165,6 +165,42 @@
     <string name="sessions_off_body">Check back later.</string>
     <!-- The Sessions screen when no station is on the air, under "Nobody's live right now" -->
     <string name="sessions_empty_body">Go live and be the first on the air.</string>
+    <!-- Your station: the page for your own station -->
+    <string name="station_none_title">You don\'t have a station yet</string>
+    <string name="station_none_body">Go live to start one. Anyone in Community can tune in.</string>
+    <plurals name="station_followers">
+        <item quantity="one">%d follower</item>
+        <item quantity="other">%d followers</item>
+    </plurals>
+    <!-- A station's votes. %1$d: up votes; %2$d: down votes -->
+    <string name="station_votes">▲ %1$d ▼ %2$d</string>
+    <string name="station_rename">Rename</string>
+    <string name="station_rename_title">Rename your station</string>
+    <string name="station_name_label">Station name</string>
+    <string name="station_share">Share</string>
+    <!-- The message sent when you share your station. %1$s: its name; %2$s: its link -->
+    <string name="station_share_text">Tune in to %1$s on Stash: %2$s</string>
+    <!-- The station's one line about what it plays, shown on its Live now card and in its room -->
+    <string name="station_vibe_label">What\'s playing tonight?</string>
+    <string name="station_vibe_title">What\'s playing tonight?</string>
+    <string name="station_vibe_empty">Add a line about what you play</string>
+    <string name="station_edit">Edit</string>
+    <string name="station_save">Save</string>
+    <string name="station_cancel">Cancel</string>
+    <!-- Under a text field: how many characters are typed, of how many allowed -->
+    <string name="station_count">%1$d / %2$d</string>
+    <string name="station_go_live_now">Go live now</string>
+    <!-- %1$s: a day, like "Sat 28 Nov". A station that isn\'t on the air for 7 days is deleted. -->
+    <string name="station_delete_note">Go live by %1$s or this station and its votes are deleted.</string>
+    <string name="station_delete">Delete station</string>
+    <string name="station_delete_title">Delete this station?</string>
+    <string name="station_delete_body">Its votes and followers go with it. This can\'t be undone.</string>
+    <string name="station_delete_body_live">Your session ends for everyone listening. The station\'s votes and followers go with it. This can\'t be undone.</string>
+    <string name="station_delete_confirm">Delete</string>
+    <!-- Your station was voted down far enough to be hidden from other people -->
+    <string name="station_hidden">Hidden by votes: only you see it.</string>
+    <!-- Your station was taken down by a moderator -->
+    <string name="station_removed">Taken down by a moderator. It will be deleted within a day.</string>
     <!-- Shown when you tap another station while your own is on the air -->
     <string name="sessions_end_yours_first">End your session first</string>
 </resources>
