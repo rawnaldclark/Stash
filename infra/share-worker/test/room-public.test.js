@@ -460,3 +460,68 @@ test("a listener's command, an unknown one, and any in a private room do nothing
     assert.equal(send(p, "h", { t: "cohost", memberId: "g", on: true }).state, p);
     assert.deepEqual(send(p, "g", { t: "command", action: "skip" }).out, []);
 });
+
+// ── Task 17: booting and presence ─────────────────────────────────────────────
+
+test("a booted listener is told first, then put out: slot, requests and reaction clock gone, everyone updated", () => {
+    let s = request(session(), "a", A, "r1").state;
+    s = send(s, "a", { t: "react", emoji: "\u{1F525}" }, T0 + 5).state;
+    const r = send(s, "h", { t: "boot", memberId: "a" }, T0 + 10);
+    assert.deepEqual(r.out[0], { to: "a", msg: { t: "ended", reason: "booted" } }, "told before anything else");
+    assert.deepEqual(r.kick, ["a"]);
+    assert.deepEqual(r.state.members.map((m) => m.id), ["h", "b"]);
+    assert.deepEqual(r.state.suggestions, []);
+    assert.equal(r.state.reactAt.a, undefined);
+    assert.deepEqual(r.state.pub.booted, [kh("a")]);
+    assert.equal(sent(r, "session")[0].msg.listeners, 1);
+    assert.deepEqual(sent(r, "members")[0].msg.members.map((m) => m.id), ["h", "b"]);
+    assert.deepEqual(views(r), { h: [] }, "the host's list loses their request");
+});
+
+test("a booted key stays out, by token or by key; a new key is a new listener", () => {
+    const s = send(session(), "h", { t: "boot", memberId: "a" }, T0 + 10).state;
+    assert.deepEqual(hello(s, "a2", { listenerHash: kh("a"), at: T0 + 20 }).reject, { code: 4403, reason: "booted" });
+    assert.deepEqual(hello(s, "a3", { listenerHash: kh("a"), resumeToken: "tok-a", at: T0 + 20 }).reject, { code: 4403, reason: "booted" });
+    const fresh = hello(s, "a4", { listenerHash: kh("someone-new"), resumeToken: "tok-a", at: T0 + 20 });
+    assert.equal(fresh.bind, "a4", "the old token holds no slot any more");
+});
+
+test("the host can't boot a co-host (take that away first) or themselves; a listener can't boot anyone", () => {
+    const s = cohost(session(), "a").state;
+    const r = send(s, "h", { t: "boot", memberId: "a" });
+    assert.deepEqual(r.out, [{ to: "h", msg: { t: "refused", what: "boot", reason: "cohost" } }]);
+    assert.equal(r.state, s);
+    assert.equal(send(s, "h", { t: "boot", memberId: "h" }).state, s);
+    assert.equal(send(s, "b", { t: "boot", memberId: "a" }).state, s);
+    const unmade = cohost(s, "a", false).state;
+    assert.deepEqual(send(unmade, "h", { t: "boot", memberId: "a" }).kick, ["a"]);
+});
+
+test("a listener dropped but not gone can be booted too: their slot goes and their key stays out", () => {
+    let s = step(session(), { type: "close", from: "a" }, T0 + 10).state;
+    const r = send(s, "h", { t: "boot", memberId: "a" }, T0 + 20);
+    assert.deepEqual(r.kick, ["a"]);
+    assert.deepEqual(sent(r, "ended"), [], "nobody to tell");
+    assert.deepEqual(hello(r.state, "a2", { resumeToken: "tok-a", listenerHash: kh("a") }).reject, { code: 4403, reason: "booted" });
+});
+
+test("the host's presence reaches everyone; nobody else sets it", () => {
+    const s = session();
+    const r = send(s, "h", { t: "presence", state: "away" });
+    assert.deepEqual(sent(r, "session").map((o) => [o.to, o.msg.presence]), [["all", "away"]]);
+    assert.equal(r.state.pub.presence, "away");
+    assert.equal(send(r.state, "h", { t: "presence", state: "away" }).state, r.state, "no change, nothing sent");
+    assert.equal(send(s, "h", { t: "presence", state: "asleep" }).state, s);
+    assert.equal(send(s, "a", { t: "presence", state: "away" }).state, s);
+});
+
+test("a private room ignores boot and presence", () => {
+    let p = privateRoom();
+    p = step(p, { type: "hello", msg: { t: "hello", v: 2 }, hostKeyOk: true, newId: "h", newToken: "th" }, T0).state;
+    p = step(p, { type: "hello", msg: { t: "hello", v: 2 }, hostKeyOk: false, newId: "g", newToken: "tg" }, T0).state;
+    for (const msg of [{ t: "boot", memberId: "g" }, { t: "presence", state: "away" }]) {
+        const r = send(p, "h", msg);
+        assert.equal(r.state, p, msg.t);
+        assert.equal(r.kick, undefined);
+    }
+});

@@ -74,3 +74,21 @@ test("a session's socket cap is twice its 54, not a private room's 20", async ()
         globalThis.Response = saved.Response;
     }
 });
+
+// ── Task 17: booting, in the shell ────────────────────────────────────────────
+
+test("a booted listener's socket hears why, then closes with 4403; their key can't come back", async () => {
+    const { ctx, room } = await openSession({ t: 1_000 });
+    const host = await connect(ctx, room, { name: "Rawn", hostKey: "KEY" });
+    const key = communityKey(5);
+    const sam = await connect(ctx, room, { name: "Sam", communityKey: key });
+    const samId = sam.sent.find((m) => m.t === "welcome").memberId;
+    await room.webSocketMessage(host, JSON.stringify({ t: "boot", memberId: samId }));
+    assert.ok(sam.sent.some((m) => m.t === "ended" && m.reason === "booted"));
+    assert.equal(sam.closeCode, 4403);
+    assert.equal(sam.deserializeAttachment().memberId, null, "unbound, so a late message can't act as them");
+    await room.webSocketClose(sam, 4403, "booted");
+    assert.equal(host.closed, false);
+    const again = await connect(ctx, room, { name: "Sam", communityKey: key });
+    assert.equal(again.closeCode, 4403);
+});

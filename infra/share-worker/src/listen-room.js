@@ -136,6 +136,15 @@ export class ListenRoom {
         ws.serializeAttachment({ memberId, at: this.now() });
     }
 
+    /** Members a session's host booted: told already (step's `out`), their sockets now unbound and closed. */
+    kick(ids) {
+        for (const ws of this.ctx.getWebSockets()) {
+            if (!ids.includes(memberOf(ws))) continue;
+            ws.serializeAttachment({ memberId: null, at: 0 });
+            try { ws.close(4403, "booted"); } catch { /* gone */ }
+        }
+    }
+
     /** Closes sockets that never said hello within UNBOUND_IDLE_MS, freeing the socket cap. */
     evictIdleUnbound() {
         const now = this.now();
@@ -168,6 +177,7 @@ export class ListenRoom {
         const r = step(state, event, this.now());
         beforeSend?.(r);
         for (const { to, msg } of r.out) this.send(to, msg);
+        if (r.kick?.length) this.kick(r.kick);
         if (r.closed) {
             for (const ws of this.ctx.getWebSockets()) { try { ws.close(4000, "ended"); } catch { /* gone */ } }
             await this.ctx.storage.deleteAlarm();

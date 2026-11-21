@@ -2,7 +2,8 @@
  * Listen Together room logic (spec docs/superpowers/specs/2026-09-24-listen-together-design.md §2–§4;
  * guests adding songs: docs/superpowers/specs/2026-11-04-listen-together-guest-adds-design.md).
  *
- * Pure: step(state, event, now) → { state, out, alarmAt, bind?, reject?, closed? }.
+ * Pure: step(state, event, now) → { state, out, alarmAt, bind?, reject?, closed?, kick? }. `kick`: members a session's
+ * host booted, whose sockets the shell closes once `out` is sent.
  * No I/O, clock or randomness: the ListenRoom Durable Object supplies `now`, fresh ids and the
  * host-key check, so `node --test` covers every rule without the Workers runtime.
  *
@@ -99,7 +100,10 @@ export const MAX_REQUESTS = 30;
 export const MAX_BOOTED = 200;
 export const capacity = (s) => (s.pub ? MAX_PUBLIC_MEMBERS : MAX_MEMBERS);
 
-const HOST_ONLY = new Set(["load", "play", "pause", "seek", "queue", "suggestion", "makeHost", "end", "settings", "autoAccept", "cohost"]);
+const HOST_ONLY = new Set([
+    "load", "play", "pause", "seek", "queue", "suggestion", "makeHost", "end", "settings",
+    "autoAccept", "cohost", "boot", "presence", // sessions
+]);
 /** Phone status → stored member status (`ready` is stored as `ok`, spec §3). */
 const STATUSES = { ready: "ok", buffering: "buffering", unavailable: "unavailable", drifting: "drifting" };
 
@@ -569,7 +573,7 @@ export function step(state, event, now) {
     const changed = handler(ctx);
     if (ctx.closed) return { state: null, out: ctx.out, alarmAt: null, closed: true };
     const next = changed ? ctx.s : state;
-    return { state: next, out: ctx.out, alarmAt: nextAlarm(next), bind: ctx.bind, reject: ctx.reject };
+    return { state: next, out: ctx.out, alarmAt: nextAlarm(next), bind: ctx.bind, reject: ctx.reject, kick: ctx.kick };
 }
 
 const EVENTS = {
@@ -1009,5 +1013,47 @@ const MESSAGES = {
         }
         ctx.out.push({ to: s.host, msg: { t: "command", action: "skip", from: event.from, trackKey: s.trackKey } });
         return false;
+    },
+
+    /**
+     * `{ memberId }`, the host putting a listener out for the rest of the session. They hear it first; then their slot,
+     * requests and reaction clock go, their key hash is remembered so a hello with it is refused (4403), and `kick` has
+     * the shell close their socket. Every slot on that key goes, an older one from before a reconnect too. Never a
+     * co-host (take that away first) or the host.
+     */
+    boot(ctx) {
+        const { s, msg, event } = ctx;
+        if (!s.pub) return false;
+        const m = memberById(s, msg.memberId);
+        if (!m || m.id === s.host) return false;
+        if (isCohost(s, m.id)) {
+            ctx.out.push({ to: event.from, msg: { t: "refused", what: "boot", reason: "cohost" } });
+            return false;
+        }
+        if (m.kh && !s.pub.booted.includes(m.kh)) {
+            s.pub.booted.push(m.kh);
+            if (s.pub.booted.length > MAX_BOOTED) s.pub.booted.shift();
+        }
+        const out = new Set(s.members.filter((x) => x.id === m.id || (m.kh && x.kh === m.kh)).map((x) => x.id));
+        for (const id of out) if (findConnected(s, id)) ctx.out.push({ to: id, msg: { t: "ended", reason: "booted" } });
+        s.members = s.members.filter((x) => !out.has(x.id));
+        const pending = s.suggestions.length;
+        s.suggestions = s.suggestions.filter((x) => !out.has(x.from));
+        for (const id of out) delete s.reactAt[id];
+        ctx.kick = [...out];
+        s.rev++;
+        ctx.out.push(membersMsg(s), sessionMsg(s));
+        if (s.suggestions.length !== pending) pushRequests(ctx);
+        return true;
+    },
+
+    /** `{ state: "booth" | "away" }`, the host at the phone or not, so listeners know whether a request will be seen. */
+    presence(ctx) {
+        const { s, msg } = ctx;
+        if (!s.pub || (msg.state !== "booth" && msg.state !== "away") || s.pub.presence === msg.state) return false;
+        s.pub.presence = msg.state;
+        s.rev++;
+        ctx.out.push(sessionMsg(s));
+        return true;
     },
 };
