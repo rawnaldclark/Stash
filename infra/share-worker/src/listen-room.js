@@ -3,8 +3,9 @@
  * pure src/room.js: it keeps the room in storage (hibernation drops memory), binds each socket to its
  * member with serializeAttachment, sends what step() says to send, and arms the single alarm.
  */
-import { step, preview, MAX_MEMBERS } from "./room.js";
+import { step, preview, capacity } from "./room.js";
 import { sameHex, sha256Hex } from "./store.js";
+import { validEditKey } from "./validate.js";
 
 /** 32 symbols with no 0/O or 1/I, so `byte & 31` is unbiased and codes read aloud cleanly. */
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -58,11 +59,11 @@ export class ListenRoom {
             // the Worker had passed it and charged a JOIN_RL token, so such a client could never connect.
             if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") return new Response(null, { status: 426 });
             // `r=1` = "I have a resume token": a returning member may rejoin a full room; hello checks the token.
-            if (state.members.length >= MAX_MEMBERS && url.searchParams.get("r") !== "1") return new Response(null, { status: 409 });
+            if (state.members.length >= capacity(state) && url.searchParams.get("r") !== "1") return new Response(null, { status: 409 });
             // Sockets that never send hello hold no member slot; this cap stops `?r=1` ones piling up.
-            if (this.ctx.getWebSockets().length >= MAX_MEMBERS * 2) {
+            if (this.ctx.getWebSockets().length >= capacity(state) * 2) {
                 this.evictIdleUnbound();
-                if (this.ctx.getWebSockets().length >= MAX_MEMBERS * 2) return new Response(null, { status: 409 });
+                if (this.ctx.getWebSockets().length >= capacity(state) * 2) return new Response(null, { status: 409 });
             }
             const pair = new WebSocketPair();
             this.ctx.acceptWebSocket(pair[1]);
@@ -86,8 +87,12 @@ export class ListenRoom {
             if (msg.t !== "hello") return; // the first message must be hello (spec §2)
             const state = (await this.ctx.storage.get("room")) ?? null;
             const hostKeyOk = !!state && typeof msg.hostKey === "string" && msg.hostKey.length <= 64 && sameHex(await sha256Hex(msg.hostKey), state.keyHash);
+            // Sessions know a listener by their Community key (build plan, decision 3): the room gets its hash, the
+            // phone's poster id, and the key itself is never stored, logged or sent on. A private room ignores it.
+            const listenerHash = validEditKey(msg.communityKey) ? await sha256Hex(msg.communityKey) : null;
+            delete msg.communityKey;
             const r = await this.apply(
-                { type: "hello", msg, hostKeyOk, newId: randomCode(8), newToken: base64url(crypto.getRandomValues(new Uint8Array(16))) },
+                { type: "hello", msg, hostKeyOk, listenerHash, newId: randomCode(8), newToken: base64url(crypto.getRandomValues(new Uint8Array(16))) },
                 (r) => { if (r.bind) this.bind(ws, r.bind); },
             );
             if (r.reject) ws.close(r.reject.code, r.reject.reason);
@@ -98,8 +103,9 @@ export class ListenRoom {
             if (msg.t === "add") this.send(from, { t: "added", by: from, next: msg.next === true, count: 0 });
             return;
         }
-        // A suggestion's id; an `add` may become suggestions too (guest adds off, or an older host).
-        await this.apply({ type: "msg", from, msg, newId: msg.t === "suggest" || msg.t === "add" ? randomCode(8) : undefined });
+        // A suggestion's id; an `add` may become suggestions too (guest adds off, or an older host); a session's request.
+        const newId = msg.t === "suggest" || msg.t === "add" || msg.t === "request" ? randomCode(8) : undefined;
+        await this.apply({ type: "msg", from, msg, newId });
     }
 
     async webSocketClose(ws, code, reason) {
