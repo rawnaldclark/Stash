@@ -56,7 +56,7 @@ The room replaces Now Playing while you're in a session. From the top:
 3. **The crowd:** one band. The **booth** on the left: the host (crown), co-hosts, DJs on the decks, each with their ring. Then the **floor**: listeners' faces, regulars with a small star, "+12" past what fits; tap it for everyone's names. Reactions rise from the face that sent them; a face that reacts bumps once.
 4. **The feed:** the last few lines, newest at the bottom, older ones fading: arrivals, phrases, "Ben's request is up next", "Lee is on the decks", "Redbone is a crowd favourite", "Last song". Held only in the room: nothing is kept after the session.
 5. **Up next:** one line, the next song and whose it is. Tap: the whole line ahead, with whose pick each is, and where your request stands ("Your request · 3rd").
-6. **Your bar:** **Request**, **React** (emoji and animations), **Say** (phrases). When the decks are open, **Join the decks** takes Request's place (requests are still in the Up next sheet).
+6. **Your bar:** **Request** and **React**. React opens one tray with everything you can send: the six emoji, the animated reactions and the phrases (one place to look, one tap from anything). When the decks are open, **Join the decks** takes Request's place (requests are still in the Up next sheet).
 
 ### 4.1 Host presence
 
@@ -71,7 +71,7 @@ The host is either **in the booth** (Stash open on screen) or **away** (listenin
 
 ### 4.3 Say: quick phrases
 
-A fixed set, tapped from the Say tray, shown in the feed under your name: **Hi all** · **Who is this?** · **Tune!** · **Run it back!** · **Turn it up** · **More like this** · **Chills** · **Thanks for the set** · **Good morning** · **Good night**.
+A fixed set, tapped from the React tray, shown in the feed under your name: **Hi all** · **Who is this?** · **Tune!** · **Run it back!** · **Turn it up** · **More like this** · **Chills** · **Thanks for the set** · **Good morning** · **Good night**.
 - "Who is this?" also opens the song card for the one who asked (artist, album, Save, Go to artist).
 - One phrase every 3 seconds per person; repeats of the same phrase within 10 seconds are folded ("Tune! ×4").
 - Translated with the app; the room sends ids, never text.
