@@ -14,13 +14,15 @@ compatibility_date = "2026-09-01"
 workers_dev = true
 # The route needs a proxied DNS record for stashfm.app before it serves anything (README "Deploy").
 # When the stashfm.app website ships, the site takes `stashfm.app/*` and this Worker keeps only its own paths:
-#   stashfm.app/m/*  stashfm.app/t*  stashfm.app/l/*  stashfm.app/v1/*  stashfm.app/.well-known/assetlinks.json
+#   stashfm.app/m/*  stashfm.app/t*  stashfm.app/l/*  stashfm.app/s/*  stashfm.app/v1/*  stashfm.app/.well-known/assetlinks.json
 # (`/t*` also catches any site page starting with /t; if that matters, use `stashfm.app/t` plus `stashfm.app/t/*`,
 # after checking that `stashfm.app/t` still matches `/t?…` links, since route patterns can't carry a query.)
+# `/s/*` (Sessions' station pages) was free when added, 2026-11-21: the site answered /s/… with its own 404.
 routes = [
   { pattern = "stashfm.app/m/*", zone_name = "stashfm.app" },
   { pattern = "stashfm.app/t*", zone_name = "stashfm.app" },
   { pattern = "stashfm.app/l/*", zone_name = "stashfm.app" },
+  { pattern = "stashfm.app/s/*", zone_name = "stashfm.app" },
   { pattern = "stashfm.app/v1/*", zone_name = "stashfm.app" },
   { pattern = "stashfm.app/.well-known/assetlinks.json", zone_name = "stashfm.app" },
 ]
@@ -87,6 +89,10 @@ migrations_dir = "migrations"
 # The deploy that sets [vars] replaces every plain-text var on the Worker, so set it here, not in the dashboard.
 [vars]
 HEARD_REQUIRED = "0"
+# Sessions (docs/superpowers/plans/2026-11-20-sessions.md): "1" turns on the station routes, Live now, Upcoming, the
+# station page and public session rooms for every app version; "0" answers them 503 sessions_off and every app hides
+# Sessions. Rolling back is setting "0" and deploying: live sessions end within a minute (their directory writes stop).
+SESSIONS = "0"
 
 [[ratelimits]]
 name = "COMMUNITY_WRITE_RL"

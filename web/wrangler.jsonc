@@ -41,12 +41,14 @@
   //   stashfm.app/m/*                          shared mix pages
   //   stashfm.app/t*                           song links: /t/<id> and the older /t?…
   //   stashfm.app/l/*                          Listen Together invites
+  //   stashfm.app/s/*                          Sessions' station pages (from 2026-11)
   //   stashfm.app/v1/*                         the app's API (mixes, songs, rooms, Community)
   //   stashfm.app/.well-known/assetlinks.json  Android App Links
   //
   // Cloudflare matches a route against the whole URL, query included, so only a
   // pattern ending in * catches /t?t=…. That also means no page on this site may
-  // start with /t (such as /terms): the share Worker would get it.
+  // start with /t (such as /terms): the share Worker would get it. Nor may one
+  // live under /s/.
   //
   // Order matters, or shared links break (web/README.md, "Deploying", step 3):
   // narrow the routes in infra/share-worker/wrangler.toml, deploy stash-share and
