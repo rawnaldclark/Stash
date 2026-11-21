@@ -636,4 +636,4 @@ PR #932, on #931. Where the build differs from the tasks above, the code and `in
   - `live` and `POST /v1/rooms {public: true}` answer 503, and `/s/…` answers 404.
   - A scripted private room passed 13 of 13.
   - The Pixel 5's real app passed as host and as guest: a guest's Play next went straight in, the room skipped to it, reactions arrived, and End worked.
-  - Still to do: the Pixel 6 run, then the merges.
+  - No Pixel 6 run: the owner judged the Pixel 5 enough. Left: the merges.
