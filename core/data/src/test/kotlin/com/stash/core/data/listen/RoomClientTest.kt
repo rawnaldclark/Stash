@@ -213,6 +213,26 @@ class RoomClientTest {
         assertThat(server.requestCount).isEqualTo(3)
     }
 
+    @Test fun `a session's refusals are final, each with its reason, and nothing reconnects`() = runBlocking {
+        val refusals = listOf(4426 to CloseReason.UPDATE, 4401 to CloseReason.KEY, 4403 to CloseReason.BOOTED)
+        for ((code, reason) in refusals) {
+            server.enqueue(upgrade(onOpen = { it.close(code, "no") }))
+            val c = client(this) { ClientMessage.Hello(v = 3) }
+            assertThat(withTimeout(5_000) { c.events.take(2).toList() }).containsExactly(RoomEvent.Connected, RoomEvent.Closed(reason)).inOrder()
+        }
+        delay(100)
+        assertThat(server.requestCount).isEqualTo(3) // one each: none came back
+    }
+
+    @Test fun `any other close still reconnects`() = runBlocking {
+        server.enqueue(upgrade(onOpen = { it.close(4408, "no hello") }))
+        server.enqueue(upgrade())
+        val c = client(this) { ClientMessage.Hello() }
+        val events = withTimeout(5_000) { c.events.take(3).toList() }
+        assertThat(events).containsExactly(RoomEvent.Connected, RoomEvent.Reconnecting, RoomEvent.Connected).inOrder()
+        c.close()
+    }
+
     @Test fun `a 429 at the upgrade backs off and retries`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(429))
         server.enqueue(upgrade())

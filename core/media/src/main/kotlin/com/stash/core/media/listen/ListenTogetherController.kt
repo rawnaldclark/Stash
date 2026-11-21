@@ -158,7 +158,8 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
     internal fun publish(state: ListenTogetherState) { _state.value = state }
     internal fun reaction(reaction: ServerMessage.Reaction) { _reactions.tryEmit(reaction) }
     internal fun message(text: String) { _messages.tryEmit(text) }
-    internal fun message(@StringRes id: Int, vararg args: Any) = message(context.getString(id, *args))
+    internal fun message(@StringRes id: Int, vararg args: Any) = message(text(id, *args))
+    internal fun text(@StringRes id: Int, vararg args: Any): String = context.getString(id, *args)
     internal fun quantityMessage(@PluralsRes id: Int, count: Int, vararg args: Any) =
         message(context.resources.getQuantityString(id, count, *args))
     internal fun event(event: SessionEvent) { _events.tryEmit(event) }

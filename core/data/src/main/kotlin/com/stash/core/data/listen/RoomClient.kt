@@ -38,8 +38,13 @@ sealed interface RoomEvent {
     data class Closed(val reason: CloseReason) : RoomEvent
 }
 
-/** [REPLACED]: the room closed us 1000 "replaced" because a newer connection resumed this membership. */
-enum class CloseReason { ENDED, FULL, GAVE_UP, REPLACED }
+/**
+ * Why a room connection ended for good. [REPLACED]: the room closed us 1000 "replaced" because a newer connection
+ * resumed this membership. A session's own refusals before a welcome (Sessions protocol): [UPDATE] (4426, an app from
+ * before Sessions), [KEY] (4401, neither the host key nor a valid Community key), [BOOTED] (4403, the host removed
+ * this phone from the session).
+ */
+enum class CloseReason { ENDED, FULL, GAVE_UP, REPLACED, UPDATE, KEY, BOOTED }
 
 /** One room connection. The session only sees this, so tests can fake it. */
 interface RoomConnection {
@@ -73,9 +78,10 @@ class OkHttpRoomConnector @Inject constructor(okHttpClient: OkHttpClient) : Room
  * The Listen Together WebSocket (spec §5): sends `hello` first on every connect, parses room
  * messages, and reconnects with backoff (1, 2, 4, 8, 15, 15… s) until two minutes have passed
  * since the connection was last up (±20% jitter). Final: 404 at the upgrade, 409 on a first join
- * (full), closes 4000/4404 (ended) and 4409 (full), and 1000 "replaced". A 409 on a resume is the
- * room's socket cap, so it retries. Other closes (4408 no hello, 1008/1009 misbehaving, network)
- * reconnect; a drop only resets the backoff if the socket had been up at least 5 s.
+ * (full), closes 4000/4404 (ended) and 4409 (full), a session's 4426/4401/4403 (update, key, booted),
+ * and 1000 "replaced". A 409 on a resume is the room's socket cap, so it retries. Other closes (4408
+ * no hello, 1008/1009 misbehaving, network) reconnect; a drop only resets the backoff if the socket
+ * had been up at least 5 s.
  *
  * A connect that got no answer at all (no DNS answer, refused, TLS failed) moves the next one to the other of
  * [bases] (stashfm.app and the old workers.dev host: the same Worker and rooms), and it stays there until that
@@ -177,6 +183,10 @@ internal class RoomClient(
                         when (code) {
                             4000, 4404 -> End.Final(CloseReason.ENDED)
                             4409 -> End.Final(CloseReason.FULL)
+                            // A session's refusals: trying again would only be refused again.
+                            4426 -> End.Final(CloseReason.UPDATE)
+                            4401 -> End.Final(CloseReason.KEY)
+                            4403 -> End.Final(CloseReason.BOOTED)
                             // Rate-limited or oversized frame: the room threw us out, so keep the
                             // backoff growing and the give-up clock running rather than retrying at 1 s forever.
                             1008, 1009 -> End.Dropped(healthy = false)

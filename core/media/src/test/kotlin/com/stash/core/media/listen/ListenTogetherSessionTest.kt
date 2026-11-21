@@ -445,6 +445,21 @@ class ListenTogetherSessionTest {
         assertThat(player.calls.last()).isEqualTo("exit")
     }
 
+    @Test fun `a session's refusals say why, and put everything back`() = runTest {
+        val notices = notices()
+        session()
+        for (reason in listOf(CloseReason.UPDATE, CloseReason.KEY, CloseReason.BOOTED)) {
+            controller.send(Command.Join("K7QA2PXM")); runCurrent()
+            connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+            connection.incoming.trySend(RoomEvent.Closed(reason)); runCurrent()
+            assertThat(player.calls.last()).isEqualTo("exit")
+            assertThat(controller.active.value).isFalse()
+        }
+        assertThat(notices).containsExactly(
+            "Update Stash to join this session", "Couldn't join this session", "You were removed from this session",
+        ).inOrder()
+    }
+
     @Test fun `rejoining from another device says so here`() = runTest {
         val notices = notices()
         join()

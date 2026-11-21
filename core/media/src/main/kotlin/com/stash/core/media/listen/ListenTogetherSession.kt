@@ -241,6 +241,10 @@ class ListenTogetherSession(
                     CloseReason.FULL -> "This session is full"
                     CloseReason.GAVE_UP -> "Lost connection to the session"
                     CloseReason.REPLACED -> "You rejoined this session somewhere else"
+                    // A session's own refusals, before any welcome.
+                    CloseReason.UPDATE -> controller.text(R.string.session_update_needed)
+                    CloseReason.KEY -> controller.text(R.string.session_couldnt_join)
+                    CloseReason.BOOTED -> controller.text(R.string.session_removed)
                 },
             )
             is RoomEvent.Message -> onMessage(event.message, event.receivedAt)

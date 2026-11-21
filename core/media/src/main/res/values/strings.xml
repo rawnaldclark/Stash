@@ -49,4 +49,12 @@
     <string name="lt_stopped_cant_play_more">Session paused: you can\'t play %1$s. Tap Play to try the next song.</string>
     <!-- A guest tapped a song to play it now, in a room that lets guests add. -->
     <string name="lt_only_host_changes_song">Only the host can change the song. Use Play next to add it.</string>
+
+    <!-- Sessions (spec 2026-11-20): a station's live listening. A session refused this phone before letting it in. -->
+    <!-- This app is older than the session (closes 4426). -->
+    <string name="session_update_needed">Update Stash to join this session</string>
+    <!-- No valid key for the session (closes 4401). -->
+    <string name="session_couldnt_join">Couldn\'t join this session</string>
+    <!-- The host removed this phone from the session (ended "booted", or closes 4403 on a try to come back). -->
+    <string name="session_removed">You were removed from this session</string>
 </resources>
