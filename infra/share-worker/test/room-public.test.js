@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { step, preview, MAX_MEMBERS, MAX_PUBLIC_MEMBERS, PUBLIC_V, PREPARE_MS, HOST_WAIT_CAP_MS } from "../src/room.js";
+import {
+    step, preview, MAX_MEMBERS, MAX_PUBLIC_MEMBERS, PUBLIC_V, PREPARE_MS, HOST_WAIT_CAP_MS, PAUSE_END_MS, HANDOVER_MS, MAX_AGE_MS,
+} from "../src/room.js";
 
 const T0 = 1_000_000;
 const TRACK = { t: "Avril 14th", a: "Aphex Twin", d: 125000, isrc: "GBBPW0100025" };
@@ -146,4 +148,87 @@ test("arrivals and departures update the session's count", () => {
     assert.equal(sent(r, "session")[0].msg.listeners, 3);
     r = step(r.state, { type: "close", from: "a" }, T0 + 4);
     assert.equal(sent(r, "session")[0].msg.listeners, 2);
+});
+
+// ── Task 14: how a session ends ───────────────────────────────────────────────
+
+/** The session with the host's song playing since T0 + 20. */
+function onAir() {
+    let s = session();
+    s = send(s, "h", { t: "load", track: TRACK }, T0 + 10).state;
+    return send(s, "h", { t: "status", status: "ready", trackKey: s.trackKey }, T0 + 20).state;
+}
+const ended = (r) => sent(r, "ended").map((o) => [o.to, o.msg.reason]);
+
+test("paused 15 minutes, a session ends; playing again before that keeps it going", () => {
+    const paused = send(onAir(), "h", { t: "pause" }, T0 + 1_000);
+    assert.equal(paused.state.pub.pausedSince, T0 + 1_000);
+    assert.equal(paused.alarmAt, T0 + 1_000 + PAUSE_END_MS);
+    assert.equal(step(paused.state, { type: "alarm" }, T0 + 1_000 + PAUSE_END_MS - 1).closed, undefined);
+    const r = step(paused.state, { type: "alarm" }, T0 + 1_000 + PAUSE_END_MS);
+    assert.equal(r.closed, true);
+    assert.deepEqual(ended(r), [["all", "paused"]]);
+    const back = send(paused.state, "h", { t: "play" }, T0 + 1_000 + 14 * 60_000);
+    assert.equal(back.state.pub.pausedSince, null);
+    assert.equal(step(back.state, { type: "alarm" }, T0 + 1_000 + PAUSE_END_MS).closed, undefined);
+});
+
+test("a seek while paused doesn't restart the 15 minutes", () => {
+    const paused = send(onAir(), "h", { t: "pause" }, T0 + 1_000).state;
+    const sought = send(paused, "h", { t: "seek", positionMs: 30_000 }, T0 + 5 * 60_000);
+    assert.equal(sought.state.pub.pausedSince, T0 + 1_000);
+});
+
+test("a session whose host never plays ends 15 minutes after it opened", () => {
+    const s = hello(pub(), "h", { host: true }).state;
+    assert.equal(step(s, { type: "alarm" }, T0 + PAUSE_END_MS).closed, true);
+});
+
+test("the host gone 60 s ends the session: no hand-over", () => {
+    const s = step(onAir(), { type: "close", from: "h" }, T0 + 1_000).state;
+    const waiting = step(s, { type: "alarm" }, T0 + 1_000 + HANDOVER_MS - 1);
+    assert.equal(waiting.closed, undefined);
+    assert.equal(waiting.state.host, "h");
+    const r = step(s, { type: "alarm" }, T0 + 1_000 + HANDOVER_MS);
+    assert.equal(r.closed, true);
+    assert.deepEqual(ended(r), [["all", "host_left"]]);
+});
+
+test("a host back within the 60 s carries on", () => {
+    let s = step(onAir(), { type: "close", from: "h" }, T0 + 1_000).state;
+    s = hello(s, "h2", { host: true, resumeToken: "tok-h", at: T0 + 30_000 }).state;
+    const r = step(s, { type: "alarm" }, T0 + 1_000 + HANDOVER_MS);
+    assert.equal(r.closed, undefined);
+});
+
+test("nobody can be made host in a session", () => {
+    const s = onAir();
+    const r = send(s, "h", { t: "makeHost", memberId: "a" });
+    assert.equal(r.state, s);
+    assert.deepEqual(r.out, []);
+});
+
+test("at 12 hours a session ends max_age; a private room still says closed", () => {
+    assert.deepEqual(ended(step(onAir(), { type: "alarm" }, T0 + MAX_AGE_MS)), [["all", "max_age"]]);
+    let p = step(privateRoom(), { type: "hello", msg: { t: "hello" }, hostKeyOk: true, newId: "h", newToken: "t" }, T0).state;
+    assert.deepEqual(ended(step(p, { type: "alarm" }, T0 + MAX_AGE_MS)), [["all", "closed"]]);
+});
+
+test("a station gone from outside ends its session with the reason; a private room ignores it", () => {
+    for (const [reason, said] of [["station_removed", "station_removed"], ["replaced", "replaced"], ["nonsense", "station_removed"]]) {
+        const r = step(onAir(), { type: "stationGone", reason }, T0 + 5_000);
+        assert.equal(r.closed, true);
+        assert.deepEqual(ended(r), [["all", said]]);
+    }
+    const p = step(privateRoom(), { type: "hello", msg: { t: "hello" }, hostKeyOk: true, newId: "h", newToken: "t" }, T0).state;
+    const r = step(p, { type: "stationGone", reason: "station_removed" }, T0);
+    assert.equal(r.closed, undefined);
+    assert.equal(r.state, p);
+});
+
+test("loading a song counts as playing: one picked just before the 15 minutes keeps the session going", () => {
+    const paused = send(onAir(), "h", { t: "pause" }, T0 + 1_000).state;
+    const loaded = send(paused, "h", { t: "load", track: TRACK }, T0 + 1_000 + PAUSE_END_MS - 1);
+    assert.equal(loaded.state.pub.pausedSince, null);
+    assert.equal(step(loaded.state, { type: "alarm" }, T0 + 1_000 + PAUSE_END_MS).closed, undefined);
 });

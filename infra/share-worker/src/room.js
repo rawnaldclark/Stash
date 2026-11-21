@@ -13,6 +13,7 @@
  *   { type: "msg", from, msg, newId? }                  any later message from member `from`
  *   { type: "close", from }                             member `from`'s socket closed
  *   { type: "alarm" }
+ *   { type: "stationGone", reason }                     a session's station went off the air (from the shell)
  * out: [{ to: memberId | "all", msg }]. An unchanged room comes back as the SAME state object.
  *
  * The queue, front to back: the Play next songs people added (first come, first played), then their Add to queue
@@ -218,12 +219,15 @@ export function preview(s) {
 /**
  * The earliest pending timer: room expiry, empty-room close, a 60 s handover/prune, the prepare deadline (§2): the
  * guests' while the host is ready, else the end of the wait for the host (the guests' alone would start nothing).
+ * A session also ends PAUSE_END_MS into a pause, and rewrites its live row every LIVE_BEAT_MS once it has one.
  */
 export function nextAlarm(s) {
     const times = [s.createdAt + MAX_AGE_MS];
     if (connected(s).length === 0) times.push(s.lastLeftAt + EMPTY_CLOSE_MS);
     for (const m of s.members) if (m.leftAt !== null) times.push(m.leftAt + HANDOVER_MS);
     if (s.phase.kind === "preparing") times.push(hostSettled(s) ? s.phase.deadlineMs : hostDeadline(s));
+    if (s.pub?.pausedSince != null) times.push(s.pub.pausedSince + PAUSE_END_MS);
+    if (s.pub?.liveAt != null) times.push(s.pub.liveAt + LIVE_BEAT_MS);
     return Math.min(...times);
 }
 
@@ -408,9 +412,13 @@ function startIfDue(ctx) {
     return true;
 }
 
-/** [by] names the member who caused the change (play, pause, seek); the room's own start has none. */
+/**
+ * [by] names the member who caused the change (play, pause, seek); the room's own start has none. A session counts
+ * how long it hasn't played since: PAUSE_END_MS of that ends it, and a seek while paused doesn't reset it.
+ */
 function setTimeline(ctx, timeline, by) {
     ctx.s.timeline = timeline;
+    if (ctx.s.pub) ctx.s.pub.pausedSince = timeline.playing ? null : (ctx.s.pub.pausedSince ?? ctx.now);
     ctx.s.rev++;
     ctx.out.push({ to: "all", msg: { t: "timeline", rev: ctx.s.rev, trackKey: ctx.s.trackKey, ...timeline, ...(by ? { by } : {}) } });
 }
@@ -488,6 +496,13 @@ function switchChanged(ctx, before, announce) {
     if (!announce) return;
     if (waiting.length) ctx.out.push(suggestionsMsg(s), queueMsg(s));
     ctx.out.push({ to: "all", msg: { t: "settings", guestsAdd: now } });
+}
+
+/** Closes the room, everyone told why. */
+function endRoom(ctx, reason) {
+    ctx.out.push({ to: "all", msg: { t: "ended", reason } });
+    ctx.closed = true;
+    return true;
 }
 
 function startPlayback(ctx) {
@@ -584,9 +599,13 @@ const EVENTS = {
         const { s, now } = ctx;
         const empty = connected(s).length === 0;
         if (now >= s.createdAt + MAX_AGE_MS || (empty && now >= s.lastLeftAt + EMPTY_CLOSE_MS)) {
-            ctx.out.push({ to: "all", msg: { t: "ended", reason: "closed" } });
-            ctx.closed = true;
-            return true;
+            return endRoom(ctx, s.pub && now >= s.createdAt + MAX_AGE_MS ? "max_age" : "closed");
+        }
+        if (s.pub) {
+            // A session ends with its host and is never passed on (spec §4): gone 60 s, or not playing for 15 minutes.
+            const host = memberById(s, s.host);
+            if (host && host.leftAt !== null && now >= host.leftAt + HANDOVER_MS) return endRoom(ctx, "host_left");
+            if (s.pub.pausedSince !== null && now >= s.pub.pausedSince + PAUSE_END_MS) return endRoom(ctx, "paused");
         }
         let changed = false;
         const expired = s.members.filter((m) => m.leftAt !== null && now >= m.leftAt + HANDOVER_MS);
@@ -615,6 +634,17 @@ const EVENTS = {
         if (startIfDue(ctx)) changed = true;
         return changed;
     },
+
+    /**
+     * From the shell: the session's station may not be on the air any more (its live row was refused: removed, hidden
+     * or blocked), another session of the station took the row ("replaced"), or its owner deleted it.
+     */
+    stationGone(ctx) {
+        const { s, event } = ctx;
+        if (!s.pub) return false;
+        s.pub.liveAt = null; // the row is gone, or another session's: nothing of ours to take out of the directory
+        return endRoom(ctx, event.reason === "replaced" ? "replaced" : "station_removed");
+    },
 };
 
 const MESSAGES = {
@@ -628,6 +658,7 @@ const MESSAGES = {
         setHostQueue(ctx, msg.why === "pick", left);
         s.timeline = { positionMs: cleanPosition(msg.positionMs, track) ?? 0, atRoomMs: now, playing: false };
         s.phase = { kind: "preparing", trackKey: s.trackKey, deadlineMs: now + PREPARE_MS, hostDeadlineMs: now + HOST_WAIT_CAP_MS };
+        if (s.pub) s.pub.pausedSince = null; // a song on its way is playing, as far as a session's 15 minutes go
         for (const m of connected(s)) m.status = "buffering";
         s.rev++;
         ctx.out.push({ to: "all", msg: {
@@ -790,6 +821,7 @@ const MESSAGES = {
 
     makeHost(ctx) {
         const { s, msg } = ctx;
+        if (s.pub) return false; // a session is its host's: co-hosts help, nobody takes over
         if (msg.memberId === s.host || !findConnected(s, msg.memberId)) return false;
         const before = guestsCanAdd(s);
         setHost(s, msg.memberId);
