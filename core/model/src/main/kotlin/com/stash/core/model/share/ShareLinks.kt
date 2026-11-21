@@ -83,6 +83,9 @@ object ShareLinks {
 
     fun roomUrl(code: String): String = "${ShareConfig.BASE_URL}/l/$code"
 
+    /** A station's link (Sessions): its page, where Open in Stash tunes in while it's live. */
+    fun stationUrl(stationId: String): String = "${ShareConfig.BASE_URL}/s/$stationId"
+
     /**
      * How long Share → "Stash link" waits for `POST /v1/tracks` before it shares the long link instead.
      * The share sheet's time box and the request's own call timeout both use it.

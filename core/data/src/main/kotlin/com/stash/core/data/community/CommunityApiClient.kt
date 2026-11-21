@@ -26,6 +26,11 @@ sealed interface CommunityResult<out T> {
 
     /** Offline, a timeout, a 5xx (the Worker's catch-all is 503 `unavailable`), a redirect, or a 2xx it can't read: worth trying again. */
     data class Failed(val reason: String?) : CommunityResult<Nothing>
+
+    companion object {
+        /** What a Sessions route answers (503, kept as a [Rejected] code) while the Worker's `SESSIONS` switch is off. */
+        const val SESSIONS_OFF = "sessions_off"
+    }
 }
 
 /** `POST /v1/community/posts`'s body. [body] is `{covers, tracks}` for a playlist or mix, `{track}` for a song. */

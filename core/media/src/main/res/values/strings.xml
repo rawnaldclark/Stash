@@ -57,4 +57,19 @@
     <string name="session_couldnt_join">Couldn\'t join this session</string>
     <!-- The host removed this phone from the session (ended "booted", or closes 4403 on a try to come back). -->
     <string name="session_removed">You were removed from this session</string>
+
+    <!-- Go live, tapped in a private Listen Together room. -->
+    <string name="session_end_private_first">End Listen Together first</string>
+    <!-- Go live, tapped while listening in someone's session. -->
+    <string name="session_leave_first">Leave this session first</string>
+    <!-- Go live didn't open the session: the server has Sessions switched off. -->
+    <string name="session_live_off">Going live isn\'t available right now</string>
+    <!-- The host's own station was removed or hidden: when going live, or when it ends the session. -->
+    <string name="session_your_station_off_air">Your station is off the air</string>
+    <string name="session_not_your_station">That station isn\'t yours</string>
+    <!-- This phone is blocked from Community. -->
+    <string name="session_live_blocked">You can\'t go live in Community</string>
+    <string name="session_slow_down">Slow down a moment, then try again</string>
+    <string name="session_live_failed">Couldn\'t go live. Try again.</string>
+    <string name="session_live_offline">Couldn\'t go live. Check your connection and try again.</string>
 </resources>

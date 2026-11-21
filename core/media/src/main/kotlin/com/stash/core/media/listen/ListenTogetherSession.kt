@@ -2,6 +2,7 @@ package com.stash.core.media.listen
 
 import android.util.Log
 import androidx.media3.common.MediaItem
+import com.stash.core.data.community.CommunityResult
 import com.stash.core.data.listen.CloseReason
 import com.stash.core.data.listen.RoomApiClient
 import com.stash.core.data.listen.RoomConnection
@@ -21,6 +22,7 @@ import com.stash.core.model.listen.ServerMessage
 import com.stash.core.model.share.ShareLinks
 import com.stash.core.model.share.SharedTrack
 import kotlin.math.abs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -49,6 +51,11 @@ class ListenTogetherSession(
     private val clock: () -> Long,
     /** This phone's remembered "Let guests add songs" (on until the user turns it off). */
     private val guestsAddPreference: suspend () -> Boolean = { true },
+    /**
+     * The phone's Community key, made on first use (CommunityKeyStore.key), or null when it can't be had. A session's
+     * listener says it in every hello; going live opens the session under it.
+     */
+    private val communityKey: suspend () -> String? = { null },
 ) {
     private var connection: RoomConnection? = null
     /**
@@ -66,6 +73,10 @@ class ListenTogetherSession(
     private var token: String? = null
     private var room: RoomState? = null
     private var isHost = false
+    /** The station whose session this is (Sessions): a public room. Null in a private room. */
+    private var stationId: String? = null
+    /** A session listener's Community key: the room checks it in every hello, a resume's too. */
+    private var listenerKey: String? = null
     /**
      * A host Load the room hasn't got yet: the first one (sent on the welcome) or one dropped while the socket
      * was down. Built on the flush, so the first Load reads where the song is then, not before the handshake.
@@ -155,6 +166,12 @@ class ListenTogetherSession(
                 if (code != null) leave()
                 join(command.code)
             }
+            is Command.TuneIn -> {
+                if (command.code == code) return
+                if (code != null) leave()
+                tuneIn(command.code, command.stationId)
+            }
+            is Command.GoLive -> goLive(command.stationId, command.name)
             Command.Leave -> leave()
             Command.End -> end()
             is Command.React -> send(ClientMessage.React(command.emoji))
@@ -182,21 +199,89 @@ class ListenTogetherSession(
             controller.message("Couldn't start a session. Check your connection and try again.")
             return
         }
-        // Read the user's queue before the session touches the player: it becomes the room's (spec §4).
+        // Built from the code, like a listener's: a room made on the old workers.dev host (stashfm.app unreachable)
+        // still gets a stashfm.app invite.
+        hostRoom(created, name, ShareLinks.roomUrl(created.code))
+    }
+
+    /** The user's queue becomes the new room's (spec §4), and this phone hosts it: a private room or a session. */
+    private suspend fun hostRoom(created: RoomApiClient.Created, name: String?, url: String) {
+        // Read the user's queue before the session touches the player.
         val mine = player.userQueue()
         val first = mine.current?.let { catalog.sharedTrackFor(it) }
         val upcoming = mine.upcoming.take(MAX_QUEUE).mapNotNull { catalog.sharedTrackFor(it) }
         // The song kept playing through the create call and the lookups: read where it is now.
         pendingLoad = first?.let { f -> { ClientMessage.Load(f, player.positionMs, upcoming) } }
-        // Built from the code, like a listener's: a room made on the old workers.dev host (stashfm.app unreachable)
-        // still gets a stashfm.app invite.
-        enter(created.code, ShareLinks.roomUrl(created.code), name, hostKey = created.hostKey, asHost = true)
+        enter(created.code, url, name, hostKey = created.hostKey, asHost = true)
     }
 
     private suspend fun join(code: String) {
         controller.publish(ListenTogetherState.Connecting(hosting = false))
         enter(code, ShareLinks.roomUrl(code), displayName(), hostKey = null, asHost = false)
     }
+
+    /** Joins station [stationId]'s session, room [code]. The room lets in only a phone with a Community key. */
+    private suspend fun tuneIn(code: String, stationId: String) {
+        controller.publish(ListenTogetherState.Connecting(hosting = false, station = stationId))
+        // Read now: the hello is built where nothing can suspend.
+        val key = readCommunityKey()
+        if (key == null) {
+            controller.publish(ListenTogetherState.Idle)
+            controller.message(R.string.session_couldnt_join)
+            return
+        }
+        this.stationId = stationId
+        listenerKey = key
+        enter(code, ShareLinks.stationUrl(stationId), displayName(), hostKey = null, asHost = false)
+    }
+
+    /**
+     * Opens a session for this phone's station and hosts it, as [host] hosts a private room. [djName]: the station's DJ
+     * name, else the display name; the room's crowd and Live now's card then name the host alike. Only from outside a
+     * room: each refusal says why and changes nothing.
+     */
+    private suspend fun goLive(stationId: String, djName: String?) {
+        if (code != null) {
+            when {
+                this.stationId == null -> controller.message(R.string.session_end_private_first)
+                !isHost -> controller.message(R.string.session_leave_first)
+                // Already live: nothing to do.
+            }
+            return
+        }
+        controller.publish(ListenTogetherState.Connecting(hosting = true, station = stationId))
+        val name = djName?.trim()?.takeIf { it.isNotEmpty() } ?: displayName()
+        val key = readCommunityKey()
+        val result = if (key == null) CommunityResult.Failed("no Community key") else api.createSession(stationId, name, key)
+        if (result !is CommunityResult.Ok) {
+            Log.w(TAG, "go live refused: $result")
+            controller.publish(ListenTogetherState.Idle)
+            controller.message(goLiveRefusal(result))
+            return
+        }
+        this.stationId = stationId
+        hostRoom(result.value, name, ShareLinks.stationUrl(stationId))
+    }
+
+    private fun goLiveRefusal(result: CommunityResult<*>): Int = when ((result as? CommunityResult.Rejected)?.code) {
+        null -> R.string.session_live_offline
+        CommunityResult.SESSIONS_OFF -> R.string.session_live_off
+        "gone" -> R.string.session_your_station_off_air
+        "not_yours" -> R.string.session_not_your_station
+        "blocked" -> R.string.session_live_blocked
+        "rate_limited" -> R.string.session_slow_down
+        else -> R.string.session_live_failed
+    }
+
+    private suspend fun readCommunityKey(): String? =
+        try {
+            communityKey()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "no Community key", e)
+            null
+        }
 
     private suspend fun enter(code: String, url: String, name: String?, hostKey: String?, asHost: Boolean) {
         this.code = code
@@ -209,12 +294,20 @@ class ListenTogetherSession(
         player.events = playerEvents
         player.enterSession(asHost, interceptor)
         player.pause()
-        Log.i(TAG, "entering room ${code.take(2)}… as ${if (asHost) "host" else "listener"}")
-        // The host key goes out only until the room hands back a token (spec §2–§3).
+        val inSession = stationId != null
+        Log.i(TAG, "entering ${if (inSession) "a session" else "room"} ${code.take(2)}… as ${if (asHost) "host" else "listener"}")
         val session = CoroutineScope(scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job]))
         sessionScope = session
+        val key = listenerKey
         val conn = connector.connect(code, session) {
-            ClientMessage.Hello(name, hostKey.takeIf { token == null }, token, RoomProtocol.VERSION, myGuestsAdd)
+            if (inSession) {
+                // A session checks who's knocking on every hello, a resume's too: the host by its key, a listener by the
+                // Community key. Guest adds don't exist there.
+                ClientMessage.Hello(name, hostKey, token, RoomProtocol.VERSION, communityKey = key.takeIf { hostKey == null })
+            } else {
+                // The host key goes out only until the room hands back a token (spec §2–§3).
+                ClientMessage.Hello(name, hostKey.takeIf { token == null }, token, RoomProtocol.VERSION, myGuestsAdd)
+            }
         }
         connection = conn
         session.launch { conn.events.collect { onEvent(it) } }
@@ -1021,6 +1114,7 @@ class ListenTogetherSession(
         player.events = null
         player.exitSession()
         code = null; url = null; myId = null; token = null; room = null; isHost = false; pendingLoad = null; loadsInFlight = 0
+        stationId = null; listenerKey = null
         welcomed = false; unplayableInARow = 0; skipNoticeKey = NONE; heldAdds.clear(); awaitingAdds.clear()
         timeline = null; applied = null; loadedKey = NONE; itemKey = NONE; readyKey = NONE; unavailableKey = NONE; lastStatus = null
         roomPreparingKey = NONE; preparedAt = 0L; prepareLimitJob = null // the job died with sessionScope
@@ -1069,7 +1163,7 @@ class ListenTogetherSession(
         val r = room
         val id = myId
         if (r == null || id == null) {
-            controller.publish(ListenTogetherState.Connecting(hosting = isHost))
+            controller.publish(ListenTogetherState.Connecting(hosting = isHost, station = stationId))
             return
         }
         controller.publish(

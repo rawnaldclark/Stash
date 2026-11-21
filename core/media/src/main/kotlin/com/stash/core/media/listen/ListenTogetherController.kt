@@ -22,10 +22,12 @@ import kotlinx.coroutines.flow.asStateFlow
 
 sealed interface ListenTogetherState {
     data object Idle : ListenTogetherState
-    data class Connecting(val hosting: Boolean) : ListenTogetherState
+
+    /** [station]: the station whose session this is (Sessions), also while moving to its newer session; null for a private room. */
+    data class Connecting(val hosting: Boolean, val station: String? = null) : ListenTogetherState
     data class InRoom(
         val code: String,
-        /** The invite link, `https://…/l/{code}`. */
+        /** The invite link, `https://…/l/{code}`; a session's is its station's, `https://…/s/{id}`. */
         val url: String,
         val myId: String,
         val isHost: Boolean,
@@ -81,7 +83,17 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
     sealed interface Command {
         data object Host : Command
         data class Join(val code: String) : Command
-        /** A listener leaves; a host hands the room to the longest-joined listener, then leaves. */
+
+        /** Tune in to station [stationId]'s session, room [code] (Sessions). Leaves any room first, as [Join] does. */
+        data class TuneIn(val code: String, val stationId: String) : Command
+
+        /**
+         * Go live: open a session for this phone's station [stationId], hosted as [name] (the station's DJ name, or
+         * null for the display name). The user's queue becomes the session's, as with [Host]. Only from outside a room.
+         */
+        data class GoLive(val stationId: String, val name: String? = null) : Command
+
+        /** A listener leaves; a host hands the room to the longest-joined listener, then leaves. A session's host ends it. */
         data object Leave : Command
         /** Host only: ends the room for everyone. */
         data object End : Command

@@ -80,7 +80,7 @@ internal class CommunityHttp(okHttpClient: OkHttpClient) {
 
     companion object {
         /** What every Sessions route answers (503) while the Worker's `SESSIONS` switch is off. */
-        const val SESSIONS_OFF = "sessions_off"
+        const val SESSIONS_OFF = CommunityResult.SESSIONS_OFF
         val JSON = "application/json".toMediaType()
         private val EMPTY_BODY = "{}".toRequestBody(JSON)
     }
