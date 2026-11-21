@@ -20,7 +20,8 @@ Status: owner's brief on 2026-11-20, decisions below agreed in chat that day. Th
 | Requests | Listeners request songs. A request **waits** until the host or a co-host taps Play next, Add to queue or Pass. An **Auto-accept** switch sends every request to the end of the queue. | Owner chose this. A DJ takes requests; strangers don't get to run your music. |
 | Co-hosts | The host can make up to **3** people co-hosts. Co-hosts skip, edit the queue and handle requests. Only the host ends the session or changes co-hosts. | Owner's brief ("can cohost"). |
 | Talking | **Reactions only, no typed chat:** the six emoji, plus a small set of **animated reactions** Stash ships in the app (§5). No GIF search. | Owner: reactions, maybe GIFs. Stash's own set needs no moderation and sends nothing to a GIF service. GIF search can come later. |
-| Who sees whom | Listeners see the host, the co-hosts, the listener count and who requested each accepted song. The host and co-hosts also see the listener list. Names are "Show my name as" or "Listener 7". | Enough to be social; strangers can't list each other. |
+| Who sees whom | **Everyone in a session sees everyone in it:** the host, the co-hosts, the listeners, and who requested each accepted song. Names are "Show my name as" or "Listener 7". | Owner: listeners see names. It's a room you walked into. |
+| Booting | **The host can boot a listener.** A booted listener is out of that session and can't rejoin it while it lasts; their next session from that host is fine. | Owner. The host's answer to someone being a nuisance, with no reports to review. |
 | Size | Up to **50 listeners** a session (`MAX_LISTENERS`, tunable), plus host and co-hosts. | One room holds that cheaply. Private Listen Together stays at 10. |
 | Accounts | **None.** Your station belongs to your community key, as your posts do. | Same as Community. |
 | Where it lives | Server: the existing `stash-share` Worker (rooms and Community). App: **Android first**; the web player and desktop listen in later. | Community and Listen Together are Android features today. |
@@ -34,7 +35,7 @@ Status: owner's brief on 2026-11-20, decisions below agreed in chat that day. Th
 
 1. **Community → Live now.** When any session is live, Community's Home section opens with a row of cards: the song playing (art), the station name, the host, "12 listening", and the station's votes. See all opens **Sessions**: **Live** (ranked, §3) and **Upcoming** (next 24 hours, soonest first).
 2. **Tune in.** Tapping a card starts the session's song at the room's position. The mini player and Now Playing show the station ("Maya's Desk Radio · LIVE · 12") instead of your queue; your own queue is kept for when you leave.
-3. **In the session** (Now Playing): Request a song (search, then Request), reactions, the vote pill (greyed out with "Listen 2 minutes to vote" until then), Leave.
+3. **In the session** (Now Playing): who's here (host, co-hosts, listeners), Request a song (search, then Request), reactions, the vote pill (greyed out with "Listen 2 minutes to vote" until then), Leave.
 4. **When it ends**, the player stops with "Maya's session ended" and offers your own queue back.
 
 A station also has a link, `stashfm.app/s/{id}`, that opens it in the app (live, or its schedule when it isn't), so a DJ can share it anywhere.
@@ -42,7 +43,7 @@ A station also has a link, `stashfm.app/s/{id}`, that opens it in the app (live,
 ### Host
 
 1. **Go live** from Now Playing (next to Listen Together). The first time, a sheet asks for a station name and says plainly what going live shares (§8). After that, one tap.
-2. **On the air:** a LIVE pill with the listener count on the mini player and Now Playing, always visible while live. Tapping it opens the session panel: listeners, requests waiting (Play next / Add to queue / Pass), co-hosts, the Auto-accept switch, and **End session**.
+2. **On the air:** a LIVE pill with the listener count on the mini player and Now Playing, always visible while live. Tapping it opens the session panel: listeners (tap one for **Make co-host** or **Boot**), requests waiting (Play next / Add to queue / Pass), co-hosts, the Auto-accept switch, and **End session**.
 3. **Your station** (the Sessions screen's Your station row): name, auto-live (**Off / On a schedule / Always**), the schedule (up to 7 time windows a week), the station link, and Delete station.
 4. **Going private:** End session, or switching auto-live off, ends it at once. While a schedule or Always is on, End session keeps you off the air until playback stops and starts again.
 
@@ -85,7 +86,7 @@ CREATE TABLE live (                        -- the directory of sessions on the a
 - **Hidden** at `up − down <= −3` unless `vouched`: not in Live or Upcoming, its link says it's unavailable; the host still sees it in Your station marked hidden.
 - **Live ranking:** `ORDER BY (up − down) + listeners * 1.0 DESC`: each listener right now counts as one vote, so a new station with people in it surfaces, and a well-voted one leads. The `1.0` is the constant to tune.
 - **Upcoming:** stations with `auto_live = 'schedule'` whose next window starts within 24 hours and that aren't live now, soonest first. Worked out in the Worker from `schedule` (the time zone makes it awkward in SQL); fine at this scale, and cached 60 s.
-- **Clean-up** (the daily cron): `live` rows past `seen_at` + 3 minutes; stations not live for **90 days** (with their votes and heard marks).
+- **Clean-up** (the daily cron): `live` rows past `seen_at` + 3 minutes; stations not live for **7 days** (with their votes and heard marks; a station that has never gone live counts from when it was made). The host's app says so in Your station: "Go live within 7 days or your station and its votes are deleted".
 - **Moderation:** `npm run community -- station list | remove | restore | block` with the post commands' rules (`block` blocks the phone from posting, voting and going live).
 
 ### Routes (`/v1/community/…`, key as in Community)
@@ -116,7 +117,8 @@ A session is a Listen Together room created with `{public: true, stationId}` and
 | Host gone 60 s | Control passes to the longest-joined guest | **The session ends** |
 | Paused 15 minutes | Nothing | **The session ends** |
 | Guests adding songs | "Let guests add songs" switch | Requests wait for the host or a co-host (or Auto-accept) |
-| Members list | Everyone sees everyone | Host and co-hosts see listeners; listeners see the count |
+| Members list | Everyone sees everyone | Everyone sees everyone |
+| Removing someone | Nobody can | The host boots a listener; out for the rest of the session |
 
 **The host's phone stays the player.** "Only the host moves the room on" (Listen Together) still holds: when a co-host skips, accepts a request or edits the queue, the room forwards it to the host's phone as a `command`, the host's app applies it to its own player and queue, and the room follows the host as it does today. A co-host's command while the host's app is reconnecting waits up to 10 s, then is refused with "The host is reconnecting".
 
@@ -128,15 +130,16 @@ A session is a Listen Together room created with `{public: true, stationId}` and
 
 | `t` | Sent by | Payload |
 |---|---|---|
-| `hello` (+) | anyone | `{ role?: "listener" }`, `cohostKey?` (a co-host rejoining) |
+| `hello` (+) | anyone | `{ role?: "listener", listenerId }`: `listenerId` is the phone's community poster id (`sha256(key)`; the app makes a key on first tune-in), so a boot holds across a reconnect. `cohostKey?`: a co-host rejoining. |
 | `request` | listener | `{ track }`: replaces `suggest` in sessions; 3 waiting per listener, 30 in all |
 | `requestAction` | host, co-host | `{ id, action: "next" \| "queue" \| "pass" }` |
 | `autoAccept` | host | `{ on }` |
 | `cohost` | host | `{ memberId, on }`; the room answers the new co-host with a private `cohostKey` |
 | `command` | co-host → room → host | `{ from, action: "skip" \| "next" \| "queue" \| "remove" \| "move", … }` |
 | `react` (+) | anyone | `{ emoji }` or `{ anim }`: one of the app's animated reactions (§5), at most one a second |
-| `session` | room | `{ listeners, cohosts, requests?, autoAccept }`: the host and co-hosts get the requests and listener list, listeners get only the count and co-host names |
-| `ended` (+) | room | `{ reason: "host_left" \| "paused" \| "ended_by_host" \| "max_age" \| "station_removed" }` |
+| `boot` | host | `{ memberId }`: a listener only (not a co-host: take co-host away first). The room closes their sockets and refuses their `resumeToken` and listener id (below) until the session ends. |
+| `session` | room | `{ listeners, cohosts, requests?, autoAccept }`: everyone gets the listener and co-host lists; only the host and co-hosts get the waiting requests |
+| `ended` (+) | room | `{ reason: "host_left" \| "paused" \| "ended_by_host" \| "max_age" \| "station_removed" \| "booted" }`: a booted listener sees "You were removed from this session". |
 
 ## 5. Animated reactions
 
@@ -161,6 +164,7 @@ Twelve short animations in the app (animated WebP, under 40 KB each): applause, 
 ## 8. Privacy and abuse
 
 - **What going live shares:** each song you play (title, artist, album, art) as you play it, your station name, your "Show my name as", your schedule if you set one, and how many people listen. Not your library, your playlists, your location or your accounts. The Go live sheet says this in one sentence the first time.
+- **What tuning in shares:** your "Show my name as" name (or "Listener 7") with everyone in that session, and the songs you request. The first tune-in says so in one line.
 - **What the server keeps:** the station and its votes (hashes, as posts); the `live` row only while you're on the air. The room keeps nothing after it ends. No history of what was played.
 - **Strangers can't type anything.** Requests are songs, reactions are fixed sets. Station and host names are the only text: checked like a post's title, hidden by votes, removable by the owner.
 - **Rate limits:** joining (`JOIN_RL`, per network), requests (room: 3 waiting per listener), reactions (1 a second), station writes (`COMMUNITY_WRITE_RL`), votes (`COMMUNITY_VOTE_RL`).
@@ -190,9 +194,10 @@ Twelve short animations in the app (animated WebP, under 40 KB each): applause, 
 - **Handing a session to a co-host when the host leaves:** the session is the host's listening; it ends with it.
 - **Push reminders for Upcoming:** no push service in Stash today.
 
-## 12. Open questions for the owner
+## 12. Owner's answers (2026-11-20)
 
-1. 50 listeners a session to start? (A room can hold more; the cost is fan-out on every song change.)
-2. Should listeners see each other's names, or only the count (as above)?
-3. Stations unused for 90 days are deleted with their votes: right length?
-4. Is "station" the word in the app (Your station, Maya's Desk Radio), with "Sessions" as the feature's name?
+1. **50 listeners** a session.
+2. **Listeners see names:** everyone in a session sees everyone in it.
+3. **Hosts can boot listeners** (added to §1, §2, §4).
+4. **7 days** without going live deletes a station and its votes.
+5. **"Station"** is the word in the app; **Sessions** is the feature.
