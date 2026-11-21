@@ -8,6 +8,7 @@ import com.stash.core.data.community.CommunityResult
 import com.stash.core.data.community.VoteCounts
 import com.stash.core.model.community.CommunityPost
 import com.stash.core.ui.ambient.contrastRatio
+import com.stash.core.ui.components.VotePillUi
 import com.stash.feature.community.CommunityViewModel.Tab
 import com.stash.feature.community.CommunityViewModel.UiState
 import io.mockk.coEvery

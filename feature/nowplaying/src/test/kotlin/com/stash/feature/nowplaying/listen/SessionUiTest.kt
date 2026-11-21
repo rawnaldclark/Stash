@@ -8,7 +8,6 @@ import com.stash.core.model.listen.RoomMember
 import com.stash.core.model.share.SharedTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -17,13 +16,6 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class SessionUiTest {
     private val res = ApplicationProvider.getApplicationContext<Context>().resources
-
-    @Test
-    fun `a person keeps one colour, and a room of ten spreads across the palette`() {
-        assertEquals(personColor("M7TAX7JN"), personColor("M7TAX7JN"))
-        val ids = listOf("M7TAX7JN", "Q2WERT5Y", "H8JK3LZX", "P4NB6VCM", "R9TY2UIO", "K5LM8NBV", "Z3XC7VBN", "A6SD9FGH", "W2ER4TYU", "E8RT6YUI")
-        assertTrue(ids.map(::personColor).toSet().size >= 5)
-    }
 
     @Test
     fun `faces show initials, names read naturally, codes are easy to read out`() {

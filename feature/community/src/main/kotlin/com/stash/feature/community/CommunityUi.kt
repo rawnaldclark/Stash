@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import com.stash.core.data.community.CommunityRepository
 import com.stash.core.data.community.CommunityResult
 import com.stash.core.model.community.CommunityPost
+import com.stash.core.ui.components.VotePillUi
 import com.stash.feature.community.CommunityViewModel.Tab
 
 /*
@@ -109,20 +110,9 @@ internal const val HERO_FACTS_ALPHA = 0.8f
 internal const val HERO_POSTER_ALPHA = 0.72f
 
 /**
- * The vote pill as drawn: the score, which arrow is lit (this phone's vote), and whether it takes taps (not on your own
- * post). Until the post is heard ([listenFirst]: 30 s played from it) an arrow that would cast a vote is [upDimmed] or
- * [downDimmed] (no words by the pill; a tap says why); your current vote stays lit and can still be taken back.
+ * A post's vote pill: it takes taps on anyone's post but your own, and until the post is heard (30 s played from it) the
+ * arrows that would cast a vote are dimmed.
  */
-internal data class VotePillUi(
-    val score: Int,
-    val upLit: Boolean,
-    val downLit: Boolean,
-    val enabled: Boolean,
-    val listenFirst: Boolean = false,
-    val upDimmed: Boolean = false,
-    val downDimmed: Boolean = false,
-)
-
 internal fun CommunityPost.votePill(): VotePillUi {
     val listenFirst = !mine && !heard
     return VotePillUi(

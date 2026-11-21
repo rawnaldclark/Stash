@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.stash.core.model.listen.RoomProtocol
 import com.stash.core.model.listen.ServerMessage
+import com.stash.core.ui.components.personColor
 import com.stash.feature.nowplaying.ui.npInk
 import kotlin.random.Random
 import kotlinx.coroutines.flow.SharedFlow
