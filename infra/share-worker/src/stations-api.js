@@ -19,6 +19,8 @@ export const STATION_IDLE_MS = 7 * DAY;
 export const LIVE_STALE_MS = 3 * 60_000;
 /** A session is full at this many listeners (the room's own cap, src/room.js, says the same). */
 export const MAX_LISTENERS = 50;
+/** Stations one phone may follow. */
+export const MAX_FOLLOWS = 200;
 
 const STATION_API = /^\/v1\/community\/stations\/([A-Za-z0-9]{8})(\/vote|\/heard|\/follow)?$/;
 const PATHS = new Set(["/v1/community/stations", "/v1/community/live", "/v1/community/upcoming"]);
@@ -43,12 +45,24 @@ export const SHOWN_SQL = `s.removed_at IS NULL AND ((s.up - s.down) > -3 OR s.vo
     AND NOT EXISTS (SELECT 1 FROM blocked b WHERE b.poster = s.owner)`;
 
 const scheduleOf = (row) => (row.schedule ? JSON.parse(row.schedule) : null);
+/**
+ * A row's session on the air (from a `LEFT JOIN live l` that already dropped stale rows), or null. [withCrowd]: the
+ * lists that draw faces get the crowd's initials too.
+ */
+function liveOf(row, withCrowd = false) {
+    if (row.room === null || row.room === undefined) return null;
+    return {
+        room: row.room, track: row.track ? JSON.parse(row.track) : null, listeners: row.listeners, paused: Boolean(row.paused),
+        full: row.listeners >= MAX_LISTENERS, ...(withCrowd ? { crowd: JSON.parse(row.crowd ?? "[]") } : {}),
+    };
+}
 
 /** Routes every station path. [method] has HEAD folded into GET. */
 export async function stationsRoute(request, env, path, method, now) {
     if (!sessionsOn(env)) return json({ error: "sessions_off" }, 503);
     if (path === "/v1/community/stations") return method === "POST" ? createStation(request, env, now) : notAllowed();
     if (path === "/v1/community/stations/mine") return method === "GET" ? mine(request, env, now) : notAllowed();
+    if (path === "/v1/community/stations/following") return method === "GET" ? followed(request, env, now) : notAllowed();
     const m = STATION_API.exec(path);
     if (m) {
         const id = m[1];
@@ -60,6 +74,7 @@ export async function stationsRoute(request, env, path, method, now) {
         }
         if (m[2] === "/vote") return method === "PUT" ? voteStation(request, env, id, now) : notAllowed();
         if (m[2] === "/heard") return method === "PUT" ? heardStation(request, env, id, now) : notAllowed();
+        if (m[2] === "/follow") return method === "PUT" ? followStation(request, env, id, now) : notAllowed();
     }
     return json({ error: "not_found" }, 404);
 }
@@ -133,10 +148,7 @@ async function getStation(request, env, id, now) {
     if (!yours && (hiddenByVotes(row) || row.blocked)) return gone();
     const schedule = row.auto_live === "schedule" ? scheduleOf(row) : null;
     const station = { ...summaryOfStation(row, me), ...(schedule ? { schedule, next: nextWindow(schedule, now) } : {}) };
-    const live = row.room === null ? null : {
-        room: row.room, track: row.track ? JSON.parse(row.track) : null, listeners: row.listeners, paused: Boolean(row.paused),
-        full: row.listeners >= MAX_LISTENERS,
-    };
+    const live = liveOf(row);
     return json({ station, ...(live ? { live } : {}) }, 200, NO_STORE);
 }
 
@@ -246,4 +258,60 @@ async function heardStation(request, env, id, now) {
         "INSERT INTO station_heard (station_id, voter, at) SELECT ?1, ?2, ?3 FROM stations WHERE id = ?1 ON CONFLICT (station_id, voter) DO NOTHING",
     ).bind(id, who.id, now).run();
     return new Response(null, { status: 204 });
+}
+
+/**
+ * PUT stations/{id}/follow {on}: follow a station or stop. Not your own; not a gone or hidden one; at most MAX_FOLLOWS a
+ * phone. Counted with the votes. Answers the caller's state and the station's follower count.
+ */
+async function followStation(request, env, id, now) {
+    if (!(await env.COMMUNITY_VOTE_RL.limit({ key: network(request, env) })).success) return rateLimited();
+    const who = await identity(request);
+    if (!who.id) return json({ error: "bad_key" }, 401);
+    const { body, tooBig } = await readJson(request);
+    if (tooBig || typeof body?.on !== "boolean") return json({ error: "bad_request" }, 400);
+    const st = await votable(env, id, who.id);
+    if (!st) return gone();
+    if (st.owner === who.id) return json({ error: "own_station" }, 403);
+    const db = env.COMMUNITY_DB;
+    if (body.on) {
+        const c = await db.prepare(
+            `SELECT COUNT(*) AS n, EXISTS (SELECT 1 FROM station_follows WHERE station_id = ?2 AND follower = ?1) AS already
+             FROM station_follows WHERE follower = ?1`,
+        ).bind(who.id, id).first();
+        if (!c.already && c.n >= MAX_FOLLOWS) return json({ error: "too_many" }, 409);
+    }
+    const write = body.on
+        ? db.prepare("INSERT INTO station_follows (station_id, follower, at) SELECT ?1, ?2, ?3 FROM stations WHERE id = ?1 ON CONFLICT DO NOTHING").bind(id, who.id, now)
+        : db.prepare("DELETE FROM station_follows WHERE station_id = ?1 AND follower = ?2").bind(id, who.id);
+    const [, counted] = await db.batch([write, db.prepare("SELECT COUNT(*) AS n FROM station_follows WHERE station_id = ?1").bind(id)]);
+    return json({ following: body.on, followers: counted.results[0].n });
+}
+
+/**
+ * GET stations/following: the stations the caller follows, live ones first (most listeners first), then by when their
+ * schedule next has them on the air, then the rest by name. Hidden, removed and blocked ones are left out.
+ */
+async function followed(request, env, now) {
+    const who = await identity(request);
+    if (!who.id) return json({ error: "bad_key" }, 401);
+    const { results } = await env.COMMUNITY_DB.prepare(
+        `SELECT ${COLUMNS}, ${MY_COLUMNS}, l.room, l.track, l.listeners, l.paused, l.crowd
+         FROM station_follows ff JOIN stations s ON s.id = ff.station_id
+         ${MY_JOINS}
+         LEFT JOIN live l ON l.station_id = s.id AND l.seen_at > ?2
+         WHERE ff.follower = ?1 AND ${SHOWN_SQL}`,
+    ).bind(who.id, now - LIVE_STALE_MS).all();
+    const stations = results.map((row) => {
+        const live = liveOf(row, true);
+        const schedule = row.auto_live === "schedule" ? scheduleOf(row) : null;
+        const next = schedule ? nextWindow(schedule, now) : null;
+        return { ...summaryOfStation(row, who.id), ...(live ? { live } : {}), ...(next ? { next } : {}) };
+    });
+    const rank = (s) => (s.live ? 0 : s.next ? 1 : 2);
+    stations.sort((a, b) => rank(a) - rank(b)
+        || (a.live && b.live ? b.live.listeners - a.live.listeners : 0)
+        || (a.next && b.next ? a.next.start - b.next.start : 0)
+        || a.name.localeCompare(b.name));
+    return json({ stations }, 200, NO_STORE);
 }
