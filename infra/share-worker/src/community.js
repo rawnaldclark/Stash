@@ -6,6 +6,7 @@
 import { json } from "./http.js";
 import { newId } from "./store.js";
 import { cleanPost, summaryOf } from "./community-post.js";
+import { isStationsPath, stationsRoute } from "./stations-api.js";
 import {
     HIDE_AT, VOTES_PER_NETWORK, VOTE_ROWS_PER_NETWORK, gone, heardRequired, hiddenByVotes, identity, network, networkHash,
     notAllowed, rateLimited, readJson,
@@ -35,6 +36,8 @@ const isGone = (post, now) => !post || post.removed_at !== null || post.expires_
 export async function communityRoute(request, env, path, method) {
     const now = Date.now();
     if (method === "GET" && !(await env.COMMUNITY_READ_RL.limit({ key: network(request, env) })).success) return rateLimited();
+    // Sessions' stations, Live now and Upcoming (src/stations-api.js): behind their own switch, SESSIONS.
+    if (isStationsPath(path)) return stationsRoute(request, env, path, method, now);
     if (path === "/v1/community/feed") return method === "GET" ? feed(request, env, now) : notAllowed();
     if (path === "/v1/community/mine") return method === "GET" ? mine(request, env, now) : notAllowed();
     if (path === "/v1/community/me") return method === "GET" ? me(request, env, now) : notAllowed();

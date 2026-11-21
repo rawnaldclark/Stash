@@ -1,0 +1,172 @@
+/**
+ * Sessions' station routes (spec docs/superpowers/specs/2026-11-20-sessions-design.md §3; plan
+ * docs/superpowers/plans/2026-11-20-sessions-step1-server.md, 1a). Under /v1/community, keyed like Community: a phone is
+ * sha256(its key). Off until SESSIONS = "1" (wrangler.toml [vars]): until then every route here answers 503 sessions_off.
+ * D1 tables: stations, station_votes, station_heard, station_follows, live (migrations/0007_sessions.sql).
+ */
+import { json } from "./http.js";
+import { newId } from "./store.js";
+import { NO_STORE, gone, hiddenByVotes, identity, network, notAllowed, rateLimited, readJson } from "./community-shared.js";
+import { cleanStationFields, nextWindow, summaryOfStation } from "./stations.js";
+
+const DAY = 86_400_000;
+/** A station that hasn't gone live for this long is deleted with its votes (owner, 2026-11-20). */
+export const STATION_IDLE_MS = 7 * DAY;
+/** A directory row its room hasn't written for this long belongs to a room that died without saying so. */
+export const LIVE_STALE_MS = 3 * 60_000;
+/** A session is full at this many listeners (the room's own cap, src/room.js, says the same). */
+export const MAX_LISTENERS = 50;
+
+const STATION_API = /^\/v1\/community\/stations\/([A-Za-z0-9]{8})(\/vote|\/heard|\/follow)?$/;
+const PATHS = new Set(["/v1/community/stations", "/v1/community/live", "/v1/community/upcoming"]);
+
+/** Whether [path] is one of the routes here (communityRoute hands them over). */
+export const isStationsPath = (path) => PATHS.has(path) || path.startsWith("/v1/community/stations/");
+export const sessionsOn = (env) => env.SESSIONS === "1";
+
+/**
+ * The columns every station read takes, with its follower count. `owner` is read to answer `mine` and never sent.
+ * Binds nothing: callers add their own joins and WHERE.
+ */
+const COLUMNS = `s.id, s.owner, s.name, s.host_name, s.vibe, s.auto_live, s.schedule, s.created_at, s.last_live_at,
+    s.up, s.down, s.vouched, s.removed_at, (SELECT COUNT(*) FROM station_follows c WHERE c.station_id = s.id) AS followers`;
+/** The caller's own vote, heard mark and follow on station `s`; ?1 is the caller's id ("" without a key). */
+const MY_JOINS = `LEFT JOIN station_votes v ON v.station_id = s.id AND v.voter = ?1
+    LEFT JOIN station_heard h ON h.station_id = s.id AND h.voter = ?1
+    LEFT JOIN station_follows f ON f.station_id = s.id AND f.follower = ?1`;
+const MY_COLUMNS = "v.value AS my_vote, h.voter IS NOT NULL AS heard, f.follower IS NOT NULL AS following";
+/** Station `s` may be shown to others: not removed, not hidden by votes, its phone not blocked. */
+export const SHOWN_SQL = `s.removed_at IS NULL AND ((s.up - s.down) > -3 OR s.vouched = 1)
+    AND NOT EXISTS (SELECT 1 FROM blocked b WHERE b.poster = s.owner)`;
+
+const scheduleOf = (row) => (row.schedule ? JSON.parse(row.schedule) : null);
+
+/** Routes every station path. [method] has HEAD folded into GET. */
+export async function stationsRoute(request, env, path, method, now) {
+    if (!sessionsOn(env)) return json({ error: "sessions_off" }, 503);
+    if (path === "/v1/community/stations") return method === "POST" ? createStation(request, env, now) : notAllowed();
+    if (path === "/v1/community/stations/mine") return method === "GET" ? mine(request, env, now) : notAllowed();
+    const m = STATION_API.exec(path);
+    if (m) {
+        const id = m[1];
+        if (!m[2]) {
+            if (method === "GET") return getStation(request, env, id, now);
+            if (method === "PATCH") return changeStation(request, env, id);
+            if (method === "DELETE") return deleteStation(request, env, id);
+            return notAllowed();
+        }
+    }
+    return json({ error: "not_found" }, 404);
+}
+
+/** A write's checks: the write limit, then a valid key. Answers the refusal, or {who}. */
+async function writer(request, env) {
+    if (!(await env.COMMUNITY_WRITE_RL.limit({ key: network(request, env) })).success) return { refusal: rateLimited() };
+    const who = await identity(request);
+    if (!who.id) return { refusal: json({ error: "bad_key" }, 401) };
+    return { who };
+}
+
+async function createStation(request, env, now) {
+    const { who, refusal } = await writer(request, env);
+    if (refusal) return refusal;
+    const { body, tooBig } = await readJson(request);
+    if (tooBig) return json({ error: "too_large" }, 413);
+    const f = cleanStationFields(body);
+    if (!f) return json({ error: "bad_request" }, 400);
+    const db = env.COMMUNITY_DB;
+    if (await db.prepare("SELECT 1 AS b FROM blocked WHERE poster = ?1").bind(who.id).first()) return json({ error: "blocked" }, 403);
+    for (let i = 0; i < 3; i++) {
+        const id = newId();
+        // No conflict target: a taken id and the phone's existing station (owner UNIQUE) both insert nothing.
+        const made = await db.prepare(
+            `INSERT INTO stations (id, owner, name, host_name, vibe, auto_live, schedule, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT DO NOTHING RETURNING id`,
+        ).bind(id, who.id, f.name, f.hostName ?? null, f.vibe ?? null, f.autoLive ?? "off",
+            f.schedule ? JSON.stringify(f.schedule) : null, now).first();
+        if (made) return json({ id: made.id }, 201);
+        const have = await db.prepare("SELECT id FROM stations WHERE owner = ?1").bind(who.id).first();
+        if (have) return json({ error: "have_station", id: have.id }, 409);
+    }
+    return json({ error: "unavailable" }, 503, { "Retry-After": "2" });
+}
+
+/** The owner's view of their station: everything others see, plus its settings and its standing. */
+function ownView(row, me) {
+    return {
+        ...summaryOfStation(row, me),
+        autoLive: row.auto_live, schedule: scheduleOf(row),
+        hidden: hiddenByVotes(row), removed: row.removed_at !== null, lastLiveAt: row.last_live_at ?? null,
+        deleteAt: (row.last_live_at ?? row.created_at) + STATION_IDLE_MS,
+    };
+}
+
+const readOwn = (env, who) => env.COMMUNITY_DB.prepare(
+    `SELECT ${COLUMNS}, ${MY_COLUMNS} FROM stations s ${MY_JOINS} WHERE s.owner = ?1`,
+).bind(who).first();
+
+async function mine(request, env) {
+    const who = await identity(request);
+    if (!who.id) return json({ error: "bad_key" }, 401);
+    const row = await readOwn(env, who.id);
+    return json({ station: row ? ownView(row, who.id) : null }, 200, NO_STORE);
+}
+
+async function getStation(request, env, id, now) {
+    const who = await identity(request);
+    if (who.bad) return json({ error: "bad_key" }, 401);
+    const me = who.id ?? null;
+    const row = await env.COMMUNITY_DB.prepare(
+        `SELECT ${COLUMNS}, ${MY_COLUMNS}, EXISTS (SELECT 1 FROM blocked b WHERE b.poster = s.owner) AS blocked,
+            l.room, l.track, l.listeners, l.paused
+         FROM stations s ${MY_JOINS}
+         LEFT JOIN live l ON l.station_id = s.id AND l.seen_at > ?3
+         WHERE s.id = ?2`,
+    ).bind(me ?? "", id, now - LIVE_STALE_MS).first();
+    if (!row || row.removed_at !== null) return gone();
+    const yours = me !== null && row.owner === me;
+    if (!yours && (hiddenByVotes(row) || row.blocked)) return gone();
+    const schedule = row.auto_live === "schedule" ? scheduleOf(row) : null;
+    const station = { ...summaryOfStation(row, me), ...(schedule ? { schedule, next: nextWindow(schedule, now) } : {}) };
+    const live = row.room === null ? null : {
+        room: row.room, track: row.track ? JSON.parse(row.track) : null, listeners: row.listeners, paused: Boolean(row.paused),
+        full: row.listeners >= MAX_LISTENERS,
+    };
+    return json({ station, ...(live ? { live } : {}) }, 200, NO_STORE);
+}
+
+/** Field name → column. Only these names ever reach the SQL; the values are bound. */
+const FIELD_COLUMNS = { name: "name", hostName: "host_name", vibe: "vibe", autoLive: "auto_live", schedule: "schedule" };
+
+async function changeStation(request, env, id) {
+    const { who, refusal } = await writer(request, env);
+    if (refusal) return refusal;
+    const { body, tooBig } = await readJson(request);
+    if (tooBig) return json({ error: "too_large" }, 413);
+    const f = cleanStationFields(body, { partial: true });
+    if (!f) return json({ error: "bad_request" }, 400);
+    const db = env.COMMUNITY_DB;
+    const row = await db.prepare("SELECT owner, removed_at FROM stations WHERE id = ?1").bind(id).first();
+    if (!row || row.removed_at !== null) return gone();
+    if (row.owner !== who.id) return json({ error: "not_yours" }, 403);
+    const keys = Object.keys(f);
+    const values = keys.map((k) => (k === "schedule" && f.schedule ? JSON.stringify(f.schedule) : f[k]));
+    await db.prepare(
+        `UPDATE stations SET ${keys.map((k, i) => `${FIELD_COLUMNS[k]} = ?${i + 2}`).join(", ")} WHERE id = ?1 AND removed_at IS NULL`,
+    ).bind(id, ...values).run();
+    const changed = await readOwn(env, who.id);
+    return changed ? json({ station: ownView(changed, who.id) }, 200, NO_STORE) : gone();
+}
+
+async function deleteStation(request, env, id) {
+    const { who, refusal } = await writer(request, env);
+    if (refusal) return refusal;
+    const db = env.COMMUNITY_DB;
+    const row = await db.prepare("SELECT owner FROM stations WHERE id = ?1").bind(id).first();
+    if (!row) return gone();
+    if (row.owner !== who.id) return json({ error: "not_yours" }, 403);
+    await db.batch(["station_votes", "station_heard", "station_follows", "live"]
+        .map((t) => db.prepare(`DELETE FROM ${t} WHERE station_id = ?1`).bind(id))
+        .concat(db.prepare("DELETE FROM stations WHERE id = ?1").bind(id)));
+    return new Response(null, { status: 204 });
+}

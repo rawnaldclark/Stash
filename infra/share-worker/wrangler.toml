@@ -87,6 +87,10 @@ migrations_dir = "migrations"
 # The deploy that sets [vars] replaces every plain-text var on the Worker, so set it here, not in the dashboard.
 [vars]
 HEARD_REQUIRED = "0"
+# Sessions (docs/superpowers/plans/2026-11-20-sessions.md): "1" turns on the station routes, Live now, Upcoming, the
+# station page and public session rooms for every app version; "0" answers them 503 sessions_off and every app hides
+# Sessions. Rolling back is setting "0" and deploying: live sessions end within a minute (their directory writes stop).
+SESSIONS = "0"
 
 [[ratelimits]]
 name = "COMMUNITY_WRITE_RL"
