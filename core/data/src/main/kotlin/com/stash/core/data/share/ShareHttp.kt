@@ -8,17 +8,28 @@ import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.ConnectionSpec
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 
 /**
+ * For a debug build pointed at a share Worker on this PC ([ShareConfig.apiOverride], `http://127.0.0.1:8811`): the
+ * app's own client speaks TLS only, so a share client also allows cleartext when [bases] has a plain-http address.
+ * The debug network security config permits that for 127.0.0.1 and localhost alone. A release build never has an
+ * override, so there this changes nothing.
+ */
+internal fun OkHttpClient.Builder.allowLocalShareWorker(bases: List<String> = ShareConfig.API_BASE_URLS): OkHttpClient.Builder = apply {
+    if (bases.any { it.startsWith("http://") }) connectionSpecs(listOf(ConnectionSpec.MODERN_TLS, ConnectionSpec.CLEARTEXT))
+}
+
+/**
  * HTTP to the share Worker (mixes, song links, Listen Together, Community): [client], configured by [configure],
  * plus the host fallback below. Each API client builds one and reuses it.
  */
 internal class ShareHttp(client: OkHttpClient, configure: OkHttpClient.Builder.() -> Unit = {}) {
-    private val http = client.newBuilder().apply(configure).addNetworkInterceptor(MarkReached).build()
+    private val http = client.newBuilder().apply(configure).allowLocalShareWorker().addNetworkInterceptor(MarkReached).build()
 
     /**
      * Sends one request, trying each of [bases] in turn ([ShareConfig.API_BASE_URLS]: stashfm.app, then the old
