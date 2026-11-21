@@ -1432,6 +1432,13 @@
     <string name="settings_addons_link_title">Add from a link</string>
     <string name="settings_addons_link_subtitle">Paste · Scan</string>
     <string name="settings_addons_other_section">Other add-ons</string>
+    <!-- Stash's Tidal's quick check (a Cloudflare Turnstile page), offered when the phone couldn't vouch for itself. -->
+    <string name="settings_addons_tidal_check_title">One quick check</string>
+    <string name="settings_addons_tidal_check_body">Before this phone can play from Stash\'s Tidal, it needs to pass a quick check. It takes a few seconds and is only asked once.</string>
+    <string name="settings_addons_tidal_check_action">Check</string>
+    <string name="settings_addons_tidal_check_sending">Checking…</string>
+    <string name="settings_addons_tidal_check_screen_title">Quick check</string>
+    <string name="settings_addons_tidal_check_screen_unreachable">The check couldn\'t be loaded. Check your connection and try again.</string>
     <string name="settings_addons_move_up">Move %1$s up</string>
     <string name="settings_addons_move_down">Move %1$s down</string>
     <string name="settings_addons_switch_desc">Use %1$s</string>

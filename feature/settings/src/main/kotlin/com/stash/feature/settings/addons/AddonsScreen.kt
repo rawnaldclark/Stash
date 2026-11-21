@@ -83,7 +83,19 @@ fun AddonsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val highlighted by viewModel.highlighted.collectAsStateWithLifecycle()
     val saveFailed by viewModel.saveFailed.collectAsStateWithLifecycle()
+    val checkPage by viewModel.tidalCheckPage.collectAsStateWithLifecycle()
+    val check by viewModel.tidalCheck.collectAsStateWithLifecycle()
     SaveFailedToast(saveFailed)
+    val openPage = checkPage
+    if (check == TidalCheck.Open && openPage != null) {
+        TidalCheckScreen(
+            page = openPage,
+            onSolved = viewModel::onTidalCheckSolved,
+            onDismiss = viewModel::onTidalCheckClosed,
+            modifier = modifier,
+        )
+        return
+    }
     // The new add-on's row stays tinted for a moment, then the mark is spent.
     LaunchedEffect(highlighted) {
         if (highlighted != null) {
@@ -102,6 +114,8 @@ fun AddonsScreen(
         onSwitched = viewModel::onSwitched,
         onRemove = viewModel::onRemove,
         modifier = modifier,
+        tidalCheck = if (checkPage != null || check is TidalCheck.Sending) check else null,
+        onTidalCheck = viewModel::onTidalCheckOpened,
     )
 }
 
@@ -119,6 +133,9 @@ internal fun AddonsContent(
     /** Remove on a row Stash turned off, after the user confirmed it. */
     onRemove: (AddonOverview.Row) -> Unit,
     modifier: Modifier = Modifier,
+    /** Stash's Tidal's quick check when this phone should pass it (or it is being handed in); null: no card. */
+    tidalCheck: TidalCheck? = null,
+    onTidalCheck: () -> Unit = {},
 ) {
     // The page's own scroll, so holding a dragged row near the top or bottom can scroll it.
     val scrollState = rememberScrollState()
@@ -145,6 +162,7 @@ internal fun AddonsContent(
                 ),
             )
         }
+        if (tidalCheck != null) TidalCheckCard(tidalCheck, onTidalCheck)
         if (state.order.isNotEmpty()) {
             SettingsSectionLabel(stringResource(R.string.settings_addons_order_section))
             // One row (Tidal alone, for most people) has nothing to be dragged past: no word about
