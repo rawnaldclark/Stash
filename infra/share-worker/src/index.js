@@ -12,6 +12,7 @@ import { legacyArt, songLinkArt } from "./art.js";
 import { base64url, randomCode } from "./listen-room.js";
 import { ip, json, limitKey, readCapped } from "./http.js";
 import { cleanup, communityRoute } from "./community.js";
+import { cleanupStations } from "./stations-api.js";
 import { pruneDaily, takeDaily, untilTomorrow } from "./quota.js";
 export { limitKey }; // test/hardening.test.js imports it from here
 
@@ -39,10 +40,14 @@ export default {
             return json({ error: "unavailable" }, 503, { "Retry-After": "2" });
         }
     },
-    /** The daily cron in wrangler.toml: expired and long-removed Community posts go (spec 2026-09-26 §2), and past days' create budgets. */
+    /**
+     * The daily cron in wrangler.toml: expired and long-removed Community posts go (spec 2026-09-26 §2), past days' create
+     * budgets, and Sessions' idle and long-removed stations with stale directory rows (spec 2026-11-20 §3).
+     */
     async scheduled(_controller, env, ctx) {
         ctx.waitUntil(cleanup(env, Date.now()));
         ctx.waitUntil(pruneDaily(env, Date.now()));
+        ctx.waitUntil(cleanupStations(env, Date.now()));
     },
 };
 

@@ -379,3 +379,26 @@ async function upcoming(request, env, now) {
     ).bind(me ?? "", now - LIVE_STALE_MS).all();
     return json({ stations: pickUpcoming(results, now, limitOf(request, 10), me) }, 200, NO_STORE);
 }
+
+/**
+ * The daily cron (spec §3 Clean-up; owner, 2026-11-20: "7 days not going live sessions are deleted"):
+ *   - directory rows whose room stopped writing (reads skip them already; this just tidies);
+ *   - stations not on the air for STATION_IDLE_MS (one never live counts from when it was made);
+ *   - stations the owner removed more than a day ago (restorable until then). removed_at comes from the PC running the
+ *     command line, so the station's own last time on the air, stamped here, must be a day old too: a PC clock days
+ *     behind can't cut the restore window short;
+ * with their votes, heard marks, follows and live rows.
+ */
+export async function cleanupStations(env, now) {
+    // ponytail: one DELETE per table, as the post cleanup; batch by id ranges if it ever gets near D1's limits.
+    const db = env.COMMUNITY_DB;
+    const doomed = `SELECT id FROM stations WHERE COALESCE(last_live_at, created_at) < ?1
+        OR (removed_at IS NOT NULL AND removed_at < ?2 AND COALESCE(last_live_at, created_at) < ?2)`;
+    const args = [now - STATION_IDLE_MS, now - DAY];
+    await db.batch([
+        db.prepare("DELETE FROM live WHERE seen_at < ?1").bind(now - LIVE_STALE_MS),
+        ...["station_votes", "station_heard", "station_follows", "live"]
+            .map((table) => db.prepare(`DELETE FROM ${table} WHERE station_id IN (${doomed})`).bind(...args)),
+        db.prepare(`DELETE FROM stations WHERE id IN (${doomed})`).bind(...args),
+    ]);
+}

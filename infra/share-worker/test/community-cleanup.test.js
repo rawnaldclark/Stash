@@ -29,7 +29,7 @@ test("the cron handler runs cleanup through waitUntil", async () => {
     await seed(e, { id: "EXPIRED0", created: Date.now() - 31 * DAY });
     const pending = [];
     await worker.scheduled({ cron: "17 4 * * *" }, e, { waitUntil: (p) => pending.push(p) });
-    assert.equal(pending.length, 2); // fake-d1 is synchronous: without this, fire-and-forget passes too (cleanup + quota prune)
+    assert.equal(pending.length, 3); // fake-d1 is synchronous: without this, fire-and-forget passes too (cleanup, quota prune, stations)
     await Promise.all(pending);
     assert.deepEqual(await ids(e), []);
 });
