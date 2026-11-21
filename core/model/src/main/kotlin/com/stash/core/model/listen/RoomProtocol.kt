@@ -21,6 +21,13 @@ object RoomProtocol {
      */
     const val VERSION = 2
 
+    /**
+     * The first version that knows guest adds: a room or member at this or above takes [ClientMessage.Add],
+     * [ClientMessage.Unqueue], [ClientMessage.Settings] and `qv`. Every capability check compares a room's or a
+     * member's `v` with this, never with [VERSION]: a private room still answers 2 to an app that says more.
+     */
+    const val ADDS_VERSION = 2
+
     val json: Json = Json {
         classDiscriminator = "t"
         ignoreUnknownKeys = true
@@ -41,6 +48,8 @@ sealed interface ClientMessage {
     /**
      * [v]: [RoomProtocol.VERSION]. [guestsAdd]: this phone's "Let guests add songs" switch, which rules the room
      * whenever this member hosts; sent on every hello, so a switch flipped while the socket was down still lands.
+     * [communityKey]: a session listener's Community key, on every hello there (the room keeps only its hash);
+     * never sent to a private room.
      */
     @Serializable @SerialName("hello")
     data class Hello(
@@ -49,6 +58,7 @@ sealed interface ClientMessage {
         val resumeToken: String? = null,
         val v: Int? = null,
         val guestsAdd: Boolean? = null,
+        val communityKey: String? = null,
     ) : ClientMessage
 
     @Serializable @SerialName("ping")
@@ -115,7 +125,87 @@ sealed interface ClientMessage {
 
     @Serializable @SerialName("end")
     data object End : ClientMessage
+
+    // ── Sessions only (infra/share-worker/README.md "Sessions protocol"); a private room ignores them ──
+
+    /** A session listener asks for [track]: the host and co-hosts decide. Answered with [ServerMessage.RequestAnswer]. */
+    @Serializable @SerialName("request")
+    data class Request(val track: SharedTrack) : ClientMessage
+
+    /** The host or a co-host answers request [id]: [action] is `next` (Play next), `queue` (Add to queue) or `pass`. */
+    @Serializable @SerialName("requestAction")
+    data class RequestAction(val id: String, val action: String) : ClientMessage
+
+    /** Host only: while [on], requests go straight in as Add to queue. */
+    @Serializable @SerialName("autoAccept")
+    data class AutoAccept(val on: Boolean) : ClientMessage
+
+    /** Host only: member [memberId] becomes a co-host ([on]) or stops being one. At most 3. */
+    @Serializable @SerialName("cohost")
+    data class Cohost(val memberId: String, val on: Boolean) : ClientMessage
+
+    /** Host only: [memberId] leaves the session and can't come back. Never a co-host: they stop being one first. */
+    @Serializable @SerialName("boot")
+    data class Boot(val memberId: String) : ClientMessage
+
+    /** Host only: [state] is [SessionInfo.BOOTH] or [SessionInfo.AWAY]. */
+    @Serializable @SerialName("presence")
+    data class Presence(val state: String) : ClientMessage
+
+    /** A co-host's Skip ([action] `skip`): the room passes it to the host's phone as [ServerMessage.Command]. */
+    @Serializable @SerialName("command")
+    data class Command(val action: String) : ClientMessage
 }
+
+/** Why a room ended ([ServerMessage.Ended.reason]), as room.js says it. */
+object EndedReason {
+    /** The host ended it for everyone. */
+    const val HOST_ENDED = "host_ended"
+
+    /** A session's host was gone 60 s (a session is never handed on). */
+    const val HOST_LEFT = "host_left"
+
+    /** A session went 15 minutes without playing. */
+    const val PAUSED = "paused"
+
+    /** A session reached 12 hours. */
+    const val MAX_AGE = "max_age"
+
+    /** A session's station was deleted, removed, hidden by votes, or its phone blocked. */
+    const val STATION_REMOVED = "station_removed"
+
+    /** A newer session of the same station took over. */
+    const val REPLACED = "replaced"
+
+    /** A private room reached its age, or emptied. */
+    const val CLOSED = "closed"
+
+    /** This member was booted from the session. */
+    const val BOOTED = "booted"
+}
+
+/**
+ * What every phone in a session knows about it, in the welcome's state and (flat) in each `session` frame: the
+ * [station] it's on the air for, [listeners] (everyone connected but the host), the [cohosts]' member ids, whether
+ * requests go straight in ([autoAccept]), and where the host is ([presence]: [BOOTH] or [AWAY]).
+ */
+@Serializable
+data class SessionInfo(
+    val station: String,
+    val listeners: Int = 0,
+    val cohosts: List<String> = emptyList(),
+    val autoAccept: Boolean = false,
+    val presence: String = BOOTH,
+) {
+    companion object {
+        const val BOOTH = "booth"
+        const val AWAY = "away"
+    }
+}
+
+/** A request waiting for the host: [from] asked for [track]. The host and co-hosts see them all, a listener their own. */
+@Serializable
+data class RoomRequest(val id: String, val from: String, val track: SharedTrack)
 
 /** Where the song is: at room time [atRoomMs] it is at [positionMs], moving if [playing] (spec §4). */
 @Serializable
@@ -160,6 +250,8 @@ data class RoomState(
     val guestsAdd: Boolean = false,
     /** The queue's version; null from an older Worker. */
     val qv: Int? = null,
+    /** A session's own state ([v] 3); null in a private room. */
+    val session: SessionInfo? = null,
 )
 
 /** Room → phone (spec §3). */
@@ -228,6 +320,41 @@ sealed interface ServerMessage {
     @Serializable @SerialName("reaction")
     data class Reaction(val from: String, val emoji: String) : ServerMessage
 
+    /** [reason]: one of [EndedReason]. */
     @Serializable @SerialName("ended")
     data class Ended(val reason: String) : ServerMessage
+
+    // ── Sessions only (infra/share-worker/README.md "Sessions protocol") ──
+
+    /** The session's state after a change: [SessionInfo]'s fields, flat. */
+    @Serializable @SerialName("session")
+    data class Session(
+        val station: String,
+        val listeners: Int = 0,
+        val cohosts: List<String> = emptyList(),
+        val autoAccept: Boolean = false,
+        val presence: String = SessionInfo.BOOTH,
+    ) : ServerMessage {
+        val info: SessionInfo get() = SessionInfo(station, listeners, cohosts, autoAccept, presence)
+    }
+
+    /** The waiting requests this member may see, after any change: all of them to the host and co-hosts, a listener's own. */
+    @Serializable @SerialName("requests")
+    data class Requests(val requests: List<RoomRequest>) : ServerMessage
+
+    /** The answer to this phone's request: [state] is `queued` (Auto-accept), `waiting`, or `full` (3 each, 30 in all). */
+    @Serializable @SerialName("requestAnswer")
+    data class RequestAnswer(val state: String) : ServerMessage
+
+    /** To its requester alone: member [by] passed on [track]. */
+    @Serializable @SerialName("requestPassed")
+    data class RequestPassed(val track: SharedTrack, val by: String) : ServerMessage
+
+    /** Something this phone sent that the room turned down: [what] (`request`, `cohost`, `skip`, `boot`) and why. */
+    @Serializable @SerialName("refused")
+    data class Refused(val what: String, val reason: String) : ServerMessage
+
+    /** To the host's phone: co-host [from] pressed [action] (`skip`) on song [trackKey]. Ignored once that song has changed. */
+    @Serializable @SerialName("command")
+    data class Command(val action: String, val from: String, val trackKey: Int) : ServerMessage
 }

@@ -17,6 +17,9 @@ class RoomProtocolTest {
             ClientMessage.Hello(name = "Rawn", v = 2, guestsAdd = false), ClientMessage.Load(track, 0, emptyList(), "unavailable", qv = 4),
             ClientMessage.Queue(listOf(track), qv = 7), ClientMessage.Add(listOf(track), next = true),
             ClientMessage.Unqueue(track.copy(addedBy = "m2"), at = 3), ClientMessage.Settings(guestsAdd = true),
+            ClientMessage.Hello(name = "Rawn", v = 3, communityKey = "K".repeat(43)), ClientMessage.Request(track),
+            ClientMessage.RequestAction("r1", "pass"), ClientMessage.AutoAccept(false), ClientMessage.Cohost("m2", on = true),
+            ClientMessage.Boot("m3"), ClientMessage.Presence(SessionInfo.BOOTH), ClientMessage.Command("skip"),
         )
         for (m in all) {
             assertThat(RoomProtocol.json.decodeFromString(ClientMessage.serializer(), RoomProtocol.encode(m))).isEqualTo(m)
@@ -108,6 +111,57 @@ class RoomProtocolTest {
         assertThat(RoomProtocol.decode("""{"t":"settings","guestsAdd":false}""")).isEqualTo(ServerMessage.SettingsUpdate(false))
         assertThat(RoomProtocol.decode("""{"t":"queue","queue":[],"qv":9}""")).isEqualTo(ServerMessage.QueueUpdate(emptyList(), qv = 9))
         assertThat(RoomProtocol.decode("""{"t":"queue","queue":[]}""")).isEqualTo(ServerMessage.QueueUpdate(emptyList(), qv = null))
+    }
+
+    // ── Sessions (infra/share-worker/README.md "Sessions protocol") ──────────
+
+    @Test fun `a session listener's hello carries the Community key, and a hello without one says nothing of it`() {
+        val key = "K".repeat(43)
+        assertThat(RoomProtocol.encode(ClientMessage.Hello(name = "Rawn", v = 3, communityKey = key)))
+            .isEqualTo("""{"t":"hello","name":"Rawn","v":3,"communityKey":"$key"}""")
+        assertThat(RoomProtocol.encode(ClientMessage.Hello(name = "Rawn", v = 3))).doesNotContain("communityKey")
+    }
+
+    @Test fun `a session's own messages go on the wire as the room reads them`() {
+        val xtal = SharedTrack("Xtal", "Aphex Twin")
+        assertThat(RoomProtocol.encode(ClientMessage.Request(xtal))).isEqualTo("""{"t":"request","track":{"t":"Xtal","a":"Aphex Twin"}}""")
+        assertThat(RoomProtocol.encode(ClientMessage.RequestAction("r1", "next"))).isEqualTo("""{"t":"requestAction","id":"r1","action":"next"}""")
+        assertThat(RoomProtocol.encode(ClientMessage.AutoAccept(true))).isEqualTo("""{"t":"autoAccept","on":true}""")
+        assertThat(RoomProtocol.encode(ClientMessage.Cohost("m2", on = false))).isEqualTo("""{"t":"cohost","memberId":"m2","on":false}""")
+        assertThat(RoomProtocol.encode(ClientMessage.Boot("m3"))).isEqualTo("""{"t":"boot","memberId":"m3"}""")
+        assertThat(RoomProtocol.encode(ClientMessage.Presence(SessionInfo.AWAY))).isEqualTo("""{"t":"presence","state":"away"}""")
+        assertThat(RoomProtocol.encode(ClientMessage.Command("skip"))).isEqualTo("""{"t":"command","action":"skip"}""")
+    }
+
+    @Test fun `a session's welcome carries its state, and a private room's has none`() {
+        val text = """{"t":"welcome","memberId":"m2","token":"tok","state":{"rev":4,"host":"m1","track":null,"trackKey":0,
+            "timeline":{"positionMs":0,"atRoomMs":1000,"playing":false},"queue":[],
+            "members":[{"id":"m1","name":"Rawn","joinedAt":1000,"status":"ok","v":3},{"id":"m2","name":"Maya","joinedAt":1001,"status":"buffering","v":3}],
+            "suggestions":[],"phase":{"kind":"playing"},"v":3,"guestsAdd":false,"qv":0,
+            "session":{"station":"Ab3dEf9h","listeners":1,"cohosts":[],"autoAccept":false,"presence":"booth"}}}"""
+        val state = (RoomProtocol.decode(text) as ServerMessage.Welcome).state
+        assertThat(state.v).isEqualTo(3)
+        assertThat(state.session).isEqualTo(SessionInfo("Ab3dEf9h", listeners = 1))
+        val private = """{"t":"state","state":{"rev":1,"host":"m1","trackKey":0,"queue":[],"members":[],"suggestions":[],"v":2}}"""
+        assertThat((RoomProtocol.decode(private) as ServerMessage.StateSync).state.session).isNull()
+    }
+
+    @Test fun `a session's frames decode as room-js sends them`() {
+        val xtal = SharedTrack("Xtal", "Aphex Twin")
+        assertThat(RoomProtocol.decode("""{"t":"session","station":"Ab3dEf9h","listeners":12,"cohosts":["m4"],"autoAccept":true,"presence":"away"}"""))
+            .isEqualTo(ServerMessage.Session("Ab3dEf9h", 12, listOf("m4"), autoAccept = true, presence = SessionInfo.AWAY))
+        assertThat((RoomProtocol.decode("""{"t":"session","station":"Ab3dEf9h"}""") as ServerMessage.Session).info)
+            .isEqualTo(SessionInfo("Ab3dEf9h"))
+        assertThat(RoomProtocol.decode("""{"t":"requests","requests":[{"id":"r1","from":"m2","track":{"t":"Xtal","a":"Aphex Twin"}}]}"""))
+            .isEqualTo(ServerMessage.Requests(listOf(RoomRequest("r1", "m2", xtal))))
+        assertThat(RoomProtocol.decode("""{"t":"requestAnswer","state":"waiting"}""")).isEqualTo(ServerMessage.RequestAnswer("waiting"))
+        assertThat(RoomProtocol.decode("""{"t":"requestPassed","track":{"t":"Xtal","a":"Aphex Twin"},"by":"m1"}"""))
+            .isEqualTo(ServerMessage.RequestPassed(xtal, "m1"))
+        assertThat(RoomProtocol.decode("""{"t":"refused","what":"request","reason":"queue_full"}"""))
+            .isEqualTo(ServerMessage.Refused("request", "queue_full"))
+        assertThat(RoomProtocol.decode("""{"t":"command","action":"skip","from":"m4","trackKey":7}"""))
+            .isEqualTo(ServerMessage.Command("skip", "m4", 7))
+        assertThat(RoomProtocol.decode("""{"t":"ended","reason":"booted"}""")).isEqualTo(ServerMessage.Ended(EndedReason.BOOTED))
     }
 
     @Test fun `the room's answer to an add decodes, refused or turned into suggestions`() {

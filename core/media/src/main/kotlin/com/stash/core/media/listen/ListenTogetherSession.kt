@@ -316,6 +316,9 @@ class ListenTogetherSession(
             is ServerMessage.SettingsUpdate -> { room = room?.copy(guestsAdd = m.guestsAdd); publish() }
             is ServerMessage.Reaction -> controller.reaction(m)
             is ServerMessage.Ended -> teardown("Session ended")
+            // Sessions' own frames: only a session sends them.
+            is ServerMessage.Session, is ServerMessage.Requests, is ServerMessage.RequestAnswer,
+            is ServerMessage.RequestPassed, is ServerMessage.Refused, is ServerMessage.Command -> Unit
         }
     }
 
