@@ -1,6 +1,6 @@
 # True tuning: each song measured, then brought to your pitch
 
-**Status:** design for the owner's approval, 2026-11-21. No code yet.
+**Status:** approved by the owner 2026-11-21 ("lets build"). Step 1 is built; its accuracy report is §8.
 
 **The owner's ask (2026-11-21):** "hz monitoring needs to be true and not a generic downpitch on every track. we aren't actively monitoring and validating the natural freq of each track with 100% accuracy."
 
@@ -48,7 +48,7 @@ The app already does this for loudness: each downloaded file is measured once in
   - A song already at 432 is left alone.
 - **Always the smallest shift that lands on your pitch.** Because a tuning is only known within a semitone (§2), there are always two shifts that put a song's notes on your grid, one up and one down, adding to a semitone. The app takes the smaller, so no song moves more than half a semitone. For the usual case, a song within a few Hz of 440, that is the shift you'd expect.
 - The factor is set at the start of each song. The pitch engine already changes pitch live between two retuned values, so a song boundary needs no gap.
-- A song under the confidence bar counts as not measured (decision 1).
+- A song under the confidence bar counts as not measured: it is shifted as a 440 recording would be (decision 1).
 - At 440 with every song measured, songs that aren't at 440 can be corrected too. That is a new behaviour, so it's its own switch (decision 3).
 
 ### 3.3 Show
@@ -56,9 +56,9 @@ The app already does this for loudness: each downloaded file is measured once in
 - **Now Playing's tuning sheet** gains one line about the song that's playing:
   - "This song: recorded at A = 441.3 Hz. Shifted 36.9 cents lower."
   - "This song is already at A = 432 Hz. Left as recorded."
-  - "This song's tuning couldn't be measured." (and what the app did instead)
+  - "This song's tuning couldn't be measured. Shifted as a standard recording."
   - "Measuring this song…" on a stream's first play.
-- **The label stops over-claiming.** "A = 432 Hz" shows only for a song that was measured. An unmeasured song says "432 Hz, assuming a standard recording" or shows that it was left alone, per decision 1.
+- **The label stops over-claiming.** "A = 432 Hz" shows only for a song that was measured. An unmeasured song says "432 Hz, assuming a standard recording".
 - **Settings › Tuning** says in one sentence that Stash measures each song first.
 
 ### 3.4 Monitor
@@ -70,12 +70,12 @@ This is the "actively monitoring and validating" part of the ask.
 - A song that lands outside tolerance is logged with its numbers (target, measured in, measured out), so a wrong measurement can be found and the song re-measured.
 - It costs a little CPU while playing, so it has a switch, on by default while Tuning isn't 440.
 
-## 4. Decisions for the owner
+## 4. Decisions (owner, 2026-11-21)
 
-1. **A song that can't be measured.** Recommended: **leave it as recorded** and say so. The alternative is to assume 440 and shift anyway, marked "not measured". The recommendation follows the ask: no shift without a measurement.
-2. **A streamed song's first play.** Recommended: **start at once, measure for the first seconds, then ease to the right pitch over about a second**, and keep the result so later plays are right from the first note. The alternative is to hold playback briefly until the measurement is in, which makes every new stream start late.
-3. **At 440, correct songs that aren't at 440?** Recommended: **off by default**, as a switch ("Bring every song to standard pitch"). Most people at 440 expect songs untouched.
-4. **Re-measuring.** Recommended: a "Measure again" on the song's line, for a result that looks wrong, plus the monitor's own log.
+1. **A song that can't be measured is treated as a standard 440 recording and shifted,** with "not measured" on its line. The owner's goal is that every track is pitched to the chosen tuning; the first draft's "leave it as recorded" was dropped for that reason. Proposed to the owner and built on at "lets build".
+2. **A streamed song's first play starts at once,** is measured over its first seconds, then eases to the right pitch over about a second. The result is kept, so later plays are right from the first note. ("first play makes sense")
+3. **At 440, songs that aren't at 440 are left alone by default,** with a switch to bring every song to standard pitch. Proposed with decision 1; the owner hasn't spoken to it directly.
+4. **"Measure again"** on the song's line. ("yes to 4")
 
 ## 5. Proving the accuracy
 
@@ -107,3 +107,41 @@ Each step is its own PR and leaves the app working.
 - Tuning stays local to this phone. In a Listen Together room or a Session, each phone applies its own.
 - A retuned stream still can't be bit-perfect, and the signal path keeps saying so.
 - The chosen target, its presets and the custom field are untouched.
+
+## 8. Step 1's accuracy report (2026-11-21)
+
+`TuningEstimator` in `core/model`, branch `feat/tuning-estimator`. Nothing in the app uses it yet.
+
+**What changed while building it.** The first version counted every spectral peak. It passed every made-audio test and then failed on real songs: drums and voices buried the tuning, and 8 of the first 10 songs came back "not measured". Now a peak counts only if it holds its pitch for about half a second, which a played note does and a drum, a spoken word or a sung slide doesn't. The confidence is how far the histogram's peak stands above its median, less a rival peak.
+
+**Made audio, where the answer is known exactly** (`TuningEstimatorTest`, in CI):
+
+| Audio | Tunings | Largest error | Bar |
+|---|---|---|---|
+| A plain tone | 8, from 428 to 452 Hz | 0.27 cents | 2 |
+| Chords, bass and melody | 8 | 0.19 cents | 2 |
+| With drums and noise on top | 4 | 0.17 cents | 5 |
+| Melody with a wide vibrato | 4 | 0.21 cents | 5 |
+| Piano-like stretched partials | 4 | 1.18 cents | 5 |
+| With echo | 4 | 0.21 cents | 5 |
+
+- At 48 and 96 kHz the reading is the same (432.01 Hz for 432).
+- A song a semitone down (415.3 Hz) reads 440.03, on the grid, as §2 says it must.
+- Noise, drums, drums with noise, a pitch that never rests, and notes on no grid: all "not measured" (confidence 0.00 to 0.08 against a bar of 0.35).
+
+**Real songs** (`TuningCorpusReport`; 19 files from the test phone, run on the dev PC, not in the repository). A real song's own tuning isn't known in advance, so each was also resampled by two exact amounts, -31.77 and +11.76 cents, and the reading had to move by exactly that.
+
+- 18 music tracks: 17 measured, all at full or near-full confidence. Across their 34 shifted copies the largest error was 0.81 cents, and most were under 0.5.
+- The one not measured, a 1966 Hendrix studio take, has two tunings in it about 16 cents apart, and the estimator says so rather than pick one.
+- 27 minutes of stand-up comedy: not measured (confidence 0.00).
+- What they read, which is the case for doing this at all:
+  - six sit within 2 cents of 440 (four of them synth or keyboard productions at 440.0 to 440.2, which is the best outside check of the absolute reading these songs allow);
+  - the rest are spread from 428.7 to 447.9 Hz: sample-based tracks pitched up 25 to 31 cents, one acoustic song 45 cents down, a band 22 cents up.
+  - Today's fixed shift would leave those up to 45 cents off the target.
+- Speed: about 7 ms for each second of audio on the dev PC (a 4-minute song in under 2 seconds). The phone will be slower; step 2 measures it there.
+
+**Limits found, and still open:**
+
+- Every voice with a wide vibrato at once, as in the first made-audio vibrato test, read 14 cents off at full confidence. Real music with steady instruments under the voice is fine (the test now has that shape), but a solo voice or solo strings needs a real recording in the corpus before step 3.
+- The absolute reading on real songs is checked only by made audio and by the 440 productions above. The corpus has no real recording whose tuning is documented.
+- The corpus is 18 songs from one phone: mostly hip-hop and rock, no classical, no solo instrument.
