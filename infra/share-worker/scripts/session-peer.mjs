@@ -1,8 +1,10 @@
 // A scripted second phone for trying Sessions and Listen Together on a real phone (Sessions plan step 2, task 2).
 // Every frame is logged. Each run makes its own random Community key, so it's a new person every time.
 //
-//   node scripts/session-peer.mjs host <origin>                      makes a station and goes live with it: two songs
-//                                                                    in turn, each moved on when it ends; Ctrl-C ends it
+//   node scripts/session-peer.mjs host <origin> [name] [vibe] [dj]   makes a station and goes live with it: two songs
+//                                                                    in turn, each moved on when it ends; Ctrl-C ends it.
+//                                                                    name, vibe line and DJ name: "Scripted ab12",
+//                                                                    "Two songs, in turn" and "Script" if not given
 //   node scripts/session-peer.mjs listen <origin> <stationId> [n]    tunes in to the station's session as n listeners
 //                                                                    (1 if not given), each reacting every 10 s
 //   node scripts/session-peer.mjs private-host <origin>              a private Listen Together room (v2), guests add
@@ -12,9 +14,14 @@
 // are ones the test phone can play: change SONGS for another library.
 import { randomBytes } from "node:crypto";
 
-const [mode, origin, arg, countArg] = process.argv.slice(2);
+const [mode, origin, arg, countArg, djArg] = process.argv.slice(2);
 if (!mode || !origin) { console.log("usage: see the top of scripts/session-peer.mjs"); process.exit(2); }
-const SONGS = [{ t: "Creep", a: "Radiohead", d: 235_000 }, { t: "Dreams", a: "The Cranberries", d: 255_000 }];
+// With covers, so Live now's cards and the room have a picture (both hosts are on the Worker's COVER_HOSTS).
+const SONGS = [
+    { t: "Creep", a: "Radiohead", d: 235_000, yt: "XFkzRNyygfk", art: "https://i.ytimg.com/vi/XFkzRNyygfk/hqdefault.jpg" },
+    { t: "Dreams", a: "The Cranberries", d: 255_000, yt: "Yam5uK6e-bQ", art: "https://i.scdn.co/image/ab67616d0000b273f6325f361d7803ad0d908451" },
+];
+const NAMES = ["Maya", "Sam", "Jo", "Ana", "Lee", "Ben", "Kai", "Rin", "Tess", "Noor"];
 const EMOJI = ["❤️", "🔥", "😂", "😮", "👏", "🎶"];
 const KEY_HEADER = "X-Stash-Community-Key";
 const wsOrigin = origin.replace(/^http/, "ws");
@@ -82,18 +89,19 @@ function playInTurn(h, firstQv) {
 if (mode === "host") {
     const key = newKey();
     const tag = randomBytes(2).toString("hex");
-    const { id } = await api("POST", "/v1/community/stations", key, { name: `Scripted ${tag}`, hostName: "Script", vibe: "Two songs, in turn" });
+    const dj = djArg || "Script";
+    const { id } = await api("POST", "/v1/community/stations", key, { name: arg || `Scripted ${tag}`, hostName: dj, vibe: countArg || "Two songs, in turn" });
     const room = await api("POST", "/v1/rooms", key, { public: true, stationId: id });
     log(`STATION ${id}  ROOM ${room.code}  link ${origin}/s/${id}`);
     // A session checks the host key on every hello, resumes too.
-    playInTurn(phone(room.code, { t: "hello", v: 3, name: "Script", hostKey: room.hostKey }, "host"));
+    playInTurn(phone(room.code, { t: "hello", v: 3, name: dj, hostKey: room.hostKey }, "host"));
 } else if (mode === "listen") {
     if (!arg) { console.log("listen needs a station id"); process.exit(2); }
     const { live } = await api("GET", `/v1/community/stations/${arg}`);
     if (!live) { log("that station isn't on the air"); process.exit(1); }
     const n = Math.max(1, Math.min(50, Number(countArg ?? 1)));
     for (let i = 0; i < n; i++) {
-        const l = phone(live.room, { t: "hello", v: 3, name: `Listener ${i + 1}`, communityKey: newKey() }, `listener${i + 1}`, n > 1);
+        const l = phone(live.room, { t: "hello", v: 3, name: NAMES[i] ?? `Listener ${i + 1}`, communityKey: newKey() }, `listener${i + 1}`, n > 1);
         let e = i;
         setInterval(() => { try { l.send({ t: "react", emoji: EMOJI[e++ % EMOJI.length] }); } catch { /* closed */ } }, 10_000);
         l.onFrame = (m) => { if (m.t === "ended") { log(`listener${i + 1} ended: ${m.reason}`); if (n === 1) process.exit(0); } };

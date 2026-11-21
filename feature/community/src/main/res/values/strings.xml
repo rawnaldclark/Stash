@@ -104,4 +104,50 @@
     <string name="community_length_minutes">%d min</string>
     <string name="community_length_hours">%d h</string>
     <string name="community_length_hours_minutes">%1$d h %2$d min</string>
+
+    <!-- Sessions: live listening others join. A "station" is one person's radio; its "session" is one time on the air.
+         These show only while the server has Sessions turned on. -->
+    <!-- Home, over the round cards of the stations you follow. Shown in capitals. -->
+    <string name="sessions_your_stations">Your stations</string>
+    <!-- Home and the Sessions screen, over the stations on the air right now. Shown in capitals. -->
+    <string name="sessions_live_now">Live now</string>
+    <!-- After "Live now": how many stations are on the air -->
+    <plurals name="sessions_live_count">
+        <item quantity="one">%d station</item>
+        <item quantity="other">%d stations</item>
+    </plurals>
+    <!-- Home, beside "Live now": opens the Sessions screen, the list of every station on the air -->
+    <string name="sessions_all">All sessions</string>
+    <!-- Home, under "Live now" when no station is on the air -->
+    <string name="sessions_nobody_live">Nobody\'s live right now</string>
+    <!-- Home, over Community's posts when the Sessions rows are above them. Shown in capitals. -->
+    <string name="sessions_posts_label">Top this week</string>
+    <string name="sessions_posts_label_all">Top posts</string>
+    <!-- A small badge on the cover of a song a station is playing right now -->
+    <string name="sessions_live">LIVE</string>
+    <!-- Under a followed station's round card while it's on the air: LIVE and how many are listening. %d: listeners -->
+    <string name="sessions_live_listeners">LIVE · %d</string>
+    <!-- Under a followed station's round card when it isn't on the air and has no set hours -->
+    <string name="sessions_off_air">Off air</string>
+    <!-- On a Live now card: how many people are listening to the station, the host not counted -->
+    <plurals name="sessions_listening">
+        <item quantity="one">%d listening</item>
+        <item quantity="other">%d listening</item>
+    </plurals>
+    <!-- On a Live now card when nobody has tuned in yet -->
+    <string name="sessions_just_host">Just the host</string>
+    <!-- On a Live now card whose session has 50 listeners: nobody else can tune in -->
+    <string name="sessions_full">Full</string>
+    <!-- A small mark on the card of a station you follow -->
+    <string name="sessions_following">Following</string>
+    <!-- A station's one line about what it plays, shown in quotation marks. %1$s: the line -->
+    <string name="sessions_vibe">“%1$s”</string>
+    <!-- A station's score: up votes minus down votes. %d: the score -->
+    <string name="sessions_score">▲ %d</string>
+    <!-- TalkBack: what tapping a station on the air does -->
+    <string name="sessions_tune_in">Tune in</string>
+    <!-- TalkBack: what tapping a followed station that isn't on the air does -->
+    <string name="sessions_open_station">Open station</string>
+    <!-- Shown when you tap another station while your own is on the air -->
+    <string name="sessions_end_yours_first">End your session first</string>
 </resources>

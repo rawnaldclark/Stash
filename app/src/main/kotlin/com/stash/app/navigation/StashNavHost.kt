@@ -211,6 +211,8 @@ private fun StashNavGraph(
                         onOpenPost = { id -> navController.navigate(CommunityPostRoute(id)) },
                         onSeeAll = { navController.navigate(CommunityRoute()) },
                         onPost = posting.pick,
+                        // Sessions: a Live now card is the join, and the player opens on the room.
+                        onOpenPlayer = { playerSheet?.expand() },
                     )
                 },
                 yourListeningSection = {
