@@ -13,8 +13,8 @@
  * Sessions' stations (spec docs/superpowers/specs/2026-11-20-sessions-design.md §3). Hyphenated, because every argument
  * is passed on to commandSql and a third word would land in its `now`:
  *
- *   npm run community -- station-list [n]            stations by latest activity (standing, removed, listeners on
- *                                                    the air, followers, phone), then the sessions on the air now
+ *   npm run community -- station-list [n]            the latest n stations (50) by activity (standing, removed,
+ *                                                    listeners on the air, followers, phone), then the sessions on air
  *   npm run community -- station-remove <stationId>  take a station down; its session ends within a minute (the room's
  *                                                    next directory write is refused)
  *   npm run community -- station-restore <stationId> undo your removal or a vote attack (drops its downvotes and
@@ -58,9 +58,9 @@ function stationId(arg) {
     return arg;
 }
 
-/** A list's count: 1 to 200, 20 when not given. */
-function listCount(arg) {
-    const count = arg ?? "20";
+/** A list's count: 1 to 200, [fallback] when not given. */
+function listCount(arg, fallback) {
+    const count = arg ?? fallback;
     const n = COUNT.test(count) ? Number.parseInt(count, 10) : 0;
     if (!(n >= 1 && n <= 200)) throw new Error("list takes a count from 1 to 200");
     return n;
@@ -74,7 +74,7 @@ export function commandSql(command, arg, now = Date.now()) {
     if (!Number.isSafeInteger(now)) throw new Error(USAGE);
     switch (command) {
         case "list": {
-            const n = listCount(arg);
+            const n = listCount(arg, "20");
             const cols = `id, kind, title, poster_name, up, down, ((up - down) <= ${HIDE_AT} AND vouched = 0) AS hidden, vouched, removed_by AS removed,
                 ROUND((${now} - created_at) / 3600000.0, 1) AS age_h, substr(poster, 1, 8) AS poster`;
             return [`SELECT ${cols} FROM posts ORDER BY created_at DESC LIMIT ${n}`,
@@ -117,7 +117,7 @@ export function commandSql(command, arg, now = Date.now()) {
                 `SELECT COUNT(*) AS downvotes_left, (SELECT COUNT(*) FROM posts WHERE removed_at IS NULL AND (up - down) <= 0) AS posts_at_or_below_0 FROM votes WHERE value = -1`].join(";\n");
         }
         case "station-list": {
-            const n = listCount(arg);
+            const n = listCount(arg, "50");
             const fresh = `l.seen_at > ${now - LIVE_STALE_MS}`;
             const cols = `s.id, s.name, s.host_name, s.up, s.down, ((s.up - s.down) <= ${HIDE_AT} AND s.vouched = 0) AS hidden, s.vouched,
                 s.removed_by AS removed, s.auto_live, ROUND((${now} - s.created_at) / 3600000.0, 1) AS age_h,

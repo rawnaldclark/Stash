@@ -6,13 +6,13 @@
  */
 import { cleanDoc, cleanTrackLink, validateDoc, validateTrackLink, validEditKey, MAX_BODY_BYTES, MAX_TRACK_BODY_BYTES } from "./validate.js";
 import { freeId, readMix, sameHex, sha256Hex, writeMix, writeTombstone } from "./store.js";
-import { APP_LINK_ORIGIN, assetLinks, landingPage, messagePage, mixPage, roomPage, songPage } from "./pages.js";
+import { APP_LINK_ORIGIN, assetLinks, landingPage, messagePage, mixPage, roomPage, songPage, stationPage } from "./pages.js";
 import { legacyTrackUrl, publicTrack, readTrack, saveTrack, trackFromQuery, writeTrack } from "./tracks.js";
 import { legacyArt, songLinkArt } from "./art.js";
 import { base64url, randomCode } from "./listen-room.js";
 import { ip, json, limitKey, readCapped } from "./http.js";
 import { cleanup, communityRoute } from "./community.js";
-import { cleanupStations } from "./stations-api.js";
+import { cleanupStations, stationForPage } from "./stations-api.js";
 import { pruneDaily, takeDaily, untilTomorrow } from "./quota.js";
 export { limitKey }; // test/hardening.test.js imports it from here
 
@@ -27,6 +27,8 @@ const SITE_HOST = "stashfm.app";
 /** Room codes: 8 of the 32 unambiguous symbols in listen-room.js (no 0/O, 1/I). */
 const ROOM_API = /^\/v1\/rooms\/([A-HJ-NP-Z2-9]{8})(\/ws)?$/;
 const ROOM_PAGE = /^\/l\/([A-HJ-NP-Z2-9]{8})$/;
+/** Sessions' station pages: ids as Community's, 8 case-sensitive letters or digits (store.js newId). */
+const STATION_PAGE = /^\/s\/([A-Za-z0-9]{8})$/;
 /** Uppercases the code segment only, so hand-typed lowercase links work and `/ws` stays as is. */
 const upperCode = (path) => path.replace(/^(\/v1\/rooms\/|\/l\/)([^/]+)/, (_, head, code) => head + code.toUpperCase());
 
@@ -115,6 +117,15 @@ export async function handle(request, env, ctx) {
         if (!(await joinAllowed(request, env))) return html(messagePage("Slow down", "Too many requests. Try again in a minute.", inviteUrl), 429);
         const pv = await roomPreview(env.ROOMS.get(env.ROOMS.idFromName(invite[1])));
         return pv ? html(roomPage(pv, inviteUrl)) : html(messagePage("Session ended", "This listening session has ended.", inviteUrl), 404);
+    }
+    const station = STATION_PAGE.exec(pagePath);
+    if (method === "GET" && station) {
+        if (!(await env.COMMUNITY_READ_RL.limit({ key: ip(request, env) })).success) {
+            return html(messagePage("Slow down", "Too many requests. Try again in a minute.", here), 429);
+        }
+        const view = await stationForPage(env, station[1], Date.now());
+        return view ? html(stationPage(view, here))
+            : html(messagePage("This station isn't available", "It may have been taken down, or deleted after a week off the air.", here), 404);
     }
     if (method === "GET" && path === "/" && url.hostname === SITE_HOST) return html(landingPage(`${url.origin}/`));
     return json({ error: "not_found" }, 404);

@@ -161,6 +161,33 @@ export function roomPage(pv, pageUrl) {
     });
 }
 
+/**
+ * GET /s/{id}: a station's page (Sessions spec 2026-11-20 §3), built like the invite page. [view] is stationForPage's
+ * answer. The room's code stays off the page: "Open in Stash" hands the app the station, and the app joins.
+ */
+export function stationPage({ station, autoLive, hours, live }, pageUrl) {
+    const listening = live && [`${live.listeners} listening`, live.full && "full", live.paused && "paused"].filter(Boolean).join(" · ");
+    const onAir = live ? `Live now · ${listening}` : hours ? `On the air: ${hours}` : null;
+    const status = onAir ?? (autoLive === "always"
+        ? `Not live right now. It goes live whenever ${station.hostName ?? "its host"} plays music in Stash.`
+        : "Not live right now.");
+    const song = live?.track && [live.track.t, live.track.a].filter(Boolean).join(" · ");
+    return shell({
+        title: station.name,
+        description: [onAir, station.hostName && `Hosted by ${station.hostName}`, "A station on Stash"].filter(Boolean).join(" · "),
+        image: cover(cleanCover(live?.track?.art)),
+        imageAlt: song ? `Album art for ${song}` : undefined,
+        pageUrl,
+        open: true,
+        body: `<h1>${esc(station.name)}</h1>`
+            + (station.hostName ? `<p class="artist">Hosted by ${esc(station.hostName)}</p>` : "")
+            + (station.vibe ? `<p class="muted">${esc(station.vibe)}</p>` : "")
+            + `<p>${esc(status)}</p>`
+            + (song ? `<p class="muted">Now playing: ${esc(song)}</p>` : ""),
+        foot: "Stations are live listening anyone can join, on Stash, a music player for Android.",
+    });
+}
+
 /** GET / on stashfm.app: a placeholder until the website exists. */
 export function landingPage(pageUrl) {
     const line = "A music player for Android: your Spotify and YouTube Music library on your phone. No account, no subscription, no ads.";

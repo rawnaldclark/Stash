@@ -63,6 +63,16 @@ test("the station cleanup leaves posts alone", async () => {
     assert.equal(await e.COMMUNITY_DB.prepare("SELECT COUNT(*) AS n FROM posts").first("n"), 1);
 });
 
+test("with Sessions off the cleanup deletes nothing and reads no station table (they may not exist yet)", async () => {
+    const e = sess({ SESSIONS: "0" });
+    await seedStation(e, { id: "IDLE0001", created: Date.now() - 8 * DAY });
+    await cleanupStations(e, Date.now());
+    assert.deepEqual(await ids(e), ["IDLE0001"]);
+    const bare = sess({ SESSIONS: "0" });
+    bare.COMMUNITY_DB.db.exec("DROP TABLE live; DROP TABLE station_follows; DROP TABLE station_heard; DROP TABLE station_votes; DROP TABLE stations");
+    await cleanupStations(bare, Date.now());
+});
+
 test("the daily cron runs the station cleanup next to the post cleanup", async () => {
     const e = sess();
     await seedStation(e, { id: "IDLE0001", created: Date.now() - 8 * DAY });

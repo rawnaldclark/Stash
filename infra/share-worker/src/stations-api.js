@@ -10,7 +10,7 @@ import {
     NO_STORE, VOTES_PER_NETWORK, VOTE_ROWS_PER_NETWORK, gone, hiddenByVotes, identity, network, networkHash, notAllowed, rateLimited,
     readJson,
 } from "./community-shared.js";
-import { cleanStationFields, nextWindow, summaryOfStation } from "./stations.js";
+import { cleanStationFields, hoursOf, nextWindow, summaryOfStation } from "./stations.js";
 
 const DAY = 86_400_000;
 /** A station that hasn't gone live for this long is deleted with its votes (owner, 2026-11-20). */
@@ -385,12 +385,17 @@ async function upcoming(request, env, now) {
  *   - directory rows whose room stopped writing (reads skip them already; this just tidies);
  *   - stations not on the air for STATION_IDLE_MS (one never live counts from when it was made);
  *   - stations the owner removed more than a day ago (restorable until then). removed_at comes from the PC running the
- *     command line, so the station's own last time on the air, stamped here, must be a day old too: a PC clock days
- *     behind can't cut the restore window short;
+ *     command line, so the station's own last time on the air, stamped by the Worker, must be a day old too: a PC clock
+ *     days behind can't cut the restore window short of a station that was on the air;
  * with their votes, heard marks, follows and live rows.
+ *
+ * With SESSIONS off it does nothing and reads no table: the Worker may be deployed before migration 0007 is applied,
+ * and no host should lose a station while nobody can go live. (Off for over a week, every station looks idle when it
+ * comes back on: README "Sessions".)
  */
 export async function cleanupStations(env, now) {
-    // ponytail: one DELETE per table, as the post cleanup; batch by id ranges if it ever gets near D1's limits.
+    if (!sessionsOn(env)) return;
+    // One DELETE per table, as the post cleanup does; split by id ranges if it ever nears D1's limits.
     const db = env.COMMUNITY_DB;
     const doomed = `SELECT id FROM stations WHERE COALESCE(last_live_at, created_at) < ?1
         OR (removed_at IS NOT NULL AND removed_at < ?2 AND COALESCE(last_live_at, created_at) < ?2)`;
@@ -401,4 +406,21 @@ export async function cleanupStations(env, now) {
             .map((table) => db.prepare(`DELETE FROM ${table} WHERE station_id IN (${doomed})`).bind(...args)),
         db.prepare(`DELETE FROM stations WHERE id IN (${doomed})`).bind(...args),
     ]);
+}
+
+/**
+ * The station page's view (GET /s/{id}, src/pages.js stationPage): {station (a summary, no caller), autoLive, hours (the
+ * schedule as a line, only when on one), live (as GET stations/{id}, or null)}. Null when Sessions is off or the station
+ * is missing, removed, hidden by votes or its phone blocked: the page then says it isn't available.
+ */
+export async function stationForPage(env, id, now) {
+    if (!sessionsOn(env)) return null;
+    const row = await env.COMMUNITY_DB.prepare(
+        `SELECT ${COLUMNS}, l.room, l.track, l.listeners, l.paused
+         FROM stations s LEFT JOIN live l ON l.station_id = s.id AND l.seen_at > ?2
+         WHERE s.id = ?1 AND ${SHOWN_SQL}`,
+    ).bind(id, now - LIVE_STALE_MS).first();
+    if (!row) return null;
+    const hours = row.auto_live === "schedule" ? hoursOf(scheduleOf(row)) : null;
+    return { station: summaryOfStation(row, null), autoLive: row.auto_live, hours, live: liveOf(row) };
 }

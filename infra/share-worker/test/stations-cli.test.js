@@ -116,6 +116,12 @@ test("every station command's SQL fits one quoted --command line, with nothing l
     }
 });
 
+test("station-list shows the latest 50 unless told otherwise; list keeps its 20", () => {
+    assert.match(commandSql("station-list"), /DESC LIMIT 50;/);
+    assert.match(commandSql("station-list", "5"), /DESC LIMIT 5;/);
+    assert.match(commandSql("list"), /DESC LIMIT 20;/);
+});
+
 test("bad station arguments never reach the SQL", () => {
     assert.throws(() => commandSql("station-remove", "x'; DROP TABLE stations; --"));
     assert.throws(() => commandSql("station-block", "short"));

@@ -155,3 +155,49 @@ export function summaryOfStation(row, me) {
         } : {}),
     };
 }
+
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+/** "09:00" → "9:00": the hour without its leading zero, on a 24-hour clock. */
+const clock = (hhmm) => `${Number(hhmm.slice(0, 2))}:${hhmm.slice(3)}`;
+
+/** Sorted ISO days as people say them: "Every day", "Weekdays", "Weekends", "Mon–Wed, Fri", "Mon, Tue". */
+function daysOf(days) {
+    const key = days.join("");
+    if (key === "1234567") return "Every day";
+    if (key === "12345") return "Weekdays";
+    if (key === "67") return "Weekends";
+    const runs = [];
+    for (const d of days) {
+        const run = runs.at(-1);
+        if (run && d === run.at(-1) + 1) run.push(d);
+        else runs.push([d]);
+    }
+    return runs.flatMap((r) => (r.length >= 3 ? [`${DAY_NAMES[r[0] - 1]}–${DAY_NAMES[r.at(-1) - 1]}`] : r.map((d) => DAY_NAMES[d - 1])))
+        .join(", ");
+}
+
+/** An IANA zone as people say it: "New York time", "Buenos Aires time", "UTC". */
+function zoneName(tz) {
+    if (/^(Etc\/)?(UTC|GMT|Universal|Zulu)$/.test(tz)) return "UTC";
+    return `${tz.split("/").at(-1).replaceAll("_", " ")} time`;
+}
+
+/**
+ * A clean schedule as one line for the station page, in the station's own time zone: "Weekdays 9:00–17:00 (New York
+ * time)". Days with the same hours are grouped; groups go in week order, then by start. Null without windows.
+ */
+export function hoursOf(schedule) {
+    if (!schedule?.windows?.length) return null;
+    const groups = new Map(); // "09:00-17:00" (zero-padded, so it sorts) → its days
+    for (const w of schedule.windows) {
+        const key = `${w.start}-${w.end}`;
+        groups.set(key, [...(groups.get(key) ?? []), w.day]);
+    }
+    const lines = [...groups].map(([key, days]) => {
+        const sorted = [...new Set(days)].sort((a, b) => a - b);
+        const [start, end] = key.split("-");
+        return { first: sorted[0], key, text: `${daysOf(sorted)} ${clock(start)}–${clock(end)}` };
+    });
+    lines.sort((a, b) => a.first - b.first || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    return `${lines.map((l) => l.text).join("; ")} (${zoneName(schedule.tz)})`;
+}

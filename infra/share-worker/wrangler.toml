@@ -14,13 +14,15 @@ compatibility_date = "2026-09-01"
 workers_dev = true
 # The route needs a proxied DNS record for stashfm.app before it serves anything (README "Deploy").
 # When the stashfm.app website ships, the site takes `stashfm.app/*` and this Worker keeps only its own paths:
-#   stashfm.app/m/*  stashfm.app/t*  stashfm.app/l/*  stashfm.app/v1/*  stashfm.app/.well-known/assetlinks.json
+#   stashfm.app/m/*  stashfm.app/t*  stashfm.app/l/*  stashfm.app/s/*  stashfm.app/v1/*  stashfm.app/.well-known/assetlinks.json
 # (`/t*` also catches any site page starting with /t; if that matters, use `stashfm.app/t` plus `stashfm.app/t/*`,
 # after checking that `stashfm.app/t` still matches `/t?…` links, since route patterns can't carry a query.)
+# `/s/*` (Sessions' station pages) was free when added, 2026-11-21: the site answered /s/… with its own 404.
 routes = [
   { pattern = "stashfm.app/m/*", zone_name = "stashfm.app" },
   { pattern = "stashfm.app/t*", zone_name = "stashfm.app" },
   { pattern = "stashfm.app/l/*", zone_name = "stashfm.app" },
+  { pattern = "stashfm.app/s/*", zone_name = "stashfm.app" },
   { pattern = "stashfm.app/v1/*", zone_name = "stashfm.app" },
   { pattern = "stashfm.app/.well-known/assetlinks.json", zone_name = "stashfm.app" },
 ]
