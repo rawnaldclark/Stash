@@ -12,9 +12,10 @@ import { validEditKey } from "./validate.js";
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const MSG_PER_SECOND = 20;
 /**
- * `add` and `unqueue` each rewrite the stored room and send the whole queue to every phone. The burst covers real use
- * (a 200-song selection is 4 messages, a few quick swipes); a client looping them is then held to the steady rate.
- * Not `suggest`: an older app sends one per song, and the room's own 3-waiting limit already holds it.
+ * `add` and `unqueue` each rewrite the stored room and send the whole queue to every phone, and so does a session's
+ * `request` with Auto-accept on. The burst covers real use (a 200-song selection is 4 messages, a few quick swipes); a
+ * client looping them is then held to the steady rate. Not `suggest`: an older app sends one per song, and the room's
+ * own 3-waiting limit already holds it.
  */
 export const EDIT_BURST = 10;
 export const EDITS_PER_SECOND = 2;
@@ -106,9 +107,12 @@ export class ListenRoom {
             if (r.reject) ws.close(r.reject.code, r.reject.reason);
             return;
         }
-        if ((msg.t === "add" || msg.t === "unqueue") && this.overEditLimit(ws)) {
-            // Ignored, not closed. An add is still answered: the sender's app is waiting to say what became of it.
+        // A session's `request` too: with Auto-accept on, each one is an add, and sends every phone the queue.
+        if ((msg.t === "add" || msg.t === "unqueue" || msg.t === "request") && this.overEditLimit(ws)) {
+            // Ignored, not closed. An add or a request is still answered: the sender's app is waiting to say what
+            // became of it.
             if (msg.t === "add") this.send(from, { t: "added", by: from, next: msg.next === true, count: 0 });
+            if (msg.t === "request") this.send(from, { t: "requestAnswer", state: "full" });
             return;
         }
         // A suggestion's id; an `add` may become suggestions too (guest adds off, or an older host); a session's request.

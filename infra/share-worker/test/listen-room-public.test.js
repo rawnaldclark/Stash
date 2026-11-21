@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ListenRoom } from "../src/listen-room.js";
+import { ListenRoom, EDIT_BURST, EDITS_PER_SECOND } from "../src/listen-room.js";
 import { LIVE_BEAT_MS, LIVE_GAP_MS } from "../src/room.js";
 import { sha256Hex } from "../src/store.js";
 import { call } from "./community-helpers.js";
@@ -226,4 +226,23 @@ test("directory writes go one at a time, in the room's order: a slow write can't
     await Promise.all([first, second]);
     assert.equal(calls, 2);
     assert.deepEqual(JSON.parse(liveRows(e)[0].track), { t: "Xtal", a: "Aphex Twin" });
+});
+
+test("requests share the edit limit with add: with Auto-accept on each one sends 54 phones the queue", async () => {
+    const clock = { t: 1_000 };
+    const { ctx, room } = await openSession(clock);
+    const host = await connect(ctx, room, { name: "Rawn", hostKey: "KEY" });
+    const sam = await connect(ctx, room, { name: "Sam", communityKey: communityKey(3) });
+    await room.webSocketMessage(host, JSON.stringify({ t: "autoAccept", on: true }));
+    const request = (t) => room.webSocketMessage(sam, JSON.stringify({ t: "request", track: { t, a: "A" } }));
+    const queues = () => host.sent.filter((m) => m.t === "queue").length;
+    for (let i = 0; i < EDIT_BURST; i++) await request(`S${i}`);
+    assert.equal(queues(), EDIT_BURST);
+    await request("over");
+    assert.equal(sam.closed, false);
+    assert.equal(queues(), EDIT_BURST, "nobody gets another whole queue");
+    assert.deepEqual(sam.sent.at(-1), { t: "requestAnswer", state: "full" }, "the requester still hears");
+    clock.t += 1_000 / EDITS_PER_SECOND;
+    await request("later");
+    assert.equal(queues(), EDIT_BURST + 1, "and it comes back at the steady rate");
 });
