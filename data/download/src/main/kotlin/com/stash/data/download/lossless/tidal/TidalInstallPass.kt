@@ -336,8 +336,12 @@ class TidalInstallPass internal constructor(
     }
 
     private suspend fun post(url: String, body: String): Answer = withContext(Dispatchers.IO) {
+        val target = url.toHttpUrlOrNull() ?: return@withContext Answer.Failed
+        // An `http:` add-on is only the debug override's local one (the signed config names https only, and a release
+        // build's network security config refuses cleartext): the shared client speaks TLS only.
+        val http = TidalDebugSettings.clientFor(http, target)
         val request = Request.Builder()
-            .url(url)
+            .url(target)
             .header("User-Agent", userAgent)
             .post(body.toRequestBody(JSON_TYPE))
             .build()
