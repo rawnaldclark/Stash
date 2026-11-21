@@ -48,9 +48,16 @@ export class ListenRoom {
     async fetch(request) {
         const url = new URL(request.url);
         if (url.pathname === "/init" && request.method === "POST") {
-            const { code, hostName, keyHash } = await request.json();
-            const r = await this.apply({ type: "create", code, hostName, keyHash });
+            // With stationId, a session (the Worker checked the station is the host's own).
+            const { code, hostName, keyHash, stationId } = await request.json();
+            const r = await this.apply({ type: "create", code, hostName, keyHash, stationId });
             return new Response(null, { status: r.reject ? 409 : 201 });
+        }
+        if (url.pathname === "/station-gone" && request.method === "POST") {
+            // The session's station was deleted (src/stations-api.js). Only the Worker reaches this: it forwards /ws alone.
+            const { reason } = await request.json();
+            await this.apply({ type: "stationGone", reason });
+            return new Response(null, { status: 204 });
         }
         const state = (await this.ctx.storage.get("room")) ?? null;
         if (url.pathname === "/preview") return state ? Response.json(preview(state)) : new Response(null, { status: 404 });

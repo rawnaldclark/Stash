@@ -12,7 +12,7 @@ import { legacyArt, songLinkArt } from "./art.js";
 import { base64url, randomCode } from "./listen-room.js";
 import { ip, json, limitKey, readCapped } from "./http.js";
 import { cleanup, communityRoute } from "./community.js";
-import { cleanupStations, stationForPage } from "./stations-api.js";
+import { cleanupStations, sessionOpening, stationForPage } from "./stations-api.js";
 import { pruneDaily, takeDaily, untilTomorrow } from "./quota.js";
 export { limitKey }; // test/hardening.test.js imports it from here
 
@@ -270,14 +270,24 @@ async function createRoom(request, env, url) {
     if (!(await env.ROOM_RL.limit({ key: ip(request, env) })).success) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
     const { body, tooBig } = await readBody(request);
     if (tooBig) return json({ error: "too_large" }, 413);
-    const hostName = typeof body?.hostName === "string" ? body.hostName.trim().slice(0, 40) || undefined : undefined;
+    // `public: true` opens a session (Sessions): the caller's own station on the air, its link the station's page.
+    // Anything else is a private Listen Together room, exactly as before.
+    const session = body?.public === true;
+    let stationHostName;
+    if (session) {
+        const opening = await sessionOpening(request, env, body.stationId);
+        if (opening.refusal) return opening.refusal;
+        stationHostName = opening.hostName;
+    }
+    const hostName = (typeof body?.hostName === "string" ? body.hostName.trim().slice(0, 40) || undefined : undefined) ?? stationHostName;
     const hostKey = base64url(crypto.getRandomValues(new Uint8Array(32)));
     const keyHash = await sha256Hex(hostKey);
     for (let i = 0; i < 5; i++) {
         const code = randomCode();
         const stub = env.ROOMS.get(env.ROOMS.idFromName(code));
-        const r = await stub.fetch(new Request("https://room/init", { method: "POST", body: JSON.stringify({ code, hostName, keyHash }) }));
-        if (r.status === 201) return json({ code, hostKey, url: `${url.origin}/l/${code}` }, 201);
+        const init = session ? { code, hostName, keyHash, stationId: body.stationId } : { code, hostName, keyHash };
+        const r = await stub.fetch(new Request("https://room/init", { method: "POST", body: JSON.stringify(init) }));
+        if (r.status === 201) return json({ code, hostKey, url: session ? `${url.origin}/s/${body.stationId}` : `${url.origin}/l/${code}` }, 201);
     }
     return json({ error: "unavailable" }, 503, { "Retry-After": "2" });
 }

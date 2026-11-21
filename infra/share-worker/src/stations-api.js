@@ -191,7 +191,9 @@ async function deleteStation(request, env, id) {
     const { who, refusal } = await writer(request, env);
     if (refusal) return refusal;
     const db = env.COMMUNITY_DB;
-    const row = await db.prepare("SELECT owner, removed_at FROM stations WHERE id = ?1").bind(id).first();
+    const row = await db.prepare(
+        "SELECT s.owner, s.removed_at, l.room FROM stations s LEFT JOIN live l ON l.station_id = s.id WHERE s.id = ?1",
+    ).bind(id).first();
     // A station the owner removed is gone to its phone too, as a removed post is: deleting it to start a new one at
     // once would skip the day it can be restored in. The cleanup deletes it after that day.
     if (!row || row.removed_at !== null) return gone();
@@ -199,7 +201,46 @@ async function deleteStation(request, env, id) {
     await db.batch(["station_votes", "station_heard", "station_follows", "live"]
         .map((t) => db.prepare(`DELETE FROM ${t} WHERE station_id = ?1`).bind(id))
         .concat(db.prepare("DELETE FROM stations WHERE id = ?1").bind(id)));
+    // Its session ends now, not at its next directory write a minute from now.
+    if (row.room) await stationGone(env, row.room, "station_removed");
     return new Response(null, { status: 204 });
+}
+
+/**
+ * Tells session [room] its station went off the air (src/room.js stationGone): it ends, its listeners told [reason].
+ * A room that already ended, or a private one, ignores it. Best effort: a session that misses it ends at its next
+ * directory write anyway, finding its station gone.
+ */
+async function stationGone(env, room, reason) {
+    try {
+        const stub = env.ROOMS.get(env.ROOMS.idFromName(room));
+        await stub.fetch(new Request("https://room/station-gone", { method: "POST", body: JSON.stringify({ reason }) }));
+    } catch (e) {
+        console.error(`station-gone ${room}: ${e?.message ?? e}`);
+    }
+}
+
+/**
+ * Whether the caller may open a session of station [stationId] (POST /v1/rooms with `public: true`, src/index.js):
+ * Sessions on, a valid key, and the caller's own station, which others may see: not removed, its phone not blocked,
+ * nor hidden by votes (its session would leave the directory at its first song). Answers {refusal}, or {hostName}: the
+ * station's DJ name, for the room when the app sends none.
+ */
+export async function sessionOpening(request, env, stationId) {
+    if (!sessionsOn(env)) return { refusal: json({ error: "sessions_off" }, 503) };
+    const who = await identity(request);
+    if (!who.id) return { refusal: json({ error: "bad_key" }, 401) };
+    if (typeof stationId !== "string" || !/^[A-Za-z0-9]{8}$/.test(stationId)) return { refusal: json({ error: "bad_request" }, 400) };
+    const row = await env.COMMUNITY_DB.prepare(
+        `SELECT s.owner, s.host_name, s.removed_at, s.up, s.down, s.vouched,
+                EXISTS (SELECT 1 FROM blocked b WHERE b.poster = ?2) AS blocked
+         FROM stations s WHERE s.id = ?1`,
+    ).bind(stationId, who.id).first();
+    if (!row || row.removed_at !== null) return { refusal: gone() };
+    if (row.owner !== who.id) return { refusal: json({ error: "not_yours" }, 403) };
+    if (row.blocked) return { refusal: json({ error: "blocked" }, 403) };
+    if (hiddenByVotes(row)) return { refusal: gone() };
+    return { hostName: row.host_name ?? undefined };
 }
 
 /** Station `s`'s counted votes, the per-network cap applied: the post recount (src/community.js RECOUNT_SQL) on stations. */
