@@ -58,6 +58,8 @@ class StationSessionTest {
     /** The station's room on the air, as its page says; every ask counted. */
     var liveRoom: () -> String? = { null }
     var liveRoomAsks = 0
+    /** Each piece of listening time given to the station, as (station, ms). */
+    val listened = mutableListOf<Pair<String, Long>>()
 
     fun TestScope.session() = ListenTogetherSession(
         scope = backgroundScope,
@@ -71,6 +73,7 @@ class StationSessionTest {
         clock = { testScheduler.currentTime },
         communityKey = { keyReads++; key },
         stationRoom = { station -> check(station == STATION); liveRoomAsks++; liveRoom() },
+        stationListened = { station, ms -> listened += station to ms },
     ).also { it.start() }
 
     /** A session as its room describes it: v 3, Maya hosting ([host] "h"), this phone "me". */
@@ -664,6 +667,61 @@ class StationSessionTest {
         receive(ServerMessage.Ended("max_age"))
         assertThat(notices).containsExactly("Session ended")
         assertThat(liveRoomAsks).isEqualTo(0)
+    }
+
+    // ── A listener's time toward the vote (task 13) ───────────────────────────
+
+    @Test fun `a listener's time counts only while on air, every 15 s and when the session ends`() = runTest {
+        listening(state(timeline = RoomTimeline(0, 0, true)))
+        player.events!!.onReady(); runCurrent() // on air from 0 s
+        advanceTimeBy(15_000); runCurrent()
+        assertThat(listened).containsExactly(STATION to 15_000L)
+        player.interceptor!!.onPause(); runCurrent() // paused here at 15 s
+        advanceTimeBy(15_000); runCurrent() // the report at 30 s has nothing to give
+        assertThat(listened).hasSize(1)
+        controller.rejoin(); runCurrent() // on air again at 30 s
+        advanceTimeBy(5_000); runCurrent()
+        controller.send(Command.Leave); runCurrent() // the last 5 s, as it ends
+        assertThat(listened).containsExactly(STATION to 15_000L, STATION to 5_000L).inOrder()
+    }
+
+    @Test fun `time while reconnecting doesn't count`() = runTest {
+        listening(state(timeline = RoomTimeline(0, 0, true)))
+        player.events!!.onReady(); runCurrent()
+        advanceTimeBy(5_000); runCurrent()
+        connection.incoming.trySend(RoomEvent.Reconnecting); runCurrent()
+        advanceTimeBy(20_000); runCurrent()
+        assertThat(listened).containsExactly(STATION to 5_000L)
+    }
+
+    @Test fun `a host's time never counts, nor anything in a private room`() = runTest {
+        coEvery { api.createSession(STATION, "Rawn", KEY) } returns created()
+        session()
+        goLiveAgain()
+        player.events!!.onReady(); runCurrent()
+        advanceTimeBy(60_000); runCurrent()
+        controller.send(Command.Leave); runCurrent()
+        controller.send(Command.Join("ABCDEFGH")); runCurrent()
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("me", "tok", state(timeline = RoomTimeline(0, 0, true), session = null).copy(v = 2)))
+        player.events!!.onReady(); runCurrent()
+        advanceTimeBy(60_000); runCurrent()
+        controller.send(Command.Leave); runCurrent()
+        assertThat(listened).isEmpty()
+    }
+
+    @Test fun `a move gives what was counted, and the newer session counts on`() = runTest {
+        liveRoom = { "M8RB3QYN" }
+        listening(state(timeline = RoomTimeline(0, 0, true)))
+        player.events!!.onReady(); runCurrent()
+        advanceTimeBy(10_000); runCurrent()
+        receive(ServerMessage.Ended("replaced"))
+        assertThat(listened).containsExactly(STATION to 10_000L)
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("me", "tok2", state(timeline = RoomTimeline(0, 0, true))))
+        player.events!!.onReady(); runCurrent()
+        advanceTimeBy(15_000); runCurrent()
+        assertThat(listened).containsExactly(STATION to 10_000L, STATION to 15_000L).inOrder()
     }
 
     companion object {

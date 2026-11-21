@@ -4,6 +4,8 @@
          %1$s: the host's name. -->
     <string name="listen_suggest_to">Suggest to %1$s</string>
     <string name="listen_suggest_to_host">Suggest to the host</string>
+    <!-- Sessions: a listener's "Play next" in a menu while listening to a station's session. It asks the host for the song. -->
+    <string name="listen_request">Request</string>
 
     <!-- The Online/Offline sheet (opened from the mode chip on Home, Sync, album and artist pages). One short line under
          each tile's word says what the mode does. Online: everything plays; songs that aren't downloaded stream.

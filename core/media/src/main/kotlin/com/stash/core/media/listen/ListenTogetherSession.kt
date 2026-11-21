@@ -60,6 +60,8 @@ class ListenTogetherSession(
     private val communityKey: suspend () -> String? = { null },
     /** The room code of station [String]'s session on the air now (its page's `live.room`); null when none, or on any failure. */
     private val stationRoom: suspend (String) -> String? = { null },
+    /** [Long] more ms this phone listened in station [String]'s sessions, toward the 2 minutes a vote needs (StationHeard). */
+    private val stationListened: suspend (String, Long) -> Unit = { _, _ -> },
 ) {
     private var connection: RoomConnection? = null
     /**
@@ -89,6 +91,10 @@ class ListenTogetherSession(
      */
     private var moving = false
     private var moveJob: Job? = null
+    /** [clock] when this phone's listening last began to count (a session's listener, [onAir]), or null while it doesn't. */
+    private var listeningSince: Long? = null
+    /** Listening time counted and not yet given to [stationListened]. */
+    private var unreportedMs = 0L
     /**
      * A host Load the room hasn't got yet: the first one (sent on the welcome) or one dropped while the socket
      * was down. Built on the flush, so the first Load reads where the song is then, not before the handshake.
@@ -326,6 +332,15 @@ class ListenTogetherSession(
         val session = CoroutineScope(scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job]))
         sessionScope = session
         val key = listenerKey
+        // A listener's time toward the station's vote leaves every 15 s, and the rest as the room is let go (dropRoom).
+        if (inSession && !asHost) {
+            session.launch {
+                while (true) {
+                    delay(LISTENING_REPORT_MS)
+                    reportListening()
+                }
+            }
+        }
         val conn = connector.connect(code, session) {
             if (inSession) {
                 // A session checks who's knocking on every hello, a resume's too: the host by its key, a listener by the
@@ -474,6 +489,35 @@ class ListenTogetherSession(
         if (stationId == null) return false
         val t = timeline ?: return false
         return t.playing && !pausedLocally && !reconnecting && t.trackKey == readyKey && readyKey != unavailableKey
+    }
+
+    /**
+     * Adds the time since the last look to [unreportedMs] if it was counting, and starts or stops the count by what the
+     * phone does now. Called on every [publish] (each change [onAir] reads publishes) and before each report. Only a
+     * session's listeners and co-hosts count: the host's own station needs no vote from it, and a private room has none.
+     */
+    private fun countListening() {
+        val now = clock()
+        listeningSince?.let { unreportedMs += now - it }
+        listeningSince = if (!isHost && onAir()) now else null
+    }
+
+    /** Gives the station what has been counted. On the service's scope, so the last of it outlives the room. */
+    private fun reportListening() {
+        countListening()
+        val station = stationId ?: return
+        val ms = unreportedMs
+        if (ms <= 0) return
+        unreportedMs = 0
+        scope.launch {
+            try {
+                stationListened(station, ms)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "listening time not kept", e)
+            }
+        }
     }
 
     private suspend fun applyState(s: RoomState) {
@@ -1334,6 +1378,9 @@ class ListenTogetherSession(
      * [pausedLocally] stays too: a listener who paused here is still paused after a move.
      */
     private fun dropRoom() {
+        // The rest of a listener's time, while the room it was counted in is still known.
+        reportListening()
+        listeningSince = null
         // Close before cancelling: RoomClient runs in sessionScope and aborts its socket when that is cancelled,
         // which would drop the End or MakeHost frame queued a moment ago.
         connection?.close()
@@ -1383,6 +1430,7 @@ class ListenTogetherSession(
 
     private fun publish() {
         intentChanged()
+        countListening()
         val code = code ?: return
         val url = url ?: return
         val r = room
@@ -1447,6 +1495,8 @@ class ListenTogetherSession(
         /** A move to the station's newer session asks for its room every 3 s for 30 s (11 asks, the first at once). */
         const val MOVE_ASK_GAP_MS = 3_000L
         const val MOVE_ASKS = 11
+        /** How often a listener's time goes to StationHeard, which keeps it per station. */
+        const val LISTENING_REPORT_MS = 15_000L
         const val MAX_UNPLAYABLE_IN_A_ROW = 3
         const val END_SLOP_MS = 1_000L
         /** One guest's songs waiting in the room's queue (owner decision 7); keep in sync with MAX_GUEST_WAITING in room.js. */
