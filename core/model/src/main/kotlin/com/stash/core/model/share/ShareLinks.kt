@@ -13,17 +13,30 @@ object ShareConfig {
     const val LEGACY_BASE_URL = "https://stash-share.rawnaldclark.workers.dev"
 
     /**
-     * Where share API calls go, in order. The old host is tried only when a request never reached stashfm.app (no
-     * DNS answer, refused, TLS failed): DNS filters often block newly registered domains for weeks. Links are still
-     * built on [BASE_URL], whichever host answered.
+     * The live Worker's hosts, in order. The old host is tried only when a request never reached stashfm.app (no DNS
+     * answer, refused, TLS failed): DNS filters often block newly registered domains for weeks. Links are still built
+     * on [BASE_URL], whichever host answered.
      */
-    val API_BASE_URLS: List<String> = listOf(BASE_URL, LEGACY_BASE_URL)
+    val PRODUCTION_BASE_URLS: List<String> = listOf(BASE_URL, LEGACY_BASE_URL)
+
+    /**
+     * Debug builds only: a share Worker on the developer's PC (`share.baseUrl` in local.properties, such as
+     * `http://127.0.0.1:8811` over `adb reverse`), for phone tests of what the live Worker has switched off. Set by
+     * StashApplication before anything reads [API_BASE_URLS]; never set in a release build.
+     */
+    @Volatile var apiOverride: String? = null
+
+    /**
+     * Where share API calls go, in order: [PRODUCTION_BASE_URLS], or only [apiOverride] when it's set. Each API
+     * client copies this once, when it's made.
+     */
+    val API_BASE_URLS: List<String> get() = apiOverride?.let(::listOf) ?: PRODUCTION_BASE_URLS
 
     /**
      * Hosts whose links open in Stash: stashfm.app, and the workers.dev host older links use. Keep in sync with the
-     * App Links filter in app/src/main/AndroidManifest.xml.
+     * App Links filter in app/src/main/AndroidManifest.xml. Links always come from these, whatever [apiOverride] says.
      */
-    val HOSTS: Set<String> = API_BASE_URLS.mapTo(LinkedHashSet()) { it.removePrefix("https://") }
+    val HOSTS: Set<String> = PRODUCTION_BASE_URLS.mapTo(LinkedHashSet()) { it.removePrefix("https://") }
 
     /**
      * Album-art CDNs a shared mix's or song's covers may point at. Anything else could log recipients' IPs.

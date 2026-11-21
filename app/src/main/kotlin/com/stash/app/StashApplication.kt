@@ -366,6 +366,16 @@ class StashApplication : Application(), Configuration.Provider {
             .setWorkerFactory(workerFactory)
             .build()
 
+    init {
+        // Debug builds only (a release build's field is always ""): every share API call goes to a share Worker on the
+        // developer's PC (`share.baseUrl` in local.properties, see app/build.gradle.kts). Here, before Hilt makes
+        // anything: each share client copies ShareConfig.API_BASE_URLS when it's made.
+        if (BuildConfig.SHARE_BASE_URL.isNotBlank()) {
+            com.stash.core.model.share.ShareConfig.apiOverride = BuildConfig.SHARE_BASE_URL
+            Log.w("StashStartup", "share API calls go to ${BuildConfig.SHARE_BASE_URL} (local.properties share.baseUrl)")
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         // First thing after super: install the crash-to-file handler so any
