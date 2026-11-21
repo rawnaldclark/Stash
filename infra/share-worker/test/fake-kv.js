@@ -16,7 +16,7 @@ export function fakeKV() {
 }
 
 export function env(over = {}) {
-    return {
+    const e = {
         SHARE_KV: fakeKV(),
         CREATE_RL: { limit: async () => ({ success: true }) },
         WRITE_RL: { limit: async () => ({ success: true }) },
@@ -24,7 +24,7 @@ export function env(over = {}) {
         JOIN_RL: { limit: async () => ({ success: true }) },
         TRACK_RL: { limit: async () => ({ success: true }) },
         ART_RL: { limit: async () => ({ success: true }) },
-        ROOMS: roomsNamespace(),
+        ROOMS: roomsNamespace(() => Date.now(), () => e), // the rooms share this env, and its D1
         COMMUNITY_DB: fakeD1(),
         COMMUNITY_SALT: "test-salt",
         COMMUNITY_WRITE_RL: { limit: async () => ({ success: true }) },
@@ -32,4 +32,5 @@ export function env(over = {}) {
         COMMUNITY_READ_RL: { limit: async () => ({ success: true }) },
         ...over,
     };
+    return e;
 }
