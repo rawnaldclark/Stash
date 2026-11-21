@@ -49,4 +49,58 @@
     <string name="lt_stopped_cant_play_more">Session paused: you can\'t play %1$s. Tap Play to try the next song.</string>
     <!-- A guest tapped a song to play it now, in a room that lets guests add. -->
     <string name="lt_only_host_changes_song">Only the host can change the song. Use Play next to add it.</string>
+
+    <!-- Sessions (spec 2026-11-20): a station's live listening. A session refused this phone before letting it in. -->
+    <!-- This app is older than the session (closes 4426). -->
+    <string name="session_update_needed">Update Stash to join this session</string>
+    <!-- No valid key for the session (closes 4401). -->
+    <string name="session_couldnt_join">Couldn\'t join this session</string>
+    <!-- The host removed this phone from the session (ended "booted", or closes 4403 on a try to come back). -->
+    <string name="session_removed">You were removed from this session</string>
+
+    <!-- Go live, tapped in a private Listen Together room. -->
+    <string name="session_end_private_first">End Listen Together first</string>
+    <!-- Go live, tapped while listening in someone's session. -->
+    <string name="session_leave_first">Leave this session first</string>
+    <!-- Go live didn't open the session: the server has Sessions switched off. -->
+    <string name="session_live_off">Going live isn\'t available right now</string>
+    <!-- The host's own station was removed or hidden: when going live, or when it ends the session. -->
+    <string name="session_your_station_off_air">Your station is off the air</string>
+    <string name="session_not_your_station">That station isn\'t yours</string>
+    <!-- This phone is blocked from Community. -->
+    <string name="session_live_blocked">You can\'t go live in Community</string>
+    <string name="session_slow_down">Slow down a moment, then try again</string>
+    <string name="session_live_failed">Couldn\'t go live. Try again.</string>
+    <string name="session_live_offline">Couldn\'t go live. Check your connection and try again.</string>
+
+    <!-- A session listener tapped a song to play it now. Their Play next is Request: it asks the host for the song. -->
+    <string name="session_only_host_changes_song">Only the host can change the song. Request it instead.</string>
+    <!-- A listener's requests reached the host, waiting for them. %1$d: how many, %2$s: the host's name. -->
+    <plurals name="session_requests_sent_to">
+        <item quantity="one">%1$d request sent to %2$s</item>
+        <item quantity="other">%1$d requests sent to %2$s</item>
+    </plurals>
+    <!-- The same, when the host's name isn't known. %1$d: how many. -->
+    <plurals name="session_requests_sent">
+        <item quantity="one">%1$d request sent</item>
+        <item quantity="other">%1$d requests sent</item>
+    </plurals>
+    <!-- A listener may have this many requests waiting (3). %1$d: the limit. -->
+    <plurals name="session_requests_cap">
+        <item quantity="one">You have %1$d request waiting</item>
+        <item quantity="other">You have %1$d requests waiting</item>
+    </plurals>
+    <!-- The session holds 30 waiting requests in all, or this listener sent too many at once. -->
+    <string name="session_requests_full">The session can\'t take more requests right now</string>
+    <!-- To the requester alone: the host or a co-host passed on their request. %1$s: who, %2$s: the song. -->
+    <string name="session_request_passed">%1$s passed on %2$s</string>
+    <!-- The same, when their name isn't known. %1$s: the song. -->
+    <string name="session_request_passed_unnamed">The host passed on %1$s</string>
+
+    <!-- To a listener: the session they were in has ended. %1$s: the host's name. -->
+    <string name="session_ended_named">%1$s\'s session ended</string>
+    <!-- The same, when the host's name isn't known. -->
+    <string name="session_ended">The session ended</string>
+    <!-- To a listener: the station was removed, hidden by votes, or its phone blocked, so its session ended. -->
+    <string name="session_off_air">This station is off the air</string>
 </resources>

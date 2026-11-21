@@ -1,6 +1,8 @@
 package com.stash.core.data.listen
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.community.CommunityApiClient
+import com.stash.core.data.community.CommunityResult
 import com.stash.core.data.share.ShareResult
 import com.stash.core.model.share.SharedTrack
 import java.net.InetAddress
@@ -66,5 +68,29 @@ class RoomApiClientTest {
             .isEqualTo(ShareResult.Ok(RoomApiClient.Preview("Rawn", 3, false, SharedTrack("Xtal", "Aphex Twin"))))
         assertThat(server.takeRequest().path).isEqualTo("/v1/rooms/K7QA2PXM")
         assertThat(client.preview("K7QA2PXM")).isEqualTo(ShareResult.NotFound)
+    }
+
+    @Test fun `a session opens for the station under the owner's key, and keeps the Worker's refusals`() = runBlocking {
+        val key = "k".repeat(43)
+        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"code":"K7QA2PXM","hostKey":"KEY","url":"https://stashfm.app/s/Ab3dEf9h"}"""))
+        assertThat(client.createSession("Ab3dEf9h", " Rawn ", key))
+            .isEqualTo(CommunityResult.Ok(RoomApiClient.Created("K7QA2PXM", "KEY", "https://stashfm.app/s/Ab3dEf9h")))
+        val req = server.takeRequest()
+        assertThat(req.path).isEqualTo("/v1/rooms")
+        assertThat(req.getHeader(CommunityApiClient.KEY_HEADER)).isEqualTo(key)
+        assertThat(req.body.readUtf8()).isEqualTo("""{"public":true,"stationId":"Ab3dEf9h","hostName":"Rawn"}""")
+        val refusals = listOf(503 to "sessions_off", 404 to "gone", 403 to "not_yours", 403 to "blocked", 401 to "bad_key")
+        for ((status, code) in refusals) {
+            server.enqueue(MockResponse().setResponseCode(status).setBody("""{"error":"$code"}"""))
+            assertThat(client.createSession("Ab3dEf9h", null, key)).isEqualTo(CommunityResult.Rejected(code))
+        }
+        assertThat(server.takeRequest().body.readUtf8()).isEqualTo("""{"public":true,"stationId":"Ab3dEf9h"}""")
+    }
+
+    @Test fun `a session's preview names its station and how many listen`() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"hostName":"Rawn","memberCount":5,"full":false,"station":"Ab3dEf9h","listeners":4}"""))
+        val preview = (client.preview("K7QA2PXM") as ShareResult.Ok).value
+        assertThat(preview.station).isEqualTo("Ab3dEf9h")
+        assertThat(preview.listeners).isEqualTo(4)
     }
 }

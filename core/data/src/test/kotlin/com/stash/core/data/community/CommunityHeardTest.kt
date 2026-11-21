@@ -44,7 +44,7 @@ class CommunityHeardTest {
         file = File.createTempFile("community_heard", ".preferences_pb").also { it.delete() }
         api = CommunityApiClient(OkHttpClient()).apply { baseUrls = listOf(server.url("/").toString().removeSuffix("/")) }
         val keys = mockk<CommunityKeyStore> { coEvery { existingKey() } answers { existingKey } }
-        heard = CommunityHeard(PreferenceDataStoreFactory.create { file }, api, keys, on, scope, clock = { now })
+        heard = CommunityHeard(PreferenceDataStoreFactory.create { file }, api::heard, keys, on, scope, clock = { now })
     }
 
     @After fun tearDown() { server.shutdown(); file.delete() }
@@ -179,7 +179,7 @@ class CommunityHeardTest {
             .apply { baseUrls = listOf(server.url("/").toString().removeSuffix("/")) }
         val keys = mockk<CommunityKeyStore> { coEvery { existingKey() } answers { existingKey } }
         val own = File.createTempFile("community_heard_slow", ".preferences_pb").also { it.delete(); it.deleteOnExit() }
-        val timing = CommunityHeard(PreferenceDataStoreFactory.create { own }, slow, keys, on, scope, clock = { now })
+        val timing = CommunityHeard(PreferenceDataStoreFactory.create { own }, slow::heard, keys, on, scope, clock = { now })
         existingKey = null
         timing.mark(A); settle()
         existingKey = key

@@ -1,15 +1,12 @@
 package com.stash.core.data.community
 
-import com.stash.core.data.share.ShareHttp
 import com.stash.core.data.share.ShareJson
 import com.stash.core.model.community.CommunityMe
 import com.stash.core.model.community.CommunityPost
 import com.stash.core.model.share.ShareConfig
 import com.stash.core.model.share.SharedTrack
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -29,6 +26,11 @@ sealed interface CommunityResult<out T> {
 
     /** Offline, a timeout, a 5xx (the Worker's catch-all is 503 `unavailable`), a redirect, or a 2xx it can't read: worth trying again. */
     data class Failed(val reason: String?) : CommunityResult<Nothing>
+
+    companion object {
+        /** What a Sessions route answers (503, kept as a [Rejected] code) while the Worker's `SESSIONS` switch is off. */
+        const val SESSIONS_OFF = "sessions_off"
+    }
 }
 
 /** `POST /v1/community/posts`'s body. [body] is `{covers, tracks}` for a playlist or mix, `{track}` for a song. */
@@ -60,12 +62,10 @@ enum class HeardSend {
 @Serializable
 data class VoteCounts(val up: Int, val down: Int, val myVote: Int)
 
-/** HTTP client for the Worker's `/v1/community` routes. Unlike `shareCall`, it keeps a 4xx's `error` code. */
+/** HTTP client for the Worker's `/v1/community` posts. Unlike `shareCall`, it keeps a 4xx's `error` code ([CommunityHttp]). */
 @Singleton
 class CommunityApiClient @Inject constructor(okHttpClient: OkHttpClient) {
-    // Bounds each try on OkHttp's side (every address, TLS, the answer). No redirects: OkHttp would carry
-    // X-Stash-Community-Key to another host.
-    private val http = ShareHttp(okHttpClient) { callTimeout(15, TimeUnit.SECONDS); followRedirects(false) }
+    private val community = CommunityHttp(okHttpClient)
 
     /** The hosts tried in turn. Test seam; off the constructor because Hilt rejects @Inject with default params. */
     internal var baseUrls: List<String> = ShareConfig.API_BASE_URLS
@@ -74,7 +74,6 @@ class CommunityApiClient @Inject constructor(okHttpClient: OkHttpClient) {
     @Serializable private data class One(val post: CommunityPost)
     @Serializable private data class Created(val id: String)
     @Serializable private data class Vote(val value: Int)
-    @Serializable private data class ErrorBody(val error: String? = null)
 
     suspend fun feed(limit: Int, key: String?): CommunityResult<List<CommunityPost>> =
         call("/v1/community/feed?limit=$limit", key) { ShareJson.decodeFromString(Posts.serializer(), it).posts }
@@ -104,21 +103,7 @@ class CommunityApiClient @Inject constructor(okHttpClient: OkHttpClient) {
      * (a Cloudflare challenge page) is the edge, not the Worker: tried again later.
      */
     suspend fun heard(id: String, key: String): HeardSend =
-        try {
-            http.exchange(baseUrls, "/v1/community/posts/$id/heard", { header(KEY_HEADER, key); put(EMPTY_BODY) }) { code, text ->
-                when {
-                    code in 200..299 -> HeardSend.SENT
-                    code == 403 && workerCode(text) != null -> HeardSend.DROPPED
-                    code == 404 && workerCode(text) == "gone" -> HeardSend.DROPPED
-                    code == 404 && workerCode(text) == "not_found" -> HeardSend.NO_ROUTE
-                    else -> HeardSend.RETRY
-                }
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            HeardSend.RETRY
-        }
+        community.heard(baseUrls, "/v1/community/posts/$id/heard", key)
 
     suspend fun takeDown(id: String, key: String): CommunityResult<Unit> =
         call("/v1/community/posts/$id", key, { delete() }) { }
@@ -129,32 +114,10 @@ class CommunityApiClient @Inject constructor(okHttpClient: OkHttpClient) {
         key: String?,
         method: Request.Builder.() -> Unit = {},
         parse: (String) -> T,
-    ): CommunityResult<T> =
-        try {
-            http.exchange(baseUrls, path, { if (key != null) header(KEY_HEADER, key); method() }) { code, text ->
-                when (code) {
-                    in 200..299 -> CommunityResult.Ok(parse(text))
-                    in 400..499 -> CommunityResult.Rejected(errorCode(code, text))
-                    else -> CommunityResult.Failed("HTTP $code")
-                }
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            CommunityResult.Failed(e.message)
-        }
-
-    /** The Worker's `error`. A 429 without one is Cloudflare's own rate-limit page. */
-    private fun errorCode(status: Int, text: String): String =
-        workerCode(text) ?: if (status == 429) "rate_limited" else "unknown"
-
-    /** The Worker's JSON error code, or null for any other body (an HTML page from the edge, nothing). */
-    private fun workerCode(text: String): String? =
-        runCatching { ShareJson.decodeFromString(ErrorBody.serializer(), text).error }.getOrNull()?.takeIf { it.isNotBlank() }
+    ): CommunityResult<T> = community.call(baseUrls, path, key, method, parse)
 
     companion object {
         const val KEY_HEADER = "X-Stash-Community-Key"
         private val JSON = "application/json".toMediaType()
-        private val EMPTY_BODY = "{}".toRequestBody(JSON)
     }
 }

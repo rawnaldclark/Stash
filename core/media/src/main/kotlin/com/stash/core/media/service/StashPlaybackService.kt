@@ -175,6 +175,10 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var autoplayRadioPreference: com.stash.core.data.prefs.AutoplayRadioPreference
     @Inject lateinit var sharePreference: com.stash.core.data.share.SharePreference
     @Inject lateinit var playbackStateStore: com.stash.core.media.PlaybackStateStore
+    // Sessions (a station's public room): the Community key in each hello, a station's newer room, the listening time.
+    @Inject lateinit var communityKeyStore: com.stash.core.data.community.CommunityKeyStore
+    @Inject lateinit var stationsRepository: com.stash.core.data.community.StationsRepository
+    @Inject lateinit var stationHeard: com.stash.core.data.community.StationHeard
 
     /** Google Cast (spec 2026-10-06). */
     @Inject lateinit var castDevices: com.stash.core.media.cast.CastDevices
@@ -1010,13 +1014,17 @@ class StashPlaybackService : MediaLibraryService() {
             displayName = { sharePreference.displayName() },
             clock = { android.os.SystemClock.elapsedRealtime() },
             guestsAddPreference = { sharePreference.guestsAddNow() },
+            communityKey = { communityKeyStore.key() },
+            stationRoom = { stationId -> stationsRepository.liveRoom(stationId) },
+            stationListened = { stationId, ms -> stationHeard.listened(stationId, ms) },
         ).also { it.start() }
         listenTogetherController.serviceAttached = true
-        android.util.Log.i("StashPlayback", "listen-together engine attached")
-        // The layout only differs by role, so rebuild it on a role change, not on every member or reaction update.
+        android.util.Log.i("StashPlayback", "listen-together engine attached (with Sessions: key, station room, listening time)")
+        // The layout only differs by role (and a session's host ends rather than leaves), so rebuild it on a change of
+        // those, not on every member or reaction update.
         serviceScope.launch {
             listenTogetherController.state
-                .map { (it as? com.stash.core.media.listen.ListenTogetherState.InRoom)?.isHost }
+                .map { (it as? com.stash.core.media.listen.ListenTogetherState.InRoom)?.let { r -> r.isHost to (r.session != null) } }
                 .distinctUntilChanged()
                 .collect { updateCustomLayout() }
         }
@@ -2103,7 +2111,8 @@ class StashPlaybackService : MediaLibraryService() {
                 buttons.add(buildLeaveSessionButton())
             together is com.stash.core.media.listen.ListenTogetherState.InRoom -> {
                 if (likeable) buttons.add(buildLikeButton(isLiked))
-                buttons.add(buildLeaveSessionButton())
+                // A station's session is never handed on: its host's Leave ends it, so the button says so.
+                buttons.add(buildLeaveSessionButton(ends = together.session != null))
             }
             else -> {
                 if (likeable) buttons.add(buildLikeButton(isLiked))
@@ -2115,8 +2124,8 @@ class StashPlaybackService : MediaLibraryService() {
     }
 
     @OptIn(UnstableApi::class)
-    private fun buildLeaveSessionButton(): CommandButton = CommandButton.Builder()
-        .setDisplayName("Leave session")
+    private fun buildLeaveSessionButton(ends: Boolean = false): CommandButton = CommandButton.Builder()
+        .setDisplayName(if (ends) "End session" else "Leave session")
         .setIconResId(R.drawable.ic_listen_leave)
         .setSessionCommand(SessionCommand(COMMAND_LEAVE_SESSION, android.os.Bundle.EMPTY))
         .build()

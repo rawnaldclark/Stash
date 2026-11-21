@@ -91,7 +91,7 @@ class CommunityRepositoryTest {
     private fun realMarks(keys: CommunityKeyStore, http: OkHttpClient, scope: CoroutineScope): CommunityHeard {
         val file = File.createTempFile("community_heard", ".preferences_pb").also { it.delete(); it.deleteOnExit() }
         val api = CommunityApiClient(http).apply { baseUrls = listOf(server.url("/").toString().removeSuffix("/")) }
-        return CommunityHeard(PreferenceDataStoreFactory.create { file }, api, keys, MutableStateFlow(true), scope)
+        return CommunityHeard(PreferenceDataStoreFactory.create { file }, api::heard, keys, MutableStateFlow(true), scope)
     }
 
     @Test fun `a Worker without the heard route can't want a listen, so the vote goes and the mark stays queued`() = runBlocking<Unit> {

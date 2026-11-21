@@ -39,7 +39,6 @@ import com.stash.core.model.share.ShareLinks
 import com.stash.core.model.share.SharedTrack
 import com.stash.core.media.listen.ListenTogetherController
 import com.stash.core.media.listen.ListenTogetherState
-import com.stash.core.ui.components.ListenTogetherRole
 import com.stash.core.ui.components.LocalCreateTrackLink
 import com.stash.core.ui.components.LocalListenTogetherRole
 import com.stash.core.ui.theme.LocalUiScaleMax
@@ -268,13 +267,7 @@ class MainActivity : AppCompatActivity() {
 
             val together by listenTogether.state.collectAsState()
             val room = together as? ListenTogetherState.InRoom
-            // A guest adds straight to the room's queue when the host lets them; otherwise Play next suggests.
-            val role = when {
-                room == null -> ListenTogetherRole.NONE
-                room.isHost -> ListenTogetherRole.HOST
-                room.guestsAdd -> ListenTogetherRole.GUEST
-                else -> ListenTogetherRole.LISTENER
-            }
+            val role = listenTogetherRole(room)
             val hostName = room?.let { r -> r.members.firstOrNull { it.id == r.hostId }?.name ?: r.hostId?.let { r.names[it] } }
             // Session notices ("Suggested to the host", …) toast on whichever screen is showing.
             val lifecycleOwner = LocalLifecycleOwner.current

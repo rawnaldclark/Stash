@@ -49,15 +49,20 @@ private const val TAG = "CommunityHeard"
  *
  * Kept in the key's own file, which a backup never carries: a new phone is a new Community identity, with nothing
  * heard. A mark is forgotten after [KEEP_MS], when its post is long gone.
+ *
+ * A station's marks work the same way, under their own names and route ([StationHeard]): [send] is the route, and
+ * [heardName] and [waitingName] where the marks are kept.
  */
 @Singleton
 class CommunityHeard internal constructor(
     private val store: DataStore<Preferences>,
-    private val api: CommunityApiClient,
+    private val send: suspend (id: String, key: String) -> HeardSend,
     private val keys: CommunityKeyStore,
     private val communityOn: Flow<Boolean>,
     private val scope: CoroutineScope,
     private val clock: () -> Long = System::currentTimeMillis,
+    heardName: String = "community_heard",
+    waitingName: String = "community_heard_waiting",
 ) {
     @Inject
     constructor(
@@ -65,13 +70,13 @@ class CommunityHeard internal constructor(
         api: CommunityApiClient,
         keys: CommunityKeyStore,
         homeSections: HomeSectionsPreference,
-    ) : this(context.communityDataStore, api, keys, homeSections.communityOn, CoroutineScope(SupervisorJob() + Dispatchers.IO))
+    ) : this(context.communityDataStore, api::heard, keys, homeSections.communityOn, CoroutineScope(SupervisorJob() + Dispatchers.IO))
 
-    /** Each mark as "id:when" (ms): post ids are 8 letters and digits. */
-    private val heardPref = stringSetPreferencesKey("community_heard")
+    /** Each mark as "id:when" (ms): post and station ids are 8 letters and digits. */
+    private val heardPref = stringSetPreferencesKey(heardName)
 
     /** The marks the Worker hasn't taken yet, the same way. */
-    private val waitingPref = stringSetPreferencesKey("community_heard_waiting")
+    private val waitingPref = stringSetPreferencesKey(waitingName)
 
     /** One background round ([retry]) at a time. */
     private val rounds = Mutex()
@@ -174,7 +179,7 @@ class CommunityHeard internal constructor(
             scope.launch {
                 var outcome = HeardSend.RETRY
                 try {
-                    outcome = api.heard(id, key)
+                    outcome = send(id, key)
                     if (outcome == HeardSend.SENT || outcome == HeardSend.DROPPED) edit { prefs, now ->
                         prefs[waitingPref] = live(prefs[waitingPref], now).filterNot { it.substringBefore(':') == id }.toSet()
                     }
