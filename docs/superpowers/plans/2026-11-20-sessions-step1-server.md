@@ -632,3 +632,8 @@ PR #932, on #931. Where the build differs from the tasks above, the code and `in
 - **Opening a session** also refuses a station hidden by votes (404 `gone`), since its first directory write would end it, and takes the station's DJ name when the app sends none. Deleting a station reads its room from `live` and ends the session at once (the room's internal `/station-gone`); if the room can't be reached, it ends at its next write.
 - **Directory initials are whole graphemes** (a flag stays a flag), and a name with none is `null`.
 - **The load check** (`scripts/room-load.mjs`) measures the stored room offline as well: a full session is 61 KB as JSON; 20,000 seeded random moves with the longest songs reach 723 KB (866 KB in a 40,000-move search), under the 1 MB bar. Live against `wrangler dev`, 54 sockets: round trips p50 56 ms, max 291 ms with every listener reacting once a second; 545 ms at worst with all 53 in the same instant. Numbers in PR #932.
+- **Deployed dark on 2026-11-21**, each step with the owner's go: 0007 `--remote`, then stash-share version `cefc598b` with `SESSIONS = "0"`. The Worker it replaced (`2d0c03f4`, 2026-11-03) predated #840, so guests adding songs went live with it. Checked after:
+  - `live` and `POST /v1/rooms {public: true}` answer 503, and `/s/…` answers 404.
+  - A scripted private room passed 13 of 13.
+  - The Pixel 5's real app passed as host and as guest: a guest's Play next went straight in, the room skipped to it, reactions arrived, and End worked.
+  - Still to do: the Pixel 6 run, then the merges.
