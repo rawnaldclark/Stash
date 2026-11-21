@@ -6,8 +6,10 @@ import androidx.annotation.PluralsRes
 import androidx.annotation.StringRes
 import com.stash.core.media.service.StashPlaybackService
 import com.stash.core.model.listen.RoomMember
+import com.stash.core.model.listen.RoomRequest
 import com.stash.core.model.listen.RoomSuggestion
 import com.stash.core.model.listen.ServerMessage
+import com.stash.core.model.listen.SessionInfo
 import com.stash.core.model.share.SharedTrack
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -22,10 +24,12 @@ import kotlinx.coroutines.flow.asStateFlow
 
 sealed interface ListenTogetherState {
     data object Idle : ListenTogetherState
-    data class Connecting(val hosting: Boolean) : ListenTogetherState
+
+    /** [station]: the station whose session this is (Sessions), also while moving to its newer session; null for a private room. */
+    data class Connecting(val hosting: Boolean, val station: String? = null) : ListenTogetherState
     data class InRoom(
         val code: String,
-        /** The invite link, `https://…/l/{code}`. */
+        /** The invite link, `https://…/l/{code}`; a session's is its station's, `https://…/s/{id}`. */
         val url: String,
         val myId: String,
         val isHost: Boolean,
@@ -58,8 +62,19 @@ sealed interface ListenTogetherState {
         val myGuestsAdd: Boolean = true,
         /** The host's app is older than guest adds: "Rawn's Stash needs an update to let you add songs." */
         val hostAppOutdated: Boolean = false,
+        /** A session's state (its station, listeners, co-hosts, Auto-accept, presence); null in a private room. */
+        val session: SessionInfo? = null,
+        /** This phone's part in the session; null in a private room. */
+        val role: SessionRole? = null,
+        /** The waiting requests this phone may see: all of them for the host and co-hosts, a listener's own. */
+        val requests: List<RoomRequest> = emptyList(),
+        /** In a session, the room's song is playing on this phone now: what a listener's time toward a station's vote counts. */
+        val onAir: Boolean = false,
     ) : ListenTogetherState
 }
+
+/** A phone's part in a session: who plays the music, who helps (adds straight in, takes songs out), who listens. */
+enum class SessionRole { HOST, COHOST, LISTENER }
 
 /**
  * Something a person did in the room, for a short named notice: "Maya joined", "Rawn skipped", "Sam added Xtal".
@@ -81,7 +96,17 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
     sealed interface Command {
         data object Host : Command
         data class Join(val code: String) : Command
-        /** A listener leaves; a host hands the room to the longest-joined listener, then leaves. */
+
+        /** Tune in to station [stationId]'s session, room [code] (Sessions). Leaves any room first, as [Join] does. */
+        data class TuneIn(val code: String, val stationId: String) : Command
+
+        /**
+         * Go live: open a session for this phone's station [stationId], hosted as [name] (the station's DJ name, or
+         * null for the display name). The user's queue becomes the session's, as with [Host]. Only from outside a room.
+         */
+        data class GoLive(val stationId: String, val name: String? = null) : Command
+
+        /** A listener leaves; a host hands the room to the longest-joined listener, then leaves. A session's host ends it. */
         data object Leave : Command
         /** Host only: ends the room for everyone. */
         data object End : Command
@@ -158,7 +183,8 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
     internal fun publish(state: ListenTogetherState) { _state.value = state }
     internal fun reaction(reaction: ServerMessage.Reaction) { _reactions.tryEmit(reaction) }
     internal fun message(text: String) { _messages.tryEmit(text) }
-    internal fun message(@StringRes id: Int, vararg args: Any) = message(context.getString(id, *args))
+    internal fun message(@StringRes id: Int, vararg args: Any) = message(text(id, *args))
+    internal fun text(@StringRes id: Int, vararg args: Any): String = context.getString(id, *args)
     internal fun quantityMessage(@PluralsRes id: Int, count: Int, vararg args: Any) =
         message(context.resources.getQuantityString(id, count, *args))
     internal fun event(event: SessionEvent) { _events.tryEmit(event) }

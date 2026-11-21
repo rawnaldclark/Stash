@@ -15,13 +15,19 @@ enum class ListenTogetherRole {
 
     /** A guest whose Play next goes to the host as a suggestion: the host doesn't let guests add, or its app is older. */
     LISTENER,
+
+    /**
+     * A listener in a station's session (Sessions): their Play next is Request, which asks the host or a co-host for the
+     * song. A request has no place of its own in the queue, so there's no Add to queue.
+     */
+    SESSION_LISTENER,
     ;
 
     /** Anyone but the host in a session: play, pause, seek and skip are the host's. */
-    val isGuest: Boolean get() = this == GUEST || this == LISTENER
+    val isGuest: Boolean get() = this == GUEST || this == LISTENER || this == SESSION_LISTENER
 
     /** "Add to queue" means something: outside a session, for the host, and for a guest whose adds go straight in. */
-    val canQueue: Boolean get() = this != LISTENER
+    val canQueue: Boolean get() = this != LISTENER && this != SESSION_LISTENER
 }
 
 val LocalListenTogetherRole = compositionLocalOf { ListenTogetherRole.NONE }
@@ -31,7 +37,7 @@ val LocalListenTogetherHostName = compositionLocalOf<String?> { null }
 
 /**
  * "Play next" in a session: the room's Play next for the host and for a guest who can add (the same rules as solo,
- * so the same words); a suggestion to the host otherwise.
+ * so the same words); a suggestion to the host otherwise; a session listener's Request.
  */
 @Composable
 fun playNextLabel(role: ListenTogetherRole, default: String): String = when (role) {
@@ -39,4 +45,5 @@ fun playNextLabel(role: ListenTogetherRole, default: String): String = when (rol
     ListenTogetherRole.LISTENER -> LocalListenTogetherHostName.current
         ?.let { stringResource(R.string.listen_suggest_to, it) }
         ?: stringResource(R.string.listen_suggest_to_host)
+    ListenTogetherRole.SESSION_LISTENER -> stringResource(R.string.listen_request)
 }

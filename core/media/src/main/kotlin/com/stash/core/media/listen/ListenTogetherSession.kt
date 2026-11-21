@@ -2,6 +2,7 @@ package com.stash.core.media.listen
 
 import android.util.Log
 import androidx.media3.common.MediaItem
+import com.stash.core.data.community.CommunityResult
 import com.stash.core.data.listen.CloseReason
 import com.stash.core.data.listen.RoomApiClient
 import com.stash.core.data.listen.RoomConnection
@@ -12,15 +13,18 @@ import com.stash.core.media.PlayNext
 import com.stash.core.media.R
 import com.stash.core.media.listen.ListenTogetherController.Command
 import com.stash.core.model.listen.ClientMessage
+import com.stash.core.model.listen.EndedReason
 import com.stash.core.model.listen.RoomMember
 import com.stash.core.model.listen.RoomPhase
 import com.stash.core.model.listen.RoomProtocol
+import com.stash.core.model.listen.RoomRequest
 import com.stash.core.model.listen.RoomState
 import com.stash.core.model.listen.RoomTimeline
 import com.stash.core.model.listen.ServerMessage
 import com.stash.core.model.share.ShareLinks
 import com.stash.core.model.share.SharedTrack
 import kotlin.math.abs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -49,6 +53,15 @@ class ListenTogetherSession(
     private val clock: () -> Long,
     /** This phone's remembered "Let guests add songs" (on until the user turns it off). */
     private val guestsAddPreference: suspend () -> Boolean = { true },
+    /**
+     * The phone's Community key, made on first use (CommunityKeyStore.key), or null when it can't be had. A session's
+     * listener says it in every hello; going live opens the session under it.
+     */
+    private val communityKey: suspend () -> String? = { null },
+    /** The room code of station [String]'s session on the air now (its page's `live.room`); null when none, or on any failure. */
+    private val stationRoom: suspend (String) -> String? = { null },
+    /** [Long] more ms this phone listened in station [String]'s sessions, toward the 2 minutes a vote needs (StationHeard). */
+    private val stationListened: suspend (String, Long) -> Unit = { _, _ -> },
 ) {
     private var connection: RoomConnection? = null
     /**
@@ -66,6 +79,22 @@ class ListenTogetherSession(
     private var token: String? = null
     private var room: RoomState? = null
     private var isHost = false
+    /** The station whose session this is (Sessions): a public room. Null in a private room. */
+    private var stationId: String? = null
+    /** A session listener's Community key: the room checks it in every hello, a resume's too. */
+    private var listenerKey: String? = null
+    /** The name this phone's hellos carry, kept for a move to the station's newer session. */
+    private var helloName: String? = null
+    /**
+     * Between a station's sessions: the old room has ended and [moveJob] is finding or opening the newer one. No room
+     * ([code] is null), but the player stays in session mode and the user's queue stays aside.
+     */
+    private var moving = false
+    private var moveJob: Job? = null
+    /** [clock] when this phone's listening last began to count (a session's listener, [onAir]), or null while it doesn't. */
+    private var listeningSince: Long? = null
+    /** Listening time counted and not yet given to [stationListened]. */
+    private var unreportedMs = 0L
     /**
      * A host Load the room hasn't got yet: the first one (sent on the welcome) or one dropped while the socket
      * was down. Built on the flush, so the first Load reads where the song is then, not before the handshake.
@@ -123,6 +152,10 @@ class ListenTogetherSession(
     private val heldAdds = mutableListOf<Pair<List<SharedTrack>, Boolean>>()
     /** Batches sent and not fully answered, oldest first. The room answers every `add`, in order, and the toast waits for that. */
     private val awaitingAdds = ArrayDeque<AddsOnTheirWay>()
+    /** A session's waiting requests this phone may see (`requests`): all of them for the host and co-hosts, a listener's own. */
+    private var requests: List<RoomRequest> = emptyList()
+    /** A listener's requests sent and not fully answered, oldest first: the room answers each `request` in order. */
+    private val awaitingRequests = ArrayDeque<RequestsOnTheirWay>()
 
     // Named notices (SessionEvent): who's been seen, their names (kept after they leave), and
     // leaves waiting out a grace period so a network blip doesn't read as goodbye and hello.
@@ -148,6 +181,10 @@ class ListenTogetherSession(
     fun shutdown() = teardown(message = null, restore = false)
 
     private suspend fun handle(command: Command) {
+        // A move to the station's newer session gives way to anything that starts a room: that begins from the user's queue.
+        if (moving && (command == Command.Host || command is Command.Join || command is Command.TuneIn || command is Command.GoLive)) {
+            teardown(message = null)
+        }
         when (command) {
             Command.Host -> if (code == null) host()
             is Command.Join -> {
@@ -155,11 +192,18 @@ class ListenTogetherSession(
                 if (code != null) leave()
                 join(command.code)
             }
+            is Command.TuneIn -> {
+                if (command.code == code) return
+                if (code != null) leave()
+                tuneIn(command.code, command.stationId)
+            }
+            is Command.GoLive -> goLive(command.stationId, command.name)
             Command.Leave -> leave()
             Command.End -> end()
             is Command.React -> send(ClientMessage.React(command.emoji))
             is Command.Suggestion -> send(ClientMessage.SuggestionAction(command.id, if (command.add) "add" else "dismiss"))
-            is Command.MakeHost -> send(ClientMessage.MakeHost(command.memberId))
+            // A session is never handed on.
+            is Command.MakeHost -> if (stationId == null) send(ClientMessage.MakeHost(command.memberId))
             // Shown at once, so a swiped or dragged row doesn't flick back while the room's echo is on its way.
             is Command.SetQueue -> if (isHost && room != null) {
                 setQueue(command.queue.take(MAX_QUEUE), command.qv ?: room?.qv)
@@ -182,15 +226,20 @@ class ListenTogetherSession(
             controller.message("Couldn't start a session. Check your connection and try again.")
             return
         }
-        // Read the user's queue before the session touches the player: it becomes the room's (spec §4).
+        // Built from the code, like a listener's: a room made on the old workers.dev host (stashfm.app unreachable)
+        // still gets a stashfm.app invite.
+        hostRoom(created, name, ShareLinks.roomUrl(created.code))
+    }
+
+    /** The user's queue becomes the new room's (spec §4), and this phone hosts it: a private room or a session. */
+    private suspend fun hostRoom(created: RoomApiClient.Created, name: String?, url: String) {
+        // Read the user's queue before the session touches the player.
         val mine = player.userQueue()
         val first = mine.current?.let { catalog.sharedTrackFor(it) }
         val upcoming = mine.upcoming.take(MAX_QUEUE).mapNotNull { catalog.sharedTrackFor(it) }
         // The song kept playing through the create call and the lookups: read where it is now.
         pendingLoad = first?.let { f -> { ClientMessage.Load(f, player.positionMs, upcoming) } }
-        // Built from the code, like a listener's: a room made on the old workers.dev host (stashfm.app unreachable)
-        // still gets a stashfm.app invite.
-        enter(created.code, ShareLinks.roomUrl(created.code), name, hostKey = created.hostKey, asHost = true)
+        enter(created.code, url, name, hostKey = created.hostKey, asHost = true)
     }
 
     private suspend fun join(code: String) {
@@ -198,23 +247,109 @@ class ListenTogetherSession(
         enter(code, ShareLinks.roomUrl(code), displayName(), hostKey = null, asHost = false)
     }
 
-    private suspend fun enter(code: String, url: String, name: String?, hostKey: String?, asHost: Boolean) {
+    /** Joins station [stationId]'s session, room [code]. The room lets in only a phone with a Community key. */
+    private suspend fun tuneIn(code: String, stationId: String) {
+        controller.publish(ListenTogetherState.Connecting(hosting = false, station = stationId))
+        // Read now: the hello is built where nothing can suspend.
+        val key = readCommunityKey()
+        if (key == null) {
+            controller.publish(ListenTogetherState.Idle)
+            controller.message(R.string.session_couldnt_join)
+            return
+        }
+        this.stationId = stationId
+        listenerKey = key
+        enter(code, ShareLinks.stationUrl(stationId), displayName(), hostKey = null, asHost = false)
+    }
+
+    /**
+     * Opens a session for this phone's station and hosts it, as [host] hosts a private room. [djName]: the station's DJ
+     * name, else the display name; the room's crowd and Live now's card then name the host alike. Only from outside a
+     * room: each refusal says why and changes nothing.
+     */
+    private suspend fun goLive(stationId: String, djName: String?) {
+        if (code != null) {
+            when {
+                this.stationId == null -> controller.message(R.string.session_end_private_first)
+                !isHost -> controller.message(R.string.session_leave_first)
+                // Already live: nothing to do.
+            }
+            return
+        }
+        controller.publish(ListenTogetherState.Connecting(hosting = true, station = stationId))
+        val name = djName?.trim()?.takeIf { it.isNotEmpty() } ?: displayName()
+        val key = readCommunityKey()
+        val result = if (key == null) CommunityResult.Failed("no Community key") else api.createSession(stationId, name, key)
+        if (result !is CommunityResult.Ok) {
+            Log.w(TAG, "go live refused: $result")
+            controller.publish(ListenTogetherState.Idle)
+            controller.message(goLiveRefusal(result))
+            return
+        }
+        this.stationId = stationId
+        hostRoom(result.value, name, ShareLinks.stationUrl(stationId))
+    }
+
+    private fun goLiveRefusal(result: CommunityResult<*>): Int = when ((result as? CommunityResult.Rejected)?.code) {
+        null -> R.string.session_live_offline
+        CommunityResult.SESSIONS_OFF -> R.string.session_live_off
+        "gone" -> R.string.session_your_station_off_air
+        "not_yours" -> R.string.session_not_your_station
+        "blocked" -> R.string.session_live_blocked
+        "rate_limited" -> R.string.session_slow_down
+        else -> R.string.session_live_failed
+    }
+
+    private suspend fun readCommunityKey(): String? =
+        try {
+            communityKey()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "no Community key", e)
+            null
+        }
+
+    /**
+     * [moved]: from a station's ended session to its newer one. The user's queue is already aside and the player still
+     * holds the last session's song, so nothing is saved: that would write the session's place over the user's.
+     */
+    private suspend fun enter(code: String, url: String, name: String?, hostKey: String?, asHost: Boolean, moved: Boolean = false) {
         this.code = code
         this.url = url
+        helloName = name
         isHost = asHost
         sessionStartClock = clock()
         controller.setActive(true) // gates PlayerRepositoryImpl's saves before anything moves
         myGuestsAdd = guestsAddPreference()
-        player.saveUserPosition()
+        if (!moved) player.saveUserPosition()
         player.events = playerEvents
         player.enterSession(asHost, interceptor)
         player.pause()
-        Log.i(TAG, "entering room ${code.take(2)}… as ${if (asHost) "host" else "listener"}")
-        // The host key goes out only until the room hands back a token (spec §2–§3).
+        val inSession = stationId != null
+        val what = if (inSession) "a session" else "room"
+        Log.i(TAG, "entering $what ${code.take(2)}… as ${if (asHost) "host" else "listener"}${if (moved) " (moved)" else ""}")
         val session = CoroutineScope(scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job]))
         sessionScope = session
+        val key = listenerKey
+        // A listener's time toward the station's vote leaves every 15 s, and the rest as the room is let go (dropRoom).
+        if (inSession && !asHost) {
+            session.launch {
+                while (true) {
+                    delay(LISTENING_REPORT_MS)
+                    reportListening()
+                }
+            }
+        }
         val conn = connector.connect(code, session) {
-            ClientMessage.Hello(name, hostKey.takeIf { token == null }, token, RoomProtocol.VERSION, myGuestsAdd)
+            if (inSession) {
+                // A session checks who's knocking on every hello, a resume's too: the host by its key, a listener by the
+                // Community key. Guest adds don't exist there.
+                ClientMessage.Hello(name, hostKey, token, RoomProtocol.VERSION, communityKey = key.takeIf { hostKey == null })
+            } else {
+                // The host key goes out only until the room hands back a token (spec §2–§3).
+                ClientMessage.Hello(name, hostKey.takeIf { token == null }, token, RoomProtocol.VERSION, myGuestsAdd)
+            }
         }
         connection = conn
         session.launch { conn.events.collect { onEvent(it) } }
@@ -232,15 +367,20 @@ class ListenTogetherSession(
                 reconnecting = true
                 welcomed = false
                 awaitingAdds.clear() // their answers went with the socket; the welcome's queue shows what got in
+                awaitingRequests.clear() // likewise: the next `requests` shows which wait
                 publish()
             }
             is RoomEvent.Closed -> teardown(
                 when (event.reason) {
                     // No welcome yet: the room was already closed when we joined (spec §6).
-                    CloseReason.ENDED -> if (myId == null) "This session has ended" else "Session ended"
+                    CloseReason.ENDED -> if (myId == null) "This session has ended" else endedWords()
                     CloseReason.FULL -> "This session is full"
                     CloseReason.GAVE_UP -> "Lost connection to the session"
                     CloseReason.REPLACED -> "You rejoined this session somewhere else"
+                    // A session's own refusals, before any welcome.
+                    CloseReason.UPDATE -> controller.text(R.string.session_update_needed)
+                    CloseReason.KEY -> controller.text(R.string.session_couldnt_join)
+                    CloseReason.BOOTED -> controller.text(R.string.session_removed)
                 },
             )
             is RoomEvent.Message -> onMessage(event.message, event.receivedAt)
@@ -315,7 +455,68 @@ class ListenTogetherSession(
             }
             is ServerMessage.SettingsUpdate -> { room = room?.copy(guestsAdd = m.guestsAdd); publish() }
             is ServerMessage.Reaction -> controller.reaction(m)
-            is ServerMessage.Ended -> teardown("Session ended")
+            is ServerMessage.Ended -> onEnded(m.reason)
+            // Sessions' own frames: only a session sends them.
+            is ServerMessage.Session -> { room = room?.copy(session = m.info); publish() }
+            is ServerMessage.Requests -> { requests = m.requests; publish() }
+            is ServerMessage.RequestAnswer -> onRequestAnswered(m.state)
+            is ServerMessage.RequestPassed -> {
+                val by = memberNames[m.by]
+                if (by != null) controller.message(R.string.session_request_passed, by, m.track.title)
+                else controller.message(R.string.session_request_passed_unnamed, m.track.title)
+            }
+            // Answers to what the host and co-hosts do with requests, co-hosts and skips: Sessions step 3.
+            is ServerMessage.Refused, is ServerMessage.Command -> Unit
+        }
+    }
+
+    /** This phone's part in a session ([ListenTogetherState.InRoom.role]); null in a private room or before the welcome. */
+    private fun role(): SessionRole? {
+        val s = room?.session ?: return null
+        val id = myId ?: return null
+        return when {
+            isHost -> SessionRole.HOST
+            id in s.cohosts -> SessionRole.COHOST
+            else -> SessionRole.LISTENER
+        }
+    }
+
+    /**
+     * In a session, the room's song is playing on this phone: the room plays it, this phone has it ready and hasn't
+     * paused it, and the socket is up. What a listener's time toward the station's vote counts.
+     */
+    private fun onAir(): Boolean {
+        if (stationId == null) return false
+        val t = timeline ?: return false
+        return t.playing && !pausedLocally && !reconnecting && t.trackKey == readyKey && readyKey != unavailableKey
+    }
+
+    /**
+     * Adds the time since the last look to [unreportedMs] if it was counting, and starts or stops the count by what the
+     * phone does now. Called on every [publish] (each change [onAir] reads publishes) and before each report. Only a
+     * session's listeners and co-hosts count: the host's own station needs no vote from it, and a private room has none.
+     */
+    private fun countListening() {
+        val now = clock()
+        listeningSince?.let { unreportedMs += now - it }
+        listeningSince = if (!isHost && onAir()) now else null
+    }
+
+    /** Gives the station what has been counted. On the service's scope, so the last of it outlives the room. */
+    private fun reportListening() {
+        countListening()
+        val station = stationId ?: return
+        val ms = unreportedMs
+        if (ms <= 0) return
+        unreportedMs = 0
+        scope.launch {
+            try {
+                stationListened(station, ms)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "listening time not kept", e)
+            }
         }
     }
 
@@ -699,8 +900,11 @@ class ListenTogetherSession(
         }
         override fun onSet(items: List<MediaItem>, startIndex: Int) {
             if (!isHost) {
-                if (canAddDirectly()) controller.message(R.string.lt_only_host_changes_song)
-                else controller.message("Leave the session to play something else")
+                when {
+                    role() == SessionRole.LISTENER -> controller.message(R.string.session_only_host_changes_song)
+                    canAddDirectly() -> controller.message(R.string.lt_only_host_changes_song)
+                    else -> controller.message("Leave the session to play something else")
+                }
                 return
             }
             hostChoseToMove()
@@ -821,10 +1025,13 @@ class ListenTogetherSession(
         }
     }
 
-    /** A room that knows guest adds takes this phone's adds straight in: it hosts, or the host lets guests add. */
+    /**
+     * A room that knows guest adds takes this phone's adds straight in: it hosts, the host lets guests add, or (in a
+     * session) it co-hosts.
+     */
     private fun canAddDirectly(): Boolean {
         val r = room ?: return false
-        return r.v >= RoomProtocol.VERSION && (isHost || r.guestsAdd)
+        return r.v >= RoomProtocol.ADDS_VERSION && (isHost || r.guestsAdd || role() == SessionRole.COHOST)
     }
 
     /**
@@ -855,8 +1062,10 @@ class ListenTogetherSession(
     private fun deliver(runs: List<Pair<List<SharedTrack>, Boolean>>, beyond: Int = 0) {
         val r = room
         if (r == null || !welcomed) return hold(runs)
-        if (r.v < RoomProtocol.VERSION) return deliverToOlderRoom(r, runs)
-        val direct = isHost || r.guestsAdd
+        // A session's listener can't add: the room answers `added {count: 0}`. Their Play next asks the host instead.
+        if (role() == SessionRole.LISTENER) return request(runs.flatMap { it.first }, beyond)
+        if (r.v < RoomProtocol.ADDS_VERSION) return deliverToOlderRoom(r, runs)
+        val direct = canAddDirectly()
         // Not sending what can't go in: the room enforces these too, so this only saves the messages.
         var left = when {
             !direct -> MAX_SUGGESTIONS
@@ -919,14 +1128,67 @@ class ListenTogetherSession(
     }
 
     private fun suggestedMessage(r: RoomState) {
-        val host = r.members.firstOrNull { it.id == r.host }?.name ?: r.host?.let { memberNames[it] }
+        val host = hostName(r)
         if (host != null) controller.message(R.string.lt_suggested_to, host) else controller.message(R.string.lt_suggested)
     }
 
-    /** A guest takes their own song out (the host edits through [Command.SetQueue]); shown at once, like the host's swipe. */
+    private fun hostName(r: RoomState): String? = r.members.firstOrNull { it.id == r.host }?.name ?: r.host?.let { memberNames[it] }
+
+    /**
+     * A session listener's Play next or Add to queue (Sessions protocol): a request, which the host or a co-host takes in
+     * or passes, or which goes straight in as Add to queue while Auto-accept is on. The room keeps
+     * [MAX_REQUESTS_WAITING] waiting from each listener, so only as many as fit are sent; the toast waits for the room's
+     * answers. [beyond]: songs selected past what was looked up.
+     */
+    private fun request(tracks: List<SharedTrack>, beyond: Int = 0) {
+        val mine = requests.count { it.from == myId }
+        val batch = RequestsOnTheirWay(wanted = tracks.size + beyond, waitingBefore = mine)
+        val unsent = mutableListOf<SharedTrack>()
+        for (track in tracks.take((MAX_REQUESTS_WAITING - mine).coerceAtLeast(0))) {
+            if (unsent.isEmpty() && connection?.send(ClientMessage.Request(track)) == true) batch.unanswered++
+            else unsent += track
+        }
+        batch.wanted -= unsent.size
+        if (batch.unanswered > 0) awaitingRequests.addLast(batch)
+        else if (unsent.isEmpty()) confirmRequests(batch) // none could go: this listener's are all waiting already
+        if (unsent.isNotEmpty()) hold(listOf(unsent to false))
+    }
+
+    private fun onRequestAnswered(state: String) {
+        val batch = awaitingRequests.firstOrNull() ?: return
+        when (state) {
+            REQUEST_QUEUED -> batch.queued++
+            REQUEST_WAITING -> batch.waiting++
+        }
+        if (--batch.unanswered > 0) return
+        awaitingRequests.removeFirst()
+        confirmRequests(batch)
+    }
+
+    private fun confirmRequests(batch: RequestsOnTheirWay) {
+        val r = room ?: return
+        val taken = batch.queued + batch.waiting
+        when {
+            taken >= batch.wanted && batch.waiting == 0 -> controller.message(R.string.lt_added_queue) // Auto-accept took them all
+            taken >= batch.wanted -> {
+                val host = hostName(r)
+                if (host != null) controller.quantityMessage(R.plurals.session_requests_sent_to, taken, taken, host)
+                else controller.quantityMessage(R.plurals.session_requests_sent, taken, taken)
+            }
+            batch.waitingBefore + batch.waiting >= MAX_REQUESTS_WAITING ->
+                controller.quantityMessage(R.plurals.session_requests_cap, MAX_REQUESTS_WAITING, MAX_REQUESTS_WAITING)
+            else -> controller.message(R.string.session_requests_full)
+        }
+    }
+
+    /**
+     * A guest takes their own song out (the host edits through [Command.SetQueue]); shown at once, like the host's swipe.
+     * A session's co-hosts take out any song.
+     */
     private fun unqueue(track: SharedTrack, at: Int) {
         val r = room ?: return
-        if (r.v < RoomProtocol.VERSION || (!isHost && track.addedBy != myId)) return
+        val anySong = isHost || role() == SessionRole.COHOST
+        if (r.v < RoomProtocol.ADDS_VERSION || (!anySong && track.addedBy != myId)) return
         val i = if (r.queue.getOrNull(at) == track) at else r.queue.indexOf(track)
         if (i >= 0) room = r.copy(queue = r.queue.filterIndexed { j, _ -> j != i })
         send(ClientMessage.Unqueue(track, at))
@@ -936,7 +1198,8 @@ class ListenTogetherSession(
     /** The host's switch. The caller remembers it; the room hears it now while this phone hosts, else in the next hello. */
     private fun setGuestsAdd(on: Boolean) {
         myGuestsAdd = on
-        if (isHost && (room?.v ?: 1) >= RoomProtocol.VERSION) send(ClientMessage.Settings(on))
+        // A session has no such switch: its settings do nothing.
+        if (isHost && stationId == null && (room?.v ?: 1) >= RoomProtocol.ADDS_VERSION) send(ClientMessage.Settings(on))
         publish()
     }
 
@@ -986,6 +1249,8 @@ class ListenTogetherSession(
     // ── Leaving ───────────────────────────────────────────────────────────────
 
     private fun leave() {
+        // A session is never handed on: its host's Leave ends it.
+        if (stationId != null && isHost) return end()
         val r = room
         if (isHost && r != null) {
             // Hand the room to the longest-joined listener instead of leaving it hostless for 60 s.
@@ -999,9 +1264,123 @@ class ListenTogetherSession(
         teardown("Session ended")
     }
 
+    /**
+     * `ended {reason}`. A private room says "Session ended" whatever the reason. A session (Sessions protocol, "How it
+     * ends") tells its host and its listeners apart, and some endings move a listener on to the station's newer session.
+     */
+    private fun onEnded(reason: String) {
+        val station = stationId ?: return teardown("Session ended")
+        val oldCode = code ?: return
+        if (isHost) {
+            return when (reason) {
+                EndedReason.MAX_AGE -> goLiveAgain(station)
+                EndedReason.STATION_REMOVED -> teardown(controller.text(R.string.session_your_station_off_air))
+                else -> teardown("Session ended")
+            }
+        }
+        val ended = endedWords()
+        when (reason) {
+            EndedReason.BOOTED -> teardown(controller.text(R.string.session_removed))
+            EndedReason.STATION_REMOVED -> teardown(controller.text(R.string.session_off_air))
+            // A newer session takes over: the host's at 12 hours, or another of the station's.
+            EndedReason.MAX_AGE, EndedReason.REPLACED -> moveToNewerSession(station, oldCode, ended, MOVE_ASKS)
+            // The host's phone was gone 60 s: one look, in case its app came back and went live again.
+            EndedReason.HOST_LEFT -> moveToNewerSession(station, oldCode, ended, asks = 1)
+            else -> teardown(ended)
+        }
+    }
+
+    /** How a room's end reads here: "Maya's session ended" to a session's listener, else "Session ended". */
+    private fun endedWords(): String {
+        if (stationId == null || isHost) return "Session ended"
+        val host = room?.let(::hostName)
+        return if (host != null) controller.text(R.string.session_ended_named, host) else controller.text(R.string.session_ended)
+    }
+
+    /**
+     * A listener whose session ended for a newer one: looks for the station's room [asks] times, [MOVE_ASK_GAP_MS]
+     * apart (the new room is listed once its first song is ready), and tunes in there quietly. Nothing new by then:
+     * [ended], and the user's queue comes back.
+     */
+    private fun moveToNewerSession(station: String, oldCode: String, ended: String, asks: Int) {
+        Log.i(TAG, "session ended; looking for the station's newer one")
+        startMove(hosting = false, station)
+        moveJob = scope.launch {
+            repeat(asks) { i ->
+                if (i > 0) delay(MOVE_ASK_GAP_MS)
+                val newer = try { stationRoom(station) } catch (e: CancellationException) { throw e } catch (e: Exception) { null }
+                if (newer != null && newer != oldCode) {
+                    moving = false
+                    enter(newer, ShareLinks.stationUrl(station), helloName, hostKey = null, asHost = false, moved = true)
+                    return@launch
+                }
+            }
+            teardown(ended)
+        }
+    }
+
+    /**
+     * The host's session reached its 12 hours. Still playing, the phone goes live again at once and carries the song, where
+     * it is in it, and the queue into the new session; its listeners follow ([moveToNewerSession]). Otherwise it ended.
+     */
+    private fun goLiveAgain(station: String) {
+        val r = room
+        val song = r?.track
+        if (song == null || timeline?.playing != true || pausedLocally) return teardown("Session ended")
+        // The adders were the old room's members: nobody in the new one.
+        val queue = r.queue.map { it.copy(addedBy = null) }
+        val name = helloName
+        Log.i(TAG, "session reached its age; going live again")
+        startMove(hosting = true, station)
+        moveJob = scope.launch {
+            val key = readCommunityKey()
+            val result = if (key == null) CommunityResult.Failed("no Community key") else api.createSession(station, name, key)
+            if (result !is CommunityResult.Ok) {
+                Log.w(TAG, "going live again refused: $result")
+                return@launch teardown("Session ended")
+            }
+            moving = false
+            pendingLoad = { ClientMessage.Load(song.copy(addedBy = null), player.positionMs, queue) }
+            enter(result.value.code, ShareLinks.stationUrl(station), name, result.value.hostKey, asHost = true, moved = true)
+        }
+    }
+
+    /** Lets go of the ended room and holds the player, in session mode, until the newer room's first song. */
+    private fun startMove(hosting: Boolean, station: String) {
+        dropRoom()
+        moving = true
+        player.pause()
+        player.setPlayIntent(false)
+        controller.publish(ListenTogetherState.Connecting(hosting = hosting, station = station))
+    }
+
+    /** Ends the session here: the room, or a move between a station's sessions. */
     private fun teardown(message: String?, restore: Boolean = true) {
-        if (code == null) return
+        if (code == null && !moving) return
         Log.i(TAG, "leaving the room${message?.let { " ($it)" }.orEmpty()}")
+        moveJob?.cancel()
+        moveJob = null
+        moving = false
+        if (code != null) dropRoom()
+        player.events = null
+        player.exitSession()
+        stationId = null; listenerKey = null; helloName = null; pausedLocally = false
+        // exitSession has already stopped and emptied the player. With restore, PlayerRepositoryImpl puts the
+        // user's queue back, paused, and saves nothing until then (restorePending).
+        controller.setActive(false, restore)
+        controller.publish(ListenTogetherState.Idle)
+        message?.let(controller::message)
+    }
+
+    /**
+     * Lets go of the room: its socket, everything its scope runs, and all that's known about it. The player stays in
+     * session mode with the user's queue aside: [teardown] goes on to end the session, a move to the station's newer room.
+     * [pausedLocally] stays too: a listener who paused here is still paused after a move.
+     */
+    private fun dropRoom() {
+        // The rest of a listener's time, while the room it was counted in is still known.
+        reportListening()
+        listeningSince = null
         // Close before cancelling: RoomClient runs in sessionScope and aborts its socket when that is cancelled,
         // which would drop the End or MakeHost frame queued a moment ago.
         connection?.close()
@@ -1011,21 +1390,15 @@ class ListenTogetherSession(
         addInbox?.close()
         addInbox = null
         stopDrift()
-        player.events = null
-        player.exitSession()
+        player.events = null // the player's events are for a song no room holds now; enter() listens again
         code = null; url = null; myId = null; token = null; room = null; isHost = false; pendingLoad = null; loadsInFlight = 0
         welcomed = false; unplayableInARow = 0; skipNoticeKey = NONE; heldAdds.clear(); awaitingAdds.clear()
+        requests = emptyList(); awaitingRequests.clear()
         timeline = null; applied = null; loadedKey = NONE; itemKey = NONE; readyKey = NONE; unavailableKey = NONE; lastStatus = null
         roomPreparingKey = NONE; preparedAt = 0L; prepareLimitJob = null // the job died with sessionScope
         reconnecting = false; versionMismatch = false; history.clear(); radioTriedKey = NONE
         seenMembers.clear(); memberNames.clear(); pendingLeaves.clear() // their jobs died with sessionScope
-        pausedLocally = false
         clockSync.reset()
-        // exitSession has already stopped and emptied the player. With restore, PlayerRepositoryImpl puts the
-        // user's queue back, paused, and saves nothing until then (restorePending).
-        controller.setActive(false, restore)
-        controller.publish(ListenTogetherState.Idle)
-        message?.let(controller::message)
     }
 
     private fun send(message: ClientMessage) {
@@ -1057,12 +1430,13 @@ class ListenTogetherSession(
 
     private fun publish() {
         intentChanged()
+        countListening()
         val code = code ?: return
         val url = url ?: return
         val r = room
         val id = myId
         if (r == null || id == null) {
-            controller.publish(ListenTogetherState.Connecting(hosting = isHost))
+            controller.publish(ListenTogetherState.Connecting(hosting = isHost, station = stationId))
             return
         }
         controller.publish(
@@ -1077,11 +1451,16 @@ class ListenTogetherSession(
                 queue = r.queue,
                 qv = r.qv,
                 names = memberNames.toMap(),
-                roomKnowsAdds = r.v >= RoomProtocol.VERSION,
-                guestsAdd = r.v >= RoomProtocol.VERSION && r.guestsAdd,
+                // A session has no guests-add switch to show: its listeners request, its co-hosts add.
+                roomKnowsAdds = r.v >= RoomProtocol.ADDS_VERSION && r.session == null,
+                guestsAdd = r.v >= RoomProtocol.ADDS_VERSION && r.guestsAdd,
                 myGuestsAdd = myGuestsAdd,
-                hostAppOutdated = r.v >= RoomProtocol.VERSION &&
-                    r.members.firstOrNull { it.id == r.host }?.let { (it.v ?: 1) < RoomProtocol.VERSION } == true,
+                hostAppOutdated = r.v >= RoomProtocol.ADDS_VERSION &&
+                    r.members.firstOrNull { it.id == r.host }?.let { (it.v ?: 1) < RoomProtocol.ADDS_VERSION } == true,
+                session = r.session,
+                role = role(),
+                requests = requests,
+                onAir = onAir(),
             ),
         )
     }
@@ -1097,11 +1476,27 @@ class ListenTogetherSession(
         var suggested: Int? = null
     }
 
+    /** One batch of a listener's requests on its way: how many were wanted, how many of theirs already waited, the answers so far. */
+    private class RequestsOnTheirWay(var wanted: Int, val waitingBefore: Int) {
+        var unanswered = 0
+        var queued = 0
+        var waiting = 0
+    }
+
     private companion object {
         const val TAG = "ListenTogether"
         const val NONE = -1
         const val MAX_QUEUE = 200
         const val MAX_SUGGESTIONS = 3
+        /** A session's waiting requests from one listener (room.js MAX_REQUESTS_EACH). */
+        const val MAX_REQUESTS_WAITING = 3
+        const val REQUEST_QUEUED = "queued"
+        const val REQUEST_WAITING = "waiting"
+        /** A move to the station's newer session asks for its room every 3 s for 30 s (11 asks, the first at once). */
+        const val MOVE_ASK_GAP_MS = 3_000L
+        const val MOVE_ASKS = 11
+        /** How often a listener's time goes to StationHeard, which keeps it per station. */
+        const val LISTENING_REPORT_MS = 15_000L
         const val MAX_UNPLAYABLE_IN_A_ROW = 3
         const val END_SLOP_MS = 1_000L
         /** One guest's songs waiting in the room's queue (owner decision 7); keep in sync with MAX_GUEST_WAITING in room.js. */

@@ -174,7 +174,7 @@ class ListenTogetherSessionTest {
         join()
         assertThat(controller.active.value).isTrue()
         assertThat(player.calls.take(3)).containsExactly("save", "enter:listener", "pause").inOrder()
-        assertThat(connection.hello!!()).isEqualTo(ClientMessage.Hello(name = "Rawn", v = 2, guestsAdd = true))
+        assertThat(connection.hello!!()).isEqualTo(ClientMessage.Hello(name = "Rawn", v = 3, guestsAdd = true))
     }
 
     @Test fun `a prepared song is loaded paused and ready is reported once the player can play it`() = runTest {
@@ -445,6 +445,21 @@ class ListenTogetherSessionTest {
         assertThat(player.calls.last()).isEqualTo("exit")
     }
 
+    @Test fun `a session's refusals say why, and put everything back`() = runTest {
+        val notices = notices()
+        session()
+        for (reason in listOf(CloseReason.UPDATE, CloseReason.KEY, CloseReason.BOOTED)) {
+            controller.send(Command.Join("K7QA2PXM")); runCurrent()
+            connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+            connection.incoming.trySend(RoomEvent.Closed(reason)); runCurrent()
+            assertThat(player.calls.last()).isEqualTo("exit")
+            assertThat(controller.active.value).isFalse()
+        }
+        assertThat(notices).containsExactly(
+            "Update Stash to join this session", "Couldn't join this session", "You were removed from this session",
+        ).inOrder()
+    }
+
     @Test fun `rejoining from another device says so here`() = runTest {
         val notices = notices()
         join()
@@ -616,7 +631,7 @@ class ListenTogetherSessionTest {
         player.positionMs = 42_000 // the song played on while the room was being created
         session()
         controller.send(Command.Host); runCurrent()
-        assertThat(connection.hello!!()).isEqualTo(ClientMessage.Hello(name = "Rawn", hostKey = "KEY", v = 2, guestsAdd = true))
+        assertThat(connection.hello!!()).isEqualTo(ClientMessage.Hello(name = "Rawn", hostKey = "KEY", v = 3, guestsAdd = true))
         connection.incoming.trySend(RoomEvent.Connected); runCurrent()
         receive(ServerMessage.Welcome("h", "tok", state(host = "h", track = null, key = 0, v = v, qv = qv, hostV = 2)))
     }
@@ -625,7 +640,7 @@ class ListenTogetherSessionTest {
         host()
         assertThat(player.calls.take(3)).containsExactly("save", "enter:host", "pause").inOrder()
         assertThat(connection.sent.filterIsInstance<ClientMessage.Load>()).containsExactly(ClientMessage.Load(track, 42_000, listOf(next)))
-        assertThat(connection.hello!!()).isEqualTo(ClientMessage.Hello(name = "Rawn", resumeToken = "tok", v = 2, guestsAdd = true))
+        assertThat(connection.hello!!()).isEqualTo(ClientMessage.Hello(name = "Rawn", resumeToken = "tok", v = 3, guestsAdd = true))
         assertThat((controller.state.value as ListenTogetherState.InRoom).url).isEqualTo(ShareLinks.roomUrl("K7QA2PXM"))
     }
 
@@ -928,7 +943,7 @@ class ListenTogetherSessionTest {
     @Test fun `hello says this app knows guest adds and carries the remembered switch`() = runTest {
         guestsAddPref = false
         join()
-        assertThat(connection.hello!!()).isEqualTo(ClientMessage.Hello(name = "Rawn", v = 2, guestsAdd = false))
+        assertThat(connection.hello!!()).isEqualTo(ClientMessage.Hello(name = "Rawn", v = 3, guestsAdd = false))
     }
 
     @Test fun `a guest's Play next and Add to queue go to the room as adds of their own kind`() = runTest {
@@ -1115,6 +1130,18 @@ class ListenTogetherSessionTest {
         assertThat(room.roomKnowsAdds).isTrue()
         assertThat(room.guestsAdd).isFalse()
         assertThat(room.hostAppOutdated).isTrue()
+    }
+
+    @Test fun `this app says v3, and a private room that answers v2 keeps guest adds`() = runTest {
+        // Sessions plan step 2, decision 1: a capability compares with ADDS_VERSION, never with what the hello says.
+        joinV2(hostV = 3) // the host on this app, which says 3
+        assertThat(connection.hello!!().v).isEqualTo(3)
+        val room = controller.state.value as ListenTogetherState.InRoom
+        assertThat(room.roomKnowsAdds).isTrue()
+        assertThat(room.guestsAdd).isTrue()
+        assertThat(room.hostAppOutdated).isFalse()
+        player.interceptor!!.onAdd(listOf(playNext("2"))); gathered()
+        assertThat(adds()).containsExactly(ClientMessage.Add(listOf(next), next = true))
     }
 
     @Test fun `a guest tapping a song where guests can add is pointed to Play next`() = runTest {

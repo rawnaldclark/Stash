@@ -121,6 +121,13 @@ val syncDebugBaseUrl: String =
 val syncDebugCleartextHost: String? =
     syncDebugBaseUrl.takeIf { it.startsWith("http://") }?.removePrefix("http://")?.substringBefore('/')?.substringBefore(':')
 
+// Debug builds can send every share API call (mixes, song links, Community, Listen Together, Sessions) to a share
+// Worker under `wrangler dev` on this PC instead: `share.baseUrl=http://127.0.0.1:8811` in local.properties, reached
+// from the phone over `adb reverse tcp:8811 tcp:8811`. Read from local.properties only, never the environment, so CI
+// can't set it; release builds always get "". The debug network security config below already allows cleartext to
+// 127.0.0.1 and localhost. StashApplication applies it (ShareConfig.apiOverride).
+val shareDebugBaseUrl: String = localProperties.getProperty("share.baseUrl").orEmpty().trim().trimEnd('/')
+
 /**
  * The debug build's network security config: the main one (no cleartext anywhere), plus cleartext for exactly the
  * host of `sync.baseUrl` when that is an http:// address (a Worker under `wrangler dev` on this PC).
@@ -224,6 +231,7 @@ android {
     buildTypes {
         release {
             buildConfigField("String", "SYNC_BASE_URL", "\"$syncReleaseBaseUrl\"")
+            buildConfigField("String", "SHARE_BASE_URL", "\"\"")
             buildConfigField("Boolean", "WEB_LINK_ENABLED", "true")
             manifestPlaceholders["webLinkEnabled"] = "true"
             // ARM only in the release APK. x86/x86_64 were ~71 MB of the universal APK (each ABI
@@ -249,6 +257,7 @@ android {
         }
         debug {
             buildConfigField("String", "SYNC_BASE_URL", "\"$syncDebugBaseUrl\"")
+            buildConfigField("String", "SHARE_BASE_URL", "\"$shareDebugBaseUrl\"")
             buildConfigField("Boolean", "WEB_LINK_ENABLED", "true")
             manifestPlaceholders["webLinkEnabled"] = "true"
             applicationIdSuffix = ".debug"
