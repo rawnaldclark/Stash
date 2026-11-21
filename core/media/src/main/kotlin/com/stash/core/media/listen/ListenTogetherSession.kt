@@ -827,7 +827,7 @@ class ListenTogetherSession(
     /** A room that knows guest adds takes this phone's adds straight in: it hosts, or the host lets guests add. */
     private fun canAddDirectly(): Boolean {
         val r = room ?: return false
-        return r.v >= RoomProtocol.VERSION && (isHost || r.guestsAdd)
+        return r.v >= RoomProtocol.ADDS_VERSION && (isHost || r.guestsAdd)
     }
 
     /**
@@ -858,7 +858,7 @@ class ListenTogetherSession(
     private fun deliver(runs: List<Pair<List<SharedTrack>, Boolean>>, beyond: Int = 0) {
         val r = room
         if (r == null || !welcomed) return hold(runs)
-        if (r.v < RoomProtocol.VERSION) return deliverToOlderRoom(r, runs)
+        if (r.v < RoomProtocol.ADDS_VERSION) return deliverToOlderRoom(r, runs)
         val direct = isHost || r.guestsAdd
         // Not sending what can't go in: the room enforces these too, so this only saves the messages.
         var left = when {
@@ -929,7 +929,7 @@ class ListenTogetherSession(
     /** A guest takes their own song out (the host edits through [Command.SetQueue]); shown at once, like the host's swipe. */
     private fun unqueue(track: SharedTrack, at: Int) {
         val r = room ?: return
-        if (r.v < RoomProtocol.VERSION || (!isHost && track.addedBy != myId)) return
+        if (r.v < RoomProtocol.ADDS_VERSION || (!isHost && track.addedBy != myId)) return
         val i = if (r.queue.getOrNull(at) == track) at else r.queue.indexOf(track)
         if (i >= 0) room = r.copy(queue = r.queue.filterIndexed { j, _ -> j != i })
         send(ClientMessage.Unqueue(track, at))
@@ -939,7 +939,7 @@ class ListenTogetherSession(
     /** The host's switch. The caller remembers it; the room hears it now while this phone hosts, else in the next hello. */
     private fun setGuestsAdd(on: Boolean) {
         myGuestsAdd = on
-        if (isHost && (room?.v ?: 1) >= RoomProtocol.VERSION) send(ClientMessage.Settings(on))
+        if (isHost && (room?.v ?: 1) >= RoomProtocol.ADDS_VERSION) send(ClientMessage.Settings(on))
         publish()
     }
 
@@ -1080,11 +1080,11 @@ class ListenTogetherSession(
                 queue = r.queue,
                 qv = r.qv,
                 names = memberNames.toMap(),
-                roomKnowsAdds = r.v >= RoomProtocol.VERSION,
-                guestsAdd = r.v >= RoomProtocol.VERSION && r.guestsAdd,
+                roomKnowsAdds = r.v >= RoomProtocol.ADDS_VERSION,
+                guestsAdd = r.v >= RoomProtocol.ADDS_VERSION && r.guestsAdd,
                 myGuestsAdd = myGuestsAdd,
-                hostAppOutdated = r.v >= RoomProtocol.VERSION &&
-                    r.members.firstOrNull { it.id == r.host }?.let { (it.v ?: 1) < RoomProtocol.VERSION } == true,
+                hostAppOutdated = r.v >= RoomProtocol.ADDS_VERSION &&
+                    r.members.firstOrNull { it.id == r.host }?.let { (it.v ?: 1) < RoomProtocol.ADDS_VERSION } == true,
             ),
         )
     }

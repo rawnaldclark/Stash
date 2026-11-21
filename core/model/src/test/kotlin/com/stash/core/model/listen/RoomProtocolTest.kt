@@ -77,7 +77,7 @@ class RoomProtocolTest {
 
     @Test fun `guest adds go on the wire as the room reads them`() {
         assertThat(RoomProtocol.encode(ClientMessage.Hello(name = "Rawn", v = RoomProtocol.VERSION, guestsAdd = true)))
-            .isEqualTo("""{"t":"hello","name":"Rawn","v":2,"guestsAdd":true}""")
+            .isEqualTo("""{"t":"hello","name":"Rawn","v":3,"guestsAdd":true}""")
         assertThat(RoomProtocol.encode(ClientMessage.Add(listOf(SharedTrack("Xtal", "Aphex Twin")), next = false)))
             .isEqualTo("""{"t":"add","tracks":[{"t":"Xtal","a":"Aphex Twin"}],"next":false}""")
         assertThat(RoomProtocol.encode(ClientMessage.Unqueue(SharedTrack("Xtal", "Aphex Twin", addedBy = "M2"), at = 1)))

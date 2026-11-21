@@ -15,11 +15,11 @@ object RoomProtocol {
     val EMOJI: List<String> = listOf("❤️", "🔥", "😂", "😮", "👏", "🎶")
 
     /**
-     * What this app speaks, sent in [ClientMessage.Hello]: 2 = guests can add songs ([ClientMessage.Add],
-     * [ClientMessage.Unqueue], [ClientMessage.Settings], `qv`). A room answers with [RoomState.v]; one that doesn't
-     * is an older Worker, and the app suggests as before. Keep in sync with PROTOCOL_V in room.js.
+     * What this app speaks, sent in [ClientMessage.Hello]: 3 = Sessions (a station's public room), which takes nothing
+     * older; 2 was guests adding songs ([ADDS_VERSION]). A room answers with [RoomState.v]: a session 3, a private room
+     * 2, an older Worker nothing (and the app suggests as before). Keep in sync with PUBLIC_V in room.js.
      */
-    const val VERSION = 2
+    const val VERSION = 3
 
     /**
      * The first version that knows guest adds: a room or member at this or above takes [ClientMessage.Add],
