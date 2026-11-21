@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.CastConnected
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
@@ -139,6 +140,7 @@ fun MiniPlayer(
     viewModel: NowPlayingViewModel = hiltViewModel(),
     listen: ListenTogetherViewModel = hiltViewModel(),
     cast: com.stash.feature.nowplaying.cast.CastViewModel = hiltViewModel(),
+    session: com.stash.feature.nowplaying.session.SessionRoomViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     // Where the music plays (Remote v2 §3): a speaker or a browser shows as a line under the title; a tap opens Play on.
@@ -150,6 +152,9 @@ fun MiniPlayer(
     val position = viewModel.positionMs.collectAsStateWithLifecycle()
     val together by listen.state.collectAsStateWithLifecycle()
     val room = together as? ListenTogetherState.InRoom
+    // Sessions: in a station's session the card says which station and that it's live, and a listener's close leaves.
+    val inSession = room?.session != null
+    val sessionState by session.state.collectAsStateWithLifecycle()
     val chrome = LocalAlbumChrome.current
 
     AnimatedVisibility(
@@ -334,7 +339,26 @@ fun MiniPlayer(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            if (playOnLine != null) {
+                            if (inSession && room != null) {
+                                // "● Maya's Desk Radio · LIVE · 14" (UX spec 2026-11-20 §4.6): the room carries on here.
+                                val listeners = room.session?.listeners ?: 0
+                                val name = sessionState.station?.name ?: androidx.compose.ui.res.stringResource(R.string.room_station)
+                                androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.size(6.dp).background(com.stash.feature.nowplaying.session.LiveRed, CircleShape))
+                                    Spacer(Modifier.size(5.dp))
+                                    Text(
+                                        text = if (listeners > 0) {
+                                            androidx.compose.ui.res.stringResource(R.string.mini_session_live_count, name, listeners)
+                                        } else {
+                                            androidx.compose.ui.res.stringResource(R.string.mini_session_live, name)
+                                        },
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            } else if (playOnLine != null) {
                                 // "Chrome on Windows" in the accent, as Spotify's device line; a tap opens Play on.
                                 androidx.compose.foundation.layout.Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -368,7 +392,8 @@ fun MiniPlayer(
                     }
                 }
 
-                room?.let { MiniSessionFaces(it) }
+                // A private room's faces; a session's card says the station instead, and keeps the room for the title.
+                room?.takeIf { !inSession }?.let { MiniSessionFaces(it) }
 
                 // The controls keep the web's visual sizes (36 / 40 / 36, 10dp apart) inside 48dp
                 // touch slots set edge to edge: half a slot's spare width on each side makes the
@@ -445,7 +470,17 @@ fun MiniPlayer(
 
                     // Skip next. A Listen Together listener can't skip the room's song: the slot stays, empty,
                     // so play/pause doesn't move when the host role changes hands.
-                    if (LocalListenTogetherRole.current.isGuest) {
+                    if (inSession && room?.isHost == false) {
+                        // A session listener's close: Leave, with the room's rule (the sheet after 2 minutes or more).
+                        MiniIconButton(onClick = session::leave) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = androidx.compose.ui.res.stringResource(R.string.room_leave),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    } else if (LocalListenTogetherRole.current.isGuest) {
                         Spacer(Modifier.size(MiniTouchTarget))
                     } else {
                         MiniIconButton(onClick = viewModel::onSkipNext) {
