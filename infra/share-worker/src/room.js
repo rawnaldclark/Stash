@@ -2,16 +2,20 @@
  * Listen Together room logic (spec docs/superpowers/specs/2026-09-24-listen-together-design.md §2–§4;
  * guests adding songs: docs/superpowers/specs/2026-11-04-listen-together-guest-adds-design.md).
  *
- * Pure: step(state, event, now) → { state, out, alarmAt, bind?, reject?, closed? }.
+ * Pure: step(state, event, now) → { state, out, alarmAt, bind?, reject?, closed?, kick?, live? }. `kick`: members a
+ * session's host booted, whose sockets the shell closes once `out` is sent. `live`: a session's live directory write,
+ * `{ upsert: row }` or `{ remove: { stationId, room } }`, which the shell makes after storing (src/stations-api.js).
  * No I/O, clock or randomness: the ListenRoom Durable Object supplies `now`, fresh ids and the
  * host-key check, so `node --test` covers every rule without the Workers runtime.
  *
  * Events:
- *   { type: "create", code, hostName, keyHash }
- *   { type: "hello", msg, hostKeyOk, newId, newToken }  a socket's first message
+ *   { type: "create", code, hostName, keyHash, stationId? }  with stationId, a session (Sessions: a public room)
+ *   { type: "hello", msg, hostKeyOk, listenerHash?, newId, newToken }  a socket's first message; listenerHash is the
+ *                                                       SHA-256 of the Community key it sent, worked out by the shell
  *   { type: "msg", from, msg, newId? }                  any later message from member `from`
  *   { type: "close", from }                             member `from`'s socket closed
  *   { type: "alarm" }
+ *   { type: "stationGone", reason }                     a session's station went off the air (from the shell)
  * out: [{ to: memberId | "all", msg }]. An unchanged room comes back as the SAME state object.
  *
  * The queue, front to back: the Play next songs people added (first come, first played), then their Add to queue
@@ -75,7 +79,37 @@ export const MAX_REMOVED = 50;
  */
 export const MAX_QUEUE_CHARS = 170_000;
 
-const HOST_ONLY = new Set(["load", "play", "pause", "seek", "queue", "suggestion", "makeHost", "end", "settings"]);
+/*
+ * Sessions (spec docs/superpowers/specs/2026-11-20-sessions-design.md §4; build plan
+ * docs/superpowers/plans/2026-11-20-sessions.md and its step 1): a room opened for a station is public. Everything a
+ * session does differently is behind `s.pub`, so a private room behaves exactly as before.
+ */
+export const MAX_LISTENERS = 50;
+export const MAX_COHOSTS = 3;
+/** The host, 3 co-hosts and 50 listeners. */
+export const MAX_PUBLIC_MEMBERS = 1 + MAX_COHOSTS + MAX_LISTENERS;
+/** What a session speaks, and the least an app must say in its hello to join one (build plan, decision 5). */
+export const PUBLIC_V = 3;
+/** Paused this long, a session ends. */
+export const PAUSE_END_MS = 15 * 60_000;
+/** How often a session on the air rewrites its live directory row when nothing else has. */
+export const LIVE_BEAT_MS = 60_000;
+/**
+ * A change (a new song, pause or play) reaches the directory at most this soon after its last write, so a host's phone
+ * can't make the Community database write at its message rate (20 a second); a later change waits for the gap's end.
+ */
+export const LIVE_GAP_MS = 5_000;
+/** Requests one listener may have waiting, and a session in all. */
+export const MAX_REQUESTS_EACH = 3;
+export const MAX_REQUESTS = 30;
+/** Key hashes a session remembers as booted. */
+export const MAX_BOOTED = 200;
+export const capacity = (s) => (s.pub ? MAX_PUBLIC_MEMBERS : MAX_MEMBERS);
+
+const HOST_ONLY = new Set([
+    "load", "play", "pause", "seek", "queue", "suggestion", "makeHost", "end", "settings",
+    "autoAccept", "cohost", "boot", "presence", // sessions
+]);
 /** Phone status → stored member status (`ready` is stored as `ok`, spec §3). */
 const STATUSES = { ready: "ok", buffering: "buffering", unavailable: "unavailable", drifting: "drifting" };
 
@@ -92,7 +126,7 @@ export function positionAt(tl, now) {
     return tl.playing ? tl.positionMs + Math.max(0, now - tl.atRoomMs) : tl.positionMs;
 }
 
-export function createRoom({ code, hostName, keyHash }, now) {
+export function createRoom({ code, hostName, keyHash, stationId }, now) {
     return {
         code, keyHash, createdAt: now, hostName: cleanName(hostName),
         rev: 0, host: null, track: null, trackKey: 0,
@@ -100,6 +134,12 @@ export function createRoom({ code, hostName, keyHash }, now) {
         queue: [], members: [], suggestions: [], phase: { kind: "playing" },
         reactAt: {}, lastLeftAt: now, hostless: false, accepted: [],
         qv: 0, adds: [], removed: [],
+        // A session: the station it's on the air for, and its own state. Co-hosts and the booted are kept by key hash,
+        // never by member id, so both hold across a reconnect (build plan, decision 3). `pausedSince`: a session ends
+        // after PAUSE_END_MS without playing, and it starts with nothing playing. `liveAt`/`liveKey`: its last live row.
+        ...(stationId ? {
+            pub: { stationId, cohosts: [], booted: [], autoAccept: false, presence: "booth", pausedSince: now, liveAt: null, liveKey: null },
+        } : {}),
     };
 }
 
@@ -123,12 +163,80 @@ function upgrade(s) {
 /** `v` only for an app that sent one (2 = it knows guest adds), so older members read exactly as before. */
 const publicMembers = (s) => connected(s).map(({ id, name, joinedAt, status, v }) => ({ id, name, joinedAt, status, ...(v ? { v } : {}) }));
 
+const memberById = (s, id) => s.members.find((m) => m.id === id);
+/** In a session, a member whose key hash the host made a co-host. */
+function isCohost(s, id) {
+    if (!s.pub) return false;
+    const kh = memberById(s, id)?.kh;
+    return !!kh && s.pub.cohosts.includes(kh);
+}
+/** The host or a co-host: who sees every request, and may add, take out and accept songs. */
+const isStaff = (s, id) => id === s.host || isCohost(s, id);
+/** Everyone connected but the host: a session's "12 listening". */
+const listenerCount = (s) => connected(s).filter((m) => m.id !== s.host).length;
+/** What every phone in a session knows about it, as `session` and in `state`. Member ids only, never a key hash. */
+function sessionInfo(s) {
+    return {
+        station: s.pub.stationId, listeners: listenerCount(s),
+        cohosts: connected(s).filter((m) => isCohost(s, m.id)).map((m) => m.id),
+        autoAccept: s.pub.autoAccept, presence: s.pub.presence,
+    };
+}
+const sessionMsg = (s) => ({ to: "all", msg: { t: "session", ...sessionInfo(s) } });
+
+/*
+ * The live directory (spec §3; build plan, task 18): a session on the air has a row in the Community database's `live`
+ * table, written by the shell from what step() returns. The room decides when: its first song, then each new song,
+ * pause or play (at most one write a LIVE_GAP_MS), and a heartbeat every LIVE_BEAT_MS that keeps the row fresh and the
+ * counts close. A song on its way counts as playing, so a new song is one write, not one at the load and another when
+ * it starts.
+ */
+const onAir = (s) => s.timeline.playing || s.phase.kind === "preparing";
+const liveKeyOf = (s) => `${s.trackKey}|${onAir(s) ? 1 : 0}`;
+/** When the session's next row is due; null for a private room or before the first song. */
+function liveDueAt(s) {
+    const p = s.pub;
+    if (!p || !s.track) return null;
+    if (p.liveAt === null) return 0;
+    return p.liveAt + (liveKeyOf(s) === p.liveKey ? LIVE_BEAT_MS : LIVE_GAP_MS);
+}
+const graphemes = typeof Intl.Segmenter === "function" ? new Intl.Segmenter() : null;
+/** A name's first letter as a face in the directory shows it (one grapheme: a flag stays a flag); null with no name. */
+function initialOf(name) {
+    if (!name) return null;
+    const first = graphemes ? graphemes.segment(name)[Symbol.iterator]().next().value.segment : [...name][0];
+    const up = first.toUpperCase();
+    return [...up].length === 1 ? up : first; // "ß" would be "SS"
+}
+/** Up to 4 faces for the directory, the host's first, then by who joined first: initials and member ids, never names. */
+function crowdOf(s) {
+    const host = findConnected(s, s.host);
+    const rest = connected(s).filter((m) => m.id !== s.host).sort((a, b) => a.joinedAt - b.joinedAt);
+    return [...(host ? [host] : []), ...rest].slice(0, 4).map((m) => ({ i: initialOf(m.name), id: m.id }));
+}
+/** The session's row as of [now], marking it written. The song goes without `by`: a member id means nothing outside. */
+function liveRow(s, now) {
+    s.pub.liveAt = now;
+    s.pub.liveKey = liveKeyOf(s);
+    const { by, ...track } = s.track;
+    return {
+        stationId: s.pub.stationId, room: s.code, track, listeners: listenerCount(s), paused: !onAir(s),
+        crowd: crowdOf(s), startedAt: s.createdAt, seenAt: now,
+    };
+}
+
+/** The waiting requests member [id] may see: all of them for the host and co-hosts, a listener's own for a listener. */
+const requestsFor = (s, id) => (isStaff(s, id) ? s.suggestions : s.suggestions.filter((x) => x.from === id));
+const requestsMsg = (s, id) => ({ to: id, msg: { t: "requests", requests: requestsFor(s, id) } });
+
 /**
  * Guests' Play next and Add to queue go straight in: the host's app knows guest adds (`v` ≥ 2 in its hello) and its
  * "Let guests add songs" switch is on (`ga`, on unless it said otherwise). Read from whoever hosts now, so a new host's
- * own switch takes over with them; an older host keeps the approvals it knows.
+ * own switch takes over with them; an older host keeps the approvals it knows. Never in a session: there, listeners'
+ * songs are requests, which wait for the host or a co-host.
  */
 export function guestsCanAdd(s) {
+    if (s.pub) return false;
     const host = s.members.find((m) => m.id === s.host);
     return !!host && (host.v ?? 1) >= 2 && host.ga !== false;
 }
@@ -137,22 +245,25 @@ export function guestsCanAdd(s) {
 export function publicState(s) {
     return {
         rev: s.rev, host: s.host, track: s.track, trackKey: s.trackKey, timeline: s.timeline, queue: s.queue,
-        members: publicMembers(s), suggestions: s.suggestions,
+        // A session's requests go to the host and co-hosts alone (`requests`), never in what everyone gets.
+        members: publicMembers(s), suggestions: s.pub ? [] : s.suggestions,
         // The guests' deadline only, as always: the host's is the room's business.
         phase: s.phase.kind === "preparing"
             ? { kind: "preparing", trackKey: s.phase.trackKey, deadlineMs: s.phase.deadlineMs }
             : { kind: "playing" },
-        v: PROTOCOL_V, guestsAdd: guestsCanAdd(s), qv: s.qv ?? 0,
+        v: s.pub ? PUBLIC_V : PROTOCOL_V, guestsAdd: guestsCanAdd(s), qv: s.qv ?? 0,
+        ...(s.pub ? { session: sessionInfo(s) } : {}),
     };
 }
 
-/** The Join screen's view (GET /v1/rooms/{code}). */
+/** The Join screen's view (GET /v1/rooms/{code}); a session's also names its station and audience. */
 export function preview(s) {
     const host = s.members.find((m) => m.id === s.host);
     return {
         hostName: host?.name ?? s.hostName,
         memberCount: connected(s).length,
-        full: s.members.length >= MAX_MEMBERS,
+        full: s.members.length >= capacity(s),
+        ...(s.pub ? { station: s.pub.stationId, listeners: listenerCount(s) } : {}),
         ...(s.track ? { track: s.track } : {}),
     };
 }
@@ -160,12 +271,16 @@ export function preview(s) {
 /**
  * The earliest pending timer: room expiry, empty-room close, a 60 s handover/prune, the prepare deadline (§2): the
  * guests' while the host is ready, else the end of the wait for the host (the guests' alone would start nothing).
+ * A session also ends PAUSE_END_MS into a pause, and wakes when its next live row is due.
  */
 export function nextAlarm(s) {
     const times = [s.createdAt + MAX_AGE_MS];
     if (connected(s).length === 0) times.push(s.lastLeftAt + EMPTY_CLOSE_MS);
     for (const m of s.members) if (m.leftAt !== null) times.push(m.leftAt + HANDOVER_MS);
     if (s.phase.kind === "preparing") times.push(hostSettled(s) ? s.phase.deadlineMs : hostDeadline(s));
+    if (s.pub?.pausedSince != null) times.push(s.pub.pausedSince + PAUSE_END_MS);
+    const live = liveDueAt(s);
+    if (live !== null) times.push(live);
     return Math.min(...times);
 }
 
@@ -334,12 +449,14 @@ function hostSettled(s) {
 const hostDeadline = (s) => s.phase.hostDeadlineMs ?? s.phase.deadlineMs;
 /**
  * A song's handshake is over: every phone is settled; or the guests' time is up and the host is settled (a slow guest
- * joins late, the host is never left behind); or the room has waited for its host as long as it will.
+ * joins late, the host is never left behind); or the room has waited for its host as long as it will. A session waits
+ * for its host alone (build plan, decision 1): 50 strangers' phones must never add silence to every song, and a listener
+ * who isn't ready joins mid-song, as a late joiner does.
  */
 function startDue(s, now) {
     if (s.phase.kind !== "preparing") return false;
     if (now >= hostDeadline(s)) return true;
-    return hostSettled(s) && (allSettled(s) || now >= s.phase.deadlineMs);
+    return hostSettled(s) && (!!s.pub || allSettled(s) || now >= s.phase.deadlineMs);
 }
 /** Starts the song if its handshake is over: after anything that may settle it (a status, a leave, a new host, the alarm). */
 function startIfDue(ctx) {
@@ -348,9 +465,13 @@ function startIfDue(ctx) {
     return true;
 }
 
-/** [by] names the member who caused the change (play, pause, seek); the room's own start has none. */
+/**
+ * [by] names the member who caused the change (play, pause, seek); the room's own start has none. A session counts
+ * how long it hasn't played since: PAUSE_END_MS of that ends it, and a seek while paused doesn't reset it.
+ */
 function setTimeline(ctx, timeline, by) {
     ctx.s.timeline = timeline;
+    if (ctx.s.pub) ctx.s.pub.pausedSince = timeline.playing ? null : (ctx.s.pub.pausedSince ?? ctx.now);
     ctx.s.rev++;
     ctx.out.push({ to: "all", msg: { t: "timeline", rev: ctx.s.rev, trackKey: ctx.s.trackKey, ...timeline, ...(by ? { by } : {}) } });
 }
@@ -430,6 +551,48 @@ function switchChanged(ctx, before, announce) {
     ctx.out.push({ to: "all", msg: { t: "settings", guestsAdd: now } });
 }
 
+/*
+ * A session's requests: listeners' songs waiting for the host or a co-host (UX spec §4.2). They're kept in
+ * `s.suggestions`, which a session never broadcasts: the host and co-hosts get the whole list, a listener only their own
+ * (`requests`).
+ */
+
+/** The waiting requests to the host and every co-host, and to each listener in [touched] (whose own list changed). */
+function pushRequests(ctx, touched = []) {
+    const { s } = ctx;
+    for (const m of connected(s)) if (isStaff(s, m.id)) ctx.out.push(requestsMsg(s, m.id));
+    for (const id of new Set(touched)) if (!isStaff(s, id) && findConnected(s, id)) ctx.out.push(requestsMsg(s, id));
+}
+
+/** One more waiting request, within MAX_REQUESTS_EACH a listener and MAX_REQUESTS in all; false when it doesn't fit. */
+function pushRequest(s, x) {
+    if (s.suggestions.length >= MAX_REQUESTS) return false;
+    if (s.suggestions.filter((y) => y.from === x.from).length >= MAX_REQUESTS_EACH) return false;
+    s.suggestions.push(x);
+    return true;
+}
+
+/**
+ * Whether request [x] fits in the queue now: the room's MAX_QUEUE adds and its MAX_QUEUE_CHARS (30 waiting requests
+ * could otherwise carry the queue past what a frame holds). [byRoom]: nobody chose it (Auto-accept), so its requester's
+ * MAX_GUEST_WAITING counts too, as for a guest's add; the host's or a co-host's pick isn't held to that, as a suggestion
+ * the host accepts isn't.
+ */
+function fitsQueue(s, x, byRoom) {
+    if (s.adds.length >= MAX_QUEUE || (byRoom && room(s, x.from) <= 0)) return false;
+    return JSON.stringify(s.queue).length + JSON.stringify({ ...x.track, by: x.from }).length + 1 <= MAX_QUEUE_CHARS;
+}
+
+/** Request [x] into the queue, its requester's, by Play next ([next]) or Add to queue. The caller bumps qv and settles. */
+const queueRequest = (s, x, next) => insertAdds(s, [{ ...x.track, by: x.from }], next);
+
+/** Closes the room, everyone told why. */
+function endRoom(ctx, reason) {
+    ctx.out.push({ to: "all", msg: { t: "ended", reason } });
+    ctx.closed = true;
+    return true;
+}
+
 function startPlayback(ctx) {
     ctx.s.phase = { kind: "playing" };
     setTimeline(ctx, { positionMs: ctx.s.timeline.positionMs, atRoomMs: ctx.now + START_LEAD_MS, playing: true });
@@ -457,21 +620,42 @@ export function step(state, event, now) {
     const ctx = { s: structuredClone(state), out: [], now, event, msg: msg ?? {} };
     upgrade(ctx.s);
     const changed = handler(ctx);
-    if (ctx.closed) return { state: null, out: ctx.out, alarmAt: null, closed: true };
-    const next = changed ? ctx.s : state;
-    return { state: next, out: ctx.out, alarmAt: nextAlarm(next), bind: ctx.bind, reject: ctx.reject };
+    if (ctx.closed) {
+        // A session takes its row out of the directory; one whose row went (stationGone) has nothing to take out.
+        const p = ctx.s.pub;
+        const live = p?.liveAt != null ? { remove: { stationId: p.stationId, room: ctx.s.code } } : undefined;
+        return { state: null, out: ctx.out, alarmAt: null, closed: true, live };
+    }
+    let next = changed ? ctx.s : state;
+    let live;
+    const due = liveDueAt(next);
+    if (due !== null && now >= due) {
+        // A row due is a change to store (liveAt moves), even when the event itself changed nothing (the heartbeat).
+        if (next === state) next = structuredClone(state);
+        live = { upsert: liveRow(next, now) };
+    }
+    return { state: next, out: ctx.out, alarmAt: nextAlarm(next), bind: ctx.bind, reject: ctx.reject, kick: ctx.kick, live };
 }
 
 const EVENTS = {
     hello(ctx) {
         const { s, now, event, msg } = ctx;
+        if (s.pub) {
+            // A session takes an app that speaks it (build plan, decision 5), known by its Community key's hash, which the
+            // shell works out (decision 3), or the host by the host key. Whoever the host booted stays out.
+            if (!(Number.isSafeInteger(msg.v) && msg.v >= PUBLIC_V)) { ctx.reject = { code: 4426, reason: "update" }; return false; }
+            if (!event.hostKeyOk && !event.listenerHash) { ctx.reject = { code: 4401, reason: "key" }; return false; }
+            if (event.listenerHash && s.pub.booted.includes(event.listenerHash)) { ctx.reject = { code: 4403, reason: "booted" }; return false; }
+        }
         const name = cleanName(msg.name);
         const before = guestsCanAdd(s);
         // Only the private token rejoins a slot: every member can see every memberId (spec §3).
         let m = typeof msg.resumeToken === "string" ? s.members.find((x) => x.token === msg.resumeToken) : undefined;
         if (!m) {
-            if (s.members.length >= MAX_MEMBERS) { ctx.reject = { code: 4409, reason: "full" }; return false; }
+            if (s.members.length >= capacity(s)) { ctx.reject = { code: 4409, reason: "full" }; return false; }
             m = { id: event.newId, token: event.newToken, name, joinedAt: now, status: "buffering", leftAt: null };
+            // A session member's key hash: what co-hosting and booting go by. Kept on resume; it never leaves the room.
+            if (s.pub) m.kh = event.listenerHash ?? null;
             s.members.push(m);
         } else {
             m.leftAt = null;
@@ -493,6 +677,8 @@ const EVENTS = {
         ctx.bind = m.id;
         ctx.out.push({ to: m.id, msg: { t: "welcome", memberId: m.id, token: m.token, state: publicState(s) } });
         ctx.out.push(membersMsg(s));
+        // In a session, the requests this member may see, and everyone hears the new count.
+        if (s.pub) ctx.out.push(requestsMsg(s, m.id), sessionMsg(s));
         return true;
     },
 
@@ -504,6 +690,7 @@ const EVENTS = {
         if (connected(s).length === 0) s.lastLeftAt = now;
         s.rev++;
         ctx.out.push(membersMsg(s));
+        if (s.pub) ctx.out.push(sessionMsg(s));
         startIfDue(ctx); // the last phone waited for left, or the host did: the guests aren't held for it
         return true;
     },
@@ -512,9 +699,13 @@ const EVENTS = {
         const { s, now } = ctx;
         const empty = connected(s).length === 0;
         if (now >= s.createdAt + MAX_AGE_MS || (empty && now >= s.lastLeftAt + EMPTY_CLOSE_MS)) {
-            ctx.out.push({ to: "all", msg: { t: "ended", reason: "closed" } });
-            ctx.closed = true;
-            return true;
+            return endRoom(ctx, s.pub && now >= s.createdAt + MAX_AGE_MS ? "max_age" : "closed");
+        }
+        if (s.pub) {
+            // A session ends with its host and is never passed on (spec §4): gone 60 s, or not playing for 15 minutes.
+            const host = memberById(s, s.host);
+            if (host && host.leftAt !== null && now >= host.leftAt + HANDOVER_MS) return endRoom(ctx, "host_left");
+            if (s.pub.pausedSince !== null && now >= s.pub.pausedSince + PAUSE_END_MS) return endRoom(ctx, "paused");
         }
         let changed = false;
         const expired = s.members.filter((m) => m.leftAt !== null && now >= m.leftAt + HANDOVER_MS);
@@ -522,6 +713,11 @@ const EVENTS = {
             const before = guestsCanAdd(s);
             const gone = new Set(expired.map((m) => m.id));
             s.members = s.members.filter((m) => !gone.has(m.id));
+            if (s.pub) {
+                // A co-host gone for good frees the place; one back on another socket still holds their key hash.
+                const held = new Set(s.members.map((m) => m.kh).filter(Boolean));
+                s.pub.cohosts = s.pub.cohosts.filter((k) => held.has(k));
+            }
             const pending = s.suggestions.length;
             s.suggestions = s.suggestions.filter((x) => !gone.has(x.from));
             for (const id of gone) delete s.reactAt[id];
@@ -535,13 +731,27 @@ const EVENTS = {
                 ctx.out.push(stateMsg(s));
             } else {
                 ctx.out.push(membersMsg(s));
-                if (s.suggestions.length !== pending) ctx.out.push(suggestionsMsg(s));
+                if (s.suggestions.length !== pending) {
+                    if (s.pub) pushRequests(ctx); // a session's requests, to the host and co-hosts only
+                    else ctx.out.push(suggestionsMsg(s));
+                }
             }
             changed = true;
         }
         // The guests' deadline (with the host ready), or the end of the wait for the host. A new 60 s heir counts as host.
         if (startIfDue(ctx)) changed = true;
         return changed;
+    },
+
+    /**
+     * From the shell: the session's station may not be on the air any more (its live row was refused: removed, hidden
+     * or blocked), another session of the station took the row ("replaced"), or its owner deleted it.
+     */
+    stationGone(ctx) {
+        const { s, event } = ctx;
+        if (!s.pub) return false;
+        s.pub.liveAt = null; // the row is gone, or another session's: nothing of ours to take out of the directory
+        return endRoom(ctx, event.reason === "replaced" ? "replaced" : "station_removed");
     },
 };
 
@@ -556,6 +766,7 @@ const MESSAGES = {
         setHostQueue(ctx, msg.why === "pick", left);
         s.timeline = { positionMs: cleanPosition(msg.positionMs, track) ?? 0, atRoomMs: now, playing: false };
         s.phase = { kind: "preparing", trackKey: s.trackKey, deadlineMs: now + PREPARE_MS, hostDeadlineMs: now + HOST_WAIT_CAP_MS };
+        if (s.pub) s.pub.pausedSince = null; // a song on its way is playing, as far as a session's 15 minutes go
         for (const m of connected(s)) m.status = "buffering";
         s.rev++;
         ctx.out.push({ to: "all", msg: {
@@ -569,6 +780,9 @@ const MESSAGES = {
 
     status(ctx) {
         const { s, msg, event } = ctx;
+        // In a session only the host's status counts (decision 1), and listeners' stay quiet (decision 2): no write,
+        // no `members` to 54 phones for each buffering change.
+        if (s.pub && event.from !== s.host) return false;
         const value = Object.hasOwn(STATUSES, msg.status) ? STATUSES[msg.status] : null;
         if (!value) return false;
         // A report for an earlier song must not count toward this song's handshake.
@@ -627,6 +841,11 @@ const MESSAGES = {
         const next = msg.next === true;
         const tracks = msg.tracks.slice(0, MAX_QUEUE).map(cleanTrack).filter(Boolean);
         if (!tracks.length) { answerAdd(ctx, next); return false; }
+        // In a session the host and co-hosts add straight in; a listener's songs go through `request`.
+        if (s.pub) {
+            if (!isStaff(s, event.from)) { answerAdd(ctx, next); return false; }
+            return addSongs(ctx, tracks, next);
+        }
         if (event.from === s.host || guestsCanAdd(s)) return addSongs(ctx, tracks, next);
         if (!event.newId) return false;
         let suggested = 0;
@@ -638,6 +857,7 @@ const MESSAGES = {
 
     suggest(ctx) {
         const { s, msg, event } = ctx;
+        if (s.pub) return false; // a session's listeners request instead
         const track = cleanTrack(msg.track);
         if (!track || s.host === event.from) return false;
         // An older app's Suggest is its Play next: with guest adds on, it goes straight in (owner decision 5).
@@ -650,6 +870,7 @@ const MESSAGES = {
 
     suggestion(ctx) {
         const { s, msg } = ctx;
+        if (s.pub) return false; // requests are taken with `requestAction`
         const i = s.suggestions.findIndex((x) => x.id === msg.id);
         if (i < 0 || (msg.action !== "add" && msg.action !== "dismiss")) return false;
         const [picked] = s.suggestions.splice(i, 1);
@@ -679,7 +900,9 @@ const MESSAGES = {
         const at = Number.isSafeInteger(msg.at) && msg.at >= 0 && msg.at < s.queue.length && addKey(s.queue[msg.at]) === k
             ? msg.at
             : s.queue.findIndex((t) => addKey(t) === k);
-        if (at < 0 || (event.from !== s.host && s.queue[at].by !== event.from)) return false;
+        // The host takes out any song, and in a session so do co-hosts; anyone else only one of theirs.
+        const anySong = s.pub ? isStaff(s, event.from) : event.from === s.host;
+        if (at < 0 || (!anySong && s.queue[at].by !== event.from)) return false;
         s.queue.splice(at, 1);
         s.qv++;
         s.removed.push({ k, qv: s.qv });
@@ -706,6 +929,12 @@ const MESSAGES = {
     react(ctx) {
         const { s, msg, event, now } = ctx;
         if (!EMOJI.includes(msg.emoji)) return false;
+        // A session keeps no reaction clock: 53 listeners reacting once a second would store the whole room 53 times a
+        // second (the load check). The shell holds each socket to REACT_GAP_MS instead (src/listen-room.js).
+        if (s.pub) {
+            ctx.out.push({ to: "all", msg: { t: "reaction", from: event.from, emoji: msg.emoji } });
+            return false;
+        }
         const last = s.reactAt[event.from];
         if (last !== undefined && now - last < REACT_GAP_MS) return false;
         s.reactAt[event.from] = now;
@@ -715,6 +944,7 @@ const MESSAGES = {
 
     makeHost(ctx) {
         const { s, msg } = ctx;
+        if (s.pub) return false; // a session is its host's: co-hosts help, nobody takes over
         if (msg.memberId === s.host || !findConnected(s, msg.memberId)) return false;
         const before = guestsCanAdd(s);
         setHost(s, msg.memberId);
@@ -729,6 +959,168 @@ const MESSAGES = {
     end(ctx) {
         ctx.out.push({ to: "all", msg: { t: "ended", reason: "host_ended" } });
         ctx.closed = true;
+        return true;
+    },
+
+    // ── Sessions only: each of these does nothing in a private room ──────────
+
+    /**
+     * `{ track }`, a listener asking for a song (the host and co-hosts add songs instead). With Auto-accept on it goes
+     * in as Add to queue, as a guest's add would; otherwise, or when it doesn't fit, it waits for the host or a co-host.
+     * The requester always hears what became of it: `requestAnswer {state: "queued" | "waiting" | "full"}`.
+     */
+    request(ctx) {
+        const { s, msg, event } = ctx;
+        if (!s.pub || isStaff(s, event.from)) return false;
+        const track = cleanTrack(msg.track);
+        if (!track) return false;
+        const x = { id: event.newId, from: event.from, track };
+        const answer = (state) => ctx.out.push({ to: event.from, msg: { t: "requestAnswer", state } });
+        if (s.pub.autoAccept && fitsQueue(s, x, true)) {
+            s.qv++;
+            queueRequest(s, x, false);
+            settle(s);
+            s.rev++;
+            ctx.out.push(queueMsg(s));
+            answer("queued");
+            return true;
+        }
+        if (!event.newId || !pushRequest(s, x)) { answer("full"); return false; }
+        s.rev++;
+        answer("waiting");
+        pushRequests(ctx, [event.from]);
+        return true;
+    },
+
+    /**
+     * `{ id, action }` from the host or a co-host, on a waiting request: Play next ("next"), Add to queue ("queue"), or
+     * "pass", which only its requester hears of (UX spec §4.2), with who passed. One that no longer fits the queue stays
+     * waiting, and the sender hears `refused`.
+     */
+    requestAction(ctx) {
+        const { s, msg, event } = ctx;
+        if (!s.pub || !isStaff(s, event.from)) return false;
+        const i = s.suggestions.findIndex((x) => x.id === msg.id);
+        if (i < 0 || !["next", "queue", "pass"].includes(msg.action)) return false;
+        const x = s.suggestions[i];
+        if (msg.action !== "pass" && !fitsQueue(s, x, false)) {
+            ctx.out.push({ to: event.from, msg: { t: "refused", what: "request", reason: "queue_full" } });
+            return false;
+        }
+        s.suggestions.splice(i, 1);
+        if (msg.action === "pass") {
+            if (findConnected(s, x.from)) ctx.out.push({ to: x.from, msg: { t: "requestPassed", track: x.track, by: event.from } });
+        } else {
+            s.qv++;
+            queueRequest(s, x, msg.action === "next");
+            settle(s);
+            ctx.out.push(queueMsg(s));
+        }
+        s.rev++;
+        pushRequests(ctx, [x.from]);
+        return true;
+    },
+
+    /**
+     * `{ on }`, the host's Auto-accept: requests go straight in as Add to queue. Turning it on lets in the ones waiting, in
+     * the order they came; one that doesn't fit stays waiting rather than being lost.
+     */
+    autoAccept(ctx) {
+        const { s, msg } = ctx;
+        if (!s.pub || typeof msg.on !== "boolean" || s.pub.autoAccept === msg.on) return false;
+        s.pub.autoAccept = msg.on;
+        const taken = [];
+        if (msg.on) {
+            const waiting = s.suggestions;
+            s.suggestions = [];
+            for (const x of waiting) {
+                if (!fitsQueue(s, x, true)) { s.suggestions.push(x); continue; }
+                if (!taken.length) s.qv++;
+                queueRequest(s, x, false);
+                taken.push(x.from);
+            }
+            if (taken.length) { settle(s); ctx.out.push(queueMsg(s)); }
+        }
+        s.rev++;
+        ctx.out.push(sessionMsg(s));
+        if (taken.length) pushRequests(ctx, taken);
+        return true;
+    },
+
+    /**
+     * `{ memberId, on }`, the host making a listener a co-host or not, at most MAX_COHOSTS. Kept by key hash, so a co-host
+     * back on a new socket is still one; one gone for good frees the place (the alarm's prune).
+     */
+    cohost(ctx) {
+        const { s, msg, event } = ctx;
+        if (!s.pub || typeof msg.on !== "boolean") return false;
+        const m = findConnected(s, msg.memberId);
+        if (!m || m.id === s.host || !m.kh || s.pub.cohosts.includes(m.kh) === msg.on) return false;
+        if (msg.on && s.pub.cohosts.length >= MAX_COHOSTS) {
+            ctx.out.push({ to: event.from, msg: { t: "refused", what: "cohost", reason: "max_cohosts" } });
+            return false;
+        }
+        s.pub.cohosts = msg.on ? [...s.pub.cohosts, m.kh] : s.pub.cohosts.filter((k) => k !== m.kh);
+        s.rev++;
+        ctx.out.push(sessionMsg(s), requestsMsg(s, m.id));
+        return true;
+    },
+
+    /**
+     * `{ action: "skip" }` from a co-host, passed on to the host's phone, which plays the room (build plan, decision 4),
+     * with who asked and the song it was for, so a host already past that song ignores it. Refused at once while the
+     * host's phone is away. The room itself doesn't change: it follows the host, as always.
+     */
+    command(ctx) {
+        const { s, msg, event } = ctx;
+        if (!s.pub || !isCohost(s, event.from) || msg.action !== "skip") return false;
+        if (!findConnected(s, s.host)) {
+            ctx.out.push({ to: event.from, msg: { t: "refused", what: "skip", reason: "host_reconnecting" } });
+            return false;
+        }
+        ctx.out.push({ to: s.host, msg: { t: "command", action: "skip", from: event.from, trackKey: s.trackKey } });
+        return false;
+    },
+
+    /**
+     * `{ memberId }`, the host putting a listener out for the rest of the session. They hear it first; then their slot,
+     * requests and reaction clock go, their key hash is remembered so a hello with it is refused (4403), and `kick` has
+     * the shell close their socket. Every slot on that key goes, an older one from before a reconnect too. Never a
+     * co-host (take that away first) or the host.
+     */
+    boot(ctx) {
+        const { s, msg, event } = ctx;
+        if (!s.pub) return false;
+        const m = memberById(s, msg.memberId);
+        if (!m || m.id === s.host) return false;
+        if (isCohost(s, m.id)) {
+            ctx.out.push({ to: event.from, msg: { t: "refused", what: "boot", reason: "cohost" } });
+            return false;
+        }
+        if (m.kh && !s.pub.booted.includes(m.kh)) {
+            s.pub.booted.push(m.kh);
+            if (s.pub.booted.length > MAX_BOOTED) s.pub.booted.shift();
+        }
+        const out = new Set(s.members.filter((x) => x.id === m.id || (m.kh && x.kh === m.kh)).map((x) => x.id));
+        for (const id of out) if (findConnected(s, id)) ctx.out.push({ to: id, msg: { t: "ended", reason: "booted" } });
+        s.members = s.members.filter((x) => !out.has(x.id));
+        const pending = s.suggestions.length;
+        s.suggestions = s.suggestions.filter((x) => !out.has(x.from));
+        for (const id of out) delete s.reactAt[id];
+        ctx.kick = [...out];
+        s.rev++;
+        ctx.out.push(membersMsg(s), sessionMsg(s));
+        if (s.suggestions.length !== pending) pushRequests(ctx);
+        return true;
+    },
+
+    /** `{ state: "booth" | "away" }`, the host at the phone or not, so listeners know whether a request will be seen. */
+    presence(ctx) {
+        const { s, msg } = ctx;
+        if (!s.pub || (msg.state !== "booth" && msg.state !== "away") || s.pub.presence === msg.state) return false;
+        s.pub.presence = msg.state;
+        s.rev++;
+        ctx.out.push(sessionMsg(s));
         return true;
     },
 };

@@ -35,14 +35,17 @@ export function fakeSocket() {
     };
 }
 
-/** A fake `ROOMS` namespace: idFromName is the identity, get() makes one ListenRoom per name. */
-export function roomsNamespace(now = () => Date.now()) {
+/**
+ * A fake `ROOMS` namespace: idFromName is the identity, get() makes one ListenRoom per name. [envOf] gives the rooms
+ * their env, as the runtime gives a Durable Object the Worker's bindings (a session writes the live directory to D1).
+ */
+export function roomsNamespace(now = () => Date.now(), envOf = () => ({})) {
     const rooms = new Map();
     return {
         rooms,
         idFromName: (name) => name,
         get(id) {
-            if (!rooms.has(id)) rooms.set(id, new ListenRoom(fakeCtx(), {}, now));
+            if (!rooms.has(id)) rooms.set(id, new ListenRoom(fakeCtx(), envOf(), now));
             return rooms.get(id);
         },
     };
