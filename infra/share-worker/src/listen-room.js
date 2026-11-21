@@ -4,6 +4,7 @@
  * member with serializeAttachment, sends what step() says to send, and arms the single alarm.
  */
 import { step, preview, capacity } from "./room.js";
+import { removeLive, writeLive } from "./stations-api.js";
 import { sameHex, sha256Hex } from "./store.js";
 import { validEditKey } from "./validate.js";
 
@@ -183,6 +184,7 @@ export class ListenRoom {
             await this.ctx.storage.deleteAlarm();
             this.alarmAt = null;
             await this.ctx.storage.deleteAll();
+            if (r.live) await this.directory(r.live);
             return r;
         }
         if (r.state && r.state !== state) await this.ctx.storage.put("room", r.state);
@@ -193,7 +195,26 @@ export class ListenRoom {
             await this.ctx.storage.setAlarm(r.alarmAt);
             this.alarmAt = r.alarmAt;
         }
+        // After the room is stored: other events may run while the database answers, and they read the stored room.
+        if (r.live) {
+            const reason = await this.directory(r.live);
+            if (reason) await this.apply({ type: "stationGone", reason });
+        }
         return r;
+    }
+
+    /**
+     * A session's live directory write (src/stations-api.js), one at a time in the order the room made them: one landing
+     * after the next, or after the session's own remove, would show the wrong song, or a session that has ended, until
+     * the row is written again or goes stale. A database error is logged and swallowed: a hiccup never ends a session,
+     * and the next heartbeat writes again. Resolves to why the station went off the air, or null.
+     */
+    directory(live) {
+        const db = this.env.COMMUNITY_DB;
+        const write = () => (live.upsert ? writeLive(db, live.upsert) : removeLive(db, live.remove).then(() => null))
+            .catch((e) => { console.error(`live directory: ${e?.message ?? e}`); return null; });
+        this.directoryTail = (this.directoryTail ?? Promise.resolve()).then(write);
+        return this.directoryTail;
     }
 
     send(to, msg) {

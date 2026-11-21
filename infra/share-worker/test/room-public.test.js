@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
     step, preview, MAX_MEMBERS, MAX_PUBLIC_MEMBERS, PUBLIC_V, PREPARE_MS, HOST_WAIT_CAP_MS, PAUSE_END_MS, HANDOVER_MS, MAX_AGE_MS,
-    MAX_QUEUE_CHARS,
+    MAX_QUEUE_CHARS, LIVE_BEAT_MS, LIVE_GAP_MS, nextAlarm,
 } from "../src/room.js";
 
 const T0 = 1_000_000;
@@ -160,11 +160,25 @@ function onAir() {
     return send(s, "h", { t: "status", status: "ready", trackKey: s.trackKey }, T0 + 20).state;
 }
 const ended = (r) => sent(r, "ended").map((o) => [o.to, o.msg.reason]);
+/** Runs the room's alarms from [r], each at the time it asked for, until it closes or the next is after [until]. */
+function alarmsFrom(r, until = Infinity) {
+    const fired = [];
+    while (!r.closed && r.alarmAt <= until) {
+        r = step(r.state, { type: "alarm" }, r.alarmAt);
+        fired.push(r);
+    }
+    return fired;
+}
 
 test("paused 15 minutes, a session ends; playing again before that keeps it going", () => {
     const paused = send(onAir(), "h", { t: "pause" }, T0 + 1_000);
     assert.equal(paused.state.pub.pausedSince, T0 + 1_000);
-    assert.equal(paused.alarmAt, T0 + 1_000 + PAUSE_END_MS);
+    // The alarms it sets (the live directory's writes among them) end it at the 15 minutes exactly.
+    const fired = alarmsFrom(paused);
+    assert.equal(fired.at(-1).closed, true);
+    assert.deepEqual(ended(fired.at(-1)), [["all", "paused"]]);
+    assert.equal(fired.at(-2).alarmAt, T0 + 1_000 + PAUSE_END_MS);
+    assert.ok(fired.filter((r) => r.live?.upsert).length >= 14, "the directory heard from it every minute meanwhile");
     assert.equal(step(paused.state, { type: "alarm" }, T0 + 1_000 + PAUSE_END_MS - 1).closed, undefined);
     const r = step(paused.state, { type: "alarm" }, T0 + 1_000 + PAUSE_END_MS);
     assert.equal(r.closed, true);
@@ -524,4 +538,109 @@ test("a private room ignores boot and presence", () => {
         assert.equal(r.state, p, msg.t);
         assert.equal(r.kick, undefined);
     }
+});
+
+// ── Task 18: the live directory ───────────────────────────────────────────────
+
+/** The row session() writes at its first song, at T0 + 10. */
+const ROW = (over = {}) => ({
+    stationId: "STATION1", room: "ABCDEFGH", track: TRACK, listeners: 2, paused: false,
+    crowd: [{ i: "H", id: "h" }, { i: "A", id: "a" }, { i: "B", id: "b" }], startedAt: T0, seenAt: T0 + 10, ...over,
+});
+
+test("a session's first song puts it in the directory: nothing before that, and its start isn't a second write", () => {
+    const s = session();
+    assert.equal(hello(s, "c", { at: T0 + 5 }).live, undefined, "no song, no row");
+    const loaded = send(s, "h", { t: "load", track: TRACK }, T0 + 10);
+    assert.deepEqual(loaded.live, { upsert: ROW() }, "the song without the room's `by`");
+    assert.equal(loaded.state.pub.liveAt, T0 + 10);
+    const started = send(loaded.state, "h", { t: "status", status: "ready", trackKey: loaded.state.trackKey }, T0 + 20);
+    assert.equal(started.state.timeline.playing, true);
+    assert.equal(started.live, undefined, "the song on its way already counted as playing");
+});
+
+test("a new song, a pause and a play each write; a join, a seek or a listener's status doesn't", () => {
+    let s = onAir(); // written at T0 + 10
+    const t1 = T0 + 10 + LIVE_GAP_MS;
+    const joined = hello(s, "c", { at: t1 });
+    assert.equal(joined.live, undefined);
+    const paused = send(joined.state, "h", { t: "pause" }, t1);
+    assert.deepEqual(paused.live.upsert, ROW({ listeners: 3, paused: true, seenAt: t1, crowd: [...ROW().crowd, { i: "C", id: "c" }] }));
+    s = paused.state;
+    const t2 = t1 + LIVE_GAP_MS;
+    assert.equal(send(s, "h", { t: "seek", positionMs: 30_000 }, t2).live, undefined);
+    assert.equal(send(s, "a", { t: "status", status: "buffering" }, t2).live, undefined);
+    const played = send(s, "h", { t: "play" }, t2);
+    assert.equal(played.live.upsert.paused, false);
+    const next = send(played.state, "h", { t: "load", track: { t: "Xtal", a: "Aphex Twin" } }, t2 + LIVE_GAP_MS);
+    assert.deepEqual(next.live.upsert.track, { t: "Xtal", a: "Aphex Twin" });
+    assert.equal(next.live.upsert.paused, false);
+});
+
+test("with nothing changing, the alarm writes the row again each minute, and the room stores that it did", () => {
+    const s = onAir();
+    assert.equal(nextAlarm(s), T0 + 10 + LIVE_BEAT_MS);
+    const beat = step(s, { type: "alarm" }, T0 + 10 + LIVE_BEAT_MS);
+    assert.deepEqual(beat.live, { upsert: ROW({ seenAt: T0 + 10 + LIVE_BEAT_MS }) });
+    assert.notEqual(beat.state, s, "a state to store, though the alarm itself changed nothing");
+    assert.equal(beat.state.pub.liveAt, T0 + 10 + LIVE_BEAT_MS);
+    assert.equal(beat.alarmAt, T0 + 10 + 2 * LIVE_BEAT_MS);
+    assert.equal(s.pub.liveAt, T0 + 10, "the state passed in is untouched");
+});
+
+test("changes within 5 s of the last write wait for the gap's end, then go as one write of how things are", () => {
+    let r = send(onAir(), "h", { t: "pause" }, T0 + 1_000);
+    assert.equal(r.live, undefined);
+    assert.equal(r.alarmAt, T0 + 10 + LIVE_GAP_MS);
+    r = send(r.state, "h", { t: "play" }, T0 + 2_000);
+    r = send(r.state, "h", { t: "pause" }, T0 + 3_000);
+    assert.equal(r.live, undefined);
+    const due = step(r.state, { type: "alarm" }, T0 + 10 + LIVE_GAP_MS);
+    assert.equal(due.live.upsert.paused, true);
+    assert.equal(due.live.upsert.seenAt, T0 + 10 + LIVE_GAP_MS);
+    // A change undone inside the gap leaves nothing to write: the heartbeat's time again.
+    let t = send(onAir(), "h", { t: "pause" }, T0 + 1_000).state;
+    t = send(t, "h", { t: "play" }, T0 + 2_000).state;
+    assert.equal(nextAlarm(t), T0 + 10 + LIVE_BEAT_MS);
+});
+
+test("a session's end takes its row down; one that never played, or whose station went, has none to take down", () => {
+    const remove = { remove: { stationId: "STATION1", room: "ABCDEFGH" } };
+    assert.deepEqual(send(onAir(), "h", { t: "end" }, T0 + 30).live, remove);
+    const gone = step(onAir(), { type: "close", from: "h" }, T0 + 30).state;
+    const left = step(gone, { type: "alarm" }, T0 + 30 + HANDOVER_MS);
+    assert.deepEqual(ended(left), [["all", "host_left"]]);
+    assert.deepEqual(left.live, remove);
+    assert.equal(send(session(), "h", { t: "end" }).live, undefined);
+    assert.equal(step(onAir(), { type: "stationGone", reason: "replaced" }, T0 + 30).live, undefined);
+});
+
+test("the directory's faces: up to 4, the host's first, then by who joined; initials and member ids, never names", () => {
+    let s = pub();
+    s = hello(s, "a", { name: "émile", at: T0 + 1 }).state;
+    s = hello(s, "b", { name: "🇯🇵 Kenji", at: T0 + 2 }).state;
+    s = hello(s, "c", { name: "", at: T0 + 3 }).state;
+    s = hello(s, "d", { name: "sam", at: T0 + 4 }).state;
+    s = hello(s, "h", { host: true, name: "rawn", at: T0 + 5 }).state;
+    const r = send(s, "h", { t: "load", track: TRACK }, T0 + 10);
+    assert.deepEqual(r.live.upsert.crowd, [{ i: "R", id: "h" }, { i: "É", id: "a" }, { i: "🇯🇵", id: "b" }, { i: null, id: "c" }]);
+    assert.equal(r.live.upsert.listeners, 4);
+    const wire = JSON.stringify(r.live);
+    for (const secret of ["rawn", "Kenji", "sam", kh("a"), "tok-a"]) assert.ok(!wire.includes(secret), secret);
+    // Someone dropped isn't a face at the next write, nor counted.
+    const dropped = step(r.state, { type: "close", from: "a" }, T0 + 20).state;
+    const beat = step(dropped, { type: "alarm" }, T0 + 10 + LIVE_BEAT_MS);
+    assert.deepEqual(beat.live.upsert.crowd.map((f) => f.id), ["h", "b", "c", "d"]);
+    assert.equal(beat.live.upsert.listeners, 3);
+});
+
+test("a private room never writes to the directory, nor wakes for it", () => {
+    let p = privateRoom();
+    p = step(p, { type: "hello", msg: { t: "hello", v: 2 }, hostKeyOk: true, newId: "h", newToken: "th" }, T0).state;
+    const loaded = send(p, "h", { t: "load", track: TRACK }, T0 + 10);
+    assert.equal(loaded.live, undefined);
+    const playing = send(loaded.state, "h", { t: "status", status: "ready", trackKey: 1 }, T0 + 20);
+    assert.equal(nextAlarm(playing.state), T0 + MAX_AGE_MS);
+    assert.equal(step(playing.state, { type: "alarm" }, T0 + 10 + LIVE_BEAT_MS).live, undefined);
+    assert.equal(send(playing.state, "h", { t: "end" }).live, undefined);
 });

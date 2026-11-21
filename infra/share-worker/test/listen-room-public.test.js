@@ -1,17 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ListenRoom } from "../src/listen-room.js";
+import { LIVE_BEAT_MS, LIVE_GAP_MS } from "../src/room.js";
 import { sha256Hex } from "../src/store.js";
+import { call } from "./community-helpers.js";
 import { fakeCtx, fakeSocket } from "./fake-room.js";
+import { seedLive, seedStation, sess } from "./stations-helpers.js";
 
 /** A valid Community key (43 base64url characters), one per [n]. */
 const communityKey = (n) => `${n}`.padStart(43, "k");
 
 /** A session for station STATION1, host key "KEY". [env] is the room's env (COMMUNITY_DB for the live directory). */
-async function openSession(clock, env = {}) {
+async function openSession(clock, env = {}, code = "ABCDEFGH") {
     const ctx = fakeCtx();
     const room = new ListenRoom(ctx, env, () => clock.t);
-    await room.apply({ type: "create", code: "ABCDEFGH", hostName: "Rawn", keyHash: await sha256Hex("KEY"), stationId: "STATION1" });
+    await room.apply({ type: "create", code, hostName: "Rawn", keyHash: await sha256Hex("KEY"), stationId: "STATION1" });
     return { ctx, room };
 }
 
@@ -91,4 +94,136 @@ test("a booted listener's socket hears why, then closes with 4403; their key can
     assert.equal(host.closed, false);
     const again = await connect(ctx, room, { name: "Sam", communityKey: key });
     assert.equal(again.closeCode, 4403);
+});
+
+// ── Task 18: the live directory, in the shell ─────────────────────────────────
+
+const TRACK = { t: "Avril 14th", a: "Aphex Twin", d: 125000 };
+const liveRows = (e) => e.COMMUNITY_DB.db.prepare("SELECT * FROM live ORDER BY room").all().map((r) => ({ ...r }));
+const lastLive = (e) => e.COMMUNITY_DB.db.prepare("SELECT last_live_at FROM stations WHERE id = 'STATION1'").get().last_live_at;
+const endedWith = (ws, reason) => ws.sent.some((m) => m.t === "ended" && m.reason === reason);
+
+/** An env with Sessions on and station STATION1 in its database. */
+async function withStation() {
+    const e = sess();
+    await seedStation(e, { id: "STATION1", name: "Late Night", created: 1 });
+    return e;
+}
+
+/** A session of STATION1 in [e]: its host and one listener connected, its first song loaded (so written). */
+async function liveSession(clock, e, code = "ABCDEFGH") {
+    const { ctx, room } = await openSession(clock, e, code);
+    const host = await connect(ctx, room, { name: "Rawn", hostKey: "KEY" });
+    const sam = await connect(ctx, room, { name: "Sam", communityKey: communityKey(7) });
+    await room.webSocketMessage(host, JSON.stringify({ t: "load", track: TRACK }));
+    return { ctx, room, host, sam };
+}
+
+test("a session's first song puts it in the directory, where Live now finds it", async () => {
+    const e = await withStation();
+    const clock = { t: Date.now() };
+    const { host, sam } = await liveSession(clock, e);
+    const [row] = liveRows(e);
+    assert.deepEqual({ ...row, track: JSON.parse(row.track), crowd: JSON.parse(row.crowd) }, {
+        station_id: "STATION1", room: "ABCDEFGH", track: TRACK, listeners: 1, paused: 0,
+        crowd: [{ i: "R", id: host.deserializeAttachment().memberId }, { i: "S", id: sam.deserializeAttachment().memberId }],
+        started_at: clock.t, seen_at: clock.t,
+    });
+    assert.equal(lastLive(e), clock.t, "on the air: the 7-day clock starts again");
+    const { sessions } = await (await call(e, "GET", "/v1/community/live")).json();
+    assert.deepEqual(sessions.map((s) => [s.station.name, s.room, s.track.t, s.listeners, s.paused, s.full]),
+        [["Late Night", "ABCDEFGH", "Avril 14th", 1, false, false]]);
+});
+
+test("an older session can't take a newer one's row back, and ends `replaced` at its next write", async () => {
+    const e = await withStation();
+    const clock = { t: Date.now() };
+    const older = await liveSession(clock, e, "ABCDEFGH");
+    clock.t += 1_000;
+    const newer = await liveSession(clock, e, "JKLMNPQR");
+    assert.deepEqual(liveRows(e).map((r) => r.room), ["JKLMNPQR"]);
+    clock.t += LIVE_BEAT_MS;
+    await older.room.alarm(); // its heartbeat
+    assert.deepEqual(liveRows(e).map((r) => [r.room, r.seen_at]), [["JKLMNPQR", clock.t - LIVE_BEAT_MS]], "untouched");
+    assert.ok(endedWith(older.sam, "replaced"));
+    assert.equal(older.sam.closeCode, 4000);
+    assert.equal(older.ctx.store.size, 0);
+    assert.equal(newer.sam.closed, false);
+});
+
+test("a station removed, hidden by votes or blocked ends its session at the next write, and its row goes", async () => {
+    for (const [what, sql] of [
+        ["removed", "UPDATE stations SET removed_at = 1, removed_by = 'owner' WHERE id = 'STATION1'"],
+        ["hidden", "UPDATE stations SET down = 3 WHERE id = 'STATION1'"],
+        ["blocked", "INSERT INTO blocked (poster, at) SELECT owner, 1 FROM stations WHERE id = 'STATION1'"],
+    ]) {
+        const e = await withStation();
+        const clock = { t: Date.now() };
+        const s = await liveSession(clock, e);
+        const stamped = lastLive(e);
+        e.COMMUNITY_DB.db.exec(sql);
+        clock.t += LIVE_BEAT_MS;
+        await s.room.alarm();
+        assert.deepEqual(liveRows(e), [], what);
+        assert.ok(endedWith(s.sam, "station_removed"), what);
+        assert.equal(s.ctx.store.size, 0, what);
+        assert.equal(lastLive(e), stamped, `${what}: no longer on the air`);
+    }
+});
+
+test("a database error leaves the session going, and the next heartbeat writes again", async () => {
+    const e = await withStation();
+    const batch = e.COMMUNITY_DB.batch;
+    e.COMMUNITY_DB.batch = async () => { throw new Error("D1_ERROR: overloaded"); };
+    const logged = [];
+    const error = console.error;
+    console.error = (...a) => logged.push(a.join(" "));
+    try {
+        const clock = { t: Date.now() };
+        const s = await liveSession(clock, e);
+        assert.equal(s.sam.closed, false);
+        assert.ok((await s.ctx.storage.get("room")).track, "still playing");
+        assert.deepEqual(liveRows(e), []);
+        assert.ok(logged.some((l) => l.includes("overloaded")));
+        e.COMMUNITY_DB.batch = batch;
+        clock.t += LIVE_BEAT_MS;
+        await s.room.alarm();
+        assert.deepEqual(liveRows(e).map((r) => r.seen_at), [clock.t]);
+    } finally {
+        console.error = error;
+    }
+});
+
+test("a session's end takes its own row down, never a newer session's", async () => {
+    const e = await withStation();
+    const clock = { t: Date.now() };
+    const s = await liveSession(clock, e);
+    await s.room.webSocketMessage(s.host, JSON.stringify({ t: "end" }));
+    assert.deepEqual(liveRows(e), []);
+    const t = await liveSession(clock, e, "JKLMNPQR");
+    await seedLive(e, { station: "STATION1", room: "STUVWXYZ", started: clock.t + 5 }); // a newer session wrote since
+    await t.room.webSocketMessage(t.host, JSON.stringify({ t: "end" }));
+    assert.deepEqual(liveRows(e).map((r) => r.room), ["STUVWXYZ"]);
+});
+
+test("directory writes go one at a time, in the room's order: a slow write can't land after the next", async () => {
+    const e = await withStation();
+    const batch = e.COMMUNITY_DB.batch;
+    let release;
+    const held = new Promise((r) => { release = r; });
+    let calls = 0;
+    e.COMMUNITY_DB.batch = async (statements) => { if (calls++ === 0) await held; return batch(statements); };
+    const clock = { t: Date.now() };
+    const { ctx, room } = await openSession(clock, e);
+    const host = await connect(ctx, room, { name: "Rawn", hostKey: "KEY" });
+    const first = room.webSocketMessage(host, JSON.stringify({ t: "load", track: TRACK })); // its write is held
+    await new Promise((r) => setImmediate(r));
+    clock.t += LIVE_GAP_MS;
+    const second = room.webSocketMessage(host, JSON.stringify({ t: "load", track: { t: "Xtal", a: "Aphex Twin" } }));
+    await new Promise((r) => setImmediate(r));
+    assert.equal(calls, 1, "the second write waits for the first");
+    release();
+    await Promise.all([first, second]);
+    assert.equal(calls, 2);
+    assert.deepEqual(JSON.parse(liveRows(e)[0].track), { t: "Xtal", a: "Aphex Twin" });
 });

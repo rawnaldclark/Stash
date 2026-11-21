@@ -2,8 +2,9 @@
  * Listen Together room logic (spec docs/superpowers/specs/2026-09-24-listen-together-design.md §2–§4;
  * guests adding songs: docs/superpowers/specs/2026-11-04-listen-together-guest-adds-design.md).
  *
- * Pure: step(state, event, now) → { state, out, alarmAt, bind?, reject?, closed?, kick? }. `kick`: members a session's
- * host booted, whose sockets the shell closes once `out` is sent.
+ * Pure: step(state, event, now) → { state, out, alarmAt, bind?, reject?, closed?, kick?, live? }. `kick`: members a
+ * session's host booted, whose sockets the shell closes once `out` is sent. `live`: a session's live directory write,
+ * `{ upsert: row }` or `{ remove: { stationId, room } }`, which the shell makes after storing (src/stations-api.js).
  * No I/O, clock or randomness: the ListenRoom Durable Object supplies `now`, fresh ids and the
  * host-key check, so `node --test` covers every rule without the Workers runtime.
  *
@@ -93,6 +94,11 @@ export const PUBLIC_V = 3;
 export const PAUSE_END_MS = 15 * 60_000;
 /** How often a session on the air rewrites its live directory row when nothing else has. */
 export const LIVE_BEAT_MS = 60_000;
+/**
+ * A change (a new song, pause or play) reaches the directory at most this soon after its last write, so a host's phone
+ * can't make the Community database write at its message rate (20 a second); a later change waits for the gap's end.
+ */
+export const LIVE_GAP_MS = 5_000;
 /** Requests one listener may have waiting, and a session in all. */
 export const MAX_REQUESTS_EACH = 3;
 export const MAX_REQUESTS = 30;
@@ -177,6 +183,48 @@ function sessionInfo(s) {
     };
 }
 const sessionMsg = (s) => ({ to: "all", msg: { t: "session", ...sessionInfo(s) } });
+
+/*
+ * The live directory (spec §3; build plan, task 18): a session on the air has a row in the Community database's `live`
+ * table, written by the shell from what step() returns. The room decides when: its first song, then each new song,
+ * pause or play (at most one write a LIVE_GAP_MS), and a heartbeat every LIVE_BEAT_MS that keeps the row fresh and the
+ * counts close. A song on its way counts as playing, so a new song is one write, not one at the load and another when
+ * it starts.
+ */
+const onAir = (s) => s.timeline.playing || s.phase.kind === "preparing";
+const liveKeyOf = (s) => `${s.trackKey}|${onAir(s) ? 1 : 0}`;
+/** When the session's next row is due; null for a private room or before the first song. */
+function liveDueAt(s) {
+    const p = s.pub;
+    if (!p || !s.track) return null;
+    if (p.liveAt === null) return 0;
+    return p.liveAt + (liveKeyOf(s) === p.liveKey ? LIVE_BEAT_MS : LIVE_GAP_MS);
+}
+const graphemes = typeof Intl.Segmenter === "function" ? new Intl.Segmenter() : null;
+/** A name's first letter as a face in the directory shows it (one grapheme: a flag stays a flag); null with no name. */
+function initialOf(name) {
+    if (!name) return null;
+    const first = graphemes ? graphemes.segment(name)[Symbol.iterator]().next().value.segment : [...name][0];
+    const up = first.toUpperCase();
+    return [...up].length === 1 ? up : first; // "ß" would be "SS"
+}
+/** Up to 4 faces for the directory, the host's first, then by who joined first: initials and member ids, never names. */
+function crowdOf(s) {
+    const host = findConnected(s, s.host);
+    const rest = connected(s).filter((m) => m.id !== s.host).sort((a, b) => a.joinedAt - b.joinedAt);
+    return [...(host ? [host] : []), ...rest].slice(0, 4).map((m) => ({ i: initialOf(m.name), id: m.id }));
+}
+/** The session's row as of [now], marking it written. The song goes without `by`: a member id means nothing outside. */
+function liveRow(s, now) {
+    s.pub.liveAt = now;
+    s.pub.liveKey = liveKeyOf(s);
+    const { by, ...track } = s.track;
+    return {
+        stationId: s.pub.stationId, room: s.code, track, listeners: listenerCount(s), paused: !onAir(s),
+        crowd: crowdOf(s), startedAt: s.createdAt, seenAt: now,
+    };
+}
+
 /** The waiting requests member [id] may see: all of them for the host and co-hosts, a listener's own for a listener. */
 const requestsFor = (s, id) => (isStaff(s, id) ? s.suggestions : s.suggestions.filter((x) => x.from === id));
 const requestsMsg = (s, id) => ({ to: id, msg: { t: "requests", requests: requestsFor(s, id) } });
@@ -223,7 +271,7 @@ export function preview(s) {
 /**
  * The earliest pending timer: room expiry, empty-room close, a 60 s handover/prune, the prepare deadline (§2): the
  * guests' while the host is ready, else the end of the wait for the host (the guests' alone would start nothing).
- * A session also ends PAUSE_END_MS into a pause, and rewrites its live row every LIVE_BEAT_MS once it has one.
+ * A session also ends PAUSE_END_MS into a pause, and wakes when its next live row is due.
  */
 export function nextAlarm(s) {
     const times = [s.createdAt + MAX_AGE_MS];
@@ -231,7 +279,8 @@ export function nextAlarm(s) {
     for (const m of s.members) if (m.leftAt !== null) times.push(m.leftAt + HANDOVER_MS);
     if (s.phase.kind === "preparing") times.push(hostSettled(s) ? s.phase.deadlineMs : hostDeadline(s));
     if (s.pub?.pausedSince != null) times.push(s.pub.pausedSince + PAUSE_END_MS);
-    if (s.pub?.liveAt != null) times.push(s.pub.liveAt + LIVE_BEAT_MS);
+    const live = liveDueAt(s);
+    if (live !== null) times.push(live);
     return Math.min(...times);
 }
 
@@ -571,9 +620,21 @@ export function step(state, event, now) {
     const ctx = { s: structuredClone(state), out: [], now, event, msg: msg ?? {} };
     upgrade(ctx.s);
     const changed = handler(ctx);
-    if (ctx.closed) return { state: null, out: ctx.out, alarmAt: null, closed: true };
-    const next = changed ? ctx.s : state;
-    return { state: next, out: ctx.out, alarmAt: nextAlarm(next), bind: ctx.bind, reject: ctx.reject, kick: ctx.kick };
+    if (ctx.closed) {
+        // A session takes its row out of the directory; one whose row went (stationGone) has nothing to take out.
+        const p = ctx.s.pub;
+        const live = p?.liveAt != null ? { remove: { stationId: p.stationId, room: ctx.s.code } } : undefined;
+        return { state: null, out: ctx.out, alarmAt: null, closed: true, live };
+    }
+    let next = changed ? ctx.s : state;
+    let live;
+    const due = liveDueAt(next);
+    if (due !== null && now >= due) {
+        // A row due is a change to store (liveAt moves), even when the event itself changed nothing (the heartbeat).
+        if (next === state) next = structuredClone(state);
+        live = { upsert: liveRow(next, now) };
+    }
+    return { state: next, out: ctx.out, alarmAt: nextAlarm(next), bind: ctx.bind, reject: ctx.reject, kick: ctx.kick, live };
 }
 
 const EVENTS = {

@@ -11,14 +11,14 @@ import {
     readJson,
 } from "./community-shared.js";
 import { cleanStationFields, hoursOf, nextWindow, summaryOfStation } from "./stations.js";
+// A session is full at the room's MAX_LISTENERS (its cap, src/room.js).
+import { MAX_LISTENERS } from "./room.js";
 
 const DAY = 86_400_000;
 /** A station that hasn't gone live for this long is deleted with its votes (owner, 2026-11-20). */
 export const STATION_IDLE_MS = 7 * DAY;
 /** A directory row its room hasn't written for this long belongs to a room that died without saying so. */
 export const LIVE_STALE_MS = 3 * 60_000;
-/** A session is full at this many listeners (the room's own cap, src/room.js, says the same). */
-export const MAX_LISTENERS = 50;
 /** Stations one phone may follow. */
 export const MAX_FOLLOWS = 200;
 
@@ -425,6 +425,43 @@ export async function cleanupStations(env, now) {
             .map((table) => db.prepare(`DELETE FROM ${table} WHERE station_id IN (${doomed})`).bind(...args)),
         db.prepare(`DELETE FROM stations WHERE id IN (${doomed})`).bind(...args),
     ]);
+}
+
+/**
+ * A session's row in the live directory, from its room (src/listen-room.js; when, src/room.js). One batch, so nothing
+ * lands between its parts:
+ *   1. the row, only for a station that may still be shown, and never over a newer session's (a station's newest
+ *      session is the one on the air: one that ended badly can't take its row back);
+ *   2. a station that may not be shown any more (removed, hidden by votes, its phone blocked) loses its row;
+ *   3. the station's last time on the air (the 7-day cleanup's clock), only while the row is this session's;
+ *   4. whose row it is now.
+ * Returns null while the row is this session's, "replaced" when a newer session of the station has it, and
+ * "station_removed" when there's none: the room then ends with that reason.
+ */
+export async function writeLive(db, row) {
+    const { stationId, room, seenAt } = row;
+    const [, , , whose] = await db.batch([
+        db.prepare(
+            `INSERT INTO live (station_id, room, track, listeners, paused, crowd, started_at, seen_at)
+             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8 FROM stations s WHERE s.id = ?1 AND ${SHOWN_SQL}
+             ON CONFLICT (station_id) DO UPDATE SET room = excluded.room, track = excluded.track,
+               listeners = excluded.listeners, paused = excluded.paused, crowd = excluded.crowd,
+               started_at = excluded.started_at, seen_at = excluded.seen_at
+             WHERE live.room = excluded.room OR excluded.started_at > live.started_at`,
+        ).bind(stationId, room, JSON.stringify(row.track), row.listeners, row.paused ? 1 : 0, JSON.stringify(row.crowd), row.startedAt, seenAt),
+        db.prepare(`DELETE FROM live WHERE station_id = ?1 AND NOT EXISTS (SELECT 1 FROM stations s WHERE s.id = ?1 AND ${SHOWN_SQL})`)
+            .bind(stationId),
+        db.prepare("UPDATE stations SET last_live_at = ?3 WHERE id = ?1 AND EXISTS (SELECT 1 FROM live WHERE station_id = ?1 AND room = ?2)")
+            .bind(stationId, room, seenAt),
+        db.prepare("SELECT room FROM live WHERE station_id = ?1").bind(stationId),
+    ]);
+    const now = whose.results[0]?.room ?? null;
+    return now === room ? null : now === null ? "station_removed" : "replaced";
+}
+
+/** A session that ended takes its row out of the directory: its own row only, never a newer session's. */
+export async function removeLive(db, { stationId, room }) {
+    await db.prepare("DELETE FROM live WHERE station_id = ?1 AND room = ?2").bind(stationId, room).run();
 }
 
 /**
