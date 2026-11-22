@@ -127,6 +127,7 @@ internal fun SessionRoom(
     viewModel: SessionRoomViewModel = hiltViewModel(),
     dj: SessionDjViewModel = hiltViewModel(),
     life: SessionLifeViewModel = hiltViewModel(),
+    recap: SessionRecapViewModel = hiltViewModel(),
 ) {
     val feed by life.feed.collectAsStateWithLifecycle()
     val greet by life.greet.collectAsStateWithLifecycle()
@@ -135,6 +136,8 @@ internal fun SessionRoom(
     var showRequest by remember { mutableStateOf(false) }
     var showRequests by remember { mutableStateOf(false) }
     val station = state.station
+    // The recap of this session carries the station's name.
+    androidx.compose.runtime.LaunchedEffect(station?.id, station?.name) { station?.let { recap.noteStation(it.id, it.name) } }
     val context = LocalContext.current
     val chrome = LocalAlbumChrome.current
     val ink = npInk()
@@ -260,7 +263,7 @@ internal fun SessionRoom(
                         .clickable(role = Role.Button, onClickLabel = stringResource(if (liked) R.string.room_unsave else R.string.room_save)) {
                             haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                             // A save is counted by the room ("9 saved this"), once a person; who saved is never shown.
-                            if (!liked) life.saved()
+                            if (!liked) { life.saved(); recap.saved() }
                             onLike()
                         },
                     contentAlignment = Alignment.Center,

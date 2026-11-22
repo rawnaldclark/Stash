@@ -203,7 +203,14 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
         if (_active.value) commands.trySend(Command.PresenceChanged)
     }
 
+    /**
+     * The person chose to leave the room they're in (rather than it ending around them): what the recap recorder
+     * reads to tell the two apart. Set by [send], cleared by the recorder.
+     */
+    @Volatile var userLeft: Boolean = false
+
     fun send(command: Command) {
+        if (command == Command.Leave) userLeft = true
         commands.trySend(command)
         // The session lives in the playback service, which stops itself after 5 idle minutes.
         // The user is looking at the app when they tap Start or Join, so a plain start is allowed.

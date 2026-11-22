@@ -361,6 +361,8 @@ fun StashScaffold(
     com.stash.feature.nowplaying.session.GoLiveHost(onOpened = { playerSheet.expand() }) {
     // The sheet after leaving a session, and the room's lines, once for the app.
     com.stash.feature.nowplaying.session.SessionLeaveHost()
+    // The recap of a session that ended around this phone.
+    com.stash.feature.nowplaying.session.SessionRecapHost()
     CompositionLocalProvider(
         LocalChromeHazeState provides hazeState,
         LocalPlayerSheet provides playerSheet,
