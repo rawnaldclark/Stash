@@ -18,6 +18,7 @@ import com.stash.core.model.listen.RoomMember
 import com.stash.core.model.listen.RoomPhase
 import com.stash.core.model.listen.RoomProtocol
 import com.stash.core.model.listen.RoomRequest
+import com.stash.core.model.listen.DecksInfo
 import com.stash.core.model.listen.SessionInfo
 import com.stash.core.model.listen.SongStats
 import com.stash.core.model.listen.RoomState
@@ -223,6 +224,14 @@ class ListenTogetherSession(
             Command.PresenceChanged -> sayPresence()
             Command.Skip -> if (role() == SessionRole.COHOST) send(ClientMessage.Command(SKIP))
             is Command.LastSong -> if (role() == SessionRole.HOST && room?.track != null) send(ClientMessage.LastSong(command.on))
+            is Command.OpenDecks -> if (role() == SessionRole.HOST) send(ClientMessage.Decks(command.open))
+            // On the decks or in the line already, the song replaces the ready one; otherwise it's sitting down.
+            is Command.DeckPick -> if (stationId != null && !isHost && decks != null) {
+                val seated = myId?.let { id -> decks?.let { d -> d.djs.any { it.id == id } || id in d.line } } == true
+                send(if (seated) ClientMessage.DeckPick(command.track) else ClientMessage.DeckJoin(command.track))
+            }
+            Command.LeaveDecks -> if (stationId != null && !isHost) send(ClientMessage.DeckLeave)
+            is Command.RemoveFromDecks -> if (role() == SessionRole.HOST) send(ClientMessage.DeckRemove(command.memberId))
             is Command.Say -> if (stationId != null && command.phrase in RoomProtocol.PHRASES) send(ClientMessage.Say(command.phrase))
             // Once a song here too: the room would drop a second, and a heart tapped on and off shouldn't keep asking.
             Command.SavedSong -> room?.takeIf { stationId != null && it.track != null && it.trackKey != savedKey }?.let {
@@ -486,6 +495,14 @@ class ListenTogetherSession(
             }
             is ServerMessage.Refused -> onRefused(m)
             is ServerMessage.Said -> controller.said(m)
+            is ServerMessage.DecksState -> {
+                decks = if (m.open) DecksInfo(true, m.djs, m.line, m.now, m.next) else null
+                publish()
+            }
+            is ServerMessage.DeckOut -> {
+                controller.deckOut(m)
+                if (m.memberId == myId) controller.message(R.string.session_deck_out)
+            }
             is ServerMessage.Stats -> {
                 songStats = SongStats(m.trackKey, m.reactions, m.saves, m.favourite)
                 publish()
@@ -511,6 +528,9 @@ class ListenTogetherSession(
 
     /** The room's last counts for a song ([SongStats.trackKey] says which): shown only while that song is the room's. */
     private var songStats: SongStats? = null
+
+    /** The open decks, as the room last said; null while they're closed. */
+    private var decks: DecksInfo? = null
 
     /** The song this phone told the room it saved ([Command.SavedSong]). */
     private var savedKey = NONE
@@ -589,6 +609,8 @@ class ListenTogetherSession(
         // The welcome's counts for the playing song (someone joining mid-song); a later state without any keeps what
         // a `songStats` frame brought.
         s.songStats?.let { songStats = it }
+        // The decks are in every state while they're open, so a state without them means closed.
+        decks = s.decks?.takeIf { it.open }
         val wasHost = isHost
         val oldHost = room?.host
         room = s
@@ -1467,7 +1489,7 @@ class ListenTogetherSession(
         code = null; url = null; myId = null; token = null; room = null; isHost = false; pendingLoad = null; loadsInFlight = 0
         welcomed = false; unplayableInARow = 0; skipNoticeKey = NONE; heldAdds.clear(); awaitingAdds.clear()
         requests = emptyList(); awaitingRequests.clear()
-        songStats = null; savedKey = NONE
+        songStats = null; savedKey = NONE; decks = null
         timeline = null; applied = null; loadedKey = NONE; itemKey = NONE; readyKey = NONE; unavailableKey = NONE; lastStatus = null
         roomPreparingKey = NONE; preparedAt = 0L; prepareLimitJob = null // the job died with sessionScope
         reconnecting = false; versionMismatch = false; history.clear(); radioTriedKey = NONE
@@ -1536,6 +1558,7 @@ class ListenTogetherSession(
                 requests = requests,
                 onAir = onAir(),
                 songStats = songStats?.takeIf { stationId != null && it.trackKey == r.trackKey },
+                decks = decks?.takeIf { stationId != null },
             ),
         )
     }

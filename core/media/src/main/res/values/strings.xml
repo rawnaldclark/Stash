@@ -101,6 +101,8 @@
     <string name="session_ended_named">%1$s\'s session ended</string>
     <!-- The same, when the host's name isn't known. -->
     <string name="session_ended">The session ended</string>
+    <!-- To a DJ the room took off the decks: their turn came twice with no song ready. -->
+    <string name="session_deck_out">You missed two turns, so you\'re off the decks</string>
     <!-- The host tried to add a 4th co-host. -->
     <string name="session_cohosts_full">A session can have 3 co-hosts</string>
     <!-- The host or a co-host accepted a request while the queue was full: it stays waiting. -->
