@@ -113,6 +113,9 @@ if (mode === "host") {
     h.onFrame = (m) => {
         play(m);
         if (m.t === "welcome") {
+            // LAST=<seconds>: calls the last song that long in. END=<seconds>: ends the session then.
+            if (process.env.LAST) setTimeout(() => h.send({ t: "lastSong" }), Number(process.env.LAST) * 1000);
+            if (process.env.END) setTimeout(() => h.send({ t: "end" }), Number(process.env.END) * 1000);
             if (process.env.DJ === "auto") h.send({ t: "autoAccept", on: true });
             if (process.env.AWAY) setTimeout(() => h.send({ t: "presence", state: "away" }), 5_000);
         }
@@ -136,7 +139,8 @@ if (mode === "host") {
     if (!live) { log("that station isn't on the air"); process.exit(1); }
     const n = Math.max(1, Math.min(50, Number(countArg ?? 1)));
     for (let i = 0; i < n; i++) {
-        const l = phone(live.room, { t: "hello", v: 3, name: NAMES[i] ?? `Listener ${i + 1}`, communityKey: newKey() }, `listener${i + 1}`, n > 1);
+        // KEY=<43 characters>: the first listener's Community key, so its regular's count can be seeded for a test.
+        const l = phone(live.room, { t: "hello", v: 3, name: NAMES[i] ?? `Listener ${i + 1}`, communityKey: i === 0 && process.env.KEY ? process.env.KEY : newKey() }, `listener${i + 1}`, n > 1);
         let e = i;
         setInterval(() => { try { l.send({ t: "react", emoji: EMOJI[e++ % EMOJI.length] }); } catch { /* closed */ } }, 10_000);
         l.onFrame = (m) => {

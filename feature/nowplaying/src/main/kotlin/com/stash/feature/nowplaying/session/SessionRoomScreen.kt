@@ -127,6 +127,7 @@ internal fun SessionRoom(
     viewModel: SessionRoomViewModel = hiltViewModel(),
     dj: SessionDjViewModel = hiltViewModel(),
     life: SessionLifeViewModel = hiltViewModel(),
+    recap: SessionRecapViewModel = hiltViewModel(),
 ) {
     val feed by life.feed.collectAsStateWithLifecycle()
     val greet by life.greet.collectAsStateWithLifecycle()
@@ -135,6 +136,8 @@ internal fun SessionRoom(
     var showRequest by remember { mutableStateOf(false) }
     var showRequests by remember { mutableStateOf(false) }
     val station = state.station
+    // The recap of this session carries the station's name.
+    androidx.compose.runtime.LaunchedEffect(station?.id, station?.name) { station?.let { recap.noteStation(it.id, it.name) } }
     val context = LocalContext.current
     val chrome = LocalAlbumChrome.current
     val ink = npInk()
@@ -260,7 +263,7 @@ internal fun SessionRoom(
                         .clickable(role = Role.Button, onClickLabel = stringResource(if (liked) R.string.room_unsave else R.string.room_save)) {
                             haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                             // A save is counted by the room ("9 saved this"), once a person; who saved is never shown.
-                            if (!liked) life.saved()
+                            if (!liked) { life.saved(); recap.saved() }
                             onLike()
                         },
                     contentAlignment = Alignment.Center,
@@ -273,6 +276,19 @@ internal fun SessionRoom(
                     )
                 }
             }
+        }
+        // "Last song": the host is ending the session when this one finishes.
+        if (room.session?.lastSong == true) {
+            Text(
+                stringResource(R.string.life_last_song),
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.6.sp),
+                color = liveInk(),
+                modifier = Modifier
+                    .padding(top = 8.dp)
+                    .clip(CircleShape)
+                    .border(1.dp, liveInk().copy(alpha = 0.5f), CircleShape)
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+            )
         }
         pickOf(room)?.let { pick ->
             PickChip(pick, Modifier.fillMaxWidth().padding(top = 8.dp))
@@ -356,16 +372,27 @@ internal fun SessionRoom(
     if (showUpNext) UpNextSheet(room, onDismiss = { showUpNext = false })
     if (showAbout && station != null) AboutStation(station, viewModel, onDismiss = { showAbout = false })
     if (confirmEnd) {
+        val last = room.session?.lastSong == true
         AlertDialog(
             onDismissRequest = { confirmEnd = false },
             title = { Text(stringResource(R.string.room_end_title)) },
             text = {
-                Text(
-                    if (listeners > 0) pluralStringResource(R.plurals.room_end_body, listeners, listeners) else stringResource(R.string.room_end_body_empty),
-                )
+                Column {
+                    Text(
+                        if (listeners > 0) pluralStringResource(R.plurals.room_end_body, listeners, listeners) else stringResource(R.string.room_end_body_empty),
+                    )
+                    // After this song: everyone sees "Last song" and the session ends when it finishes.
+                    if (room.track != null) {
+                        TextButton(
+                            onClick = { confirmEnd = false; dj.lastSong(!last) },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                            modifier = Modifier.padding(top = 8.dp),
+                        ) { Text(stringResource(if (last) R.string.room_end_not_after else R.string.room_end_after)) }
+                    }
+                }
             },
             confirmButton = {
-                TextButton(onClick = { confirmEnd = false; onEnd() }) { Text(stringResource(R.string.room_end), color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = { confirmEnd = false; onEnd() }) { Text(stringResource(R.string.room_end_now), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { confirmEnd = false }) { Text(stringResource(R.string.np_tuning_cancel)) } },
         )

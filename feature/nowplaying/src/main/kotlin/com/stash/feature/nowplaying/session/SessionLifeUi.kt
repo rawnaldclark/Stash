@@ -60,6 +60,12 @@ internal sealed interface FeedLine {
 
     /** "Redbone is a crowd favourite". */
     data class Favourite(val title: String) : FeedLine
+
+    /** "Ben is back": a regular arriving. */
+    data class Back(val name: String?) : FeedLine
+
+    /** "Last song": the host is ending after this one. */
+    data object LastSong : FeedLine
 }
 
 /**

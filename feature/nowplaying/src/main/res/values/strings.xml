@@ -240,10 +240,56 @@
     <!-- %1$s: the song -->
     <string name="life_favourite_line">%1$s is a crowd favourite</string>
     <string name="life_favourite">Crowd favourite</string>
+    <!-- A regular arriving. %1$s: their name -->
+    <string name="life_back">%1$s is back</string>
+    <!-- The host is ending the session after the song that\'s playing -->
+    <string name="life_last_song">Last song</string>
     <plurals name="life_saved">
         <item quantity="one">%d saved this</item>
         <item quantity="other">%d saved this</item>
     </plurals>
+
+    <!-- Sessions: the recap after a session ends -->
+    <!-- %1$s: the station -->
+    <string name="recap_title">That was %1$s</string>
+    <string name="recap_title_host">Your session</string>
+    <!-- %1$s: the host -->
+    <string name="recap_with">with %1$s</string>
+    <string name="session_ended_plain">The session ended</string>
+    <!-- %1$d: hours; %2$d: minutes -->
+    <string name="recap_hours_minutes">%1$d h %2$d min</string>
+    <plurals name="recap_minutes">
+        <item quantity="one">%d min</item>
+        <item quantity="other">%d min</item>
+    </plurals>
+    <string name="recap_listened">listened</string>
+    <string name="recap_on_air">on the air</string>
+    <plurals name="recap_songs">
+        <item quantity="one">song</item>
+        <item quantity="other">songs</item>
+    </plurals>
+    <plurals name="recap_people">
+        <item quantity="one">person came by</item>
+        <item quantity="other">people came by</item>
+    </plurals>
+    <string name="recap_peak">most at once</string>
+    <plurals name="recap_requests">
+        <item quantity="one">request played</item>
+        <item quantity="other">requests played</item>
+    </plurals>
+    <plurals name="recap_regulars">
+        <item quantity="one">regular</item>
+        <item quantity="other">regulars</item>
+    </plurals>
+    <string name="recap_your_picks">YOUR PICKS THAT PLAYED</string>
+    <plurals name="recap_reacted">
+        <item quantity="one">%d reacted</item>
+        <item quantity="other">%d reacted</item>
+    </plurals>
+    <string name="recap_favourites">CROWD FAVOURITES</string>
+    <string name="recap_saved">SONGS YOU SAVED</string>
+    <string name="recap_most_saved">MOST SAVED</string>
+    <string name="recap_done">Done</string>
 
     <!-- Sessions: requests, co-hosts and the booth -->
     <string name="dj_the_host">The host</string>
@@ -296,6 +342,9 @@
     <string name="room_saved">In your Liked Songs</string>
     <string name="room_unsave">Remove from Liked Songs</string>
     <string name="room_end_title">End the session for everyone?</string>
+    <string name="room_end_now">End now</string>
+    <string name="room_end_after">End after this song</string>
+    <string name="room_end_not_after">Don\'t end after this song</string>
     <plurals name="room_end_body">
         <item quantity="one">%d person is listening. Your own queue comes back as you left it.</item>
         <item quantity="other">%d people are listening. Your own queue comes back as you left it.</item>

@@ -216,6 +216,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var listenTogetherController: com.stash.core.media.listen.ListenTogetherController
 
+    /** Sessions: makes and keeps a session's recap when it ends, whether or not the app is on screen. */
+    @Inject
+    lateinit var sessionRecapRecorder: com.stash.core.media.listen.SessionRecapRecorder
+
     @Inject
     lateinit var handoffPublisher: com.stash.core.media.handoff.HandoffPublisher
 
@@ -402,6 +406,7 @@ class StashApplication : Application(), Configuration.Provider {
         // early as possible; the first STARTED event doesn't fire until after
         // onCreate completes anyway.
         mirrorSignal.start()
+        sessionRecapRecorder.start()
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
