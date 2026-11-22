@@ -2,7 +2,9 @@
  * Listen Together room logic (spec docs/superpowers/specs/2026-09-24-listen-together-design.md §2–§4;
  * guests adding songs: docs/superpowers/specs/2026-11-04-listen-together-guest-adds-design.md).
  *
- * Pure: step(state, event, now) → { state, out, alarmAt, bind?, reject?, closed?, kick?, live? }. `kick`: members a
+ * Pure: step(state, event, now) → { state, out, alarmAt, bind?, reject?, closed?, kick?, live?, regulars? }.
+ * `regulars`: `{ stationId, listeners }`, key hashes whose stay in this session reached REGULAR_STAY_MS, for the shell
+ * to count at the station (once each a session). `kick`: members a
  * session's host booted, whose sockets the shell closes once `out` is sent. `live`: a session's live directory write,
  * `{ upsert: row }` or `{ remove: { stationId, room } }`, which the shell makes after storing (src/stations-api.js).
  * No I/O, clock or randomness: the ListenRoom Durable Object supplies `now`, fresh ids and the
@@ -104,6 +106,14 @@ export const PHRASES = ["hi", "who", "tune", "again", "louder", "more", "chills"
 export const SAY_GAP_MS = 3_000;
 /** A song's counts go out when they change, at most this often. */
 export const STATS_GAP_MS = 2_000;
+/**
+ * Regulars (UX spec §7): a listener who stays this long in a session, in total, has that session counted for them at
+ * its station, and after REGULAR_SESSIONS of them is a regular there (a star on their face, "Ben is back").
+ */
+export const REGULAR_STAY_MS = 10 * 60_000;
+export const REGULAR_SESSIONS = 3;
+/** Listeners whose time a session remembers after they left, in case they come back: past this, a short stay is forgotten. */
+export const MAX_STAYS = 500;
 /** A crowd favourite: this many people at least, and a third of the room, reacted while the song played. */
 export const FAVOURITE_MIN = 3;
 /** Paused this long, a session ends. */
@@ -177,7 +187,33 @@ function upgrade(s) {
 }
 
 /** `v` only for an app that sent one (2 = it knows guest adds), so older members read exactly as before. */
-const publicMembers = (s) => connected(s).map(({ id, name, joinedAt, status, v }) => ({ id, name, joinedAt, status, ...(v ? { v } : {}) }));
+const publicMembers = (s) => connected(s).map(({ id, name, joinedAt, status, v, visits }) => ({
+    id, name, joinedAt, status, ...(v ? { v } : {}),
+    // A regular at this station: only the fact, never the count or the key hash it was read by.
+    ...((visits ?? 0) >= REGULAR_SESSIONS ? { regular: true } : {}),
+}));
+
+/** How long a member has been connected to this session in all, as of [now]. */
+const stayOf = (m, now) => (m.inMs ?? 0) + (m.leftAt === null ? now - (m.sinceAt ?? m.joinedAt) : 0);
+/**
+ * A listener is leaving for good (their slot lapsed, or the session is ending): their time joins what the session
+ * remembers for their key hash, and the first time that reaches REGULAR_STAY_MS they go out in `regulars`. -1 marks
+ * one already counted, so coming back never counts the same session twice.
+ */
+function countStay(ctx, m) {
+    const p = ctx.s.pub;
+    if (!p || !m.kh) return;
+    p.stays ??= {};
+    const before = p.stays[m.kh];
+    if (before === -1) return;
+    const total = (before ?? 0) + stayOf(m, ctx.now);
+    if (total >= REGULAR_STAY_MS) {
+        p.stays[m.kh] = -1;
+        (ctx.regulars ??= []).push(m.kh);
+    } else if (before !== undefined || Object.keys(p.stays).length < MAX_STAYS) {
+        p.stays[m.kh] = total;
+    }
+}
 
 const memberById = (s, id) => s.members.find((m) => m.id === id);
 /** In a session, a member whose key hash the host made a co-host. */
@@ -636,6 +672,8 @@ const queueRequest = (s, x, next) => insertAdds(s, [{ ...x.track, by: x.from }],
 
 /** Closes the room, everyone told why. */
 function endRoom(ctx, reason) {
+    // Everyone still in the session, or inside their 60 s, has their stay counted now.
+    if (ctx.s?.pub) for (const m of ctx.s.members) countStay(ctx, m);
     ctx.out.push({ to: "all", msg: { t: "ended", reason } });
     ctx.closed = true;
     return true;
@@ -672,7 +710,7 @@ export function step(state, event, now) {
         // A session takes its row out of the directory; one whose row went (stationGone) has nothing to take out.
         const p = ctx.s.pub;
         const live = p?.liveAt != null ? { remove: { stationId: p.stationId, room: ctx.s.code } } : undefined;
-        return { state: null, out: ctx.out, alarmAt: null, closed: true, live };
+        return { state: null, out: ctx.out, alarmAt: null, closed: true, live, regulars: regularsOf(ctx) };
     }
     let next = changed ? ctx.s : state;
     let live;
@@ -682,8 +720,10 @@ export function step(state, event, now) {
         if (next === state) next = structuredClone(state);
         live = { upsert: liveRow(next, now) };
     }
-    return { state: next, out: ctx.out, alarmAt: nextAlarm(next), bind: ctx.bind, reject: ctx.reject, kick: ctx.kick, live };
+    return { state: next, out: ctx.out, alarmAt: nextAlarm(next), bind: ctx.bind, reject: ctx.reject, kick: ctx.kick, live, regulars: regularsOf(ctx) };
 }
+
+const regularsOf = (ctx) => (ctx.regulars?.length ? { stationId: ctx.s.pub.stationId, listeners: ctx.regulars } : undefined);
 
 const EVENTS = {
     hello(ctx) {
@@ -703,10 +743,16 @@ const EVENTS = {
             if (s.members.length >= capacity(s)) { ctx.reject = { code: 4409, reason: "full" }; return false; }
             m = { id: event.newId, token: event.newToken, name, joinedAt: now, status: "buffering", leftAt: null };
             // A session member's key hash: what co-hosting and booting go by. Kept on resume; it never leaves the room.
-            if (s.pub) m.kh = event.listenerHash ?? null;
+            if (s.pub) {
+                m.kh = event.listenerHash ?? null;
+                m.sinceAt = now;
+                // How many of this station's sessions they stayed for before, as the shell read it: 3 makes a regular.
+                if (m.kh && Number.isSafeInteger(event.visits) && event.visits > 0) m.visits = Math.min(event.visits, 9_999);
+            }
             s.members.push(m);
         } else {
             m.leftAt = null;
+            if (s.pub) m.sinceAt = now;
             if (name) m.name = name;
             // Back mid-handshake: its old "ok" was for another song, so wait for this one.
             if (s.phase.kind === "preparing") m.status = "buffering";
@@ -734,6 +780,8 @@ const EVENTS = {
         const { s, now, event } = ctx;
         const m = findConnected(s, event.from);
         if (!m) return false;
+        // Before leftAt moves: the time of this connection joins the member's total.
+        if (s.pub) m.inMs = stayOf(m, now);
         m.leftAt = now;
         if (connected(s).length === 0) s.lastLeftAt = now;
         s.rev++;
@@ -767,6 +815,7 @@ const EVENTS = {
         const expired = s.members.filter((m) => m.leftAt !== null && now >= m.leftAt + HANDOVER_MS);
         if (expired.length) {
             const before = guestsCanAdd(s);
+            for (const m of expired) countStay(ctx, m);
             const gone = new Set(expired.map((m) => m.id));
             s.members = s.members.filter((m) => !gone.has(m.id));
             if (s.pub) {
@@ -1025,9 +1074,7 @@ const MESSAGES = {
     },
 
     end(ctx) {
-        ctx.out.push({ to: "all", msg: { t: "ended", reason: "host_ended" } });
-        ctx.closed = true;
-        return true;
+        return endRoom(ctx, "host_ended");
     },
 
     // ── Sessions only: each of these does nothing in a private room ──────────

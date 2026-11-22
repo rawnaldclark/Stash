@@ -4,7 +4,7 @@
  * member with serializeAttachment, sends what step() says to send, and arms the single alarm.
  */
 import { step, preview, capacity, EMOJI, ANIMS, REACT_GAP_MS, SAY_GAP_MS } from "./room.js";
-import { removeLive, writeLive } from "./stations-api.js";
+import { countRegulars, removeLive, visitsOf, writeLive } from "./stations-api.js";
 import { sameHex, sha256Hex } from "./store.js";
 import { validEditKey } from "./validate.js";
 
@@ -103,8 +103,13 @@ export class ListenRoom {
             // phone's poster id, and the key itself is never stored, logged or sent on. A private room ignores it.
             const listenerHash = validEditKey(msg.communityKey) ? await sha256Hex(msg.communityKey) : null;
             delete msg.communityKey;
+            // A session listener's earlier stays at this station, for the regular's star. A database hiccup reads as
+            // none: nobody is kept out of a session for it.
+            const visits = state?.pub && listenerHash && !hostKeyOk
+                ? await visitsOf(this.env.COMMUNITY_DB, state.pub.stationId, listenerHash).catch(() => 0)
+                : 0;
             const r = await this.apply(
-                { type: "hello", msg, hostKeyOk, listenerHash, newId: randomCode(8), newToken: base64url(crypto.getRandomValues(new Uint8Array(16))) },
+                { type: "hello", msg, hostKeyOk, listenerHash, visits, newId: randomCode(8), newToken: base64url(crypto.getRandomValues(new Uint8Array(16))) },
                 (r) => { if (r.bind) this.bind(ws, r.bind); },
             );
             if (r.reject) ws.close(r.reject.code, r.reject.reason);
@@ -214,6 +219,7 @@ export class ListenRoom {
             this.alarmAt = null;
             await this.ctx.storage.deleteAll();
             if (r.live) await this.directory(r.live);
+            if (r.regulars) await this.regulars(r.regulars);
             return r;
         }
         if (r.state && r.state !== state) await this.ctx.storage.put("room", r.state);
@@ -224,6 +230,7 @@ export class ListenRoom {
             await this.ctx.storage.setAlarm(r.alarmAt);
             this.alarmAt = r.alarmAt;
         }
+        if (r.regulars) await this.regulars(r.regulars);
         // After the room is stored: other events may run while the database answers, and they read the stored room.
         if (r.live) {
             const reason = await this.directory(r.live);
@@ -244,6 +251,12 @@ export class ListenRoom {
             .catch((e) => { console.error(`live directory: ${e?.message ?? e}`); return null; });
         this.directoryTail = (this.directoryTail ?? Promise.resolve()).then(write);
         return this.directoryTail;
+    }
+
+    /** Counts this session for the listeners who stayed (src/stations-api.js). An error is logged, never thrown. */
+    regulars({ stationId, listeners }) {
+        return countRegulars(this.env.COMMUNITY_DB, stationId, listeners, this.now())
+            .catch((e) => { console.error(`regulars: ${e?.message ?? e}`); });
     }
 
     send(to, msg) {
