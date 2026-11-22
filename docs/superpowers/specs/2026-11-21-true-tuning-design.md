@@ -1,6 +1,6 @@
 # True tuning: each song measured, then brought to your pitch
 
-**Status:** approved by the owner 2026-11-21 ("lets build"). Step 1 is built; its accuracy report is §8.
+**Status:** approved by the owner 2026-11-21 ("lets build"). All five steps are built: PRs #935 to #939, stacked, unmerged. §8 is step 1's accuracy report; §9 is what was built and where it differs from this design.
 
 **The owner's ask (2026-11-21):** "hz monitoring needs to be true and not a generic downpitch on every track. we aren't actively monitoring and validating the natural freq of each track with 100% accuracy."
 
@@ -145,3 +145,34 @@ Each step is its own PR and leaves the app working.
 - Every voice with a wide vibrato at once, as in the first made-audio vibrato test, read 14 cents off at full confidence. Real music with steady instruments under the voice is fine (the test now has that shape), but a solo voice or solo strings needs a real recording in the corpus before step 3.
 - The absolute reading on real songs is checked only by made audio and by the 440 productions above. The corpus has no real recording whose tuning is documented.
 - The corpus is 18 songs from one phone: mostly hip-hop and rock, no classical, no solo instrument.
+
+## 9. As built (2026-11-21, PRs #935 to #939)
+
+| Step | PR | Branch |
+|---|---|---|
+| 1. The estimator | #935 | `feat/tuning-estimator` |
+| 2. Measure and store (database 81) | #936 | `feat/tuning-measure` |
+| 3. Apply per song; Now Playing's line | #937 | `feat/tuning-apply` |
+| 4. The output monitor | #938 | `feat/tuning-monitor` |
+| 5. Measured as it plays | #939 | `feat/tuning-live` |
+
+Where it differs from the sections above:
+
+- **§3.2's "smallest shift" rule is not built.** At a setting far from 440 it would move almost nothing: 415 is a semitone down, which the rule reads as "already on the grid". The shift is the setting over the song's own tuning, the whole way. A song's tuning is still only known within a semitone, so it is read as the 440 recording nearest to what was measured.
+- **Songs aren't measured at download time (§3.1).** That adds a second full decode to every download. The background pass measured 134 songs in 5 minutes on the Pixel 5, and a song played before it gets there is measured as it plays.
+- **Decision 3's switch isn't built.** At 440 nothing is shifted, which was its default.
+- **The monitor has no switch (§3.4),** and its line is in Now Playing's speed sheet under the song's line, not on the signal path sheet. The signal path still says "retuned to A = 432 Hz" for every song.
+- **A stream's first play (decision 2) keeps measuring.** The design said: measure the first seconds, ease to the right pitch, keep the result. Real songs showed an intro can sit 8 to 19 cents from the rest of the song, so the first sure reading (12 seconds in) is used, later readings that moved more than 3 cents replace it, and only a reading resting on a minute of the song is kept.
+- **Settings › Tuning's sentence (§3.3) isn't written.** Its footer still says only that Tuning applies to everything you play.
+
+On the Pixel 5:
+
+- A song measured at 440.5 Hz and played at 432: the output read 0.04 cents from 432 after 20 seconds.
+- A song with no stored reading: 20 cents off 432 until its reading landed 16 seconds in, then within about 5.
+
+Open, beyond §8's limits:
+
+- At a gapless seam the next song's first half second or so is at the previous song's shift.
+- A song whose sections sit at different tunings is corrected more than once while it plays. Each correction is a glide of up to a second.
+- Not tried: a stream with no library row, a crossfade between two unmeasured songs, Listen Together or a Session with Tuning on, and a USB DAC.
+- Nobody has listened critically yet.
