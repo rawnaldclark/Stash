@@ -114,6 +114,14 @@ export const REGULAR_STAY_MS = 10 * 60_000;
 export const REGULAR_SESSIONS = 3;
 /** Listeners whose time a session remembers after they left, in case they come back: past this, a short stay is forgotten. */
 export const MAX_STAYS = 500;
+/**
+ * Open decks (UX spec §5): besides the host, this many listeners take turns playing one song each; more wait in a
+ * line of at most DECK_LINE. A DJ whose turn comes with no song ready is skipped, and off the decks after
+ * DECK_MISSES in a row.
+ */
+export const DECK_SEATS = 4;
+export const DECK_LINE = 20;
+export const DECK_MISSES = 2;
 /** A crowd favourite: this many people at least, and a third of the room, reacted while the song played. */
 export const FAVOURITE_MIN = 3;
 /** Paused this long, a session ends. */
@@ -134,7 +142,7 @@ export const capacity = (s) => (s.pub ? MAX_PUBLIC_MEMBERS : MAX_MEMBERS);
 
 const HOST_ONLY = new Set([
     "load", "play", "pause", "seek", "queue", "suggestion", "makeHost", "end", "settings",
-    "autoAccept", "cohost", "boot", "presence", "lastSong", // sessions
+    "autoAccept", "cohost", "boot", "presence", "lastSong", "decks", "deckRemove", // sessions
 ]);
 /** Phone status → stored member status (`ready` is stored as `ok`, spec §3). */
 const STATUSES = { ready: "ok", buffering: "buffering", unavailable: "unavailable", drifting: "drifting" };
@@ -239,6 +247,110 @@ function sessionInfo(s) {
 const sessionMsg = (s) => ({ to: "all", msg: { t: "session", ...sessionInfo(s) } });
 
 /*
+ * Open decks (UX spec §5). While the host has them open, up to DECK_SEATS listeners are DJs, each keeping one song
+ * ready (`picks`), and the turns go round: the host, then each DJ in the order they sat down. The host's phone still
+ * plays everything from the queue, as it does today: when a song starts, the room puts the next DJ's ready pick at
+ * the front of the queue as their add (`pending` says whose), and the host's own turn is simply the host's queue.
+ * DJs are kept by key hash, as co-hosts are, so a seat holds across a reconnect.
+ *   last     whose song is playing: "host" or a DJ's key hash
+ *   pending  whose turn is next, once decided: "host", a DJ's key hash (their pick is in the queue), or null
+ */
+const decksOf = (s) => s.pub?.decks ?? null;
+/** The member id a key hash goes by now: the connected one, else one in its 60 s; null when they're gone. */
+function idOfKh(s, kh) {
+    return (s.members.find((m) => m.kh === kh && m.leftAt === null) ?? s.members.find((m) => m.kh === kh))?.id ?? null;
+}
+/** What every phone knows about the decks: member ids only. `ready`: that DJ has a song waiting or already queued. */
+function decksInfo(s) {
+    const d = decksOf(s);
+    const who = (k) => (k === "host" ? s.host : k ? idOfKh(s, k) : null);
+    return {
+        open: true,
+        djs: d.djs.map((kh) => ({ id: idOfKh(s, kh), ready: !!d.picks[kh] || d.pending === kh })).filter((x) => x.id),
+        line: d.line.map((kh) => idOfKh(s, kh)).filter(Boolean),
+        now: who(d.last), next: who(d.pending),
+    };
+}
+const decksMsg = (s) => ({ to: "all", msg: { t: "decksState", ...(decksOf(s) ? decksInfo(s) : { open: false, djs: [], line: [], now: null, next: null }) } });
+/** Off the decks or out of the line, their ready song with them; the first in line takes a free seat. */
+function offDecks(s, kh) {
+    const d = decksOf(s);
+    if (!d || !(d.djs.includes(kh) || d.line.includes(kh))) return false;
+    d.djs = d.djs.filter((k) => k !== kh);
+    d.line = d.line.filter((k) => k !== kh);
+    delete d.picks[kh];
+    delete d.misses[kh];
+    while (d.djs.length < DECK_SEATS && d.line.length) d.djs.push(d.line.shift());
+    return true;
+}
+/**
+ * Decides whose turn is next, if it isn't decided yet: the first after `last` in the round with a song ready has it
+ * put at the front of the queue as their add; reaching the host means the host's own queue is next. `atLoad`: a song
+ * just started, so a DJ passed over with nothing ready has missed their turn (DECK_MISSES in a row and they're off the
+ * decks, told with `deckOut`). Between songs (someone sat down, or readied a song) nobody is counted as missing, and a
+ * DJ who comes before the host in the round can still take the turn the host was about to have.
+ */
+function fillNext(ctx, atLoad) {
+    const { s } = ctx;
+    const d = decksOf(s);
+    if (!d || (d.pending && d.pending !== "host")) return false;
+    const order = ["host", ...d.djs];
+    const at = Math.max(0, order.indexOf(d.last));
+    const out = [];
+    let changed = false;
+    for (let i = 1; i <= order.length; i++) {
+        const who = order[(at + i) % order.length];
+        if (who === "host") {
+            if (d.pending !== "host") { d.pending = "host"; changed = true; }
+            break;
+        }
+        const pick = d.picks[who];
+        const id = idOfKh(s, who);
+        if (pick && id) {
+            delete d.picks[who];
+            d.misses[who] = 0;
+            s.qv++;
+            insertAdds(s, [{ ...pick, by: id }], true);
+            settle(s);
+            d.pending = who;
+            changed = true;
+            break;
+        }
+        if (atLoad) {
+            d.misses[who] = (d.misses[who] ?? 0) + 1;
+            changed = true;
+            if (d.misses[who] >= DECK_MISSES) out.push(who);
+        }
+    }
+    for (const kh of out) {
+        const id = idOfKh(s, kh);
+        offDecks(s, kh);
+        if (id) ctx.out.push({ to: "all", msg: { t: "deckOut", memberId: id, reason: "skipped" } });
+    }
+    return changed;
+}
+/** A song just started: it was the pending DJ's, or the host's, and the next turn is decided. */
+function decksOnLoad(ctx) {
+    const { s } = ctx;
+    const d = decksOf(s);
+    if (!d) return;
+    const pendingId = d.pending && d.pending !== "host" ? idOfKh(s, d.pending) : null;
+    if (d.pending === "host" || d.pending == null) {
+        d.last = "host";
+        d.pending = null;
+    } else if (pendingId && s.track.by === pendingId) {
+        d.last = d.pending;
+        d.pending = null;
+    } else if (!pendingId || !s.queue.some((t) => t.by === pendingId)) {
+        // The host played something of its own and the DJ's song is no longer waiting (taken out, or they left).
+        d.last = "host";
+        d.pending = null;
+    } // else the DJ's song is still next in the queue: nothing to decide yet
+    fillNext(ctx, true);
+    ctx.out.push(decksMsg(s));
+}
+
+/*
  * A song's crowd counts (UX spec §4.4, §4.5): how many people reacted to it and how many saved it, never who. Kept
  * for the song that's playing only, and made on first use, so a session nobody reacts in stores nothing new. A
  * reaction is stored once a person a song (a 54-person room writes at most 54 times a song for them, where storing
@@ -336,6 +448,7 @@ export function publicState(s) {
         ...(s.pub ? { session: sessionInfo(s) } : {}),
         // The playing song's counts, for someone who joins mid-song; absent until anyone reacted to it or saved it.
         ...(s.pub?.stats && s.pub.stats.key === s.trackKey ? { songStats: publicStats(s.pub.stats) } : {}),
+        ...(s.pub?.decks ? { decks: decksInfo(s) } : {}),
     };
 }
 
@@ -816,6 +929,13 @@ const EVENTS = {
         if (expired.length) {
             const before = guestsCanAdd(s);
             for (const m of expired) countStay(ctx, m);
+            // A DJ gone for good leaves the decks, unless they're back on another socket.
+            if (decksOf(s)) {
+                const staying = new Set(s.members.filter((m) => !expired.includes(m)).map((m) => m.kh).filter(Boolean));
+                let left = false;
+                for (const m of expired) if (m.kh && !staying.has(m.kh)) left = offDecks(s, m.kh) || left;
+                if (left) ctx.out.push(decksMsg(s));
+            }
             const gone = new Set(expired.map((m) => m.id));
             s.members = s.members.filter((m) => !gone.has(m.id));
             if (s.pub) {
@@ -860,6 +980,18 @@ const EVENTS = {
     },
 };
 
+/** A DJ's song is ready: kept, and put in the queue at once if the next turn is theirs to take. */
+function readied(ctx, d, kh, track) {
+    const { s } = ctx;
+    d.picks[kh] = track;
+    const before = s.qv;
+    fillNext(ctx, false);
+    s.rev++;
+    if (s.qv !== before) ctx.out.push(queueMsg(s));
+    ctx.out.push(decksMsg(s));
+    return true;
+}
+
 const MESSAGES = {
     load(ctx) {
         const { s, now, msg, event } = ctx;
@@ -873,6 +1005,7 @@ const MESSAGES = {
         // The last song's counts end with it; only when they last went out is kept, for the gap.
         if (s.pub?.stats) s.pub.stats = { key: s.trackKey, reacted: [], saved: [], fav: false, sentAt: s.pub.stats.sentAt, dirty: false };
         setHostQueue(ctx, msg.why === "pick", left);
+        decksOnLoad(ctx);
         s.timeline = { positionMs: cleanPosition(msg.positionMs, track) ?? 0, atRoomMs: now, playing: false };
         s.phase = { kind: "preparing", trackKey: s.trackKey, deadlineMs: now + PREPARE_MS, hostDeadlineMs: now + HOST_WAIT_CAP_MS };
         if (s.pub) s.pub.pausedSince = null; // a song on its way is playing, as far as a session's 15 minutes go
@@ -1095,6 +1228,64 @@ const MESSAGES = {
         return true;
     },
 
+    // ── Open decks (UX spec §5) ──
+
+    /** `{ open }`, the host: opens the decks, or closes them (every ready song is dropped; one already queued stays). */
+    decks(ctx) {
+        const { s, msg } = ctx;
+        if (!s.pub || typeof msg.open !== "boolean" || msg.open === !!decksOf(s)) return false;
+        if (msg.open) s.pub.decks = { open: true, djs: [], line: [], picks: {}, misses: {}, last: "host", pending: null };
+        else delete s.pub.decks;
+        s.rev++;
+        ctx.out.push(decksMsg(s));
+        return true;
+    },
+
+    /** `{ track }`, a listener: a seat on the decks with this song ready, or a place in the line when the seats are taken. */
+    deckJoin(ctx) {
+        const { s, msg, event } = ctx;
+        const d = decksOf(s);
+        const kh = memberById(s, event.from)?.kh;
+        const track = cleanTrack(msg.track);
+        if (!d || !kh || event.from === s.host || !track) return false;
+        if (!d.djs.includes(kh) && !d.line.includes(kh)) {
+            if (d.djs.length < DECK_SEATS) d.djs.push(kh);
+            else if (d.line.length < DECK_LINE) d.line.push(kh);
+            else { ctx.out.push({ to: event.from, msg: { t: "refused", what: "decks", reason: "full" } }); return false; }
+        }
+        return readied(ctx, d, kh, track);
+    },
+
+    /** `{ track }`, a DJ or someone in the line: their ready song, replacing the one before. */
+    deckPick(ctx) {
+        const { s, msg, event } = ctx;
+        const d = decksOf(s);
+        const kh = memberById(s, event.from)?.kh;
+        const track = cleanTrack(msg.track);
+        if (!d || !kh || !track || !(d.djs.includes(kh) || d.line.includes(kh))) return false;
+        return readied(ctx, d, kh, track);
+    },
+
+    /** A DJ steps down, or someone leaves the line. */
+    deckLeave(ctx) {
+        const { s, event } = ctx;
+        const kh = memberById(s, event.from)?.kh;
+        if (!kh || !offDecks(s, kh)) return false;
+        s.rev++;
+        ctx.out.push(decksMsg(s));
+        return true;
+    },
+
+    /** `{ memberId }`, the host: takes someone off the decks or out of the line. */
+    deckRemove(ctx) {
+        const { s, msg } = ctx;
+        const kh = memberById(s, msg.memberId)?.kh;
+        if (!kh || !offDecks(s, kh)) return false;
+        s.rev++;
+        ctx.out.push(decksMsg(s));
+        return true;
+    },
+
     /** `{ phrase }`: one of PHRASES, passed on to everyone as `said`. Nothing is stored: the shell holds the pace. */
     say(ctx) {
         const { s, msg, event } = ctx;
@@ -1254,6 +1445,7 @@ const MESSAGES = {
         const out = new Set(s.members.filter((x) => x.id === m.id || (m.kh && x.kh === m.kh)).map((x) => x.id));
         for (const id of out) if (findConnected(s, id)) ctx.out.push({ to: id, msg: { t: "ended", reason: "booted" } });
         s.members = s.members.filter((x) => !out.has(x.id));
+        if (m.kh && offDecks(s, m.kh)) ctx.out.push(decksMsg(s));
         const pending = s.suggestions.length;
         s.suggestions = s.suggestions.filter((x) => !out.has(x.from));
         for (const id of out) delete s.reactAt[id];
