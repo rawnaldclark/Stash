@@ -198,11 +198,23 @@ The welcome's `state` has `v: 3`, `session` and `suggestions: []`. Then that mem
 | `saved {trackKey}` | everyone | this person saved the playing song: counted once each, for the song with that key only |
 | `settings`, `makeHost`, `suggest`, `suggestion` | | no effect |
 
+**Open decks.** While the host has the decks open, up to 4 listeners are DJs and the turns go round: the host, then each DJ in the order they sat down, one song each. Up to 20 more wait in a line, and the first takes a seat that frees.
+
+| Message | Who | What it does |
+|---|---|---|
+| `decks {open}` | host | opens the decks, or closes them: every ready song is dropped, one already in the queue stays |
+| `deckJoin {track}` | listeners | a seat with this song ready, or a place in the line. `refused {what: "decks", reason: "full"}` when both are full |
+| `deckPick {track}` | a DJ, or someone in the line | their ready song, replacing the one before |
+| `deckLeave` | a DJ, or someone in the line | steps down |
+| `deckRemove {memberId}` | host | takes someone off the decks or out of the line |
+
+The host's phone plays everything from the queue, as before. When a song starts, the room decides whose turn is next and puts that DJ's ready song at the front of the queue as their add; the host's own turn is simply the host's queue. A DJ with nothing ready when their turn comes is skipped, and off the decks after 2 turns missed in a row (`deckOut {memberId, reason: "skipped"}` to everyone). Someone who readies a song between songs, and comes before the host in the round, still takes the turn the host was about to have. `decksState {open, djs: [{id, ready}], line: [ids], now, next}` goes to everyone on each change, and the welcome's `state` carries it as `decks` while they're open. A DJ is kept by key hash, so a seat holds across a reconnect; one gone 60 s, or booted, leaves the decks.
+
 **Regulars.** The room adds up how long each listener is connected to a session (by their key hash, across reconnects and coming back). The first time that reaches 10 minutes, when their slot lapses or the session ends, the shell adds one to their row in `station_regulars` (`migrations/0008_regulars.sql`): once a session each, and never for the host or a station that is gone. At `hello` the shell reads a listener's count and the room marks them `regular: true` in `members` from 3 sessions on. Only that flag is sent: never the count or the hash. A row not added to for 60 days is swept by the daily cron. Without the table (this code deployed before its migration) the read answers 0 and the write is logged and dropped, so sessions run as before.
 
 **A song's counts.** `songStats {trackKey, reactions, saves, favourite}` goes to everyone when the playing song's counts change, at most once every 2 s (a change inside the gap goes at its end). `reactions` and `saves` are people, each counted once a song; who they are is never sent. `favourite` turns true, and stays, once at least 3 people and a third of everyone connected have reacted while the song played. The welcome's `state` carries the same object as `songStats` once the song has any. The room stores a person's first reaction to a song and nothing for their later ones.
 
-New frames: `said`; `songStats`; `session`; `requests {requests: [{id, from, track}]}` after any change, all of them to the host and co-hosts and a listener's own to them; `requestAnswer`; `requestPassed {track, by}` to its requester alone; `refused {what, reason}`; and `command` to the host.
+New frames: `said`; `songStats`; `decksState`; `deckOut`; `session`; `requests {requests: [{id, from, track}]}` after any change, all of them to the host and co-hosts and a listener's own to them; `requestAnswer`; `requestPassed {track, by}` to its requester alone; `refused {what, reason}`; and `command` to the host.
 
 **How it ends.** `ended {reason}`, then every socket closes 4000. `host_ended`: End. `host_left`: the host's phone gone 60 s (a session is never handed on). `paused`: 15 minutes without playing (a song on its way counts as playing). `max_age`: 12 hours. `station_removed`: the station deleted, removed, hidden by votes, or its phone blocked. `replaced`: a newer session of the station. `closed`: 5 minutes with nobody in it.
 
