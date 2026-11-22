@@ -2,6 +2,7 @@ package com.stash.core.data.community
 
 import com.stash.core.data.share.ShareJson
 import com.stash.core.data.share.cut
+import com.stash.core.model.community.StationSchedule
 import com.stash.core.model.community.FollowState
 import com.stash.core.model.community.LiveSession
 import com.stash.core.model.community.Station
@@ -21,11 +22,28 @@ import okhttp3.RequestBody.Companion.toRequestBody
  * [hostName] or [vibe] clears it; the name can't be cleared. Cut to the Worker's limits (UTF-16 units, after trimming):
  * name 1 to 40, hostName up to 40, vibe up to 60.
  */
-data class StationEdit(val name: String? = null, val hostName: String? = null, val vibe: String? = null) {
+data class StationEdit(
+    val name: String? = null,
+    val hostName: String? = null,
+    val vibe: String? = null,
+    /** `off`, `schedule` or `always` (auto-live). */
+    val autoLive: String? = null,
+    /** The hours it goes live on its own, on the host's wall clock; sent whole. */
+    val schedule: StationSchedule? = null,
+) {
     internal fun body(): RequestBody = buildJsonObject {
         name?.let { put("name", it.trim().cut(40)) }
         hostName?.let { put("hostName", it.trim().cut(40)) }
         vibe?.let { put("vibe", it.trim().cut(60)) }
+        autoLive?.let { put("autoLive", it) }
+        schedule?.let { s ->
+            put("schedule", buildJsonObject {
+                put("tz", s.tz)
+                put("windows", kotlinx.serialization.json.buildJsonArray {
+                    for (w in s.windows) add(buildJsonObject { put("day", w.day); put("start", w.start); put("end", w.end) })
+                })
+            })
+        }
     }.toString().toRequestBody(CommunityHttp.JSON)
 }
 

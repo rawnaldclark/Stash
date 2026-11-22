@@ -1,5 +1,8 @@
 package com.stash.feature.community.sessions
 
+import com.stash.core.model.community.StationSchedule
+import com.stash.core.model.community.ScheduleWindow
+import com.stash.core.model.community.AutoLiveMode
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.community.CommunityResult
 import com.stash.core.data.community.StationEdit
@@ -134,5 +137,72 @@ class YourStationViewModelTest {
 
     @Test fun `the station's link is its page on stashfm`() {
         assertThat(stationLinkText("Ab3dEf9h")).isEqualTo("stashfm.app/s/Ab3dEf9h")
+    }
+
+    // ── Auto-live (step 6) ──────────────────────────────────────────────
+
+    private fun answering() { coEvery { repo.update(any(), any()) } answers { CommunityResult.Ok(own) } }
+    private val weekday = ScheduleWindow(1, "09:00", "17:00")
+
+    @Test fun `choosing a schedule sends the mode with its hours and this phone's zone, even with none yet`() = runTest(dispatcher) {
+        answering()
+        val vm = vm().also { it.zone = { "America/New_York" } }; advanceUntilIdle()
+        vm.setAutoLive(AutoLiveMode.SCHEDULE); advanceUntilIdle()
+        coVerify(exactly = 1) { repo.update("Ab3dEf9h", StationEdit(autoLive = "schedule", schedule = StationSchedule("America/New_York", emptyList()))) }
+    }
+
+    @Test fun `Always and Off send the mode alone, and the mode it already has sends nothing`() = runTest(dispatcher) {
+        answering()
+        val vm = vm(); advanceUntilIdle()
+        vm.setAutoLive(AutoLiveMode.OFF); advanceUntilIdle() // a station starts off
+        coVerify(exactly = 0) { repo.update(any(), any()) }
+        vm.setAutoLive(AutoLiveMode.ALWAYS); advanceUntilIdle()
+        coVerify(exactly = 1) { repo.update("Ab3dEf9h", StationEdit(autoLive = "always")) }
+    }
+
+    @Test fun `hours are added in order, with the phone's zone, and removed`() = runTest(dispatcher) {
+        val late = ScheduleWindow(5, "22:00", "02:00")
+        coEvery { repo.mine() } returns CommunityResult.Ok(own.copy(autoLive = "schedule", schedule = StationSchedule("Europe/London", listOf(late))))
+        answering()
+        val vm = vm().also { it.zone = { "America/New_York" } }; advanceUntilIdle()
+        vm.addHours(weekday); advanceUntilIdle()
+        coVerify(exactly = 1) { repo.update("Ab3dEf9h", StationEdit(schedule = StationSchedule("America/New_York", listOf(weekday, late)))) }
+    }
+
+    @Test fun `removing hours sends the rest`() = runTest(dispatcher) {
+        val late = ScheduleWindow(5, "22:00", "02:00")
+        coEvery { repo.mine() } returns CommunityResult.Ok(own.copy(autoLive = "schedule", schedule = StationSchedule("America/New_York", listOf(weekday, late))))
+        answering()
+        val vm = vm().also { it.zone = { "America/New_York" } }; advanceUntilIdle()
+        vm.removeHours(weekday); advanceUntilIdle()
+        vm.removeHours(ScheduleWindow(2, "01:00", "02:00")); advanceUntilIdle() // not one of its windows
+        coVerify(exactly = 1) { repo.update("Ab3dEf9h", StationEdit(schedule = StationSchedule("America/New_York", listOf(late)))) }
+        coVerify(exactly = 1) { repo.update(any(), any()) }
+    }
+
+    @Test fun `malformed hours, the same hours twice and an eighth window send nothing`() = runTest(dispatcher) {
+        val seven = (1..7).map { ScheduleWindow(it, "09:00", "17:00") }
+        coEvery { repo.mine() } returns CommunityResult.Ok(own.copy(autoLive = "schedule", schedule = StationSchedule("America/New_York", seven)))
+        answering()
+        val full = vm(); advanceUntilIdle()
+        full.addHours(ScheduleWindow(1, "18:00", "20:00")); advanceUntilIdle()
+
+        coEvery { repo.mine() } returns CommunityResult.Ok(own.copy(autoLive = "schedule", schedule = StationSchedule("America/New_York", listOf(weekday))))
+        val one = vm(); advanceUntilIdle()
+        one.addHours(weekday); advanceUntilIdle()
+        one.addHours(ScheduleWindow(2, "09:00", "09:00")); advanceUntilIdle()
+        one.addHours(ScheduleWindow(2, "9am", "17:00")); advanceUntilIdle()
+        coVerify(exactly = 0) { repo.update(any(), any()) }
+    }
+
+    @Test fun `a time is two digits, a colon and two digits`() {
+        assertThat(timeOrNull("09:05")).isEqualTo("09:05")
+        assertThat(timeOrNull(" 23:59 ")).isEqualTo("23:59")
+        for (bad in listOf("9:05", "09:5", "24:00", "12:60", "0905", "", "noon")) assertThat(timeOrNull(bad)).isNull()
+    }
+
+    @Test fun `hours read as the day and the two times`() {
+        assertThat(hoursLine(weekday, java.util.Locale.US)).isEqualTo("Mon 09:00 – 17:00")
+        assertThat(dayName(7, java.util.Locale.US)).isEqualTo("Sun")
     }
 }

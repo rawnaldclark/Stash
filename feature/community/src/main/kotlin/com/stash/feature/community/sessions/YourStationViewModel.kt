@@ -8,6 +8,10 @@ import com.stash.core.data.community.StationsRepository
 import com.stash.core.data.community.stationMessage
 import com.stash.core.media.listen.ListenTogetherController
 import com.stash.core.media.listen.ListenTogetherState
+import com.stash.core.model.community.AutoLiveMode
+import com.stash.core.model.community.AutoLiveSchedule
+import com.stash.core.model.community.ScheduleWindow
+import com.stash.core.model.community.StationSchedule
 import com.stash.core.model.community.Station
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -78,6 +82,33 @@ class YourStationViewModel @Inject constructor(
         if (wanted == station.vibe.orEmpty()) return
         change(station, StationEdit(vibe = wanted))
     }
+
+    /** Off, On a schedule or Always. A schedule goes with its hours, so the Worker never holds a mode without them. */
+    fun setAutoLive(mode: AutoLiveMode) {
+        val station = _state.value.station ?: return
+        if (AutoLiveMode.of(station.autoLive) == mode) return
+        val schedule = if (mode == AutoLiveMode.SCHEDULE) station.schedule ?: StationSchedule(zone(), emptyList()) else null
+        change(station, StationEdit(autoLive = mode.wire, schedule = schedule))
+    }
+
+    /** One more window of hours. The phone's time zone travels with them. Refused past [AutoLiveSchedule.MAX_WINDOWS], or malformed. */
+    fun addHours(window: ScheduleWindow) {
+        val station = _state.value.station ?: return
+        val now = station.schedule?.windows.orEmpty()
+        if (!AutoLiveSchedule.isValid(window) || now.size >= AutoLiveSchedule.MAX_WINDOWS || window in now) return
+        val sorted = (now + window).sortedWith(compareBy({ it.day }, { it.start }))
+        change(station, StationEdit(schedule = StationSchedule(zone(), sorted)))
+    }
+
+    fun removeHours(window: ScheduleWindow) {
+        val station = _state.value.station ?: return
+        val now = station.schedule?.windows.orEmpty()
+        if (window !in now) return
+        change(station, StationEdit(schedule = StationSchedule(zone(), now - window)))
+    }
+
+    /** Test seam: the phone's time zone. */
+    internal var zone: () -> String = { java.time.ZoneId.systemDefault().id }
 
     private fun change(station: Station, edit: StationEdit) {
         if (_state.value.saving) return

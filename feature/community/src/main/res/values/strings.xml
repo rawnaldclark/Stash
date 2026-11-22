@@ -228,4 +228,17 @@
         <item quantity="one">%1$d song · %2$s</item>
         <item quantity="other">%1$d songs · %2$s</item>
     </plurals>
+    <!-- Your station: going live on its own -->
+    <string name="autolive_title">GO LIVE ON ITS OWN</string>
+    <string name="autolive_off">Off</string>
+    <string name="autolive_schedule">On a schedule</string>
+    <string name="autolive_always">Always</string>
+    <string name="autolive_off_body">Your station goes on the air only when you tap Go live.</string>
+    <string name="autolive_schedule_body">Playing music during these hours puts your station on the air. It ends after the song that\'s playing when the hours do.</string>
+    <string name="autolive_always_body">Whenever you play music, your station is on the air. Never in Download mode or a private Listen Together room.</string>
+    <string name="autolive_add">Add hours</string>
+    <string name="autolive_remove">Remove</string>
+    <string name="autolive_from">From</string>
+    <string name="autolive_to">To</string>
+    <string name="autolive_hours_hint">24-hour times, like 09:00 and 17:30, on this phone\'s clock. An end before the start runs past midnight.</string>
 </resources>
