@@ -147,6 +147,29 @@ class SessionLifeTest {
         assertThat(lines(vm)).containsExactly(FeedLine.Favourite("Redbone"), FeedLine.Favourite("Ivy")).inOrder()
     }
 
+    @Test fun `a regular arrives as back, and the last song is said once each time it's called`() = runTest(dispatcher) {
+        val withRegular = room().copy(members = listOf(RoomMember("h", "Maya"), RoomMember("me", "Rawn"), RoomMember("b", "Ben", regular = true)))
+        state.value = withRegular
+        val vm = SessionLifeViewModel(controller); runCurrent()
+        events.tryEmit(SessionEvent(SessionEvent.Kind.JOINED, "b", "Ben")); runCurrent()
+        events.tryEmit(SessionEvent(SessionEvent.Kind.JOINED, "x", "Jo")); runCurrent()
+        state.value = withRegular.copy(session = SessionInfo("St4tion1", lastSong = true)); runCurrent()
+        state.value = withRegular.copy(session = SessionInfo("St4tion1", lastSong = true, listeners = 3)); runCurrent()
+        assertThat(lines(vm)).containsExactly(FeedLine.Back("Ben"), FeedLine.Joined("Jo"), FeedLine.LastSong).inOrder()
+        // Taken back, then called again: said again.
+        state.value = withRegular.copy(session = SessionInfo("St4tion1")); runCurrent()
+        state.value = withRegular.copy(session = SessionInfo("St4tion1", lastSong = true)); runCurrent()
+        assertThat(lines(vm).count { it == FeedLine.LastSong }).isEqualTo(2)
+    }
+
+    @Test fun `a recap's length reads as hours and minutes`() {
+        assertThat(recapDuration(0)).isEqualTo(0 to 0)
+        assertThat(recapDuration(59_999)).isEqualTo(0 to 0)
+        assertThat(recapDuration(42 * 60_000L)).isEqualTo(0 to 42)
+        assertThat(recapDuration(102 * 60_000L + 30_000)).isEqualTo(1 to 42)
+        assertThat(recapDuration(-5)).isEqualTo(0 to 0)
+    }
+
     @Test fun `a new session starts with an empty feed`() = runTest(dispatcher) {
         state.value = room()
         val vm = SessionLifeViewModel(controller); runCurrent()
