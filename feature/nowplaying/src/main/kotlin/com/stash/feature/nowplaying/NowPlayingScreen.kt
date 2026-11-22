@@ -36,6 +36,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -305,7 +306,8 @@ fun NowPlayingScreen(
     val measuringTuning by tuningViewModel.measuring.collectAsStateWithLifecycle()
     val outputTuningLine by tuningViewModel.outputLine.collectAsStateWithLifecycle()
     var showCustomTuningDialog by remember { mutableStateOf(false) }
-    val speedSheetState = rememberModalBottomSheetState()
+    // Fully open: with Tuning's lines about the song, half height cuts the sheet off.
+    val speedSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // The queue row (if any) whose Save-to-Playlist picker is open.
     var queueSaveTrack by remember { mutableStateOf<com.stash.core.model.Track?>(null) }
     val shareTrack by viewModel.shareTrack.collectAsStateWithLifecycle()
@@ -2470,6 +2472,7 @@ private fun SpeedSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 36.dp),
         ) {
