@@ -23,6 +23,7 @@ class SessionAutoLiveTest {
     private val playing = MutableStateFlow(false)
     private val room = MutableStateFlow<ListenTogetherState>(ListenTogetherState.Idle)
     private val downloadMode = MutableStateFlow(false)
+    private val communityOn = MutableStateFlow(true)
     private val sessionsOn = MutableStateFlow<Boolean?>(true)
     private val edits = MutableStateFlow(0)
     private var online = true
@@ -35,7 +36,7 @@ class SessionAutoLiveTest {
     private var startAt = base(10, 0)
 
     private fun TestScope.autoLive() = SessionAutoLive(
-        playing = playing, room = room, downloadMode = downloadMode, sessionsOn = sessionsOn, edits = edits,
+        playing = playing, room = room, downloadMode = downloadMode, communityOn = communityOn, sessionsOn = sessionsOn, edits = edits,
         myStation = { reads++; station }, online = { online }, send = { sent += it },
         scope = backgroundScope, clock = { startAt + testScheduler.currentTime },
     ).also { it.start(); runCurrent() }
@@ -75,6 +76,16 @@ class SessionAutoLiveTest {
         playing.value = true; runCurrent()
         assertThat(sent).isEmpty()
         assertThat(reads).isEqualTo(0)
+    }
+
+    @Test fun `the person's own Community switch off never goes live, and on again it does`() = runTest {
+        communityOn.value = false
+        autoLive()
+        playing.value = true; runCurrent()
+        advanceTimeBy(2 * 60_000); runCurrent()
+        assertThat(sent).isEmpty()
+        communityOn.value = true; runCurrent()
+        assertThat(sent).containsExactly(Command.GoLive("St4tion1", "Rawn"))
     }
 
     @Test fun `Download mode never goes live`() = runTest {
