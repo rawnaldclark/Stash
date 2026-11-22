@@ -2,6 +2,7 @@ package com.stash.core.media.listen
 
 import com.stash.core.data.community.CommunityResult
 import com.stash.core.data.community.StationsRepository
+import com.stash.core.data.prefs.HomeSectionsPreference
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.listen.ListenTogetherController.Command
@@ -42,6 +43,8 @@ class SessionAutoLive internal constructor(
     private val playing: Flow<Boolean>,
     private val room: StateFlow<ListenTogetherState>,
     private val downloadMode: Flow<Boolean>,
+    /** The person's own Community switch (Settings): off, the station never goes on the air by itself. */
+    private val communityOn: Flow<Boolean>,
     private val sessionsOn: StateFlow<Boolean?>,
     private val edits: Flow<Int>,
     private val myStation: suspend () -> Station?,
@@ -56,11 +59,13 @@ class SessionAutoLive internal constructor(
         streaming: StreamingPreference,
         stations: StationsRepository,
         connectivity: ConnectivityMonitor,
+        homeSections: HomeSectionsPreference,
     ) : this(
         playing = player.playerState.map { it.isPlaying }.distinctUntilChanged(),
         room = controller.state,
         // Streaming off is Download mode: fully offline, never on the air.
         downloadMode = streaming.enabled.map { !it }.distinctUntilChanged(),
+        communityOn = homeSections.communityOn.distinctUntilChanged(),
         sessionsOn = stations.sessionsOn,
         edits = stations.revision,
         myStation = { (stations.mine() as? CommunityResult.Ok)?.value },
@@ -75,6 +80,7 @@ class SessionAutoLive internal constructor(
     private var stationReadAt = 0L
     private var isPlaying = false
     private var isDownloadMode = false
+    private var isCommunityOn = false
     private var ticker: Job? = null
 
     private val _wentLive = MutableSharedFlow<Station>(extraBufferCapacity = 1)
@@ -85,12 +91,15 @@ class SessionAutoLive internal constructor(
     /** Call once, at app start. */
     fun start() {
         scope.launch {
-            combine(playing, downloadMode, room, sessionsOn, edits) { p, d, _, _, e -> Triple(p, d, e) }.collect { (p, d, e) ->
+            val switches = combine(downloadMode, communityOn) { d, c -> d to c }
+            combine(playing, switches, room, sessionsOn, edits) { p, d, _, _, e -> Triple(p, d, e) }.collect { (p, sw, e) ->
+                val (d, c) = sw
                 val started = p && !isPlaying
                 val edited = e != lastEdit
                 lastEdit = e
                 isPlaying = p
                 isDownloadMode = d
+                isCommunityOn = c
                 // The station is read when the music starts (at most every STATION_FRESH_MS) and after an edit.
                 if (edited || (started && clock() - stationReadAt >= STATION_FRESH_MS)) readStation()
                 look()
@@ -129,7 +138,7 @@ class SessionAutoLive internal constructor(
             playing = isPlaying,
             room = roomNow(),
             downloadMode = isDownloadMode,
-            communityOn = sessionsOn.value == true,
+            communityOn = sessionsOn.value == true && isCommunityOn,
             online = online(),
         )
         when (val step = auto.look(facts, clock())) {

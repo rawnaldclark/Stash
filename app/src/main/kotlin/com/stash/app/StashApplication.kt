@@ -225,6 +225,9 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var sessionAutoLive: com.stash.core.media.listen.SessionAutoLive
 
     @Inject
+    lateinit var autoLiveNotifier: com.stash.core.media.listen.AutoLiveNotifier
+
+    @Inject
     lateinit var handoffPublisher: com.stash.core.media.handoff.HandoffPublisher
 
     /** Recap story audio: its song pauses while the app is in the background and carries on when it's back. */
@@ -412,6 +415,7 @@ class StashApplication : Application(), Configuration.Provider {
         mirrorSignal.start()
         sessionRecapRecorder.start()
         sessionAutoLive.start()
+        autoLiveNotifier.start()
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
