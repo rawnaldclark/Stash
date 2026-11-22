@@ -122,4 +122,111 @@
     <string name="np_tuning_cents_standard">Standard pitch, as recorded</string>
     <string name="np_tuning_set">Set</string>
     <string name="np_tuning_cancel">Cancel</string>
+
+    <!-- Sessions: going live. Your "station" is your own radio; going live plays it for anyone in Community who tunes in. -->
+    <!-- The action in Now Playing's menu, the sheet's title and its main button -->
+    <string name="go_live_title">Go live</string>
+    <!-- The action while your session is opening -->
+    <string name="go_live_going">Going live…</string>
+    <!-- The action while your station is on the air. %d: how many people are listening -->
+    <string name="go_live_on_air_count">On the air · %d</string>
+    <string name="go_live_on_air">On the air</string>
+    <!-- The first-time sheet: what going live shares, in one sentence -->
+    <string name="go_live_shares">Going live shares each song you play, your station\'s name and your name with anyone who tunes in.</string>
+    <string name="go_live_name_label">Name your station</string>
+    <string name="go_live_name_hint">Like Rawn\'s Basement</string>
+    <!-- Over the field for the name listeners see for you -->
+    <string name="go_live_host_label">Your name</string>
+    <string name="go_live_vibe_label">What\'s playing tonight?</string>
+    <!-- Beside "What's playing tonight?": the line is optional, then how many characters are typed, of how many allowed -->
+    <string name="go_live_vibe_count">optional · %1$d / %2$d</string>
+    <string name="go_live_vibe_hint">90s house, requests open</string>
+    <string name="go_live_vibe_note">Shown on your Live now card and in your session. Kept for next time.</string>
+    <string name="go_live_not_now">Not now</string>
+
+    <!-- Sessions: the room. What the player shows while you listen to, or host, a station's session. -->
+    <!-- The header, before the station's name has loaded -->
+    <string name="room_station">Station</string>
+    <string name="room_collapse">Collapse</string>
+    <string name="room_menu">More</string>
+    <!-- Beside the red dot in the header: the station is on the air -->
+    <string name="room_live">LIVE</string>
+    <!-- How many people are listening, the host not counted -->
+    <plurals name="room_listening">
+        <item quantity="one">%d listening</item>
+        <item quantity="other">%d listening</item>
+    </plurals>
+    <string name="room_no_listeners">nobody yet</string>
+    <string name="room_follow">Follow</string>
+    <string name="room_following">Following</string>
+    <string name="room_leave">Leave</string>
+    <string name="room_end">End session</string>
+    <string name="room_share">Share station</string>
+    <!-- The message sent when you share the station you\'re listening to. %1$s: its name; %2$s: its link -->
+    <string name="room_share_text">Tune in to %1$s on Stash: %2$s</string>
+    <string name="room_about">About this station</string>
+    <!-- %1$s: the name the host goes by -->
+    <string name="room_about_host">Hosted by %1$s</string>
+    <plurals name="room_about_followers">
+        <item quantity="one">%d follower</item>
+        <item quantity="other">%d followers</item>
+    </plurals>
+    <string name="room_close">Close</string>
+    <!-- A station\'s one line about what it plays, in quotation marks. %1$s: the line -->
+    <string name="room_vibe">“%1$s”</string>
+    <!-- Shown to a host whose music is paused: listeners hear nothing, and the station isn\'t listed -->
+    <string name="room_host_paused">Paused. Press play to go on the air.</string>
+    <!-- Whose song is playing. %1$s: their name -->
+    <string name="room_pick">%1$s\'s pick</string>
+    <string name="room_pick_yours">Your pick</string>
+    <string name="room_pick_someone">A listener\'s pick</string>
+    <!-- Under a face in the crowd -->
+    <string name="room_host">host</string>
+    <string name="room_cohost">co-host</string>
+    <!-- This phone\'s own name in a list of people -->
+    <string name="room_you">You</string>
+    <!-- After the faces that fit: how many more people are in the room. %d: how many -->
+    <string name="room_more">+%d</string>
+    <string name="room_nobody">Nobody\'s tuned in yet</string>
+    <!-- Names, then how many others. %1$s: "You, Lee, Jo"; %2$d: how many more -->
+    <plurals name="room_names_more">
+        <item quantity="one">%1$s and %2$d more</item>
+        <item quantity="other">%1$s and %2$d more</item>
+    </plurals>
+    <!-- TalkBack: what tapping the crowd does. Also the heading of that list. -->
+    <string name="room_everyone">Everyone here</string>
+    <plurals name="room_here">
+        <item quantity="one">%d person here</item>
+        <item quantity="other">%d people here</item>
+    </plurals>
+    <string name="room_up_next">Up next</string>
+    <string name="room_up_next_empty">Nothing queued yet</string>
+    <plurals name="room_up_next_more">
+        <item quantity="one">And %d more song</item>
+        <item quantity="other">And %d more songs</item>
+    </plurals>
+    <!-- A listener\'s button to ask the host for a song -->
+    <string name="room_request">Request</string>
+    <string name="room_react">React</string>
+    <!-- The heart: saves the song that\'s playing to your Liked Songs -->
+    <string name="room_save">Save to Liked Songs</string>
+    <string name="room_saved">In your Liked Songs</string>
+    <string name="room_unsave">Remove from Liked Songs</string>
+    <string name="room_end_title">End the session for everyone?</string>
+    <plurals name="room_end_body">
+        <item quantity="one">%d person is listening. Your own queue comes back as you left it.</item>
+        <item quantity="other">%d people are listening. Your own queue comes back as you left it.</item>
+    </plurals>
+    <string name="room_end_body_empty">Your station goes off the air. Your own queue comes back as you left it.</string>
+    <!-- Under a station\'s vote arrows until you\'ve listened to its sessions for 2 minutes; also shown when a dimmed arrow is tapped -->
+    <string name="room_vote_listen_first">Listen 2 minutes to vote</string>
+    <!-- A vote that couldn\'t go for now. Nothing was lost. -->
+    <string name="room_vote_try_again">Couldn\'t vote right now. Try again.</string>
+    <!-- The small sheet after you leave a session. %1$s: the station\'s name -->
+    <string name="room_parting_title">How was %1$s?</string>
+    <string name="room_parting_follow">Follow this station</string>
+    <string name="room_parting_done">Done</string>
+    <!-- The mini player in a session, under the song: the station and that it\'s live. %1$s: the station; %2$d: how many are listening -->
+    <string name="mini_session_live">%1$s · LIVE</string>
+    <string name="mini_session_live_count">%1$s · LIVE · %2$d</string>
 </resources>

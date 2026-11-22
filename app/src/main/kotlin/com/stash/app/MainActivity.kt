@@ -73,6 +73,9 @@ class MainActivity : AppCompatActivity() {
         /** [pendingDeepLink] prefix for a Listen Together invite; the room code follows. */
         const val DEEP_LINK_LISTEN_PREFIX = "listen:"
 
+        /** A station's link (Sessions, `…/s/{id}`): opens the station's page. */
+        const val DEEP_LINK_STATION_PREFIX = "station:"
+
         /** [pendingDeepLink] prefix for a Link Stash on the web pairing link (`https://stashfm.app/link#1.…`); the link follows. */
         const val DEEP_LINK_WEB_LINK_PREFIX = "weblink:"
 
@@ -408,6 +411,10 @@ class MainActivity : AppCompatActivity() {
                 }
                 is ShareLinks.Parsed.Room -> {
                     pendingDeepLink.value = DEEP_LINK_LISTEN_PREFIX + parsed.code
+                    true
+                }
+                is ShareLinks.Parsed.Station -> {
+                    pendingDeepLink.value = DEEP_LINK_STATION_PREFIX + parsed.id
                     true
                 }
                 null -> false

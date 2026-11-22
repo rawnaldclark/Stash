@@ -80,6 +80,7 @@ import com.stash.core.model.share.ShareConfig
 import com.stash.core.model.share.SharedTrack
 import coil3.compose.AsyncImage
 import com.stash.core.ui.components.StashSwitch
+import com.stash.core.ui.components.personColor
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.nowplaying.R
 import kotlinx.coroutines.delay
@@ -87,13 +88,7 @@ import kotlinx.coroutines.flow.SharedFlow
 
 // ── Faces ─────────────────────────────────────────────────────────────────────
 
-/** One colour per person, stable from their member id: their face, reactions and picks all wear it. */
-internal val PERSON_COLORS = listOf(
-    Color(0xFFA78BFA), Color(0xFFF472B6), Color(0xFF22D3EE), Color(0xFFFBBF24),
-    Color(0xFF34D399), Color(0xFFFB923C), Color(0xFF60A5FA), Color(0xFFA3E635),
-)
-
-internal fun personColor(memberId: String): Color = PERSON_COLORS[Math.floorMod(memberId.hashCode(), PERSON_COLORS.size)]
+// A person's colour (their face, reactions and picks) is core/ui's personColor: Community's cards wear it too.
 
 /** "Maya Lopez" → "ML", "Pixel5" → "P". The room knows names only, so faces are initials. */
 internal fun initials(name: String?): String =

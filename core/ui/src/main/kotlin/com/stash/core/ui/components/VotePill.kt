@@ -1,4 +1,4 @@
-package com.stash.feature.community
+package com.stash.core.ui.components
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
@@ -50,14 +50,29 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.stash.core.model.community.CommunityPost
+import com.stash.core.ui.R
 import com.stash.core.ui.ambient.AccentRoles
 import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.theme.StashTheme
 
-/** The pill's paints: idle, lit (this phone's vote) and inert (your own post, or an arrow waiting for a listen). */
+/**
+ * The vote pill as drawn: the score, which arrow is lit (this phone's vote), and whether it takes taps (not on what's
+ * your own). Until the thing is heard ([listenFirst]) an arrow that would cast a vote is [upDimmed] or [downDimmed] (no
+ * words by the pill; a tap says why); your current vote stays lit and can still be taken back.
+ */
+data class VotePillUi(
+    val score: Int,
+    val upLit: Boolean,
+    val downLit: Boolean,
+    val enabled: Boolean,
+    val listenFirst: Boolean = false,
+    val upDimmed: Boolean = false,
+    val downDimmed: Boolean = false,
+)
+
+/** The pill's paints: idle, lit (this phone's vote) and inert (your own, or an arrow waiting for a listen). */
 @Immutable
-internal data class VotePillColors(
+data class VotePillColors(
     val fill: Color,
     val border: Color,
     val icon: Color,
@@ -69,7 +84,7 @@ internal data class VotePillColors(
     val inertIcon: Color,
 )
 
-internal object VotePillDefaults {
+object VotePillDefaults {
     /**
      * On the page (a list row, a rail card, the post's page): quiet glass with a hairline, and the app's album colour
      * when voted (as the chips are). The hairline is the faint one: on the phone (2026-11-01) the bright one made a
@@ -107,36 +122,31 @@ internal object VotePillDefaults {
 }
 
 /**
- * ▲ score ▼ in one horizontal capsule (spec 2026-09-26 §3 Votes, redrawn 2026-11-01). Your vote lights the pill
- * in the album colour; tapping it again takes it back ([CommunityPost.nextVote] in the view model). On your own
- * post the arrows are dimmed and silent to TalkBack, and the score alone stays.
+ * ▲ score ▼ in one horizontal capsule (spec 2026-09-26 §3 Votes, redrawn 2026-11-01), on Community's posts and on
+ * stations (Sessions). Your vote lights the pill in the album colour; tapping it again takes it back (the view model
+ * works out the next vote). On your own post or station the arrows are dimmed and silent to TalkBack, and the score
+ * alone stays.
  *
  * Taps on the pill never reach the row or card under it: a near miss on an arrow shouldn't open the post. Your own
- * post's pill takes no taps at all, so a tap on it opens the post as before.
+ * pill takes no taps at all, so a tap on it reaches what's under it as before.
  *
- * Until the post is heard (30 s played from it, contract 2026-11-03) the arrows that would vote are dimmed, and that's
- * all the pill shows: no words by it, so a heard post's pill and a waiting one's are the same size and nothing moves when
- * it wakes. A dimmed arrow still takes the tap and hands it to [onVote], whose view model says why instead of voting
- * ("Play it for 30 seconds to vote."); TalkBack hears "Listen first" on the arrow itself. Your current vote stays lit
+ * Until the thing is heard (a post: 30 s played from it, contract 2026-11-03; a station: 2 minutes in its sessions) the
+ * arrows that would vote are dimmed, and that's all the pill shows: no words by it, so a heard pill and a waiting one are
+ * the same size and nothing moves when it wakes. A dimmed arrow still takes the tap and hands it to [onVote], whose
+ * view model says why instead of voting; TalkBack hears "Listen first" on the arrow itself. Your current vote stays lit
  * and can be taken back. (Owner, 2026-11-03: a "Listen first" under every post's pill said what the tap already does.)
  *
  * @param compact the smaller pill of list rows and rail cards (32 dp high instead of 36, narrower arrows), so the
  *   title beside it keeps its room.
  */
 @Composable
-internal fun VotePill(
-    post: CommunityPost,
+fun VotePill(
+    ui: VotePillUi,
     onVote: (Int) -> Unit,
     modifier: Modifier = Modifier,
     colors: VotePillColors = VotePillDefaults.onPage(),
     compact: Boolean = false,
 ) {
-    Pill(post.votePill(), onVote, modifier, colors, compact)
-}
-
-/** The capsule itself: ▲ score ▼. */
-@Composable
-private fun Pill(ui: VotePillUi, onVote: (Int) -> Unit, modifier: Modifier, colors: VotePillColors, compact: Boolean) {
     val lit = ui.upLit || ui.downLit
     val fill by animateColorAsState(if (lit) colors.litFill else colors.fill, tween(PILL_FADE_MS), label = "pillFill")
     val border by animateColorAsState(if (lit) colors.litBorder else colors.border, tween(PILL_FADE_MS), label = "pillBorder")
@@ -152,10 +162,10 @@ private fun Pill(ui: VotePillUi, onVote: (Int) -> Unit, modifier: Modifier, colo
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // What a dimmed arrow says to TalkBack, after its name (the screen shows no words for it).
-        val waiting = stringResource(R.string.community_listen_first)
+        val waiting = stringResource(R.string.vote_listen_first)
         PillArrow(
             icon = Icons.Rounded.KeyboardArrowUp,
-            label = stringResource(R.string.community_vote_up),
+            label = stringResource(R.string.vote_up),
             lit = ui.upLit,
             enabled = ui.enabled,
             dimmed = if (ui.upDimmed) waiting else null,
@@ -165,7 +175,7 @@ private fun Pill(ui: VotePillUi, onVote: (Int) -> Unit, modifier: Modifier, colo
             // The up arrow's tap area reaches out past the pill's start, never in over the score.
             inner = Alignment.CenterEnd,
         ) { onVote(1) }
-        val votes = pluralStringResource(R.plurals.community_votes, ui.score, ui.score)
+        val votes = pluralStringResource(R.plurals.votes, ui.score, ui.score)
         // The number rolls up for a vote up and down for a vote down.
         AnimatedContent(
             targetState = ui.score,
@@ -191,7 +201,7 @@ private fun Pill(ui: VotePillUi, onVote: (Int) -> Unit, modifier: Modifier, colo
         }
         PillArrow(
             icon = Icons.Rounded.KeyboardArrowDown,
-            label = stringResource(R.string.community_vote_down),
+            label = stringResource(R.string.vote_down),
             lit = ui.downLit,
             enabled = ui.enabled,
             dimmed = if (ui.downDimmed) waiting else null,
@@ -261,7 +271,7 @@ private fun PillArrow(
 }
 
 /** The smallest tap area (Material's and Android's 48 dp). */
-internal val MinTouch = 48.dp
+val MinTouch = 48.dp
 
 /** The pill's colour change and the score's roll (the tab bar's colour step). */
 private const val PILL_FADE_MS = 180

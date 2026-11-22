@@ -20,6 +20,12 @@ enum class NowPlayingAction {
     LYRICS,
     QUEUE,
     LISTEN_TOGETHER,
+    /**
+     * Go live (Sessions): play your station for anyone in Community who tunes in. Only while Community is on and the
+     * server says Sessions is. Not in [DefaultPins]; pins are saved by name and the menu lists every unpinned action in
+     * this order, so it needs no migration.
+     */
+    GO_LIVE,
     SAVE_TO_PLAYLIST,
     SHARE,
     POST_TO_COMMUNITY,

@@ -73,6 +73,7 @@ import com.stash.core.model.share.SharedTrack
 import com.stash.feature.community.CommunityPostViewModel.UiState
 import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.components.LocalAppSnackbar
+import com.stash.core.ui.components.VotePill
 import com.stash.core.ui.components.bottomChromePadding
 
 /**
@@ -286,7 +287,7 @@ private fun PostBody(
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(Modifier.width(8.dp))
-                    VotePill(post, onVote = viewModel::vote)
+                    VotePill(post.votePill(), onVote = viewModel::vote)
                 }
                 Spacer(Modifier.height(14.dp))
 

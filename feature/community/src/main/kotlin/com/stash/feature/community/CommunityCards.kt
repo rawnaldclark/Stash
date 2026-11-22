@@ -69,7 +69,10 @@ import com.stash.core.ui.ambient.rememberCoverRoles
 import com.stash.core.ui.components.BlurredCoverBackdrop
 import com.stash.core.ui.components.HomeRailCardSize
 import com.stash.core.ui.components.HomeRailCoverShape
+import com.stash.core.ui.components.MinTouch
 import com.stash.core.ui.components.ShimmerPlaceholder
+import com.stash.core.ui.components.VotePill
+import com.stash.core.ui.components.VotePillDefaults
 import com.stash.core.ui.components.motion.pressScale
 import com.stash.core.ui.theme.SpaceGrotesk
 import com.stash.core.ui.theme.StashElevation
@@ -154,7 +157,7 @@ internal fun CommunityHero(
                     )
                 }
                 Spacer(Modifier.height(10.dp))
-                VotePill(post, onVote, colors = VotePillDefaults.onArt(roles))
+                VotePill(post.votePill(), onVote, colors = VotePillDefaults.onArt(roles))
             }
         }
     }
@@ -248,7 +251,7 @@ internal fun CommunityRailCard(rank: Int, post: CommunityPost, onOpen: () -> Uni
             overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.height(6.dp))
-        VotePill(post, onVote, compact = true)
+        VotePill(post.votePill(), onVote, compact = true)
     }
 }
 

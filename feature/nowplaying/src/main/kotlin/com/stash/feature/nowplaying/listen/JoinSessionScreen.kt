@@ -57,6 +57,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.ui.theme.StashTheme
+import com.stash.core.ui.components.personColor
 
 /** Where an invite link lands: who's hosting, what's playing, your name, and one big Join (spec §5–§6). */
 @Composable

@@ -47,6 +47,7 @@ import coil3.compose.AsyncImage
 import com.stash.core.model.community.CommunityPost
 import com.stash.core.model.share.ShareConfig
 import com.stash.core.ui.components.LocalAppSnackbar
+import com.stash.core.ui.components.VotePill
 import com.stash.core.ui.theme.StashTheme
 
 /** Between the facts on one line: "Playlist · 42 songs". */
@@ -209,7 +210,7 @@ internal fun PostListRow(
                 Text(stringResource(R.string.community_hidden), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
             }
         }
-        if (showVotes) VotePill(post, onVote, compact = true)
+        if (showVotes) VotePill(post.votePill(), onVote, compact = true)
     }
 }
 
