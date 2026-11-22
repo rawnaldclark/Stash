@@ -122,6 +122,14 @@
     <string name="np_tuning_cents_standard">Standard pitch, as recorded</string>
     <string name="np_tuning_set">Set</string>
     <string name="np_tuning_cancel">Cancel</string>
+    <string name="np_tuning_song_recorded">This song was recorded at A = %1$s Hz.</string>
+    <string name="np_tuning_song_lower">This song was recorded at A = %1$s Hz. Shifted %2$s cents lower.</string>
+    <string name="np_tuning_song_higher">This song was recorded at A = %1$s Hz. Shifted %2$s cents higher.</string>
+    <string name="np_tuning_song_already">This song is already at A = %1$s Hz. Not shifted.</string>
+    <string name="np_tuning_song_no_pitch">This song\'s tuning couldn\'t be measured. Shifted as a standard recording.</string>
+    <string name="np_tuning_song_not_measured">This song isn\'t measured yet. Shifted as a standard recording.</string>
+    <string name="np_tuning_measure_again">Measure again</string>
+    <string name="np_tuning_measuring">Measuring…</string>
 
     <!-- Sessions: going live. Your "station" is your own radio; going live plays it for anyone in Community who tunes in. -->
     <!-- The action in Now Playing's menu, the sheet's title and its main button -->

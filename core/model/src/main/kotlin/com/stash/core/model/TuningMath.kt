@@ -43,6 +43,27 @@ object TuningMath {
     /** What every frequency is multiplied by: 432 Hz gives 0.981818... */
     fun factor(hz: Float): Float = (sanitize(hz).toDouble() / STANDARD_HZ).toFloat()
 
+    /**
+     * What one song's frequencies are multiplied by: the chosen reference over the song's own tuning, which sits
+     * [songCents] from the 440 grid (true tuning, spec 2026-11-21). A song recorded at 442 (+7.85 cents) and
+     * retuned to 432 gets 432/442; a song already at the reference gets 1. [songCents] 0 is a standard recording,
+     * and what a song without a reading counts as.
+     *
+     * At standard nothing is shifted, whatever the song's own tuning: songs off 440 are left as recorded.
+     */
+    fun factor(hz: Float, songCents: Float): Float {
+        if (!isRetuned(hz)) return 1f
+        return (sanitize(hz).toDouble() / STANDARD_HZ / Math.pow(2.0, songCentsOrStandard(songCents) / 1200.0)).toFloat()
+    }
+
+    /** How far that moves the song, in cents: negative is lower. 0 at standard. */
+    fun shiftCents(hz: Float, songCents: Float): Double =
+        if (!isRetuned(hz)) 0.0 else cents(hz) - songCentsOrStandard(songCents)
+
+    /** A song's offset within the half semitone a tuning can be known to; anything else reads as standard. */
+    private fun songCentsOrStandard(songCents: Float): Double =
+        if (songCents.isFinite()) songCents.coerceIn(-50f, 50f).toDouble() else 0.0
+
     /** The offset from standard in cents (hundredths of a semitone): 432 Hz is -31.77. */
     fun cents(hz: Float): Double = 1200.0 * ln(sanitize(hz).toDouble() / STANDARD_HZ) / ln(2.0)
 

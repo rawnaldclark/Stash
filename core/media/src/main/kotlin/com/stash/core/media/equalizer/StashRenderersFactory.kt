@@ -110,6 +110,7 @@ class StashRenderersFactory(
                         },
                         tuningHz = tuningController::outputHz,
                         pitchStages = PitchStageFactory(tuningController::newStage),
+                        songCents = { outputSession.tuningCents },
                     )
                 },
             )

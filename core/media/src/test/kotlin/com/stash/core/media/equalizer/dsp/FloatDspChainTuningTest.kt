@@ -11,7 +11,10 @@ class FloatDspChainTuningTest {
     private var hz = 440f
     private val stages = mutableListOf<FixedDelayFakeStage>()
     private fun chain(factory: PitchStageFactory = PitchStageFactory { _, ch -> FixedDelayFakeStage(ch, 4).also { stages += it } }) =
-        FloatDspChain({ EqState() }, { LoudnessState(enabled = true, currentTrackGainDb = 0f) }, { hz }, factory)
+        FloatDspChain({ EqState() }, { LoudnessState(enabled = true, currentTrackGainDb = 0f) }, { hz }, factory, { songCents })
+
+    /** The playing song's own offset from the 440 grid; 0 is a standard recording. */
+    private var songCents = 0f
 
     @Test fun `the limiter runs on retuned audio, and 440 touches nothing`() {
         // A phase vocoder can overshoot: with Tuning in, the limiter at the end of the chain holds
@@ -72,6 +75,46 @@ class FloatDspChainTuningTest {
         hz = 444f
         c.process(FloatArray(4), 2)
         assertThat(stages.single().factor.toDouble()).isWithin(1e-7).of(444.0 / 440.0)
+    }
+
+    @Test fun `a song's own tuning sets the factor, the reference over what it was recorded at`() {
+        hz = 432f
+        songCents = 7.85f // recorded at 442
+        val c = chain()
+        c.configure(48_000, 2)
+        c.engageTuning(true)
+        assertThat(stages.single().factor.toDouble()).isWithin(1e-5).of(432.0 / 442.0)
+    }
+
+    @Test fun `the next song on the same stream, or a reading that lands, moves the factor live`() {
+        hz = 432f
+        val c = chain()
+        c.configure(48_000, 2)
+        c.engageTuning(true)
+        assertThat(stages.single().factor.toDouble()).isWithin(1e-7).of(432.0 / 440.0) // no reading: a standard recording
+
+        songCents = -31.7667f // a song already at 432
+        c.process(FloatArray(4), 2)
+        assertThat(stages.single().factor.toDouble()).isWithin(1e-6).of(1.0)
+
+        songCents = 21.7f
+        c.process(FloatArray(4), 2)
+        assertThat(stages.single().factor.toDouble()).isWithin(1e-5).of(432.0 / 445.55)
+        assertThat(stages).hasSize(1)
+    }
+
+    @Test fun `at 440 a song's own tuning changes nothing`() {
+        hz = 440f
+        songCents = 21.7f
+        val c = chain()
+        c.configure(48_000, 2)
+        assertThat(c.tuningWanted()).isFalse()
+        // Still engaged from before Tuning was switched off: factor 1 until the rebuild.
+        hz = 432f
+        c.engageTuning(true)
+        hz = 440f
+        c.process(FloatArray(4), 2)
+        assertThat(stages.single().factor).isEqualTo(1f)
     }
 
     @Test fun `reset empties the stage (a seek)`() {

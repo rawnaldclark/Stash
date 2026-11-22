@@ -91,6 +91,7 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var hiResOutputController: com.stash.core.media.output.HiResOutputController
     @Inject lateinit var tuningController: com.stash.core.media.tuning.TuningController
     @Inject lateinit var trackDao: TrackDao
+    @Inject lateinit var songTunings: com.stash.core.data.audio.SongTunings
     @Inject lateinit var streamingPreference: com.stash.core.data.prefs.StreamingPreference
     @Inject lateinit var connectivity: com.stash.core.media.streaming.ConnectivityMonitor
 
@@ -1600,6 +1601,7 @@ class StashPlaybackService : MediaLibraryService() {
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 updateSessionLoudness(session, mediaItem)
+                followSessionTuning(session, mediaItem)
             }
         })
         player.addAnalyticsListener(object : AnalyticsListener {
@@ -2026,6 +2028,26 @@ class StashPlaybackService : MediaLibraryService() {
         serviceScope.launch {
             val track = trackDao.getById(trackId)
             session.trackGainDb = if (track == null) 0f else computeGain(track.loudnessLufs, track.truePeakDbfs)
+        }
+    }
+
+    /** Each player's watch on its current song's tuning (see [followSessionTuning]). Main thread only. */
+    private val tuningWatches = HashMap<com.stash.core.media.output.OutputSession, kotlinx.coroutines.Job>()
+
+    /**
+     * Keeps [session]'s tuning offset at its current song's stored reading, 0 (a standard recording) until one
+     * is known. It follows the row, so a reading that lands while the song plays (the background pass, or
+     * "Measure again") is heard at once.
+     */
+    private fun followSessionTuning(
+        session: com.stash.core.media.output.OutputSession,
+        mediaItem: MediaItem?,
+    ) {
+        tuningWatches.remove(session)?.cancel()
+        session.tuningCents = 0f
+        val trackId = mediaItem?.mediaId?.toLongOrNull() ?: return
+        tuningWatches[session] = serviceScope.launch {
+            songTunings.observe(trackId).collect { session.tuningCents = it.appliedCents }
         }
     }
 

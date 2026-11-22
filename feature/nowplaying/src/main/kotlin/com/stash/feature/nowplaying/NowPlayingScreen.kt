@@ -300,6 +300,9 @@ fun NowPlayingScreen(
     // Tuning shares the speed sheet: both are "how this sounds right now".
     val tuningViewModel: NowPlayingTuningViewModel = hiltViewModel()
     val tuningHz by tuningViewModel.referenceHz.collectAsStateWithLifecycle()
+    val songTuningLine by tuningViewModel.songLine.collectAsStateWithLifecycle()
+    val canMeasureTuning by tuningViewModel.canMeasure.collectAsStateWithLifecycle()
+    val measuringTuning by tuningViewModel.measuring.collectAsStateWithLifecycle()
     var showCustomTuningDialog by remember { mutableStateOf(false) }
     val speedSheetState = rememberModalBottomSheetState()
     // The queue row (if any) whose Save-to-Playlist picker is open.
@@ -826,6 +829,9 @@ fun NowPlayingScreen(
             tuningHz = tuningHz.takeIf { tuningViewModel.available },
             onTuningSelect = { tuningViewModel.set(it); showSpeedSheet = false },
             onTuningCustom = { showSpeedSheet = false; showCustomTuningDialog = true },
+            songTuningLine = songTuningLine,
+            onMeasureAgain = (tuningViewModel::measureAgain).takeIf { canMeasureTuning },
+            measuringTuning = measuringTuning,
         )
     }
 
@@ -2443,6 +2449,11 @@ private fun SpeedSheet(
     tuningHz: Float? = null,
     onTuningSelect: (Float) -> Unit = {},
     onTuningCustom: () -> Unit = {},
+    /** What Tuning did to the playing song, under the chips. */
+    songTuningLine: SongTuningLine = SongTuningLine.None,
+    /** "Measure again", or null when the song has no file on this phone to measure. */
+    onMeasureAgain: (() -> Unit)? = null,
+    measuringTuning: Boolean = false,
 ) {
     val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
     ModalBottomSheet(
@@ -2533,6 +2544,28 @@ private fun SpeedSheet(
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
                 TuningChips(tuningHz = tuningHz, onSelect = onTuningSelect, onCustom = onTuningCustom)
+                val songText = songTuningText(songTuningLine)
+                if (songText != null) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = songText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (onMeasureAgain != null) {
+                        androidx.compose.material3.TextButton(
+                            onClick = onMeasureAgain,
+                            enabled = !measuringTuning,
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                        ) {
+                            Text(
+                                androidx.compose.ui.res.stringResource(
+                                    if (measuringTuning) R.string.np_tuning_measuring else R.string.np_tuning_measure_again,
+                                ),
+                            )
+                        }
+                    }
+                }
             }
         }
     }

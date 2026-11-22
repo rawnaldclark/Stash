@@ -1639,6 +1639,15 @@ interface TrackDao {
     )
     suspend fun tracksNeedingTuning(afterId: Long, limit: Int): List<TrackEntity>
 
+    /** One track's tuning columns, and each change to them; null while there is no such track. */
+    @Query(
+        """
+        SELECT tuning_cents AS cents, tuning_confidence AS confidence, tuning_measured_at AS measuredAt
+        FROM tracks WHERE id = :id
+        """
+    )
+    fun observeTuning(id: Long): Flow<TrackTuningRow?>
+
     /** A tuning measurement: the offset from the 440 grid in cents, and how sure it is. */
     @Query(
         """
@@ -3342,3 +3351,10 @@ interface TrackDao {
 
 /** Library totals for the diagnostics bundle. [missingFiles] = downloaded rows whose file is gone. */
 data class TrackDiagnosticsTotals(val total: Int, val downloaded: Int, val missingFiles: Int)
+
+/** [TrackDao.observeTuning]'s row: a track's three tuning columns. */
+data class TrackTuningRow(
+    val cents: Float?,
+    val confidence: Float?,
+    val measuredAt: Long?,
+)

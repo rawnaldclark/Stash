@@ -125,6 +125,13 @@ class OutputSession(
      * Null until the player's first song has been looked up.
      */
     @Volatile var trackGainDb: Float? = null
+
+    /**
+     * How far THIS player's current song sits from the 440 grid, in cents, as measured (true tuning): Tuning
+     * shifts by the chosen reference over the song's own tuning. 0 for a standard recording and for a song with
+     * no reading. Per player for the reason [trackGainDb] is: a crossfade plays two songs at once.
+     */
+    @Volatile var tuningCents: Float = 0f
 }
 
 /**
