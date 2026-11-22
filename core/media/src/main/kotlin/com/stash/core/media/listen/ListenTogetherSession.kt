@@ -56,6 +56,8 @@ class ListenTogetherSession(
     private val clock: () -> Long,
     /** This phone's remembered "Let guests add songs" (on until the user turns it off). */
     private val guestsAddPreference: suspend () -> Boolean = { true },
+    /** This phone's station plays requests without asking (Your station's Auto-accept); off until turned on. */
+    private val autoAcceptPreference: suspend () -> Boolean = { false },
     /**
      * The phone's Community key, made on first use (CommunityKeyStore.key), or null when it can't be had. A session's
      * listener says it in every hello; going live opens the session under it.
@@ -424,6 +426,11 @@ class ListenTogetherSession(
                 // The room keeps a host's presence, but a reconnect is when it may have changed unsaid.
                 presenceSaid = m.state.session?.presence
                 sayPresence()
+                // Auto-accept is the station's setting, kept on this phone: a session it opens starts with it.
+                if (role() == SessionRole.HOST) {
+                    val wanted = autoAcceptPreference()
+                    if (m.state.session?.autoAccept != wanted) send(ClientMessage.AutoAccept(wanted))
+                }
                 // A reconnect: the room forgot our status with the old socket, so say it again,
                 // unless applyState just started a new song (that reports for itself).
                 if (loadedKey == before && loadedKey != NONE) when (loadedKey) {

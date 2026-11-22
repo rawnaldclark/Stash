@@ -2,6 +2,7 @@ package com.stash.feature.nowplaying.session
 
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.repository.MusicRepository
+import com.stash.core.data.share.SharePreference
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.listen.ListenTogetherController
 import com.stash.core.media.listen.ListenTogetherController.Command
@@ -122,12 +123,13 @@ class SessionDjTest {
     private val controller: ListenTogetherController = mockk(relaxed = true)
     private val player: PlayerRepository = mockk(relaxed = true)
     private val music: MusicRepository = mockk()
+    private val share: SharePreference = mockk(relaxed = true)
 
     private fun track(id: Long, title: String) = Track(id = id, title = title, artist = "Artist")
 
     @Test fun `typing searches the library after a moment, two letters at least, 30 results at most`() = runTest(dispatcher) {
         every { music.search("ni") } returns flowOf((1L..40L).map { track(it, "Nights $it") })
-        val vm = SessionDjViewModel(controller, player, music)
+        val vm = SessionDjViewModel(controller, player, music, share)
         backgroundScope.launch { vm.results.collect() }
 
         vm.setQuery("n"); advanceTimeBy(400); runCurrent()
@@ -146,14 +148,14 @@ class SessionDjTest {
 
     @Test fun `a request is the same add every song menu makes`() = runTest(dispatcher) {
         coEvery { player.addToQueue(any<Track>()) } returns true
-        val vm = SessionDjViewModel(controller, player, music)
+        val vm = SessionDjViewModel(controller, player, music, share)
         val song = track(7, "Nights")
         vm.request(song); runCurrent()
         coVerify(exactly = 1) { player.addToQueue(song) }
     }
 
     @Test fun `each tap sends its command`() = runTest(dispatcher) {
-        val vm = SessionDjViewModel(controller, player, music)
+        val vm = SessionDjViewModel(controller, player, music, share)
         vm.answer("r1", RequestAnswer.NEXT)
         vm.answer("r2", RequestAnswer.PASS)
         vm.setAutoAccept(true)
@@ -165,6 +167,8 @@ class SessionDjTest {
         verify { controller.send(Command.AnswerRequest("r1", RequestAnswer.NEXT)) }
         verify { controller.send(Command.AnswerRequest("r2", RequestAnswer.PASS)) }
         verify { controller.send(Command.SetAutoAccept(true)) }
+        runCurrent()
+        coVerify { share.setAutoAccept(true) } // the station's setting: the next session starts with it
         verify { controller.send(Command.SetCohost("b", true)) }
         verify { controller.send(Command.Boot("b")) }
         verify { controller.send(Command.Unqueue(nights, 3)) }

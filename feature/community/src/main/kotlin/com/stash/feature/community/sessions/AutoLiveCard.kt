@@ -16,6 +16,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -79,6 +80,30 @@ private fun Chip(text: String, selected: Boolean, enabled: Boolean, onClick: () 
  * seven windows), each removable, with Add hours.
  */
 @OptIn(ExperimentalLayoutApi::class)
+/** Your station's Auto-accept: one switch, in the same card as the rest of the page. */
+@Composable
+internal fun AutoAcceptCard(on: Boolean, onChange: (Boolean) -> Unit) {
+    val ext = StashTheme.extendedColors
+    val shape = MaterialTheme.shapes.extraLarge
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(ext.glassBackground)
+            .border(1.dp, ext.glassBorder, shape)
+            .clickable(role = Role.Switch) { onChange(!on) }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(stringResource(R.string.station_auto_accept), style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.station_auto_accept_body), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = on, onCheckedChange = null)
+    }
+}
+
 @Composable
 internal fun AutoLiveCard(
     station: Station,

@@ -3,6 +3,7 @@ package com.stash.feature.nowplaying.session
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.repository.MusicRepository
+import com.stash.core.data.share.SharePreference
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.listen.ListenTogetherController
 import com.stash.core.media.listen.ListenTogetherController.Command
@@ -36,6 +37,7 @@ class SessionDjViewModel @Inject constructor(
     private val controller: ListenTogetherController,
     private val player: PlayerRepository,
     music: MusicRepository,
+    private val sharePreference: SharePreference,
 ) : ViewModel() {
 
     private val _query = MutableStateFlow("")
@@ -83,7 +85,11 @@ class SessionDjViewModel @Inject constructor(
     /** "End after this song", or taking it back. */
     fun lastSong(on: Boolean) = controller.send(Command.LastSong(on))
 
-    fun setAutoAccept(on: Boolean) = controller.send(Command.SetAutoAccept(on))
+    /** The booth's Auto-accept is the station's setting: it is remembered, so the next session starts the same way. */
+    fun setAutoAccept(on: Boolean) {
+        controller.send(Command.SetAutoAccept(on))
+        viewModelScope.launch { sharePreference.setAutoAccept(on) }
+    }
 
     fun setCohost(memberId: String, on: Boolean) = controller.send(Command.SetCohost(memberId, on))
 

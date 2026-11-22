@@ -31,6 +31,7 @@ class SharePreference @Inject constructor(@ApplicationContext private val contex
     private val nameKey = stringPreferencesKey("display_name")
     private val guestsAddKey = booleanPreferencesKey("listen_guests_add")
     private val tuneInNameSeenKey = booleanPreferencesKey("session_name_seen")
+    private val autoAcceptKey = booleanPreferencesKey("station_auto_accept")
 
     /** The host's "Let guests add songs": on until they turn it off (owner decision 1, 2026-11-04). */
     val guestsAdd: Flow<Boolean> = context.shareDataStore.data.map { it[guestsAddKey] ?: true }.catch { emit(true) }
@@ -39,6 +40,18 @@ class SharePreference @Inject constructor(@ApplicationContext private val contex
 
     suspend fun setGuestsAdd(on: Boolean) {
         context.shareDataStore.edit { it[guestsAddKey] = on }
+    }
+
+    /**
+     * This phone's station plays requests without asking (Your station's Auto-accept, and the booth's switch): off
+     * until turned on, and every session the station opens starts with it.
+     */
+    val autoAccept: Flow<Boolean> = context.shareDataStore.data.map { it[autoAcceptKey] ?: false }.catch { emit(false) }
+
+    suspend fun autoAcceptNow(): Boolean = runCatching { autoAccept.first() }.getOrDefault(false)
+
+    suspend fun setAutoAccept(on: Boolean) {
+        context.shareDataStore.edit { it[autoAcceptKey] = on }
     }
 
     /**

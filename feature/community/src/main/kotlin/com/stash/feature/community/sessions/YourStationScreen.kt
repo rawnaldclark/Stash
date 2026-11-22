@@ -89,6 +89,7 @@ fun YourStationScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val room by viewModel.room.collectAsStateWithLifecycle()
+    val autoAccept by viewModel.autoAccept.collectAsStateWithLifecycle()
     CommunitySnackbar(state.message, viewModel::messageShown)
     // Deleted: there's nothing left to show.
     LaunchedEffect(state.deleted) { if (state.deleted) onBack() }
@@ -129,6 +130,7 @@ fun YourStationScreen(
                             onAddHours = viewModel::addHours,
                             onRemoveHours = viewModel::removeHours,
                         )
+                        AutoAcceptCard(on = autoAccept, onChange = viewModel::setAutoAccept)
                     },
                 )
                 state.loading -> repeat(3) { RowSkeleton() }
@@ -199,7 +201,7 @@ private fun StationBody(
     onEditVibe: () -> Unit,
     onGoLive: () -> Unit,
     onDelete: () -> Unit,
-    /** The auto-live card, between the vibe line and Go live. */
+    /** The auto-live card and Auto-accept, between the vibe line and Go live. */
     autoLive: @Composable () -> Unit = {},
 ) {
     val ext = StashTheme.extendedColors
