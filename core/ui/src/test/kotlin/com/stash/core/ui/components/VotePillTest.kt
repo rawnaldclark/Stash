@@ -1,4 +1,4 @@
-package com.stash.feature.community
+package com.stash.core.ui.components
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,7 +19,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.height
 import androidx.compose.ui.unit.width
 import com.google.common.truth.Truth.assertThat
-import com.stash.core.model.community.CommunityPost
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -27,18 +26,19 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * The vote pill on a post that isn't heard yet (contract 2026-11-03), as the owner asked on 2026-11-03: no "Listen first"
+ * The vote pill on something that isn't heard yet (a post: contract 2026-11-03; a station in Sessions), as the owner asked on 2026-11-03: no "Listen first"
  * words by it (the tap's note says why), the arrows dimmed but still taking the tap, TalkBack still told why on the
  * arrow, and the pill the same size as a heard post's, so nothing moves when a post wakes.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
-class CommunityVotePillTest {
+class VotePillTest {
     @get:Rule val rule = createComposeRule()
 
-    private fun post(heard: Boolean, myVote: Int = 0) = CommunityPost(
-        id = if (heard) "HEARD001" else "WAITING1", kind = "song", title = "garden", name = "Maya", count = 1,
-        createdAt = 1, up = 9, down = 0, myVote = myVote, heard = heard,
+    /** Someone else's post or station at a score of 9: until it's [heard], the arrows that would cast a vote are dimmed. */
+    private fun post(heard: Boolean, myVote: Int = 0) = VotePillUi(
+        score = 9, upLit = myVote == 1, downLit = myVote == -1, enabled = true,
+        listenFirst = !heard, upDimmed = !heard && myVote != 1, downDimmed = !heard && myVote != -1,
     )
 
     /** The arrow named [label] inside the pill tagged [tag]. */

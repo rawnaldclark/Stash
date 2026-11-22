@@ -69,6 +69,9 @@ object ShareLinks {
 
         /** A Listen Together invite, `https://…/l/{code}` (spec 2026-09-24 §5). */
         data class Room(val code: String) : Parsed
+
+        /** A station's link, `https://…/s/{id}` (Sessions): its page in the app. Station ids keep their case. */
+        data class Station(val id: String) : Parsed
     }
 
     private val ID = Regex("^[A-Za-z0-9]{8}$")
@@ -120,6 +123,8 @@ object ShareLinks {
             scheme == "https" && host in ShareConfig.HOSTS -> when {
                 path.startsWith("/m/") -> path.removePrefix("/m/").takeIf { ID.matches(it) }?.let { Parsed.Mix(it) }
                 path.startsWith("/l/") -> path.removePrefix("/l/").uppercase().takeIf { ROOM_CODE.matches(it) }?.let { Parsed.Room(it) }
+                // Case kept: unlike room codes, station ids are case-sensitive.
+                path.startsWith("/s/") -> path.removePrefix("/s/").takeIf { ID.matches(it) }?.let { Parsed.Station(it) }
                 path.startsWith("/t/") -> path.removePrefix("/t/").takeIf { ID.matches(it) }?.let { Parsed.TrackRef(it) }
                 path == "/t" -> trackFrom(q["t"], q["a"], q["al"], q["d"], q["isrc"], q["sp"], q["yt"])
                 else -> null

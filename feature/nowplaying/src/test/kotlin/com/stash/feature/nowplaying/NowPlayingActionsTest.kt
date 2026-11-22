@@ -48,6 +48,34 @@ class NowPlayingActionsTest {
         )
     }
 
+    // ── Go live (Sessions) ───────────────────────────────────────────────────────────────────
+
+    @Test fun `Go live shows only while Sessions is on, right after Listen together`() {
+        assertTrue(NowPlayingAction.GO_LIVE !in menuActions(NowPlayingAction.DefaultPins, solo))
+        val menu = menuActions(NowPlayingAction.DefaultPins, solo.copy(sessionsOn = true))
+        assertEquals(menu.indexOf(LISTEN_TOGETHER) + 1, menu.indexOf(NowPlayingAction.GO_LIVE))
+    }
+
+    @Test fun `Go live is for outside a room, and stays while this phone is on the air`() {
+        val on = solo.copy(sessionsOn = true)
+        // A private room, and someone else's session: it would have to end or leave first.
+        assertTrue(!isActionAvailable(NowPlayingAction.GO_LIVE, on.copy(inRoom = true)))
+        assertTrue(!isActionAvailable(NowPlayingAction.GO_LIVE, on.copy(inRoom = true, inSession = true)))
+        // On the air it reads "On the air".
+        assertTrue(isActionAvailable(NowPlayingAction.GO_LIVE, on.copy(inRoom = true, inSession = true, hostingSession = true)))
+    }
+
+    @Test fun `a session has its own room, so Listen together isn't offered in one`() {
+        assertTrue(isActionAvailable(LISTEN_TOGETHER, solo.copy(inRoom = true)))
+        assertTrue(!isActionAvailable(LISTEN_TOGETHER, solo.copy(inRoom = true, inSession = true)))
+    }
+
+    @Test fun `the pin editor lists Go live only while Sessions is on, or while it's still pinned`() {
+        assertTrue(NowPlayingAction.GO_LIVE !in editableActions(NowPlayingAction.DefaultPins, solo))
+        assertTrue(NowPlayingAction.GO_LIVE in editableActions(NowPlayingAction.DefaultPins, solo.copy(sessionsOn = true)))
+        assertTrue(NowPlayingAction.GO_LIVE in editableActions(NowPlayingAction.DefaultPins + NowPlayingAction.GO_LIVE, solo))
+    }
+
     // ── order ────────────────────────────────────────────────────────────────────────────────
 
     @Test fun `pinned icons keep the canonical order whatever order they were pinned in`() {
@@ -319,7 +347,7 @@ class NowPlayingActionsTest {
         assertTrue(NowPlayingAction.RADIO in shown)
         assertTrue(NowPlayingAction.PLAYBACK_SPEED in shown)
         // A library song keeps them all.
-        assertTrue(SCANNED_HIDDEN.all { isActionAvailable(it, ctx.copy(isScannedSong = false)) })
+        assertTrue(SCANNED_HIDDEN.all { isActionAvailable(it, ctx.copy(isScannedSong = false, sessionsOn = true)) })
     }
 
     @Test fun `a cloud song can't be flagged as a wrong match but keeps download and share`() {

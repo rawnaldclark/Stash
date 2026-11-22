@@ -595,7 +595,8 @@ fun NowPlayingScreen(
             }
         }
     }
-    val fullArtOn = fullArtPref == true && fullArtPages.isNotEmpty()
+    // Not in a station's session: the room has its own, smaller cover (Sessions).
+    val fullArtOn = fullArtPref == true && fullArtPages.isNotEmpty() && room?.session == null
     // The square art's pages and full art's line up (front, back, inside) when the back is known.
     val pagesLineUp = coverArt?.back != null
     // The holder only (no colour read here): each reader takes its colour where it draws, so the
@@ -616,9 +617,17 @@ fun NowPlayingScreen(
     val isCloudSong = track?.source == com.stash.core.model.MusicSource.CLOUD
     val isSoundCloudSong = track?.soundCloudId != null || track?.source == com.stash.core.model.MusicSource.SOUNDCLOUD
     val isPreview = track?.soundCloudPreview == true && !isDownloaded
-    val actionCtx = remember(room != null, casting, postToCommunity != null, isDownloaded, castSupported, hasBrowser, onBrowser, isScannedSong, isCloudSong, isSoundCloudSong, isPreview, streams) {
+    // Sessions: Go live is offered while the Worker says Sessions is on (GoLiveHost knows), from outside a room.
+    val goLive = com.stash.feature.nowplaying.session.LocalGoLive.current
+    val sessionsOn = goLive?.available == true
+    val inSession = room?.session != null
+    val hostingSession = inSession && room?.isHost == true
+    val actionCtx = remember(room != null, inSession, hostingSession, sessionsOn, casting, postToCommunity != null, isDownloaded, castSupported, hasBrowser, onBrowser, isScannedSong, isCloudSong, isSoundCloudSong, isPreview, streams) {
         ActionContext(
             inRoom = room != null,
+            inSession = inSession,
+            hostingSession = hostingSession,
+            sessionsOn = sessionsOn,
             casting = casting,
             communityAvailable = postToCommunity != null,
             isDownloaded = isDownloaded,
@@ -642,8 +651,19 @@ fun NowPlayingScreen(
     val castLabel = com.stash.feature.nowplaying.cast.playOnLine(playOn)
         ?: androidx.compose.ui.res.stringResource(R.string.play_on_title)
     val tuningMark = tuningMark(tuningHz)
-    val visualState = remember(radioLabel != null, radioTuning, radioPlaying, reading, togetherState, playbackSpeed, tuningHz, tuningMark, isDownloaded, castConnectingTo, castingTo, castLabel) {
+    // Go live's words: how many are listening while on the air, "Going live…" while the session opens.
+    val listeners = room?.session?.listeners ?: 0
+    val goingLive = goLive?.busy == true || (togetherState as? ListenTogetherState.Connecting)?.let { it.hosting && it.station != null } == true
+    val goLiveLabel = when {
+        hostingSession && listeners > 0 -> androidx.compose.ui.res.stringResource(R.string.go_live_on_air_count, listeners)
+        hostingSession -> androidx.compose.ui.res.stringResource(R.string.go_live_on_air)
+        goingLive -> androidx.compose.ui.res.stringResource(R.string.go_live_going)
+        else -> androidx.compose.ui.res.stringResource(R.string.go_live_title)
+    }
+    val visualState = remember(radioLabel != null, radioTuning, radioPlaying, reading, togetherState, playbackSpeed, tuningHz, tuningMark, isDownloaded, castConnectingTo, castingTo, castLabel, goLiveLabel, hostingSession) {
         ActionVisualState(
+            goLiveLabel = goLiveLabel,
+            onAir = hostingSession,
             radioActive = radioLabel != null,
             radioTuning = radioTuning,
             lyricsOpen = reading,
@@ -665,7 +685,7 @@ fun NowPlayingScreen(
     val rowFit = remember(pins, actionCtx, rowWidthDp, hasArt) {
         fitTopRow(topRowActions(pins, actionCtx), rowWidthDp, extraSlots = if (hasArt) 1 else 0)
     }
-    val onAction: (NowPlayingAction) -> Unit = remember(radioTuning, radioLabel, togetherState, track, postToCommunity) {
+    val onAction: (NowPlayingAction) -> Unit = remember(radioTuning, radioLabel, togetherState, track, postToCommunity, goLive, hostingSession) {
         { action ->
             when (action) {
                 // The speaker sheet the Cast button opens: pick a speaker, or control / disconnect.
@@ -684,6 +704,9 @@ fun NowPlayingScreen(
                     is ListenTogetherState.Connecting -> Unit
                     ListenTogetherState.Idle -> showStartTogether = true
                 }
+                // The first time, the sheet that names the station; after that, one tap. On the air it opens the
+                // session's sheet (End session).
+                NowPlayingAction.GO_LIVE -> if (hostingSession) showSession = true else goLive?.begin?.invoke()
                 NowPlayingAction.SAVE_TO_PLAYLIST -> showSaveSheet = true
                 NowPlayingAction.SHARE -> shareRequested = viewModel.onShareCurrent()
                 NowPlayingAction.POST_TO_COMMUNITY ->
@@ -1139,7 +1162,48 @@ fun NowPlayingScreen(
                 }
             }
 
-            Column(modifier = Modifier.fillMaxSize().padding(bottom = navBarInset)) {
+            // Sessions: a station's session has its own room in place of the player's content (UX spec 2026-11-20 §4).
+            // The host keeps the player's own controls there.
+            if (room?.session != null) {
+                com.stash.feature.nowplaying.session.SessionRoom(
+                    room = room,
+                    song = com.stash.feature.nowplaying.session.RoomSong(
+                        title = track?.title ?: room.track?.title.orEmpty(),
+                        artist = track?.artist ?: room.track?.artist.orEmpty(),
+                        art = artModel,
+                        durationMs = uiState.durationMs,
+                        playing = uiState.playWhenReady || uiState.isPlaying,
+                        progress = { progressFraction(playerPosition.value, uiState.durationMs) },
+                        elapsedMs = { playerPosition.value },
+                        // An All Songs file can't be liked (no library row): no heart.
+                        liked = track?.takeUnless { it.isScannedSong }?.let { it.stashLikedAt != null },
+                    ),
+                    reactions = together.reactions,
+                    animate = ambientAnimationEnabled,
+                    onCollapse = onDismiss,
+                    onReact = together::react,
+                    onRejoin = together::rejoin,
+                    onLike = viewModel::onLikeTap,
+                    onSeek = viewModel::onSeekTo,
+                    onEnd = together::end,
+                    hostControls = {
+                        PlaybackControls(
+                            isPlaying = uiState.playWhenReady || uiState.isPlaying,
+                            isBuffering = uiState.isBuffering && (uiState.playWhenReady || uiState.isPlaying),
+                            shuffleEnabled = uiState.shuffleEnabled,
+                            repeatMode = uiState.repeatMode,
+                            onPlayPauseClick = viewModel::onPlayPauseClick,
+                            onSkipNext = viewModel::onSkipNext,
+                            onSkipPrevious = viewModel::onSkipPrevious,
+                            onToggleShuffle = viewModel::onToggleShuffle,
+                            onCycleRepeatMode = viewModel::onCycleRepeatMode,
+                            onReact = together::react,
+                            canSkip = true,
+                        )
+                    },
+                    modifier = Modifier.then(controlsLayer).statusBarsPadding().padding(bottom = navBarInset),
+                )
+            } else Column(modifier = Modifier.fillMaxSize().padding(bottom = navBarInset)) {
                 // -- Top row: dismiss, then cast, the pinned actions, ⋮ and (pinned) queue. It stays
                 // put while the art and the lyrics swap beneath it. --
                 Column(
@@ -1536,7 +1600,7 @@ fun NowPlayingScreen(
                     }
                 }
             }
-            if (room != null) com.stash.feature.nowplaying.listen.FloatingReactions(together.reactions, animate = ambientAnimationEnabled, modifier = Modifier.fillMaxSize().then(controlsLayer))
+            if (room != null && room.session == null) com.stash.feature.nowplaying.listen.FloatingReactions(together.reactions, animate = ambientAnimationEnabled, modifier = Modifier.fillMaxSize().then(controlsLayer))
             com.stash.feature.nowplaying.ui.PageZoomLayer(pageZoom)
         }
     }

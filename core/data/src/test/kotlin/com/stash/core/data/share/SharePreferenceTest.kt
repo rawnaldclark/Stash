@@ -17,4 +17,12 @@ class SharePreferenceTest {
         prefs.setDisplayName("n".repeat(39) + "🎧")
         assertThat(prefs.displayName()).isEqualTo("n".repeat(39))
     }
+
+    @Test fun `the first tune-in's name line is unseen until it's marked, and stays seen`() = runBlocking {
+        val prefs = SharePreference(ApplicationProvider.getApplicationContext())
+        assertThat(prefs.tuneInNameSeen()).isFalse()
+        prefs.setTuneInNameSeen()
+        assertThat(prefs.tuneInNameSeen()).isTrue()
+        assertThat(SharePreference(ApplicationProvider.getApplicationContext()).tuneInNameSeen()).isTrue()
+    }
 }
