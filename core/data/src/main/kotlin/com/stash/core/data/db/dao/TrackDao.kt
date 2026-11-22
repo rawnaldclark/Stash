@@ -1304,8 +1304,8 @@ interface TrackDao {
      * meanwhile, and the replacement file with its format, bitrate, length
      * (null [durationMs] keeps the row's) and quality columns written
      * outright, nulls included: [markAsDownloaded]'s COALESCE would keep a
-     * replaced FLAC's 24-bit depth on lossy audio. Loudness is cleared so the
-     * background pass measures the new recording, [metadataEmbeddedAt] says
+     * replaced FLAC's 24-bit depth on lossy audio. Loudness and tuning are cleared so the
+     * background passes measure the new recording, [metadataEmbeddedAt] says
      * whether Stash's tags were written, the wrong-match flag is cleared, and
      * [TrackEntity.matchPickedAt] records that the user picked this audio.
      *
@@ -1325,6 +1325,9 @@ interface TrackDao {
             loudness_lufs = NULL,
             true_peak_dbfs = NULL,
             loudness_measured_at = NULL,
+            tuning_cents = NULL,
+            tuning_confidence = NULL,
+            tuning_measured_at = NULL,
             match_flagged = 0,
             match_picked_at = :pickedAt,
             youtube_id = :youtubeId,
@@ -1617,6 +1620,60 @@ interface TrackDao {
         """
     )
     suspend fun markLoudnessFailed(id: Long, now: Long, nanSentinel: Float = Float.NaN)
+
+    // ── True tuning (v81) ───────────────────────────────────────────────
+
+    /**
+     * Up to [limit] downloaded tracks whose tuning has never been measured, paged by id as
+     * [tracksNeedingLoudness] is and for the same reason: rows the worker can't open stay unstamped.
+     */
+    @Query(
+        """
+        SELECT * FROM tracks
+        WHERE tuning_measured_at IS NULL
+          AND file_path IS NOT NULL
+          AND id > :afterId
+        ORDER BY id
+        LIMIT :limit
+        """
+    )
+    suspend fun tracksNeedingTuning(afterId: Long, limit: Int): List<TrackEntity>
+
+    /** A tuning measurement: the offset from the 440 grid in cents, and how sure it is. */
+    @Query(
+        """
+        UPDATE tracks
+        SET tuning_cents = :cents,
+            tuning_confidence = :confidence,
+            tuning_measured_at = :now
+        WHERE id = :id
+        """
+    )
+    suspend fun updateTuning(id: Long, cents: Float, confidence: Float, now: Long)
+
+    /** The file couldn't be decoded: stamped with no reading, so it isn't tried again. */
+    @Query(
+        """
+        UPDATE tracks
+        SET tuning_cents = NULL,
+            tuning_confidence = NULL,
+            tuning_measured_at = :now
+        WHERE id = :id
+        """
+    )
+    suspend fun markTuningFailed(id: Long, now: Long)
+
+    /** Forgets a track's tuning, so it is measured again ("Measure again", or a replaced file). */
+    @Query(
+        """
+        UPDATE tracks
+        SET tuning_cents = NULL,
+            tuning_confidence = NULL,
+            tuning_measured_at = NULL
+        WHERE id = :id
+        """
+    )
+    suspend fun clearTuning(id: Long)
 
     // ── Stream availability (v0.9.27) ───────────────────────────────────
 

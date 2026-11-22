@@ -36,4 +36,25 @@ class FFmpegBridgeCancellationTest {
         assertEquals(3, exit)
         assertEquals("summary\n", stderr)
     }
+
+    @Test fun `streamed stdout arrives whole, with the exit code and stderr`() = runBlocking {
+        val process = ProcessBuilder("sh", "-c", "printf abcdefgh; echo why >&2; exit 2").start()
+        val got = StringBuilder()
+
+        val (exit, stderr) = FFmpegBridgeImpl.awaitStreamingStdout(process) { bytes, length -> got.append(String(bytes, 0, length)) }
+
+        assertEquals("abcdefgh", got.toString())
+        assertEquals(2, exit)
+        assertEquals("why\n", stderr)
+    }
+
+    @Test fun `cancelling a streaming caller kills the process`() = runBlocking {
+        val process = ProcessBuilder("sleep", "30").start()
+        val job = launch(Dispatchers.IO) { FFmpegBridgeImpl.awaitStreamingStdout(process) { _, _ -> } }
+        delay(200) // let it block in the stdout read
+
+        withTimeout(5_000) { job.cancelAndJoin() }
+
+        assertFalse(process.isAlive)
+    }
 }

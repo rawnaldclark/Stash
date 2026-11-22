@@ -129,7 +129,7 @@ import kotlinx.serialization.json.Json
         com.stash.core.data.db.entity.DuplicateDismissalEntity::class,
         com.stash.core.data.db.entity.SpotifyAccountEntity::class,
     ],
-    version = 80,
+    version = 81,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -2078,6 +2078,19 @@ abstract class StashDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v80 -> v81: true tuning (spec 2026-11-21). Three columns on `tracks` for each recording's own tuning:
+         * its offset from the 440 grid in cents, how sure that reading is, and when it was taken. All NULL to
+         * start with, which is "not measured yet": the backfill worker fills them in. Nothing existing changes.
+         */
+        val MIGRATION_80_81 = object : Migration(80, 81) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tracks ADD COLUMN tuning_cents REAL")
+                db.execSQL("ALTER TABLE tracks ADD COLUMN tuning_confidence REAL")
+                db.execSQL("ALTER TABLE tracks ADD COLUMN tuning_measured_at INTEGER")
+            }
+        }
+
         /** Edit order tables start empty, so existing playlists retain their native order. */
         val MIGRATION_73_74 = object : Migration(73, 74) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -2248,6 +2261,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_77_78,
                 MIGRATION_78_79,
                 MIGRATION_79_80,
+                MIGRATION_80_81,
             )
         }
     }
