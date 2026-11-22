@@ -1602,6 +1602,7 @@ class StashPlaybackService : MediaLibraryService() {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 updateSessionLoudness(session, mediaItem)
                 followSessionTuning(session, mediaItem)
+                renderersFactory.tuningMonitor?.restart()
             }
         })
         player.addAnalyticsListener(object : AnalyticsListener {

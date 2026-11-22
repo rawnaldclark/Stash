@@ -128,6 +128,8 @@
     <string name="np_tuning_song_already">This song is already at A = %1$s Hz. Not shifted.</string>
     <string name="np_tuning_song_no_pitch">This song\'s tuning couldn\'t be measured. Shifted as a standard recording.</string>
     <string name="np_tuning_song_not_measured">This song isn\'t measured yet. Shifted as a standard recording.</string>
+    <string name="np_tuning_output_on">Measured at the output: A = %1$s Hz</string>
+    <string name="np_tuning_output_off">Measured at the output: A = %1$s Hz, %2$s cents off</string>
     <string name="np_tuning_measure_again">Measure again</string>
     <string name="np_tuning_measuring">Measuring…</string>
 

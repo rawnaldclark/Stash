@@ -65,3 +65,11 @@ internal fun songTuningText(line: SongTuningLine): String? {
         SongTuningLine.NotMeasured -> stringResource(R.string.np_tuning_song_not_measured)
     }
 }
+
+/** What the output measures as, under the song's line. */
+@Composable
+internal fun outputTuningText(line: OutputTuningLine): String {
+    val locale = tuningLocale()
+    return if (line.onTarget) stringResource(R.string.np_tuning_output_on, TuningMath.plain(line.hz, locale))
+    else stringResource(R.string.np_tuning_output_off, TuningMath.plain(line.hz, locale), TuningMath.plain(kotlin.math.abs(line.offCents), locale))
+}

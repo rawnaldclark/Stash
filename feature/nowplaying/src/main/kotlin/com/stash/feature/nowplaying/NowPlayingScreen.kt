@@ -303,6 +303,7 @@ fun NowPlayingScreen(
     val songTuningLine by tuningViewModel.songLine.collectAsStateWithLifecycle()
     val canMeasureTuning by tuningViewModel.canMeasure.collectAsStateWithLifecycle()
     val measuringTuning by tuningViewModel.measuring.collectAsStateWithLifecycle()
+    val outputTuningLine by tuningViewModel.outputLine.collectAsStateWithLifecycle()
     var showCustomTuningDialog by remember { mutableStateOf(false) }
     val speedSheetState = rememberModalBottomSheetState()
     // The queue row (if any) whose Save-to-Playlist picker is open.
@@ -832,6 +833,7 @@ fun NowPlayingScreen(
             songTuningLine = songTuningLine,
             onMeasureAgain = (tuningViewModel::measureAgain).takeIf { canMeasureTuning },
             measuringTuning = measuringTuning,
+            outputTuningLine = outputTuningLine,
         )
     }
 
@@ -2454,6 +2456,8 @@ private fun SpeedSheet(
     /** "Measure again", or null when the song has no file on this phone to measure. */
     onMeasureAgain: (() -> Unit)? = null,
     measuringTuning: Boolean = false,
+    /** What the output measures as, a few seconds into a retuned song. */
+    outputTuningLine: OutputTuningLine? = null,
 ) {
     val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
     ModalBottomSheet(
@@ -2552,6 +2556,15 @@ private fun SpeedSheet(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (outputTuningLine != null) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = outputTuningText(outputTuningLine),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (outputTuningLine.onTarget) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     if (onMeasureAgain != null) {
                         androidx.compose.material3.TextButton(
                             onClick = onMeasureAgain,
