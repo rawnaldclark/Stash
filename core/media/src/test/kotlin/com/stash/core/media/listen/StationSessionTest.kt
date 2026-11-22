@@ -724,6 +724,138 @@ class StationSessionTest {
         assertThat(listened).containsExactly(STATION to 10_000L, STATION to 15_000L).inOrder()
     }
 
+    // ── The DJ: requests answered, Auto-accept, co-hosts, boot, presence, a co-host's Skip (step 3) ───────────
+
+    inline fun <reified T : ClientMessage> sent(): List<T> = connection.sent.filterIsInstance<T>()
+
+    @Test fun `the host answers a request - play next, add to queue, or pass`() = runTest {
+        goLive()
+        controller.send(Command.AnswerRequest("r1", ListenTogetherController.RequestAnswer.NEXT)); runCurrent()
+        controller.send(Command.AnswerRequest("r2", ListenTogetherController.RequestAnswer.QUEUE)); runCurrent()
+        controller.send(Command.AnswerRequest("r3", ListenTogetherController.RequestAnswer.PASS)); runCurrent()
+        assertThat(sent<ClientMessage.RequestAction>()).containsExactly(
+            ClientMessage.RequestAction("r1", "next"), ClientMessage.RequestAction("r2", "queue"), ClientMessage.RequestAction("r3", "pass"),
+        ).inOrder()
+    }
+
+    @Test fun `a co-host answers requests too, a listener never`() = runTest {
+        listening()
+        controller.send(Command.AnswerRequest("r1", ListenTogetherController.RequestAnswer.NEXT)); runCurrent()
+        assertThat(sent<ClientMessage.RequestAction>()).isEmpty()
+        receive(ServerMessage.Session(STATION, listeners = 1, cohosts = listOf("me")))
+        controller.send(Command.AnswerRequest("r1", ListenTogetherController.RequestAnswer.NEXT)); runCurrent()
+        assertThat(sent<ClientMessage.RequestAction>()).containsExactly(ClientMessage.RequestAction("r1", "next"))
+    }
+
+    @Test fun `Auto-accept, co-hosts and boot are the host's alone`() = runTest {
+        listening()
+        receive(ServerMessage.Session(STATION, listeners = 1, cohosts = listOf("me")))
+        controller.send(Command.SetAutoAccept(true)); runCurrent()
+        controller.send(Command.SetCohost("x", true)); runCurrent()
+        controller.send(Command.Boot("x")); runCurrent()
+        assertThat(sent<ClientMessage.AutoAccept>()).isEmpty()
+        assertThat(sent<ClientMessage.Cohost>()).isEmpty()
+        assertThat(sent<ClientMessage.Boot>()).isEmpty()
+    }
+
+    @Test fun `the host turns Auto-accept on and off, and makes and unmakes a co-host`() = runTest {
+        goLive()
+        controller.send(Command.SetAutoAccept(true)); runCurrent()
+        controller.send(Command.SetAutoAccept(false)); runCurrent()
+        controller.send(Command.SetCohost("x", true)); runCurrent()
+        controller.send(Command.SetCohost("x", false)); runCurrent()
+        assertThat(sent<ClientMessage.AutoAccept>()).containsExactly(ClientMessage.AutoAccept(true), ClientMessage.AutoAccept(false)).inOrder()
+        assertThat(sent<ClientMessage.Cohost>()).containsExactly(ClientMessage.Cohost("x", true), ClientMessage.Cohost("x", false)).inOrder()
+    }
+
+    @Test fun `booting a listener is one message, a co-host stops being one first, and the host never boots themselves`() = runTest {
+        goLive()
+        receive(ServerMessage.Session(STATION, listeners = 2, cohosts = listOf("c")))
+        controller.send(Command.Boot("x")); runCurrent()
+        controller.send(Command.Boot("c")); runCurrent()
+        controller.send(Command.Boot("me")); runCurrent()
+        assertThat(sent<ClientMessage.Boot>()).containsExactly(ClientMessage.Boot("x"), ClientMessage.Boot("c")).inOrder()
+        assertThat(sent<ClientMessage.Cohost>()).containsExactly(ClientMessage.Cohost("c", false))
+        assertThat(connection.sent.indexOf(ClientMessage.Cohost("c", false))).isLessThan(connection.sent.indexOf(ClientMessage.Boot("c")))
+    }
+
+    @Test fun `the room's refusals are said in words`() = runTest {
+        val notices = notices()
+        goLive()
+        receive(ServerMessage.Refused("cohost", "max_cohosts"))
+        receive(ServerMessage.Refused("request", "queue_full"))
+        receive(ServerMessage.Refused("something", "new")) // one this app doesn't know: nothing
+        assertThat(notices).containsExactly("A session can have 3 co-hosts", "The queue is full. That request is still waiting.").inOrder()
+    }
+
+    @Test fun `a co-host's Skip goes to the host, a listener's nowhere`() = runTest {
+        val notices = notices()
+        listening()
+        player.interceptor!!.onNext(); runCurrent()
+        assertThat(sent<ClientMessage.Command>()).isEmpty()
+        receive(ServerMessage.Session(STATION, listeners = 1, cohosts = listOf("me")))
+        player.interceptor!!.onNext(); runCurrent()
+        assertThat(sent<ClientMessage.Command>()).containsExactly(ClientMessage.Command("skip"))
+        receive(ServerMessage.Refused("skip", "host_reconnecting"))
+        assertThat(notices).containsExactly("Maya is reconnecting. Try again in a moment.")
+    }
+
+    @Test fun `the host's phone skips for a co-host, but not a song that has already changed`() = runTest {
+        goLive()
+        receive(ServerMessage.StateSync(state(host = "me", key = 1, timeline = RoomTimeline(0, 0, true), queue = listOf(next))))
+        val loadsBefore = sent<ClientMessage.Load>().size
+        receive(ServerMessage.Command("skip", from = "c", trackKey = 9)) // pressed on another song
+        assertThat(sent<ClientMessage.Load>()).hasSize(loadsBefore)
+        receive(ServerMessage.Command("skip", from = "c", trackKey = 1))
+        val load = sent<ClientMessage.Load>().last()
+        assertThat(sent<ClientMessage.Load>()).hasSize(loadsBefore + 1)
+        assertThat(load.track).isEqualTo(next)
+        assertThat(load.why).isEqualTo("skip")
+    }
+
+    @Test fun `a listener's phone ignores a skip command`() = runTest {
+        listening(state(queue = listOf(next)))
+        receive(ServerMessage.Command("skip", from = "c", trackKey = 1))
+        assertThat(sent<ClientMessage.Load>()).isEmpty()
+    }
+
+    @Test fun `the host says away and back, once each, and nobody else says anything`() = runTest {
+        goLive()
+        assertThat(sent<ClientMessage.Presence>()).isEmpty() // in the booth, as the room assumes
+        controller.send(Command.SetPresence(inBooth = false)); runCurrent()
+        controller.send(Command.SetPresence(inBooth = false)); runCurrent()
+        controller.send(Command.SetPresence(inBooth = true)); runCurrent()
+        assertThat(sent<ClientMessage.Presence>()).containsExactly(ClientMessage.Presence("away"), ClientMessage.Presence("booth")).inOrder()
+    }
+
+    @Test fun `a listener's presence is never sent`() = runTest {
+        listening()
+        controller.send(Command.SetPresence(inBooth = false)); runCurrent()
+        assertThat(sent<ClientMessage.Presence>()).isEmpty()
+    }
+
+    @Test fun `a host who went away before going live says so at the welcome`() = runTest {
+        session()
+        controller.send(Command.SetPresence(inBooth = false)); runCurrent()
+        coEvery { api.createSession(STATION, "Rawn", KEY) } returns created()
+        controller.send(Command.GoLive(STATION, "Rawn")); runCurrent()
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("me", "tok", state(host = "me", track = null, key = 0)))
+        assertThat(sent<ClientMessage.Presence>()).containsExactly(ClientMessage.Presence("away"))
+    }
+
+    @Test fun `a change of presence while the socket was down is said after the next welcome`() = runTest {
+        goLive()
+        connection.up = false
+        controller.send(Command.SetPresence(inBooth = false)); runCurrent()
+        assertThat(sent<ClientMessage.Presence>()).isEmpty()
+        connection.up = true
+        connection.incoming.trySend(RoomEvent.Reconnecting); runCurrent()
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("me", "tok", state(host = "me", track = null, key = 0)))
+        assertThat(sent<ClientMessage.Presence>()).containsExactly(ClientMessage.Presence("away"))
+    }
+
     companion object {
         const val STATION = "Ab3dEf9h"
         val KEY = "k".repeat(43)

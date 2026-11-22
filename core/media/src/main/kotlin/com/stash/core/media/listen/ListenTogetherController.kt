@@ -122,7 +122,30 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
         data class SetGuestsAdd(val on: Boolean) : Command
         /** Catch up with the room after a local pause (see [ListenTogetherState.InRoom.pausedLocally]). */
         data object Rejoin : Command
+
+        // ── A session's host and co-hosts (Sessions step 3) ──
+
+        /** The host or a co-host answers waiting request [id]: Play next, Add to queue, or pass. */
+        data class AnswerRequest(val id: String, val answer: RequestAnswer) : Command
+
+        /** Host only: while on, requests go straight into the queue. */
+        data class SetAutoAccept(val on: Boolean) : Command
+
+        /** Host only: [memberId] becomes a co-host, or stops being one. */
+        data class SetCohost(val memberId: String, val on: Boolean) : Command
+
+        /** Host only: [memberId] leaves the session and can't come back. A co-host stops being one first. */
+        data class Boot(val memberId: String) : Command
+
+        /**
+         * Whether Stash is on this phone's screen. Sent whenever it changes, in a room or not: a session's host says
+         * it to the room ("Maya is in the booth" / "Maya is away"), now and after every reconnect.
+         */
+        data class SetPresence(val inBooth: Boolean) : Command
     }
+
+    /** What a host or co-host does with a request. */
+    enum class RequestAnswer(val action: String) { NEXT("next"), QUEUE("queue"), PASS("pass") }
 
     private val _active = MutableStateFlow(false)
     /** True from the moment a session starts until it ends (spec §4 "One session-active flag"). */

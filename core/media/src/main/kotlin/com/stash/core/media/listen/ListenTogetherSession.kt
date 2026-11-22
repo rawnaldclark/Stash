@@ -18,6 +18,7 @@ import com.stash.core.model.listen.RoomMember
 import com.stash.core.model.listen.RoomPhase
 import com.stash.core.model.listen.RoomProtocol
 import com.stash.core.model.listen.RoomRequest
+import com.stash.core.model.listen.SessionInfo
 import com.stash.core.model.listen.RoomState
 import com.stash.core.model.listen.RoomTimeline
 import com.stash.core.model.listen.ServerMessage
@@ -212,6 +213,16 @@ class ListenTogetherSession(
             is Command.Unqueue -> unqueue(command.track, command.at)
             is Command.SetGuestsAdd -> setGuestsAdd(command.on)
             Command.Rejoin -> rejoin()
+            is Command.AnswerRequest -> if (role() == SessionRole.HOST || role() == SessionRole.COHOST) {
+                send(ClientMessage.RequestAction(command.id, command.answer.action))
+            }
+            is Command.SetAutoAccept -> if (role() == SessionRole.HOST) send(ClientMessage.AutoAccept(command.on))
+            is Command.SetCohost -> if (role() == SessionRole.HOST) send(ClientMessage.Cohost(command.memberId, command.on))
+            is Command.Boot -> if (role() == SessionRole.HOST) boot(command.memberId)
+            is Command.SetPresence -> {
+                inBooth = command.inBooth
+                sayPresence()
+            }
         }
     }
 
@@ -396,6 +407,9 @@ class ListenTogetherSession(
                 welcomed = true
                 val before = loadedKey
                 applyState(m.state)
+                // The room keeps a host's presence, but a reconnect is when it may have changed unsaid.
+                presenceSaid = m.state.session?.presence
+                sayPresence()
                 // A reconnect: the room forgot our status with the old socket, so say it again,
                 // unless applyState just started a new song (that reports for itself).
                 if (loadedKey == before && loadedKey != NONE) when (loadedKey) {
@@ -465,8 +479,46 @@ class ListenTogetherSession(
                 if (by != null) controller.message(R.string.session_request_passed, by, m.track.title)
                 else controller.message(R.string.session_request_passed_unnamed, m.track.title)
             }
-            // Answers to what the host and co-hosts do with requests, co-hosts and skips: Sessions step 3.
-            is ServerMessage.Refused, is ServerMessage.Command -> Unit
+            is ServerMessage.Refused -> onRefused(m)
+            // A co-host's Skip, for the song it was pressed on: one that has changed since is left alone.
+            is ServerMessage.Command -> if (isHost && m.action == SKIP && m.trackKey == loadedKey) {
+                hostChoseToMove()
+                advanceNow("skip")
+            }
+        }
+    }
+
+    /** Whether Stash is on this phone's screen ([Command.SetPresence]); what a session's host tells the room. */
+    private var inBooth = true
+
+    /** What the room was last told, so the same word isn't sent twice; cleared with each welcome. */
+    private var presenceSaid: String? = null
+
+    /** A session's host says where they are, when it changes and after every welcome. */
+    private fun sayPresence() {
+        if (role() != SessionRole.HOST) return
+        val state = if (inBooth) SessionInfo.BOOTH else SessionInfo.AWAY
+        if (state == presenceSaid) return
+        if (connection?.send(ClientMessage.Presence(state)) == true) presenceSaid = state
+    }
+
+    /** Boots [memberId]. The room refuses a co-host, so they stop being one first. */
+    private fun boot(memberId: String) {
+        if (memberId == myId) return
+        if (room?.session?.cohosts?.contains(memberId) == true) send(ClientMessage.Cohost(memberId, false))
+        send(ClientMessage.Boot(memberId))
+    }
+
+    /** Something the room turned down, in words; anything it may add later says nothing. */
+    private fun onRefused(m: ServerMessage.Refused) {
+        when (m.what to m.reason) {
+            "cohost" to "max_cohosts" -> controller.message(R.string.session_cohosts_full)
+            "request" to "queue_full" -> controller.message(R.string.session_request_no_room)
+            "skip" to "host_reconnecting" -> {
+                val host = room?.let(::hostName)
+                if (host != null) controller.message(R.string.session_host_reconnecting, host)
+                else controller.message(R.string.session_host_reconnecting_unnamed)
+            }
         }
     }
 
@@ -884,6 +936,8 @@ class ListenTogetherSession(
         }
         override fun onSeek(positionMs: Long) { if (isHost) send(ClientMessage.Seek(positionMs)) }
         override fun onNext() {
+            // A co-host's Skip goes to the host's phone, which is the one that moves the room.
+            if (!isHost && role() == SessionRole.COHOST) return send(ClientMessage.Command(SKIP))
             if (!isHost) return
             hostChoseToMove()
             advanceNow("skip")
@@ -1490,6 +1544,7 @@ class ListenTogetherSession(
         const val MAX_SUGGESTIONS = 3
         /** A session's waiting requests from one listener (room.js MAX_REQUESTS_EACH). */
         const val MAX_REQUESTS_WAITING = 3
+        const val SKIP = "skip"
         const val REQUEST_QUEUED = "queued"
         const val REQUEST_WAITING = "waiting"
         /** A move to the station's newer session asks for its room every 3 s for 30 s (11 asks, the first at once). */
