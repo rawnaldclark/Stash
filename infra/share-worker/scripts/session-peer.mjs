@@ -4,9 +4,16 @@
 //   node scripts/session-peer.mjs host <origin> [name] [vibe] [dj]   makes a station and goes live with it: two songs
 //                                                                    in turn, each moved on when it ends; Ctrl-C ends it.
 //                                                                    name, vibe line and DJ name: "Scripted ab12",
-//                                                                    "Two songs, in turn" and "Script" if not given
+//                                                                    "Two songs, in turn" and "Script" if not given.
+//                                                                    DJ=next|queue|pass answers each request that way
+//                                                                    4 s after it arrives; DJ=auto turns Auto-accept on;
+//                                                                    COHOST=1 makes the first listener a co-host;
+//                                                                    AWAY=1 says "away" 5 s in; BOOT=<name> boots them.
 //   node scripts/session-peer.mjs listen <origin> <stationId> [n]    tunes in to the station's session as n listeners
 //                                                                    (1 if not given), each reacting every 10 s
+//                                                                    With REQUEST=1 each also asks for a song 3 s in
+//                                                                    (the first two for the test songs, the rest for
+//                                                                    songs the host's phone may not have).
 //   node scripts/session-peer.mjs private-host <origin>              a private Listen Together room (v2), guests add
 //   node scripts/session-peer.mjs private-guest <origin> <code>      joins a private room (v2): Play next and a reaction
 //
@@ -94,7 +101,32 @@ if (mode === "host") {
     const room = await api("POST", "/v1/rooms", key, { public: true, stationId: id });
     log(`STATION ${id}  ROOM ${room.code}  link ${origin}/s/${id}`);
     // A session checks the host key on every hello, resumes too.
-    playInTurn(phone(room.code, { t: "hello", v: 3, name: dj, hostKey: room.hostKey }, "host"));
+    const h = phone(room.code, { t: "hello", v: 3, name: dj, hostKey: room.hostKey }, "host");
+    playInTurn(h);
+    // The DJ's side, for trying requests, co-hosts, presence and booting from a real phone.
+    const play = h.onFrame;
+    const answered = new Set();
+    let cohosted = false;
+    h.onFrame = (m) => {
+        play(m);
+        if (m.t === "welcome") {
+            if (process.env.DJ === "auto") h.send({ t: "autoAccept", on: true });
+            if (process.env.AWAY) setTimeout(() => h.send({ t: "presence", state: "away" }), 5_000);
+        }
+        if (m.t === "requests" && ["next", "queue", "pass"].includes(process.env.DJ)) {
+            for (const r of m.requests) {
+                if (answered.has(r.id)) continue;
+                answered.add(r.id);
+                setTimeout(() => h.send({ t: "requestAction", id: r.id, action: process.env.DJ }), 4_000);
+            }
+        }
+        if (m.t === "members") {
+            const others = m.members.filter((x) => x.name !== dj);
+            if (process.env.COHOST && !cohosted && others.length) { cohosted = true; h.send({ t: "cohost", memberId: others[0].id, on: true }); }
+            const out = process.env.BOOT && others.find((x) => x.name === process.env.BOOT);
+            if (out) h.send({ t: "boot", memberId: out.id });
+        }
+    };
 } else if (mode === "listen") {
     if (!arg) { console.log("listen needs a station id"); process.exit(2); }
     const { live } = await api("GET", `/v1/community/stations/${arg}`);
@@ -104,7 +136,13 @@ if (mode === "host") {
         const l = phone(live.room, { t: "hello", v: 3, name: NAMES[i] ?? `Listener ${i + 1}`, communityKey: newKey() }, `listener${i + 1}`, n > 1);
         let e = i;
         setInterval(() => { try { l.send({ t: "react", emoji: EMOJI[e++ % EMOJI.length] }); } catch { /* closed */ } }, 10_000);
-        l.onFrame = (m) => { if (m.t === "ended") { log(`listener${i + 1} ended: ${m.reason}`); if (n === 1) process.exit(0); } };
+        l.onFrame = (m) => {
+            if (m.t === "ended") { log(`listener${i + 1} ended: ${m.reason}`); if (n === 1) process.exit(0); }
+            if (m.t === "welcome" && process.env.REQUEST) {
+                const track = SONGS[i] ?? { t: `Request ${i + 1}`, a: NAMES[i] ?? "Listener", d: 200_000 };
+                setTimeout(() => l.send({ t: "request", track }), 3_000 + i * 500);
+            }
+        };
     }
 } else if (mode === "private-host") {
     const room = await api("POST", "/v1/rooms", null, { hostName: "Script" });

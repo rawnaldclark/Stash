@@ -124,8 +124,11 @@ internal fun SessionRoom(
     hostControls: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SessionRoomViewModel = hiltViewModel(),
+    dj: SessionDjViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var showRequest by remember { mutableStateOf(false) }
+    var showRequests by remember { mutableStateOf(false) }
     val station = state.station
     val context = LocalContext.current
     val chrome = LocalAlbumChrome.current
@@ -295,22 +298,33 @@ internal fun SessionRoom(
         // ── Up next, on one line ──────────────────────────────────────────────────
         UpNextLine(room, ink = ink, muted = muted, onClick = { showUpNext = true }, modifier = Modifier.padding(top = 10.dp))
 
+        // ── Requests, for the host and co-hosts ────────────────────────────────
+        if (answersRequests(room)) {
+            RequestsLine(room, ink = ink, muted = muted, onClick = { showRequests = true }, modifier = Modifier.padding(top = 4.dp))
+        }
+
         // ── The bar ───────────────────────────────────────────────────────────────
         Spacer(Modifier.height(12.dp))
         if (room.isHost) {
             hostControls()
         } else {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                // Requests arrive with step 3: until then the button says so by being quiet.
+                // A listener asks for a song; a co-host's own adds go straight in from any song menu, and they
+                // answer requests from the line above.
                 Row(
-                    Modifier.weight(1f).height(52.dp).alpha(0.4f).clip(CircleShape).background(ink),
+                    Modifier.weight(1f).height(52.dp).clip(CircleShape).background(ink)
+                        .clickable(role = Role.Button) { if (answersRequests(room)) showRequests = true else showRequest = true },
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
                 ) {
                     val on = MaterialTheme.colorScheme.background
                     Icon(Icons.Rounded.Add, contentDescription = null, tint = on, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.room_request), style = MaterialTheme.typography.titleMedium, color = on)
+                    Text(
+                        stringResource(if (answersRequests(room)) R.string.dj_requests_title else R.string.room_request),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = on,
+                    )
                 }
                 ReactPill(ink = ink, onReact = onReact)
             }
@@ -318,7 +332,9 @@ internal fun SessionRoom(
         Spacer(Modifier.height(12.dp))
     }
 
-    if (showEveryone) EveryoneSheet(room, crowd, onDismiss = { showEveryone = false })
+    if (showEveryone) EveryoneSheet(room, crowd, dj, onDismiss = { showEveryone = false })
+    if (showRequest && !answersRequests(room)) RequestSheet(room, dj, onDismiss = { showRequest = false })
+    if (showRequests && answersRequests(room)) RequestsSheet(room, dj, onDismiss = { showRequests = false })
     if (showUpNext) UpNextSheet(room, onDismiss = { showUpNext = false })
     if (showAbout && station != null) AboutStation(station, viewModel, onDismiss = { showAbout = false })
     if (confirmEnd) {
@@ -471,9 +487,11 @@ private fun ReactPill(ink: Color, onReact: (String) -> Unit) {
 /** Everyone in the room, by name: the booth first, then the floor in the order they joined. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EveryoneSheet(room: ListenTogetherState.InRoom, crowd: Crowd, onDismiss: () -> Unit) {
+private fun EveryoneSheet(room: ListenTogetherState.InRoom, crowd: Crowd, dj: SessionDjViewModel, onDismiss: () -> Unit) {
     val ground = StashTheme.extendedColors.elevatedSurface
     val cohosts = room.session?.cohosts.orEmpty()
+    // The host taps someone for Co-host or Boot: one person's row open at a time.
+    var open by remember { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = ground, properties = com.stash.core.ui.components.sheetBarsFollow(ground)) {
         Text(
             pluralStringResource(R.plurals.room_here, crowd.everyone.size, crowd.everyone.size),
@@ -482,8 +500,11 @@ private fun EveryoneSheet(room: ListenTogetherState.InRoom, crowd: Crowd, onDism
         )
         LazyColumn(Modifier.fillMaxWidth().navigationBarsPadding().padding(top = 8.dp, bottom = 16.dp)) {
             itemsIndexed(crowd.everyone, key = { _, m -> m.id }) { _, member ->
+                val actions = memberActions(room, member.id)
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                    Modifier.fillMaxWidth()
+                        .then(if (actions != null) Modifier.clickable(role = Role.Button) { open = if (open == member.id) null else member.id } else Modifier)
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
@@ -506,6 +527,9 @@ private fun EveryoneSheet(room: ListenTogetherState.InRoom, crowd: Crowd, onDism
                     if (part != null) {
                         Text(stringResource(part), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                }
+                if (actions != null && open == member.id) {
+                    MemberActionsRow(member, actions, dj, onDone = { open = null })
                 }
             }
         }
