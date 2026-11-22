@@ -218,6 +218,53 @@
     <!-- A listener\'s button to ask the host for a song -->
     <string name="room_request">Request</string>
     <string name="room_react">React</string>
+
+    <!-- Sessions: requests, co-hosts and the booth -->
+    <string name="dj_the_host">The host</string>
+    <string name="dj_request_title">Request a song</string>
+    <!-- %1$s: the host\'s name -->
+    <string name="dj_presence_booth">%1$s is in the booth and sees requests.</string>
+    <string name="dj_presence_booth_auto">%1$s is in the booth. Requests play automatically.</string>
+    <string name="dj_presence_away_wait">%1$s is away. Requests wait.</string>
+    <string name="dj_presence_away_auto">%1$s is away. Requests play automatically.</string>
+    <string name="dj_your_requests">YOUR REQUESTS</string>
+    <!-- How many of this listener\'s requests are waiting, of how many can. -->
+    <string name="dj_waiting_of">%1$d of %2$d waiting</string>
+    <string name="dj_state_up_next">Up next</string>
+    <string name="dj_state_waiting">Waiting</string>
+    <string name="dj_take_back">Take back</string>
+    <string name="dj_search_hint">Search your library</string>
+    <string name="dj_search_none">Nothing in your library matches. Search anywhere in Stash and choose Request.</string>
+    <!-- %1$d: how many can wait; %2$s: the host\'s name -->
+    <string name="dj_request_foot">Up to %1$d waiting at a time. When %2$s plays yours, the room sees your name on it. You can also request from any song in Stash.</string>
+    <string name="dj_request_full">You have %1$d waiting. You can request more when one is answered.</string>
+    <string name="dj_requests_title">Requests</string>
+    <plurals name="dj_requests_waiting">
+        <item quantity="one">%d request waiting</item>
+        <item quantity="other">%d requests waiting</item>
+    </plurals>
+    <plurals name="dj_requests_line">
+        <item quantity="one">%d request waiting</item>
+        <item quantity="other">%d requests waiting</item>
+    </plurals>
+    <string name="dj_requests_line_none">No requests waiting</string>
+    <string name="dj_requests_line_auto">Requests play automatically</string>
+    <string name="dj_requests_none">Nobody has asked for a song yet.</string>
+    <string name="dj_requests_none_auto">Nothing is waiting.</string>
+    <!-- A co-host's button: skip the song that's playing. -->
+    <string name="dj_skip">Skip this song</string>
+    <string name="dj_auto_accept">Auto-accept</string>
+    <string name="dj_auto_accept_sub">Requests go straight into the queue</string>
+    <string name="dj_answer_next">Next</string>
+    <string name="dj_answer_queue">Queue</string>
+    <string name="dj_answer_pass">Pass</string>
+    <string name="dj_cohost_make">Co-host</string>
+    <string name="dj_cohost_remove">Remove co-host</string>
+    <string name="dj_cohosts_full">3 co-hosts already</string>
+    <string name="dj_boot">Boot</string>
+    <!-- %1$s: the person\'s name -->
+    <string name="dj_boot_title">Boot %1$s?</string>
+    <string name="dj_boot_body">They leave now and can\'t come back to this session.</string>
     <!-- The heart: saves the song that\'s playing to your Liked Songs -->
     <string name="room_save">Save to Liked Songs</string>
     <string name="room_saved">In your Liked Songs</string>

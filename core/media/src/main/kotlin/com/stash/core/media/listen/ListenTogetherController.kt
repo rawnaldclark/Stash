@@ -122,7 +122,33 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
         data class SetGuestsAdd(val on: Boolean) : Command
         /** Catch up with the room after a local pause (see [ListenTogetherState.InRoom.pausedLocally]). */
         data object Rejoin : Command
+
+        // ── A session's host and co-hosts (Sessions step 3) ──
+
+        /** The host or a co-host answers waiting request [id]: Play next, Add to queue, or pass. */
+        data class AnswerRequest(val id: String, val answer: RequestAnswer) : Command
+
+        /** Host only: while on, requests go straight into the queue. */
+        data class SetAutoAccept(val on: Boolean) : Command
+
+        /** Host only: [memberId] becomes a co-host, or stops being one. */
+        data class SetCohost(val memberId: String, val on: Boolean) : Command
+
+        /** Host only: [memberId] leaves the session and can't come back. A co-host stops being one first. */
+        data class Boot(val memberId: String) : Command
+
+        /**
+         * A co-host's Skip: the room passes it to the host's phone, which moves on. Its own command because a
+         * listener's player takes no "next" (a co-host is a listener to the player), so a transport Skip never arrives.
+         */
+        data object Skip : Command
+
+        /** [inBooth] changed: a session's host tells the room. Sent by [setInBooth], never by a screen. */
+        data object PresenceChanged : Command
     }
+
+    /** What a host or co-host does with a request. */
+    enum class RequestAnswer(val action: String) { NEXT("next"), QUEUE("queue"), PASS("pass") }
 
     private val _active = MutableStateFlow(false)
     /** True from the moment a session starts until it ends (spec §4 "One session-active flag"). */
@@ -150,6 +176,20 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
     internal val commands = Channel<Command>(Channel.UNLIMITED)
 
     @Volatile internal var serviceAttached = false
+
+    /**
+     * Whether Stash is on this phone's screen, from the app's own lifecycle. A session's host says it to the room
+     * ("Maya is in the booth" / "Maya is away"), when it changes and after every reconnect.
+     */
+    @Volatile var inBooth: Boolean = true
+        private set
+
+    /** The app came to the screen ([on]) or left it. Outside a room this only remembers: it never starts the service. */
+    fun setInBooth(on: Boolean) {
+        if (inBooth == on) return
+        inBooth = on
+        if (_active.value) commands.trySend(Command.PresenceChanged)
+    }
 
     fun send(command: Command) {
         commands.trySend(command)

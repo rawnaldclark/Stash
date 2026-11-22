@@ -101,6 +101,13 @@
     <string name="session_ended_named">%1$s\'s session ended</string>
     <!-- The same, when the host's name isn't known. -->
     <string name="session_ended">The session ended</string>
+    <!-- The host tried to add a 4th co-host. -->
+    <string name="session_cohosts_full">A session can have 3 co-hosts</string>
+    <!-- The host or a co-host accepted a request while the queue was full: it stays waiting. -->
+    <string name="session_request_no_room">The queue is full. That request is still waiting.</string>
+    <!-- A co-host pressed Skip while the host\'s phone was offline. %1$s: the host. -->
+    <string name="session_host_reconnecting">%1$s is reconnecting. Try again in a moment.</string>
+    <string name="session_host_reconnecting_unnamed">The host is reconnecting. Try again in a moment.</string>
     <!-- To a listener: the station was removed, hidden by votes, or its phone blocked, so its session ended. -->
     <string name="session_off_air">This station is off the air</string>
 </resources>

@@ -214,6 +214,9 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var webRemote: com.stash.core.data.weblink.remote.WebRemote
 
     @Inject
+    lateinit var listenTogetherController: com.stash.core.media.listen.ListenTogetherController
+
+    @Inject
     lateinit var handoffPublisher: com.stash.core.media.handoff.HandoffPublisher
 
     /** Recap story audio: its song pauses while the app is in the background and carries on when it's back. */
@@ -402,6 +405,8 @@ class StashApplication : Application(), Configuration.Provider {
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
+                    // A session's host is "in the booth" while Stash is on screen (Sessions).
+                    listenTogetherController.setInBooth(true)
                     // The playback service stops itself after five idle minutes and the
                     // controller drops with it; the next tap then pays ~1 s of service
                     // start (Pixel 6, 2026-09-06). Reconnect while the user is still
@@ -431,6 +436,8 @@ class StashApplication : Application(), Configuration.Provider {
                 }
 
                 override fun onStop(owner: LifecycleOwner) {
+                    // ...and "away" once it isn't: requests wait, or play by themselves with Auto-accept.
+                    listenTogetherController.setInBooth(false)
                     // The BotGuard WebView is ~50 MB; drop it while backgrounded, it
                     // rebuilds on the next play (or the next onStart pre-warm).
                     applicationScope.launch { innerTubeClient.releasePoTokens() }
