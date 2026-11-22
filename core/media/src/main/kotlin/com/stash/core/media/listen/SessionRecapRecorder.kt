@@ -78,4 +78,7 @@ class SessionRecapRecorder internal constructor(
     fun saved() { builder?.saved() }
 
     fun shown() { _ended.value = null }
+
+    /** Opens a kept recap again (the Sessions screen's Recent list). */
+    fun show(recap: SessionRecap) { _ended.value = recap }
 }

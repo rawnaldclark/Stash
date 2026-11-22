@@ -219,4 +219,13 @@
     <string name="sessions_name_field">Show my name as</string>
     <!-- Shown when you tap another station while your own is on the air -->
     <string name="sessions_end_yours_first">End your session first</string>
+    <!-- Sessions screen: recaps kept on this phone, to open again -->
+    <string name="sessions_recent">Recent</string>
+    <string name="sessions_recent_yours">Your session</string>
+    <string name="sessions_recent_session">A session</string>
+    <!-- %1$d: songs that played; %2$s: when it ended ("2 hours ago") -->
+    <plurals name="sessions_recent_songs">
+        <item quantity="one">%1$d song · %2$s</item>
+        <item quantity="other">%1$d songs · %2$s</item>
+    </plurals>
 </resources>

@@ -1,5 +1,6 @@
 package com.stash.feature.community.sessions
 
+import com.stash.core.model.listen.SessionRecap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -86,8 +87,12 @@ fun SessionsScreen(
     onOpenPlayer: () -> Unit,
     onGoLive: () -> Unit,
     onYourStation: () -> Unit,
+    /** Opens a kept recap again. */
+    onOpenRecap: (SessionRecap) -> Unit = {},
     viewModel: SessionsViewModel = hiltViewModel(),
+    recent: RecentRecapsViewModel = hiltViewModel(),
 ) {
+    val recaps by recent.recaps.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val room by viewModel.room.collectAsStateWithLifecycle()
     LifecycleResumeEffect(Unit) { viewModel.onShown(all = true); onPauseOrDispose {} }
@@ -172,8 +177,40 @@ fun SessionsScreen(
                         }
                     }
                 }
+                // Recent: the recaps this phone kept (a week), to open again. Not while Sessions is off or loading.
+                if (recaps.isNotEmpty() && ui != SessionsListUi.Loading && ui != SessionsListUi.Off) {
+                    item(key = "recent_label") { ListLabel(stringResource(R.string.sessions_recent)) }
+                    items(recaps, key = { "r" + it.id }) { recap -> RecentRow(recap, onClick = { onOpenRecap(recap) }) }
+                }
             }
         }
+    }
+}
+
+/** One kept recap: the station (or "Your session"), and when it ended. */
+@Composable
+private fun RecentRow(recap: SessionRecap, onClick: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val title = when {
+        recap.wasHost -> stringResource(R.string.sessions_recent_yours)
+        else -> recap.stationName ?: recap.hostName ?: stringResource(R.string.sessions_recent_session)
+    }
+    val whenEnded = android.text.format.DateUtils.getRelativeTimeSpanString(
+        recap.endedAt, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS,
+    ).toString()
+    androidx.compose.foundation.layout.Column(
+        Modifier
+            .fillMaxWidth()
+            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        Text(
+            androidx.compose.ui.res.pluralStringResource(R.plurals.sessions_recent_songs, recap.songs, recap.songs, whenEnded),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
     }
 }
 
