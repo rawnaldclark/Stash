@@ -81,27 +81,30 @@ internal fun ReactTray(greet: Boolean, onReact: (String) -> Unit, onSay: (String
             Text(stringResource(R.string.room_react), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
             FlowRow(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 (RoomProtocol.EMOJI + RoomProtocol.ANIMS).forEach { id ->
-                    val glyph = reactionGlyph(id) ?: return@forEach
-                    Box(
-                        Modifier
-                            .size(48.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-                            .clickable(role = Role.Button) {
-                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                                onReact(id)
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) { Text(glyph, fontSize = 22.sp) }
+                    // No early return here: a labelled return inside a composable lambda breaks dexing.
+                    val glyph = reactionGlyph(id)
+                    if (glyph != null) {
+                        Box(
+                            Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                                .clickable(role = Role.Button) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                    onReact(id)
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) { Text(glyph, fontSize = 22.sp) }
+                    }
                 }
             }
             TrayLabel(stringResource(R.string.life_say))
             FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 RoomProtocol.PHRASES.forEach { id ->
-                    val words = phraseRes(id) ?: return@forEach
+                    val words = phraseRes(id)
                     val lit = greet && id == "hi"
                     val scheme = MaterialTheme.colorScheme
-                    Text(
+                    if (words != null) Text(
                         stringResource(words),
                         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                         color = if (lit) scheme.onPrimary else scheme.onSurface,
@@ -142,9 +145,9 @@ internal fun FeedLines(feed: Feed, ink: Color, modifier: Modifier = Modifier) {
         val last = feed.lines.lastIndex
         feed.lines.forEachIndexed { i, entry ->
             key(entry.id) {
-                val text = feedText(entry.line) ?: return@key
+                val text = feedText(entry.line)
                 val fade by animateFloatAsState(targetValue = 1f - 0.22f * (last - i), label = "feed")
-                Text(
+                if (text != null) Text(
                     text,
                     style = MaterialTheme.typography.bodySmall,
                     color = ink,

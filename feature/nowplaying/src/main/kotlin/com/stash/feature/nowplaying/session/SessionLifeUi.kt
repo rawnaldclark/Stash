@@ -18,16 +18,17 @@ internal fun isAnimated(emoji: String): Boolean = emoji.startsWith(ANIM_PREFIX)
 
 private const val ANIM_PREFIX = "a:"
 
+/** Each differs from the six emoji and from the others, so the tray never shows the same picture twice. */
 private val ANIM_GLYPHS = mapOf(
-    "a:applause" to "👏", // clapping hands
-    "a:fire" to "🔥",
+    "a:applause" to "🎉", // party popper
+    "a:fire" to "💥", // burst
     "a:hearts" to "💕", // two hearts
-    "a:dancing" to "🕺", // man dancing
+    "a:dancing" to "🕺", // dancer
     "a:mindblown" to "🤯",
     "a:lighter" to "🕯️", // candle: a lighter held up
     "a:headphones" to "🎧",
     "a:rewind" to "⏪",
-    "a:laughing" to "😂",
+    "a:laughing" to "🤣", // rolling on the floor
     "a:bassdrop" to "🔊", // speaker, loud
     "a:wave" to "👋",
     "a:clap" to "🙌", // raised hands: clapping along

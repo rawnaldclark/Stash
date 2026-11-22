@@ -43,6 +43,8 @@ class SessionLifeTest {
     @Test fun `every animated reaction and every phrase this app can send has something to show`() {
         for (id in RoomProtocol.ANIMS) assertThat(reactionGlyph(id)).isNotNull()
         assertThat(RoomProtocol.ANIMS.map(::reactionGlyph).toSet()).hasSize(12)
+        // None looks like one of the six emoji: the tray shows 18 different pictures.
+        assertThat((RoomProtocol.EMOJI + RoomProtocol.ANIMS).map(::reactionGlyph).toSet()).hasSize(18)
         for (id in RoomProtocol.PHRASES) assertThat(phraseRes(id)).isNotNull()
         assertThat(RoomProtocol.PHRASES.map(::phraseRes).toSet()).hasSize(10)
     }
