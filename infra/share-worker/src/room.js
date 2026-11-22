@@ -90,6 +90,22 @@ export const MAX_COHOSTS = 3;
 export const MAX_PUBLIC_MEMBERS = 1 + MAX_COHOSTS + MAX_LISTENERS;
 /** What a session speaks, and the least an app must say in its hello to join one (build plan, decision 5). */
 export const PUBLIC_V = 3;
+/**
+ * A session's animated reactions and quick phrases (UX spec §4.3, design §5): ids only, never text, so each app says
+ * them in its own language. Keep in sync with RoomProtocol.ANIMS and RoomProtocol.PHRASES in core/model. An app that
+ * doesn't know an id shows nothing, so later sets can be added here first.
+ */
+export const ANIMS = [
+    "a:applause", "a:fire", "a:hearts", "a:dancing", "a:mindblown", "a:lighter",
+    "a:headphones", "a:rewind", "a:laughing", "a:bassdrop", "a:wave", "a:clap",
+];
+export const PHRASES = ["hi", "who", "tune", "again", "louder", "more", "chills", "thanks", "morning", "night"];
+/** One phrase a person every this long: held by the shell, a socket at a time, as reactions are. */
+export const SAY_GAP_MS = 3_000;
+/** A song's counts go out when they change, at most this often. */
+export const STATS_GAP_MS = 2_000;
+/** A crowd favourite: this many people at least, and a third of the room, reacted while the song played. */
+export const FAVOURITE_MIN = 3;
 /** Paused this long, a session ends. */
 export const PAUSE_END_MS = 15 * 60_000;
 /** How often a session on the air rewrites its live directory row when nothing else has. */
@@ -185,6 +201,33 @@ function sessionInfo(s) {
 const sessionMsg = (s) => ({ to: "all", msg: { t: "session", ...sessionInfo(s) } });
 
 /*
+ * A song's crowd counts (UX spec §4.4, §4.5): how many people reacted to it and how many saved it, never who. Kept
+ * for the song that's playing only, and made on first use, so a session nobody reacts in stores nothing new. A
+ * reaction is stored once a person a song (a 54-person room writes at most 54 times a song for them, where storing
+ * every reaction would write 53 times a second: the load check).
+ */
+function statsOf(s) {
+    const p = s.pub;
+    if (!p.stats || p.stats.key !== s.trackKey) {
+        p.stats = { key: s.trackKey, reacted: [], saved: [], fav: false, sentAt: p.stats?.sentAt ?? null, dirty: false };
+    }
+    return p.stats;
+}
+const publicStats = (st) => ({ trackKey: st.key, reactions: st.reacted.length, saves: st.saved.length, favourite: st.fav });
+const statsMsg = (s) => ({ to: "all", msg: { t: "songStats", ...publicStats(s.pub.stats) } });
+/** The counts changed: everyone hears now, or at the end of the gap since they last did (the alarm sends it). */
+function statsChanged(ctx) {
+    const st = ctx.s.pub.stats;
+    if (st.sentAt === null || ctx.now - st.sentAt >= STATS_GAP_MS) {
+        st.sentAt = ctx.now;
+        st.dirty = false;
+        ctx.out.push(statsMsg(ctx.s));
+    } else {
+        st.dirty = true;
+    }
+}
+
+/*
  * The live directory (spec §3; build plan, task 18): a session on the air has a row in the Community database's `live`
  * table, written by the shell from what step() returns. The room decides when: its first song, then each new song,
  * pause or play (at most one write a LIVE_GAP_MS), and a heartbeat every LIVE_BEAT_MS that keeps the row fresh and the
@@ -253,6 +296,8 @@ export function publicState(s) {
             : { kind: "playing" },
         v: s.pub ? PUBLIC_V : PROTOCOL_V, guestsAdd: guestsCanAdd(s), qv: s.qv ?? 0,
         ...(s.pub ? { session: sessionInfo(s) } : {}),
+        // The playing song's counts, for someone who joins mid-song; absent until anyone reacted to it or saved it.
+        ...(s.pub?.stats && s.pub.stats.key === s.trackKey ? { songStats: publicStats(s.pub.stats) } : {}),
     };
 }
 
@@ -281,6 +326,7 @@ export function nextAlarm(s) {
     if (s.pub?.pausedSince != null) times.push(s.pub.pausedSince + PAUSE_END_MS);
     const live = liveDueAt(s);
     if (live !== null) times.push(live);
+    if (s.pub?.stats?.dirty) times.push(s.pub.stats.sentAt + STATS_GAP_MS);
     return Math.min(...times);
 }
 
@@ -708,6 +754,14 @@ const EVENTS = {
             if (s.pub.pausedSince !== null && now >= s.pub.pausedSince + PAUSE_END_MS) return endRoom(ctx, "paused");
         }
         let changed = false;
+        // Counts that changed inside the gap go out at its end.
+        const stats = s.pub?.stats;
+        if (stats?.dirty && now >= stats.sentAt + STATS_GAP_MS) {
+            stats.sentAt = now;
+            stats.dirty = false;
+            ctx.out.push(statsMsg(s));
+            changed = true;
+        }
         const expired = s.members.filter((m) => m.leftAt !== null && now >= m.leftAt + HANDOVER_MS);
         if (expired.length) {
             const before = guestsCanAdd(s);
@@ -763,6 +817,8 @@ const MESSAGES = {
         const left = msg.why === "back" ? s.track : null;
         s.track = track.by ? track : { ...track, by: event.from };
         s.trackKey++;
+        // The last song's counts end with it; only when they last went out is kept, for the gap.
+        if (s.pub?.stats) s.pub.stats = { key: s.trackKey, reacted: [], saved: [], fav: false, sentAt: s.pub.stats.sentAt, dirty: false };
         setHostQueue(ctx, msg.why === "pick", left);
         s.timeline = { positionMs: cleanPosition(msg.positionMs, track) ?? 0, atRoomMs: now, playing: false };
         s.phase = { kind: "preparing", trackKey: s.trackKey, deadlineMs: now + PREPARE_MS, hostDeadlineMs: now + HOST_WAIT_CAP_MS };
@@ -928,12 +984,20 @@ const MESSAGES = {
 
     react(ctx) {
         const { s, msg, event, now } = ctx;
-        if (!EMOJI.includes(msg.emoji)) return false;
+        // A session also takes the animated ones, by id.
+        if (!EMOJI.includes(msg.emoji) && !(s.pub && ANIMS.includes(msg.emoji))) return false;
         // A session keeps no reaction clock: 53 listeners reacting once a second would store the whole room 53 times a
         // second (the load check). The shell holds each socket to REACT_GAP_MS instead (src/listen-room.js).
         if (s.pub) {
             ctx.out.push({ to: "all", msg: { t: "reaction", from: event.from, emoji: msg.emoji } });
-            return false;
+            // Counted once a person a song: only that first one changes what's stored.
+            if (!s.track) return false;
+            const st = statsOf(s);
+            if (st.reacted.includes(event.from)) return false;
+            st.reacted.push(event.from);
+            if (!st.fav && onAir(s) && st.reacted.length >= FAVOURITE_MIN && st.reacted.length * 3 >= connected(s).length) st.fav = true;
+            statsChanged(ctx);
+            return true;
         }
         const last = s.reactAt[event.from];
         if (last !== undefined && now - last < REACT_GAP_MS) return false;
@@ -963,6 +1027,25 @@ const MESSAGES = {
     },
 
     // ── Sessions only: each of these does nothing in a private room ──────────
+
+    /** `{ phrase }`: one of PHRASES, passed on to everyone as `said`. Nothing is stored: the shell holds the pace. */
+    say(ctx) {
+        const { s, msg, event } = ctx;
+        if (!s.pub || !PHRASES.includes(msg.phrase)) return false;
+        ctx.out.push({ to: "all", msg: { t: "said", from: event.from, phrase: msg.phrase } });
+        return false;
+    },
+
+    /** `{ trackKey }`: this person saved the playing song. Counted once each; who saved is never sent. */
+    saved(ctx) {
+        const { s, msg, event } = ctx;
+        if (!s.pub || !s.track || msg.trackKey !== s.trackKey) return false;
+        const st = statsOf(s);
+        if (st.saved.includes(event.from)) return false;
+        st.saved.push(event.from);
+        statsChanged(ctx);
+        return true;
+    },
 
     /**
      * `{ track }`, a listener asking for a song (the host and co-hosts add songs instead). With Auto-accept on it goes
