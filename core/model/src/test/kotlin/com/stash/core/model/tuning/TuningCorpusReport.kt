@@ -56,4 +56,35 @@ class TuningCorpusReport {
             println(line)
         }
     }
+
+    /**
+     * What a song reads as after its first seconds, against the whole song: how soon a song heard for the first
+     * time (a stream) can be trusted, for the rule in the playback service.
+     */
+    @Test fun `real songs, how soon the reading settles`() {
+        val dir = System.getenv("TUNING_CORPUS")?.let(::File)
+        assumeTrue(dir != null && dir.isDirectory)
+        val marks = intArrayOf(8, 12, 20, 32, 60)
+        for (song in dir!!.listFiles { f -> f.name.endsWith("@0.f32") }!!.sortedBy { it.name }) {
+            val meter = TuningEstimator.Meter(44_100)
+            val chunk = ByteArray(44_100 * 4)
+            val floats = FloatArray(44_100)
+            val early = HashMap<Int, TuningEstimator.Result>()
+            var second = 0
+            song.inputStream().buffered().use { input ->
+                while (true) {
+                    val got = input.readNBytes(chunk, 0, chunk.size)
+                    if (got <= 0) break
+                    ByteBuffer.wrap(chunk, 0, got - got % 4).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer().get(floats, 0, got / 4)
+                    meter.add(floats, got / 4)
+                    second++
+                    if (second in marks) early[second] = meter.result()
+                }
+            }
+            val whole = meter.result()
+            val line = StringBuilder("SETTLE %-26s whole %+6.2f c conf %.2f".format(song.name.removeSuffix("@0.f32"), whole.cents, whole.confidence))
+            for (m in marks) early[m]?.let { line.append("  | %ds: off %5.2f c, conf %.2f".format(m, apart(it.cents, whole.cents), it.confidence)) }
+            println(line)
+        }
+    }
 }
