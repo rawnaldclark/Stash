@@ -222,6 +222,7 @@ class ListenTogetherSession(
             is Command.Boot -> if (role() == SessionRole.HOST) boot(command.memberId)
             Command.PresenceChanged -> sayPresence()
             Command.Skip -> if (role() == SessionRole.COHOST) send(ClientMessage.Command(SKIP))
+            is Command.LastSong -> if (role() == SessionRole.HOST && room?.track != null) send(ClientMessage.LastSong(command.on))
             is Command.Say -> if (stationId != null && command.phrase in RoomProtocol.PHRASES) send(ClientMessage.Say(command.phrase))
             // Once a song here too: the room would drop a second, and a heart tapped on and off shouldn't keep asking.
             Command.SavedSong -> room?.takeIf { stationId != null && it.track != null && it.trackKey != savedKey }?.let {
@@ -1017,6 +1018,9 @@ class ListenTogetherSession(
      */
     private suspend fun advance(why: String = "end", keepPaused: Boolean = false) {
         val r = room ?: return
+        // "End after this song": the song is over (ended, skipped, or unplayable), so the session is. The room would
+        // end it at the next load too; ending here keeps this phone from starting a song nobody will hear.
+        if (isHost && r.session?.lastSong == true) return end()
         if (why == UNAVAILABLE && unplayableInARow >= MAX_UNPLAYABLE_IN_A_ROW) return stopOnUnplayable(r)
         val current = r.track
         val next = r.queue.firstOrNull()

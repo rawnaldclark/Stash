@@ -254,22 +254,37 @@ private fun BoothSeat(seat: Seat, gap: Color, modifier: Modifier = Modifier) {
 /** One person: their room colour and initials, ringed in the ground's colour so overlapping faces read apart. */
 @Composable
 internal fun Face(member: RoomMember, size: Dp, ring: Color, modifier: Modifier = Modifier) {
-    Box(
-        modifier.size(size).border(2.dp, ring, CircleShape).padding(2.dp).clip(CircleShape).background(personColor(member.id)),
-        contentAlignment = Alignment.Center,
-    ) {
-        val letter = (size.value * 0.36f).sp
-        Text(
-            initials(member.name),
-            color = FaceInk,
-            fontWeight = FontWeight.Bold,
-            fontSize = letter,
-            lineHeight = letter * 1.2f,
-            maxLines = 1,
-            modifier = Modifier.clearAndSetSemantics { },
-        )
+    Box(modifier.size(size)) {
+        Box(
+            Modifier.matchParentSize().border(2.dp, ring, CircleShape).padding(2.dp).clip(CircleShape).background(personColor(member.id)),
+            contentAlignment = Alignment.Center,
+        ) {
+            val letter = (size.value * 0.36f).sp
+            Text(
+                initials(member.name),
+                color = FaceInk,
+                fontWeight = FontWeight.Bold,
+                fontSize = letter,
+                lineHeight = letter * 1.2f,
+                maxLines = 1,
+                modifier = Modifier.clearAndSetSemantics { },
+            )
+        }
+        // A regular at this station: a small star on the face's corner.
+        if (member.regular) {
+            val star = size * 0.42f
+            Box(
+                Modifier.align(Alignment.BottomEnd).size(star).background(ring, CircleShape).padding(1.dp).background(RegularGold, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Rounded.Star, contentDescription = null, tint = FaceInk, modifier = Modifier.size(star * 0.7f).clearAndSetSemantics { })
+            }
+        }
     }
 }
+
+/** The regular's star. */
+private val RegularGold = Color(0xFFF2C14E)
 
 /**
  * "You, Lee, Jo and 8 more": this phone first when it's on the floor, then the floor's first names, then how many

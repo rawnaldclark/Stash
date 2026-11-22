@@ -939,6 +939,69 @@ class StationSessionTest {
         assertThat((controller.state.value as ListenTogetherState.InRoom).songStats).isEqualTo(SongStats(4, 6, 2, true))
     }
 
+    // ── The last song, and regulars (step 5) ──────────────────────────────────────────────────────────────────
+
+    @Test fun `the host calls the last song and takes it back, and nobody else can`() = runTest {
+        goLive()
+        controller.send(Command.LastSong(true)); runCurrent()
+        assertThat(sent<ClientMessage.LastSong>()).isEmpty() // nothing playing yet
+        receive(ServerMessage.StateSync(state(host = "me", key = 1, timeline = RoomTimeline(0, 0, true))))
+        controller.send(Command.LastSong(true)); runCurrent()
+        controller.send(Command.LastSong(false)); runCurrent()
+        assertThat(sent<ClientMessage.LastSong>()).containsExactly(ClientMessage.LastSong(true), ClientMessage.LastSong(false)).inOrder()
+    }
+
+    @Test fun `a listener's last song goes nowhere`() = runTest {
+        listening()
+        controller.send(Command.LastSong(true)); runCurrent()
+        assertThat(sent<ClientMessage.LastSong>()).isEmpty()
+    }
+
+    @Test fun `the room's last song reaches the state`() = runTest {
+        listening()
+        fun last() = (controller.state.value as ListenTogetherState.InRoom).session!!.lastSong
+        assertThat(last()).isFalse()
+        receive(ServerMessage.Session(STATION, listeners = 1, lastSong = true))
+        assertThat(last()).isTrue()
+        receive(ServerMessage.Session(STATION, listeners = 1))
+        assertThat(last()).isFalse()
+    }
+
+    @Test fun `after the last song the host's phone ends the session and never loads the next`() = runTest {
+        goLive()
+        receive(ServerMessage.StateSync(state(host = "me", key = 1, timeline = RoomTimeline(0, 0, true), queue = listOf(next))))
+        receive(ServerMessage.Session(STATION, listeners = 1, lastSong = true))
+        val loads = sent<ClientMessage.Load>().size
+        player.interceptor!!.onNext(); runCurrent() // the song ending takes the same path as a skip
+        assertThat(sent<ClientMessage.Load>()).hasSize(loads)
+        assertThat(sent<ClientMessage.End>()).hasSize(1)
+        assertThat(controller.state.value).isEqualTo(ListenTogetherState.Idle)
+    }
+
+    @Test fun `without a last song the host's skip loads the next as before`() = runTest {
+        goLive()
+        receive(ServerMessage.StateSync(state(host = "me", key = 1, timeline = RoomTimeline(0, 0, true), queue = listOf(next))))
+        val loads = sent<ClientMessage.Load>().size
+        player.interceptor!!.onNext(); runCurrent()
+        assertThat(sent<ClientMessage.Load>()).hasSize(loads + 1)
+        assertThat(sent<ClientMessage.End>()).isEmpty()
+    }
+
+    @Test fun `a listener hears the session ended when the last song finished`() = runTest {
+        val notices = notices()
+        listening()
+        receive(ServerMessage.Ended("last_song"))
+        assertThat(notices).containsExactly("Maya's session ended")
+        assertThat(controller.state.value).isEqualTo(ListenTogetherState.Idle)
+    }
+
+    @Test fun `a regular's star arrives with the members`() = runTest {
+        listening()
+        receive(ServerMessage.Members(listOf(RoomMember("h", "Maya", 1, "ok", v = 3), RoomMember("me", "Rawn", 2, "ok", v = 3), RoomMember("b", "Ben", 3, "ok", v = 3, regular = true))))
+        val members = (controller.state.value as ListenTogetherState.InRoom).members
+        assertThat(members.filter { it.regular }.map { it.name }).containsExactly("Ben")
+    }
+
     companion object {
         const val STATION = "Ab3dEf9h"
         val KEY = "k".repeat(43)

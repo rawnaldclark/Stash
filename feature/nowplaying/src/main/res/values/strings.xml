@@ -240,6 +240,10 @@
     <!-- %1$s: the song -->
     <string name="life_favourite_line">%1$s is a crowd favourite</string>
     <string name="life_favourite">Crowd favourite</string>
+    <!-- A regular arriving. %1$s: their name -->
+    <string name="life_back">%1$s is back</string>
+    <!-- The host is ending the session after the song that\'s playing -->
+    <string name="life_last_song">Last song</string>
     <plurals name="life_saved">
         <item quantity="one">%d saved this</item>
         <item quantity="other">%d saved this</item>
@@ -296,6 +300,9 @@
     <string name="room_saved">In your Liked Songs</string>
     <string name="room_unsave">Remove from Liked Songs</string>
     <string name="room_end_title">End the session for everyone?</string>
+    <string name="room_end_now">End now</string>
+    <string name="room_end_after">End after this song</string>
+    <string name="room_end_not_after">Don\'t end after this song</string>
     <plurals name="room_end_body">
         <item quantity="one">%d person is listening. Your own queue comes back as you left it.</item>
         <item quantity="other">%d people are listening. Your own queue comes back as you left it.</item>

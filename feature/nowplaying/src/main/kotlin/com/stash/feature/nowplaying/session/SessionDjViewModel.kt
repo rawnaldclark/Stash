@@ -65,6 +65,9 @@ class SessionDjViewModel @Inject constructor(
 
     fun answer(id: String, answer: RequestAnswer) = controller.send(Command.AnswerRequest(id, answer))
 
+    /** "End after this song", or taking it back. */
+    fun lastSong(on: Boolean) = controller.send(Command.LastSong(on))
+
     fun setAutoAccept(on: Boolean) = controller.send(Command.SetAutoAccept(on))
 
     fun setCohost(memberId: String, on: Boolean) = controller.send(Command.SetCohost(memberId, on))

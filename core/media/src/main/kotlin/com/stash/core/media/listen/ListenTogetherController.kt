@@ -146,6 +146,9 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
          */
         data object Skip : Command
 
+        /** Host only, "End after this song": the session ends when the playing song does. [on] false takes it back. */
+        data class LastSong(val on: Boolean) : Command
+
         /** A quick phrase, by its id ([com.stash.core.model.listen.RoomProtocol.PHRASES]); a session only. */
         data class Say(val phrase: String) : Command
 

@@ -176,6 +176,10 @@ sealed interface ClientMessage {
     @Serializable @SerialName("say")
     data class Say(val phrase: String) : ClientMessage
 
+    /** Host only, "End after this song": the session ends when the playing song does. [on] false takes it back. */
+    @Serializable @SerialName("lastSong")
+    data class LastSong(val on: Boolean = true) : ClientMessage
+
     /** This person saved the song with [trackKey] (the playing one): counted once each in [SongStats.saves]. */
     @Serializable @SerialName("saved")
     data class Saved(val trackKey: Int) : ClientMessage
@@ -206,6 +210,9 @@ object EndedReason {
 
     /** This member was booted from the session. */
     const val BOOTED = "booted"
+
+    /** The host's last song finished. */
+    const val LAST_SONG = "last_song"
 }
 
 /**
@@ -220,6 +227,8 @@ data class SessionInfo(
     val cohosts: List<String> = emptyList(),
     val autoAccept: Boolean = false,
     val presence: String = BOOTH,
+    /** The host called the playing song the last one: the session ends when it does. */
+    val lastSong: Boolean = false,
 ) {
     companion object {
         const val BOOTH = "booth"
@@ -251,6 +260,8 @@ data class RoomMember(
     val joinedAt: Long = 0,
     val status: String = "buffering",
     val v: Int? = null,
+    /** In a session: a regular at this station (3 sessions of 10 minutes or more). Only the fact is ever sent. */
+    val regular: Boolean = false,
 )
 
 @Serializable
@@ -367,8 +378,9 @@ sealed interface ServerMessage {
         val cohosts: List<String> = emptyList(),
         val autoAccept: Boolean = false,
         val presence: String = SessionInfo.BOOTH,
+        val lastSong: Boolean = false,
     ) : ServerMessage {
-        val info: SessionInfo get() = SessionInfo(station, listeners, cohosts, autoAccept, presence)
+        val info: SessionInfo get() = SessionInfo(station, listeners, cohosts, autoAccept, presence, lastSong)
     }
 
     /** The waiting requests this member may see, after any change: all of them to the host and co-hosts, a listener's own. */

@@ -274,6 +274,19 @@ internal fun SessionRoom(
                 }
             }
         }
+        // "Last song": the host is ending the session when this one finishes.
+        if (room.session?.lastSong == true) {
+            Text(
+                stringResource(R.string.life_last_song),
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.6.sp),
+                color = liveInk(),
+                modifier = Modifier
+                    .padding(top = 8.dp)
+                    .clip(CircleShape)
+                    .border(1.dp, liveInk().copy(alpha = 0.5f), CircleShape)
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+            )
+        }
         pickOf(room)?.let { pick ->
             PickChip(pick, Modifier.fillMaxWidth().padding(top = 8.dp))
         }
@@ -356,16 +369,27 @@ internal fun SessionRoom(
     if (showUpNext) UpNextSheet(room, onDismiss = { showUpNext = false })
     if (showAbout && station != null) AboutStation(station, viewModel, onDismiss = { showAbout = false })
     if (confirmEnd) {
+        val last = room.session?.lastSong == true
         AlertDialog(
             onDismissRequest = { confirmEnd = false },
             title = { Text(stringResource(R.string.room_end_title)) },
             text = {
-                Text(
-                    if (listeners > 0) pluralStringResource(R.plurals.room_end_body, listeners, listeners) else stringResource(R.string.room_end_body_empty),
-                )
+                Column {
+                    Text(
+                        if (listeners > 0) pluralStringResource(R.plurals.room_end_body, listeners, listeners) else stringResource(R.string.room_end_body_empty),
+                    )
+                    // After this song: everyone sees "Last song" and the session ends when it finishes.
+                    if (room.track != null) {
+                        TextButton(
+                            onClick = { confirmEnd = false; dj.lastSong(!last) },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                            modifier = Modifier.padding(top = 8.dp),
+                        ) { Text(stringResource(if (last) R.string.room_end_not_after else R.string.room_end_after)) }
+                    }
+                }
             },
             confirmButton = {
-                TextButton(onClick = { confirmEnd = false; onEnd() }) { Text(stringResource(R.string.room_end), color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = { confirmEnd = false; onEnd() }) { Text(stringResource(R.string.room_end_now), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { confirmEnd = false }) { Text(stringResource(R.string.np_tuning_cancel)) } },
         )

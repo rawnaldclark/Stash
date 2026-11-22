@@ -41,6 +41,7 @@ class SessionLifeViewModel @Inject constructor(
 
     /** The song (by the room's key) already announced as a favourite, so its line is said once. */
     private var favouriteSaid = -1
+    private var lastSongSaid = false
 
     init {
         // A new session starts with an empty feed, and greets a listener.
@@ -51,6 +52,7 @@ class SessionLifeViewModel @Inject constructor(
                 .collectLatest { entered ->
                     _feed.value = Feed()
                     favouriteSaid = -1
+                    lastSongSaid = false
                     _greet.value = entered != null && !entered.second
                     if (_greet.value) {
                         delay(GREET_MS)
@@ -68,12 +70,20 @@ class SessionLifeViewModel @Inject constructor(
         viewModelScope.launch {
             controller.events.collect { event ->
                 val room = session() ?: return@collect
-                if (event.kind == SessionEvent.Kind.JOINED && event.memberId != room.myId) add(FeedLine.Joined(event.name))
+                if (event.kind == SessionEvent.Kind.JOINED && event.memberId != room.myId) {
+                    // A regular is greeted as one: the room marks them in its members.
+                    val regular = room.members.firstOrNull { it.id == event.memberId }?.regular == true
+                    add(if (regular) FeedLine.Back(event.name) else FeedLine.Joined(event.name))
+                }
             }
         }
         viewModelScope.launch {
             controller.state.collect { state ->
                 val room = (state as? ListenTogetherState.InRoom)?.takeIf { it.session != null } ?: return@collect
+                // "Last song", once each time the host calls it.
+                val last = room.session?.lastSong == true
+                if (last && !lastSongSaid) add(FeedLine.LastSong)
+                lastSongSaid = last
                 val stats = room.songStats ?: return@collect
                 val title = room.track?.title ?: return@collect
                 if (stats.favourite && stats.trackKey != favouriteSaid) {
