@@ -205,4 +205,23 @@ class YourStationViewModelTest {
         assertThat(hoursLine(weekday, java.util.Locale.US)).isEqualTo("Mon 09:00 – 17:00")
         assertThat(dayName(7, java.util.Locale.US)).isEqualTo("Sun")
     }
+
+    // ── Upcoming (step 6) ───────────────────────────────────────────────
+
+    @Test fun `upcoming lists stations with a time, never your own, and a failed read keeps what was there`() = runTest(dispatcher) {
+        val soon = Station(id = "Soon0001", name = "Late Night", next = com.stash.core.model.community.OnAirWindow(1_000, 2_000))
+        coEvery { repo.upcoming(any()) } returns CommunityResult.Ok(listOf(soon, soon.copy(id = "Mine0001", mine = true), soon.copy(id = "NoTime01", next = null)))
+        val vm = UpcomingViewModel(repo)
+        vm.load(); advanceUntilIdle()
+        assertThat(vm.upcoming.value.map { it.id }).containsExactly("Soon0001")
+        coEvery { repo.upcoming(any()) } returns CommunityResult.Failed("offline")
+        vm.load(); advanceUntilIdle()
+        assertThat(vm.upcoming.value.map { it.id }).containsExactly("Soon0001")
+    }
+
+    @Test fun `when a station is next on reads as the day and the time on this phone's clock`() {
+        val start = java.time.ZonedDateTime.of(2026, 11, 16, 9, 0, 0, 0, java.time.ZoneId.of("America/New_York")).toInstant().toEpochMilli()
+        assertThat(nextOnText(start, java.time.ZoneId.of("America/New_York"), java.util.Locale.US)).matches("Mon 9:00.AM")
+        assertThat(nextOnText(start, java.time.ZoneId.of("Europe/London"), java.util.Locale.UK)).isEqualTo("Mon 14:00")
+    }
 }

@@ -74,6 +74,10 @@ class StationsApiClient @Inject constructor(okHttpClient: OkHttpClient) {
     suspend fun following(key: String): CommunityResult<List<Station>> =
         call("stations/following", key) { ShareJson.decodeFromString(Stations.serializer(), it).stations }
 
+    /** Stations on a schedule that aren't on the air and are next on within 24 hours, soonest first; each has `next`. */
+    suspend fun upcoming(limit: Int, key: String?): CommunityResult<List<Station>> =
+        call("upcoming?limit=${limit.coerceIn(1, 50)}", key) { ShareJson.decodeFromString(Stations.serializer(), it).stations }
+
     /** A station, with its session while it's on the air. `Rejected("gone")`: missing, removed, or hidden from this phone. */
     suspend fun station(id: String, key: String?): CommunityResult<StationPage> =
         call("stations/$id", key) { ShareJson.decodeFromString(StationPage.serializer(), it) }

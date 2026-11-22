@@ -64,6 +64,11 @@ class StationsRepository @Inject constructor(
         keys.existingKey()?.let { api.following(it).learned() } ?: CommunityResult.Ok(emptyList())
     }
 
+    /** Stations going live on their own within a day, soonest first (the Sessions screen's Upcoming). */
+    suspend fun upcoming(limit: Int = 10): CommunityResult<List<Station>> = whileOn {
+        api.upcoming(limit, keys.existingKey()).learned()
+    }
+
     suspend fun station(id: String): CommunityResult<StationPage> = whileOn {
         heard.retry()
         api.station(id, keys.existingKey()).learned()
