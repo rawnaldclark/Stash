@@ -71,7 +71,8 @@ private val FloorOverlap = 6.dp
 /** How many faces the floor shows before "+N" (the mockup's four, on a phone's width). */
 internal const val FLOOR_FITS = 5
 
-private data class Floater(val id: Long, val emoji: String, val from: String, val x: Float)
+/** [animated]: one of the 12 animated reactions, drawn larger and swaying as it climbs. */
+private data class Floater(val id: Long, val emoji: String, val from: String, val x: Float, val animated: Boolean = false)
 
 private const val MAX_FLOATERS = 10
 
@@ -106,11 +107,13 @@ internal fun CrowdBand(
         val gate = ReactionGate()
         var next = 0L
         reactions.collect { r ->
+            // One this app doesn't know (a newer app's animated reaction) shows as nothing.
+            val glyph = reactionGlyph(r.emoji) ?: return@collect
             if (!gate.allow(System.currentTimeMillis())) return@collect
             if (floaters.size >= MAX_FLOATERS) floaters.removeAt(0)
             // Someone past "+N" (or not placed yet) rises from the "+N" bubble, or the band's end.
             val x = (faceX[r.from] ?: faceX[MORE])?.let { it - band[0] } ?: (band[1] * 0.8f)
-            floaters += Floater(next++, r.emoji, r.from, x)
+            floaters += Floater(next++, glyph, r.from, x, animated = isAnimated(r.emoji))
         }
     }
     Box(modifier.fillMaxWidth().onGloballyPositioned { band[0] = it.positionInRoot().x; band[1] = it.size.width.toFloat() }) {
@@ -199,9 +202,12 @@ internal fun CrowdBand(
                                 translationY = if (animate) -rise * p - half else -half * 2
                                 // In over the first eighth, then fading out as it climbs.
                                 alpha = if (p < 0.12f) p / 0.12f else 1f - (p - 0.12f) / 0.88f
-                                val s = if (p < 0.12f) 0.6f + 0.4f * (p / 0.12f) else 1f
+                                val grow = if (f.animated) 1.45f else 1f
+                                val s = (if (p < 0.12f) 0.6f + 0.4f * (p / 0.12f) else 1f) * grow
                                 scaleX = s
                                 scaleY = s
+                                // An animated one sways as it climbs.
+                                if (f.animated && animate) rotationZ = 14f * kotlin.math.sin(p * 4f * Math.PI.toFloat())
                             }
                             .size(30.dp)
                             .background(Color(0xE60B0B12), CircleShape)

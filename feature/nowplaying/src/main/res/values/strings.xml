@@ -219,6 +219,32 @@
     <string name="room_request">Request</string>
     <string name="room_react">React</string>
 
+    <!-- Sessions: the React tray, quick phrases, the feed, a song\'s crowd -->
+    <string name="life_say">SAY</string>
+    <string name="phrase_hi">Hi all</string>
+    <string name="phrase_who">Who is this?</string>
+    <string name="phrase_tune">Tune!</string>
+    <string name="phrase_again">Run it back!</string>
+    <string name="phrase_louder">Turn it up</string>
+    <string name="phrase_more">More like this</string>
+    <string name="phrase_chills">Chills</string>
+    <string name="phrase_thanks">Thanks for the set</string>
+    <string name="phrase_morning">Good morning</string>
+    <string name="phrase_night">Good night</string>
+    <!-- The feed. %1$s: a person\'s name -->
+    <string name="life_joined">%1$s tuned in</string>
+    <!-- %1$s: who said it; %2$s: the phrase -->
+    <string name="life_said">%1$s · %2$s</string>
+    <!-- The same phrase from several people. %1$s: the phrase; %2$d: how many times -->
+    <string name="life_said_many">%1$s ×%2$d</string>
+    <!-- %1$s: the song -->
+    <string name="life_favourite_line">%1$s is a crowd favourite</string>
+    <string name="life_favourite">Crowd favourite</string>
+    <plurals name="life_saved">
+        <item quantity="one">%d saved this</item>
+        <item quantity="other">%d saved this</item>
+    </plurals>
+
     <!-- Sessions: requests, co-hosts and the booth -->
     <string name="dj_the_host">The host</string>
     <string name="dj_request_title">Request a song</string>
