@@ -268,3 +268,39 @@ test("a reaction a second a socket, held by the shell; in a session no reaction 
     assert.equal(reactions(), 2, "a second on; the bad emoji didn't count as one");
     assert.equal(puts, 0, "nothing stored for any of them");
 });
+
+test("a phrase every 3 s a socket, held by the shell, and none of them stores the room", async () => {
+    const clock = { t: 1_000 };
+    const { ctx, room } = await openSession(clock);
+    const host = await connect(ctx, room, { name: "Rawn", hostKey: "KEY" });
+    const sam = await connect(ctx, room, { name: "Sam", communityKey: communityKey(4) });
+    const jo = await connect(ctx, room, { name: "Jo", communityKey: communityKey(5) });
+    let puts = 0;
+    const put = ctx.storage.put;
+    ctx.storage.put = async (...a) => { puts++; return put(...a); };
+    const say = (ws, phrase = "tune") => room.webSocketMessage(ws, JSON.stringify({ t: "say", phrase }));
+    const said = () => host.sent.filter((m) => m.t === "said").length;
+    await say(sam);
+    assert.equal(said(), 1);
+    clock.t += 2_999;
+    await say(sam, "chills");
+    assert.equal(said(), 1, "under 3 s since Sam's last");
+    await say(jo);
+    assert.equal(said(), 2, "Jo's pace is Jo's own");
+    clock.t += 1;
+    await say(sam, "chills");
+    assert.equal(said(), 3);
+    assert.equal(puts, 0);
+});
+
+test("an animated reaction passes the shell as an emoji does", async () => {
+    const clock = { t: 1_000 };
+    const { ctx, room } = await openSession(clock);
+    const host = await connect(ctx, room, { name: "Rawn", hostKey: "KEY" });
+    const sam = await connect(ctx, room, { name: "Sam", communityKey: communityKey(4) });
+    await room.webSocketMessage(sam, JSON.stringify({ t: "react", emoji: "a:fire" }));
+    assert.equal(host.sent.filter((m) => m.t === "reaction" && m.emoji === "a:fire").length, 1);
+    clock.t += 1_000;
+    await room.webSocketMessage(sam, JSON.stringify({ t: "react", emoji: "a:nope" }));
+    assert.equal(host.sent.filter((m) => m.t === "reaction").length, 1);
+});

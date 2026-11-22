@@ -192,13 +192,18 @@ The welcome's `state` has `v: 3`, `session` and `suggestions: []`. Then that mem
 | `command {action: "skip"}` | co-hosts | goes to the host's phone as `command {action: "skip", from, trackKey}`, to ignore if that song has already changed. While the host's phone is away: `refused {what: "skip", reason: "host_reconnecting"}` |
 | `request {track}` | listeners | answered `requestAnswer {state}`: `queued` (Auto-accept), `waiting`, or `full` (3 waiting each, 30 in all) |
 | `react {emoji}`, `ping {c}`, `status` | everyone | as in a private room (only the host's `status` counts) |
+| `react {emoji}` with an animated one | everyone | `emoji` may also be one of the 12 ids in `ANIMS` (`a:fire`, `a:applause`, …), passed on as `reaction` like the six emoji. A private room takes only the six |
+| `say {phrase}` | everyone | one of the 10 ids in `PHRASES` (`hi`, `who`, `tune`, `again`, `louder`, `more`, `chills`, `thanks`, `morning`, `night`), passed on to all as `said {from, phrase}`. Ids only, never text: each app says them in its own language |
+| `saved {trackKey}` | everyone | this person saved the playing song: counted once each, for the song with that key only |
 | `settings`, `makeHost`, `suggest`, `suggestion` | | no effect |
 
-New frames: `session`; `requests {requests: [{id, from, track}]}` after any change, all of them to the host and co-hosts and a listener's own to them; `requestAnswer`; `requestPassed {track, by}` to its requester alone; `refused {what, reason}`; and `command` to the host.
+**A song's counts.** `songStats {trackKey, reactions, saves, favourite}` goes to everyone when the playing song's counts change, at most once every 2 s (a change inside the gap goes at its end). `reactions` and `saves` are people, each counted once a song; who they are is never sent. `favourite` turns true, and stays, once at least 3 people and a third of everyone connected have reacted while the song played. The welcome's `state` carries the same object as `songStats` once the song has any. The room stores a person's first reaction to a song and nothing for their later ones.
+
+New frames: `said`; `songStats`; `session`; `requests {requests: [{id, from, track}]}` after any change, all of them to the host and co-hosts and a listener's own to them; `requestAnswer`; `requestPassed {track, by}` to its requester alone; `refused {what, reason}`; and `command` to the host.
 
 **How it ends.** `ended {reason}`, then every socket closes 4000. `host_ended`: End. `host_left`: the host's phone gone 60 s (a session is never handed on). `paused`: 15 minutes without playing (a song on its way counts as playing). `max_age`: 12 hours. `station_removed`: the station deleted, removed, hidden by votes, or its phone blocked. `replaced`: a newer session of the station. `closed`: 5 minutes with nobody in it.
 
-**Limits.** A private room's: 20 messages a second a socket, and a reaction a second each. `add`, `unqueue` and `request` share 10 at once, then 2 a second; past that an add is answered `added {count: 0}` and a request `requestAnswer {state: "full"}`.
+**Limits.** A private room's: 20 messages a second a socket, and a reaction a second each. A phrase every 3 s each. `add`, `unqueue` and `request` share 10 at once, then 2 a second; past that an add is answered `added {count: 0}` and a request `requestAnswer {state: "full"}`.
 
 **The directory.** The room writes its `live` row (`writeLive` in `src/stations-api.js`): at its first song, each new song, pause or play (at most once every 5 s), and every minute, which keeps it fresh. The end takes it down. The app only reads it (`GET live`).
 
