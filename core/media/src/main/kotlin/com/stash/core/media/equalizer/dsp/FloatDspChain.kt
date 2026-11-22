@@ -83,12 +83,18 @@ class FloatDspChain(
     private val tuningHz: () -> Float = { TuningMath.STANDARD_HZ },
     /** Builds the pitch stage for a stream; [PitchStageFactory.NONE] where there is no engine. */
     private val pitchStages: PitchStageFactory = PitchStageFactory.NONE,
+    /**
+     * How far this stream's song sits from the 440 grid, in cents (its own tuning, as measured); 0 for a
+     * standard recording or one with no reading. The stage shifts by the reference over the song's tuning.
+     */
+    private val songCents: () -> Float = { 0f },
 ) {
     private var sampleRate = 0
     private var channels = 0
 
     private var tuner: PitchStage? = null
     private var tunerHz = TuningMath.STANDARD_HZ
+    private var tunerCents = 0f
 
     /** The engine couldn't be built for this stream: Tuning stays out of it. */
     private var tunerMissing = false
@@ -189,7 +195,8 @@ class FloatDspChain(
         tuner = stage
         stage.reset()
         tunerHz = TuningMath.sanitize(tuningHz())
-        stage.setFactor(TuningMath.factor(tunerHz))
+        tunerCents = songCents()
+        stage.setFactor(TuningMath.factor(tunerHz, tunerCents))
         tuningEngaged = true
     }
 
@@ -215,10 +222,13 @@ class FloatDspChain(
         val stage = tuner
         if (tuningEngaged && stage != null) {
             // 440 while still engaged (Tuning was just switched off): factor 1 until the rebuild.
+            // A new song on the same stream (a gapless seam), or its reading arriving, moves the factor live too.
             val hz = TuningMath.sanitize(tuningHz())
-            if (hz != tunerHz) {
-                stage.setFactor(TuningMath.factor(hz))
+            val cents = songCents()
+            if (hz != tunerHz || cents != tunerCents) {
+                stage.setFactor(TuningMath.factor(hz, cents))
                 tunerHz = hz
+                tunerCents = cents
             }
             stage.process(samples, frames)
         }

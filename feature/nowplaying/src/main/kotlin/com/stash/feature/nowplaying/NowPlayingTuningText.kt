@@ -47,3 +47,21 @@ internal fun tuningEntryLine(entry: TuningMath.Entry): String {
         }
     }
 }
+
+/** The line about the playing song under Tuning's chips, or null when there's nothing to say. */
+@Composable
+internal fun songTuningText(line: SongTuningLine): String? {
+    val locale = tuningLocale()
+    return when (line) {
+        SongTuningLine.None -> null
+        is SongTuningLine.RecordedAt -> stringResource(R.string.np_tuning_song_recorded, TuningMath.plain(line.songHz, locale))
+        is SongTuningLine.Shifted -> stringResource(
+            if (line.lower) R.string.np_tuning_song_lower else R.string.np_tuning_song_higher,
+            TuningMath.plain(line.songHz, locale),
+            TuningMath.plain(line.cents, locale),
+        )
+        is SongTuningLine.AlreadyThere -> stringResource(R.string.np_tuning_song_already, TuningMath.number(line.hz, locale))
+        SongTuningLine.NoPitch -> stringResource(R.string.np_tuning_song_no_pitch)
+        SongTuningLine.NotMeasured -> stringResource(R.string.np_tuning_song_not_measured)
+    }
+}
