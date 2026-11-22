@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.stash.core.data.audio.SongTunings
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.tuning.TuningController
+import com.stash.core.media.tuning.TuningMonitor
 import com.stash.core.model.TuningMath
 import com.stash.core.model.tuning.SongTuning
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -68,6 +69,26 @@ sealed interface SongTuningLine {
 }
 
 /**
+ * What the output measures as while a retuned song plays (spec §3.4): the pitch it landed on, and how far that is
+ * from the reference.
+ */
+data class OutputTuningLine(val hz: Double, val offCents: Double) {
+    /** Within the estimator's own error on real songs. */
+    val onTarget: Boolean get() = abs(offCents) <= ON_TARGET_CENTS
+
+    companion object {
+        const val ON_TARGET_CENTS = 5.0
+
+        /** Null at standard, before there is a reading, and for output with no steady pitch to read. */
+        fun of(referenceHz: Float, reading: TuningMonitor.Reading?): OutputTuningLine? {
+            if (reading == null || !reading.measured || !TuningMath.isRetuned(referenceHz)) return null
+            val off = TuningMonitor.offCents(reading.cents, referenceHz)
+            return OutputTuningLine(hz = TuningMath.sanitize(referenceHz) * Math.pow(2.0, off / 1200.0), offCents = off)
+        }
+    }
+}
+
+/**
  * Tuning's row in the Playback speed sheet (440 · 432 · 444 · Custom), its mark on the speed action, and the line
  * about the song that's playing. The same setting as Settings > Audio & Quality > Tuning; like speed, the sheet is
  * hidden while casting (the speaker decodes, so the phone's output stage isn't in the path).
@@ -100,6 +121,11 @@ class NowPlayingTuningViewModel @Inject constructor(
     val canMeasure: StateFlow<Boolean> = current
         .map { it != null && it.id > 0 && !it.filePath.isNullOrBlank() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** What the output measures as, a few seconds into a retuned song. */
+    val outputLine: StateFlow<OutputTuningLine?> = tuning.outputReading
+        .combine(referenceHz) { reading, hz -> OutputTuningLine.of(hz, reading) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val _measuring = MutableStateFlow(false)
 

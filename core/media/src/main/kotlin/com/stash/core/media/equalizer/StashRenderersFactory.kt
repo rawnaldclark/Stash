@@ -82,6 +82,10 @@ class StashRenderersFactory(
 
     /** This factory's player's facts for its output stage (fed by the service's analytics listener). */
     val outputSession = OutputSession(mainPlayback)
+
+    /** Measures what this player's pitch stage puts out; only the playback service's players are checked. */
+    val tuningMonitor: com.stash.core.media.tuning.TuningMonitor? =
+        if (mainPlayback) com.stash.core.media.tuning.TuningMonitor(onReading = tuningController::reportOutput) else null
     init {
         setMediaCodecSelector(samsungSafeSelector)
     }
@@ -111,6 +115,7 @@ class StashRenderersFactory(
                         tuningHz = tuningController::outputHz,
                         pitchStages = PitchStageFactory(tuningController::newStage),
                         songCents = { outputSession.tuningCents },
+                        monitor = tuningMonitor,
                     )
                 },
             )

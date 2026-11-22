@@ -88,6 +88,8 @@ class FloatDspChain(
      * standard recording or one with no reading. The stage shifts by the reference over the song's tuning.
      */
     private val songCents: () -> Float = { 0f },
+    /** Hears what the pitch stage puts out, to check where it landed; null where nothing listens. */
+    private val monitor: com.stash.core.media.tuning.TuningMonitor? = null,
 ) {
     private var sampleRate = 0
     private var channels = 0
@@ -197,6 +199,7 @@ class FloatDspChain(
         tunerHz = TuningMath.sanitize(tuningHz())
         tunerCents = songCents()
         stage.setFactor(TuningMath.factor(tunerHz, tunerCents))
+        monitor?.restart()
         tuningEngaged = true
     }
 
@@ -229,8 +232,10 @@ class FloatDspChain(
                 stage.setFactor(TuningMath.factor(hz, cents))
                 tunerHz = hz
                 tunerCents = cents
+                monitor?.restart() // what was heard was at the old factor
             }
             stage.process(samples, frames)
+            monitor?.offer(samples, frames, channels, sampleRate)
         }
 
         preamp.setTarget(preampTarget(eq))

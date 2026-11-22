@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.audio.SongTunings
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.tuning.TuningController
+import com.stash.core.media.tuning.TuningMonitor
 import com.stash.core.model.PlayerState
 import com.stash.core.model.Track
 import com.stash.core.model.tuning.SongTuning
@@ -36,8 +37,10 @@ class NowPlayingTuningViewModelTest {
     private val state = MutableStateFlow(PlayerState())
     private val tunings = mutableMapOf<Long, MutableStateFlow<SongTuning>>()
 
+    private val output = MutableStateFlow<TuningMonitor.Reading?>(null)
     private val tuning: TuningController = mockk(relaxed = true) {
         every { effectiveHz } returns reference
+        every { outputReading } returns output
         every { available } returns true
     }
     private val player: PlayerRepository = mockk(relaxed = true) { every { playerState } returns state }
@@ -81,7 +84,36 @@ class NowPlayingTuningViewModelTest {
         assertThat(SongTuningLine.of(440f, SongTuning.NotMeasured)).isEqualTo(SongTuningLine.None)
     }
 
+    @Test fun `the output's line is the pitch it landed on, and whether that's the reference`() {
+        val on = OutputTuningLine.of(432f, TuningMonitor.Reading(cents = -31.4, confidence = 1.0, seconds = 12.0))!!
+        assertThat(on.hz).isWithin(0.02).of(432.09)
+        assertThat(on.onTarget).isTrue()
+
+        val off = OutputTuningLine.of(432f, TuningMonitor.Reading(cents = -20.0, confidence = 1.0, seconds = 12.0))!!
+        assertThat(off.offCents).isWithin(0.01).of(11.77)
+        assertThat(off.onTarget).isFalse()
+    }
+
+    @Test fun `no output line at standard, before a reading, or for output with nothing to read`() {
+        val reading = TuningMonitor.Reading(cents = -31.4, confidence = 1.0, seconds = 12.0)
+        assertThat(OutputTuningLine.of(440f, reading)).isNull()
+        assertThat(OutputTuningLine.of(432f, null)).isNull()
+        assertThat(OutputTuningLine.of(432f, reading.copy(confidence = 0.1))).isNull()
+    }
+
     // ── the view model ──────────────────────────────────────────────────
+
+    @Test fun `the output line follows the monitor`() = runTest(UnconfinedTestDispatcher()) {
+        val vm = vm()
+        backgroundScope.launch { vm.outputLine.collect() }
+        assertThat(vm.outputLine.value).isNull()
+
+        output.value = TuningMonitor.Reading(cents = -31.7, confidence = 1.0, seconds = 8.0)
+        assertThat(vm.outputLine.value!!.onTarget).isTrue()
+
+        output.value = null // the next song
+        assertThat(vm.outputLine.value).isNull()
+    }
 
     @Test fun `the line follows the playing song, its reading and the reference`() = runTest(UnconfinedTestDispatcher()) {
         val vm = vm()

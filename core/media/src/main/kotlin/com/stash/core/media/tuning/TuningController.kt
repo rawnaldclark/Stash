@@ -1,6 +1,7 @@
 package com.stash.core.media.tuning
 
 import android.os.Looper
+import android.util.Log
 import com.stash.core.data.prefs.TuningPreference
 import com.stash.core.media.equalizer.dsp.PitchStage
 import com.stash.core.media.equalizer.dsp.SignalsmithPitchStage
@@ -113,6 +114,33 @@ class TuningController internal constructor(
         return stored.value
     }
 
+    private val _outputReading = MutableStateFlow<TuningMonitor.Reading?>(null)
+    @Volatile private var lastReporter: TuningMonitor? = null
+
+    /**
+     * What the pitch stage's output measures as right now ([TuningMonitor]), or null: not retuned, or the song
+     * has only just begun. During a crossfade both players report; both are at the reference.
+     */
+    val outputReading: StateFlow<TuningMonitor.Reading?> = _outputReading.asStateFlow()
+
+    /** A monitor's reading, or null when it starts again. A restart only clears a reading that monitor gave. */
+    fun reportOutput(monitor: TuningMonitor, reading: TuningMonitor.Reading?) {
+        if (reading == null) {
+            if (lastReporter === monitor) _outputReading.value = null
+            return
+        }
+        lastReporter = monitor
+        _outputReading.value = reading
+        val target = outputHz()
+        Log.i(
+            TAG,
+            "output reads %+.2f c of 440 after %.0f s (confidence %.2f): %+.2f c off A = %s".format(
+                java.util.Locale.US, reading.cents, reading.seconds, reading.confidence,
+                TuningMonitor.offCents(reading.cents, target), TuningMath.number(target, java.util.Locale.US),
+            ),
+        )
+    }
+
     /** True while music is retuned: a non-standard reference, and an engine to do it. */
     fun isRetuned(): Boolean = TuningMath.isRetuned(outputHz())
 
@@ -143,5 +171,6 @@ class TuningController internal constructor(
 
     private companion object {
         const val FIRST_READ_TIMEOUT_MS = 1_000L
+        const val TAG = "TuningMonitor"
     }
 }

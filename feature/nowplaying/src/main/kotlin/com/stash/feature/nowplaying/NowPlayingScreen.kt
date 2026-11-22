@@ -36,6 +36,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -303,8 +304,10 @@ fun NowPlayingScreen(
     val songTuningLine by tuningViewModel.songLine.collectAsStateWithLifecycle()
     val canMeasureTuning by tuningViewModel.canMeasure.collectAsStateWithLifecycle()
     val measuringTuning by tuningViewModel.measuring.collectAsStateWithLifecycle()
+    val outputTuningLine by tuningViewModel.outputLine.collectAsStateWithLifecycle()
     var showCustomTuningDialog by remember { mutableStateOf(false) }
-    val speedSheetState = rememberModalBottomSheetState()
+    // Fully open: with Tuning's lines about the song, half height cuts the sheet off.
+    val speedSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // The queue row (if any) whose Save-to-Playlist picker is open.
     var queueSaveTrack by remember { mutableStateOf<com.stash.core.model.Track?>(null) }
     val shareTrack by viewModel.shareTrack.collectAsStateWithLifecycle()
@@ -832,6 +835,7 @@ fun NowPlayingScreen(
             songTuningLine = songTuningLine,
             onMeasureAgain = (tuningViewModel::measureAgain).takeIf { canMeasureTuning },
             measuringTuning = measuringTuning,
+            outputTuningLine = outputTuningLine,
         )
     }
 
@@ -2454,6 +2458,8 @@ private fun SpeedSheet(
     /** "Measure again", or null when the song has no file on this phone to measure. */
     onMeasureAgain: (() -> Unit)? = null,
     measuringTuning: Boolean = false,
+    /** What the output measures as, a few seconds into a retuned song. */
+    outputTuningLine: OutputTuningLine? = null,
 ) {
     val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
     ModalBottomSheet(
@@ -2466,6 +2472,7 @@ private fun SpeedSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 36.dp),
         ) {
@@ -2552,6 +2559,15 @@ private fun SpeedSheet(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (outputTuningLine != null) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = outputTuningText(outputTuningLine),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (outputTuningLine.onTarget) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     if (onMeasureAgain != null) {
                         androidx.compose.material3.TextButton(
                             onClick = onMeasureAgain,
