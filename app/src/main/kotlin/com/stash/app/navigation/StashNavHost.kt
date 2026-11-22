@@ -702,6 +702,7 @@ private fun StashNavGraph(
                 onYourStation = { navController.navigate(YourStationRoute) { launchSingleTop = true } },
                 // The scaffold's recap sheet shows it: both read the one recorder.
                 onOpenRecap = hiltViewModel<com.stash.feature.nowplaying.session.SessionRecapViewModel>()::show,
+                onOpenStation = { id -> navController.navigate(StationRoute(id)) { launchSingleTop = true } },
             )
         }
 

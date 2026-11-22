@@ -43,6 +43,26 @@ class StationsApiClientTest {
         assertThat(second.getHeader(CommunityApiClient.KEY_HEADER)).isEqualTo(key)
     }
 
+    @Test fun `upcoming asks for stations going live soon, capped at the Worker's most, and the key is optional`() = runBlocking {
+        answer(body = """{"stations":[{"id":"Ab3dEf9h","name":"Late Night","next":{"start":1000,"end":2000}}]}""")
+        val soon = (client.upcoming(10, key = null) as CommunityResult.Ok).value.single()
+        assertThat(soon.next?.start).isEqualTo(1000L)
+        val first = server.takeRequest()
+        assertThat(first.path).isEqualTo("/v1/community/upcoming?limit=10")
+        assertThat(first.getHeader(CommunityApiClient.KEY_HEADER)).isNull()
+        answer(body = """{"stations":[]}""")
+        client.upcoming(500, key)
+        assertThat(server.takeRequest().path).isEqualTo("/v1/community/upcoming?limit=50")
+    }
+
+    @Test fun `an edit carries the auto-live mode and the whole schedule`() {
+        val edit = StationEdit(autoLive = "schedule", schedule = com.stash.core.model.community.StationSchedule("America/New_York", listOf(com.stash.core.model.community.ScheduleWindow(1, "09:00", "17:00"))))
+        val sink = okio.Buffer().also { edit.body().writeTo(it) }
+        assertThat(sink.readUtf8()).isEqualTo("""{"autoLive":"schedule","schedule":{"tz":"America/New_York","windows":[{"day":1,"start":"09:00","end":"17:00"}]}}""")
+        val name = okio.Buffer().also { StationEdit(name = "New").body().writeTo(it) }
+        assertThat(name.readUtf8()).isEqualTo("""{"name":"New"}""")
+    }
+
     @Test fun `the followed list, a station's page and your own station come from their own paths`() = runBlocking {
         answer(body = """{"stations":[$station]}""")
         assertThat((client.following(key) as CommunityResult.Ok).value.single().id).isEqualTo("Ab3dEf9h")

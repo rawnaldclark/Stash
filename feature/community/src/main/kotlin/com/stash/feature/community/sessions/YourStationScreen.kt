@@ -121,6 +121,15 @@ fun YourStationScreen(
                     onEditVibe = { editing = Field.VIBE },
                     onGoLive = if (onAir) onOpenPlayer else onGoLive,
                     onDelete = viewModel::askDelete,
+                    autoLive = {
+                        AutoLiveCard(
+                            station = station,
+                            busy = state.saving,
+                            onMode = viewModel::setAutoLive,
+                            onAddHours = viewModel::addHours,
+                            onRemoveHours = viewModel::removeHours,
+                        )
+                    },
                 )
                 state.loading -> repeat(3) { RowSkeleton() }
                 state.failed -> ErrorCard(onRetry = viewModel::load, modifier = gutter)
@@ -190,6 +199,8 @@ private fun StationBody(
     onEditVibe: () -> Unit,
     onGoLive: () -> Unit,
     onDelete: () -> Unit,
+    /** The auto-live card, between the vibe line and Go live. */
+    autoLive: @Composable () -> Unit = {},
 ) {
     val ext = StashTheme.extendedColors
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
@@ -278,6 +289,7 @@ private fun StationBody(
                 modifier = Modifier.padding(start = 12.dp),
             )
         }
+        autoLive()
         GoLiveButton(onAir = onAir, enabled = !busy && !station.removed, onClick = onGoLive)
         Spacer(Modifier.height(8.dp))
         // Not while it's on the air: being live is what keeps it.

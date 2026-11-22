@@ -91,7 +91,11 @@ fun SessionsScreen(
     onOpenRecap: (SessionRecap) -> Unit = {},
     viewModel: SessionsViewModel = hiltViewModel(),
     recent: RecentRecapsViewModel = hiltViewModel(),
+    upcomingModel: UpcomingViewModel = hiltViewModel(),
+    onOpenStation: (String) -> Unit = {},
 ) {
+    val upcoming by upcomingModel.upcoming.collectAsStateWithLifecycle()
+    LifecycleResumeEffect(Unit) { upcomingModel.load(); onPauseOrDispose {} }
     val recaps by recent.recaps.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val room by viewModel.room.collectAsStateWithLifecycle()
@@ -177,6 +181,11 @@ fun SessionsScreen(
                         }
                     }
                 }
+                // Upcoming: stations that go live on their own within a day.
+                if (upcoming.isNotEmpty() && ui != SessionsListUi.Loading && ui != SessionsListUi.Off) {
+                    item(key = "upcoming_label") { ListLabel(stringResource(R.string.sessions_upcoming)) }
+                    items(upcoming, key = { "u" + it.id }) { station -> UpcomingRow(station, onClick = { onOpenStation(station.id) }) }
+                }
                 // Recent: the recaps this phone kept (a week), to open again. Not while Sessions is off or loading.
                 if (recaps.isNotEmpty() && ui != SessionsListUi.Loading && ui != SessionsListUi.Off) {
                     item(key = "recent_label") { ListLabel(stringResource(R.string.sessions_recent)) }
@@ -184,6 +193,27 @@ fun SessionsScreen(
                 }
             }
         }
+    }
+}
+
+/** A station that goes live on its own soon: its name, and when. */
+@Composable
+private fun UpcomingRow(station: Station, onClick: () -> Unit) {
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    val locale = config.locales[0] ?: java.util.Locale.getDefault()
+    androidx.compose.foundation.layout.Column(
+        Modifier
+            .fillMaxWidth()
+            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+    ) {
+        Text(station.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        Text(
+            station.next?.let { stringResource(R.string.sessions_upcoming_at, nextOnText(it.start, java.time.ZoneId.systemDefault(), locale)) }.orEmpty(),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
     }
 }
 
