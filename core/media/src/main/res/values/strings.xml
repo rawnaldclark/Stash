@@ -103,6 +103,12 @@
     <string name="session_ended">The session ended</string>
     <!-- To a DJ the room took off the decks: their turn came twice with no song ready. -->
     <string name="session_deck_out">You missed two turns, so you\'re off the decks</string>
+    <!-- Auto-live: the quiet notification on the first time in a day the station goes on the air by itself. -->
+    <string name="auto_live_channel">Your station</string>
+    <!-- %1$s: the station\'s name -->
+    <string name="auto_live_notice_title">%1$s is on the air</string>
+    <string name="auto_live_notice_text">Your station went live by itself. People can tune in to what you play.</string>
+    <string name="auto_live_notice_end">End session</string>
     <!-- The host tried to add a 4th co-host. -->
     <string name="session_cohosts_full">A session can have 3 co-hosts</string>
     <!-- The host or a co-host accepted a request while the queue was full: it stays waiting. -->

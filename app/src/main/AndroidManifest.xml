@@ -197,6 +197,10 @@
         <receiver
             android:name="com.stash.core.data.sync.DownloadControlReceiver"
             android:exported="false" />
+        <!-- The auto-live notification's End session (only the app's own PendingIntent reaches it). -->
+        <receiver
+            android:name="com.stash.core.media.listen.AutoLiveEndReceiver"
+            android:exported="false" />
         <receiver
             android:name="com.stash.core.data.sync.BootReceiver"
             android:exported="true"
