@@ -219,10 +219,7 @@ class ListenTogetherSession(
             is Command.SetAutoAccept -> if (role() == SessionRole.HOST) send(ClientMessage.AutoAccept(command.on))
             is Command.SetCohost -> if (role() == SessionRole.HOST) send(ClientMessage.Cohost(command.memberId, command.on))
             is Command.Boot -> if (role() == SessionRole.HOST) boot(command.memberId)
-            is Command.SetPresence -> {
-                inBooth = command.inBooth
-                sayPresence()
-            }
+            Command.PresenceChanged -> sayPresence()
         }
     }
 
@@ -488,16 +485,13 @@ class ListenTogetherSession(
         }
     }
 
-    /** Whether Stash is on this phone's screen ([Command.SetPresence]); what a session's host tells the room. */
-    private var inBooth = true
-
     /** What the room was last told, so the same word isn't sent twice; cleared with each welcome. */
     private var presenceSaid: String? = null
 
     /** A session's host says where they are, when it changes and after every welcome. */
     private fun sayPresence() {
         if (role() != SessionRole.HOST) return
-        val state = if (inBooth) SessionInfo.BOOTH else SessionInfo.AWAY
+        val state = if (controller.inBooth) SessionInfo.BOOTH else SessionInfo.AWAY
         if (state == presenceSaid) return
         if (connection?.send(ClientMessage.Presence(state)) == true) presenceSaid = state
     }

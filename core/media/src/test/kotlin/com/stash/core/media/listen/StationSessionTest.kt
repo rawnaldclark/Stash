@@ -822,21 +822,21 @@ class StationSessionTest {
     @Test fun `the host says away and back, once each, and nobody else says anything`() = runTest {
         goLive()
         assertThat(sent<ClientMessage.Presence>()).isEmpty() // in the booth, as the room assumes
-        controller.send(Command.SetPresence(inBooth = false)); runCurrent()
-        controller.send(Command.SetPresence(inBooth = false)); runCurrent()
-        controller.send(Command.SetPresence(inBooth = true)); runCurrent()
+        controller.setInBooth(false); runCurrent()
+        controller.setInBooth(false); runCurrent()
+        controller.setInBooth(true); runCurrent()
         assertThat(sent<ClientMessage.Presence>()).containsExactly(ClientMessage.Presence("away"), ClientMessage.Presence("booth")).inOrder()
     }
 
     @Test fun `a listener's presence is never sent`() = runTest {
         listening()
-        controller.send(Command.SetPresence(inBooth = false)); runCurrent()
+        controller.setInBooth(false); runCurrent()
         assertThat(sent<ClientMessage.Presence>()).isEmpty()
     }
 
     @Test fun `a host who went away before going live says so at the welcome`() = runTest {
         session()
-        controller.send(Command.SetPresence(inBooth = false)); runCurrent()
+        controller.setInBooth(false); runCurrent()
         coEvery { api.createSession(STATION, "Rawn", KEY) } returns created()
         controller.send(Command.GoLive(STATION, "Rawn")); runCurrent()
         connection.incoming.trySend(RoomEvent.Connected); runCurrent()
@@ -847,7 +847,7 @@ class StationSessionTest {
     @Test fun `a change of presence while the socket was down is said after the next welcome`() = runTest {
         goLive()
         connection.up = false
-        controller.send(Command.SetPresence(inBooth = false)); runCurrent()
+        controller.setInBooth(false); runCurrent()
         assertThat(sent<ClientMessage.Presence>()).isEmpty()
         connection.up = true
         connection.incoming.trySend(RoomEvent.Reconnecting); runCurrent()

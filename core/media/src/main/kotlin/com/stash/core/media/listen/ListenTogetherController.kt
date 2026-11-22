@@ -137,11 +137,8 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
         /** Host only: [memberId] leaves the session and can't come back. A co-host stops being one first. */
         data class Boot(val memberId: String) : Command
 
-        /**
-         * Whether Stash is on this phone's screen. Sent whenever it changes, in a room or not: a session's host says
-         * it to the room ("Maya is in the booth" / "Maya is away"), now and after every reconnect.
-         */
-        data class SetPresence(val inBooth: Boolean) : Command
+        /** [inBooth] changed: a session's host tells the room. Sent by [setInBooth], never by a screen. */
+        data object PresenceChanged : Command
     }
 
     /** What a host or co-host does with a request. */
@@ -173,6 +170,20 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
     internal val commands = Channel<Command>(Channel.UNLIMITED)
 
     @Volatile internal var serviceAttached = false
+
+    /**
+     * Whether Stash is on this phone's screen, from the app's own lifecycle. A session's host says it to the room
+     * ("Maya is in the booth" / "Maya is away"), when it changes and after every reconnect.
+     */
+    @Volatile var inBooth: Boolean = true
+        private set
+
+    /** The app came to the screen ([on]) or left it. Outside a room this only remembers: it never starts the service. */
+    fun setInBooth(on: Boolean) {
+        if (inBooth == on) return
+        inBooth = on
+        if (_active.value) commands.trySend(Command.PresenceChanged)
+    }
 
     fun send(command: Command) {
         commands.trySend(command)
