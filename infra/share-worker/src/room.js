@@ -124,7 +124,7 @@ export const capacity = (s) => (s.pub ? MAX_PUBLIC_MEMBERS : MAX_MEMBERS);
 
 const HOST_ONLY = new Set([
     "load", "play", "pause", "seek", "queue", "suggestion", "makeHost", "end", "settings",
-    "autoAccept", "cohost", "boot", "presence", // sessions
+    "autoAccept", "cohost", "boot", "presence", "lastSong", // sessions
 ]);
 /** Phone status → stored member status (`ready` is stored as `ok`, spec §3). */
 const STATUSES = { ready: "ok", buffering: "buffering", unavailable: "unavailable", drifting: "drifting" };
@@ -196,6 +196,8 @@ function sessionInfo(s) {
         station: s.pub.stationId, listeners: listenerCount(s),
         cohosts: connected(s).filter((m) => isCohost(s, m.id)).map((m) => m.id),
         autoAccept: s.pub.autoAccept, presence: s.pub.presence,
+        // Only once the host has called it: the playing song is the session's last.
+        ...(s.pub.lastSong === s.trackKey ? { lastSong: true } : {}),
     };
 }
 const sessionMsg = (s) => ({ to: "all", msg: { t: "session", ...sessionInfo(s) } });
@@ -814,6 +816,8 @@ const MESSAGES = {
         const { s, now, msg, event } = ctx;
         const track = cleanTrack(msg.track);
         if (!track) return false;
+        // The host called the playing song the last one: its end, or a skip past it, is the session's.
+        if (s.pub && s.pub.lastSong === s.trackKey && s.track) return endRoom(ctx, "last_song");
         const left = msg.why === "back" ? s.track : null;
         s.track = track.by ? track : { ...track, by: event.from };
         s.trackKey++;
@@ -1027,6 +1031,22 @@ const MESSAGES = {
     },
 
     // ── Sessions only: each of these does nothing in a private room ──────────
+
+    /**
+     * The host's "End after this song": everyone hears it is the last song (`session` carries `lastSong`), and the
+     * host's next `load`, which its phone sends when the song ends or is skipped, ends the session with `last_song`.
+     * `{ on: false }` takes it back. End now is still `end`.
+     */
+    lastSong(ctx) {
+        const { s, msg } = ctx;
+        if (!s.pub || !s.track) return false;
+        const on = msg.on !== false;
+        if (on === (s.pub.lastSong === s.trackKey)) return false;
+        if (on) s.pub.lastSong = s.trackKey; else delete s.pub.lastSong;
+        s.rev++;
+        ctx.out.push(sessionMsg(s));
+        return true;
+    },
 
     /** `{ phrase }`: one of PHRASES, passed on to everyone as `said`. Nothing is stored: the shell holds the pace. */
     say(ctx) {

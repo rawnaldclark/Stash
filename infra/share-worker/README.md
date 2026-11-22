@@ -186,6 +186,7 @@ The welcome's `state` has `v: 3`, `session` and `suggestions: []`. Then that mem
 | `cohost {memberId, on}` | host | at most 3: the 4th is `refused {what: "cohost", reason: "max_cohosts"}` |
 | `boot {memberId}` | host | they get `ended {reason: "booted"}`, their socket closes 4403, and their key stays out. A co-host first stops being one: `refused {what: "boot", reason: "cohost"}` |
 | `presence {state}` | host | `"booth"` or `"away"`, in `session` |
+| `lastSong {on?}` | host | "End after this song": `session` then carries `lastSong: true`, and the host's next `load` (its phone sends one when the song ends or is skipped) ends the session with `ended {reason: "last_song"}`. `{on: false}` takes it back |
 | `add {tracks, next}` | host, co-hosts | straight in, a co-host holding at most 20 waiting, as a guest does. A listener's is answered `added {count: 0}` |
 | `unqueue {track}` | host and co-hosts any song; listeners their own | as in a private room |
 | `requestAction {id, action}` | host, co-hosts | `next` (Play next), `queue` (Add to queue) or `pass`. One the queue no longer has room for stays waiting: `refused {what: "request", reason: "queue_full"}` |
