@@ -261,6 +261,29 @@ internal fun RequestsSheet(room: ListenTogetherState.InRoom, viewModel: SessionD
                     }
                 }
             }
+            if (room.role == SessionRole.HOST) {
+                item {
+                    val decksOpen = room.decks != null
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable(role = Role.Switch) { viewModel.openDecks(!decksOpen) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(R.string.decks_open), style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                stringResource(R.string.decks_open_sub),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(checked = decksOpen, onCheckedChange = null)
+                    }
+                }
+            }
             if (waiting.isEmpty()) {
                 item {
                     Text(
@@ -297,7 +320,7 @@ internal fun RequestsSheet(room: ListenTogetherState.InRoom, viewModel: SessionD
  * asks first: they can't come back to this session).
  */
 @Composable
-internal fun MemberActionsRow(member: RoomMember, actions: MemberActions, viewModel: SessionDjViewModel, onDone: () -> Unit) {
+internal fun MemberActionsRow(member: RoomMember, actions: MemberActions, viewModel: SessionDjViewModel, onDone: () -> Unit, onDecks: Boolean = false) {
     var confirmBoot by remember { mutableStateOf(false) }
     val name = member.name?.takeIf(String::isNotBlank) ?: stringResource(R.string.listen_someone)
     Row(Modifier.fillMaxWidth().padding(start = 68.dp, end = 20.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -315,6 +338,8 @@ internal fun MemberActionsRow(member: RoomMember, actions: MemberActions, viewMo
                 modifier = Modifier.align(Alignment.CenterVertically),
             )
         }
+        // On the decks or in the line: the host can take them off.
+        if (onDecks) RowButton(stringResource(R.string.decks_take_off), onClick = { viewModel.removeFromDecks(member.id); onDone() }, strong = false)
         if (actions.canBoot) RowButton(stringResource(R.string.dj_boot), onClick = { confirmBoot = true }, strong = false)
     }
     if (confirmBoot) {

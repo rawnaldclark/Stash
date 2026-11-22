@@ -291,6 +291,44 @@
     <string name="recap_most_saved">MOST SAVED</string>
     <string name="recap_done">Done</string>
 
+    <!-- Sessions: open decks, where the host and a few listeners take turns playing one song each -->
+    <string name="decks_title">ON THE DECKS</string>
+    <string name="decks_now">NOW</string>
+    <string name="decks_next">NEXT</string>
+    <plurals name="decks_open_seats">
+        <item quantity="one">%d open spot</item>
+        <item quantity="other">%d open spots</item>
+    </plurals>
+    <string name="decks_full">No open spots</string>
+    <plurals name="decks_waiting">
+        <item quantity="one">%d waiting</item>
+        <item quantity="other">%d waiting</item>
+    </plurals>
+    <string name="decks_join">Join the decks</string>
+    <string name="decks_your_pick">Your pick</string>
+    <string name="decks_join_body">Pick a song and take a spot. You play one song each turn.</string>
+    <string name="decks_join_body_line">The spots are taken. Pick a song and wait in line for the next one.</string>
+    <string name="decks_join_with">Join with this</string>
+    <string name="decks_pick_this">Pick this</string>
+    <string name="decks_your_song">Your song is playing. Pick your next one.</string>
+    <string name="decks_pick_needed">Pick a song for your turn, or you\'ll be skipped.</string>
+    <string name="decks_up_next">You\'re up next.</string>
+    <!-- %d: how many songs until this person\'s turn -->
+    <plurals name="decks_turn_in">
+        <item quantity="one">Your turn in %d song.</item>
+        <item quantity="other">Your turn in %d songs.</item>
+    </plurals>
+    <!-- %1$d: this person\'s place in the line -->
+    <string name="decks_in_line">You\'re number %1$d in line for a spot.</string>
+    <string name="decks_foot">On the decks you keep one song ready. Miss two turns in a row and you\'re off them.</string>
+    <string name="decks_leave">Leave the decks</string>
+    <string name="decks_leave_line">Leave the line</string>
+    <string name="decks_open">Open the decks</string>
+    <string name="decks_open_sub">Up to 4 listeners take turns, one song each</string>
+    <string name="decks_take_off">Off the decks</string>
+    <!-- The feed. %1$s: a person\'s name -->
+    <string name="decks_feed_off">%1$s is off the decks</string>
+
     <!-- Sessions: requests, co-hosts and the booth -->
     <string name="dj_the_host">The host</string>
     <string name="dj_request_title">Request a song</string>

@@ -90,10 +90,12 @@ class SessionLifeTest {
     private val state = MutableStateFlow<ListenTogetherState>(ListenTogetherState.Idle)
     private val said = MutableSharedFlow<ServerMessage.Said>(extraBufferCapacity = 8)
     private val events = MutableSharedFlow<SessionEvent>(extraBufferCapacity = 8)
+    private val deckOuts = MutableSharedFlow<ServerMessage.DeckOut>(extraBufferCapacity = 8)
     private val controller: ListenTogetherController = mockk(relaxed = true) {
         every { state } returns this@SessionLifeTest.state
         every { said } returns this@SessionLifeTest.said
         every { events } returns this@SessionLifeTest.events
+        every { deckOuts } returns this@SessionLifeTest.deckOuts
     }
 
     private fun room(

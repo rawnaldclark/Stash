@@ -9,6 +9,9 @@
 //                                                                    4 s after it arrives; DJ=auto turns Auto-accept on;
 //                                                                    COHOST=1 makes the first listener a co-host;
 //                                                                    AWAY=1 says "away" 5 s in; BOOT=<name> boots them.
+//                                                                    DECKS=1 opens the decks 3 s in, and each song is
+//                                                                    then the front of the room's queue, as the app
+//                                                                    plays it; TURN=<seconds> moves on that soon.
 //   node scripts/session-peer.mjs listen <origin> <stationId> [n]    tunes in to the station's session as n listeners
 //                                                                    (1 if not given), each reacting every 10 s
 //                                                                    With REQUEST=1 each also asks for a song 3 s in
@@ -16,6 +19,10 @@
 //                                                                    songs the host's phone may not have).
 //                                                                    With LIFE=1 they say phrases, send animated
 //                                                                    reactions and save songs.
+//                                                                    With DECKS=1 each joins the decks 2 s after they
+//                                                                    open and readies a song each time theirs starts;
+//                                                                    DECKS=once readies only the first, so they miss
+//                                                                    turns after it.
 //   node scripts/session-peer.mjs private-host <origin>              a private Listen Together room (v2), guests add
 //   node scripts/session-peer.mjs private-guest <origin> <code>      joins a private room (v2): Play next and a reaction
 //
@@ -49,6 +56,7 @@ function brief(m) {
         case "timeline": return `timeline #${m.trackKey} ${m.playing ? "playing" : "paused"} at ${Math.round(m.positionMs / 1000)}s`;
         case "queue": return `queue (${m.queue.length}) ${m.queue.slice(0, 3).map(title).join(" | ")}`;
         case "reaction": return `reaction ${m.emoji} from ${m.from}`;
+        case "decksState": return `decks ${m.open ? "open" : "closed"} djs ${m.djs.map((d) => d.id + (d.ready ? "+" : "-")).join(",") || "-"} line ${m.line.join(",") || "-"} now ${m.now} next ${m.next}`;
         default: return JSON.stringify(m).slice(0, 220);
     }
 }
@@ -64,7 +72,7 @@ async function api(method, path, key, body) {
 /** One phone's socket: logs every frame, says ready to every prepare (as the app does once the song is in), pings. */
 function phone(code, hello, name, quiet = false) {
     const ws = new WebSocket(`${wsOrigin}/v1/rooms/${code}/ws`);
-    const p = { ws, name, onFrame: null, send: (m) => ws.send(JSON.stringify(m)) };
+    const p = { ws, name, onFrame: null, picks: 0, send: (m) => ws.send(JSON.stringify(m)) };
     ws.onopen = () => p.send(hello);
     ws.onmessage = (e) => {
         const m = JSON.parse(e.data);
@@ -81,15 +89,29 @@ function phone(code, hello, name, quiet = false) {
 /** The host's side of playing: each song is moved on to the other when it ends, as the host's phone does. */
 function playInTurn(h, firstQv) {
     let next = 1, timer = null;
+    // DECKS: the room's queue as it last said, so the next song is its front (a DJ's pick, when one is waiting).
+    const decks = !!process.env.DECKS;
+    const turnMs = process.env.TURN ? Number(process.env.TURN) * 1000 : null;
+    let queue = [], qv = 0, playing = SONGS[0];
     h.onFrame = (m) => {
         if (m.t === "welcome") h.send({ t: "load", track: SONGS[0], positionMs: 0, queue: [SONGS[1]], why: "pick", qv: m.state.qv ?? firstQv });
+        if (m.t === "queue") { queue = m.queue; qv = m.qv ?? qv; }
+        if (m.t === "prepare") playing = m.track;
         if (m.t === "timeline") clearTimeout(timer);
         if (m.t === "timeline" && m.playing) {
-            const song = SONGS[(next + 1) % 2]; // the one playing now
+            const song = decks ? playing : SONGS[(next + 1) % 2]; // the one playing now
             timer = setTimeout(() => {
+                if (decks && queue.length) {
+                    const [track, ...rest] = queue;
+                    // The host's own queue never runs dry: the two test songs keep following.
+                    const own = rest.some((t) => !t.by || t.by === h.id) ? rest : [...rest, SONGS[next], SONGS[(next + 1) % 2]];
+                    if (!track.by || track.by === h.id) next = (next + 1) % 2;
+                    h.send({ t: "load", track, positionMs: 0, queue: own, why: "end", qv });
+                    return;
+                }
                 h.send({ t: "load", track: SONGS[next], positionMs: 0, queue: [SONGS[(next + 1) % 2]], why: "end" });
                 next = (next + 1) % 2;
-            }, Math.max(1_000, song.d - m.positionMs));
+            }, turnMs ?? Math.max(1_000, (song.d ?? 200_000) - m.positionMs));
         }
         if (m.t === "ended") process.exit(0);
     };
@@ -113,6 +135,8 @@ if (mode === "host") {
     h.onFrame = (m) => {
         play(m);
         if (m.t === "welcome") {
+            h.id = m.memberId;
+            if (process.env.DECKS) setTimeout(() => h.send({ t: "decks", open: true }), 3_000);
             // LAST=<seconds>: calls the last song that long in. END=<seconds>: ends the session then.
             if (process.env.LAST) setTimeout(() => h.send({ t: "lastSong" }), Number(process.env.LAST) * 1000);
             if (process.env.END) setTimeout(() => h.send({ t: "end" }), Number(process.env.END) * 1000);
@@ -157,6 +181,16 @@ if (mode === "host") {
             if (process.env.LIFE && (m.t === "prepare" || (m.t === "welcome" && m.state.trackKey))) {
                 const key = m.t === "prepare" ? m.trackKey : m.state.trackKey;
                 if (i % 2 === 0) setTimeout(() => { try { l.send({ t: "saved", trackKey: key }); } catch { /* closed */ } }, 6_000 + i * 400);
+            }
+            // DECKS: sit down with a song 2 s after the decks open (staggered), and ready another each time theirs starts.
+            if (m.t === "welcome") { l.id = m.memberId; if (m.state.decks) l.onFrame({ t: "decksState", ...m.state.decks }); }
+            if (process.env.DECKS && m.t === "decksState" && m.open && !l.joined) {
+                l.joined = true;
+                setTimeout(() => l.send({ t: "deckJoin", track: SONGS[i % 2] }), 2_000 + i * 600);
+            }
+            if (process.env.DECKS && m.t === "decksState" && !m.open) l.joined = false;
+            if (process.env.DECKS === "1" && m.t === "prepare" && m.track.by === l.id) {
+                setTimeout(() => { try { l.send({ t: "deckPick", track: SONGS[(i + ++l.picks) % 2] }); } catch { /* closed */ } }, 1_500);
             }
             if (m.t === "welcome" && process.env.REQUEST) {
                 const track = SONGS[i] ?? { t: `Request ${i + 1}`, a: NAMES[i] ?? "Listener", d: 200_000 };

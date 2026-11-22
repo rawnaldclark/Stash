@@ -9,6 +9,7 @@ import com.stash.core.media.listen.ListenTogetherController.Command
 import com.stash.core.media.listen.ListenTogetherController.RequestAnswer
 import com.stash.core.model.Track
 import com.stash.core.model.share.SharedTrack
+import com.stash.core.model.share.toSharedTrack
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -64,6 +65,20 @@ class SessionDjViewModel @Inject constructor(
     fun takeBack(track: SharedTrack, queueIndex: Int) = controller.send(Command.Unqueue(track, queueIndex))
 
     fun answer(id: String, answer: RequestAnswer) = controller.send(Command.AnswerRequest(id, answer))
+
+    /** The host opens the decks, or closes them. */
+    fun openDecks(open: Boolean) = controller.send(Command.OpenDecks(open))
+
+    /** A listener's song for the decks: it sits them down (or joins the line) the first time, and replaces their ready song after. */
+    fun deckPick(track: Track) {
+        controller.send(Command.DeckPick(track.toSharedTrack()))
+        _query.value = "" // the next pick starts from an empty search
+    }
+
+    fun leaveDecks() = controller.send(Command.LeaveDecks)
+
+    /** The host takes someone off the decks or out of the line. */
+    fun removeFromDecks(memberId: String) = controller.send(Command.RemoveFromDecks(memberId))
 
     /** "End after this song", or taking it back. */
     fun lastSong(on: Boolean) = controller.send(Command.LastSong(on))

@@ -172,6 +172,27 @@ sealed interface ClientMessage {
     @Serializable @SerialName("command")
     data class Command(val action: String) : ClientMessage
 
+    // ── Open decks (Sessions step 7): the host and up to four DJs take turns, one song each ──
+
+    /** Host only: opens the decks, or closes them (every ready song is dropped). */
+    @Serializable @SerialName("decks")
+    data class Decks(val open: Boolean) : ClientMessage
+
+    /** A listener takes a seat on the decks with [track] ready, or a place in the line when the seats are taken. */
+    @Serializable @SerialName("deckJoin")
+    data class DeckJoin(val track: SharedTrack) : ClientMessage
+
+    /** A DJ's (or someone in the line's) ready song, replacing the one before. */
+    @Serializable @SerialName("deckPick")
+    data class DeckPick(val track: SharedTrack) : ClientMessage
+
+    @Serializable @SerialName("deckLeave")
+    data object DeckLeave : ClientMessage
+
+    /** Host only: takes [memberId] off the decks or out of the line. */
+    @Serializable @SerialName("deckRemove")
+    data class DeckRemove(val memberId: String) : ClientMessage
+
     /** A quick phrase, by id ([RoomProtocol.PHRASES]): everyone gets [ServerMessage.Said]. One every 3 s. */
     @Serializable @SerialName("say")
     data class Say(val phrase: String) : ClientMessage
@@ -236,6 +257,29 @@ data class SessionInfo(
     }
 }
 
+/** A DJ on the decks: [ready] when they have a song waiting, or already in the queue for their turn. */
+@Serializable
+data class DeckSeat(val id: String, val ready: Boolean = false)
+
+/**
+ * The open decks, as every phone knows them: the DJs in the order of their turns (the host's turn comes first in each
+ * round and isn't listed), the line waiting for a seat, whose song is playing ([now]) and whose turn is next ([next];
+ * null until it's decided, the host's id when it's the host's own queue).
+ */
+@Serializable
+data class DecksInfo(
+    val open: Boolean = true,
+    val djs: List<DeckSeat> = emptyList(),
+    val line: List<String> = emptyList(),
+    val now: String? = null,
+    val next: String? = null,
+) {
+    companion object {
+        /** The room's rule: seats beside the host. */
+        const val SEATS = 4
+    }
+}
+
 /**
  * The playing song's crowd counts, in a session: how many people have reacted to it and saved it (never who), and
  * whether it became a crowd favourite (3 people and a third of the room reacting while it played).
@@ -296,6 +340,8 @@ data class RoomState(
     val session: SessionInfo? = null,
     /** The playing song's crowd counts, once anyone has reacted to it or saved it (a session only). */
     val songStats: SongStats? = null,
+    /** The open decks; null while they're closed (a session only). */
+    val decks: DecksInfo? = null,
 )
 
 /** Room → phone (spec §3). */
@@ -394,6 +440,20 @@ sealed interface ServerMessage {
     /** To its requester alone: member [by] passed on [track]. */
     @Serializable @SerialName("requestPassed")
     data class RequestPassed(val track: SharedTrack, val by: String) : ServerMessage
+
+    /** The decks after a change: [DecksInfo]'s fields, flat; [open] false when the host closed them. */
+    @Serializable @SerialName("decksState")
+    data class DecksState(
+        val open: Boolean = true,
+        val djs: List<DeckSeat> = emptyList(),
+        val line: List<String> = emptyList(),
+        val now: String? = null,
+        val next: String? = null,
+    ) : ServerMessage
+
+    /** [memberId] is off the decks: [reason] `skipped` after two turns with no song ready. */
+    @Serializable @SerialName("deckOut")
+    data class DeckOut(val memberId: String, val reason: String = "") : ServerMessage
 
     /** Member [from] said quick phrase [phrase] (an id of [RoomProtocol.PHRASES]; an unknown one is shown as nothing). */
     @Serializable @SerialName("said")

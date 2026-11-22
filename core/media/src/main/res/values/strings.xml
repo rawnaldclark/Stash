@@ -101,6 +101,8 @@
     <string name="session_ended_named">%1$s\'s session ended</string>
     <!-- The same, when the host's name isn't known. -->
     <string name="session_ended">The session ended</string>
+    <!-- To a DJ the room took off the decks: their turn came twice with no song ready. -->
+    <string name="session_deck_out">You missed two turns, so you\'re off the decks</string>
     <!-- Auto-live: the quiet notification on the first time in a day the station goes on the air by itself. -->
     <string name="auto_live_channel">Your station</string>
     <!-- %1$s: the station\'s name -->

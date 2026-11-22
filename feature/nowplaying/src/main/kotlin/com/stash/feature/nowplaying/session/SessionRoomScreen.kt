@@ -132,6 +132,8 @@ internal fun SessionRoom(
     val feed by life.feed.collectAsStateWithLifecycle()
     val greet by life.greet.collectAsStateWithLifecycle()
     var showTray by remember { mutableStateOf(false) }
+    var showDeck by remember { mutableStateOf(false) }
+    val decks = remember(room.decks, room.members, room.hostId, room.myId, room.isHost) { decksUi(room) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showRequest by remember { mutableStateOf(false) }
     var showRequests by remember { mutableStateOf(false) }
@@ -319,6 +321,9 @@ internal fun SessionRoom(
             modifier = Modifier.padding(top = 10.dp),
         )
 
+        // ── The decks, while they're open: who's on, whose turn is next, the line ───
+        if (decks != null) DecksCard(decks, ink = ink, muted = muted, modifier = Modifier.padding(top = 8.dp))
+
         // ── The feed: who came in, what people say, crowd favourites ───────────────
         FeedLines(feed, ink = muted, modifier = Modifier.padding(top = 6.dp, start = 4.dp))
 
@@ -340,7 +345,14 @@ internal fun SessionRoom(
                 // answer requests from the line above.
                 Row(
                     Modifier.weight(1f).height(52.dp).clip(CircleShape).background(ink)
-                        .clickable(role = Role.Button) { if (answersRequests(room)) showRequests = true else showRequest = true },
+                        .clickable(role = Role.Button) {
+                            when {
+                                answersRequests(room) -> showRequests = true
+                                // With the decks open, Join the decks takes Request's place (any song menu still requests).
+                                decks != null -> showDeck = true
+                                else -> showRequest = true
+                            }
+                        },
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
                 ) {
@@ -348,7 +360,14 @@ internal fun SessionRoom(
                     Icon(Icons.Rounded.Add, contentDescription = null, tint = on, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        stringResource(if (answersRequests(room)) R.string.dj_requests_title else R.string.room_request),
+                        stringResource(
+                            when {
+                                answersRequests(room) -> R.string.dj_requests_title
+                                decks == null -> R.string.room_request
+                                decks.place == DeckPlace.OFF -> R.string.decks_join
+                                else -> R.string.decks_your_pick
+                            },
+                        ),
                         style = MaterialTheme.typography.titleMedium,
                         color = on,
                     )
@@ -365,6 +384,7 @@ internal fun SessionRoom(
         Spacer(Modifier.height(12.dp))
     }
 
+    if (showDeck && decks != null && !answersRequests(room)) DeckSheet(decks, dj, onDismiss = { showDeck = false })
     if (showTray) ReactTray(greet = greet, onReact = onReact, onSay = life::say, onDismiss = { showTray = false })
     if (showEveryone) EveryoneSheet(room, crowd, dj, onDismiss = { showEveryone = false })
     if (showRequest && !answersRequests(room)) RequestSheet(room, dj, onDismiss = { showRequest = false })
@@ -560,7 +580,7 @@ private fun EveryoneSheet(room: ListenTogetherState.InRoom, crowd: Crowd, dj: Se
                     }
                 }
                 if (actions != null && open == member.id) {
-                    MemberActionsRow(member, actions, dj, onDone = { open = null })
+                    MemberActionsRow(member, actions, dj, onDone = { open = null }, onDecks = room.isHost && onDecksOrLine(room, member.id))
                 }
             }
         }

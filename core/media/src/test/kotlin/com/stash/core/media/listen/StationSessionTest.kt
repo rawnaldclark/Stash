@@ -17,6 +17,8 @@ import com.stash.core.model.listen.RoomRequest
 import com.stash.core.model.listen.RoomState
 import com.stash.core.model.listen.RoomTimeline
 import com.stash.core.model.listen.ServerMessage
+import com.stash.core.model.listen.DeckSeat
+import com.stash.core.model.listen.DecksInfo
 import com.stash.core.model.listen.SessionInfo
 import com.stash.core.model.listen.SongStats
 import com.stash.core.model.share.SharedTrack
@@ -1000,6 +1002,88 @@ class StationSessionTest {
         receive(ServerMessage.Members(listOf(RoomMember("h", "Maya", 1, "ok", v = 3), RoomMember("me", "Rawn", 2, "ok", v = 3), RoomMember("b", "Ben", 3, "ok", v = 3, regular = true))))
         val members = (controller.state.value as ListenTogetherState.InRoom).members
         assertThat(members.filter { it.regular }.map { it.name }).containsExactly("Ben")
+    }
+
+    // ── Open decks (step 7) ───────────────────────────────────────────────────────────────────────────────────
+
+    private fun decksNow() = (controller.state.value as ListenTogetherState.InRoom).decks
+
+    @Test fun `the host opens and closes the decks and takes someone off, and nobody else can`() = runTest {
+        goLive()
+        controller.send(Command.OpenDecks(true)); runCurrent()
+        controller.send(Command.RemoveFromDecks("x")); runCurrent()
+        controller.send(Command.OpenDecks(false)); runCurrent()
+        assertThat(sent<ClientMessage.Decks>()).containsExactly(ClientMessage.Decks(true), ClientMessage.Decks(false)).inOrder()
+        assertThat(sent<ClientMessage.DeckRemove>()).containsExactly(ClientMessage.DeckRemove("x"))
+    }
+
+    @Test fun `a listener can't open the decks or take anyone off`() = runTest {
+        listening()
+        controller.send(Command.OpenDecks(true)); runCurrent()
+        controller.send(Command.RemoveFromDecks("x")); runCurrent()
+        assertThat(sent<ClientMessage.Decks>()).isEmpty()
+        assertThat(sent<ClientMessage.DeckRemove>()).isEmpty()
+    }
+
+    @Test fun `the room's decks reach the state, and closing them clears it`() = runTest {
+        listening()
+        assertThat(decksNow()).isNull()
+        receive(ServerMessage.DecksState(open = true, djs = listOf(DeckSeat("b", ready = true)), line = listOf("c"), now = "h", next = "b"))
+        assertThat(decksNow()).isEqualTo(DecksInfo(true, listOf(DeckSeat("b", true)), listOf("c"), "h", "b"))
+        receive(ServerMessage.DecksState(open = false))
+        assertThat(decksNow()).isNull()
+    }
+
+    @Test fun `someone tuning in while the decks are open starts with them`() = runTest {
+        listening(state().copy(decks = DecksInfo(djs = listOf(DeckSeat("b", true)), now = "b", next = "h")))
+        assertThat(decksNow()?.djs?.single()?.id).isEqualTo("b")
+    }
+
+    @Test fun `a first pick sits down, a later one replaces the ready song`() = runTest {
+        listening()
+        controller.send(Command.DeckPick(next)); runCurrent()
+        assertThat(sent<ClientMessage.DeckJoin>()).isEmpty() // the decks aren't open
+        receive(ServerMessage.DecksState(open = true, now = "h"))
+        controller.send(Command.DeckPick(next)); runCurrent()
+        assertThat(sent<ClientMessage.DeckJoin>()).containsExactly(ClientMessage.DeckJoin(next))
+        receive(ServerMessage.DecksState(open = true, djs = listOf(DeckSeat("me", ready = true)), now = "h", next = "me"))
+        controller.send(Command.DeckPick(track)); runCurrent()
+        assertThat(sent<ClientMessage.DeckPick>()).containsExactly(ClientMessage.DeckPick(track))
+        assertThat(sent<ClientMessage.DeckJoin>()).hasSize(1)
+    }
+
+    @Test fun `someone waiting in the line changes their song the same way`() = runTest {
+        listening()
+        receive(ServerMessage.DecksState(open = true, line = listOf("me"), now = "h"))
+        controller.send(Command.DeckPick(track)); runCurrent()
+        assertThat(sent<ClientMessage.DeckPick>()).containsExactly(ClientMessage.DeckPick(track))
+    }
+
+    @Test fun `a listener steps down, and the host has no seat to leave or take`() = runTest {
+        listening()
+        controller.send(Command.LeaveDecks); runCurrent()
+        assertThat(sent<ClientMessage.DeckLeave>()).hasSize(1)
+    }
+
+    @Test fun `the host's own pick and leave are never sent`() = runTest {
+        goLive()
+        receive(ServerMessage.DecksState(open = true, now = "me"))
+        controller.send(Command.DeckPick(next)); runCurrent()
+        controller.send(Command.LeaveDecks); runCurrent()
+        assertThat(sent<ClientMessage.DeckJoin>()).isEmpty()
+        assertThat(sent<ClientMessage.DeckLeave>()).isEmpty()
+    }
+
+    @Test fun `a DJ taken off the decks for missing turns is told, and everyone's feed hears who`() = runTest {
+        val notices = notices()
+        listening()
+        val outs = mutableListOf<ServerMessage.DeckOut>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { controller.deckOuts.collect { outs += it } }
+        receive(ServerMessage.DeckOut("b", "skipped"))
+        assertThat(notices).isEmpty()
+        receive(ServerMessage.DeckOut("me", "skipped"))
+        assertThat(notices).containsExactly("You missed two turns, so you're off the decks")
+        assertThat(outs.map { it.memberId }).containsExactly("b", "me").inOrder()
     }
 
     companion object {

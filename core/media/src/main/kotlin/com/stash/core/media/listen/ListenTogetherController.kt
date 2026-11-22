@@ -8,6 +8,7 @@ import com.stash.core.media.service.StashPlaybackService
 import com.stash.core.model.listen.RoomMember
 import com.stash.core.model.listen.RoomRequest
 import com.stash.core.model.listen.RoomSuggestion
+import com.stash.core.model.listen.DecksInfo
 import com.stash.core.model.listen.ServerMessage
 import com.stash.core.model.listen.SongStats
 import com.stash.core.model.listen.SessionInfo
@@ -73,6 +74,8 @@ sealed interface ListenTogetherState {
         val onAir: Boolean = false,
         /** In a session, the playing song's crowd counts: people who reacted and saved, and whether it's a crowd favourite. */
         val songStats: SongStats? = null,
+        /** In a session, the open decks (who's on, whose turn is next, the line); null while they're closed. */
+        val decks: DecksInfo? = null,
     ) : ListenTogetherState
 }
 
@@ -148,6 +151,20 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
 
         /** Host only, "End after this song": the session ends when the playing song does. [on] false takes it back. */
         data class LastSong(val on: Boolean) : Command
+
+        // ── Open decks (Sessions step 7) ──
+
+        /** Host only: opens or closes the decks. */
+        data class OpenDecks(val open: Boolean) : Command
+
+        /** A listener sits down with [track] ready (or joins the line); already on the decks, it replaces their ready song. */
+        data class DeckPick(val track: SharedTrack) : Command
+
+        /** Steps down from the decks, or leaves the line. */
+        data object LeaveDecks : Command
+
+        /** Host only: takes [memberId] off the decks. */
+        data class RemoveFromDecks(val memberId: String) : Command
 
         /** A quick phrase, by its id ([com.stash.core.model.listen.RoomProtocol.PHRASES]); a session only. */
         data class Say(val phrase: String) : Command
@@ -241,6 +258,12 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
 
     internal fun publish(state: ListenTogetherState) { _state.value = state }
     internal fun reaction(reaction: ServerMessage.Reaction) { _reactions.tryEmit(reaction) }
+
+    private val _deckOuts = MutableSharedFlow<ServerMessage.DeckOut>(extraBufferCapacity = 8)
+
+    /** DJs the room took off the decks (skipped twice), for the feed. */
+    val deckOuts: SharedFlow<ServerMessage.DeckOut> = _deckOuts.asSharedFlow()
+    internal fun deckOut(out: ServerMessage.DeckOut) { _deckOuts.tryEmit(out) }
 
     private val _said = MutableSharedFlow<ServerMessage.Said>(extraBufferCapacity = 16)
 
