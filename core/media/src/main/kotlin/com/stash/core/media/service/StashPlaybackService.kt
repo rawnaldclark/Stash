@@ -1595,12 +1595,14 @@ class StashPlaybackService : MediaLibraryService() {
         // depth, rate). Per player: the crossfade spare reports its next song
         // early, and only becomes "the source" once its output is audible.
         val session = renderersFactory.outputSession
+        renderersFactory.onSongReading = { reading -> onSongReading(session, reading) }
         // Each player normalizes its OWN song: the crossfade spare primes the
         // next song (a transition on the spare), so it fades in at that song's
         // level while the master keeps the outgoing song's.
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 updateSessionLoudness(session, mediaItem)
+                renderersFactory.songMonitor?.restart()
                 followSessionTuning(session, mediaItem)
                 renderersFactory.tuningMonitor?.restart()
             }
@@ -2035,10 +2037,24 @@ class StashPlaybackService : MediaLibraryService() {
     /** Each player's watch on its current song's tuning (see [followSessionTuning]). Main thread only. */
     private val tuningWatches = HashMap<com.stash.core.media.output.OutputSession, kotlinx.coroutines.Job>()
 
+    /** One play of a song on one player, for true tuning. Its fields are the main thread's. */
+    private class TuningPlay(val trackId: Long?) {
+        val live = com.stash.core.media.tuning.LiveTuning()
+
+        /** The song had no stored reading when it started: it is measured as it plays. */
+        var measuredLive = false
+
+        /** This play kept its own reading on the song: the row coming back isn't news. */
+        var storedOwn = false
+        var first = true
+    }
+
+    private val tuningPlays = java.util.concurrent.ConcurrentHashMap<com.stash.core.media.output.OutputSession, TuningPlay>()
+
     /**
-     * Keeps [session]'s tuning offset at its current song's stored reading, 0 (a standard recording) until one
-     * is known. It follows the row, so a reading that lands while the song plays (the background pass, or
-     * "Measure again") is heard at once.
+     * Keeps [session]'s tuning offset at its current song's stored reading. A song with none starts as a
+     * standard recording (0) and is measured as it plays ([onSongReading]). The row is followed, so a whole-file
+     * reading that lands while the song plays (the background pass, or "Measure again") takes over at once.
      */
     private fun followSessionTuning(
         session: com.stash.core.media.output.OutputSession,
@@ -2046,9 +2062,64 @@ class StashPlaybackService : MediaLibraryService() {
     ) {
         tuningWatches.remove(session)?.cancel()
         session.tuningCents = 0f
-        val trackId = mediaItem?.mediaId?.toLongOrNull() ?: return
+        session.tuningLive = false
+        if (mediaItem == null) {
+            tuningPlays.remove(session)
+            return
+        }
+        val trackId = mediaItem.mediaId.toLongOrNull()
+        val play = TuningPlay(trackId)
+        tuningPlays[session] = play
+        if (trackId == null) {
+            // Not a library song: nothing stored to read, nowhere to keep a reading. Measured for this play.
+            play.measuredLive = true
+            session.tuningLive = true
+            return
+        }
         tuningWatches[session] = serviceScope.launch {
-            songTunings.observe(trackId).collect { session.tuningCents = it.appliedCents }
+            songTunings.observe(trackId).collect { tuning ->
+                val notMeasured = tuning is com.stash.core.model.tuning.SongTuning.NotMeasured
+                if (play.first) {
+                    play.first = false
+                    if (notMeasured) {
+                        play.measuredLive = true
+                        session.tuningLive = true
+                    } else {
+                        session.tuningCents = tuning.appliedCents
+                    }
+                } else if (!notMeasured && !(play.measuredLive && play.storedOwn)) {
+                    // A whole-file reading arrived: it is better than what the first seconds said.
+                    play.measuredLive = false
+                    session.tuningLive = false
+                    session.tuningCents = tuning.appliedCents
+                }
+            }
+        }
+    }
+
+    /**
+     * A reading of [session]'s song so far, measured as it plays (a background thread calls this).
+     * [com.stash.core.media.tuning.LiveTuning] decides whether to shift by it and whether to keep it. A song with
+     * a file on this phone isn't kept from here: the background pass measures all of it.
+     */
+    private fun onSongReading(
+        session: com.stash.core.media.output.OutputSession,
+        reading: com.stash.core.media.tuning.TuningMonitor.Reading,
+    ) {
+        val play = tuningPlays[session] ?: return
+        serviceScope.launch {
+            if (tuningPlays[session] !== play || !play.measuredLive) return@launch
+            val decision = play.live.on(reading)
+            decision.applyCents?.let {
+                session.tuningCents = it
+                android.util.Log.i("TuningMonitor", "song reads %+.2f c of 440 after %.0f s as it plays: shifting by that".format(java.util.Locale.US, it, reading.seconds))
+            }
+            val store = decision.store ?: return@launch
+            val trackId = play.trackId ?: return@launch
+            val row = trackDao.getById(trackId) ?: return@launch
+            if (row.filePath?.let { java.io.File(it).exists() } == true) return@launch
+            play.storedOwn = true
+            trackDao.updateTuning(trackId, store.cents, store.confidence, System.currentTimeMillis())
         }
     }
 

@@ -47,6 +47,9 @@ fun dspActivation(eq: EqState, loudness: LoudnessState, tuning: Boolean = false)
     tuning = tuning,
 )
 
+/** How fast a song's tuning correction is eased in when it changes mid-stream: half a semitone in under a second. */
+private const val GLIDE_CENTS_PER_SECOND = 60f
+
 /**
  * Stash's equalizer, bass boost, loudness normalization and limiter as one
  * float chain, run by the output stage on interleaved float PCM in place.
@@ -90,6 +93,12 @@ class FloatDspChain(
     private val songCents: () -> Float = { 0f },
     /** Hears what the pitch stage puts out, to check where it landed; null where nothing listens. */
     private val monitor: com.stash.core.media.tuning.TuningMonitor? = null,
+    /**
+     * Hears the song itself, before the pitch stage, while [measureSong] says it has no reading yet: a song played
+     * for the first time is measured as it plays.
+     */
+    private val songMonitor: com.stash.core.media.tuning.TuningMonitor? = null,
+    private val measureSong: () -> Boolean = { false },
 ) {
     private var sampleRate = 0
     private var channels = 0
@@ -225,13 +234,24 @@ class FloatDspChain(
         val stage = tuner
         if (tuningEngaged && stage != null) {
             // 440 while still engaged (Tuning was just switched off): factor 1 until the rebuild.
-            // A new song on the same stream (a gapless seam), or its reading arriving, moves the factor live too.
+            if (songMonitor != null && measureSong()) songMonitor.offer(samples, frames, channels, sampleRate)
+            // A new reference moves the factor at once. A new offset for the song (the next song at a gapless
+            // seam, or its reading arriving while it plays) is eased in, so a correction mid-song isn't a jump.
             val hz = TuningMath.sanitize(tuningHz())
-            val cents = songCents()
-            if (hz != tunerHz || cents != tunerCents) {
-                stage.setFactor(TuningMath.factor(hz, cents))
+            val wanted = songCents()
+            var moved = false
+            if (hz != tunerHz) {
                 tunerHz = hz
-                tunerCents = cents
+                tunerCents = wanted
+                moved = true
+            } else if (wanted != tunerCents) {
+                val step = GLIDE_CENTS_PER_SECOND * frames / sampleRate
+                val gap = wanted - tunerCents
+                tunerCents = if (kotlin.math.abs(gap) <= step) wanted else tunerCents + kotlin.math.sign(gap) * step
+                moved = true
+            }
+            if (moved) {
+                stage.setFactor(TuningMath.factor(tunerHz, tunerCents))
                 monitor?.restart() // what was heard was at the old factor
             }
             stage.process(samples, frames)

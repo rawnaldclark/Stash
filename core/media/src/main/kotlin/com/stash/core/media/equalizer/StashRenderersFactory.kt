@@ -83,6 +83,13 @@ class StashRenderersFactory(
     /** This factory's player's facts for its output stage (fed by the service's analytics listener). */
     val outputSession = OutputSession(mainPlayback)
 
+    /** Where [songMonitor]'s readings go: the playback service sets it. Called on a background thread. */
+    @Volatile var onSongReading: ((com.stash.core.media.tuning.TuningMonitor.Reading) -> Unit)? = null
+
+    /** Measures this player's song itself while it has no stored reading ([OutputSession.tuningLive]). */
+    val songMonitor: com.stash.core.media.tuning.TuningMonitor? =
+        if (mainPlayback) com.stash.core.media.tuning.TuningMonitor { _, reading -> if (reading != null) onSongReading?.invoke(reading) } else null
+
     /** Measures what this player's pitch stage puts out; only the playback service's players are checked. */
     val tuningMonitor: com.stash.core.media.tuning.TuningMonitor? =
         if (mainPlayback) com.stash.core.media.tuning.TuningMonitor(onReading = tuningController::reportOutput) else null
@@ -116,6 +123,8 @@ class StashRenderersFactory(
                         pitchStages = PitchStageFactory(tuningController::newStage),
                         songCents = { outputSession.tuningCents },
                         monitor = tuningMonitor,
+                        songMonitor = songMonitor,
+                        measureSong = { outputSession.tuningLive },
                     )
                 },
             )

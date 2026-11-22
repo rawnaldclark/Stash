@@ -94,13 +94,38 @@ class FloatDspChainTuningTest {
         assertThat(stages.single().factor.toDouble()).isWithin(1e-7).of(432.0 / 440.0) // no reading: a standard recording
 
         songCents = -31.7667f // a song already at 432
-        c.process(FloatArray(4), 2)
+        c.process(FloatArray(96_000), 48_000) // a second of audio: time for the correction to ease in
         assertThat(stages.single().factor.toDouble()).isWithin(1e-6).of(1.0)
 
         songCents = 21.7f
-        c.process(FloatArray(4), 2)
+        c.process(FloatArray(96_000), 48_000)
         assertThat(stages.single().factor.toDouble()).isWithin(1e-5).of(432.0 / 445.55)
         assertThat(stages).hasSize(1)
+    }
+
+    @Test fun `a song's correction arriving mid-stream is eased in, not jumped to`() {
+        hz = 432f
+        val c = chain()
+        c.configure(48_000, 2)
+        c.engageTuning(true)
+        songCents = 30f
+
+        c.process(FloatArray(9_600), 4_800) // a tenth of a second: 6 of the 30 cents
+        assertThat(stages.single().factor.toDouble()).isWithin(1e-5).of(432.0 / 440.0 / Math.pow(2.0, 6.0 / 1200.0))
+
+        repeat(5) { c.process(FloatArray(9_600), 4_800) } // half a second more: there
+        assertThat(stages.single().factor.toDouble()).isWithin(1e-5).of(432.0 / 440.0 / Math.pow(2.0, 30.0 / 1200.0))
+    }
+
+    @Test fun `a new reference is jumped to, and takes the song's offset with it`() {
+        hz = 432f
+        val c = chain()
+        c.configure(48_000, 2)
+        c.engageTuning(true)
+        songCents = 30f
+        hz = 444f
+        c.process(FloatArray(4), 2)
+        assertThat(stages.single().factor.toDouble()).isWithin(1e-5).of(444.0 / 440.0 / Math.pow(2.0, 30.0 / 1200.0))
     }
 
     @Test fun `at 440 a song's own tuning changes nothing`() {
