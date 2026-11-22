@@ -70,7 +70,10 @@ class SessionDjViewModel @Inject constructor(
     fun openDecks(open: Boolean) = controller.send(Command.OpenDecks(open))
 
     /** A listener's song for the decks: it sits them down (or joins the line) the first time, and replaces their ready song after. */
-    fun deckPick(track: Track) = controller.send(Command.DeckPick(track.toSharedTrack()))
+    fun deckPick(track: Track) {
+        controller.send(Command.DeckPick(track.toSharedTrack()))
+        _query.value = "" // the next pick starts from an empty search
+    }
 
     fun leaveDecks() = controller.send(Command.LeaveDecks)
 
