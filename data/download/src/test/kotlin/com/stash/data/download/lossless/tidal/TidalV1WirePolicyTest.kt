@@ -21,7 +21,16 @@ import com.stash.data.download.lossless.tidal.TidalWireParityTest.RelayAnswer
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.withTimeout
+import androidx.datastore.preferences.core.preferencesOf
+import androidx.datastore.preferences.core.stringPreferencesKey
+import com.stash.core.addons.DefaultAddonEntry
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl
@@ -76,6 +85,9 @@ class TidalV1WirePolicyTest {
     private lateinit var wires: TidalWires
     private lateinit var client: TidalClient
 
+    /** Builds [wires] and [client] again, the v1 wire told of refusals by this install's pass (anti-leech step 3). */
+    private lateinit var rebuild: (TidalInstallPass?) -> Unit
+
     private val query = TrackQuery(artist = "Daft Punk", title = "Get Lucky", isrc = "USQX91300108", durationMs = 248_000)
 
     private val searchHit = RelayAnswer(
@@ -116,7 +128,7 @@ class TidalV1WirePolicyTest {
         v1Server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val url = request.requestUrl!!
-                val route = url.encodedPath.removePrefix("/v1/$TOKEN/")
+                val route = url.encodedPath.removePrefix("/v1/$TOKEN/").removePrefix("/v1/$PASS/")
                 return when {
                     route == "manifest.json" -> json(200, V1FacePort.MANIFEST)
                     route == "search" -> { v1Searches += url; v1SearchInstead?.invoke() ?: V1FacePort.search(searchHit, url.queryParameter("limit")) }
@@ -145,8 +157,11 @@ class TidalV1WirePolicyTest {
         val http = OkHttpClient()
         val addonClient = HttpAddonClient(http, TestAddonHost(), TestAddonHost(), TestAddonHost(), LocalHttp)
         val legacy = LegacyRelayWire(http, RelaySigner(config, supporter(), appVersionProvider()), quota)
-        wires = TidalWires(config, registry, legacy, AddonV1Wire(addonClient, quota), TidalDebugSettings.off(), OwnTidalServer(NoUserAddons, prefs))
-        client = TidalClient(prefs, FakeAddonRefDao(), quota, wires).also { it.nowMs = { now } }
+        rebuild = { pass ->
+            wires = TidalWires(config, registry, legacy, AddonV1Wire(addonClient, quota, pass), TidalDebugSettings.off(), OwnTidalServer(NoUserAddons, prefs))
+            client = TidalClient(prefs, FakeAddonRefDao(), quota, wires).also { it.nowMs = { now } }
+        }
+        rebuild(null)
     }
 
     @After fun tearDown() {
@@ -410,7 +425,51 @@ class TidalV1WirePolicyTest {
         assertThat(wires.route()).isInstanceOf(TidalWires.Route.Addon::class.java)
     }
 
+    // ------------------------------------------------------------------------------- this install's pass (anti-leech step 3)
+
+    @Test fun `a 401 on this install's pass lets the pass go, and the access token is used again`() = runBlocking<Unit> {
+        val origin = v1Server.url("/").toString().trimEnd('/')
+        val store = MemoryPreferencesStore(preferencesOf(stringPreferencesKey("origin") to origin, stringPreferencesKey("pass") to PASS))
+        val entries = MutableStateFlow(listOf(DefaultAddonEntry(v1Server.url("/v1/$TOKEN/manifest.json").toString(), enabled = true, firstParty = true)))
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val pass = TidalInstallPass(store, OkHttpClient(), { null }, "Stash/test", { now }).also { it.bind(scope, entries) }
+            withTimeout(3_000) { while (pass.held.value == null) delay(10) }
+            rebuild(pass)
+            val manifest = AddonValidator.anyManifest(Json.parseToJsonElement(V1FacePort.MANIFEST), AddonValidator.Options(allowLocalHttp = true))
+            registry.state.value = listOf(tidalAddon(v1Server.url("/v1/$PASS/").toString(), manifest))
+            v1StreamInstead = { refused(401, "unauthorized") }
+
+            assertThat(lookup()).isEqualTo(TidalLookup.Failed)
+            withTimeout(3_000) { while (pass.held.value != null) delay(10) }
+            assertThat(store.values.value[stringPreferencesKey("pass")]).isNull()
+            // With the pass gone, the face's link is the access token's again.
+            assertThat(TidalInstallPass.withPass(entries.value.single().manifestUrl, pass.held.value)).contains("/v1/$TOKEN/")
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test fun `a 401 on the access token leaves the pass alone`() = runBlocking<Unit> {
+        val origin = v1Server.url("/").toString().trimEnd('/')
+        val store = MemoryPreferencesStore(preferencesOf(stringPreferencesKey("origin") to origin, stringPreferencesKey("pass") to PASS))
+        val entries = MutableStateFlow(listOf(DefaultAddonEntry(v1Server.url("/v1/$TOKEN/manifest.json").toString(), enabled = true, firstParty = true)))
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val pass = TidalInstallPass(store, OkHttpClient(), { null }, "Stash/test", { now }).also { it.bind(scope, entries) }
+            withTimeout(3_000) { while (pass.held.value == null) delay(10) }
+            rebuild(pass)
+            v1StreamInstead = { refused(401, "unauthorized") }
+            assertThat(lookup()).isEqualTo(TidalLookup.Failed)
+            delay(100)
+            assertThat(pass.held.value?.pass).isEqualTo(PASS)
+        } finally {
+            scope.cancel()
+        }
+    }
+
     private companion object {
         const val TOKEN = "tok-123"
+        const val PASS = "eyJ2IjoxfQ.c2ln"
     }
 }

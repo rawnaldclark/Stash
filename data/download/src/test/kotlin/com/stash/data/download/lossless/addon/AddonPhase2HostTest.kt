@@ -9,6 +9,12 @@ import com.stash.data.download.lossless.relay.LosslessConfig
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.TidalRelay
 import com.stash.data.download.lossless.tidal.TidalDebugSettings
+import com.stash.data.download.lossless.tidal.MemoryPreferencesStore
+import com.stash.data.download.lossless.tidal.TidalInstallPass
+import androidx.datastore.preferences.core.preferencesOf
+import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.coroutines.delay
+import okhttp3.OkHttpClient
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope
@@ -111,6 +117,43 @@ class AddonPhase2HostTest {
         assertThat(trust.isFirstParty("https://relay.stash.example/addon/")).isTrue()
         relay.value = TidalRelay("https://mine.example", null, userOwned = true)
         assertThat(trust.isFirstParty("https://mine.example/")).isFalse()
+    }
+
+    @Test fun `this install's pass takes the access token's place in the first-party link, and its base stays first-party`() = runBlocking<Unit> {
+        val relay = MutableStateFlow<TidalRelay?>(null)
+        val list = MutableStateFlow(
+            listOf(
+                DefaultAddonEntry("https://tidal.example.workers.dev/v1/tok/manifest.json", enabled = true, firstParty = true),
+                DefaultAddonEntry("https://tidal.example.workers.dev/other/manifest.json", enabled = true, firstParty = false),
+            ),
+        )
+        val config = mockk<LosslessConfigFetcher> {
+            every { tidalRelay } returns relay
+            every { defaultAddons } returns list
+        }
+        val store = MemoryPreferencesStore(
+            preferencesOf(stringPreferencesKey("origin") to "https://tidal.example.workers.dev", stringPreferencesKey("pass") to "eyJ2IjoxfQ.c2ln"),
+        )
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val pass = TidalInstallPass(store, OkHttpClient(), { null }, "Stash/test")
+            val defaults = SignedConfigDefaultAddons(config, TidalDebugSettings.off(), pass)
+            pass.bind(scope, defaults.unpassed)
+            withTimeout(3_000) { while (defaults.entries.value.first().manifestUrl.contains("/tok/")) delay(10) }
+            assertThat(defaults.entries.value.map { it.manifestUrl }).containsExactly(
+                "https://tidal.example.workers.dev/v1/eyJ2IjoxfQ.c2ln/manifest.json",
+                "https://tidal.example.workers.dev/other/manifest.json",
+            ).inOrder()
+            // What registration reads is the config's own list.
+            assertThat(defaults.unpassed.value).isEqualTo(list.value)
+            val trust = SignedConfigAddonTrust(config, defaults)
+            assertThat(trust.isFirstParty("https://tidal.example.workers.dev/v1/eyJ2IjoxfQ.c2ln/")).isTrue()
+            // The config's own link stays Stash's own: a call on its way there while the pass arrived is still signed.
+            assertThat(trust.isFirstParty("https://tidal.example.workers.dev/v1/tok/")).isTrue()
+            assertThat(trust.isFirstParty("https://tidal.example.workers.dev/v1/eyJ2IjoxfQ.other/")).isFalse()
+        } finally {
+            scope.cancel()
+        }
     }
 
     @Test fun `debug override - origins only, https or local http`() {

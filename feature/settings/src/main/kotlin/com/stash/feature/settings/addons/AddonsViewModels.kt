@@ -7,7 +7,9 @@ import com.stash.addons.contract.Quota
 import com.stash.core.addons.Trust
 import com.stash.data.download.lossless.addon.AddonLinks
 import com.stash.data.download.lossless.addon.AddonOverview
+import com.stash.data.download.lossless.tidal.CheckOutcome
 import com.stash.data.download.lossless.tidal.OwnTidalServer
+import com.stash.data.download.lossless.tidal.TidalInstallPass
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -28,10 +30,49 @@ import javax.inject.Inject
 class AddonsViewModel @Inject constructor(
     private val overview: AddonOverview,
     private val links: AddonLinks,
+    /** This phone's pass for Stash's Tidal (anti-leech step 3): its quick check, when attestation was refused. */
+    private val installPass: TidalInstallPass? = null,
 ) : ViewModel() {
 
     val state: StateFlow<AddonOverview.State> =
         overview.state.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AddonOverview.State())
+
+    /** Stash's Tidal's check page, when this phone should pass its quick check; null when there is nothing to do. */
+    val tidalCheckPage: StateFlow<String?> = installPass?.checkPage ?: MutableStateFlow(null)
+
+    private val _tidalCheck = MutableStateFlow<TidalCheck>(TidalCheck.Idle)
+
+    /** Where the quick check is: its screen is open, its token is being handed in, or why it didn't go through. */
+    val tidalCheck: StateFlow<TidalCheck> = _tidalCheck.asStateFlow()
+
+    /** "Check" on the quick check's card: its screen opens. */
+    fun onTidalCheckOpened() {
+        if (tidalCheckPage.value != null) _tidalCheck.value = TidalCheck.Open
+    }
+
+    /** The check's screen was closed before the check was passed. */
+    fun onTidalCheckClosed() {
+        if (_tidalCheck.value == TidalCheck.Open) _tidalCheck.value = TidalCheck.Idle
+    }
+
+    /** The check's screen caught the page's hand-back: its token goes to the add-on, for this phone's pass. */
+    fun onTidalCheckSolved(token: String) {
+        val pass = installPass ?: return
+        _tidalCheck.value = TidalCheck.Sending
+        viewModelScope.launch {
+            _tidalCheck.value = try {
+                when (val outcome = pass.registerWithTurnstile(token)) {
+                    CheckOutcome.Passed -> TidalCheck.Idle
+                    is CheckOutcome.Failed -> TidalCheck.Failed(outcome.message)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "check not handed in: ${e.javaClass.simpleName}")
+                TidalCheck.Failed("Something went wrong. Try again.")
+            }
+        }
+    }
 
     /** The add-on added a moment ago: its row is highlighted once. */
     val highlighted: StateFlow<String?> = links.lastAdded
@@ -80,6 +121,21 @@ class AddonsViewModel @Inject constructor(
     private companion object {
         const val TAG = "AddonsScreen"
     }
+}
+
+/** Where Stash's Tidal's quick check is, on Settings › Add-ons. */
+sealed interface TidalCheck {
+    /** Nothing under way: the card offers Check when there is a check page. */
+    data object Idle : TidalCheck
+
+    /** The check's screen is open. */
+    data object Open : TidalCheck
+
+    /** The solved check is being handed in. */
+    data object Sending : TidalCheck
+
+    /** It didn't go through: [message] says why, in the user's words. */
+    data class Failed(val message: String) : TidalCheck
 }
 
 /**

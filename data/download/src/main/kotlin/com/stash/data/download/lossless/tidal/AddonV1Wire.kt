@@ -71,6 +71,8 @@ import javax.inject.Singleton
 class AddonV1Wire @Inject constructor(
     private val client: HttpAddonClient,
     private val quota: LosslessQuota,
+    /** Told of a 401 from a first-party add-on: this install's pass may have been withdrawn (anti-leech step 3). */
+    private val installPass: TidalInstallPass? = null,
 ) {
     /** Hard failures in a row, per route: see the class doc. */
     private val searchHardFailures = AtomicInteger()
@@ -188,6 +190,8 @@ class AddonV1Wire @Inject constructor(
                 }
                 ErrorCode.UNAUTHORIZED, ErrorCode.BAD_REQUEST -> {
                     Log.w(TidalClient.TAG, "v1 add-on refused the call (HTTP ${f.status})")
+                    // Stash's own add-on refusing its link: when the link holds this install's pass, it is let go.
+                    if (owner && f.code == ErrorCode.UNAUTHORIZED) installPass?.refused(addon.base)
                     WireReply.Error(f.status)
                 }
             }

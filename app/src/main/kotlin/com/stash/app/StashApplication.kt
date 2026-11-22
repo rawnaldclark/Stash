@@ -255,6 +255,16 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var addonRegistry: com.stash.core.addons.InTreeAddonRegistry
 
     /**
+     * This install's own pass for Stash's Tidal add-on (anti-leech step 3): Android key attestation after each applied
+     * config while there is none, against the default add-ons before the pass goes in ([signedDefaultAddons]).
+     */
+    @Inject
+    lateinit var tidalInstallPass: com.stash.data.download.lossless.tidal.TidalInstallPass
+
+    @Inject
+    lateinit var signedDefaultAddons: com.stash.data.download.lossless.addon.SignedConfigDefaultAddons
+
+    /**
      * The signed add-on index (the official list and the blocklist, add-ons phase 4 §1.5): its kept
      * copy at once, then a fetch after every applied config, at most once in 6 hours.
      */
@@ -464,6 +474,8 @@ class StashApplication : Application(), Configuration.Provider {
         startLosslessConfig()
         addonIndexFetcher.start(applicationScope, losslessConfigFetcher)
         addonRegistry.start(applicationScope, losslessConfigFetcher.refreshedAt)
+        // This install's own pass for Stash's Tidal add-on, once the add-on offers its check (anti-leech step 3).
+        tidalInstallPass.start(applicationScope, signedDefaultAddons.unpassed, losslessConfigFetcher.refreshedAt)
         losslessQuotaRefresher.start(applicationScope)
         // A restore whose user picked a different library folder than the
         // backup's: it could not be written before the restart (the live
