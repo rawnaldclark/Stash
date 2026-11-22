@@ -322,6 +322,29 @@ data class TrackEntity(
     val loudnessMeasuredAt: Long? = null,
 
     /**
+     * v81, true tuning (spec 2026-11-21): how far this recording's notes sit from the 12-note grid at A = 440 Hz,
+     * in cents, -50 until +50 (432 Hz is -31.77), as `TuningEstimator` read it. NULL = not measured yet, or the
+     * file couldn't be decoded ([tuningMeasuredAt] says which). Only to be trusted with [tuningConfidence].
+     */
+    @ColumnInfo(name = "tuning_cents")
+    val tuningCents: Float? = null,
+
+    /**
+     * v81: 0 to 1, how clearly the song's steady notes agree on [tuningCents]. Under
+     * `TuningEstimator.MIN_CONFIDENCE` the song has no tuning to find (speech, drums, two tunings at once) and
+     * counts as not measured, though it was.
+     */
+    @ColumnInfo(name = "tuning_confidence")
+    val tuningConfidence: Float? = null,
+
+    /**
+     * v81: when the tuning measurement was attempted, epoch millis. NULL = never, so the backfill worker takes it;
+     * set with [tuningCents] NULL = the file couldn't be decoded and isn't tried again.
+     */
+    @ColumnInfo(name = "tuning_measured_at")
+    val tuningMeasuredAt: Long? = null,
+
+    /**
      * v0.9.27: Cached result of an `AvailabilityCheckWorker` lookup
      * against Kennyy's Qobuz proxy. True = the proxy can resolve a
      * stream URL for this track (the streaming engine can play it

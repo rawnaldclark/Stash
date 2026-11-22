@@ -55,6 +55,9 @@ class TrackDaoCompleteSwapTest {
             loudnessLufs = -9.5f,
             truePeakDbfs = -0.3f,
             loudnessMeasuredAt = 1_000L,
+            tuningCents = 8.5f,
+            tuningConfidence = 0.9f,
+            tuningMeasuredAt = 1_000L,
             matchFlagged = true,
             canonicalTitle = "lacrymosa",
             canonicalArtist = "evanescence",
@@ -103,6 +106,9 @@ class TrackDaoCompleteSwapTest {
         assertNull(row.loudnessLufs)
         assertNull(row.truePeakDbfs)
         assertNull("so the loudness pass measures the new recording", row.loudnessMeasuredAt)
+        assertNull("the old recording's tuning isn't the new one's", row.tuningCents)
+        assertNull(row.tuningConfidence)
+        assertNull("so the tuning pass measures the new recording", row.tuningMeasuredAt)
     }
 
     @Test

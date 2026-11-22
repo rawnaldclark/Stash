@@ -63,6 +63,18 @@ interface FFmpegBridge {
      * diagnostic output while rejecting any partial output file.
      */
     suspend fun runWithStderrCapture(args: List<String>): String
+
+    /**
+     * Runs ffmpeg with [args] and hands its **stdout** to [onBytes] block by block as it arrives (the array is
+     * reused: read `length` bytes of it before returning). For decoding to raw audio on `-`, where the output is
+     * far too large to hold.
+     *
+     * Throws [IOException] as [runWithStderrCapture] does, with the end of stderr in the message. Cancelling the
+     * caller kills ffmpeg.
+     */
+    suspend fun streamStdout(args: List<String>, onBytes: (bytes: ByteArray, length: Int) -> Unit) {
+        throw UnsupportedOperationException("streamStdout")
+    }
 }
 
 /**
@@ -82,29 +94,42 @@ class FFmpegBridgeImpl @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : FFmpegBridge {
 
+    private fun start(args: List<String>): Process {
+        val binary = ffmpegBinary()
+        if (!binary.exists() || !binary.canExecute()) {
+            throw IOException(
+                "ffmpeg binary missing or not executable at ${binary.absolutePath}; " +
+                    "ensure FFmpeg.getInstance().init(context) has been called",
+            )
+        }
+
+        val cmd = ArrayList<String>(args.size + 1).apply {
+            add(binary.absolutePath)
+            addAll(args)
+        }
+
+        return ProcessBuilder(cmd)
+            .apply {
+                val env = environment()
+                env["LD_LIBRARY_PATH"] = ldLibraryPath()
+                env["TMPDIR"] = context.cacheDir.absolutePath
+            }
+            .redirectErrorStream(false)
+            .start()
+    }
+
+    override suspend fun streamStdout(args: List<String>, onBytes: (bytes: ByteArray, length: Int) -> Unit) =
+        withContext(Dispatchers.IO) {
+            val (exit, stderr) = awaitStreamingStdout(start(args), onBytes)
+            if (exit != 0) {
+                Log.w(TAG, "ffmpeg exited with code $exit; stderr length=${stderr.length}")
+                throw IOException("ffmpeg exited with code $exit" + if (stderr.isBlank()) "" else ":\n$stderr")
+            }
+        }
+
     override suspend fun runWithStderrCapture(args: List<String>): String =
         withContext(Dispatchers.IO) {
-            val binary = ffmpegBinary()
-            if (!binary.exists() || !binary.canExecute()) {
-                throw IOException(
-                    "ffmpeg binary missing or not executable at ${binary.absolutePath}; " +
-                        "ensure FFmpeg.getInstance().init(context) has been called",
-                )
-            }
-
-            val cmd = ArrayList<String>(args.size + 1).apply {
-                add(binary.absolutePath)
-                addAll(args)
-            }
-
-            val process = ProcessBuilder(cmd)
-                .apply {
-                    val env = environment()
-                    env["LD_LIBRARY_PATH"] = ldLibraryPath()
-                    env["TMPDIR"] = context.cacheDir.absolutePath
-                }
-                .redirectErrorStream(false)
-                .start()
+            val process = start(args)
 
             val (exit, stderr) = awaitCapturingStderr(process)
 
@@ -205,6 +230,71 @@ class FFmpegBridgeImpl @Inject constructor(
                 killer.cancel()
             }
         }
+
+        /**
+         * Hands [process]'s stdout to [onBytes] as it arrives, waits for it to exit and returns (exit code, the
+         * end of its stderr). stderr is read on a side thread so it can't fill and block the process. As in
+         * [awaitCapturingStderr], cancelling the caller destroys the process, which ends the blocked read.
+         */
+        internal suspend fun awaitStreamingStdout(
+            process: Process,
+            onBytes: (bytes: ByteArray, length: Int) -> Unit,
+        ): Pair<Int, String> = coroutineScope {
+            val killer = launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+                try {
+                    awaitCancellation()
+                } finally {
+                    process.destroy()
+                }
+            }
+            try {
+                val stderr = StringBuffer()
+                val stderrReader = Thread {
+                    try {
+                        process.errorStream.bufferedReader().use { reader ->
+                            val chunk = CharArray(4096)
+                            while (true) {
+                                val got = reader.read(chunk)
+                                if (got < 0) break
+                                stderr.append(chunk, 0, got)
+                                // The end is what says why it failed.
+                                if (stderr.length > STDERR_KEPT * 2) stderr.delete(0, stderr.length - STDERR_KEPT)
+                            }
+                        }
+                    } catch (_: Exception) {
+                        // Stream closed while reading: fine.
+                    }
+                }.also { it.isDaemon = true; it.start() }
+
+                try {
+                    process.inputStream.use { input ->
+                        val buffer = ByteArray(1 shl 16)
+                        while (true) {
+                            val got = input.read(buffer)
+                            if (got < 0) break
+                            if (got > 0) onBytes(buffer, got)
+                        }
+                    }
+                } catch (e: IOException) {
+                    // The process was destroyed under the read (cancellation), or died: the exit code says which.
+                    ensureActive()
+                }
+                val exit = try {
+                    process.waitFor()
+                } catch (ie: InterruptedException) {
+                    process.destroy()
+                    Thread.currentThread().interrupt()
+                    throw ie
+                }
+                stderrReader.join(500)
+                ensureActive()
+                exit to stderr.toString()
+            } finally {
+                killer.cancel()
+            }
+        }
+
+        private const val STDERR_KEPT = 4_000
 
         // youtubedl-android extracts the ffmpeg binary into nativeLibraryDir
         // under this name. Confirmed by disassembling the library AAR:
