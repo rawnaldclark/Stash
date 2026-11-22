@@ -220,6 +220,11 @@ class ListenTogetherSession(
             is Command.AnswerRequest -> if (role() == SessionRole.HOST || role() == SessionRole.COHOST) {
                 send(ClientMessage.RequestAction(command.id, command.answer.action))
             }
+            // Gone from the list at once; the room's own list follows. One the host answered meanwhile isn't there to take.
+            is Command.CancelRequest -> if (requests.any { it.id == command.id && it.from == myId } && connection?.send(ClientMessage.RequestCancel(command.id)) == true) {
+                requests = requests.filterNot { it.id == command.id }
+                publish()
+            }
             is Command.SetAutoAccept -> if (role() == SessionRole.HOST) send(ClientMessage.AutoAccept(command.on))
             is Command.SetCohost -> if (role() == SessionRole.HOST) send(ClientMessage.Cohost(command.memberId, command.on))
             is Command.Boot -> if (role() == SessionRole.HOST) boot(command.memberId)

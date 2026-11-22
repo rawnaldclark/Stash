@@ -152,6 +152,10 @@ sealed interface ClientMessage {
     @Serializable @SerialName("requestAction")
     data class RequestAction(val id: String, val action: String) : ClientMessage
 
+    /** A listener takes back their own waiting request [id]. */
+    @Serializable @SerialName("requestCancel")
+    data class RequestCancel(val id: String) : ClientMessage
+
     /** Host only: while [on], requests go straight in as Add to queue. */
     @Serializable @SerialName("autoAccept")
     data class AutoAccept(val on: Boolean) : ClientMessage

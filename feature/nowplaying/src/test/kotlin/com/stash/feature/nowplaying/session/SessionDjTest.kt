@@ -82,7 +82,7 @@ class SessionDjTest {
         )
         assertThat(myRequests(r)).containsExactly(
             MyRequest(nights.copy(addedBy = "me"), accepted = true, queueIndex = 1),
-            MyRequest(ivy, accepted = false),
+            MyRequest(ivy, accepted = false, id = "r1"),
         ).inOrder()
         assertThat(myWaiting(r)).isEqualTo(1)
     }
@@ -159,11 +159,13 @@ class SessionDjTest {
         vm.answer("r1", RequestAnswer.NEXT)
         vm.answer("r2", RequestAnswer.PASS)
         vm.setAutoAccept(true)
+        vm.cancelRequest("r9")
         vm.setCohost("b", true)
         vm.boot("b")
         vm.takeBack(nights, 3)
         vm.skip()
         verify { controller.send(Command.Skip) }
+        verify { controller.send(Command.CancelRequest("r9")) }
         verify { controller.send(Command.AnswerRequest("r1", RequestAnswer.NEXT)) }
         verify { controller.send(Command.AnswerRequest("r2", RequestAnswer.PASS)) }
         verify { controller.send(Command.SetAutoAccept(true)) }

@@ -753,6 +753,23 @@ class StationSessionTest {
         assertThat(sent<ClientMessage.RequestAction>()).containsExactly(ClientMessage.RequestAction("r1", "next"))
     }
 
+    @Test fun `a listener takes back a waiting request of their own, and it leaves the list at once`() = runTest {
+        listening()
+        receive(ServerMessage.Requests(listOf(RoomRequest("r1", "me", track), RoomRequest("r2", "me", next))))
+        controller.send(Command.CancelRequest("r1")); runCurrent()
+        controller.send(Command.CancelRequest("r1")); runCurrent() // tapped twice: asked once
+        controller.send(Command.CancelRequest("nope")); runCurrent()
+        assertThat(sent<ClientMessage.RequestCancel>()).containsExactly(ClientMessage.RequestCancel("r1"))
+        assertThat((controller.state.value as ListenTogetherState.InRoom).requests.map { it.id }).containsExactly("r2")
+    }
+
+    @Test fun `the booth can't take back a listener's request, only answer it`() = runTest {
+        goLive()
+        receive(ServerMessage.Requests(listOf(RoomRequest("r1", "b", track))))
+        controller.send(Command.CancelRequest("r1")); runCurrent()
+        assertThat(sent<ClientMessage.RequestCancel>()).isEmpty()
+    }
+
     @Test fun `Auto-accept, co-hosts and boot are the host's alone`() = runTest {
         listening()
         receive(ServerMessage.Session(STATION, listeners = 1, cohosts = listOf("me")))

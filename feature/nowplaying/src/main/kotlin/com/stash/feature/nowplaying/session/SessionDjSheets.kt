@@ -155,7 +155,7 @@ internal fun RequestSheet(room: ListenTogetherState.InRoom, viewModel: SessionDj
                         )
                     }
                 }
-                items(mine, key = { (if (it.accepted) "q" else "w") + it.queueIndex + it.track.title + it.track.artist }) { request ->
+                items(mine, key = { it.id ?: ("q" + it.queueIndex + it.track.title + it.track.artist) }) { request ->
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         SongLines(request.track.title, request.track.artist, Modifier.weight(1f))
                         if (request.accepted) {
@@ -173,6 +173,12 @@ internal fun RequestSheet(room: ListenTogetherState.InRoom, viewModel: SessionDj
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            val id = request.id
+                            if (id != null) {
+                                TextButton(onClick = { viewModel.cancelRequest(id) }) {
+                                    Text(stringResource(R.string.dj_take_back))
+                                }
+                            }
                         }
                     }
                 }

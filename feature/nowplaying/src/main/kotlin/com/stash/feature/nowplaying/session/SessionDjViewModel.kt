@@ -66,6 +66,9 @@ class SessionDjViewModel @Inject constructor(
     /** Takes back one of this listener's songs that the host already put in Up next. */
     fun takeBack(track: SharedTrack, queueIndex: Int) = controller.send(Command.Unqueue(track, queueIndex))
 
+    /** Takes back one of this listener's requests that's still waiting for an answer. */
+    fun cancelRequest(id: String) = controller.send(Command.CancelRequest(id))
+
     fun answer(id: String, answer: RequestAnswer) = controller.send(Command.AnswerRequest(id, answer))
 
     /** The host opens the decks, or closes them. */

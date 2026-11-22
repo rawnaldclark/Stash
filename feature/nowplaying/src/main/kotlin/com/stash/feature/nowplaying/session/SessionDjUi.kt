@@ -46,12 +46,14 @@ internal data class MyRequest(
     val accepted: Boolean,
     /** Where it sits in the room's queue, for taking it back; -1 while it waits. */
     val queueIndex: Int = -1,
+    /** The room's id for it while it waits, for taking it back; null once it's in Up next. */
+    val id: String? = null,
 )
 
 /** This listener's songs: the ones in Up next first (in the order they'll play), then the ones still waiting. */
 internal fun myRequests(room: ListenTogetherState.InRoom): List<MyRequest> {
     val accepted = room.queue.mapIndexedNotNull { i, t -> if (t.addedBy == room.myId) MyRequest(t, accepted = true, queueIndex = i) else null }
-    val waiting = room.requests.filter { it.from == room.myId }.map { MyRequest(it.track, accepted = false) }
+    val waiting = room.requests.filter { it.from == room.myId }.map { MyRequest(it.track, accepted = false, id = it.id) }
     return accepted + waiting
 }
 
