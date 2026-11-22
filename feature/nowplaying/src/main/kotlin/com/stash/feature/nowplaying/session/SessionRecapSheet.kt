@@ -41,6 +41,7 @@ import javax.inject.Inject
 class SessionRecapViewModel @Inject constructor(private val recorder: SessionRecapRecorder) : ViewModel() {
     val ended: StateFlow<SessionRecap?> = recorder.ended
     fun shown() = recorder.shown()
+    fun show(recap: SessionRecap) = recorder.show(recap)
     fun saved() = recorder.saved()
     fun noteStation(id: String, name: String) = recorder.noteStation(id, name)
 }

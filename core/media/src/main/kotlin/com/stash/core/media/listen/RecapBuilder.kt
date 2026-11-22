@@ -22,6 +22,7 @@ class RecapBuilder(first: ListenTogetherState.InRoom, private val startedAt: Lon
 
     /** The song that's playing, and the room's last counts for it. */
     private var song: SharedTrack? = null
+    private var songSince = 0L
     private var songReactions = 0
     private var songSaves = 0
     private var songFavourite = false
@@ -50,9 +51,9 @@ class RecapBuilder(first: ListenTogetherState.InRoom, private val startedAt: Lon
         peak = maxOf(peak, room.session?.listeners ?: 0)
 
         if (room.track != song) {
-            closeSong()
+            closeSong(now)
             song = room.track
-            if (song != null) songs++
+            songSince = now
         }
         room.songStats?.let { stats ->
             songReactions = stats.reactions
@@ -76,8 +77,17 @@ class RecapBuilder(first: ListenTogetherState.InRoom, private val startedAt: Lon
     }
 
     /** The song that was playing is over: what the room made of it goes into the lists. */
-    private fun closeSong() {
+    private fun closeSong(now: Long) {
         val s = song ?: return
+        // A song that was the room's for only a moment didn't play: the queue's restored song at its last second when
+        // a host goes live, or one skipped as it started. It isn't counted, and nothing about it is listed.
+        if (now - songSince < MIN_SONG_MS) {
+            songReactions = 0
+            songSaves = 0
+            songFavourite = false
+            return
+        }
+        songs++
         val line = RecapSong(s.title, s.artist, songReactions, songSaves)
         if (s.addedBy == myId && !wasHost) myPicks += line
         if (wasHost && s.addedBy != null && s.addedBy != myId) requestsPlayed++
@@ -94,7 +104,7 @@ class RecapBuilder(first: ListenTogetherState.InRoom, private val startedAt: Lon
      * for any session that played a song. Null otherwise: a look-in isn't worth a recap.
      */
     fun finish(now: Long, ended: Boolean, stationName: String? = null): SessionRecap? {
-        closeSong()
+        closeSong(now)
         song = null
         onAirSince?.let { listenedMs += now - it }
         onAirSince = null
@@ -124,5 +134,8 @@ class RecapBuilder(first: ListenTogetherState.InRoom, private val startedAt: Lon
     companion object {
         /** A listener who left before the end gets a recap after this long (the spec's 10 minutes). */
         const val MIN_STAY_MS = 10 * 60_000L
+
+        /** A song counts as played once it was the room's song this long. */
+        const val MIN_SONG_MS = 15_000L
     }
 }

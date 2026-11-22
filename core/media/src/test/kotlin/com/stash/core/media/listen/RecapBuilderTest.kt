@@ -89,6 +89,25 @@ class RecapBuilderTest {
         assertThat(recap.favourites.map { it.title }).containsExactly("Ivy")
     }
 
+    @Test fun `a song that was the room's for only a moment isn't counted or listed`() {
+        // A host goes live on the queue's restored song at its last second; it ends at once and the session's song loads.
+        val hosts = creep.copy(addedBy = "me")
+        val b = RecapBuilder(room(track = bens, host = true, stats = SongStats(1, saves = 2, favourite = true)), startedAt = 0)
+        b.on(room(track = hosts, host = true), 4_000)
+        b.on(room(track = hosts, host = true, stats = SongStats(2, saves = 1)), 3 * min)
+        val recap = b.finish(4 * min, ended = true)!!
+        assertThat(recap.songs).isEqualTo(1)
+        assertThat(recap.requestsPlayed).isEqualTo(0)
+        assertThat(recap.favourites).isEmpty()
+        assertThat(recap.mostSaved?.title).isEqualTo("Creep")
+    }
+
+    @Test fun `a session of nothing but moments has no recap`() {
+        val b = RecapBuilder(room(), startedAt = 0)
+        b.on(room(track = mine), 5_000)
+        assertThat(b.finish(9_000, ended = true)).isNull()
+    }
+
     @Test fun `a listener who left early gets none, one who stayed 10 minutes or to the end does`() {
         assertThat(RecapBuilder(room(), 0).finish(9 * min, ended = false)).isNull()
         assertThat(RecapBuilder(room(), 0).finish(10 * min, ended = false)).isNotNull()
