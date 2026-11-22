@@ -365,7 +365,15 @@ internal fun MemberActionsRow(member: RoomMember, actions: MemberActions, viewMo
 
 /** The room's line for the host and co-hosts: how many requests wait. Tapping opens them. */
 @Composable
-internal fun RequestsLine(room: ListenTogetherState.InRoom, ink: androidx.compose.ui.graphics.Color, muted: androidx.compose.ui.graphics.Color, onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun RequestsLine(
+    room: ListenTogetherState.InRoom,
+    ink: androidx.compose.ui.graphics.Color,
+    muted: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    /** The crowd's reactions and phrases in the last minute; said at the end of the line while there are any. */
+    energy: Int = 0,
+) {
     val waiting = room.requests.size
     Row(
         modifier
@@ -396,5 +404,13 @@ internal fun RequestsLine(room: ListenTogetherState.InRoom, ink: androidx.compos
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
+        if (energy > 0) {
+            Text(
+                pluralStringResource(R.plurals.dj_energy, energy, energy),
+                style = MaterialTheme.typography.labelMedium,
+                color = muted,
+                maxLines = 1,
+            )
+        }
     }
 }

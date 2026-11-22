@@ -91,11 +91,13 @@ class SessionLifeTest {
     private val said = MutableSharedFlow<ServerMessage.Said>(extraBufferCapacity = 8)
     private val events = MutableSharedFlow<SessionEvent>(extraBufferCapacity = 8)
     private val deckOuts = MutableSharedFlow<ServerMessage.DeckOut>(extraBufferCapacity = 8)
+    private val reactions = MutableSharedFlow<ServerMessage.Reaction>(extraBufferCapacity = 8)
     private val controller: ListenTogetherController = mockk(relaxed = true) {
         every { state } returns this@SessionLifeTest.state
         every { said } returns this@SessionLifeTest.said
         every { events } returns this@SessionLifeTest.events
         every { deckOuts } returns this@SessionLifeTest.deckOuts
+        every { reactions } returns this@SessionLifeTest.reactions
     }
 
     private fun room(
@@ -170,6 +172,34 @@ class SessionLifeTest {
         assertThat(recapDuration(42 * 60_000L)).isEqualTo(0 to 42)
         assertThat(recapDuration(102 * 60_000L + 30_000)).isEqualTo(1 to 42)
         assertThat(recapDuration(-5)).isEqualTo(0 to 0)
+    }
+
+    @Test fun `the crowd's energy is the others' reactions and phrases in the last minute`() = runTest(dispatcher) {
+        state.value = room(host = true)
+        val vm = SessionLifeViewModel(controller).also { it.clock = { testScheduler.currentTime } }; runCurrent()
+        assertThat(vm.energy.value).isEqualTo(0)
+        reactions.tryEmit(ServerMessage.Reaction("b", "🔥")); runCurrent()
+        reactions.tryEmit(ServerMessage.Reaction("me", "🔥")); runCurrent() // this phone's own isn't the crowd's
+        advanceTimeBy(20_000); runCurrent()
+        said.tryEmit(ServerMessage.Said("b", "tune")); runCurrent()
+        reactions.tryEmit(ServerMessage.Reaction("x", "a:fire")); runCurrent()
+        assertThat(vm.energy.value).isEqualTo(3)
+        advanceTimeBy(40_000); runCurrent() // the first is a minute old
+        assertThat(vm.energy.value).isEqualTo(2)
+        advanceTimeBy(20_000); runCurrent()
+        assertThat(vm.energy.value).isEqualTo(0)
+    }
+
+    @Test fun `the energy starts again with a new session, and a private room has none`() = runTest(dispatcher) {
+        state.value = room(host = true)
+        val vm = SessionLifeViewModel(controller).also { it.clock = { testScheduler.currentTime } }; runCurrent()
+        reactions.tryEmit(ServerMessage.Reaction("b", "🔥")); runCurrent()
+        assertThat(vm.energy.value).isEqualTo(1)
+        state.value = room(code = "SECOND02", host = true); runCurrent()
+        assertThat(vm.energy.value).isEqualTo(0)
+        state.value = room(session = null); runCurrent()
+        reactions.tryEmit(ServerMessage.Reaction("b", "🔥")); runCurrent()
+        assertThat(vm.energy.value).isEqualTo(0)
     }
 
     @Test fun `a new session starts with an empty feed`() = runTest(dispatcher) {

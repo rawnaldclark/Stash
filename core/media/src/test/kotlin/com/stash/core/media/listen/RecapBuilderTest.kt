@@ -108,6 +108,13 @@ class RecapBuilderTest {
         assertThat(recap.requestsPlayed).isEqualTo(1)
     }
 
+    @Test fun `a co-host's own song isn't a request`() {
+        val withCohost = SessionInfo("St4tion1", listeners = 2, cohosts = listOf("b"))
+        val b = RecapBuilder(room(track = bens, host = true, session = withCohost), startedAt = 0)
+        b.on(room(track = SharedTrack("Nikes", "Frank Ocean", addedBy = "x"), host = true, session = withCohost), 3 * min)
+        assertThat(b.finish(6 * min, ended = true)!!.requestsPlayed).isEqualTo(1) // x's, not the co-host's
+    }
+
     @Test fun `a song that was the room's for only a moment isn't counted or listed`() {
         // A host goes live on the queue's restored song at its last second; it ends at once and the session's song loads.
         val hosts = creep.copy(addedBy = "me")

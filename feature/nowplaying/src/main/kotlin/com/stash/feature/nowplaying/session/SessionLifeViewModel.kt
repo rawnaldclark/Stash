@@ -8,6 +8,7 @@ import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.media.listen.SessionEvent
 import com.stash.core.model.listen.RoomProtocol
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +37,18 @@ class SessionLifeViewModel @Inject constructor(
     /** True for a listener's first [GREET_MS] in a session: "Hi all" is lit in the tray. */
     val greet: StateFlow<Boolean> = _greet.asStateFlow()
 
+    private val _energy = MutableStateFlow(0)
+
+    /**
+     * The crowd's energy (UX spec §8): how many reactions and phrases the others sent in the last [ENERGY_MS],
+     * counted on this phone. The booth shows it, so the host can feel the room at a glance.
+     */
+    val energy: StateFlow<Int> = _energy.asStateFlow()
+
+    /** When each counted reaction or phrase arrived, oldest first. */
+    private val energyAt = ArrayDeque<Long>()
+    private var energyTick: Job? = null
+
     /** Test seam for the clock. */
     internal var clock: () -> Long = { System.currentTimeMillis() }
 
@@ -51,6 +64,8 @@ class SessionLifeViewModel @Inject constructor(
                 .distinctUntilChanged()
                 .collectLatest { entered ->
                     _feed.value = Feed()
+                    energyAt.clear()
+                    countEnergy()
                     favouriteSaid = -1
                     lastSongSaid = false
                     _greet.value = entered != null && !entered.second
@@ -63,8 +78,15 @@ class SessionLifeViewModel @Inject constructor(
         viewModelScope.launch {
             controller.said.collect { said ->
                 val room = session() ?: return@collect
+                if (said.from != room.myId) energised()
                 if (said.phrase !in RoomProtocol.PHRASES) return@collect // a newer app's: nothing to show
                 add(FeedLine.Said(nameOf(room, said.from), said.phrase))
+            }
+        }
+        viewModelScope.launch {
+            controller.reactions.collect { reaction ->
+                val room = session() ?: return@collect
+                if (reaction.from != room.myId) energised()
             }
         }
         viewModelScope.launch {
@@ -100,6 +122,25 @@ class SessionLifeViewModel @Inject constructor(
         }
     }
 
+    /** One more reaction or phrase from the crowd. */
+    private fun energised() {
+        energyAt.addLast(clock())
+        countEnergy()
+    }
+
+    /** Drops what's older than [ENERGY_MS], and comes back when the oldest left is. */
+    private fun countEnergy() {
+        val now = clock()
+        while (energyAt.isNotEmpty() && now - energyAt.first() >= ENERGY_MS) energyAt.removeFirst()
+        _energy.value = energyAt.size
+        energyTick?.cancel()
+        val oldest = energyAt.firstOrNull() ?: return
+        energyTick = viewModelScope.launch {
+            delay(oldest + ENERGY_MS - now)
+            countEnergy()
+        }
+    }
+
     private fun session(): ListenTogetherState.InRoom? =
         (controller.state.value as? ListenTogetherState.InRoom)?.takeIf { it.session != null }
 
@@ -119,5 +160,8 @@ class SessionLifeViewModel @Inject constructor(
 
     private companion object {
         const val GREET_MS = 10_000L
+
+        /** How far back the crowd's energy counts. */
+        const val ENERGY_MS = 60_000L
     }
 }
