@@ -132,6 +132,12 @@ class OutputSession(
      * no reading. Per player for the reason [trackGainDb] is: a crossfade plays two songs at once.
      */
     @Volatile var tuningCents: Float = 0f
+
+    /**
+     * True while this player's song has no stored reading and is being measured as it plays
+     * ([com.stash.core.media.tuning.LiveTuning]): its audio goes to the song monitor.
+     */
+    @Volatile var tuningLive: Boolean = false
 }
 
 /**
