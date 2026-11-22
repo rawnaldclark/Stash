@@ -31,7 +31,8 @@ class JoinSessionViewModel @Inject constructor(
 ) : ViewModel() {
     sealed interface UiState {
         data object Loading : UiState
-        data class Ready(val hostName: String?, val memberCount: Int, val track: SharedTrack?) : UiState
+        /** [station]: the room is that station's session (Sessions), which Join tunes in to. */
+        data class Ready(val hostName: String?, val memberCount: Int, val track: SharedTrack?, val station: String? = null) : UiState
         data object Full : UiState
         data object Ended : UiState
         data object RateLimited : UiState
@@ -70,7 +71,7 @@ class JoinSessionViewModel @Inject constructor(
         _state.value = UiState.Loading
         viewModelScope.launch {
             _state.value = when (val r = api.preview(code)) {
-                is ShareResult.Ok -> if (r.value.full) UiState.Full else UiState.Ready(r.value.hostName, r.value.memberCount, r.value.track)
+                is ShareResult.Ok -> if (r.value.full) UiState.Full else UiState.Ready(r.value.hostName, r.value.memberCount, r.value.track, r.value.station)
                 ShareResult.NotFound, ShareResult.Gone -> UiState.Ended
                 is ShareResult.Failed -> if (r.message == ShareResult.Failed.RATE_LIMITED) UiState.RateLimited else UiState.Failed
                 else -> UiState.Failed
@@ -87,7 +88,15 @@ class JoinSessionViewModel @Inject constructor(
         joining = true
         viewModelScope.launch {
             sharePreference.setDisplayName(name)
-            controller.send(ListenTogetherController.Command.Join(code))
+            // A station's session lets in a listener by their Community key, not as a private room's guest. This
+            // screen has just shown who sees their name, so the first tune-in's line doesn't ask again.
+            val station = (_state.value as? UiState.Ready)?.station
+            if (station != null) {
+                sharePreference.setTuneInNameSeen()
+                controller.send(ListenTogetherController.Command.TuneIn(code, station))
+            } else {
+                controller.send(ListenTogetherController.Command.Join(code))
+            }
             // Stay here, the button showing progress, until the room lets us in. A join that fails ends
             // in Idle after Connecting (an Idle before that is just the old room closing): check the room
             // again so this screen says why (ended, full) instead of opening an empty Now Playing.

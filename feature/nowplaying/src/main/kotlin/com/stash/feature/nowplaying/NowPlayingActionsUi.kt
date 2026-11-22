@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.outlined.PushPin
@@ -99,6 +100,10 @@ internal data class ActionVisualState(
     val tuningHz: Float = 440f,
     /** Tuning on the speed action ("A432", localized), or null at 440. */
     val tuningMark: String? = null,
+    /** Go live's words right now, from strings.xml: "Go live", "Going live…", "On the air · 12". */
+    val goLiveLabel: String = "",
+    /** This phone's station is on the air. */
+    val onAir: Boolean = false,
     val isDownloaded: Boolean = false,
     /** The speaker being connected to, while connecting. */
     val castConnectingTo: String? = null,
@@ -155,6 +160,7 @@ internal fun actionVisual(action: NowPlayingAction, s: ActionVisualState, pinned
         },
         active = s.together is ListenTogetherState.InRoom,
     )
+    NowPlayingAction.GO_LIVE -> ActionVisual(Icons.Default.Sensors, s.goLiveLabel, active = s.onAir)
     NowPlayingAction.SAVE_TO_PLAYLIST -> ActionVisual(Icons.Default.BookmarkBorder, "Save to Playlist")
     NowPlayingAction.SHARE -> ActionVisual(Icons.Default.Share, "Share song")
     NowPlayingAction.POST_TO_COMMUNITY -> ActionVisual(Icons.Default.Public, "Post to Community")
@@ -188,6 +194,7 @@ internal fun editorLabel(action: NowPlayingAction): String = when (action) {
     NowPlayingAction.LYRICS -> "Lyrics"
     NowPlayingAction.QUEUE -> "Queue"
     NowPlayingAction.LISTEN_TOGETHER -> "Listen together"
+    NowPlayingAction.GO_LIVE -> "Go live"
     NowPlayingAction.SAVE_TO_PLAYLIST -> "Save to Playlist"
     NowPlayingAction.SHARE -> "Share song"
     NowPlayingAction.POST_TO_COMMUNITY -> "Post to Community"

@@ -11,8 +11,14 @@ import com.stash.core.data.prefs.NowPlayingAction
 
 /** What the screen knows that decides whether an action can show at all right now. */
 internal data class ActionContext(
-    /** In a Listen Together room: the room owns the queue and the pace. */
+    /** In a Listen Together room or a station's session: the room owns the queue and the pace. */
     val inRoom: Boolean = false,
+    /** That room is a station's session (Sessions), as its host or a listener. */
+    val inSession: Boolean = false,
+    /** This phone is on the air: it hosts that session. */
+    val hostingSession: Boolean = false,
+    /** Going live is offered: Community is on and the Worker says Sessions is. */
+    val sessionsOn: Boolean = false,
     /** Playing on a Cast speaker: the speaker decodes, so speed is no longer the phone's. */
     val casting: Boolean = false,
     /** Community is on (LocalPostToCommunity is provided). */
@@ -44,6 +50,7 @@ internal data class ActionContext(
 /** What an All Songs file can't do: each needs a library row, an online identity, or both. */
 internal val SCANNED_HIDDEN: Set<NowPlayingAction> = setOf(
     NowPlayingAction.LISTEN_TOGETHER,
+    NowPlayingAction.GO_LIVE,
     NowPlayingAction.SAVE_TO_PLAYLIST,
     NowPlayingAction.SHARE,
     NowPlayingAction.POST_TO_COMMUNITY,
@@ -61,7 +68,9 @@ internal val CLOUD_HIDDEN: Set<NowPlayingAction> = setOf(NowPlayingAction.FLAG_W
  * Whether [action] can show right now, pinned or not. These are the rules the row and the
  * menu had before pins: no Radio, Queue or Speed in a room; no Speed while casting; Post to
  * Community only while Community is on; Cast exactly where its automatic button showed (a
- * phone that can Cast, outside a Listen Together room: the two exclude each other).
+ * phone that can Cast, outside a Listen Together room: the two exclude each other). Go live only
+ * while Sessions is on, and from outside a room or on the air (there it reads "On the air"); a
+ * session has its own room, so Listen together's sheet isn't offered in one.
  */
 internal fun isActionAvailable(action: NowPlayingAction, ctx: ActionContext): Boolean = when {
     ctx.isPreview && action == NowPlayingAction.DOWNLOAD -> false
@@ -76,6 +85,8 @@ private fun isActionAvailableForAnySong(action: NowPlayingAction, ctx: ActionCon
     NowPlayingAction.RADIO, NowPlayingAction.QUEUE -> !ctx.inRoom
     NowPlayingAction.PLAYBACK_SPEED -> !ctx.inRoom && !ctx.casting
     NowPlayingAction.POST_TO_COMMUNITY -> ctx.communityAvailable
+    NowPlayingAction.LISTEN_TOGETHER -> !ctx.inSession
+    NowPlayingAction.GO_LIVE -> ctx.sessionsOn && (!ctx.inRoom || ctx.hostingSession)
     NowPlayingAction.STREAM_QUALITY -> ctx.streams && !ctx.onBrowser
     else -> true
 }
@@ -179,6 +190,7 @@ internal fun editableActions(pins: Set<NowPlayingAction>, ctx: ActionContext): L
     NowPlayingAction.entries.filter {
         it in pins || when (it) {
             NowPlayingAction.POST_TO_COMMUNITY -> ctx.communityAvailable
+            NowPlayingAction.GO_LIVE -> ctx.sessionsOn
             NowPlayingAction.CAST -> ctx.castSupported || ctx.hasBrowser
             else -> true
         }

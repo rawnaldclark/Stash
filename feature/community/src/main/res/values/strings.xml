@@ -57,15 +57,7 @@
     <!-- A short tag on your own post in a list -->
     <string name="community_you">YOU</string>
 
-    <!-- The vote pill -->
-    <string name="community_vote_up">Vote up</string>
-    <string name="community_vote_down">Vote down</string>
-    <plurals name="community_votes">
-        <item quantity="one">%d vote</item>
-        <item quantity="other">%d votes</item>
-    </plurals>
-    <!-- TalkBack only, after a dimmed vote arrow's name ("Vote up, Listen first"): you can vote on a post once you've played it for 30 seconds -->
-    <string name="community_listen_first">Listen first</string>
+    <!-- The vote pill's own words are in core/ui (vote_up, vote_down, votes, vote_listen_first). -->
     <!-- Shown when a dimmed vote arrow is tapped -->
     <string name="community_listen_first_note">Play it for 30 seconds to vote.</string>
     <!-- A vote that couldn't go: the post's listen hasn't reached Community yet (offline, busy). Nothing was lost. -->
@@ -112,4 +104,119 @@
     <string name="community_length_minutes">%d min</string>
     <string name="community_length_hours">%d h</string>
     <string name="community_length_hours_minutes">%1$d h %2$d min</string>
+
+    <!-- Sessions: live listening others join. A "station" is one person's radio; its "session" is one time on the air.
+         These show only while the server has Sessions turned on. -->
+    <!-- Home, over the round cards of the stations you follow. Shown in capitals. -->
+    <string name="sessions_your_stations">Your stations</string>
+    <!-- Home and the Sessions screen, over the stations on the air right now. Shown in capitals. -->
+    <string name="sessions_live_now">Live now</string>
+    <!-- After "Live now": how many stations are on the air -->
+    <plurals name="sessions_live_count">
+        <item quantity="one">%d station</item>
+        <item quantity="other">%d stations</item>
+    </plurals>
+    <!-- Home, beside "Live now": opens the Sessions screen, the list of every station on the air -->
+    <string name="sessions_all">All sessions</string>
+    <!-- Home, under "Live now" when no station is on the air -->
+    <string name="sessions_nobody_live">Nobody\'s live right now</string>
+    <!-- Home, over Community's posts when the Sessions rows are above them. Shown in capitals. -->
+    <string name="sessions_posts_label">Top this week</string>
+    <string name="sessions_posts_label_all">Top posts</string>
+    <!-- A small badge on the cover of a song a station is playing right now -->
+    <string name="sessions_live">LIVE</string>
+    <!-- Under a followed station's round card while it's on the air: LIVE and how many are listening. %d: listeners -->
+    <string name="sessions_live_listeners">LIVE · %d</string>
+    <!-- Under a followed station's round card when it isn't on the air and has no set hours -->
+    <string name="sessions_off_air">Off air</string>
+    <!-- On a Live now card: how many people are listening to the station, the host not counted -->
+    <plurals name="sessions_listening">
+        <item quantity="one">%d listening</item>
+        <item quantity="other">%d listening</item>
+    </plurals>
+    <!-- On a Live now card when nobody has tuned in yet -->
+    <string name="sessions_just_host">Just the host</string>
+    <!-- On a Live now card whose session has 50 listeners: nobody else can tune in -->
+    <string name="sessions_full">Full</string>
+    <!-- A small mark on the card of a station you follow -->
+    <string name="sessions_following">Following</string>
+    <!-- A station's one line about what it plays, shown in quotation marks. %1$s: the line -->
+    <string name="sessions_vibe">“%1$s”</string>
+    <!-- A station's score: up votes minus down votes. %d: the score -->
+    <string name="sessions_score">▲ %d</string>
+    <!-- TalkBack: what tapping a station on the air does -->
+    <string name="sessions_tune_in">Tune in</string>
+    <!-- TalkBack: what tapping a followed station that isn't on the air does -->
+    <string name="sessions_open_station">Open station</string>
+    <!-- The Sessions screen: every station on the air right now -->
+    <string name="sessions_title">Sessions</string>
+    <!-- A button: start playing your station for others to tune in to -->
+    <string name="sessions_go_live">Go live</string>
+    <!-- The same button while your station is on the air: opens your session -->
+    <string name="sessions_on_air">On the air</string>
+    <!-- TalkBack: the round button that opens your own station's page -->
+    <string name="sessions_your_station">Your station</string>
+    <!-- The Sessions screen, over the stations you follow that are on the air. Shown in capitals. -->
+    <string name="sessions_you_follow">Stations you follow</string>
+    <!-- The Sessions screen, over every other station on the air. Shown in capitals. -->
+    <string name="sessions_everyone">Everyone live</string>
+    <!-- The Sessions screen when the server has Sessions turned off -->
+    <string name="sessions_off_title">Sessions isn\'t available right now</string>
+    <string name="sessions_off_body">Check back later.</string>
+    <!-- The Sessions screen when no station is on the air, under "Nobody's live right now" -->
+    <string name="sessions_empty_body">Go live and be the first on the air.</string>
+    <!-- Your station: the page for your own station -->
+    <string name="station_none_title">You don\'t have a station yet</string>
+    <string name="station_none_body">Go live to start one. Anyone in Community can tune in.</string>
+    <plurals name="station_followers">
+        <item quantity="one">%d follower</item>
+        <item quantity="other">%d followers</item>
+    </plurals>
+    <!-- A station's votes. %1$d: up votes; %2$d: down votes -->
+    <string name="station_votes">▲ %1$d ▼ %2$d</string>
+    <string name="station_rename">Rename</string>
+    <string name="station_rename_title">Rename your station</string>
+    <string name="station_name_label">Station name</string>
+    <string name="station_share">Share</string>
+    <!-- The message sent when you share your station. %1$s: its name; %2$s: its link -->
+    <string name="station_share_text">Tune in to %1$s on Stash: %2$s</string>
+    <!-- The station's one line about what it plays, shown on its Live now card and in its room -->
+    <string name="station_vibe_label">What\'s playing tonight?</string>
+    <string name="station_vibe_title">What\'s playing tonight?</string>
+    <string name="station_vibe_empty">Add a line about what you play</string>
+    <string name="station_edit">Edit</string>
+    <string name="station_save">Save</string>
+    <string name="station_cancel">Cancel</string>
+    <!-- Under a text field: how many characters are typed, of how many allowed -->
+    <string name="station_count">%1$d / %2$d</string>
+    <string name="station_go_live_now">Go live now</string>
+    <!-- %1$s: a day, like "Sat 28 Nov". A station that isn\'t on the air for 7 days is deleted. -->
+    <string name="station_delete_note">Go live by %1$s or this station and its votes are deleted.</string>
+    <string name="station_delete">Delete station</string>
+    <string name="station_delete_title">Delete this station?</string>
+    <string name="station_delete_body">Its votes and followers go with it. This can\'t be undone.</string>
+    <string name="station_delete_body_live">Your session ends for everyone listening. The station\'s votes and followers go with it. This can\'t be undone.</string>
+    <string name="station_delete_confirm">Delete</string>
+    <!-- Your station was voted down far enough to be hidden from other people -->
+    <string name="station_hidden">Hidden by votes: only you see it.</string>
+    <!-- Your station was taken down by a moderator -->
+    <string name="station_removed">Taken down by a moderator. It will be deleted within a day.</string>
+    <!-- A station\'s page: where its link lands -->
+    <string name="station_title">Station</string>
+    <string name="station_unavailable">This station isn\'t available</string>
+    <string name="station_unavailable_body">It may have been deleted, or Sessions isn\'t available right now.</string>
+    <!-- %1$s: the name the host goes by -->
+    <string name="station_hosted_by">Hosted by %1$s</string>
+    <string name="station_off_air">Off the air</string>
+    <string name="station_off_air_body">Follow it to see it on Home when it\'s live.</string>
+    <!-- %1$s: a time, like "8:30 AM" or "Fri 9:00 PM" -->
+    <string name="station_next_on">Next on the air: %1$s</string>
+    <string name="station_follow">Follow</string>
+    <!-- Before your first tune-in ever. %1$s: the name other listeners will see for you -->
+    <string name="sessions_name_line">Everyone in a session sees your name: %1$s</string>
+    <string name="sessions_name_line_bare">Everyone in a session sees your name.</string>
+    <string name="sessions_name_change">Change</string>
+    <string name="sessions_name_field">Show my name as</string>
+    <!-- Shown when you tap another station while your own is on the air -->
+    <string name="sessions_end_yours_first">End your session first</string>
 </resources>

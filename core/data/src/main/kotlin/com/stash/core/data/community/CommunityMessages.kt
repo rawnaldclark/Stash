@@ -17,3 +17,25 @@ fun communityMessage(result: CommunityResult<*>): String = when (result) {
         else -> "Something went wrong. Try again."
     }
 }
+
+/**
+ * The sentence for a station action that didn't go through (Sessions: making, changing or deleting your station, a
+ * follow, a vote, going live). The Worker's codes are in infra/share-worker/README.md "Contract for the app".
+ */
+fun stationMessage(result: CommunityResult<*>): String = when (result) {
+    is CommunityResult.Ok -> ""
+    is CommunityResult.Failed -> "Couldn't reach Community. Try again."
+    is CommunityResult.Rejected -> when (result.code) {
+        "bad_request", "too_large" -> "That can't be used. Try something else."
+        "have_station" -> "You already have a station."
+        "gone" -> "This station is no longer available."
+        "not_yours" -> "That isn't your station."
+        "own_station" -> "That's your own station."
+        "too_many" -> "You follow 200 stations. Unfollow one to follow another."
+        "blocked" -> "You can't do that in Community."
+        "rate_limited" -> "Slow down a moment."
+        CommunityResult.SESSIONS_OFF -> "Sessions isn't available right now."
+        "off" -> "Community is turned off."
+        else -> "Something went wrong. Try again."
+    }
+}

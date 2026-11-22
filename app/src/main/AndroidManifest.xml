@@ -148,10 +148,12 @@
                 <data android:scheme="https" android:host="stashfm.app" android:path="/t" />
                 <data android:scheme="https" android:host="stashfm.app" android:pathPrefix="/t/" />
                 <data android:scheme="https" android:host="stashfm.app" android:pathPrefix="/l/" />
+                <data android:scheme="https" android:host="stashfm.app" android:pathPrefix="/s/" />
                 <data android:scheme="https" android:host="stash-share.rawnaldclark.workers.dev" android:pathPrefix="/m/" />
                 <data android:scheme="https" android:host="stash-share.rawnaldclark.workers.dev" android:path="/t" />
                 <data android:scheme="https" android:host="stash-share.rawnaldclark.workers.dev" android:pathPrefix="/t/" />
                 <data android:scheme="https" android:host="stash-share.rawnaldclark.workers.dev" android:pathPrefix="/l/" />
+                <data android:scheme="https" android:host="stash-share.rawnaldclark.workers.dev" android:pathPrefix="/s/" />
             </intent-filter>
             <!-- Static app shortcuts (e.g. "Resume playback"). Must live on
                  the launcher activity. -->

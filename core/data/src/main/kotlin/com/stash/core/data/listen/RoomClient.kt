@@ -2,6 +2,7 @@ package com.stash.core.data.listen
 
 import android.os.SystemClock
 import android.util.Log
+import com.stash.core.data.share.allowLocalShareWorker
 import com.stash.core.model.listen.ClientMessage
 import com.stash.core.model.listen.RoomProtocol
 import com.stash.core.model.share.ShareConfig
@@ -65,9 +66,10 @@ class OkHttpRoomConnector @Inject constructor(okHttpClient: OkHttpClient) : Room
 
     // A room socket can sit quiet for 30 s between pings, and the shared client's 30 s read
     // timeout would kill it. OkHttp's own ping keeps NAT mappings warm.
-    private val client = okHttpClient.newBuilder()
+    internal val client = okHttpClient.newBuilder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .pingInterval(20, TimeUnit.SECONDS)
+        .allowLocalShareWorker()
         .build()
 
     override fun connect(code: String, scope: CoroutineScope, hello: () -> ClientMessage.Hello): RoomConnection =

@@ -46,6 +46,17 @@ class JoinSessionViewModelTest {
         assertEquals(JoinSessionViewModel.UiState.Ready("Rawn", 3, SharedTrack("Xtal", "Aphex Twin")), vm().state.value)
     }
 
+    @Test fun `a code that is a station's session tunes in instead of joining`() {
+        coEvery { api.preview("K7QA2PXM") } returns
+            ShareResult.Ok(RoomApiClient.Preview("Maya", 12, false, SharedTrack("Xtal", "Aphex Twin"), station = "Ab3dEf9h", listeners = 11))
+        val vm = vm()
+        vm.join {}
+        io.mockk.verify(exactly = 1) { controller.send(ListenTogetherController.Command.TuneIn("K7QA2PXM", "Ab3dEf9h")) }
+        io.mockk.verify(exactly = 0) { controller.send(match { it is ListenTogetherController.Command.Join }) }
+        // This screen has shown who sees their name: the first tune-in's line doesn't ask again.
+        coVerify { sharePreference.setTuneInNameSeen() }
+    }
+
     @Test fun `full, ended and unreachable rooms each say so`() {
         coEvery { api.preview(any()) } returns ShareResult.Ok(RoomApiClient.Preview("Rawn", 10, true))
         assertEquals(JoinSessionViewModel.UiState.Full, vm().state.value)

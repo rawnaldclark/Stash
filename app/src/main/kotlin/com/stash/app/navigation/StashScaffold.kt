@@ -267,6 +267,12 @@ fun StashScaffold(
                 } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_LISTEN_PREFIX)) {
                     val code = pendingDeepLink.removePrefix(com.stash.app.MainActivity.DEEP_LINK_LISTEN_PREFIX)
                     navController.navigate(ListenJoinRoute(code))
+                } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_STATION_PREFIX)) {
+                    // A station's link: its page, which says so itself when Sessions isn't available.
+                    val id = pendingDeepLink.removePrefix(com.stash.app.MainActivity.DEEP_LINK_STATION_PREFIX)
+                    // In place of a station page already open: launchSingleTop would keep that page's own station
+                    // (its ViewModel read the id when it was made), and Tune in there would join the wrong one.
+                    navController.navigate(StationRoute(id)) { popUpTo<StationRoute> { inclusive = true } }
                 } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_MUSIC_LINK_PREFIX)) {
                     navController.navigate(LinkImportRoute(pendingDeepLink.removePrefix(com.stash.app.MainActivity.DEEP_LINK_MUSIC_LINK_PREFIX)))
                 } else if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_ADDON_LINK_PREFIX)) {
@@ -350,6 +356,11 @@ fun StashScaffold(
     ) {
     // "Save to Google Drive" in every song, album and playlist menu while Drive is connected.
     CloudSaveHost {
+    // Sessions: one Go live for the Sessions screen, Your station and Now Playing, with its first-time sheet over
+    // them all. On the air, the player opens on the session.
+    com.stash.feature.nowplaying.session.GoLiveHost(onOpened = { playerSheet.expand() }) {
+    // The sheet after leaving a session, and the room's lines, once for the app.
+    com.stash.feature.nowplaying.session.SessionLeaveHost()
     CompositionLocalProvider(
         LocalChromeHazeState provides hazeState,
         LocalPlayerSheet provides playerSheet,
@@ -583,6 +594,7 @@ fun StashScaffold(
     }
     }
     }
+    } // GoLiveHost
     }
     }
     }
