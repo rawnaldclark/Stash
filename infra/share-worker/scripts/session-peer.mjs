@@ -14,6 +14,8 @@
 //                                                                    With REQUEST=1 each also asks for a song 3 s in
 //                                                                    (the first two for the test songs, the rest for
 //                                                                    songs the host's phone may not have).
+//                                                                    With LIFE=1 they say phrases, send animated
+//                                                                    reactions and save songs.
 //   node scripts/session-peer.mjs private-host <origin>              a private Listen Together room (v2), guests add
 //   node scripts/session-peer.mjs private-guest <origin> <code>      joins a private room (v2): Play next and a reaction
 //
@@ -30,6 +32,7 @@ const SONGS = [
 ];
 const NAMES = ["Maya", "Sam", "Jo", "Ana", "Lee", "Ben", "Kai", "Rin", "Tess", "Noor"];
 const EMOJI = ["❤️", "🔥", "😂", "😮", "👏", "🎶"];
+const ANIMS = ["a:applause", "a:fire", "a:hearts", "a:dancing", "a:mindblown", "a:lighter", "a:headphones", "a:rewind", "a:laughing", "a:bassdrop", "a:wave", "a:clap"];
 const KEY_HEADER = "X-Stash-Community-Key";
 const wsOrigin = origin.replace(/^http/, "ws");
 const t0 = Date.now();
@@ -138,6 +141,19 @@ if (mode === "host") {
         setInterval(() => { try { l.send({ t: "react", emoji: EMOJI[e++ % EMOJI.length] }); } catch { /* closed */ } }, 10_000);
         l.onFrame = (m) => {
             if (m.t === "ended") { log(`listener${i + 1} ended: ${m.reason}`); if (n === 1) process.exit(0); }
+            // LIFE=1: each listener says a phrase 4 s in and every 12 s after (the first three all say "tune", so the
+            // feed folds them), sends an animated reaction every 7 s, and saves each song once it starts.
+            if (m.t === "welcome" && process.env.LIFE) {
+                const phrases = ["tune", "tune", "tune", "chills", "who", "thanks", "again", "more", "hi", "louder"];
+                let k = 0;
+                setTimeout(() => l.send({ t: "say", phrase: phrases[i % phrases.length] }), 4_000);
+                setInterval(() => { try { l.send({ t: "say", phrase: phrases[(i + ++k) % phrases.length] }); } catch { /* closed */ } }, 12_000 + i * 700);
+                setInterval(() => { try { l.send({ t: "react", emoji: ANIMS[(i + k) % ANIMS.length] }); } catch { /* closed */ } }, 7_000 + i * 300);
+            }
+            if (process.env.LIFE && (m.t === "prepare" || (m.t === "welcome" && m.state.trackKey))) {
+                const key = m.t === "prepare" ? m.trackKey : m.state.trackKey;
+                if (i % 2 === 0) setTimeout(() => { try { l.send({ t: "saved", trackKey: key }); } catch { /* closed */ } }, 6_000 + i * 400);
+            }
             if (m.t === "welcome" && process.env.REQUEST) {
                 const track = SONGS[i] ?? { t: `Request ${i + 1}`, a: NAMES[i] ?? "Listener", d: 200_000 };
                 setTimeout(() => l.send({ t: "request", track }), 3_000 + i * 500);

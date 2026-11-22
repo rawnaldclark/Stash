@@ -18,6 +18,7 @@ import com.stash.core.model.listen.RoomState
 import com.stash.core.model.listen.RoomTimeline
 import com.stash.core.model.listen.ServerMessage
 import com.stash.core.model.listen.SessionInfo
+import com.stash.core.model.listen.SongStats
 import com.stash.core.model.share.SharedTrack
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -863,6 +864,79 @@ class StationSessionTest {
         connection.incoming.trySend(RoomEvent.Connected); runCurrent()
         receive(ServerMessage.Welcome("me", "tok", state(host = "me", track = null, key = 0)))
         assertThat(sent<ClientMessage.Presence>()).containsExactly(ClientMessage.Presence("away"))
+    }
+
+    // ── The room's life: phrases, animated reactions, a song's counts (step 4) ─────────────────────────────────
+
+    @Test fun `a phrase goes to the room by its id, and only one of the ten`() = runTest {
+        listening()
+        controller.send(Command.Say("tune")); runCurrent()
+        controller.send(Command.Say("Tune!")); runCurrent()
+        controller.send(Command.Say("anything typed")); runCurrent()
+        assertThat(sent<ClientMessage.Say>()).containsExactly(ClientMessage.Say("tune"))
+    }
+
+    @Test fun `a private room says nothing`() = runTest {
+        session()
+        controller.send(Command.Join("K7QA2PXM")); runCurrent()
+        connection.incoming.trySend(RoomEvent.Connected); runCurrent()
+        receive(ServerMessage.Welcome("me", "tok", state(session = null)))
+        controller.send(Command.Say("tune")); runCurrent()
+        controller.send(Command.SavedSong); runCurrent()
+        assertThat(sent<ClientMessage.Say>()).isEmpty()
+        assertThat(sent<ClientMessage.Saved>()).isEmpty()
+    }
+
+    @Test fun `phrases said in the room reach the feed`() = runTest {
+        listening()
+        val heard = mutableListOf<ServerMessage.Said>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { controller.said.collect { heard += it } }
+        receive(ServerMessage.Said("h", "thanks"))
+        receive(ServerMessage.Said("x", "a phrase from a newer app"))
+        assertThat(heard).containsExactly(ServerMessage.Said("h", "thanks"), ServerMessage.Said("x", "a phrase from a newer app")).inOrder()
+    }
+
+    @Test fun `an animated reaction is sent as its id`() = runTest {
+        listening()
+        controller.send(Command.React("a:fire")); runCurrent()
+        assertThat(sent<ClientMessage.React>()).containsExactly(ClientMessage.React("a:fire"))
+    }
+
+    @Test fun `a save is told to the room once a song`() = runTest {
+        listening(state(key = 4))
+        controller.send(Command.SavedSong); runCurrent()
+        controller.send(Command.SavedSong); runCurrent() // the heart tapped off and on again
+        assertThat(sent<ClientMessage.Saved>()).containsExactly(ClientMessage.Saved(4))
+        receive(ServerMessage.StateSync(state(key = 5, track = next)))
+        controller.send(Command.SavedSong); runCurrent()
+        assertThat(sent<ClientMessage.Saved>()).containsExactly(ClientMessage.Saved(4), ClientMessage.Saved(5)).inOrder()
+    }
+
+    @Test fun `a save while the socket is down isn't counted as told`() = runTest {
+        listening(state(key = 4))
+        connection.up = false
+        controller.send(Command.SavedSong); runCurrent()
+        connection.up = true
+        controller.send(Command.SavedSong); runCurrent()
+        assertThat(sent<ClientMessage.Saved>()).containsExactly(ClientMessage.Saved(4))
+    }
+
+    @Test fun `the song's counts reach the room's state, for the song that's playing only`() = runTest {
+        listening(state(key = 4))
+        fun stats() = (controller.state.value as ListenTogetherState.InRoom).songStats
+        assertThat(stats()).isNull()
+        receive(ServerMessage.Stats(trackKey = 4, reactions = 3, saves = 1, favourite = true))
+        assertThat(stats()).isEqualTo(SongStats(4, reactions = 3, saves = 1, favourite = true))
+        receive(ServerMessage.Stats(trackKey = 3, reactions = 9)) // a late one for the song before
+        assertThat(stats()).isNull()
+        receive(ServerMessage.Stats(trackKey = 4, reactions = 4, saves = 1, favourite = true))
+        receive(ServerMessage.StateSync(state(key = 5, track = next)))
+        assertThat(stats()).isNull() // the next song starts from nothing
+    }
+
+    @Test fun `someone tuning in mid-song starts with its counts`() = runTest {
+        listening(state(key = 4).copy(songStats = SongStats(4, reactions = 6, saves = 2, favourite = true)))
+        assertThat((controller.state.value as ListenTogetherState.InRoom).songStats).isEqualTo(SongStats(4, 6, 2, true))
     }
 
     companion object {

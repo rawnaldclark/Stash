@@ -126,7 +126,11 @@ internal fun SessionRoom(
     modifier: Modifier = Modifier,
     viewModel: SessionRoomViewModel = hiltViewModel(),
     dj: SessionDjViewModel = hiltViewModel(),
+    life: SessionLifeViewModel = hiltViewModel(),
 ) {
+    val feed by life.feed.collectAsStateWithLifecycle()
+    val greet by life.greet.collectAsStateWithLifecycle()
+    var showTray by remember { mutableStateOf(false) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showRequest by remember { mutableStateOf(false) }
     var showRequests by remember { mutableStateOf(false) }
@@ -255,6 +259,8 @@ internal fun SessionRoom(
                         .border(1.dp, ink.copy(alpha = 0.18f), CircleShape)
                         .clickable(role = Role.Button, onClickLabel = stringResource(if (liked) R.string.room_unsave else R.string.room_save)) {
                             haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            // A save is counted by the room ("9 saved this"), once a person; who saved is never shown.
+                            if (!liked) life.saved()
                             onLike()
                         },
                     contentAlignment = Alignment.Center,
@@ -271,6 +277,7 @@ internal fun SessionRoom(
         pickOf(room)?.let { pick ->
             PickChip(pick, Modifier.fillMaxWidth().padding(top = 8.dp))
         }
+        SongCrowdLine(room.songStats, accent = chrome.accent, muted = muted, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
 
         // ── Where the song is: a listener follows the room, the host can seek ─────
         GlowingProgressBar(
@@ -295,6 +302,9 @@ internal fun SessionRoom(
             onShowEveryone = { showEveryone = true },
             modifier = Modifier.padding(top = 10.dp),
         )
+
+        // ── The feed: who came in, what people say, crowd favourites ───────────────
+        FeedLines(feed, ink = muted, modifier = Modifier.padding(top = 6.dp, start = 4.dp))
 
         // ── Up next, on one line ──────────────────────────────────────────────────
         UpNextLine(room, ink = ink, muted = muted, onClick = { showUpNext = true }, modifier = Modifier.padding(top = 10.dp))
@@ -333,12 +343,13 @@ internal fun SessionRoom(
                         Icon(Icons.Rounded.SkipNext, contentDescription = stringResource(R.string.dj_skip), tint = ink)
                     }
                 }
-                ReactPill(ink = ink, onReact = onReact)
+                ReactPill(ink = ink, onClick = { showTray = true })
             }
         }
         Spacer(Modifier.height(12.dp))
     }
 
+    if (showTray) ReactTray(greet = greet, onReact = onReact, onSay = life::say, onDismiss = { showTray = false })
     if (showEveryone) EveryoneSheet(room, crowd, dj, onDismiss = { showEveryone = false })
     if (showRequest && !answersRequests(room)) RequestSheet(room, dj, onDismiss = { showRequest = false })
     if (showRequests && answersRequests(room)) RequestsSheet(room, dj, onDismiss = { showRequests = false })
@@ -460,34 +471,20 @@ private fun SongArt(track: SharedTrack?, modifier: Modifier = Modifier) {
 
 /** React: the six reactions, in a tray that stays open for quick repeat taps. */
 @Composable
-private fun ReactPill(ink: Color, onReact: (String) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    val haptics = LocalHapticFeedback.current
-    Box {
-        Row(
-            Modifier
-                .width(140.dp)
-                .height(52.dp)
-                .clip(CircleShape)
-                .border(1.dp, ink.copy(alpha = 0.18f), CircleShape)
-                .clickable(role = Role.Button) { open = true },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            Icon(Icons.Rounded.AddReaction, contentDescription = null, tint = ink, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.room_react), style = MaterialTheme.typography.titleMedium, color = ink)
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            Row(Modifier.padding(horizontal = 4.dp)) {
-                RoomProtocol.EMOJI.forEach { emoji ->
-                    TextButton(onClick = {
-                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                        onReact(emoji)
-                    }) { Text(emoji, fontSize = 22.sp) }
-                }
-            }
-        }
+private fun ReactPill(ink: Color, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .width(140.dp)
+            .height(52.dp)
+            .clip(CircleShape)
+            .border(1.dp, ink.copy(alpha = 0.18f), CircleShape)
+            .clickable(role = Role.Button, onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Icon(Icons.Rounded.AddReaction, contentDescription = null, tint = ink, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(stringResource(R.string.room_react), style = MaterialTheme.typography.titleMedium, color = ink)
     }
 }
 
