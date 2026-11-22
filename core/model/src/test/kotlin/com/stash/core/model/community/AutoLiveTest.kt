@@ -173,6 +173,25 @@ class AutoLiveTest {
         assertThat(auto.look(hosting, at(16, 17, 1))).isEqualTo(AutoLiveStep.Nothing)
     }
 
+    @Test fun `while the session it asked for is still opening, it keeps its window's end and asks for nothing more`() {
+        val auto = AutoLive()
+        val t = at(16, 16, 59)
+        assertThat(auto.look(facts(), t)).isInstanceOf(AutoLiveStep.GoLive::class.java)
+        assertThat(auto.look(facts(), t + 500)).isEqualTo(AutoLiveStep.Nothing) // not in the room yet
+        assertThat(auto.look(facts(room = AutoLiveRoom.ELSEWHERE), t + 1_000)).isEqualTo(AutoLiveStep.Nothing) // connecting
+        assertThat(auto.look(facts(room = AutoLiveRoom.HOSTING), t + 3_000)).isEqualTo(AutoLiveStep.Nothing)
+        assertThat(auto.look(facts(room = AutoLiveRoom.HOSTING), at(16, 17, 0))).isEqualTo(AutoLiveStep.EndAfterSong)
+    }
+
+    @Test fun `a session that never opened is forgotten after half a minute, and the next start of playback tries again`() {
+        val auto = AutoLive()
+        val t = at(16, 10)
+        assertThat(auto.look(facts(), t)).isInstanceOf(AutoLiveStep.GoLive::class.java)
+        assertThat(auto.look(facts(), t + 31_000)).isEqualTo(AutoLiveStep.Nothing) // it was refused: no retry while the music plays on
+        auto.look(facts(playing = false), t + 60_000)
+        assertThat(auto.look(facts(), t + 61_000)).isInstanceOf(AutoLiveStep.GoLive::class.java)
+    }
+
     @Test fun `a session the host opened by hand, or an Always one, is never ended for them`() {
         val byHand = AutoLive()
         assertThat(byHand.look(facts(room = AutoLiveRoom.HOSTING), at(16, 16, 59))).isEqualTo(AutoLiveStep.Nothing)

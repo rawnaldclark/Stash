@@ -135,6 +135,7 @@ class AutoLive {
 
     /** Auto-live opened the session this phone is hosting. */
     private var opened = false
+    private var openedAt = 0L
     private var endAsked = false
 
     fun look(facts: AutoLiveFacts, nowMs: Long): AutoLiveStep {
@@ -154,10 +155,17 @@ class AutoLive {
             }
             return AutoLiveStep.Nothing
         }
-        // Not hosting any more: whatever auto-live opened is over.
-        opened = false
-        until = null
-        endAsked = false
+        // Off the air again: whatever auto-live opened is over. Not while its session is still opening: the room
+        // takes a moment to exist, and passes through "connecting" on the way.
+        if (opened && facts.room == AutoLiveRoom.NONE && nowMs - openedAt >= OPENING_MS) {
+            opened = false
+            until = null
+            endAsked = false
+        }
+        if (opened) {
+            wasEligible = eligible
+            return AutoLiveStep.Nothing
+        }
 
         if (eligible && !wasEligible) pending = true
         if (!eligible) pending = false
@@ -169,7 +177,13 @@ class AutoLive {
         if (!clear) return AutoLiveStep.Nothing
         pending = false
         opened = true
+        openedAt = nowMs
         until = window?.end
         return AutoLiveStep.GoLive(station, until)
+    }
+
+    companion object {
+        /** How long a session auto-live asked for may take to open before it counts as not having opened. */
+        const val OPENING_MS = 30_000L
     }
 }

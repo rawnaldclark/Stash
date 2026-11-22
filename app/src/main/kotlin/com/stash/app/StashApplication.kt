@@ -220,6 +220,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var sessionRecapRecorder: com.stash.core.media.listen.SessionRecapRecorder
 
+    /** Sessions: puts this phone's station on the air by itself, by its schedule or always. */
+    @Inject
+    lateinit var sessionAutoLive: com.stash.core.media.listen.SessionAutoLive
+
     @Inject
     lateinit var handoffPublisher: com.stash.core.media.handoff.HandoffPublisher
 
@@ -407,6 +411,7 @@ class StashApplication : Application(), Configuration.Provider {
         // onCreate completes anyway.
         mirrorSignal.start()
         sessionRecapRecorder.start()
+        sessionAutoLive.start()
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
