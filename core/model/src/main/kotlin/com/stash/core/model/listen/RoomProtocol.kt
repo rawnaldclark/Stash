@@ -15,6 +15,22 @@ object RoomProtocol {
     val EMOJI: List<String> = listOf("❤️", "🔥", "😂", "😮", "👏", "🎶")
 
     /**
+     * A session's 12 animated reactions, sent in [ClientMessage.React] as their id, in the tray's order. Keep in sync
+     * with ANIMS in infra/share-worker/src/room.js. An id this app doesn't know is shown as nothing.
+     */
+    val ANIMS: List<String> = listOf(
+        "a:applause", "a:fire", "a:hearts", "a:dancing", "a:mindblown", "a:lighter",
+        "a:headphones", "a:rewind", "a:laughing", "a:bassdrop", "a:wave", "a:clap",
+    )
+
+    /**
+     * A session's 10 quick phrases, sent in [ClientMessage.Say] as ids: Hi all, Who is this?, Tune!, Run it back!,
+     * Turn it up, More like this, Chills, Thanks for the set, Good morning, Good night. Each app says them in its own
+     * language. Keep in sync with PHRASES in room.js.
+     */
+    val PHRASES: List<String> = listOf("hi", "who", "tune", "again", "louder", "more", "chills", "thanks", "morning", "night")
+
+    /**
      * What this app speaks, sent in [ClientMessage.Hello]: 3 = Sessions (a station's public room), which takes nothing
      * older; 2 was guests adding songs ([ADDS_VERSION]). A room answers with [RoomState.v]: a session 3, a private room
      * 2, an older Worker nothing (and the app suggests as before). Keep in sync with PUBLIC_V in room.js.
@@ -155,6 +171,14 @@ sealed interface ClientMessage {
     /** A co-host's Skip ([action] `skip`): the room passes it to the host's phone as [ServerMessage.Command]. */
     @Serializable @SerialName("command")
     data class Command(val action: String) : ClientMessage
+
+    /** A quick phrase, by id ([RoomProtocol.PHRASES]): everyone gets [ServerMessage.Said]. One every 3 s. */
+    @Serializable @SerialName("say")
+    data class Say(val phrase: String) : ClientMessage
+
+    /** This person saved the song with [trackKey] (the playing one): counted once each in [SongStats.saves]. */
+    @Serializable @SerialName("saved")
+    data class Saved(val trackKey: Int) : ClientMessage
 }
 
 /** Why a room ended ([ServerMessage.Ended.reason]), as room.js says it. */
@@ -202,6 +226,13 @@ data class SessionInfo(
         const val AWAY = "away"
     }
 }
+
+/**
+ * The playing song's crowd counts, in a session: how many people have reacted to it and saved it (never who), and
+ * whether it became a crowd favourite (3 people and a third of the room reacting while it played).
+ */
+@Serializable
+data class SongStats(val trackKey: Int, val reactions: Int = 0, val saves: Int = 0, val favourite: Boolean = false)
 
 /** A request waiting for the host: [from] asked for [track]. The host and co-hosts see them all, a listener their own. */
 @Serializable
@@ -252,6 +283,8 @@ data class RoomState(
     val qv: Int? = null,
     /** A session's own state ([v] 3); null in a private room. */
     val session: SessionInfo? = null,
+    /** The playing song's crowd counts, once anyone has reacted to it or saved it (a session only). */
+    val songStats: SongStats? = null,
 )
 
 /** Room → phone (spec §3). */
@@ -349,6 +382,14 @@ sealed interface ServerMessage {
     /** To its requester alone: member [by] passed on [track]. */
     @Serializable @SerialName("requestPassed")
     data class RequestPassed(val track: SharedTrack, val by: String) : ServerMessage
+
+    /** Member [from] said quick phrase [phrase] (an id of [RoomProtocol.PHRASES]; an unknown one is shown as nothing). */
+    @Serializable @SerialName("said")
+    data class Said(val from: String, val phrase: String) : ServerMessage
+
+    /** The playing song's counts after a change: [SongStats]'s fields, flat. At most once every 2 s. */
+    @Serializable @SerialName("songStats")
+    data class Stats(val trackKey: Int, val reactions: Int = 0, val saves: Int = 0, val favourite: Boolean = false) : ServerMessage
 
     /** Something this phone sent that the room turned down: [what] (`request`, `cohost`, `skip`, `boot`) and why. */
     @Serializable @SerialName("refused")

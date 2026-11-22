@@ -9,6 +9,7 @@ import com.stash.core.model.listen.RoomMember
 import com.stash.core.model.listen.RoomRequest
 import com.stash.core.model.listen.RoomSuggestion
 import com.stash.core.model.listen.ServerMessage
+import com.stash.core.model.listen.SongStats
 import com.stash.core.model.listen.SessionInfo
 import com.stash.core.model.share.SharedTrack
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -70,6 +71,8 @@ sealed interface ListenTogetherState {
         val requests: List<RoomRequest> = emptyList(),
         /** In a session, the room's song is playing on this phone now: what a listener's time toward a station's vote counts. */
         val onAir: Boolean = false,
+        /** In a session, the playing song's crowd counts: people who reacted and saved, and whether it's a crowd favourite. */
+        val songStats: SongStats? = null,
     ) : ListenTogetherState
 }
 
@@ -142,6 +145,12 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
          * listener's player takes no "next" (a co-host is a listener to the player), so a transport Skip never arrives.
          */
         data object Skip : Command
+
+        /** A quick phrase, by its id ([com.stash.core.model.listen.RoomProtocol.PHRASES]); a session only. */
+        data class Say(val phrase: String) : Command
+
+        /** This phone saved the session's playing song to Liked Songs: the room counts it, once a person. */
+        data object SavedSong : Command
 
         /** [inBooth] changed: a session's host tells the room. Sent by [setInBooth], never by a screen. */
         data object PresenceChanged : Command
@@ -222,6 +231,12 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
 
     internal fun publish(state: ListenTogetherState) { _state.value = state }
     internal fun reaction(reaction: ServerMessage.Reaction) { _reactions.tryEmit(reaction) }
+
+    private val _said = MutableSharedFlow<ServerMessage.Said>(extraBufferCapacity = 16)
+
+    /** Quick phrases as they're said in the session, for its feed. */
+    val said: SharedFlow<ServerMessage.Said> = _said.asSharedFlow()
+    internal fun said(said: ServerMessage.Said) { _said.tryEmit(said) }
     internal fun message(text: String) { _messages.tryEmit(text) }
     internal fun message(@StringRes id: Int, vararg args: Any) = message(text(id, *args))
     internal fun text(@StringRes id: Int, vararg args: Any): String = context.getString(id, *args)

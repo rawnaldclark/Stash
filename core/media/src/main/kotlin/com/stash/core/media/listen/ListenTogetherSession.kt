@@ -19,6 +19,7 @@ import com.stash.core.model.listen.RoomPhase
 import com.stash.core.model.listen.RoomProtocol
 import com.stash.core.model.listen.RoomRequest
 import com.stash.core.model.listen.SessionInfo
+import com.stash.core.model.listen.SongStats
 import com.stash.core.model.listen.RoomState
 import com.stash.core.model.listen.RoomTimeline
 import com.stash.core.model.listen.ServerMessage
@@ -221,6 +222,11 @@ class ListenTogetherSession(
             is Command.Boot -> if (role() == SessionRole.HOST) boot(command.memberId)
             Command.PresenceChanged -> sayPresence()
             Command.Skip -> if (role() == SessionRole.COHOST) send(ClientMessage.Command(SKIP))
+            is Command.Say -> if (stationId != null && command.phrase in RoomProtocol.PHRASES) send(ClientMessage.Say(command.phrase))
+            // Once a song here too: the room would drop a second, and a heart tapped on and off shouldn't keep asking.
+            Command.SavedSong -> room?.takeIf { stationId != null && it.track != null && it.trackKey != savedKey }?.let {
+                if (connection?.send(ClientMessage.Saved(it.trackKey)) == true) savedKey = it.trackKey
+            }
         }
     }
 
@@ -478,6 +484,11 @@ class ListenTogetherSession(
                 else controller.message(R.string.session_request_passed_unnamed, m.track.title)
             }
             is ServerMessage.Refused -> onRefused(m)
+            is ServerMessage.Said -> controller.said(m)
+            is ServerMessage.Stats -> {
+                songStats = SongStats(m.trackKey, m.reactions, m.saves, m.favourite)
+                publish()
+            }
             // A co-host's Skip, for the song it was pressed on: one that has changed since is left alone.
             is ServerMessage.Command -> if (isHost && m.action == SKIP && m.trackKey == loadedKey) {
                 hostChoseToMove()
@@ -496,6 +507,12 @@ class ListenTogetherSession(
         if (state == presenceSaid) return
         if (connection?.send(ClientMessage.Presence(state)) == true) presenceSaid = state
     }
+
+    /** The room's last counts for a song ([SongStats.trackKey] says which): shown only while that song is the room's. */
+    private var songStats: SongStats? = null
+
+    /** The song this phone told the room it saved ([Command.SavedSong]). */
+    private var savedKey = NONE
 
     /** Boots [memberId]. The room refuses a co-host, so they stop being one first. */
     private fun boot(memberId: String) {
@@ -568,6 +585,9 @@ class ListenTogetherSession(
     }
 
     private suspend fun applyState(s: RoomState) {
+        // The welcome's counts for the playing song (someone joining mid-song); a later state without any keeps what
+        // a `songStats` frame brought.
+        s.songStats?.let { songStats = it }
         val wasHost = isHost
         val oldHost = room?.host
         room = s
@@ -1443,6 +1463,7 @@ class ListenTogetherSession(
         code = null; url = null; myId = null; token = null; room = null; isHost = false; pendingLoad = null; loadsInFlight = 0
         welcomed = false; unplayableInARow = 0; skipNoticeKey = NONE; heldAdds.clear(); awaitingAdds.clear()
         requests = emptyList(); awaitingRequests.clear()
+        songStats = null; savedKey = NONE
         timeline = null; applied = null; loadedKey = NONE; itemKey = NONE; readyKey = NONE; unavailableKey = NONE; lastStatus = null
         roomPreparingKey = NONE; preparedAt = 0L; prepareLimitJob = null // the job died with sessionScope
         reconnecting = false; versionMismatch = false; history.clear(); radioTriedKey = NONE
@@ -1510,6 +1531,7 @@ class ListenTogetherSession(
                 role = role(),
                 requests = requests,
                 onAir = onAir(),
+                songStats = songStats?.takeIf { stationId != null && it.trackKey == r.trackKey },
             ),
         )
     }
