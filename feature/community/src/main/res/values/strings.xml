@@ -228,6 +228,10 @@
         <item quantity="one">%1$d song · %2$s</item>
         <item quantity="other">%1$d songs · %2$s</item>
     </plurals>
+    <!-- Sessions screen: stations that go live on their own soon -->
+    <string name="sessions_upcoming">Upcoming</string>
+    <!-- %1$s: the day and time, "Mon 9:00 AM" -->
+    <string name="sessions_upcoming_at">On at %1$s</string>
     <!-- Your station: going live on its own -->
     <string name="autolive_title">GO LIVE ON ITS OWN</string>
     <string name="autolive_off">Off</string>
