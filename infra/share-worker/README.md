@@ -186,6 +186,7 @@ The welcome's `state` has `v: 3`, `session` and `suggestions: []`. Then that mem
 | `cohost {memberId, on}` | host | at most 3: the 4th is `refused {what: "cohost", reason: "max_cohosts"}` |
 | `boot {memberId}` | host | they get `ended {reason: "booted"}`, their socket closes 4403, and their key stays out. A co-host first stops being one: `refused {what: "boot", reason: "cohost"}` |
 | `presence {state}` | host | `"booth"` or `"away"`, in `session` |
+| `lastSong {on?}` | host | "End after this song": `session` then carries `lastSong: true`, and the host's next `load` (its phone sends one when the song ends or is skipped) ends the session with `ended {reason: "last_song"}`. `{on: false}` takes it back |
 | `add {tracks, next}` | host, co-hosts | straight in, a co-host holding at most 20 waiting, as a guest does. A listener's is answered `added {count: 0}` |
 | `unqueue {track}` | host and co-hosts any song; listeners their own | as in a private room |
 | `requestAction {id, action}` | host, co-hosts | `next` (Play next), `queue` (Add to queue) or `pass`. One the queue no longer has room for stays waiting: `refused {what: "request", reason: "queue_full"}` |
@@ -196,6 +197,8 @@ The welcome's `state` has `v: 3`, `session` and `suggestions: []`. Then that mem
 | `say {phrase}` | everyone | one of the 10 ids in `PHRASES` (`hi`, `who`, `tune`, `again`, `louder`, `more`, `chills`, `thanks`, `morning`, `night`), passed on to all as `said {from, phrase}`. Ids only, never text: each app says them in its own language |
 | `saved {trackKey}` | everyone | this person saved the playing song: counted once each, for the song with that key only |
 | `settings`, `makeHost`, `suggest`, `suggestion` | | no effect |
+
+**Regulars.** The room adds up how long each listener is connected to a session (by their key hash, across reconnects and coming back). The first time that reaches 10 minutes, when their slot lapses or the session ends, the shell adds one to their row in `station_regulars` (`migrations/0008_regulars.sql`): once a session each, and never for the host or a station that is gone. At `hello` the shell reads a listener's count and the room marks them `regular: true` in `members` from 3 sessions on. Only that flag is sent: never the count or the hash. A row not added to for 60 days is swept by the daily cron. Without the table (this code deployed before its migration) the read answers 0 and the write is logged and dropped, so sessions run as before.
 
 **A song's counts.** `songStats {trackKey, reactions, saves, favourite}` goes to everyone when the playing song's counts change, at most once every 2 s (a change inside the gap goes at its end). `reactions` and `saves` are people, each counted once a song; who they are is never sent. `favourite` turns true, and stays, once at least 3 people and a third of everyone connected have reacted while the song played. The welcome's `state` carries the same object as `songStats` once the song has any. The room stores a person's first reaction to a song and nothing for their later ones.
 

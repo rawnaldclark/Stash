@@ -17,6 +17,8 @@ import { MAX_LISTENERS } from "./room.js";
 const DAY = 86_400_000;
 /** A station that hasn't gone live for this long is deleted with its votes (owner, 2026-11-20). */
 export const STATION_IDLE_MS = 7 * DAY;
+/** A regular's count is forgotten when they haven't stayed for a session of the station in this long. */
+export const REGULAR_IDLE_MS = 60 * DAY;
 /** A directory row its room hasn't written for this long belongs to a room that died without saying so. */
 export const LIVE_STALE_MS = 3 * 60_000;
 /** Stations one phone may follow. */
@@ -198,7 +200,7 @@ async function deleteStation(request, env, id) {
     // once would skip the day it can be restored in. The cleanup deletes it after that day.
     if (!row || row.removed_at !== null) return gone();
     if (row.owner !== who.id) return json({ error: "not_yours" }, 403);
-    await db.batch(["station_votes", "station_heard", "station_follows", "live"]
+    await db.batch(["station_votes", "station_heard", "station_follows", "station_regulars", "live"]
         .map((t) => db.prepare(`DELETE FROM ${t} WHERE station_id = ?1`).bind(id))
         .concat(db.prepare("DELETE FROM stations WHERE id = ?1").bind(id)));
     // Its session ends now, not at its next directory write a minute from now.
@@ -462,10 +464,30 @@ export async function cleanupStations(env, now) {
     const args = [now - STATION_IDLE_MS, now - DAY];
     await db.batch([
         db.prepare("DELETE FROM live WHERE seen_at < ?1").bind(now - LIVE_STALE_MS),
-        ...["station_votes", "station_heard", "station_follows", "live"]
+        db.prepare("DELETE FROM station_regulars WHERE last_at < ?1").bind(now - REGULAR_IDLE_MS),
+        ...["station_votes", "station_heard", "station_follows", "station_regulars", "live"]
             .map((table) => db.prepare(`DELETE FROM ${table} WHERE station_id IN (${doomed})`).bind(...args)),
         db.prepare(`DELETE FROM stations WHERE id IN (${doomed})`).bind(...args),
     ]);
+}
+
+/** How many of [stationId]'s sessions [listener] (a key hash) has stayed for; 0 when none. */
+export async function visitsOf(db, stationId, listener) {
+    const row = await db.prepare("SELECT sessions FROM station_regulars WHERE station_id = ?1 AND listener = ?2").bind(stationId, listener).first();
+    return row?.sessions ?? 0;
+}
+
+/**
+ * One more session for each of [listeners] at [stationId] (their room says each once a session). Only for a station
+ * that still exists, so a session outliving its station's deletion leaves no rows behind.
+ */
+export async function countRegulars(db, stationId, listeners, now) {
+    if (!listeners.length) return;
+    await db.batch(listeners.map((listener) => db.prepare(
+        `INSERT INTO station_regulars (station_id, listener, sessions, last_at)
+         SELECT ?1, ?2, 1, ?3 FROM stations WHERE id = ?1
+         ON CONFLICT (station_id, listener) DO UPDATE SET sessions = sessions + 1, last_at = ?3`,
+    ).bind(stationId, listener, now)));
 }
 
 /**

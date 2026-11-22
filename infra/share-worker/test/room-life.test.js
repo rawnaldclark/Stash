@@ -184,3 +184,42 @@ test("reactions while the song is paused count, but don't make a favourite", () 
     for (const [i, id] of ["l1", "l2", "l3"].entries()) { r = send(s, id, { t: "react", emoji: FIRE }, T0 + 10 + i * 3000); s = r.state; }
     assert.deepEqual(sent(r, "songStats"), [{ t: "songStats", trackKey: 1, reactions: 3, saves: 0, favourite: false }]);
 });
+
+// ── Step 5: the last song ─────────────────────────────────────────────────────
+
+test("the host calls the last song: everyone's session says so, and the next load ends it", () => {
+    let s = playing();
+    const called = send(s, "h", { t: "lastSong" }, T0 + 100);
+    assert.equal(sent(called, "session")[0].lastSong, true);
+    assert.equal(publicState(called.state).session.lastSong, true, "someone joining now sees it too");
+    assert.deepEqual(send(called.state, "h", { t: "lastSong" }, T0 + 200).out, [], "calling it twice says nothing new");
+    const end = send(called.state, "h", { t: "load", track: NEXT, positionMs: 0, queue: [], why: "end" }, T0 + 9000);
+    assert.deepEqual(sent(end, "ended"), [{ t: "ended", reason: "last_song" }]);
+    assert.equal(sent(end, "prepare").length, 0, "the next song never starts");
+    assert.equal(end.state, null, "the room is closed");
+});
+
+test("the host can take it back, and then the session goes on", () => {
+    let s = send(playing(), "h", { t: "lastSong" }, T0 + 100).state;
+    const back = send(s, "h", { t: "lastSong", on: false }, T0 + 200);
+    assert.ok(!("lastSong" in sent(back, "session")[0]));
+    const next = send(back.state, "h", { t: "load", track: NEXT, positionMs: 0, queue: [] }, T0 + 9000);
+    assert.equal(sent(next, "prepare").length, 1);
+    assert.deepEqual(sent(next, "ended"), []);
+});
+
+test("only the host calls it, only with a song on, and never in a private room", () => {
+    const s = playing();
+    assert.deepEqual(send(s, "l1", { t: "lastSong" }).out, []);
+    assert.ok(!("lastSong" in publicState(s).session), "absent until called: the session's shape is as before");
+    let empty = step(null, { type: "create", code: "ABCDEFGH", hostName: "Rawn", keyHash: "h", stationId: "STATION1" }, T0).state;
+    empty = hello(empty, "h", { host: true }).state;
+    assert.deepEqual(send(empty, "h", { t: "lastSong" }).out, []);
+    const p = privateRoom();
+    assert.deepEqual(send(p, "h", { t: "lastSong" }).out, []);
+});
+
+test("End now still ends at once, last song or not", () => {
+    const s = send(playing(), "h", { t: "lastSong" }, T0 + 100).state;
+    assert.deepEqual(sent(send(s, "h", { t: "end" }, T0 + 200), "ended"), [{ t: "ended", reason: "host_ended" }]);
+});
