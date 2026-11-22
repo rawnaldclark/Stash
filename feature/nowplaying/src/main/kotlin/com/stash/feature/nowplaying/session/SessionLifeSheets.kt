@@ -137,6 +137,7 @@ private fun feedText(line: FeedLine): String? = when (line) {
     is FeedLine.Favourite -> stringResource(R.string.life_favourite_line, line.title)
     is FeedLine.Back -> stringResource(R.string.life_back, line.name ?: stringResource(R.string.listen_someone))
     FeedLine.LastSong -> stringResource(R.string.life_last_song)
+    is FeedLine.OffDecks -> stringResource(R.string.decks_feed_off, line.name ?: stringResource(R.string.listen_someone))
 }
 
 /** The feed under the crowd: the last few lines, newest at the bottom, older ones fading. */

@@ -68,6 +68,12 @@ class SessionLifeViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
+            controller.deckOuts.collect { out ->
+                val room = session() ?: return@collect
+                if (out.memberId != room.myId) add(FeedLine.OffDecks(nameOf(room, out.memberId)))
+            }
+        }
+        viewModelScope.launch {
             controller.events.collect { event ->
                 val room = session() ?: return@collect
                 if (event.kind == SessionEvent.Kind.JOINED && event.memberId != room.myId) {

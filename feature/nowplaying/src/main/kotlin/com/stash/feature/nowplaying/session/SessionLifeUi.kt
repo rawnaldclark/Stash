@@ -64,6 +64,9 @@ internal sealed interface FeedLine {
     /** "Ben is back": a regular arriving. */
     data class Back(val name: String?) : FeedLine
 
+    /** "Lee is off the decks": two turns missed in a row. */
+    data class OffDecks(val name: String?) : FeedLine
+
     /** "Last song": the host is ending after this one. */
     data object LastSong : FeedLine
 }
