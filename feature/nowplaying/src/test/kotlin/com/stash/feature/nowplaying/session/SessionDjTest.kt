@@ -160,6 +160,8 @@ class SessionDjTest {
         vm.setCohost("b", true)
         vm.boot("b")
         vm.takeBack(nights, 3)
+        vm.skip()
+        verify { controller.send(Command.Skip) }
         verify { controller.send(Command.AnswerRequest("r1", RequestAnswer.NEXT)) }
         verify { controller.send(Command.AnswerRequest("r2", RequestAnswer.PASS)) }
         verify { controller.send(Command.SetAutoAccept(true)) }

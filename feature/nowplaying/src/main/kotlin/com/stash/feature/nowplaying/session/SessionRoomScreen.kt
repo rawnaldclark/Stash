@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -325,6 +326,12 @@ internal fun SessionRoom(
                         style = MaterialTheme.typography.titleMedium,
                         color = on,
                     )
+                }
+                // A co-host can skip the song: the host's phone does it.
+                if (room.role == com.stash.core.media.listen.SessionRole.COHOST) {
+                    IconButton(onClick = dj::skip, modifier = Modifier.size(52.dp).clip(CircleShape).border(1.dp, ink.copy(alpha = 0.35f), CircleShape)) {
+                        Icon(Icons.Rounded.SkipNext, contentDescription = stringResource(R.string.dj_skip), tint = ink)
+                    }
                 }
                 ReactPill(ink = ink, onReact = onReact)
             }

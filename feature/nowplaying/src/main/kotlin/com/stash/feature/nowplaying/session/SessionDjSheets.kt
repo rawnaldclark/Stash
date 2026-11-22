@@ -59,8 +59,8 @@ import com.stash.feature.nowplaying.R
 @Composable
 private fun RowButton(text: String, onClick: () -> Unit, enabled: Boolean = true, strong: Boolean = true) {
     val scheme = MaterialTheme.colorScheme
-    val ground = if (strong) scheme.primary else scheme.surfaceVariant
-    val ink = if (strong) scheme.onPrimary else scheme.onSurfaceVariant
+    val ground = if (strong) scheme.primary else scheme.onSurface.copy(alpha = 0.10f)
+    val ink = if (strong) scheme.onPrimary else scheme.onSurface
     Text(
         text,
         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
@@ -69,7 +69,7 @@ private fun RowButton(text: String, onClick: () -> Unit, enabled: Boolean = true
         modifier = Modifier
             .heightIn(min = 36.dp)
             .clip(CircleShape)
-            .background(ground.copy(alpha = if (enabled) 1f else 0.4f))
+            .background(if (enabled) ground else ground.copy(alpha = ground.alpha * 0.4f))
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
     )

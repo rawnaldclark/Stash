@@ -220,6 +220,7 @@ class ListenTogetherSession(
             is Command.SetCohost -> if (role() == SessionRole.HOST) send(ClientMessage.Cohost(command.memberId, command.on))
             is Command.Boot -> if (role() == SessionRole.HOST) boot(command.memberId)
             Command.PresenceChanged -> sayPresence()
+            Command.Skip -> if (role() == SessionRole.COHOST) send(ClientMessage.Command(SKIP))
         }
     }
 

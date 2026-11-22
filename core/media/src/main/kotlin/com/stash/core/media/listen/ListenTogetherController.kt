@@ -137,6 +137,12 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
         /** Host only: [memberId] leaves the session and can't come back. A co-host stops being one first. */
         data class Boot(val memberId: String) : Command
 
+        /**
+         * A co-host's Skip: the room passes it to the host's phone, which moves on. Its own command because a
+         * listener's player takes no "next" (a co-host is a listener to the player), so a transport Skip never arrives.
+         */
+        data object Skip : Command
+
         /** [inBooth] changed: a session's host tells the room. Sent by [setInBooth], never by a screen. */
         data object PresenceChanged : Command
     }

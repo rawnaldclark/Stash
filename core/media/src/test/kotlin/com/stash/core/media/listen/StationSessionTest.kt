@@ -796,6 +796,9 @@ class StationSessionTest {
         receive(ServerMessage.Session(STATION, listeners = 1, cohosts = listOf("me")))
         player.interceptor!!.onNext(); runCurrent()
         assertThat(sent<ClientMessage.Command>()).containsExactly(ClientMessage.Command("skip"))
+        // The room's Skip button: its own command, since a listener's player takes no "next".
+        controller.send(Command.Skip); runCurrent()
+        assertThat(sent<ClientMessage.Command>()).hasSize(2)
         receive(ServerMessage.Refused("skip", "host_reconnecting"))
         assertThat(notices).containsExactly("Maya is reconnecting. Try again in a moment.")
     }
@@ -811,6 +814,12 @@ class StationSessionTest {
         assertThat(sent<ClientMessage.Load>()).hasSize(loadsBefore + 1)
         assertThat(load.track).isEqualTo(next)
         assertThat(load.why).isEqualTo("skip")
+    }
+
+    @Test fun `a listener's Skip command goes nowhere, nor the host's own`() = runTest {
+        listening()
+        controller.send(Command.Skip); runCurrent()
+        assertThat(sent<ClientMessage.Command>()).isEmpty()
     }
 
     @Test fun `a listener's phone ignores a skip command`() = runTest {

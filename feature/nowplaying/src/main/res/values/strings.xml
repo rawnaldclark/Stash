@@ -250,7 +250,9 @@
     <string name="dj_requests_line_none">No requests waiting</string>
     <string name="dj_requests_line_auto">Requests play automatically</string>
     <string name="dj_requests_none">Nobody has asked for a song yet.</string>
-    <string name="dj_requests_none_auto">Requests go straight into the queue.</string>
+    <string name="dj_requests_none_auto">Nothing is waiting.</string>
+    <!-- A co-host's button: skip the song that's playing. -->
+    <string name="dj_skip">Skip this song</string>
     <string name="dj_auto_accept">Auto-accept</string>
     <string name="dj_auto_accept_sub">Requests go straight into the queue</string>
     <string name="dj_answer_next">Next</string>

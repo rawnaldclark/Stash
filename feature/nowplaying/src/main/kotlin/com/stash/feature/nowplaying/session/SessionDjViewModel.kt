@@ -57,6 +57,9 @@ class SessionDjViewModel @Inject constructor(
         viewModelScope.launch { player.addToQueue(track) }
     }
 
+    /** A co-host's Skip: the engine passes it to the host's phone, which moves the room on. */
+    fun skip() = controller.send(Command.Skip)
+
     /** Takes back one of this listener's songs that the host already put in Up next. */
     fun takeBack(track: SharedTrack, queueIndex: Int) = controller.send(Command.Unqueue(track, queueIndex))
 
