@@ -76,6 +76,11 @@ sealed interface ListenTogetherState {
         val songStats: SongStats? = null,
         /** In a session, the open decks (who's on, whose turn is next, the line); null while they're closed. */
         val decks: DecksInfo? = null,
+        /**
+         * For the host of a session: how many of this station's sessions each listener stayed for before this one, by
+         * member id. Empty for everyone else, and for listeners on their first visits.
+         */
+        val visits: Map<String, Int> = emptyMap(),
     ) : ListenTogetherState
 }
 

@@ -507,6 +507,8 @@ class ListenTogetherSession(
             }
             is ServerMessage.Refused -> onRefused(m)
             is ServerMessage.Said -> controller.said(m)
+            // Added to, not replaced: someone who left keeps their count while their name is still on the screen.
+            is ServerMessage.Visits -> { visits = visits + m.visits.filterValues { it > 0 }; publish() }
             is ServerMessage.DecksState -> {
                 decks = if (m.open) DecksInfo(true, m.djs, m.line, m.now, m.next) else null
                 publish()
@@ -543,6 +545,8 @@ class ListenTogetherSession(
 
     /** The open decks, as the room last said; null while they're closed. */
     private var decks: DecksInfo? = null
+    /** The host's: each listener's earlier sessions at this station, by member id (`visits`). */
+    private var visits: Map<String, Int> = emptyMap()
 
     /** The song this phone told the room it saved ([Command.SavedSong]). */
     private var savedKey = NONE
@@ -1501,7 +1505,7 @@ class ListenTogetherSession(
         code = null; url = null; myId = null; token = null; room = null; isHost = false; pendingLoad = null; loadsInFlight = 0
         welcomed = false; unplayableInARow = 0; skipNoticeKey = NONE; heldAdds.clear(); awaitingAdds.clear()
         requests = emptyList(); awaitingRequests.clear()
-        songStats = null; savedKey = NONE; decks = null
+        songStats = null; savedKey = NONE; decks = null; visits = emptyMap()
         timeline = null; applied = null; loadedKey = NONE; itemKey = NONE; readyKey = NONE; unavailableKey = NONE; lastStatus = null
         roomPreparingKey = NONE; preparedAt = 0L; prepareLimitJob = null // the job died with sessionScope
         reconnecting = false; versionMismatch = false; history.clear(); radioTriedKey = NONE
@@ -1571,6 +1575,7 @@ class ListenTogetherSession(
                 onAir = onAir(),
                 songStats = songStats?.takeIf { stationId != null && it.trackKey == r.trackKey },
                 decks = decks?.takeIf { stationId != null },
+                visits = if (stationId != null && isHost) visits else emptyMap(),
             ),
         )
     }

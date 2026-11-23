@@ -579,6 +579,16 @@ private fun EveryoneSheet(room: ListenTogetherState.InRoom, crowd: Crowd, dj: Se
                     if (part != null) {
                         Text(stringResource(part), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    // The host's alone: how often this listener has stayed for a session here before.
+                    val visits = room.visits[member.id] ?: 0
+                    if (visits > 0 && member.id != room.hostId) {
+                        Text(
+                            pluralStringResource(R.plurals.room_visits, visits, visits),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
                 }
                 if (actions != null && open == member.id) {
                     MemberActionsRow(member, actions, dj, onDone = { open = null }, onDecks = room.isHost && onDecksOrLine(room, member.id))

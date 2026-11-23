@@ -240,6 +240,11 @@
     <!-- %1$s: the song -->
     <string name="life_favourite_line">%1$s is a crowd favourite</string>
     <string name="life_favourite">Crowd favourite</string>
+    <!-- The host's crowd list, beside a listener: how many of this station's sessions they stayed for before this one -->
+    <plurals name="room_visits">
+        <item quantity="one">here %d time before</item>
+        <item quantity="other">here %d times before</item>
+    </plurals>
     <!-- A regular arriving. %1$s: their name -->
     <string name="life_back">%1$s is back</string>
     <!-- The host is ending the session after the song that\'s playing -->

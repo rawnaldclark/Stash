@@ -445,6 +445,13 @@ sealed interface ServerMessage {
     @Serializable @SerialName("requestPassed")
     data class RequestPassed(val track: SharedTrack, val by: String) : ServerMessage
 
+    /**
+     * To the host alone: how many of this station's sessions each connected listener stayed for before this one, by
+     * member id. Listeners with none are left out.
+     */
+    @Serializable @SerialName("visits")
+    data class Visits(val visits: Map<String, Int> = emptyMap()) : ServerMessage
+
     /** The decks after a change: [DecksInfo]'s fields, flat; [open] false when the host closed them. */
     @Serializable @SerialName("decksState")
     data class DecksState(

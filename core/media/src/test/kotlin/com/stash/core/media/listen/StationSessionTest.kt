@@ -770,6 +770,19 @@ class StationSessionTest {
         assertThat(sent<ClientMessage.RequestCancel>()).isEmpty()
     }
 
+    @Test fun `the host's room keeps each returning listener's count, and a listener's room never has one`() = runTest {
+        goLive()
+        receive(ServerMessage.Visits(mapOf("b" to 4)))
+        receive(ServerMessage.Visits(mapOf("c" to 1, "zero" to 0)))
+        assertThat((controller.state.value as ListenTogetherState.InRoom).visits).containsExactly("b", 4, "c", 1)
+    }
+
+    @Test fun `a listener's room shows no counts, whatever arrives`() = runTest {
+        listening()
+        receive(ServerMessage.Visits(mapOf("b" to 4)))
+        assertThat((controller.state.value as ListenTogetherState.InRoom).visits).isEmpty()
+    }
+
     @Test fun `Auto-accept, co-hosts and boot are the host's alone`() = runTest {
         listening()
         receive(ServerMessage.Session(STATION, listeners = 1, cohosts = listOf("me")))
