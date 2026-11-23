@@ -134,6 +134,15 @@ internal fun RecapSheet(recap: SessionRecap, onDismiss: () -> Unit) {
                     Fact(recap.requestsPlayed.toString(), pluralStringResource(R.plurals.recap_requests, recap.requestsPlayed), Modifier.weight(1f))
                     Fact(recap.regulars.toString(), pluralStringResource(R.plurals.recap_regulars, recap.regulars), Modifier.weight(1f))
                 }
+                val gained = recap.newFollowers ?: 0
+                if (gained > 0) {
+                    Text(
+                        pluralStringResource(R.plurals.recap_new_followers, gained, gained),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 14.dp),
+                    )
+                }
                 recap.mostSaved?.let { song ->
                     SongList(stringResource(R.string.recap_most_saved), listOf(song)) { pluralStringResource(R.plurals.life_saved, it.saves, it.saves) }
                 }

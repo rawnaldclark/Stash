@@ -37,6 +37,11 @@ data class SessionRecap(
     val saved: List<RecapSong> = emptyList(),
     /** The song most people saved (the host's recap); null when nobody saved any. */
     val mostSaved: RecapSong? = null,
+    /**
+     * The station's followers gained while it was on the air (the host's recap): its count after, less its count
+     * before. Null when either couldn't be read, and in a recap kept by an older app.
+     */
+    val newFollowers: Int? = null,
 )
 
 /** A song in a recap. [reactions] and [saves] are people, as the room counted them. */

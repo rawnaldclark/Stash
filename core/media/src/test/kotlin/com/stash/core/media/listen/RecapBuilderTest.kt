@@ -201,6 +201,41 @@ class RecapBuilderTest {
         assertThat(recorder.ended.value).isNull()
     }
 
+    @Test fun `a host's recap gains the followers the station won while on the air`() = runTest {
+        var followers: Int? = 38
+        val recorder = SessionRecapRecorder(controller, { kept += it }, backgroundScope, { now }, { followers })
+        recorder.start(); runCurrent()
+        state.value = room(host = true); runCurrent()
+        followers = 41
+        now = 5 * min
+        state.value = ListenTogetherState.Idle; runCurrent()
+        assertThat(recorder.ended.value!!.newFollowers).isEqualTo(3)
+        assertThat(kept.single().newFollowers).isEqualTo(3)
+    }
+
+    @Test fun `followers that can't be read, or that fell, don't spoil the recap, and a listener's has none`() = runTest {
+        var followers: Int? = null
+        val recorder = SessionRecapRecorder(controller, { kept += it }, backgroundScope, { now }, { followers })
+        recorder.start(); runCurrent()
+        state.value = room(host = true); runCurrent()
+        followers = 41 // unread at the start: no difference to give
+        now = 5 * min
+        state.value = ListenTogetherState.Idle; runCurrent()
+        assertThat(kept.single().newFollowers).isNull()
+
+        state.value = room(host = true, code = "SECOND02"); runCurrent()
+        followers = 40 // one unfollowed
+        now = 10 * min
+        state.value = ListenTogetherState.Idle; runCurrent()
+        assertThat(kept.last().newFollowers).isEqualTo(0)
+
+        state.value = room(code = "THIRD003"); runCurrent()
+        now = 15 * min
+        state.value = ListenTogetherState.Idle; runCurrent()
+        assertThat(kept.last().wasHost).isFalse()
+        assertThat(kept.last().newFollowers).isNull()
+    }
+
     @Test fun `a private room has no recap, and a move to another session closes the first`() = runTest {
         val recorder = SessionRecapRecorder(controller, { kept += it }, backgroundScope, { now })
         recorder.start(); runCurrent()

@@ -277,6 +277,11 @@
         <item quantity="one">request played</item>
         <item quantity="other">requests played</item>
     </plurals>
+    <!-- The host's recap: people who followed the station while it was on the air -->
+    <plurals name="recap_new_followers">
+        <item quantity="one">+%d new follower</item>
+        <item quantity="other">+%d new followers</item>
+    </plurals>
     <plurals name="recap_regulars">
         <item quantity="one">regular</item>
         <item quantity="other">regulars</item>
