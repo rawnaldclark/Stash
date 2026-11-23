@@ -321,6 +321,30 @@ test("a pass reaches its requester alone, saying who passed", () => {
     assert.deepEqual(views(r), { h: [], b: [], a: [] });
 });
 
+test("a listener takes back their own waiting request, and the host, co-hosts and they see it gone", () => {
+    const s = request(request(withCohost(session(), "b"), "a", A, "r1").state, "a", B, "r2").state;
+    const r = send(s, "a", { t: "requestCancel", id: "r1" });
+    assert.deepEqual(r.state.suggestions.map((x) => x.id), ["r2"]);
+    assert.deepEqual(views(r), { h: ["r2"], b: ["r2"], a: ["r2"] });
+    assert.equal(r.state.rev, s.rev + 1);
+    // Their place among the 3 a listener may have waiting is free again.
+    const again = request(request(r.state, "a", { t: "S3", a: "A" }, "r3").state, "a", { t: "S4", a: "A" }, "r4");
+    assert.deepEqual(sent(again, "requestAnswer").map((o) => o.msg.state), ["waiting"]);
+});
+
+test("nobody takes back someone else's request, one that isn't there, or one already taken", () => {
+    const s = request(withCohost(hello(session(), "c", { at: T0 + 3 }).state, "b"), "a", A, "r1").state;
+    for (const [from, id] of [["c", "r1"], ["h", "r1"], ["b", "r1"], ["a", "nope"], ["a", 7]]) {
+        const r = send(s, from, { t: "requestCancel", id });
+        assert.equal(r.state, s, `${from} ${id}`);
+        assert.deepEqual(r.out, []);
+    }
+    const taken = send(s, "h", { t: "requestAction", id: "r1", action: "queue" }).state;
+    const late = send(taken, "a", { t: "requestCancel", id: "r1" });
+    assert.equal(late.state, taken);
+    assert.equal(late.state.queue.length, taken.queue.length); // it stays in the queue: Unqueue is how that's taken back
+});
+
 test("listeners can't act on requests, and nobody can on one that isn't there", () => {
     const s = request(session(), "a", A, "r1").state;
     for (const [from, msg] of [["b", { id: "r1", action: "next" }], ["h", { id: "nope", action: "next" }], ["h", { id: "r1", action: "play" }]]) {

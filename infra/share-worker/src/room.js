@@ -1334,6 +1334,21 @@ const MESSAGES = {
     },
 
     /**
+     * `{ id }`, a listener taking back one of their own waiting requests. Nobody is told but the host and co-hosts
+     * (their list loses it) and the requester (theirs does). One already answered, or someone else's, does nothing.
+     */
+    requestCancel(ctx) {
+        const { s, msg, event } = ctx;
+        if (!s.pub || typeof msg.id !== "string") return false;
+        const i = s.suggestions.findIndex((x) => x.id === msg.id && x.from === event.from);
+        if (i < 0) return false;
+        s.suggestions.splice(i, 1);
+        s.rev++;
+        pushRequests(ctx, [event.from]);
+        return true;
+    },
+
+    /**
      * `{ id, action }` from the host or a co-host, on a waiting request: Play next ("next"), Add to queue ("queue"), or
      * "pass", which only its requester hears of (UX spec §4.2), with who passed. One that no longer fits the queue stays
      * waiting, and the sender hears `refused`.

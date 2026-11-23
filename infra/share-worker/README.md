@@ -191,6 +191,7 @@ The welcome's `state` has `v: 3`, `session` and `suggestions: []`. Then that mem
 | `unqueue {track}` | host and co-hosts any song; listeners their own | as in a private room |
 | `requestAction {id, action}` | host, co-hosts | `next` (Play next), `queue` (Add to queue) or `pass`. One the queue no longer has room for stays waiting: `refused {what: "request", reason: "queue_full"}` |
 | `command {action: "skip"}` | co-hosts | goes to the host's phone as `command {action: "skip", from, trackKey}`, to ignore if that song has already changed. While the host's phone is away: `refused {what: "skip", reason: "host_reconnecting"}` |
+| `requestCancel {id}` | listeners | takes back the sender's own waiting request; one already answered, or someone else's, does nothing |
 | `request {track}` | listeners | answered `requestAnswer {state}`: `queued` (Auto-accept), `waiting`, or `full` (3 waiting each, 30 in all) |
 | `react {emoji}`, `ping {c}`, `status` | everyone | as in a private room (only the host's `status` counts) |
 | `react {emoji}` with an animated one | everyone | `emoji` may also be one of the 12 ids in `ANIMS` (`a:fire`, `a:applause`, …), passed on as `reaction` like the six emoji. A private room takes only the six |
