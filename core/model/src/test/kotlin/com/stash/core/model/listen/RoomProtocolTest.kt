@@ -127,6 +127,7 @@ class RoomProtocolTest {
         assertThat(RoomProtocol.encode(ClientMessage.Request(xtal))).isEqualTo("""{"t":"request","track":{"t":"Xtal","a":"Aphex Twin"}}""")
         assertThat(RoomProtocol.encode(ClientMessage.RequestAction("r1", "next"))).isEqualTo("""{"t":"requestAction","id":"r1","action":"next"}""")
         assertThat(RoomProtocol.encode(ClientMessage.RequestCancel("r1"))).isEqualTo("""{"t":"requestCancel","id":"r1"}""")
+        assertThat(RoomProtocol.decode("""{"t":"visits","visits":{"b":4,"c":1}}""")).isEqualTo(ServerMessage.Visits(mapOf("b" to 4, "c" to 1)))
         assertThat(RoomProtocol.encode(ClientMessage.AutoAccept(true))).isEqualTo("""{"t":"autoAccept","on":true}""")
         assertThat(RoomProtocol.encode(ClientMessage.Cohost("m2", on = false))).isEqualTo("""{"t":"cohost","memberId":"m2","on":false}""")
         assertThat(RoomProtocol.encode(ClientMessage.Boot("m3"))).isEqualTo("""{"t":"boot","memberId":"m3"}""")
