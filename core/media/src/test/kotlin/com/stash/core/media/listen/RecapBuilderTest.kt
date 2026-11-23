@@ -35,10 +35,11 @@ class RecapBuilderTest {
         code: String = "K7QA2PXM",
         session: SessionInfo? = SessionInfo("St4tion1", listeners = listeners),
         decks: DecksInfo? = null,
+        visits: Map<String, Int> = emptyMap(),
     ) = ListenTogetherState.InRoom(
         code = code, url = "u", myId = "me", isHost = host, hostId = if (host) "me" else "h", members = members,
         suggestions = emptyList(), track = track, session = session, role = if (host) SessionRole.HOST else SessionRole.LISTENER,
-        songStats = stats, onAir = onAir, decks = decks,
+        songStats = stats, onAir = onAir, decks = decks, visits = visits,
     )
 
     // ── the builder ─────────────────────────────────────────────────────
@@ -106,6 +107,22 @@ class RecapBuilderTest {
         val recap = b.finish(9 * min, ended = true)!!
         assertThat(recap.songs).isEqualTo(3)
         assertThat(recap.requestsPlayed).isEqualTo(1)
+    }
+
+    @Test fun `a listener here for a third session who stays 10 minutes is a new regular`() {
+        val crowd = listOf(RoomMember("me", "Rawn"), RoomMember("b", "Ben"), RoomMember("c", "Cy"), RoomMember("d", "Di", regular = true))
+        val seen = mapOf("b" to 2, "c" to 2, "d" to 7, "e" to 1)
+        val b = RecapBuilder(room(host = true, members = crowd, visits = seen), startedAt = 0)
+        // Cy leaves after 4 minutes; Ben stays; Di was a regular already.
+        b.on(room(host = true, members = crowd.filter { it.id != "c" }, visits = seen), 4 * min)
+        val recap = b.finish(11 * min, ended = true)!!
+        assertThat(recap.newRegulars).isEqualTo(1)
+        assertThat(recap.regulars).isEqualTo(1) // Di, who came as one
+    }
+
+    @Test fun `a listener's recap never counts new regulars`() {
+        val b = RecapBuilder(room(visits = mapOf("b" to 2)), startedAt = 0)
+        assertThat(b.finish(30 * min, ended = true)!!.newRegulars).isEqualTo(0)
     }
 
     @Test fun `a co-host's own song isn't a request`() {
@@ -199,6 +216,67 @@ class RecapBuilderTest {
         state.value = ListenTogetherState.Idle; runCurrent()
         assertThat(kept).isEmpty()
         assertThat(recorder.ended.value).isNull()
+    }
+
+    @Test fun `a host's recap gains the followers the station won while on the air`() = runTest {
+        var followers: Int? = 38
+        val recorder = SessionRecapRecorder(controller, { kept += it }, backgroundScope, { now }, { followers })
+        recorder.start(); runCurrent()
+        state.value = room(host = true); runCurrent()
+        followers = 41
+        now = 5 * min
+        state.value = ListenTogetherState.Idle; runCurrent()
+        assertThat(recorder.ended.value!!.newFollowers).isEqualTo(3)
+        assertThat(kept.single().newFollowers).isEqualTo(3)
+    }
+
+    @Test fun `followers that can't be read, or that fell, don't spoil the recap, and a listener's has none`() = runTest {
+        var followers: Int? = null
+        val recorder = SessionRecapRecorder(controller, { kept += it }, backgroundScope, { now }, { followers })
+        recorder.start(); runCurrent()
+        state.value = room(host = true); runCurrent()
+        followers = 41 // unread at the start: no difference to give
+        now = 5 * min
+        state.value = ListenTogetherState.Idle; runCurrent()
+        assertThat(kept.single().newFollowers).isNull()
+
+        state.value = room(host = true, code = "SECOND02"); runCurrent()
+        followers = 40 // one unfollowed
+        now = 10 * min
+        state.value = ListenTogetherState.Idle; runCurrent()
+        assertThat(kept.last().newFollowers).isEqualTo(0)
+
+        state.value = room(code = "THIRD003"); runCurrent()
+        now = 15 * min
+        state.value = ListenTogetherState.Idle; runCurrent()
+        assertThat(kept.last().wasHost).isFalse()
+        assertThat(kept.last().newFollowers).isNull()
+    }
+
+    @Test fun `a listener's recap says when the station is on next, if its schedule has a time ahead`() = runTest {
+        var next: Long? = 90 * min
+        val asked = mutableListOf<String>()
+        val recorder = SessionRecapRecorder(controller, { kept += it }, backgroundScope, { now }, nextOn = { asked += it; next })
+        recorder.start(); runCurrent()
+        state.value = room(); runCurrent()
+        now = 5 * min
+        state.value = ListenTogetherState.Idle; runCurrent()
+        assertThat(asked).containsExactly("St4tion1")
+        assertThat(recorder.ended.value!!.nextOnAt).isEqualTo(90 * min)
+
+        next = 6 * min // the window it was just in: not ahead of when this stay ended
+        state.value = room(code = "SECOND02"); runCurrent()
+        now = 12 * min
+        state.value = ListenTogetherState.Idle; runCurrent()
+        assertThat(kept.last().nextOnAt).isNull()
+
+        // A host is never told when their own station is on next.
+        next = 500 * min
+        state.value = room(host = true, code = "THIRD003"); runCurrent()
+        now = 20 * min
+        state.value = ListenTogetherState.Idle; runCurrent()
+        assertThat(kept.last().nextOnAt).isNull()
+        assertThat(asked).hasSize(2)
     }
 
     @Test fun `a private room has no recap, and a move to another session closes the first`() = runTest {
