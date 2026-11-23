@@ -136,9 +136,13 @@ internal fun RecapSheet(recap: SessionRecap, onDismiss: () -> Unit) {
                     Fact(recap.regulars.toString(), pluralStringResource(R.plurals.recap_regulars, recap.regulars), Modifier.weight(1f))
                 }
                 val gained = recap.newFollowers ?: 0
-                if (gained > 0) {
+                val news = listOfNotNull(
+                    if (gained > 0) pluralStringResource(R.plurals.recap_new_followers, gained, gained) else null,
+                    if (recap.newRegulars > 0) pluralStringResource(R.plurals.recap_new_regulars, recap.newRegulars, recap.newRegulars) else null,
+                )
+                if (news.isNotEmpty()) {
                     Text(
-                        pluralStringResource(R.plurals.recap_new_followers, gained, gained),
+                        news.joinToString(" · "),
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(top = 14.dp),

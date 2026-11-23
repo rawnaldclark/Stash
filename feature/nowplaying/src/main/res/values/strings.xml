@@ -287,6 +287,11 @@
         <item quantity="one">+%d new follower</item>
         <item quantity="other">+%d new followers</item>
     </plurals>
+    <!-- The host's recap: listeners who became regulars in this session -->
+    <plurals name="recap_new_regulars">
+        <item quantity="one">+%d new regular</item>
+        <item quantity="other">+%d new regulars</item>
+    </plurals>
     <plurals name="recap_regulars">
         <item quantity="one">regular</item>
         <item quantity="other">regulars</item>

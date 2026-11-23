@@ -27,6 +27,11 @@ data class SessionRecap(
     val peak: Int = 0,
     /** Regulars among them (the host's recap). */
     val regulars: Int = 0,
+    /**
+     * Listeners this session made regulars (the host's recap): here for their third session, and stayed the 10
+     * minutes that count. Worked out on the host's phone from what the room told it.
+     */
+    val newRegulars: Int = 0,
     /** This person's songs that played, with how many people reacted to each. */
     val myPicks: List<RecapSong> = emptyList(),
     /** Listeners' and co-hosts' songs the host's session played (the host's recap). */

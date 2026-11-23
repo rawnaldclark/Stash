@@ -18,6 +18,12 @@ class RecapBuilder(first: ListenTogetherState.InRoom, private val startedAt: Lon
     private var hostName: String? = null
     private val people = HashSet<String>()
     private val regulars = HashSet<String>()
+
+    /** The host's: each listener's earlier sessions here, as the room said; and how long each has been in this one. */
+    private val visits = HashMap<String, Int>()
+    private val stayedMs = HashMap<String, Long>()
+    private var present: Set<String> = emptySet()
+    private var presentSince = 0L
     private var peak = 0
 
     /** The song that's playing, and the room's last counts for it. */
@@ -49,6 +55,11 @@ class RecapBuilder(first: ListenTogetherState.InRoom, private val startedAt: Lon
     /** The room as it is at [now]. */
     fun on(room: ListenTogetherState.InRoom, now: Long) {
         room.hostId?.let { id -> (room.members.firstOrNull { it.id == id }?.name ?: room.names[id])?.takeIf(String::isNotBlank)?.let { hostName = it } }
+        // The time since the last state belongs to whoever was here through it.
+        for (id in present) stayedMs[id] = (stayedMs[id] ?: 0L) + (now - presentSince)
+        present = room.members.mapNotNull { m -> m.id.takeIf { it != myId } }.toSet()
+        presentSince = now
+        visits.putAll(room.visits)
         for (m in room.members) {
             if (m.id == myId) continue
             people += m.id
@@ -119,6 +130,8 @@ class RecapBuilder(first: ListenTogetherState.InRoom, private val startedAt: Lon
         song = null
         onAirSince?.let { listenedMs += now - it }
         onAirSince = null
+        for (id in present) stayedMs[id] = (stayedMs[id] ?: 0L) + (now - presentSince)
+        present = emptySet()
         if (songs == 0) return null
         if (!wasHost && !ended && now - startedAt < MIN_STAY_MS) return null
         return SessionRecap(
@@ -134,6 +147,8 @@ class RecapBuilder(first: ListenTogetherState.InRoom, private val startedAt: Lon
             people = people.size,
             peak = peak,
             regulars = regulars.size,
+            // One session short of a regular when they came, and this one counted.
+            newRegulars = if (wasHost) visits.count { (id, n) -> n == REGULAR_SESSIONS - 1 && (stayedMs[id] ?: 0L) >= MIN_STAY_MS } else 0,
             myPicks = myPicks.toList(),
             requestsPlayed = requestsPlayed,
             favourites = favourites.toList(),
@@ -145,6 +160,9 @@ class RecapBuilder(first: ListenTogetherState.InRoom, private val startedAt: Lon
     companion object {
         /** A listener who left before the end gets a recap after this long (the spec's 10 minutes). */
         const val MIN_STAY_MS = 10 * 60_000L
+
+        /** Sessions stayed for that make a listener a regular at a station (the room's REGULAR_SESSIONS). */
+        const val REGULAR_SESSIONS = 3
 
         /** A song counts as played once it was the room's song this long. */
         const val MIN_SONG_MS = 15_000L

@@ -35,10 +35,11 @@ class RecapBuilderTest {
         code: String = "K7QA2PXM",
         session: SessionInfo? = SessionInfo("St4tion1", listeners = listeners),
         decks: DecksInfo? = null,
+        visits: Map<String, Int> = emptyMap(),
     ) = ListenTogetherState.InRoom(
         code = code, url = "u", myId = "me", isHost = host, hostId = if (host) "me" else "h", members = members,
         suggestions = emptyList(), track = track, session = session, role = if (host) SessionRole.HOST else SessionRole.LISTENER,
-        songStats = stats, onAir = onAir, decks = decks,
+        songStats = stats, onAir = onAir, decks = decks, visits = visits,
     )
 
     // ── the builder ─────────────────────────────────────────────────────
@@ -106,6 +107,22 @@ class RecapBuilderTest {
         val recap = b.finish(9 * min, ended = true)!!
         assertThat(recap.songs).isEqualTo(3)
         assertThat(recap.requestsPlayed).isEqualTo(1)
+    }
+
+    @Test fun `a listener here for a third session who stays 10 minutes is a new regular`() {
+        val crowd = listOf(RoomMember("me", "Rawn"), RoomMember("b", "Ben"), RoomMember("c", "Cy"), RoomMember("d", "Di", regular = true))
+        val seen = mapOf("b" to 2, "c" to 2, "d" to 7, "e" to 1)
+        val b = RecapBuilder(room(host = true, members = crowd, visits = seen), startedAt = 0)
+        // Cy leaves after 4 minutes; Ben stays; Di was a regular already.
+        b.on(room(host = true, members = crowd.filter { it.id != "c" }, visits = seen), 4 * min)
+        val recap = b.finish(11 * min, ended = true)!!
+        assertThat(recap.newRegulars).isEqualTo(1)
+        assertThat(recap.regulars).isEqualTo(1) // Di, who came as one
+    }
+
+    @Test fun `a listener's recap never counts new regulars`() {
+        val b = RecapBuilder(room(visits = mapOf("b" to 2)), startedAt = 0)
+        assertThat(b.finish(30 * min, ended = true)!!.newRegulars).isEqualTo(0)
     }
 
     @Test fun `a co-host's own song isn't a request`() {
