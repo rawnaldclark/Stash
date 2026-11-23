@@ -109,6 +109,12 @@
     <string name="auto_live_notice_title">%1$s is on the air</string>
     <string name="auto_live_notice_text">Your station went live by itself. People can tune in to what you play.</string>
     <string name="auto_live_notice_end">End session</string>
+    <!-- The quiet notification a host gets while the app is in the background and listeners' requests wait. -->
+    <plurals name="away_requests_title">
+        <item quantity="one">%d request waiting</item>
+        <item quantity="other">%d requests waiting</item>
+    </plurals>
+    <string name="away_requests_text">Open Stash to play them or pass.</string>
     <!-- The host tried to add a 4th co-host. -->
     <string name="session_cohosts_full">A session can have 3 co-hosts</string>
     <!-- The host or a co-host accepted a request while the queue was full: it stays waiting. -->
