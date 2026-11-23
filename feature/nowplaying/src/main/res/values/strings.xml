@@ -389,6 +389,8 @@
     <string name="room_save">Save to Liked Songs</string>
     <string name="room_saved">In your Liked Songs</string>
     <string name="room_unsave">Remove from Liked Songs</string>
+    <!-- The song card that "Who is this?" opens: its artist's page -->
+    <string name="song_card_artist">Go to artist</string>
     <string name="room_end_title">End the session for everyone?</string>
     <string name="room_end_now">End now</string>
     <string name="room_end_after">End after this song</string>

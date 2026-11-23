@@ -1190,6 +1190,7 @@ fun NowPlayingScreen(
                     onLike = viewModel::onLikeTap,
                     onSeek = viewModel::onSeekTo,
                     onEnd = together::end,
+                    onGoToArtist = viewModel::onTrackInfoTapped,
                     hostControls = {
                         PlaybackControls(
                             isPlaying = uiState.playWhenReady || uiState.isPlaying,

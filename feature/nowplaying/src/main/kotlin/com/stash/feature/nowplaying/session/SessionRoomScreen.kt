@@ -124,6 +124,8 @@ internal fun SessionRoom(
     onEnd: () -> Unit,
     hostControls: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    /** Opens the playing song's artist page (the song card's Go to artist). */
+    onGoToArtist: () -> Unit = {},
     viewModel: SessionRoomViewModel = hiltViewModel(),
     dj: SessionDjViewModel = hiltViewModel(),
     life: SessionLifeViewModel = hiltViewModel(),
@@ -133,6 +135,7 @@ internal fun SessionRoom(
     val greet by life.greet.collectAsStateWithLifecycle()
     val energy by life.energy.collectAsStateWithLifecycle()
     var showTray by remember { mutableStateOf(false) }
+    var showSongCard by remember { mutableStateOf(false) }
     var showDeck by remember { mutableStateOf(false) }
     val decks = remember(room.decks, room.members, room.hostId, room.myId, room.isHost) { decksUi(room) }
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -386,7 +389,30 @@ internal fun SessionRoom(
     }
 
     if (showDeck && decks != null && !answersRequests(room)) DeckSheet(decks, dj, onDismiss = { showDeck = false })
-    if (showTray) ReactTray(greet = greet, onReact = onReact, onSay = life::say, onDismiss = { showTray = false })
+    if (showTray) {
+        ReactTray(
+            greet = greet,
+            onReact = onReact,
+            onSay = { phrase ->
+                life.say(phrase)
+                // "Who is this?" also answers the one who asked: the song's card, in the tray's place.
+                if (phrase == PHRASE_WHO && room.track != null) { showTray = false; showSongCard = true }
+            },
+            onDismiss = { showTray = false },
+        )
+    }
+    if (showSongCard) {
+        SongCardSheet(
+            card = songCard(song.title, song.artist, room.track?.album),
+            art = song.art ?: room.track?.artUrl?.takeIf(ShareConfig::isAllowedCover),
+            liked = song.liked,
+            onSave = {
+                if (song.liked == false) { life.saved(); recap.saved(); onLike() }
+            },
+            onGoToArtist = onGoToArtist,
+            onDismiss = { showSongCard = false },
+        )
+    }
     if (showEveryone) EveryoneSheet(room, crowd, dj, onDismiss = { showEveryone = false })
     if (showRequest && !answersRequests(room)) RequestSheet(room, dj, onDismiss = { showRequest = false })
     if (showRequests && answersRequests(room)) RequestsSheet(room, dj, onDismiss = { showRequests = false })
