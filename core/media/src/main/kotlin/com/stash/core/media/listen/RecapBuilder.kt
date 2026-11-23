@@ -27,6 +27,12 @@ class RecapBuilder(first: ListenTogetherState.InRoom, private val startedAt: Lon
     private var songSaves = 0
     private var songFavourite = false
 
+    /** Whose turn on the open decks the room last said the playing song is; null with the decks closed. */
+    private var songDeckTurn: String? = null
+
+    /** The co-hosts as the room last had them: they add songs themselves, so theirs aren't requests. */
+    private var cohosts: List<String> = emptyList()
+
     private var songs = 0
     private var requestsPlayed = 0
     private val myPicks = ArrayList<RecapSong>()
@@ -55,6 +61,8 @@ class RecapBuilder(first: ListenTogetherState.InRoom, private val startedAt: Lon
             song = room.track
             songSince = now
         }
+        songDeckTurn = room.decks?.now
+        cohosts = room.session?.cohosts.orEmpty()
         room.songStats?.let { stats ->
             songReactions = stats.reactions
             songSaves = stats.saves
@@ -90,7 +98,10 @@ class RecapBuilder(first: ListenTogetherState.InRoom, private val startedAt: Lon
         songs++
         val line = RecapSong(s.title, s.artist, songReactions, songSaves)
         if (s.addedBy == myId && !wasHost) myPicks += line
-        if (wasHost && s.addedBy != null && s.addedBy != myId) requestsPlayed++
+        // A request is a listener's song the booth let in. A DJ's turn on the open decks is theirs by right, and a
+        // co-host adds songs themselves: nobody asked for either.
+        val by = s.addedBy
+        if (wasHost && by != null && by != myId && by != songDeckTurn && by !in cohosts) requestsPlayed++
         if (songFavourite) favourites += line
         if (songSaves > 0 && songSaves > (mostSaved?.saves ?: 0)) mostSaved = line
         songReactions = 0

@@ -155,7 +155,7 @@ internal fun RequestSheet(room: ListenTogetherState.InRoom, viewModel: SessionDj
                         )
                     }
                 }
-                items(mine, key = { (if (it.accepted) "q" else "w") + it.queueIndex + it.track.title + it.track.artist }) { request ->
+                items(mine, key = { it.id ?: ("q" + it.queueIndex + it.track.title + it.track.artist) }) { request ->
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         SongLines(request.track.title, request.track.artist, Modifier.weight(1f))
                         if (request.accepted) {
@@ -173,6 +173,12 @@ internal fun RequestSheet(room: ListenTogetherState.InRoom, viewModel: SessionDj
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            val id = request.id
+                            if (id != null) {
+                                TextButton(onClick = { viewModel.cancelRequest(id) }) {
+                                    Text(stringResource(R.string.dj_take_back))
+                                }
+                            }
                         }
                     }
                 }
@@ -359,7 +365,15 @@ internal fun MemberActionsRow(member: RoomMember, actions: MemberActions, viewMo
 
 /** The room's line for the host and co-hosts: how many requests wait. Tapping opens them. */
 @Composable
-internal fun RequestsLine(room: ListenTogetherState.InRoom, ink: androidx.compose.ui.graphics.Color, muted: androidx.compose.ui.graphics.Color, onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun RequestsLine(
+    room: ListenTogetherState.InRoom,
+    ink: androidx.compose.ui.graphics.Color,
+    muted: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    /** The crowd's reactions and phrases in the last minute; said at the end of the line while there are any. */
+    energy: Int = 0,
+) {
     val waiting = room.requests.size
     Row(
         modifier
@@ -390,5 +404,13 @@ internal fun RequestsLine(room: ListenTogetherState.InRoom, ink: androidx.compos
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
+        if (energy > 0) {
+            Text(
+                pluralStringResource(R.plurals.dj_energy, energy, energy),
+                style = MaterialTheme.typography.labelMedium,
+                color = muted,
+                maxLines = 1,
+            )
+        }
     }
 }

@@ -7,15 +7,23 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.community.CommunityResult
 import com.stash.core.data.community.StationEdit
 import com.stash.core.data.community.StationsRepository
+import com.stash.core.data.share.SharePreference
+import com.stash.core.media.listen.ListenTogetherController
+import com.stash.core.media.listen.ListenTogetherController.Command
+import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.model.community.Station
+import com.stash.core.model.listen.SessionInfo
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -38,7 +46,34 @@ class YourStationViewModelTest {
 
     @After fun tearDown() { Dispatchers.resetMain() }
 
-    private fun vm() = YourStationViewModel(repo, mockk(relaxed = true))
+    private val controller = mockk<ListenTogetherController>(relaxed = true)
+    private val room = MutableStateFlow<ListenTogetherState>(ListenTogetherState.Idle)
+    private val remembered = MutableStateFlow(false)
+    private val share = mockk<SharePreference> {
+        every { autoAccept } returns remembered
+        coEvery { setAutoAccept(any()) } answers { remembered.value = firstArg() }
+    }
+
+    private fun vm(): YourStationViewModel {
+        every { controller.state } returns room
+        return YourStationViewModel(repo, controller, share)
+    }
+
+    @Test fun `Auto-accept is remembered, and a session on the air hears it at once`() = runTest(dispatcher) {
+        val vm = vm(); advanceUntilIdle()
+        assertThat(vm.autoAccept.value).isFalse()
+        vm.setAutoAccept(true); advanceUntilIdle()
+        assertThat(vm.autoAccept.value).isTrue()
+        verify(exactly = 0) { controller.send(any()) } // off the air: nothing to tell, and no player started for it
+
+        room.value = ListenTogetherState.InRoom(
+            code = "K7QA2PXM", url = "u", myId = "me", isHost = true, hostId = "me", members = emptyList(), suggestions = emptyList(),
+            session = SessionInfo("Ab3dEf9h"),
+        )
+        vm.setAutoAccept(false); advanceUntilIdle()
+        assertThat(remembered.value).isFalse()
+        verify(exactly = 1) { controller.send(Command.SetAutoAccept(false)) }
+    }
 
     @Test fun `it opens on this phone's station`() = runTest(dispatcher) {
         val vm = vm(); advanceUntilIdle()

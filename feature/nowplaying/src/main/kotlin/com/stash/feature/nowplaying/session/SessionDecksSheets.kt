@@ -99,6 +99,8 @@ internal fun DecksCard(ui: DecksUi, ink: Color, muted: Color, modifier: Modifier
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(name, style = MaterialTheme.typography.labelLarge, color = ink.copy(alpha = if (seat.ready) 1f else 0.55f), maxLines = 1)
+                    // The round starts with the host: said in words, as the crowd band says it.
+                    if (seat.host) Text(stringResource(R.string.room_host), style = MaterialTheme.typography.labelSmall, color = muted, maxLines = 1)
                     if (tag != null) {
                         Text(tag, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = personColor(seat.id), maxLines = 1)
                     }

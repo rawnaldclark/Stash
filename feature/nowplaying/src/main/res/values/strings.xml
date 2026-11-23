@@ -358,6 +358,11 @@
         <item quantity="other">%d requests waiting</item>
     </plurals>
     <string name="dj_requests_line_none">No requests waiting</string>
+    <!-- The booth: how lively the crowd is. %d: reactions and phrases from listeners in the last minute -->
+    <plurals name="dj_energy">
+        <item quantity="one">%d reaction this minute</item>
+        <item quantity="other">%d reactions this minute</item>
+    </plurals>
     <string name="dj_requests_line_auto">Requests play automatically</string>
     <string name="dj_requests_none">Nobody has asked for a song yet.</string>
     <string name="dj_requests_none_auto">Nothing is waiting.</string>

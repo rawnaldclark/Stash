@@ -63,6 +63,8 @@ class StationSessionTest {
     var liveRoomAsks = 0
     /** Each piece of listening time given to the station, as (station, ms). */
     val listened = mutableListOf<Pair<String, Long>>()
+    /** Your station's Auto-accept, as this phone remembers it. */
+    var autoAccept = false
 
     fun TestScope.session() = ListenTogetherSession(
         scope = backgroundScope,
@@ -74,6 +76,7 @@ class StationSessionTest {
         autoplayRadio = { false },
         displayName = { "Rawn" },
         clock = { testScheduler.currentTime },
+        autoAcceptPreference = { autoAccept },
         communityKey = { keyReads++; key },
         stationRoom = { station -> check(station == STATION); liveRoomAsks++; liveRoom() },
         stationListened = { station, ms -> listened += station to ms },
@@ -750,6 +753,23 @@ class StationSessionTest {
         assertThat(sent<ClientMessage.RequestAction>()).containsExactly(ClientMessage.RequestAction("r1", "next"))
     }
 
+    @Test fun `a listener takes back a waiting request of their own, and it leaves the list at once`() = runTest {
+        listening()
+        receive(ServerMessage.Requests(listOf(RoomRequest("r1", "me", track), RoomRequest("r2", "me", next))))
+        controller.send(Command.CancelRequest("r1")); runCurrent()
+        controller.send(Command.CancelRequest("r1")); runCurrent() // tapped twice: asked once
+        controller.send(Command.CancelRequest("nope")); runCurrent()
+        assertThat(sent<ClientMessage.RequestCancel>()).containsExactly(ClientMessage.RequestCancel("r1"))
+        assertThat((controller.state.value as ListenTogetherState.InRoom).requests.map { it.id }).containsExactly("r2")
+    }
+
+    @Test fun `the booth can't take back a listener's request, only answer it`() = runTest {
+        goLive()
+        receive(ServerMessage.Requests(listOf(RoomRequest("r1", "b", track))))
+        controller.send(Command.CancelRequest("r1")); runCurrent()
+        assertThat(sent<ClientMessage.RequestCancel>()).isEmpty()
+    }
+
     @Test fun `Auto-accept, co-hosts and boot are the host's alone`() = runTest {
         listening()
         receive(ServerMessage.Session(STATION, listeners = 1, cohosts = listOf("me")))
@@ -769,6 +789,21 @@ class StationSessionTest {
         controller.send(Command.SetCohost("x", false)); runCurrent()
         assertThat(sent<ClientMessage.AutoAccept>()).containsExactly(ClientMessage.AutoAccept(true), ClientMessage.AutoAccept(false)).inOrder()
         assertThat(sent<ClientMessage.Cohost>()).containsExactly(ClientMessage.Cohost("x", true), ClientMessage.Cohost("x", false)).inOrder()
+    }
+
+    @Test fun `a session the station opens starts with the station's Auto-accept`() = runTest {
+        autoAccept = true
+        goLive()
+        assertThat(sent<ClientMessage.AutoAccept>()).containsExactly(ClientMessage.AutoAccept(true))
+        // Back after a drop, the room still has it: nothing more to say.
+        receive(ServerMessage.Welcome("me", "tok", state(host = "me", session = SessionInfo(STATION, listeners = 1, autoAccept = true))))
+        assertThat(sent<ClientMessage.AutoAccept>()).hasSize(1)
+    }
+
+    @Test fun `a listener's own Auto-accept setting says nothing in someone else's session`() = runTest {
+        autoAccept = true
+        listening()
+        assertThat(sent<ClientMessage.AutoAccept>()).isEmpty()
     }
 
     @Test fun `booting a listener is one message, a co-host stops being one first, and the host never boots themselves`() = runTest {

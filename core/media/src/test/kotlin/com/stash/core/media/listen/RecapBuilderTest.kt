@@ -1,6 +1,8 @@
 package com.stash.core.media.listen
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.model.listen.DeckSeat
+import com.stash.core.model.listen.DecksInfo
 import com.stash.core.model.listen.RecapSong
 import com.stash.core.model.listen.RoomMember
 import com.stash.core.model.listen.SessionInfo
@@ -32,10 +34,11 @@ class RecapBuilderTest {
         members: List<RoomMember> = listOf(RoomMember("h", "Maya"), RoomMember("me", "Rawn"), RoomMember("b", "Ben", regular = true)),
         code: String = "K7QA2PXM",
         session: SessionInfo? = SessionInfo("St4tion1", listeners = listeners),
+        decks: DecksInfo? = null,
     ) = ListenTogetherState.InRoom(
         code = code, url = "u", myId = "me", isHost = host, hostId = if (host) "me" else "h", members = members,
         suggestions = emptyList(), track = track, session = session, role = if (host) SessionRole.HOST else SessionRole.LISTENER,
-        songStats = stats, onAir = onAir,
+        songStats = stats, onAir = onAir, decks = decks,
     )
 
     // ── the builder ─────────────────────────────────────────────────────
@@ -87,6 +90,29 @@ class RecapBuilderTest {
         assertThat(recap.mostSaved).isEqualTo(RecapSong("Ivy", "Frank Ocean", reactions = 5, saves = 3))
         assertThat(recap.myPicks).isEmpty()
         assertThat(recap.favourites.map { it.title }).containsExactly("Ivy")
+    }
+
+    @Test fun `a DJ's turn on the open decks isn't a request, but a song they asked for is`() {
+        val hosts = creep.copy(addedBy = "me")
+        val bensAsk = SharedTrack("Pink + White", "Frank Ocean", addedBy = "b")
+        fun decks(now: String) = DecksInfo(djs = listOf(DeckSeat("b", true)), now = now)
+        val b = RecapBuilder(room(track = hosts, host = true, decks = decks("me")), startedAt = 0)
+        // Ben's turn: the song arrives a frame before the decks say whose it is.
+        b.on(room(track = bens, host = true, decks = decks("me")), 3 * min)
+        b.on(room(track = bens, host = true, decks = decks("b")), 3 * min + 50)
+        // Then a song Ben asked the host for, played on the host's turn.
+        b.on(room(track = bensAsk, host = true, decks = decks("b")), 6 * min)
+        b.on(room(track = bensAsk, host = true, decks = decks("me")), 6 * min + 50)
+        val recap = b.finish(9 * min, ended = true)!!
+        assertThat(recap.songs).isEqualTo(3)
+        assertThat(recap.requestsPlayed).isEqualTo(1)
+    }
+
+    @Test fun `a co-host's own song isn't a request`() {
+        val withCohost = SessionInfo("St4tion1", listeners = 2, cohosts = listOf("b"))
+        val b = RecapBuilder(room(track = bens, host = true, session = withCohost), startedAt = 0)
+        b.on(room(track = SharedTrack("Nikes", "Frank Ocean", addedBy = "x"), host = true, session = withCohost), 3 * min)
+        assertThat(b.finish(6 * min, ended = true)!!.requestsPlayed).isEqualTo(1) // x's, not the co-host's
     }
 
     @Test fun `a song that was the room's for only a moment isn't counted or listed`() {

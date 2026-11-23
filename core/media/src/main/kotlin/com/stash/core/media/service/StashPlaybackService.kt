@@ -1015,6 +1015,7 @@ class StashPlaybackService : MediaLibraryService() {
             displayName = { sharePreference.displayName() },
             clock = { android.os.SystemClock.elapsedRealtime() },
             guestsAddPreference = { sharePreference.guestsAddNow() },
+            autoAcceptPreference = { sharePreference.autoAcceptNow() },
             communityKey = { communityKeyStore.key() },
             stationRoom = { stationId -> stationsRepository.liveRoom(stationId) },
             stationListened = { stationId, ms -> stationHeard.listened(stationId, ms) },

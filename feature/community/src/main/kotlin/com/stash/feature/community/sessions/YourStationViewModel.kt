@@ -6,7 +6,9 @@ import com.stash.core.data.community.CommunityResult
 import com.stash.core.data.community.StationEdit
 import com.stash.core.data.community.StationsRepository
 import com.stash.core.data.community.stationMessage
+import com.stash.core.data.share.SharePreference
 import com.stash.core.media.listen.ListenTogetherController
+import com.stash.core.media.listen.ListenTogetherController.Command
 import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.model.community.AutoLiveMode
 import com.stash.core.model.community.AutoLiveSchedule
@@ -17,7 +19,9 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -29,6 +33,7 @@ import kotlinx.coroutines.launch
 class YourStationViewModel @Inject constructor(
     private val stations: StationsRepository,
     private val controller: ListenTogetherController,
+    private val sharePreference: SharePreference,
 ) : ViewModel() {
     data class UiState(
         val loading: Boolean = true,
@@ -51,6 +56,16 @@ class YourStationViewModel @Inject constructor(
 
     /** This phone's room: while it's on the air, Go live now reads "On the air" and opens the session. */
     val room: StateFlow<ListenTogetherState> get() = controller.state
+
+    /** Requests play without asking, in every session this station opens. Kept on this phone. */
+    val autoAccept: StateFlow<Boolean> = sharePreference.autoAccept.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** Remembered for the next session, and told to the one on the air now, if there is one. */
+    fun setAutoAccept(on: Boolean) {
+        viewModelScope.launch { sharePreference.setAutoAccept(on) }
+        val room = controller.state.value
+        if (room is ListenTogetherState.InRoom && room.isHost && room.session != null) controller.send(Command.SetAutoAccept(on))
+    }
 
     init { load() }
 

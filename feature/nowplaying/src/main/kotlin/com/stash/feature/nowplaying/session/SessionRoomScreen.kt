@@ -131,6 +131,7 @@ internal fun SessionRoom(
 ) {
     val feed by life.feed.collectAsStateWithLifecycle()
     val greet by life.greet.collectAsStateWithLifecycle()
+    val energy by life.energy.collectAsStateWithLifecycle()
     var showTray by remember { mutableStateOf(false) }
     var showDeck by remember { mutableStateOf(false) }
     val decks = remember(room.decks, room.members, room.hostId, room.myId, room.isHost) { decksUi(room) }
@@ -332,7 +333,7 @@ internal fun SessionRoom(
 
         // ── Requests, for the host and co-hosts ────────────────────────────────
         if (answersRequests(room)) {
-            RequestsLine(room, ink = ink, muted = muted, onClick = { showRequests = true }, modifier = Modifier.padding(top = 4.dp))
+            RequestsLine(room, ink = ink, muted = muted, onClick = { showRequests = true }, modifier = Modifier.padding(top = 4.dp), energy = energy)
         }
 
         // ── The bar ───────────────────────────────────────────────────────────────

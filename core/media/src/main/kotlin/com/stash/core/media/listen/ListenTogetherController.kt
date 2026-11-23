@@ -134,6 +134,9 @@ class ListenTogetherController @Inject constructor(@ApplicationContext private v
         /** The host or a co-host answers waiting request [id]: Play next, Add to queue, or pass. */
         data class AnswerRequest(val id: String, val answer: RequestAnswer) : Command
 
+        /** A listener takes back their own request [id] while it still waits for an answer. */
+        data class CancelRequest(val id: String) : Command
+
         /** Host only: while on, requests go straight into the queue. */
         data class SetAutoAccept(val on: Boolean) : Command
 
