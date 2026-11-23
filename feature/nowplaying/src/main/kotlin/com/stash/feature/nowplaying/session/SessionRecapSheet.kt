@@ -17,6 +17,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
@@ -153,7 +154,25 @@ internal fun RecapSheet(recap: SessionRecap, onDismiss: () -> Unit) {
             }
             SongList(stringResource(R.string.recap_favourites), recap.favourites) { null }
             if (!recap.wasHost) SongList(stringResource(R.string.recap_saved), recap.saved) { null }
+            // Only while it's still ahead: a recap reopened days later says nothing stale.
+            val nextOn = recap.nextOnAt?.takeIf { !recap.wasHost && it > System.currentTimeMillis() }
+            if (nextOn != null) {
+                val locale = LocalConfiguration.current.locales[0] ?: java.util.Locale.getDefault()
+                Text(
+                    stringResource(R.string.recap_next_on, recapNextOn(nextOn, java.time.ZoneId.systemDefault(), locale)),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 14.dp),
+                )
+            }
             TextButton(onClick = onDismiss, modifier = Modifier.padding(top = 12.dp)) { Text(stringResource(R.string.recap_done)) }
         }
     }
+}
+
+/** When a station is next on, as the recap says it: the day's short name and the time, on this phone's clock ("Sat 9:00 PM"). */
+internal fun recapNextOn(startMs: Long, zone: java.time.ZoneId, locale: java.util.Locale): String {
+    val at = java.time.Instant.ofEpochMilli(startMs).atZone(zone)
+    val day = at.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, locale)
+    return "$day " + java.time.format.DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT).withLocale(locale).format(at)
 }

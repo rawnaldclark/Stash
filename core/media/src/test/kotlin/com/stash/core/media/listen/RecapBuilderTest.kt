@@ -236,6 +236,32 @@ class RecapBuilderTest {
         assertThat(kept.last().newFollowers).isNull()
     }
 
+    @Test fun `a listener's recap says when the station is on next, if its schedule has a time ahead`() = runTest {
+        var next: Long? = 90 * min
+        val asked = mutableListOf<String>()
+        val recorder = SessionRecapRecorder(controller, { kept += it }, backgroundScope, { now }, nextOn = { asked += it; next })
+        recorder.start(); runCurrent()
+        state.value = room(); runCurrent()
+        now = 5 * min
+        state.value = ListenTogetherState.Idle; runCurrent()
+        assertThat(asked).containsExactly("St4tion1")
+        assertThat(recorder.ended.value!!.nextOnAt).isEqualTo(90 * min)
+
+        next = 6 * min // the window it was just in: not ahead of when this stay ended
+        state.value = room(code = "SECOND02"); runCurrent()
+        now = 12 * min
+        state.value = ListenTogetherState.Idle; runCurrent()
+        assertThat(kept.last().nextOnAt).isNull()
+
+        // A host is never told when their own station is on next.
+        next = 500 * min
+        state.value = room(host = true, code = "THIRD003"); runCurrent()
+        now = 20 * min
+        state.value = ListenTogetherState.Idle; runCurrent()
+        assertThat(kept.last().nextOnAt).isNull()
+        assertThat(asked).hasSize(2)
+    }
+
     @Test fun `a private room has no recap, and a move to another session closes the first`() = runTest {
         val recorder = SessionRecapRecorder(controller, { kept += it }, backgroundScope, { now })
         recorder.start(); runCurrent()

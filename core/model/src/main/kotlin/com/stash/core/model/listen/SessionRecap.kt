@@ -42,6 +42,11 @@ data class SessionRecap(
      * before. Null when either couldn't be read, and in a recap kept by an older app.
      */
     val newFollowers: Int? = null,
+    /**
+     * When the station's schedule puts it on the air next, as the station's page said when this stay ended (a
+     * listener's recap). Null when it has no schedule, or the page couldn't be read.
+     */
+    val nextOnAt: Long? = null,
 )
 
 /** A song in a recap. [reactions] and [saves] are people, as the room counted them. */

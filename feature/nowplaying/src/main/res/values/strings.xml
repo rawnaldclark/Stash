@@ -294,6 +294,8 @@
     <string name="recap_favourites">CROWD FAVOURITES</string>
     <string name="recap_saved">SONGS YOU SAVED</string>
     <string name="recap_most_saved">MOST SAVED</string>
+    <!-- A listener's recap: when the station's schedule puts it on the air next. %1$s: a day and time, like "Sat 9:00 PM" -->
+    <string name="recap_next_on">Next on the air: %1$s</string>
     <string name="recap_done">Done</string>
 
     <!-- Sessions: open decks, where the host and a few listeners take turns playing one song each -->
