@@ -174,6 +174,14 @@ class SessionLifeTest {
         assertThat(PHRASE_WHO).isIn(com.stash.core.model.listen.RoomProtocol.PHRASES)
     }
 
+    @Test fun `when a station is next on reads as a day and a time on the phone's clock`() {
+        val ny = java.time.ZoneId.of("America/New_York")
+        val at = java.time.ZonedDateTime.of(2026, 11, 28, 21, 0, 0, 0, ny).toInstant().toEpochMilli() // a Saturday
+        assertThat(recapNextOn(at, ny, java.util.Locale.US).replace('\u202f', ' ')).isEqualTo("Sat 9:00 PM")
+        // The same moment is already Sunday in Tokyo.
+        assertThat(recapNextOn(at, java.time.ZoneId.of("Asia/Tokyo"), java.util.Locale.US)).startsWith("Sun ")
+    }
+
     @Test fun `a recap's length reads as hours and minutes`() {
         assertThat(recapDuration(0)).isEqualTo(0 to 0)
         assertThat(recapDuration(59_999)).isEqualTo(0 to 0)

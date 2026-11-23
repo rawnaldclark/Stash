@@ -27,6 +27,11 @@ data class SessionRecap(
     val peak: Int = 0,
     /** Regulars among them (the host's recap). */
     val regulars: Int = 0,
+    /**
+     * Listeners this session made regulars (the host's recap): here for their third session, and stayed the 10
+     * minutes that count. Worked out on the host's phone from what the room told it.
+     */
+    val newRegulars: Int = 0,
     /** This person's songs that played, with how many people reacted to each. */
     val myPicks: List<RecapSong> = emptyList(),
     /** Listeners' and co-hosts' songs the host's session played (the host's recap). */
@@ -37,6 +42,16 @@ data class SessionRecap(
     val saved: List<RecapSong> = emptyList(),
     /** The song most people saved (the host's recap); null when nobody saved any. */
     val mostSaved: RecapSong? = null,
+    /**
+     * The station's followers gained while it was on the air (the host's recap): its count after, less its count
+     * before. Null when either couldn't be read, and in a recap kept by an older app.
+     */
+    val newFollowers: Int? = null,
+    /**
+     * When the station's schedule puts it on the air next, as the station's page said when this stay ended (a
+     * listener's recap). Null when it has no schedule, or the page couldn't be read.
+     */
+    val nextOnAt: Long? = null,
 )
 
 /** A song in a recap. [reactions] and [saves] are people, as the room counted them. */
