@@ -799,6 +799,10 @@
     <string name="settings_send_computer_usb_ready">Plugged into a computer, File transfer on.</string>
     <string name="settings_send_computer_copying">Getting songs ready: %1$d of %2$d</string>
     <string name="settings_send_computer_copying_desc">Copying them where your computer can reach them.</string>
+    <string name="settings_send_computer_preparing">Getting songs ready…</string>
+    <string name="settings_send_computer_copying_keeps">Copying them where your computer can reach them. It carries on if you leave this screen or the screen turns off.</string>
+    <string name="settings_send_computer_cancelling">Stopping…</string>
+    <string name="settings_send_computer_cancelling_desc">Removing the copies. Your downloads stay.</string>
     <plurals name="settings_send_computer_waiting">
         <item quantity="one">%1$d song ready. Waiting for your computer…</item>
         <item quantity="other">%1$d songs ready. Waiting for your computer…</item>

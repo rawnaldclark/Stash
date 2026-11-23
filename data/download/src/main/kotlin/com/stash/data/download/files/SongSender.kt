@@ -53,7 +53,7 @@ data class SendResult(val entries: List<JsonObject>, val reused: Int, val failed
 class SongSender(private val folder: SendFolder) {
 
     /** [onProgress] is told before each song: how many are done, of how many. Cancelling the coroutine stops between blocks. */
-    suspend fun send(songs: List<SendSong>, onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }): SendResult {
+    suspend fun send(songs: List<SendSong>, onProgress: suspend (done: Int, total: Int) -> Unit = { _, _ -> }): SendResult {
         val context = currentCoroutineContext()
         val wanted = songs.associateBy { it.name }
         // What a stopped send left: whole files of this send are kept, everything else goes (halves, renamed doubles,
@@ -72,14 +72,14 @@ class SongSender(private val folder: SendFolder) {
         val entries = ArrayList<JsonObject>(songs.size)
         var failed = 0
         var reused = 0
-        songs.forEachIndexed { i, song ->
+        for ((i, song) in songs.withIndex()) {
             context.ensureActive()
             onProgress(i, songs.size)
             val there = kept[song.name]
             if (there != null) {
                 entries += song.entry(there.name, there.bytes)
                 reused++
-                return@forEachIndexed
+                continue
             }
             val written = runCatching {
                 song.open()?.use { source -> folder.write(song.name, source) { context[kotlinx.coroutines.Job]?.isActive != false } }

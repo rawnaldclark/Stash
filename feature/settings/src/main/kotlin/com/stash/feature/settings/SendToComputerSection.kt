@@ -169,10 +169,22 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                 UsbLine()
                 Action(stringResource(R.string.settings_send_computer_button), filled = true, onClick = viewModel::start)
             }
+            SendToComputerState.Preparing -> {
+                Line(stringResource(R.string.settings_send_computer_preparing), strong = true)
+                Spacer(modifier = Modifier.height(4.dp))
+                Line(stringResource(R.string.settings_send_computer_copying_desc))
+                Bar(0f)
+                Action(stringResource(R.string.settings_cancel), filled = false, onClick = viewModel::cancel)
+            }
+            SendToComputerState.Cancelling -> {
+                Line(stringResource(R.string.settings_send_computer_cancelling), strong = true)
+                Spacer(modifier = Modifier.height(4.dp))
+                Line(stringResource(R.string.settings_send_computer_cancelling_desc))
+            }
             is SendToComputerState.Copying -> {
                 Line(stringResource(R.string.settings_send_computer_copying, s.current + 1, s.total), strong = true)
                 Spacer(modifier = Modifier.height(4.dp))
-                Line(stringResource(R.string.settings_send_computer_copying_desc))
+                Line(stringResource(R.string.settings_send_computer_copying_keeps))
                 Bar(if (s.total == 0) 0f else s.current.toFloat() / s.total)
                 Action(stringResource(R.string.settings_cancel), filled = false, onClick = viewModel::cancel)
             }
