@@ -46,7 +46,7 @@ const POST_ID = /^[A-Za-z0-9]{8}$/;
 const PREFIX = /^[0-9a-f]{8,64}$/;
 const COUNT = /^\d{1,3}$/;
 const USAGE = "usage: npm run community -- list [n] | remove <postId> | restore <postId> | block <postId> | unblock <posterIdPrefix> | drop-unheard-downvotes"
-    + " | station-list [n] | station-remove <stationId> | station-restore <stationId> | station-block <stationId>";
+    + " | station-list [n] | station-remove <stationId> | station-restore <stationId> | station-block <stationId> | stats [days]";
 
 function postId(arg) {
     if (!POST_ID.test(arg ?? "")) throw new Error("expected a post id: 8 letters or digits");
@@ -153,6 +153,28 @@ export function commandSql(command, arg, now = Date.now()) {
                 `UPDATE posts SET removed_at = ${now}, removed_by = 'owner' WHERE removed_at IS NULL AND poster = ${owner} RETURNING id, title`,
                 `DELETE FROM live WHERE station_id = '${id}' RETURNING room`,
                 `SELECT substr(poster, 1, 8) AS poster, at, note FROM blocked WHERE poster = ${owner}`].join(";\n");
+        }
+        case "stats": {
+            // The Sessions scoreboard: each of the last [days] days, their totals, and what the totals can't hold.
+            const days = listCount(arg, "7");
+            const since = new Date(now - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+            const from = `FROM session_stats WHERE day >= '${since}'`;
+            const share = (col) => `CASE WHEN SUM(listeners) > 0 THEN ROUND(100.0 * SUM(${col}) / SUM(listeners)) END AS ${col}_pct`;
+            const week = now - 7 * 86_400_000;
+            return [`SELECT * ${from} ORDER BY day DESC`,
+                `SELECT SUM(sessions) AS sessions, SUM(listeners) AS listeners, SUM(listener_minutes) AS listener_minutes,
+                    CASE WHEN SUM(listeners) > 0 THEN ROUND(1.0 * SUM(listener_minutes) / SUM(listeners), 1) END AS avg_stay_min,
+                    CASE WHEN SUM(listeners) = 0 THEN NULL
+                         WHEN 2 * SUM(stay_under_2) >= SUM(listeners) THEN 'under 2 min'
+                         WHEN 2 * SUM(stay_under_2 + stay_2_to_10) >= SUM(listeners) THEN '2 to 10 min'
+                         WHEN 2 * SUM(stay_under_2 + stay_2_to_10 + stay_10_to_30) >= SUM(listeners) THEN '10 to 30 min'
+                         ELSE '30 min or more' END AS median_stay,
+                    ${share("reacted")}, ${share("said")}, ${share("saved")}, ${share("requested")}, SUM(requests_taken) AS requests_taken,
+                    (SELECT COUNT(*) FROM station_follows WHERE at >= ${now - days * 86_400_000}) AS follows,
+                    CASE WHEN SUM(sessions) > 0 THEN ROUND(1.0 * (SELECT COUNT(*) FROM station_follows WHERE at >= ${now - days * 86_400_000}) / SUM(sessions), 2) END AS follows_per_session
+                 ${from}`,
+                `SELECT COUNT(*) AS returning_listeners_7d, COUNT(DISTINCT station_id) AS at_stations
+                 FROM station_regulars WHERE sessions >= 2 AND last_at >= ${week}`].join(";\n");
         }
         default:
             throw new Error(USAGE);

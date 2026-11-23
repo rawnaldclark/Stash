@@ -269,7 +269,7 @@ test("a reaction a second a socket, held by the shell; in a session no reaction 
     assert.equal(puts, 0, "nothing stored for any of them");
 });
 
-test("a phrase every 3 s a socket, held by the shell, and none of them stores the room", async () => {
+test("a phrase every 3 s a socket, held by the shell, and only a listener's first stores the room", async () => {
     const clock = { t: 1_000 };
     const { ctx, room } = await openSession(clock);
     const host = await connect(ctx, room, { name: "Rawn", hostKey: "KEY" });
@@ -290,7 +290,7 @@ test("a phrase every 3 s a socket, held by the shell, and none of them stores th
     clock.t += 1;
     await say(sam, "chills");
     assert.equal(said(), 3);
-    assert.equal(puts, 0);
+    assert.equal(puts, 2, "Sam's first and Jo's first, for the scoreboard; Sam's second stored nothing");
 });
 
 test("an animated reaction passes the shell as an emoji does", async () => {
