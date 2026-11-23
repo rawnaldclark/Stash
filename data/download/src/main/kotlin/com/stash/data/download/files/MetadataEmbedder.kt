@@ -237,8 +237,10 @@ class MetadataEmbedder @Inject constructor(
             ExistingTags(
                 album = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM).orEmpty().trim(),
                 hasGenre = has(android.media.MediaMetadataRetriever.METADATA_KEY_GENRE),
+                // An MP4 file's DATE is its container's creation time, not a release year.
                 hasYear = has(android.media.MediaMetadataRetriever.METADATA_KEY_YEAR) ||
-                    has(android.media.MediaMetadataRetriever.METADATA_KEY_DATE),
+                    (file.extension.lowercase() !in MP4_EXTENSIONS &&
+                        has(android.media.MediaMetadataRetriever.METADATA_KEY_DATE)),
                 hasTrackNumber = has(android.media.MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER),
             )
         } catch (e: Exception) {
@@ -320,6 +322,7 @@ class MetadataEmbedder @Inject constructor(
         // Containers that don't support ffmpeg's `-disposition:v:0 attached_pic`
         // mapping (mux fails with exit 234). Tag writing still works for these.
         private val OPUS_OGG_EXTENSIONS = setOf("opus", "ogg")
+        private val MP4_EXTENSIONS = setOf("m4a", "mp4", "m4b", "aac")
 
         // Issue #118 threshold: max base64 length we'll inline into argv before
         // switching to the ffmetadata-file fallback. Linux MAX_ARG_STRLEN is

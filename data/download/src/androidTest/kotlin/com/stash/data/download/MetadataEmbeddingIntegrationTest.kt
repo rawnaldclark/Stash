@@ -6,6 +6,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.stash.core.common.AppVersionProvider
 import com.stash.core.model.Track
+import com.stash.data.download.files.ExtraTagSource
+import com.stash.data.download.files.ExtraTags
 import com.stash.data.download.files.MetadataEmbedder
 import com.yausername.ffmpeg.FFmpeg
 import kotlinx.coroutines.runBlocking
@@ -99,6 +101,54 @@ class MetadataEmbeddingIntegrationTest {
 
     @Test fun embedsTagsAndArtIntoFlac() = runBlocking {
         verifyRoundTrip("sample_flac.flac")
+    }
+
+    /**
+     * A bare file (title and artist only, no album) takes the catalogue's
+     * album, year, track number and genre, in each container; and a second
+     * pass over the now-complete file does not even ask the catalogue.
+     */
+    @Test fun fillsABareFilesBlanksFromTheCatalogue() = runBlocking {
+        for (asset in listOf("sample_flac.flac", "sample_opus.opus", "sample_m4a.m4a")) {
+            var asked = 0
+            val catalogue = object : ExtraTagSource {
+                override suspend fun lookUp(track: Track): ExtraTags? {
+                    asked++
+                    return ExtraTags(album = "In Rainbows", year = 2007, trackNumber = 3, discNumber = 2, genre = "Alternative")
+                }
+            }
+            val withCatalogue = MetadataEmbedder(context, versionProvider, catalogue)
+            val source = copyAssetToCache(asset)
+            val track = Track(id = 1, title = "Nude", artist = "Radiohead")
+
+            val result = withCatalogue.embedMetadata(source, track, artFile)
+
+            MediaMetadataRetriever().apply {
+                setDataSource(result.absolutePath)
+                assertEquals("$asset title", "Nude", extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE))
+                assertEquals("$asset album", "In Rainbows", extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM))
+                assertEquals("$asset genre", "Alternative", extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE))
+                val year = extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR)
+                    ?: extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE)
+                if (asset.endsWith(".m4a")) {
+                    // Android's reader does not report an MP4 file's year (its DATE is the container's
+                    // creation time), so the tag is looked for in the file itself: the "(c)day" atom.
+                    val bytes = result.readBytes().toString(Charsets.ISO_8859_1)
+                    val at = bytes.indexOf("©day")
+                    assertTrue("$asset has a year atom", at >= 0)
+                    assertTrue("$asset year atom says 2007", bytes.substring(at, at + 40).contains("2007"))
+                } else {
+                    assertTrue("$asset year, was $year", year.orEmpty().contains("2007"))
+                }
+                val number = extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
+                assertTrue("$asset track, was $number", number.orEmpty().startsWith("3"))
+                release()
+            }
+            assertEquals("$asset asked once", 1, asked)
+
+            withCatalogue.embedMetadata(result, track, artFile)
+            assertEquals("$asset: a complete file is not looked up again", 1, asked)
+        }
     }
 
     private suspend fun verifyRoundTrip(asset: String) {
