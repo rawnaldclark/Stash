@@ -166,6 +166,14 @@ class SessionLifeTest {
         assertThat(lines(vm).count { it == FeedLine.LastSong }).isEqualTo(2)
     }
 
+    @Test fun `the song card names the album only when there is one that isn't the title again`() {
+        assertThat(songCard("Nights", "Frank Ocean", "Blonde")).isEqualTo(SongCard("Nights", "Frank Ocean", "Blonde"))
+        assertThat(songCard("Nights", "Frank Ocean", null).album).isNull()
+        assertThat(songCard("Nights", "Frank Ocean", "  ").album).isNull()
+        assertThat(songCard("Creep", "Radiohead", "creep ").album).isNull() // a single, named for its song
+        assertThat(PHRASE_WHO).isIn(com.stash.core.model.listen.RoomProtocol.PHRASES)
+    }
+
     @Test fun `when a station is next on reads as a day and a time on the phone's clock`() {
         val ny = java.time.ZoneId.of("America/New_York")
         val at = java.time.ZonedDateTime.of(2026, 11, 28, 21, 0, 0, 0, ny).toInstant().toEpochMilli() // a Saturday
