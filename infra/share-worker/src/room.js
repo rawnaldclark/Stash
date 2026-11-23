@@ -201,6 +201,15 @@ const publicMembers = (s) => connected(s).map(({ id, name, joinedAt, status, v, 
     ...((visits ?? 0) >= REGULAR_SESSIONS ? { regular: true } : {}),
 }));
 
+/**
+ * For the host alone (UX spec §7, "Ben · 5th time here"): how many of this station's sessions each connected listener
+ * stayed for before this one, by member id. Listeners with none are left out. Nobody else is ever sent a count.
+ */
+const visitsMsg = (s) => ({
+    to: s.host,
+    msg: { t: "visits", visits: Object.fromEntries(connected(s).filter((m) => m.visits > 0).map((m) => [m.id, m.visits])) },
+});
+
 /** How long a member has been connected to this session in all, as of [now]. */
 const stayOf = (m, now) => (m.inMs ?? 0) + (m.leftAt === null ? now - (m.sinceAt ?? m.joinedAt) : 0);
 /**
@@ -886,6 +895,10 @@ const EVENTS = {
         ctx.out.push(membersMsg(s));
         // In a session, the requests this member may see, and everyone hears the new count.
         if (s.pub) ctx.out.push(requestsMsg(s, m.id), sessionMsg(s));
+        // The host hears a returning listener's count when they arrive, and everyone's when the host itself (re)connects.
+        if (s.pub && s.host && findConnected(s, s.host) && (m.visits > 0 || (m.id === s.host && connected(s).some((x) => x.visits > 0)))) {
+            ctx.out.push(visitsMsg(s));
+        }
         return true;
     },
 

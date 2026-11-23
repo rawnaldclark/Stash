@@ -87,8 +87,29 @@ test("three sessions before make a regular: the members list says so, and never 
     const r = hello(s, "ben", { at: T0, visits: 5 });
     const members = r.out.find((o) => o.msg.t === "members").msg.members;
     assert.deepEqual(members.map((m) => [m.id, m.regular ?? false]), [["h", false], ["new", false], ["two", false], ["ben", true]]);
-    assert.ok(!JSON.stringify(r.out).includes("visits"));
+    assert.ok(!JSON.stringify(r.out.filter((o) => o.to !== "h")).includes("visits"));
     assert.ok(!JSON.stringify(r.out).includes(kh("ben")));
+});
+
+test("the host alone hears how many sessions a listener stayed for before, when they arrive", () => {
+    let s = session();
+    const fresh = hello(s, "new", { at: T0 });
+    assert.deepEqual(fresh.out.filter((o) => o.msg.t === "visits"), []); // a first visit: nothing to say
+    s = hello(fresh.state, "two", { at: T0, visits: 2 }).state;
+    const r = hello(s, "ben", { at: T0, visits: 5 });
+    assert.deepEqual(r.out.filter((o) => o.msg.t === "visits"), [{ to: "h", msg: { t: "visits", visits: { two: 2, ben: 5 } } }]);
+});
+
+test("a host who reconnects hears the counts again, and a listener who does hears none", () => {
+    let s = hello(session(), "ben", { at: T0, visits: 5 }).state;
+    const token = s.members.find((m) => m.id === "h").token;
+    s = step(s, { type: "close", from: "h" }, T0 + 1000).state;
+    const away = hello(s, "ana", { at: T0 + 2000, visits: 1 });
+    assert.deepEqual(away.out.filter((o) => o.msg.t === "visits"), []); // no host to tell
+    // As the app comes back: its resume token and its Community key, and no host key.
+    const back = hello(away.state, "h", { resumeToken: token, hash: "h", at: T0 + 3000 });
+    assert.equal(back.state.host, "h");
+    assert.deepEqual(back.out.filter((o) => o.msg.t === "visits"), [{ to: "h", msg: { t: "visits", visits: { ben: 5, ana: 1 } } }]);
 });
 
 test("the host's own visits are never read into the room", () => {
