@@ -36,11 +36,17 @@ test("there are 10 phrases and 12 animated reactions, as ids", () => {
     assert.equal(new Set([...PHRASES, ...ANIMS]).size, 22);
 });
 
-test("a phrase reaches everyone under the sender's id, and nothing is stored", () => {
+test("a phrase reaches everyone under the sender's id, and only a listener's first is stored", () => {
     const s = playing();
     const r = send(s, "l1", { t: "say", phrase: "tune" });
     assert.deepEqual(r.out, [{ to: "all", msg: { t: "said", from: "l1", phrase: "tune" } }]);
-    assert.equal(r.state, s);
+    // The first marks them as having spoken, for the scoreboard; after that a phrase changes nothing.
+    assert.notEqual(r.state, s);
+    const again = send(r.state, "l1", { t: "say", phrase: "chills" });
+    assert.deepEqual(again.out, [{ to: "all", msg: { t: "said", from: "l1", phrase: "chills" } }]);
+    assert.equal(again.state, r.state);
+    // The host is no listener: theirs is never stored.
+    assert.equal(send(s, "h", { t: "say", phrase: "tune" }).state, s);
 });
 
 test("only the fixed phrases pass: no text, no unknown id", () => {

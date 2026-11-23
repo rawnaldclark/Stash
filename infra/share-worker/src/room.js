@@ -2,7 +2,8 @@
  * Listen Together room logic (spec docs/superpowers/specs/2026-09-24-listen-together-design.md §2–§4;
  * guests adding songs: docs/superpowers/specs/2026-11-04-listen-together-guest-adds-design.md).
  *
- * Pure: step(state, event, now) → { state, out, alarmAt, bind?, reject?, closed?, kick?, live?, regulars? }.
+ * Pure: step(state, event, now) → { state, out, alarmAt, bind?, reject?, closed?, kick?, live?, regulars?, stats? }.
+ * `stats`: a session's totals for the scoreboard, once, as it closes (see sessionStats).
  * `regulars`: `{ stationId, listeners }`, key hashes whose stay in this session reached REGULAR_STAY_MS, for the shell
  * to count at the station (once each a session). `kick`: members a
  * session's host booted, whose sockets the shell closes once `out` is sent. `live`: a session's live directory write,
@@ -220,6 +221,11 @@ const stayOf = (m, now) => (m.inMs ?? 0) + (m.leftAt === null ? now - (m.sinceAt
 function countStay(ctx, m) {
     const p = ctx.s.pub;
     if (!p || !m.kh) return;
+    // The scoreboard's listener time: every listener's, however short (the host is no listener).
+    if (m.id !== ctx.s.host) {
+        p.time ??= {};
+        if (m.kh in p.time || Object.keys(p.time).length < MAX_STAYS) p.time[m.kh] = (p.time[m.kh] ?? 0) + stayOf(m, ctx.now);
+    }
     p.stays ??= {};
     const before = p.stays[m.kh];
     if (before === -1) return;
@@ -233,6 +239,45 @@ function countStay(ctx, m) {
 }
 
 const memberById = (s, id) => s.members.find((m) => m.id === id);
+
+/** What a listener did in a session, for the scoreboard: one bit each, kept by key hash and never sent to anyone. */
+export const ACT = { react: 1, say: 2, save: 4, request: 8 };
+function noteAct(s, memberId, bit) {
+    const p = s.pub;
+    const kh = memberById(s, memberId)?.kh;
+    if (!p || !kh || memberId === s.host) return false;
+    p.acts ??= {};
+    if (p.acts[kh] & bit) return false;
+    if (!(kh in p.acts) && Object.keys(p.acts).length >= MAX_STAYS) return false;
+    p.acts[kh] = (p.acts[kh] ?? 0) | bit;
+    return true;
+}
+
+/** Upper bounds, in minutes, of the scoreboard's stay buckets; the last bucket is everything longer. */
+export const STAY_BUCKETS_MIN = [2, 10, 30];
+/**
+ * A session's totals for the scoreboard (build plan, decision 10), made as it ends: numbers only, no person, station
+ * or song in them. Null for a session that never reached the air.
+ */
+function sessionStats(s) {
+    const p = s.pub;
+    if (!p || !p.everLive) return null;
+    const times = Object.values(p.time ?? {});
+    const acts = Object.values(p.acts ?? {});
+    const did = (bit) => acts.filter((a) => a & bit).length;
+    const stays = [0, 0, 0, 0];
+    for (const ms of times) {
+        const i = STAY_BUCKETS_MIN.findIndex((min) => ms < min * 60_000);
+        stays[i < 0 ? STAY_BUCKETS_MIN.length : i]++;
+    }
+    return {
+        listeners: times.length,
+        minutes: Math.round(times.reduce((a, b) => a + b, 0) / 60_000),
+        stays,
+        reacted: did(ACT.react), said: did(ACT.say), saved: did(ACT.save), requested: did(ACT.request),
+        requestsTaken: p.taken ?? 0,
+    };
+}
 /** In a session, a member whose key hash the host made a co-host. */
 function isCohost(s, id) {
     if (!s.pub) return false;
@@ -419,6 +464,7 @@ function crowdOf(s) {
 /** The session's row as of [now], marking it written. The song goes without `by`: a member id means nothing outside. */
 function liveRow(s, now) {
     s.pub.liveAt = now;
+    s.pub.everLive = true;
     s.pub.liveKey = liveKeyOf(s);
     const { by, ...track } = s.track;
     return {
@@ -790,12 +836,16 @@ function fitsQueue(s, x, byRoom) {
 }
 
 /** Request [x] into the queue, its requester's, by Play next ([next]) or Add to queue. The caller bumps qv and settles. */
-const queueRequest = (s, x, next) => insertAdds(s, [{ ...x.track, by: x.from }], next);
+function queueRequest(s, x, next) {
+    if (s.pub) s.pub.taken = (s.pub.taken ?? 0) + 1; // the scoreboard's "requests taken"
+    return insertAdds(s, [{ ...x.track, by: x.from }], next);
+}
 
 /** Closes the room, everyone told why. */
 function endRoom(ctx, reason) {
     // Everyone still in the session, or inside their 60 s, has their stay counted now.
     if (ctx.s?.pub) for (const m of ctx.s.members) countStay(ctx, m);
+    if (ctx.s?.pub) ctx.stats = sessionStats(ctx.s) ?? undefined;
     ctx.out.push({ to: "all", msg: { t: "ended", reason } });
     ctx.closed = true;
     return true;
@@ -832,7 +882,7 @@ export function step(state, event, now) {
         // A session takes its row out of the directory; one whose row went (stationGone) has nothing to take out.
         const p = ctx.s.pub;
         const live = p?.liveAt != null ? { remove: { stationId: p.stationId, room: ctx.s.code } } : undefined;
-        return { state: null, out: ctx.out, alarmAt: null, closed: true, live, regulars: regularsOf(ctx) };
+        return { state: null, out: ctx.out, alarmAt: null, closed: true, live, regulars: regularsOf(ctx), stats: ctx.stats };
     }
     let next = changed ? ctx.s : state;
     let live;
@@ -1194,6 +1244,7 @@ const MESSAGES = {
             const st = statsOf(s);
             if (st.reacted.includes(event.from)) return false;
             st.reacted.push(event.from);
+            noteAct(s, event.from, ACT.react);
             if (!st.fav && onAir(s) && st.reacted.length >= FAVOURITE_MIN && st.reacted.length * 3 >= connected(s).length) st.fav = true;
             statsChanged(ctx);
             return true;
@@ -1304,7 +1355,7 @@ const MESSAGES = {
         const { s, msg, event } = ctx;
         if (!s.pub || !PHRASES.includes(msg.phrase)) return false;
         ctx.out.push({ to: "all", msg: { t: "said", from: event.from, phrase: msg.phrase } });
-        return false;
+        return noteAct(s, event.from, ACT.say); // stored only the first time: a phrase otherwise changes nothing
     },
 
     /** `{ trackKey }`: this person saved the playing song. Counted once each; who saved is never sent. */
@@ -1314,6 +1365,7 @@ const MESSAGES = {
         const st = statsOf(s);
         if (st.saved.includes(event.from)) return false;
         st.saved.push(event.from);
+        noteAct(s, event.from, ACT.save);
         statsChanged(ctx);
         return true;
     },
@@ -1329,6 +1381,7 @@ const MESSAGES = {
         const track = cleanTrack(msg.track);
         if (!track) return false;
         const x = { id: event.newId, from: event.from, track };
+        noteAct(s, event.from, ACT.request);
         const answer = (state) => ctx.out.push({ to: event.from, msg: { t: "requestAnswer", state } });
         if (s.pub.autoAccept && fitsQueue(s, x, true)) {
             s.qv++;

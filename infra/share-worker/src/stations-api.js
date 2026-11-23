@@ -491,6 +491,22 @@ export async function countRegulars(db, stationId, listeners, now) {
 }
 
 /**
+ * A session's totals join its day's row of the scoreboard (migrations/0009_session_stats.sql): the UTC day it ended.
+ * [stats] is what its room made (src/room.js, sessionStats): numbers only.
+ */
+export async function addSessionStats(db, stats, now) {
+    const day = new Date(now).toISOString().slice(0, 10);
+    const cols = ["sessions", "listeners", "listener_minutes", "stay_under_2", "stay_2_to_10", "stay_10_to_30", "stay_30_up",
+        "reacted", "said", "saved", "requested", "requests_taken"];
+    const values = [1, stats.listeners, stats.minutes, ...stats.stays, stats.reacted, stats.said, stats.saved, stats.requested, stats.requestsTaken]
+        .map((n) => (Number.isSafeInteger(n) && n > 0 ? n : 0));
+    await db.prepare(
+        `INSERT INTO session_stats (day, ${cols.join(", ")}) VALUES (?1, ${cols.map((_, i) => `?${i + 2}`).join(", ")})
+         ON CONFLICT (day) DO UPDATE SET ${cols.map((c) => `${c} = ${c} + excluded.${c}`).join(", ")}`,
+    ).bind(day, ...values).run();
+}
+
+/**
  * A session's row in the live directory, from its room (src/listen-room.js; when, src/room.js). One batch, so nothing
  * lands between its parts:
  *   1. the row, only for a station that may still be shown, and never over a newer session's (a station's newest

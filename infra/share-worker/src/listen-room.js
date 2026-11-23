@@ -4,7 +4,7 @@
  * member with serializeAttachment, sends what step() says to send, and arms the single alarm.
  */
 import { step, preview, capacity, EMOJI, ANIMS, REACT_GAP_MS, SAY_GAP_MS } from "./room.js";
-import { countRegulars, removeLive, visitsOf, writeLive } from "./stations-api.js";
+import { addSessionStats, countRegulars, removeLive, visitsOf, writeLive } from "./stations-api.js";
 import { sameHex, sha256Hex } from "./store.js";
 import { validEditKey } from "./validate.js";
 
@@ -220,6 +220,9 @@ export class ListenRoom {
             await this.ctx.storage.deleteAll();
             if (r.live) await this.directory(r.live);
             if (r.regulars) await this.regulars(r.regulars);
+            // The scoreboard's totals for this session. Without the table (this code deployed before its migration),
+            // or on any database error, they are logged and dropped: a session ends the same either way.
+            if (r.stats) await addSessionStats(this.env.COMMUNITY_DB, r.stats, this.now()).catch((e) => { console.error(`session stats: ${e?.message ?? e}`); });
             return r;
         }
         if (r.state && r.state !== state) await this.ctx.storage.put("room", r.state);
