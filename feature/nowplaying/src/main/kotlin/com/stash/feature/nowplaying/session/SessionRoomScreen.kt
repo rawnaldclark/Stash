@@ -98,6 +98,8 @@ internal class RoomSong(
     val elapsedMs: () -> Long,
     /** In Liked Songs; null when the song can't be liked (no library row yet). */
     val liked: Boolean?,
+    /** The album as this phone has it, for the song card; null when it has none. */
+    val album: String? = null,
 )
 
 /**
@@ -403,7 +405,7 @@ internal fun SessionRoom(
     }
     if (showSongCard) {
         SongCardSheet(
-            card = songCard(song.title, song.artist, room.track?.album),
+            card = songCard(song.title, song.artist, song.album?.takeIf(String::isNotBlank) ?: room.track?.album),
             art = song.art ?: room.track?.artUrl?.takeIf(ShareConfig::isAllowedCover),
             liked = song.liked,
             onSave = {

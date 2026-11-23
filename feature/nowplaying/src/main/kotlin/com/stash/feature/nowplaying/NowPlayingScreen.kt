@@ -1181,6 +1181,7 @@ fun NowPlayingScreen(
                         elapsedMs = { playerPosition.value },
                         // An All Songs file can't be liked (no library row): no heart.
                         liked = track?.takeUnless { it.isScannedSong }?.let { it.stashLikedAt != null },
+                        album = track?.album,
                     ),
                     reactions = together.reactions,
                     animate = ambientAnimationEnabled,
