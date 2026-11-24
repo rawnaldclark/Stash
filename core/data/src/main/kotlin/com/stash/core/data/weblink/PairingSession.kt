@@ -35,7 +35,7 @@ sealed interface PairingState {
      * link (the camera app, a chat, a web page), not from the in-app scanner, so the sheet warns that only a computer in front
      * of the user should be linked (the name on the sheet is whatever that browser chose).
      */
-    data class Confirm(val browserName: String, val code: String, val fromLink: Boolean = false) : PairingState
+    data class Confirm(val browserName: String, val code: String, val fromLink: Boolean = false, val computer: Boolean = false) : PairingState
 
     /** Answered; "Waiting for your computer… · 123 456" until the browser's user confirms the same code. */
     data class Waiting(val browserName: String, val code: String) : PairingState
@@ -45,7 +45,7 @@ sealed interface PairingState {
      * result once that browser is unlinked (Unlink everything, Remove, or from the web) instead of showing a stale
      * "Linked to Chrome on Windows". Null only for callers that don't know it.
      */
-    data class Linked(val browserName: String, val browserDeviceId: String? = null) : PairingState
+    data class Linked(val browserName: String, val browserDeviceId: String? = null, val computer: Boolean = false) : PairingState
 
     /** Stopped, with nothing joined, created or pinned. [code] stays on screen when the phone had already shown it. */
     data class Failed(val message: String, val code: String? = null) : PairingState
@@ -166,7 +166,7 @@ class PairingSession(
         val kpair = SyncKeys.pairKey(eP.private, link.eBPub, link.pairSecret, link.pairId, link.eBPub, ePPub, browser.deviceId, browser.pub)
         val code = SyncKeys.pairCode(kpair)
         pending = Pending(link, browser, eP, ePPub, kpair, code)
-        return set(PairingState.Confirm(browser.name, code, fromLink))
+        return set(PairingState.Confirm(browser.name, code, fromLink, computer = browser.type == TYPE_DESKTOP))
     }
 
     private suspend fun confirmInner(p: Pending): PairingState {
@@ -239,7 +239,7 @@ class PairingSession(
         return when (outcome) {
             WebLinkResult.Ok -> {
                 withContext(NonCancellable) { repo.refresh() }
-                set(PairingState.Linked(name, p.browser.deviceId))
+                set(PairingState.Linked(name, p.browser.deviceId, computer = p.browser.type == TYPE_DESKTOP))
             }
             is WebLinkResult.Failed -> fail(outcome.message, p.code)
             is WebLinkResult.Unlinked -> fail(WebLinkCopy.UNFINISHED, p.code)

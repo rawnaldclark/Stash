@@ -1090,6 +1090,8 @@
     <string name="settings_web_link_waiting_desc">Check that %s shows the same six digits, then tap Link there.</string>
     <string name="settings_web_link_linked_to">Linked to %s</string>
     <string name="settings_web_link_linked_desc">Linked. Nothing is mirrored yet.</string>
+    <string name="settings_web_link_confirm_body_after_code_computer">. Then this phone can be its remote: while Stash plays there, you see it here, and what you tap plays there.</string>
+    <string name="settings_web_link_linked_desc_computer">Linked. Open Stash there and play something: this phone becomes its remote. Play on › Computers moves your music there.</string>
     <string name="settings_web_link_code_label">"Code "</string>
     <string name="settings_web_link_scan_again">Scan again</string>
     <string name="settings_web_link_action_rename">Rename</string>
