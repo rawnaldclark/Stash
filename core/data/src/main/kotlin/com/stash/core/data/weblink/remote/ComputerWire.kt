@@ -41,7 +41,15 @@ data class ComputerState(
     val repeat: String,
     /** "Playing from" on the computer, or null. */
     val from: String?,
+    /** What the playing song is as it plays there, once the computer has said; null when it hasn't. */
+    val format: ComputerFormat? = null,
 )
+
+/**
+ * What the computer's playing song is as it plays there: [codec] lower case ("flac", "opus", "mp3"), and its [sampleRate] and
+ * [bitDepth] when known (a stream's depth often isn't: then none is shown, never a guess).
+ */
+data class ComputerFormat(val codec: String, val sampleRate: Int?, val bitDepth: Int?)
 
 /** A computer whose socket is open, and what it said last ([receivedAt]: this phone's elapsed-realtime clock). */
 data class ComputerLive(val device: String, val name: String, val state: ComputerState, val receivedAt: Long)
@@ -157,8 +165,22 @@ object ComputerWire {
             shuffle = o.bool("shuffle") == true,
             repeat = o.str("repeat")?.takeIf { it == "off" || it == "all" || it == "one" } ?: "off",
             from = o.str("from")?.let { HandoffWire.cleanText(it, MAX_FROM) }?.takeIf { it.isNotEmpty() },
+            format = readFormat(o["format"]),
         )
     }
+
+    /** A state's `format`, or null when there is none or it isn't one (the rest of the state still reads). */
+    private fun readFormat(e: kotlinx.serialization.json.JsonElement?): ComputerFormat? {
+        val f = e as? JsonObject ?: return null
+        val codec = f.str("codec")?.lowercase()?.takeIf { CODEC.matches(it) } ?: return null
+        return ComputerFormat(
+            codec = codec,
+            sampleRate = f.long("sampleRate")?.takeIf { it in 1..1_536_000 }?.toInt(),
+            bitDepth = f.long("bitDepth")?.takeIf { it in 1..64 }?.toInt(),
+        )
+    }
+
+    private val CODEC = Regex("[a-z0-9][a-z0-9_.-]{0,23}")
 
     /** Whether a state's `caps` say the sender keeps its own queue (a computer), read before [readState]. */
     fun keepsQueue(text: String): Boolean = try {

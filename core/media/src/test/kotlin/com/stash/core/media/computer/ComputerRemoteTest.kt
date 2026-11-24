@@ -3,6 +3,7 @@ package com.stash.core.media.computer
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.weblink.handoff.WireSong
 import com.stash.core.data.weblink.remote.ComputerCommand
+import com.stash.core.data.weblink.remote.ComputerFormat
 import com.stash.core.data.weblink.remote.ComputerItem
 import com.stash.core.data.weblink.remote.ComputerLink
 import com.stash.core.data.weblink.remote.ComputerLive
@@ -46,11 +47,17 @@ class ComputerRemoteTest {
 
     private fun song(title: String) = WireSong(title, "Frank Ocean")
 
-    private fun says(playing: Boolean, sid: String = "sessionAAAA", titles: List<String> = listOf("Pink + White", "Nights", "Solo")) {
+    private fun says(
+        playing: Boolean,
+        sid: String = "sessionAAAA",
+        titles: List<String> = listOf("Pink + White", "Nights", "Solo"),
+        format: ComputerFormat? = null,
+    ) {
         val items = titles.mapIndexed { i, t -> ComputerItem("q${i + 1}", song(t)) }
         val st = ComputerState(
             sid = sid, playing = playing, loading = false, positionMs = 10_000, durationMs = 184_000, volume = 0.5,
             song = items.first().song, iid = "q1", at = 2, length = 10, items = items, shuffle = false, repeat = "off", from = "Blonde",
+            format = format,
         )
         link.computers.update { it + (PC to ComputerLive(PC, "Stash on DESKTOP", st, now)) }
     }
@@ -135,6 +142,24 @@ class ComputerRemoteTest {
         now += 1_000
         says(playing = true)
         assertThat(lookups).containsExactly("Pink + White", "Nights", "Solo")
+    }
+
+    @Test
+    fun `the playing song names the format the computer plays, never this phone's copy or the app's default`() {
+        // This phone's copy is an Opus file; the computer plays a FLAC stream.
+        library["Pink + White"] = track(7, "Pink + White", local = true).copy(filePath = "/music/pink.opus", fileFormat = "opus", qualityKbps = 160)
+        says(playing = true)
+        var playing = remote.view.value!!.currentTrack!!
+        assertThat(playing.id).isEqualTo(7) // still this phone's row: heart and download work
+        assertThat(playing.fileFormat).isEmpty() // not said yet: no line, rather than a wrong one
+        assertThat(playing.filePath).isNull()
+        assertThat(playing.qualityKbps).isEqualTo(0)
+        now += 1_000
+        says(playing = true, format = ComputerFormat("flac", 44_100, 16))
+        playing = remote.view.value!!.currentTrack!!
+        assertThat(playing.fileFormat).isEqualTo("flac")
+        assertThat(playing.bitsPerSample).isEqualTo(16)
+        assertThat(playing.sampleRateHz).isEqualTo(44_100)
     }
 
     @Test

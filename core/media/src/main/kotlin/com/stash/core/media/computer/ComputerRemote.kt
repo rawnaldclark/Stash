@@ -6,6 +6,7 @@ import com.stash.core.data.weblink.WebSongs
 import com.stash.core.data.weblink.handoff.HandoffSongMatcher
 import com.stash.core.data.weblink.handoff.WireSong
 import com.stash.core.data.weblink.remote.ComputerCommand
+import com.stash.core.data.weblink.remote.ComputerFormat
 import com.stash.core.data.weblink.remote.ComputerLink
 import com.stash.core.data.weblink.remote.ComputerLive
 import com.stash.core.data.weblink.remote.ComputerWire
@@ -271,6 +272,7 @@ class ComputerRemote internal constructor(
         val st = live.state
         val queue = st.items.map { trackOf(it.iid, it.song) }
         val playingTrack = st.song?.let { song -> queue.firstOrNull()?.takeIf { st.items.firstOrNull()?.iid == st.iid } ?: trackOf(st.iid, song) }
+            ?.let { asPlayedThere(it, st.format) }
         return PlayerState(
             currentTrack = playingTrack,
             isPlaying = st.playing && !st.loading,
@@ -312,6 +314,19 @@ class ComputerRemote internal constructor(
             }
         }
     }
+
+    /**
+     * [track] as the computer plays it: Now Playing's format line names what the computer said it decodes ([format]), or
+     * nothing until it says, never this phone's own copy of the song or the app's default.
+     */
+    private fun asPlayedThere(track: Track, format: ComputerFormat?): Track = track.copy(
+        filePath = null,
+        fileFormat = format?.codec.orEmpty(),
+        bitsPerSample = format?.bitDepth,
+        sampleRateHz = format?.sampleRate,
+        qualityKbps = 0,
+        streamOrigin = null,
+    )
 
     /** This phone's row for the song (one it sent, or one its library holds), else the song as the computer describes it. */
     private fun trackOf(iid: String?, song: WireSong): Track = key(song.title, song.artist).let { sent[it] ?: known.value[it] } ?: Track(
