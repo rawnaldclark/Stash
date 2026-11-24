@@ -41,7 +41,7 @@ import kotlin.random.Random
 class TopViewModelTest {
 
     private val player = mockk<PlayerRepository>(relaxed = true).also {
-        every { it.playerState } returns MutableStateFlow(PlayerState())
+        MutableStateFlow(PlayerState()).let { s -> every { it.playerState } returns s; every { it.shownState } returns s }
     }
     private val connectivity = mockk<ConnectivityMonitor>().also { every { it.isConnected() } returns true }
     private val artistImages = mockk<ArtistImageDao>().also { every { it.observeAll() } returns flowOf(emptyList()) }

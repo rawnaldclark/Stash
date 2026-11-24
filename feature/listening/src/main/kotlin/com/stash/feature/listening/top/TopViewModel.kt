@@ -141,7 +141,7 @@ class TopViewModel @VisibleForTesting internal constructor(
     val range: StateFlow<ListeningRange> = _range.asStateFlow()
 
     /** The song playing now, so its row is marked like in every other list. */
-    val nowPlayingTrackId: StateFlow<Long?> = playerRepository.playerState
+    val nowPlayingTrackId: StateFlow<Long?> = playerRepository.shownState
         .map { it.currentTrack?.id }
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)

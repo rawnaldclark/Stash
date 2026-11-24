@@ -8,7 +8,7 @@ object WebLinkCopy {
     const val UNFINISHED = "Linking didn't finish. Show a new code on your computer."
     const val OFFLINE = "Can't reach Stash right now. Try again in a minute."
     const val SLOW_DOWN = "Too many tries. Wait a minute and try again."
-    const val FULL = "You've linked 4 browsers. Remove one first."
+    const val FULL = "You've linked 4 browsers and computers. Remove one first."
     const val ALREADY_LINKED = "That browser is already linked."
     const val KEY_CHANGED = "Key changed: remove it and link it again"
     const val NOT_VERIFIED = "Not verified"

@@ -1052,13 +1052,13 @@
     <string name="settings_web_link_remove_device_desc">It stops seeing your phone at once. Its library stays as it is.</string>
     <string name="settings_web_link_action_remove">Remove</string>
     <string name="settings_web_link_unlink_everything_title">Unlink everything?</string>
-    <string name="settings_web_link_unlink_everything_desc">Every linked browser is unlinked at once. Nothing is deleted from any library.</string>
+    <string name="settings_web_link_unlink_everything_desc">Every linked browser and computer is unlinked at once. Nothing is deleted from any library.</string>
     <string name="settings_web_link_action_unlink_everything">Unlink everything</string>
-    <string name="settings_web_link_section_link_browser">Link a browser</string>
-    <string name="settings_web_link_not_linked_instructions">Open play.stashfm.app › Settings › Your phone</string>
+    <string name="settings_web_link_section_link_browser">Link a browser or computer</string>
+    <string name="settings_web_link_not_linked_instructions">Open play.stashfm.app, or Stash on your computer, › Settings › Your phone</string>
     <string name="settings_web_link_scan_code_button">Scan code</string>
     <string name="settings_web_link_section_linked_devices">Linked devices</string>
-    <string name="settings_web_link_link_another_browser">Link another browser</string>
+    <string name="settings_web_link_link_another_browser">Link another browser or computer</string>
     <string name="settings_web_link_up_to_four">Up to 4</string>
     <string name="settings_web_link_section_handoff">Handoff</string>
     <string name="settings_web_link_handoff_title">Pick up where you left off</string>
@@ -1090,6 +1090,8 @@
     <string name="settings_web_link_waiting_desc">Check that %s shows the same six digits, then tap Link there.</string>
     <string name="settings_web_link_linked_to">Linked to %s</string>
     <string name="settings_web_link_linked_desc">Linked. Nothing is mirrored yet.</string>
+    <string name="settings_web_link_confirm_body_after_code_computer">. Then this phone can be its remote: while Stash plays there, you see it here, and what you tap plays there.</string>
+    <string name="settings_web_link_linked_desc_computer">Linked. Open Stash there and play something: this phone becomes its remote. Play on › Computers moves your music there.</string>
     <string name="settings_web_link_code_label">"Code "</string>
     <string name="settings_web_link_scan_again">Scan again</string>
     <string name="settings_web_link_action_rename">Rename</string>

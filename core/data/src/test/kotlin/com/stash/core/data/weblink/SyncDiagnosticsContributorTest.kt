@@ -63,7 +63,7 @@ class SyncDiagnosticsContributorTest {
 
         section.nowMs = { clock }
         val text = section.section()
-        assertThat(text).contains("Linked: yes · this phone + 1 browser(s) · key epoch 1")
+        assertThat(text).contains("Linked: yes · this phone + 1 browser(s) + 0 computer(s) · key epoch 1")
         assertThat(text).contains("Mirroring: likes both")
         assertThat(text).contains("Last run: just now (ok)")
         val sp = store.space()!!

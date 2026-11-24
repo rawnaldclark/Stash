@@ -42,7 +42,7 @@ class AllSongsViewModelDeleteTest {
         every { dao.observeFolders() } returns flowOf(emptyList())
         every { dao.observeSongs() } returns flowOf(emptyList())
         coEvery { dao.getFolders() } returns emptyList()
-        every { player.playerState } returns MutableStateFlow(PlayerState())
+        MutableStateFlow(PlayerState()).let { s -> every { player.playerState } returns s; every { player.shownState } returns s }
     }
 
     @After

@@ -78,6 +78,25 @@ class HandoffSongMatcher @Inject constructor(
     }
 
     /**
+     * [song]'s row in this library, if it has one, and never a new row: what another device plays shown as this phone's own
+     * song (its heart, its download, its mark in a list). A row found by an id must be the same recording ([sameRecording]).
+     */
+    suspend fun find(song: WireSong): TrackEntity? = withContext(Dispatchers.IO) {
+        try {
+            if (song.phoneOnly) return@withContext null
+            val byId = song.isrc?.let { trackDao.findByIsrc(it) }
+                ?: song.youtubeId?.let { trackDao.findByYoutubeId(it) }
+                ?: song.spotifyId?.let { trackDao.findBySpotifyUri("spotify:track:$it") }
+            byId?.takeIf { sameRecording(it, song) } ?: byWords(song)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "no lookup for a song: ${e.javaClass.simpleName}")
+            null
+        }
+    }
+
+    /**
      * [mirror]: the stricter matching a mirrored like, play or playlist needs (link-sync spec §3, sync-v1 §2.2). A `phoneOnly` song
      * is this phone's own file, found by its words, never made. A row found by its ISRC, YouTube id or Spotify id is taken only
      * when it is the same song ([sameRecording]): two songs that share a video (a placeholder id, a remaster and its original)

@@ -349,7 +349,7 @@ class PlaylistDetailViewModel @Inject constructor(
         combine(playlistTracks, streamingPreference.enabled) { tracks, streamOnly ->
             if (streamOnly) tracks else tracks.filter { it.isDownloaded }
         }.withSearchFilter(_searchQuery),
-        playerRepository.playerState,
+        playerRepository.shownState,
         _searchQuery,
         _showSearch,
     ) { playlist, tracks, playerState, query, showSearch ->

@@ -151,7 +151,7 @@ class LibraryViewModelAlbumsTest {
 
     private fun buildVm(musicRepository: MusicRepository, streaming: Boolean = true): LibraryViewModel = LibraryViewModel(
         musicRepository = musicRepository,
-        playerRepository = mock { on { playerState } doReturn MutableStateFlow(PlayerState()) },
+        playerRepository = mock { MutableStateFlow(PlayerState()).let { s -> on { playerState } doReturn s; on { shownState } doReturn s } },
         tokenManager = mock<TokenManager> {
             on { youTubeAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected)
         },

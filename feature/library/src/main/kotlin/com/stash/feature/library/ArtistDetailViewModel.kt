@@ -114,7 +114,7 @@ class ArtistDetailViewModel @Inject constructor(
      */
     val uiState: StateFlow<ArtistDetailUiState> = combine(
         musicRepository.getTracksByArtist(artistName).withSearchFilter(_searchQuery),
-        playerRepository.playerState,
+        playerRepository.shownState,
         _searchQuery,
         _showSearch,
         artistImageDao.observeByName(artistName.primaryArtist()),

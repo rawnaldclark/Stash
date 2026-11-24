@@ -291,7 +291,7 @@ class ArtistDetailViewModelTest {
     }
 
     private fun playerRepoMock(): PlayerRepository = mock {
-        on { playerState } doReturn MutableStateFlow(PlayerState())
+        MutableStateFlow(PlayerState()).let { s -> on { playerState } doReturn s; on { shownState } doReturn s }
     }
 
     private fun musicRepoMock(): MusicRepository = mock {
@@ -307,7 +307,7 @@ class ArtistDetailViewModelTest {
      */
     private fun buildVm(
         playerRepository: PlayerRepository = mock {
-            on { playerState } doReturn MutableStateFlow(PlayerState())
+            MutableStateFlow(PlayerState()).let { s -> on { playerState } doReturn s; on { shownState } doReturn s }
         },
         musicRepository: MusicRepository = mock {
             on { getTracksByArtist(any()) } doReturn flowOf(emptyList())

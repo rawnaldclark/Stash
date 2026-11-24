@@ -114,7 +114,7 @@ class LibraryViewModelShuffleLikedTest {
     // ── harness (mirrors LibraryViewModelLikedSearchTest) ────────────────
 
     private fun playerRepoMock(): PlayerRepository = mock {
-        on { playerState } doReturn MutableStateFlow(PlayerState())
+        MutableStateFlow(PlayerState()).let { s -> on { playerState } doReturn s; on { shownState } doReturn s }
     }
 
     private fun buildVm(playerRepository: PlayerRepository, liked: List<Track>): LibraryViewModel {
