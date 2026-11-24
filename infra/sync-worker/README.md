@@ -31,10 +31,11 @@ Unknown fields are dropped; every stored value is rebuilt from the fields above.
 | Method and path | Who | Body → answer |
 |---|---|---|
 | `POST /v1/pair` | player | `{ device: { id, tokenHash, pub, labelCt } }` → 201 `{ pairId, expiresAt }` (3 minutes) |
-| `GET /v1/pair/{pairId}` | player + browser's token | long-poll ≤ 25 s: 200 `{ phonePub, ct }`, 204 pending, 410 `expired` |
+| `POST /v1/desktop/pair` | anyone (Stash on a computer) | the same, for a device of type `desktop`; codes counted per IP (6 per 10 minutes) and so are the spaces made from them. The desktop then makes the browser's two calls below itself, with its token. |
+| `GET /v1/pair/{pairId}` | player + browser's token (a desktop's code: the desktop's token, directly) | long-poll ≤ 25 s: 200 `{ phonePub, ct }`, 204 pending, 410 `expired` |
 | `GET /v1/pair/{pairId}/label` | phone | 200 `{ labelCt, expiresAt, browser: { id, pub } }`; 409 `used`; 410 `expired` |
 | `POST /v1/pair/{pairId}/answer` | phone | `{ phonePub, ct, device: { id, tokenHash, pub, labelCt } }` → 201; second answer 409 `used` |
-| `POST /v1/pair/{pairId}/reply` | player + browser's token | `{ ct }` → 201 (the browser holds the space, §5.1 step 4; sync-v1 sends it after the browser added the phone) |
+| `POST /v1/pair/{pairId}/reply` | player + browser's token (a desktop's code: the desktop's token, directly) | `{ ct }` → 201 (the browser holds the space, §5.1 step 4; sync-v1 sends it after the browser added the phone) |
 | `GET /v1/pair/{pairId}/reply` | phone's token | long-poll ≤ 25 s: 200 `{ ct }`, 204 pending |
 | `POST /v1/spaces` | the phone that answered, after the browser's reply (`409 no_reply` before it, the code untouched) | `{ pairId, spaceId, labels: { <phoneId>: labelCt, <browserId>: labelCt } }` (exactly those two, sealed under the new data key at epoch 1; they replace the pairing-time labels) → 201 `{ spaceId, epoch: 1 }`; both devices come from the slot; the code is burned only once the space exists (`409 exists`, `429` or an error give it back) |
 | `GET /v1/spaces/{sid}` | member | `{ spaceId, me, epoch, rotationDue, compactDue, head, snapshot: { uptoSeq, parts, epoch } \| null, devices: [{ id, type, pub, labelCt, addedAt, lastSeenAt }], serverTime }` |
@@ -72,8 +73,8 @@ opens or stores an envelope.
 | `{ t: "hello", device, token }` | client → server, first | Checked like a member call (token in constant time, a browser only through the player, the 90-day idle rule, one read). Bad → close `4401 revoked`, `4403 forbidden`, `4429` (daily reads). The first frame must be a well-formed hello within 10 s: anything else (junk, another frame, a late hello) closes `4401` (a socket that never authenticates wakes the object at most once). On a space that doesn't exist, the first frame closes it `4401`, as a revoked device's hello is answered (a socket that never speaks there is closed by the next upgrade's sweep). A second socket of the same device closes the first with `4409 replaced`, and the others hear `peer` on again |
 | `{ t: "ready", me, epoch, peers: [{ device, type }] }` | server → client | After a good hello: the devices with a socket open now |
 | `{ t: "peer", device, type, on }` | server → others | A device's socket opened (or replaced an older one) or closed |
-| `{ t: "state", env }` → `{ t: "state", from, env }` | browser → the phones' sockets | sync-v1 `stash-remote-state`; from a phone: `bad_request` |
-| `{ t: "cmd", to, env }` → `{ t: "cmd", from, env }` | phone → `to`'s socket only (a browser) | sync-v1 `stash-remote-cmd`; `{ t: "error", code: "offline", to }` when `to` has no socket; from a browser, or to a phone: `bad_request` |
+| `{ t: "state", env }` → `{ t: "state", from, env }` | browser or desktop → the phones' sockets | sync-v1 `stash-remote-state`; from a phone: `bad_request` |
+| `{ t: "cmd", to, env }` → `{ t: "cmd", from, env }` | phone → `to`'s socket only (a browser or a desktop) | sync-v1 `stash-remote-cmd`; `{ t: "error", code: "offline", to }` when `to` has no socket; from a browser, or to a phone: `bad_request` |
 | `{ t: "epoch", epoch }` | server → all | The key was rotated: fetch your envelope before the next frame |
 | `{ t: "error", code, … }` | server → sender | `bad_request`, `epoch` (with the current `epoch`), `rotation_due`, `offline` |
 
@@ -87,7 +88,7 @@ reconnect with a backoff after a drop, never after `4401`, `4403` or `4409`.
 
 | Limit | Value |
 |---|---|
-| Devices per space | 1 phone + 4 browsers |
+| Devices per space | 1 phone + 4 browsers and computers (type `web` or `desktop`) |
 | Request body | 1 MiB (read as a stream and cut off at the cap) |
 | `now` envelope · config · label · pairing message · key envelope | 16 KiB · 64 KiB · 1 KiB · 4 KiB · 1 KiB of ciphertext |
 | Snapshot / one send | 16 parts × 1 MiB |

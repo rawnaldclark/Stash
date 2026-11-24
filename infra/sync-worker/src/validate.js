@@ -23,7 +23,13 @@ export function isNewSpaceId(v) {
 export const isPairId = (v) => typeof v === "string" && /^[A-Za-z0-9_-]{22}$/.test(v);
 /** The device token's server-side form (sync-v1): base64url(SHA-256(the token's 32 bytes)), 43 characters. */
 export const isTokenHash = (v) => typeof v === "string" && /^[A-Za-z0-9_-]{43}$/.test(v);
-export const DEVICE_TYPES = ["phone", "web"];
+/**
+ * `phone` (one a space), `web` (a browser, only through the player) and `desktop` (Stash on a computer, which calls directly and
+ * pairs by itself). A browser and a desktop share the four places beside the phone, and both are what a phone remotes.
+ */
+export const DEVICE_TYPES = ["phone", "web", "desktop"];
+/** A device a phone remotes and that says what it plays: a browser or a desktop. */
+export const isPlayerType = (t) => t === "web" || t === "desktop";
 
 /** A P-256 public key, uncompressed (65 bytes, 0x04 first), base64url. */
 export function isPub(v) {
