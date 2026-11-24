@@ -18,7 +18,9 @@ import javax.inject.Singleton
 
 /**
  * Embeds metadata (TITLE, ARTIST, ALBUMARTIST, ALBUM, ISRC, ENCODER)
- * and optional cover art into audio files using ffmpeg. Container-
+ * and optional cover art into audio files using ffmpeg, plus the album,
+ * year, track number and genre a catalogue knows when the file lacks
+ * them ([ExtraTagSource]). Container-
  * agnostic — `-c copy` muxes the new metadata + picture stream into
  * the original codec without re-encoding.
  *
@@ -37,7 +39,11 @@ import javax.inject.Singleton
 class MetadataEmbedder @Inject constructor(
     @ApplicationContext private val context: Context,
     private val appVersion: AppVersionProvider,
+    private val extraTags: ExtraTagSource = ExtraTagSource.None,
 ) {
+    /** Test seam: what a file's own tags already say (see [extraTagsFor]). */
+    internal var readExisting: (File) -> ExistingTags = ::readExistingTags
+
     internal var renameFile: (File, File) -> Boolean = { source, target ->
         source.renameTo(target)
     }
@@ -68,6 +74,7 @@ class MetadataEmbedder @Inject constructor(
         val args = buildFfmpegArgs(
             audioFile, outputFile, track, albumArtFile, appVersion,
             opusPictureMetadataFile = opusPictureMetadataFile,
+            extraTags = extraTagsFor(audioFile, track),
         )
 
         try {
@@ -200,6 +207,50 @@ class MetadataEmbedder @Inject constructor(
         }
     }
 
+    /**
+     * The album, year, track number and genre a catalogue knows and the
+     * file does not say: a source that hands over a bare stream leaves a
+     * file with only its title and artist, which sorts poorly in any
+     * music library. A file that already carries them (a source that
+     * tags its own files) is not looked up at all. No answer, or any
+     * failure, is `null`: the file is tagged with what Stash knows.
+     */
+    private suspend fun extraTagsFor(audioFile: File, track: Track): ExtraTags? {
+        if (extraTags === ExtraTagSource.None) return null
+        return try {
+            val existing = readExisting(audioFile)
+            if (existing.isComplete(track)) return null
+            extraTags.lookUp(track)?.onlyBlanks(existing, track)?.takeUnless { it.isEmpty }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "extra tags skipped for ${audioFile.name}: ${e.message}")
+            null
+        }
+    }
+
+    private fun readExistingTags(file: File): ExistingTags {
+        val retriever = android.media.MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(file.absolutePath)
+            fun has(key: Int) = !retriever.extractMetadata(key).isNullOrBlank()
+            ExistingTags(
+                album = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM).orEmpty().trim(),
+                hasGenre = has(android.media.MediaMetadataRetriever.METADATA_KEY_GENRE),
+                // An MP4 file's DATE is its container's creation time, not a release year.
+                hasYear = has(android.media.MediaMetadataRetriever.METADATA_KEY_YEAR) ||
+                    (file.extension.lowercase() !in MP4_EXTENSIONS &&
+                        has(android.media.MediaMetadataRetriever.METADATA_KEY_DATE)),
+                hasTrackNumber = has(android.media.MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER),
+            )
+        } catch (e: Exception) {
+            // Unreadable here is not "has no tags": claim nothing, add nothing a source may have written.
+            ExistingTags(hasGenre = true, hasYear = true, hasTrackNumber = true, album = "?")
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
     private fun resolveFfmpegBinary(): File? {
         val nativeDir = context.applicationInfo.nativeLibraryDir
         val candidates = listOf("libffmpeg.so", "libffmpeg.zip.so")
@@ -271,6 +322,7 @@ class MetadataEmbedder @Inject constructor(
         // Containers that don't support ffmpeg's `-disposition:v:0 attached_pic`
         // mapping (mux fails with exit 234). Tag writing still works for these.
         private val OPUS_OGG_EXTENSIONS = setOf("opus", "ogg")
+        private val MP4_EXTENSIONS = setOf("m4a", "mp4", "m4b", "aac")
 
         // Issue #118 threshold: max base64 length we'll inline into argv before
         // switching to the ffmetadata-file fallback. Linux MAX_ARG_STRLEN is
@@ -300,6 +352,7 @@ class MetadataEmbedder @Inject constructor(
             albumArtFile: File?,
             appVersion: AppVersionProvider,
             opusPictureMetadataFile: File? = null,
+            extraTags: ExtraTags? = null,
         ): List<String> = buildList {
             add("-i"); add(audioFile.absolutePath)
 
@@ -333,6 +386,18 @@ class MetadataEmbedder @Inject constructor(
 
             if (track.album.isNotEmpty()) {
                 add("-metadata"); add("album=${sanitize(track.album)}")
+            } else if (!extraTags?.album.isNullOrBlank()) {
+                add("-metadata"); add("album=${sanitize(extraTags!!.album)}")
+            }
+
+            // What a catalogue added for the file's blanks. ffmpeg writes
+            // these under each container's own names (GENRE / DATE /
+            // TRACKNUMBER / DISCNUMBER in FLAC and Opus).
+            extraTags?.let { extra ->
+                if (extra.genre.isNotBlank()) { add("-metadata"); add("genre=${sanitize(extra.genre)}") }
+                extra.year?.let { add("-metadata"); add("date=$it") }
+                extra.trackNumber?.let { add("-metadata"); add("track=$it") }
+                extra.discNumber?.let { add("-metadata"); add("disc=$it") }
             }
 
             val effectiveAlbumArtist = track.albumArtist.ifBlank { track.artist }

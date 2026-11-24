@@ -40,6 +40,10 @@ abstract class DownloadModule {
     @Singleton
     abstract fun bindUploadNaming(impl: com.stash.data.download.cloud.DriveUploadNaming): com.stash.data.cloud.upload.UploadNaming
 
+    /** A saved file's missing album, year, track number and genre come from a public catalogue. */
+    @Binds
+    abstract fun bindExtraTagSource(impl: com.stash.data.download.files.CatalogueTags): com.stash.data.download.files.ExtraTagSource
+
     /** The one-time check for clips reads each FLAC's end through the file's own path or document. */
     @Binds
     abstract fun bindFlacLengthsReader(impl: com.stash.data.download.clips.FlacTailReader): com.stash.data.download.clips.FlacLengthsReader
