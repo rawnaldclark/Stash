@@ -406,6 +406,9 @@ class StashPlaybackService : MediaLibraryService() {
          */
         internal const val IDLE_STOP_TIMEOUT_MS = 5 * 60_000L
 
+        /** The session of the computer this phone is the remote for (beside the phone's own). */
+        private const val COMPUTER_SESSION_ID = "stash-computer"
+
         /**
          * Idle stop while casting. Stopping the service ends the cast session
          * (the speaker drops back to its idle screen and has to be picked
@@ -505,6 +508,18 @@ class StashPlaybackService : MediaLibraryService() {
     private var castWakeLock: android.os.PowerManager.WakeLock? = null
     private var castWifiLock: android.net.wifi.WifiManager.WifiLock? = null
     private val isCasting: Boolean get() = castPlayer?.isAttached == true
+
+    /**
+     * This phone as the remote for Stash on a computer: while one is attached, a session of its own ([computerSession], with
+     * [com.stash.core.media.computer.ComputerSessionPlayer]) puts what the computer plays in the notification, the lock screen,
+     * headphone buttons and the volume keys, in the phone's notification's place. The phone's session is left as it is: the
+     * app's player follows that one and must keep seeing the phone's own player.
+     */
+    @Inject lateinit var computerRemote: com.stash.core.media.computer.ComputerRemote
+    private var computerSession: MediaSession? = null
+    private var computerPlayer: com.stash.core.media.computer.ComputerSessionPlayer? = null
+    /** The attached computer's name while its session shows ("On Stash on DESKTOP" in the notification). */
+    @Volatile private var computerName: String? = null
 
     /** What the cast wrapper plays through: a Chromecast, or a linked browser (Remote v2). Null while it plays here. */
     private enum class CastKind { SPEAKER, BROWSER }
@@ -709,6 +724,8 @@ class StashPlaybackService : MediaLibraryService() {
                 // "On Chrome on Windows · <artist>" while a browser plays the queue (Remote v2 §6), as Listen Together's line.
                 val browser = browserOutputs.session.value?.takeIf { onBrowser }
                     ?.let { getString(R.string.cast_on_browser_line, it.name) }
+                    // The same line while the notification shows a computer this phone is the remote for.
+                    ?: computerName?.let { getString(R.string.cast_on_browser_line, it) }
                 if (!listenTogetherController.active.value && browser == null) return base
                 val together = if (listenTogetherController.active.value) togetherLine(listenTogetherController.state.value) else null
                 return listOfNotNull(together, browser, base).joinToString(" · ")
@@ -997,6 +1014,13 @@ class StashPlaybackService : MediaLibraryService() {
         // placeholder notification's channel/build pattern below.
         serviceScope.launch { observeSleepTimerState() }
 
+        // The computer this phone is the remote for, in the notification (logged at the wiring site).
+        android.util.Log.i("StashPlayback", "computer remote: following")
+        serviceScope.launch {
+            kotlinx.coroutines.flow.combine(computerRemote.attached, computerRemote.view) { live, view -> live to view }
+                .collect { (live, view) -> showComputer(live, view) }
+        }
+
         // Listen Together (spec 2026-09-24 §5). Logged at the wiring site: green unit tests say nothing about this line.
         // serviceScope is Dispatchers.Main.immediate, so the session (and enterSession/exitSession/configure) runs on main.
         listenTogetherSession = com.stash.core.media.listen.ListenTogetherSession(
@@ -1264,6 +1288,51 @@ class StashPlaybackService : MediaLibraryService() {
         triggerNotificationUpdate()
         // Last: what waits for the phone to hold the queue again (the queue's "Play on this phone") may go on at once.
         browserOutputs.noteServed(false)
+    }
+
+    /**
+     * The attached computer ([live], shown as [view]) in the notification: its session opens while one is attached and this
+     * phone neither casts nor is in Listen Together (those own the notification), and closes when it goes.
+     */
+    @OptIn(UnstableApi::class)
+    private fun showComputer(live: com.stash.core.data.weblink.remote.ComputerLive?, view: com.stash.core.model.PlayerState?) {
+        val wanted = live != null && view != null && !destroying && !isCasting && !listenTogetherController.active.value
+        if (!wanted) {
+            closeComputerSession()
+            return
+        }
+        computerName = live!!.name
+        val player = computerPlayer ?: com.stash.core.media.computer.ComputerSessionPlayer(computerRemote).also { computerPlayer = it }
+        player.show(view, live.state.volume)
+        if (computerSession != null) return
+        val builder = MediaSession.Builder(this, player).setId(COMPUTER_SESSION_ID)
+        openPlayerIntent(this)?.let { openPlayer ->
+            builder.setSessionActivity(
+                android.app.PendingIntent.getActivity(
+                    this, 0, openPlayer,
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
+        }
+        val session = builder.build()
+        computerSession = session
+        addSession(session)
+        android.util.Log.i("StashPlayback", "computer remote: in the notification")
+        triggerNotificationUpdate()
+    }
+
+    /** The computer's session goes; the phone's notification is back (if it has one). Idempotent. */
+    @OptIn(UnstableApi::class)
+    private fun closeComputerSession() {
+        val session = computerSession ?: return
+        computerSession = null
+        computerName = null
+        removeSession(session)
+        session.release()
+        computerPlayer?.release()
+        computerPlayer = null
+        android.util.Log.i("StashPlayback", "computer remote: out of the notification")
+        if (!destroying) triggerNotificationUpdate()
     }
 
     /** What the speaker loads for [item]: a LAN URL from [castServer], plus the metadata it shows. */
@@ -1845,6 +1914,8 @@ class StashPlaybackService : MediaLibraryService() {
     private fun performIdleStop() {
         // A paused listener, or a host in a long pause, must not drop out of the session (spec §5).
         if (listenTogetherController.active.value) return
+        // The remote for a computer: its notification stays while the computer is there (gone after a minute unheard).
+        if (computerSession != null) return
         val master = activePlayer
         if (master != null && !isPlayerIdle(master.playWhenReady, master.playbackState)) {
             // Belt and braces: the ticker's view lagged reality somehow.
@@ -2311,6 +2382,9 @@ class StashPlaybackService : MediaLibraryService() {
      */
     @OptIn(UnstableApi::class)
     override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
+        // While the computer's session shows, it has the notification: the phone's (paused) one would only fight it for the slot.
+        val computer = computerSession
+        if (computer != null && session !== computer) return
         val inSession = ::listenTogetherController.isInitialized && listenTogetherController.active.value
         super.onUpdateNotification(session, startInForegroundRequired || inSession || isCasting)
     }
@@ -2368,6 +2442,7 @@ class StashPlaybackService : MediaLibraryService() {
         }
         castServer?.stop()
         releaseCastLocks()
+        closeComputerSession()
         serviceScope.cancel()
         // Release the session before the players; the engine owns BOTH players.
         mediaSession?.release()
