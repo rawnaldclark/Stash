@@ -32,7 +32,13 @@ class ComputerRemoteTest {
     private var now = 100_000L
     private val link = FakeLink()
     private val phone = MutableStateFlow(PlayerState())
-    private val remote = ComputerRemote(link, CoroutineScope(UnconfinedTestDispatcher()), { now }).also { it.watchPhone(phone) }
+    /** This phone's library, by title; each lookup counted. */
+    private val library = mutableMapOf<String, Track>()
+    private val lookups = mutableListOf<String>()
+    private val remote = ComputerRemote(link, CoroutineScope(UnconfinedTestDispatcher()), { now }, { s ->
+        lookups += s.title
+        library[s.title]
+    }).also { it.watchPhone(phone) }
 
     private fun song(title: String) = WireSong(title, "Frank Ocean")
 
@@ -114,6 +120,18 @@ class ComputerRemoteTest {
     }
 
     @Test
+    fun `a song the computer plays that this library holds shows as its row, each song looked for once`() {
+        library["Nights"] = track(7, "Nights")
+        says(playing = true)
+        val view = remote.view.value!!
+        assertThat(view.queue[1].id).isEqualTo(7)
+        assertThat(view.currentTrack!!.id).isLessThan(0)
+        now += 1_000
+        says(playing = true)
+        assertThat(lookups).containsExactly("Pink + White", "Nights", "Solo")
+    }
+
+    @Test
     fun `the queue's rows map to the computer's items, a move to its place in the whole queue`() {
         says(playing = true)
         remote.removeAt(2)
@@ -141,8 +159,12 @@ class ComputerRemoteTest {
     @Test
     fun `This phone pauses the computer and doesn't take up the same session again`() {
         says(playing = true)
-        remote.leave()
+        val was = remote.leave()!!
         assertThat(link.sent).containsExactly(ComputerCommand.Pause)
+        // What it played carries on here, from where it was.
+        assertThat(was.songs.map { it.title }).containsExactly("Pink + White", "Nights", "Solo").inOrder()
+        assertThat(was.positionMs).isEqualTo(10_000)
+        assertThat(was.from).isEqualTo("Blonde")
         assertThat(remote.current()).isNull()
         says(playing = true)
         assertThat(remote.current()).isNull()

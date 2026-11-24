@@ -111,7 +111,7 @@ class AlbumDetailViewModel @Inject constructor(
      */
     val uiState: StateFlow<AlbumDetailUiState> = combine(
         albumTracks.withSearchFilter(_searchQuery),
-        playerRepository.playerState,
+        playerRepository.shownState,
         _searchQuery,
         _showSearch,
     ) { tracks, playerState, query, showSearch ->

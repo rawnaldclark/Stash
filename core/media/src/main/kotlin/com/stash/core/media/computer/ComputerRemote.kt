@@ -1,7 +1,9 @@
 package com.stash.core.media.computer
 
 import android.os.SystemClock
+import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.weblink.WebSongs
+import com.stash.core.data.weblink.handoff.HandoffSongMatcher
 import com.stash.core.data.weblink.handoff.WireSong
 import com.stash.core.data.weblink.remote.ComputerCommand
 import com.stash.core.data.weblink.remote.ComputerLink
@@ -32,6 +34,11 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+/** What a computer was playing when this phone took the music back: [songs] from the playing one on, [positionMs] into it. */
+data class ComputerQueue(val songs: List<WireSong>, val positionMs: Long, val repeat: RepeatMode, val from: String)
 
 /** A linked computer as "Play on" lists it. [playing]: what it plays now, or null; [live] false: Stash isn't open there. */
 data class ComputerOutput(val device: String, val name: String, val live: Boolean, val playing: String?)
@@ -58,15 +65,24 @@ class ComputerRemote internal constructor(
     private val link: ComputerLink,
     private val scope: CoroutineScope,
     private val clock: () -> Long,
+    /** A song's row in this library, or null; never makes one. */
+    private val find: suspend (WireSong) -> Track? = { null },
 ) {
-    @Inject constructor(link: ComputerLink) :
-        this(link, CoroutineScope(SupervisorJob() + Dispatchers.Default), SystemClock::elapsedRealtime)
+    @Inject constructor(link: ComputerLink, matcher: HandoffSongMatcher) : this(
+        link,
+        CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        SystemClock::elapsedRealtime,
+        { matcher.find(it)?.toDomain() },
+    )
 
     private val chosen = MutableStateFlow<String?>(null)
     /** Computer sessions the listener stepped away from ("This phone"): not taken up again by themselves. */
     private val declined: MutableSet<String> = Collections.newSetFromMap(ConcurrentHashMap())
     /** This phone's songs as sent, by their words: the computer names them back the same way. */
     private val sent = ConcurrentHashMap<String, Track>()
+    /** The computer's songs looked up in this library, by their words: the row, or null (looked for, not held). */
+    private val known = MutableStateFlow<Map<String, Track?>>(emptyMap())
+    private val looking: MutableSet<String> = Collections.newSetFromMap(ConcurrentHashMap())
     @Volatile private var phoneActive = false
 
     /** The computer this phone is the remote for, as it last said, or null. */
@@ -74,7 +90,8 @@ class ComputerRemote internal constructor(
         .stateIn(scope, SharingStarted.Eagerly, null)
 
     /** The attached computer's state as this phone's player state, or null while none is attached. */
-    val view: StateFlow<PlayerState?> = attached.map { it?.let(::stateOf) }.stateIn(scope, SharingStarted.Eagerly, null)
+    val view: StateFlow<PlayerState?> = combine(attached.onEach { it?.let(::lookUp) }, known) { live, _ -> live?.let(::stateOf) }
+        .stateIn(scope, SharingStarted.Eagerly, null)
 
     /** The linked computers for "Play on". */
     val outputs: StateFlow<List<ComputerOutput>> = combine(link.linkedComputers, link.computers) { names, live ->
@@ -111,6 +128,9 @@ class ComputerRemote internal constructor(
         chosen.value = playing?.device ?: chosen.value?.takeIf { it in link.computers.value }
     }
 
+    /** Where the attached computer is in its song now, or null. */
+    fun positionNow(): Long? = current()?.let(::positionOf)
+
     /** The attached computer, when it is heard from; null otherwise (the player then plays here). */
     fun current(): ComputerLive? = chosen.value?.let { link.computers.value[it] }?.takeIf(::fresh)
 
@@ -126,14 +146,22 @@ class ComputerRemote internal constructor(
         return true
     }
 
-    /** "This phone": the computer pauses, and this phone stops being its remote until the listener picks it again. */
-    fun leave() {
+    /**
+     * "This phone": the computer pauses, and this phone stops being its remote until the listener picks it again. Returns what
+     * the computer was playing (its queue from the playing song on, and where in it), so the music carries on here; null when
+     * it wasn't playing.
+     */
+    fun leave(): ComputerQueue? {
         val live = current()
         chosen.value = null
-        if (live != null) {
-            declined.add(live.state.sid)
-            link.sendToComputer(live.device, ComputerCommand.Pause)
-        }
+        if (live == null) return null
+        declined.add(live.state.sid)
+        link.sendToComputer(live.device, ComputerCommand.Pause)
+        val st = live.state
+        val song = st.song?.takeIf { st.playing } ?: return null
+        val items = st.items.map { it.song }
+        val songs = if (st.items.firstOrNull()?.iid == st.iid) items else listOf(song) + items
+        return ComputerQueue(songs, positionOf(live), repeatOf(st.repeat), st.from?.takeIf { it.isNotBlank() } ?: live.name)
     }
 
     // ------------------------------------------------------------------------------------------ the player's calls
@@ -244,7 +272,7 @@ class ComputerRemote internal constructor(
             positionMs = positionOf(live),
             durationMs = st.durationMs,
             isShuffleEnabled = st.shuffle,
-            repeatMode = when (st.repeat) { "all" -> RepeatMode.ALL; "one" -> RepeatMode.ONE; else -> RepeatMode.OFF },
+            repeatMode = repeatOf(st.repeat),
             queue = queue,
             currentIndex = 0,
             isStreaming = true,
@@ -257,8 +285,31 @@ class ComputerRemote internal constructor(
         )
     }
 
-    /** This phone's row for a song it sent, else the song as the computer describes it (an id no row has). */
-    private fun trackOf(iid: String?, song: WireSong): Track = sent[key(song.title, song.artist)] ?: Track(
+    /**
+     * [live]'s songs this phone hasn't looked for yet, looked up in its library: a song the computer plays that this library
+     * holds shows as its row (its heart, its download, its mark in the lists). Nothing is added to the library.
+     */
+    private fun lookUp(live: ComputerLive) {
+        val songs = (listOfNotNull(live.state.song) + live.state.items.map { it.song })
+            .distinctBy { key(it.title, it.artist) }
+            .filter { key(it.title, it.artist).let { k -> !sent.containsKey(k) && k !in known.value && k !in looking } }
+        if (songs.isEmpty()) return
+        scope.launch {
+            for (song in songs) {
+                val k = key(song.title, song.artist)
+                if (k in known.value || !looking.add(k)) continue
+                try {
+                    val row = find(song)?.takeIf { it.id > 0 }
+                    known.update { m -> (if (m.size >= MAX_KNOWN) emptyMap() else m) + (k to row) }
+                } finally {
+                    looking.remove(k)
+                }
+            }
+        }
+    }
+
+    /** This phone's row for the song (one it sent, or one its library holds), else the song as the computer describes it. */
+    private fun trackOf(iid: String?, song: WireSong): Track = key(song.title, song.artist).let { sent[it] ?: known.value[it] } ?: Track(
         id = syntheticId(iid, song),
         title = song.title,
         artist = song.artist,
@@ -288,6 +339,11 @@ class ComputerRemote internal constructor(
 
         /** A list goes over as at most this many commands of 100 songs. */
         internal const val MAX_CHUNKS = 5
+
+        /** Looked-up songs kept; past this the list starts again. */
+        private const val MAX_KNOWN = 2_000
+
+        private fun repeatOf(mode: String) = when (mode) { "all" -> RepeatMode.ALL; "one" -> RepeatMode.ONE; else -> RepeatMode.OFF }
 
         internal fun key(title: String, artist: String) = title.trim().lowercase() + "\u0000" + artist.trim().lowercase()
 

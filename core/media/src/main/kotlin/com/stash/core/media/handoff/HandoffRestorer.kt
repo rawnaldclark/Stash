@@ -109,6 +109,24 @@ class HandoffRestorer @Inject constructor(
     suspend fun restore(offer: HandoffOffer, positionMs: Long, onNote: (String) -> Unit): RestoreResult {
         val queue = channel.readQueue(offer.device)
         val layout = HandoffLayout.of(offer.now, queue) ?: return RestoreResult.Failed
+        val repeat = when (offer.now.repeat) {
+            HandoffRepeat.OFF -> RepeatMode.OFF
+            HandoffRepeat.ALL -> RepeatMode.ALL
+            HandoffRepeat.ONE -> RepeatMode.ONE
+        }
+        return restoreLayout(layout, positionMs, offer.now.from?.takeIf { it.isNotBlank() } ?: offer.deviceName, repeat, onNote)
+    }
+
+    /**
+     * Another device's queue as it plays there ([songs] from the playing song on, [positionMs] into it), played here from where
+     * it is: how "This phone" takes the music back from a computer this phone was the remote for.
+     */
+    suspend fun restoreSongs(songs: List<WireSong>, positionMs: Long, from: String, repeat: RepeatMode, onNote: (String) -> Unit): RestoreResult {
+        if (songs.isEmpty()) return RestoreResult.NothingPlayable
+        return restoreLayout(HandoffLayout(songs, 0, null), positionMs, from, repeat, onNote)
+    }
+
+    private suspend fun restoreLayout(layout: HandoffLayout, positionMs: Long, label: String, repeat: RepeatMode, onNote: (String) -> Unit): RestoreResult {
         val matched = HashMap<Int, Track>()
         val missing = HashSet<Int>()
         suspend fun match(slot: Int): Track? {
@@ -146,12 +164,8 @@ class HandoffRestorer @Inject constructor(
         val plan = HandoffQueuePlan(
             first = firstSlots.map { matched.getValue(it) },
             positionMs = position,
-            source = PlaybackSource.Handoff(offer.now.from?.takeIf { it.isNotBlank() } ?: offer.deviceName),
-            repeat = when (offer.now.repeat) {
-                HandoffRepeat.OFF -> RepeatMode.OFF
-                HandoffRepeat.ALL -> RepeatMode.ALL
-                HandoffRepeat.ONE -> RepeatMode.ONE
-            },
+            source = PlaybackSource.Handoff(label),
+            repeat = repeat,
             rest = {
                 // The rest in batches (one transaction each), not one write per song.
                 val todo = layout.songs.indices.filter { it !in firstSlots && it !in matched && it !in missing }

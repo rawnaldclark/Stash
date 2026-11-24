@@ -1,5 +1,6 @@
 package com.stash.feature.nowplaying.cast
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.media.cast.BrowserOutput
@@ -74,6 +75,7 @@ class CastViewModel @Inject constructor(
     // Tests leave these: no linked computer, and no player to move music from.
     private val computers: ComputerRemote = ComputerRemote.unlinked(),
     private val player: com.stash.core.media.PlayerRepository? = null,
+    private val restorer: com.stash.core.media.handoff.HandoffRestorer? = null,
 ) : ViewModel() {
     val connection: StateFlow<CastConnection> = devices.connection
 
@@ -191,9 +193,22 @@ class CastViewModel @Inject constructor(
 
     fun setBrowserVolume(level: Float) = browsers.remote.value?.setVolume(level)
 
-    /** "This phone": whatever plays elsewhere comes back here; a browser's music carries on (owner's decision D2). */
-    fun playHere() {
-        if (computers.current() != null) computers.leave()
+    /**
+     * "This phone": whatever plays elsewhere comes back here; a browser's music carries on (owner's decision D2), and so does a
+     * computer's: it pauses there and its queue plays on here from where it was ([carryOver] false: a song of this phone's is
+     * about to play instead).
+     */
+    fun playHere(carryOver: Boolean = true) {
+        if (computers.current() != null) {
+            val was = computers.leave()
+            val restore = restorer
+            if (carryOver && was != null && restore != null) {
+                viewModelScope.launch {
+                    val result = restore.restoreSongs(was.songs, was.positionMs, was.from, was.repeat) { note -> Log.i(TAG, note) }
+                    Log.i(TAG, "the computer's queue came here: $result")
+                }
+            }
+        }
         if (browsers.session.value != null) browsers.disconnect()
         if (devices.connection.value is CastConnection.Connected || devices.connection.value is CastConnection.Connecting) {
             devices.disconnect()
@@ -205,7 +220,7 @@ class CastViewModel @Inject constructor(
      * playback service holds the queue again, so the song plays here instead of being stepped over on the browser.
      */
     fun playHereThen(then: () -> Unit) {
-        playHere()
+        playHere(carryOver = false)
         viewModelScope.launch {
             withTimeoutOrNull(BACK_ON_PHONE_MS) { browsers.served.first { !it } }
             then()
@@ -217,6 +232,8 @@ class CastViewModel @Inject constructor(
     }
 
     private companion object {
+        const val TAG = "PlayOn"
+
         /** Coming back is a few calls on the main thread; this only keeps a tap from waiting forever on a stopped service. */
         const val BACK_ON_PHONE_MS = 3_000L
     }

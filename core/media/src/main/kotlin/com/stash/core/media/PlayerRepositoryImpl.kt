@@ -70,6 +70,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -534,6 +535,11 @@ class PlayerRepositoryImpl @Inject constructor(
         // A linked computer is taken up as the output only while this phone plays nothing.
         computer?.watchPhone(playerState)
     }
+
+    override val shownState: StateFlow<PlayerState> = computer?.let { pc ->
+        kotlinx.coroutines.flow.combine(playerState, pc.view) { phone, there -> there ?: phone }
+            .stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, playerState.value)
+    } ?: playerState
 
     /**
      * Playback position ticker: 250 ms while playing, and SILENT while
@@ -1804,6 +1810,25 @@ class PlayerRepositoryImpl @Inject constructor(
         seed: com.stash.core.data.radio.RadioSeed,
         keepCurrent: Boolean,
     ): RadioStartResult {
+        // The remote for a computer: the station is found here and plays there (its first batch; it doesn't grow there).
+        // "Start radio" on the playing song carries on from where the song is.
+        computer?.current()?.let { live ->
+            val (_, found) = radioGenerator.start(seed)
+            if (found.isEmpty()) return RadioStartResult.NoStation
+            // Library ids, as for a station here: the generator's ids name no row.
+            val generated = found.map { it.withQueueIdentity() }
+            val label = when (seed) {
+                is com.stash.core.data.radio.RadioSeed.Artist -> seed.name
+                is com.stash.core.data.radio.RadioSeed.Song -> seed.title
+            }
+            val songSeed = seed as? com.stash.core.data.radio.RadioSeed.Song
+            val seedKey = songSeed?.let { trackIdentity(it.title, it.artist) }
+            val seedTrack = if (keepCurrent && seedKey != null) generated.firstOrNull { trackIdentity(it.title, it.artist) == seedKey } else null
+            val station = listOfNotNull(seedTrack) + generated.filter { it !== seedTrack }
+            val at = if (seedTrack != null) computer.positionNow() ?: live.state.positionMs else 0L
+            return if (computer.setQueue(station, 0, com.stash.core.model.PlaybackSource.Radio(label), at)) RadioStartResult.Started
+            else RadioStartResult.NoStation
+        }
         val controller = ensureController() ?: return RadioStartResult.PlayerNotReady
         // A station is songs found online: Download mode plays only what is on the phone.
         if (!streamAllowed()) return RadioStartResult.DownloadMode
