@@ -124,7 +124,24 @@ class NowPlayingViewModel @Inject constructor(
     // Data saver: the back cover / inside pages / Discogs look-up waits for Wi-Fi. Tests leave the
     // default, which never applies.
     private val dataSaver: com.stash.core.data.prefs.DataSaver = com.stash.core.data.prefs.DataSaver.Off,
+    // While this phone is the remote for Stash on a linked computer, Now Playing shows what the computer plays. Tests
+    // leave it null (never a computer).
+    private val computer: com.stash.core.media.computer.ComputerRemote? = null,
 ) : ViewModel() {
+
+    /** What Now Playing shows: the attached computer's state while there is one, else this phone's player's. */
+    private val shownState: kotlinx.coroutines.flow.Flow<com.stash.core.model.PlayerState> = computer
+        ?.let { c -> combine(playerRepository.playerState, c.view) { phone, remote -> remote ?: phone } }
+        ?: playerRepository.playerState
+
+    /** The position that goes with [shownState]. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val shownPosition: kotlinx.coroutines.flow.Flow<Long> = computer
+        ?.let { c ->
+            c.view.map { it != null }.distinctUntilChanged()
+                .flatMapLatest { remote -> if (remote) c.position else playerRepository.currentPosition }
+        }
+        ?: playerRepository.currentPosition
 
     /**
      * Launches work the user asked for that must finish even if they leave Now Playing (this
@@ -866,7 +883,7 @@ class NowPlayingViewModel @Inject constructor(
      * using the player's raw position untouched.
      */
     val currentPositionMs: StateFlow<Long> = combine(
-        playerRepository.currentPosition,
+        shownPosition,
         lyricsSyncOffsetMs,
         lyricsOutputOffset,
     ) { pos, songOffsetMs, output ->
@@ -884,7 +901,7 @@ class NowPlayingViewModel @Inject constructor(
      * every 250ms while playing, and readers should read it as late as possible (in draw, or in a
      * small child composable) so only they redraw per tick.
      */
-    val positionMs: StateFlow<Long> = playerRepository.currentPosition
+    val positionMs: StateFlow<Long> = shownPosition
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000L),
@@ -928,7 +945,7 @@ class NowPlayingViewModel @Inject constructor(
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun observePlayerStateLive() {
-        val liveTrackFlow = playerRepository.playerState
+        val liveTrackFlow = shownState
             .map { it.currentTrack?.let { t -> t.id to t.youtubeId } }
             .distinctUntilChanged()
             .flatMapLatest { key ->
@@ -959,7 +976,7 @@ class NowPlayingViewModel @Inject constructor(
         // The 250ms position tick is NOT combined in here (see [positionMs]): it made uiState,
         // and so every reader of it, re-emit four times a second.
         combine(
-            playerRepository.playerState,
+            shownState,
             liveTrackFlow,
             optimisticLikeState,
         ) { state, live, optimistic ->

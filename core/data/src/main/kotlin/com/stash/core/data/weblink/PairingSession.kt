@@ -1,6 +1,7 @@
 package com.stash.core.data.weblink
 
 import android.util.Log
+import com.stash.core.data.weblink.WebLinkRepository.Companion.TYPE_DESKTOP
 import com.stash.core.data.weblink.WebLinkRepository.Companion.TYPE_PHONE
 import com.stash.core.data.weblink.WebLinkRepository.Companion.TYPE_WEB
 import com.stash.core.data.weblink.WebLinkRepository.Companion.auth
@@ -135,13 +136,13 @@ class PairingSession(
         } catch (e: SyncCryptoException) {
             return fail(WebLinkCopy.NOT_A_CODE)
         }
-        // The label must be a browser's, and its key the one the server holds for that device (sync-v1 §3.4).
+        // The label must be a browser's or a computer's, and its key the one the server holds for that device (sync-v1 §3.4).
         val serverPub = try {
             Base64Url.decode(info.browser.pub)
         } catch (e: IllegalArgumentException) {
             return fail(WebLinkCopy.NOT_A_CODE)
         }
-        if (browser.type != TYPE_WEB || !SyncCrypto.sameBytes(serverPub, browser.pub)) return fail(WebLinkCopy.NOT_A_CODE)
+        if ((browser.type != TYPE_WEB && browser.type != TYPE_DESKTOP) || !SyncCrypto.sameBytes(serverPub, browser.pub)) return fail(WebLinkCopy.NOT_A_CODE)
 
         // Already linked: the browser joins this space, so check it isn't in it already and that there is room (spec §2.2).
         val linked = store.space()
@@ -153,7 +154,8 @@ class PairingSession(
                     val status = repo.status.value as? WebLinkStatus.Linked
                     if (status != null) {
                         if (status.devices.any { it.id == browser.deviceId }) return fail(WebLinkCopy.ALREADY_LINKED)
-                        if (status.devices.count { it.type == TYPE_WEB } >= MAX_BROWSERS) return fail(WebLinkCopy.FULL)
+                        // Browsers and computers share the space's four places (the sync service counts them together).
+                        if (status.devices.count { it.type == TYPE_WEB || it.type == TYPE_DESKTOP } >= MAX_BROWSERS) return fail(WebLinkCopy.FULL)
                     }
                 }
             }

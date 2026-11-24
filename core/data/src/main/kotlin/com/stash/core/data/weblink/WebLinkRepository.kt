@@ -255,7 +255,7 @@ class WebLinkRepository @Inject constructor(
             val name = known?.nickname?.takeIf { it.isNotBlank() }
                 ?: label?.name?.takeIf { trust == DeviceTrust.VERIFIED }
                 ?: known?.labelName
-                ?: if (d.type == TYPE_PHONE) "Phone" else "Browser"
+                ?: when (d.type) { TYPE_PHONE -> "Phone"; TYPE_DESKTOP -> "Computer"; else -> "Browser" }
             devices += LinkedDevice(d.id, d.type, name, isMe = false, trust = trust, lastSeenAt = d.lastSeenAt)
         }
         return devices to roster
@@ -401,6 +401,9 @@ class WebLinkRepository @Inject constructor(
         const val TAG = "WebLink"
         const val TYPE_PHONE = "phone"
         const val TYPE_WEB = "web"
+
+        /** Stash on a computer: it joins like a browser, and plays with this phone as its remote. */
+        const val TYPE_DESKTOP = "desktop"
         const val MAX_ROTATE_TRIES = 4
 
         fun auth(id: LinkIdentity) = DeviceAuth(id.deviceId, id.token)

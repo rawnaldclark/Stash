@@ -101,6 +101,9 @@ internal fun CastSheet(
     val browsers by viewModel.browserList.collectAsStateWithLifecycle()
     val volume by viewModel.volume.collectAsStateWithLifecycle()
     val browserVolume by viewModel.browserVolume.collectAsStateWithLifecycle()
+    val computers by viewModel.computerList.collectAsStateWithLifecycle()
+    val computerDevice by viewModel.computerDevice.collectAsStateWithLifecycle()
+    val computerVolume by viewModel.computerVolume.collectAsStateWithLifecycle()
     DisposableEffect(Unit) {
         viewModel.startScan()
         onDispose { viewModel.stopScan() }
@@ -177,6 +180,48 @@ internal fun CastSheet(
                     }
                     Text(
                         text = stringResource(R.string.play_on_browser_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                    )
+                }
+            }
+
+            // Stash on a linked computer: it keeps the queue, and this phone is its remote.
+            if (computers.isNotEmpty()) {
+                SectionLabel(stringResource(R.string.play_on_computers))
+                computers.forEach { computer ->
+                    val current = computer.device == computerDevice
+                    OutputRow(
+                        icon = Icons.Default.Computer,
+                        name = computer.name,
+                        status = when {
+                            current -> null
+                            !computer.live -> stringResource(R.string.play_on_computer_not_open)
+                            computer.playing != null -> stringResource(R.string.play_on_browser_playing, computer.playing.orEmpty())
+                            else -> stringResource(R.string.play_on_browser_ready)
+                        },
+                        current = current,
+                        enabled = current || computer.live,
+                        onClick = {
+                            if (viewModel.connectComputer(computer)) {
+                                onDismiss()
+                            } else {
+                                android.widget.Toast.makeText(context, R.string.play_on_computer_unavailable, android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                    )
+                }
+                if (computerDevice != null) {
+                    computerVolume?.let { level ->
+                        VolumeSlider(
+                            volume = level,
+                            description = stringResource(R.string.play_on_computer_volume),
+                            onVolume = viewModel::setComputerVolume,
+                        )
+                    }
+                    Text(
+                        text = stringResource(R.string.play_on_computer_note),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),

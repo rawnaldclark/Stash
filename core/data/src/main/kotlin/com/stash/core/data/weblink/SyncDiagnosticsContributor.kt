@@ -36,7 +36,7 @@ class SyncDiagnosticsContributor @Inject constructor(
             return@buildString
         }
         val roster = orNull { store.roster() }.orEmpty()
-        appendLine("Linked: yes · this phone + ${roster.count { it.type == "web" }} browser(s) · key epoch ${space.epoch}")
+        appendLine("Linked: yes · this phone + ${roster.count { it.type == "web" }} browser(s) + ${roster.count { it.type == "desktop" }} computer(s) · key epoch ${space.epoch}")
         appendLine("Pick up where you left off: ${if (handoff.enabled.value) "on" else "off"}")
         val r = engine.record()
         val cfg = r?.configJson?.let { runCatching { MirrorWire.readConfig(it) }.getOrNull() }

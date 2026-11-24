@@ -84,7 +84,7 @@ class WebRemote internal constructor(
     private val clock: () -> Long,
     private val wallClock: () -> Long,
     private val tickMs: Long,
-) : BrowserLink {
+) : BrowserLink, ComputerLink {
     @Inject constructor(store: WebLinkStore, repo: WebLinkRepository, config: WebLinkConfig, connector: LiveConnector) :
         this(store, repo, config, connector, CoroutineScope(SupervisorJob() + Dispatchers.IO), { SystemClock.elapsedRealtime() }, System::currentTimeMillis, TICK_MS)
 
@@ -97,6 +97,9 @@ class WebRemote internal constructor(
 
         /** [unpin] of pin number [pin], after the commands before it: a session's last release goes out before it closes. */
         class Unpin(val pin: Long) : Outgoing
+
+        /** A command to a linked computer, which keeps its own queue ([ComputerWire]). */
+        class ToComputer(val to: String, val command: ComputerCommand) : Outgoing
     }
 
     /** Taps, in the order they happened (each [send] used to start its own coroutine, which could overtake another). */
@@ -120,6 +123,9 @@ class WebRemote internal constructor(
     /** Verified browsers of the space: id → name. Read again on each roster change, so a browser linked later is heard. */
     private val names = MutableStateFlow<Map<String, String>>(emptyMap())
     private val browsers = MutableStateFlow<Map<String, BrowserState>>(emptyMap())
+    /** Verified computers of the space (Stash on a computer, type `desktop`): id → name. */
+    private val computerNames = MutableStateFlow<Map<String, String>>(emptyMap())
+    private val computerStates = MutableStateFlow<Map<String, ComputerLive>>(emptyMap())
     /** The last command number per browser session. */
     private val sent = ConcurrentHashMap<String, Long>()
     /** Browser sessions this phone has told to let go: a state that still names this phone as driver is in flight, not stale. */
@@ -144,6 +150,12 @@ class WebRemote internal constructor(
     /** This phone's device id in the space, or null before the socket first opened. */
     override val deviceId: String? get() = me.takeIf { it.isNotEmpty() }
 
+    /** Every linked computer whose socket is open and that has said what it plays, by device id. */
+    override val computers: StateFlow<Map<String, ComputerLive>> = computerStates.asStateFlow()
+
+    /** The space's verified computers, id → name, running or not (read while the socket is wanted). */
+    override val linkedComputers: StateFlow<Map<String, String>> = computerNames.asStateFlow()
+
     init {
         scope.launch {
             // In the foreground, each roster change runs start() again: it opens, keeps or closes the socket to match. A pinned
@@ -161,6 +173,7 @@ class WebRemote internal constructor(
                 when (o) {
                     is Outgoing.Command -> sendNow(o.to, o.command)
                     is Outgoing.Unpin -> unpinNow(o.pin)
+                    is Outgoing.ToComputer -> sendLock.withLock { sendComputerLocked(o.to, o.command) }
                 }
             }
         }
@@ -238,13 +251,17 @@ class WebRemote internal constructor(
             return@withLock
         }
         val web = link?.web.orEmpty()
+        val desktops = link?.desktops.orEmpty()
         names.value = web.associate { it.deviceId to it.displayName }
-        if (link == null || web.isEmpty()) return@withLock close() // unlinked, or no browser left: nothing to control, no socket
+        computerNames.value = desktops.associate { it.deviceId to it.displayName }
+        // Unlinked, or no browser or computer left: nothing to control, no socket.
+        if (link == null || (web.isEmpty() && desktops.isEmpty())) return@withLock close()
         val known = names.value
         if (browsers.value.keys.any { it !in known }) {
             browsers.update { all -> all.filterKeys { it in known } }
             publish()
         }
+        computerStates.update { all -> all.filterKeys { it in computerNames.value } }
         val target = link.spaceId to link.deviceId
         if (conn != null && openFor == target) return@withLock
         if (conn != null) close() // linked again, to another space or as another device: that socket's hello is stale
@@ -287,6 +304,7 @@ class WebRemote internal constructor(
         sent.clear()
         released.clear()
         browsers.value = emptyMap()
+        computerStates.value = emptyMap()
         publish()
     }
 
@@ -294,10 +312,11 @@ class WebRemote internal constructor(
     private suspend fun readLink(): Link? {
         val id = store.identity() ?: return null
         val sp = store.space() ?: return null
-        return Link(id, sp, store.roster().filter { it.type == "web" })
+        val roster = store.roster()
+        return Link(id, sp, roster.filter { it.type == "web" }, roster.filter { it.type == TYPE_DESKTOP })
     }
 
-    private class Link(val identity: LinkIdentity, val space: LinkedSpace, val web: List<RosterEntry>) {
+    private class Link(val identity: LinkIdentity, val space: LinkedSpace, val web: List<RosterEntry>, val desktops: List<RosterEntry>) {
         val deviceId: String get() = identity.deviceId
         val spaceId: String get() = space.spaceId
     }
@@ -349,6 +368,32 @@ class WebRemote internal constructor(
         return true
     }
 
+    /**
+     * Sends [command] to the computer [device], in order with every other command. One that can't go out now (the socket is
+     * down, the computer isn't heard from) is dropped: the remote shows what the computer says, so nothing is left half done.
+     */
+    override fun sendToComputer(device: String, command: ComputerCommand) {
+        outbox.trySend(Outgoing.ToComputer(device, command))
+    }
+
+    /** Seals and sends [command] to the computer [to]. Under [sendLock]. */
+    private suspend fun sendComputerLocked(to: String, command: ComputerCommand): Boolean {
+        val c = conn ?: return false
+        val live = computerStates.value[to] ?: return false
+        val env = guard(null) {
+            val sp = store.space() ?: return@guard null
+            val key = dataKey(sp, sp.epoch) ?: return@guard null
+            val n = sent.compute(live.state.sid) { _, last -> maxOf((last ?: 0L) + 1, wallClock()) }!!
+            SyncCrypto.seal(key, sp.spaceId, sp.epoch, RemoteWire.cmdPlace(me, to), ComputerWire.cmdJson(live.state.sid, n, command))
+        } ?: return false
+        val frame = buildJsonObject {
+            put("t", "cmd")
+            put("to", to)
+            put("env", SyncJson.encodeToJsonElement(SyncEnvelope.serializer(), env))
+        }.toString()
+        return c.send(frame)
+    }
+
     // ---------------------------------------------------------------------------------------- frames
 
     private suspend fun onEvent(c: LiveConnection, e: LiveEvent) {
@@ -381,6 +426,7 @@ class WebRemote internal constructor(
             val driven = keep?.let(all::get) ?: return@update emptyMap()
             mapOf(driven.device to (if (driven.lostAt == null) driven.copy(lostAt = now) else driven))
         }
+        computerStates.value = emptyMap()
         publish()
     }
 
@@ -394,19 +440,31 @@ class WebRemote internal constructor(
             "ready" -> {
                 val live = (m["peers"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.takeIf { p -> p.str("type") == "web" }?.str("device") }.toSet()
                 browsers.update { all -> all.filterKeys { it in live } }
+                val liveComputers = (m["peers"] as? JsonArray).orEmpty()
+                    .mapNotNull { (it as? JsonObject)?.takeIf { p -> p.str("type") == TYPE_DESKTOP }?.str("device") }.toSet()
+                computerStates.update { all -> all.filterKeys { it in liveComputers } }
                 publish()
             }
-            "peer" -> if (m.str("type") == "web" && (m["on"] as? JsonPrimitive)?.booleanOrNull == false) drop(m.str("device"))
+            "peer" -> if ((m["on"] as? JsonPrimitive)?.booleanOrNull == false) {
+                when (m.str("type")) {
+                    "web" -> drop(m.str("device"))
+                    TYPE_DESKTOP -> m.str("device")?.let { d -> computerStates.update { it - d } }
+                }
+            }
             "state" -> onState(m.str("from"), m["env"])
             "epoch" -> guard(Unit) { repo.refresh() }
             "error" -> when (m.str("code")) {
                 "epoch", "rotation_due" -> guard(Unit) { repo.refresh() }
-                "offline" -> drop(m.str("to"))
+                "offline" -> {
+                    drop(m.str("to"))
+                    m.str("to")?.let { d -> computerStates.update { it - d } }
+                }
             }
         }
     }
 
     private suspend fun onState(from: String?, envJson: kotlinx.serialization.json.JsonElement?) {
+        from?.let(computerNames.value::get)?.let { return onComputerState(from, it, envJson) }
         val name = from?.let(names.value::get) ?: return // not a browser this phone verified
         val st = guard(null) {
             val env = SyncJson.decodeFromJsonElement(SyncEnvelope.serializer(), envJson ?: return@guard null)
@@ -435,6 +493,21 @@ class WebRemote internal constructor(
             // lets go and plays on as its own music (spec 2026-11-03 §2.3 "Resume").
             sendNow(from, RemoteCommand.Release(pause = owed[from] ?: false))
         }
+    }
+
+    /** A computer's state: opened like a browser's, read by [ComputerWire]. */
+    private suspend fun onComputerState(from: String, name: String, envJson: kotlinx.serialization.json.JsonElement?) {
+        val st = guard(null) {
+            val env = SyncJson.decodeFromJsonElement(SyncEnvelope.serializer(), envJson ?: return@guard null)
+            var sp = store.space() ?: return@guard null
+            if (sp.keyFor(env.e) == null && env.e > sp.epoch) {
+                repo.refresh()
+                sp = store.space() ?: return@guard null
+            }
+            val key = dataKey(sp, env.e) ?: return@guard null
+            ComputerWire.readState(SyncCrypto.open(key, sp.spaceId, RemoteWire.statePlace(from), env, MAX_PLAIN))
+        } ?: return
+        computerStates.update { it + (from to ComputerLive(from, name, st, clock())) }
     }
 
     private fun drop(device: String?) {
@@ -469,6 +542,9 @@ class WebRemote internal constructor(
 
     internal companion object {
         private const val TAG = "WebRemote"
+
+        /** A linked computer's device type (Stash on a computer). */
+        const val TYPE_DESKTOP = "desktop"
 
         /** How often the card re-checks freshness while a browser is shown. */
         const val TICK_MS = 5_000L

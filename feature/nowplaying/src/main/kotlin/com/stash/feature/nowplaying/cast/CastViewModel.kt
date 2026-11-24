@@ -10,6 +10,9 @@ import com.stash.core.media.cast.CastDevice
 import com.stash.core.media.cast.CastDevices
 import com.stash.core.media.cast.CastRemote
 import com.stash.core.media.cast.WebCastRemote
+import com.stash.core.media.computer.ComputerOutput
+import com.stash.core.media.computer.ComputerRemote
+import kotlinx.coroutines.flow.map
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -36,9 +39,13 @@ data class PlayOnState(
     val browser: BrowserSession? = null,
     /** The space has a linked browser: "Play on" shows even on a phone without Cast. */
     val hasBrowser: Boolean = false,
+    /** The linked computer this phone is the remote for ("Stash on DESKTOP"), or null. */
+    val computer: String? = null,
+    /** The space has a linked computer. */
+    val hasComputer: Boolean = false,
 ) {
-    /** The button (and the ⋮ row) shows: the phone can Cast, or there is a browser to play on. */
-    val available: Boolean get() = connection != CastConnection.Unavailable || hasBrowser || browser != null
+    /** The button (and the ⋮ row) shows: the phone can Cast, or there is a browser or a computer to play on. */
+    val available: Boolean get() = connection != CastConnection.Unavailable || hasBrowser || browser != null || hasComputer
 
     /** The phone can Cast: the sheet lists speakers. */
     val castSupported: Boolean get() = connection != CastConnection.Unavailable
@@ -48,7 +55,8 @@ data class PlayOnState(
 
     /** The device the music plays on, once it does ("Chrome on Windows", "Living Room"); null on this phone. */
     val playingOn: String?
-        get() = browser?.takeIf { it.link != WebCastRemote.Link.STARTING }?.name ?: (connection as? CastConnection.Connected)?.deviceName
+        get() = browser?.takeIf { it.link != WebCastRemote.Link.STARTING }?.name ?: computer
+            ?: (connection as? CastConnection.Connected)?.deviceName
 
     /** The device the music is on its way to ("Starting on…", "Connecting to…"); null otherwise. */
     val startingOn: String?
@@ -63,6 +71,9 @@ data class PlayOnState(
 class CastViewModel @Inject constructor(
     private val devices: CastDevices,
     private val browsers: BrowserOutputs,
+    // Tests leave these: no linked computer, and no player to move music from.
+    private val computers: ComputerRemote = ComputerRemote.unlinked(),
+    private val player: com.stash.core.media.PlayerRepository? = null,
 ) : ViewModel() {
     val connection: StateFlow<CastConnection> = devices.connection
 
@@ -81,8 +92,27 @@ class CastViewModel @Inject constructor(
      */
     val phoneOnly: StateFlow<Set<Long>> = browsers.phoneOnly
 
+    /** The linked computers, and whether Stash is open on each. */
+    val computerList: StateFlow<List<ComputerOutput>> = computers.outputs
+
+    /** The computer this phone is the remote for, by device id, or null. */
+    val computerDevice: StateFlow<String?> = computers.attached.map { it?.device }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** That computer's volume (0..1), or null. */
+    val computerVolume: StateFlow<Float?> = computers.attached.map { it?.state?.volume?.toFloat() }.distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     /** Where the music plays. */
-    val playOn: StateFlow<PlayOnState> = combine(devices.connection, browsers.session, browsers.hasBrowser, ::PlayOnState)
+    val playOn: StateFlow<PlayOnState> = combine(
+        devices.connection,
+        browsers.session,
+        browsers.hasBrowser,
+        computers.attached,
+        computers.outputs,
+    ) { connection, session, hasBrowser, computer, list ->
+        PlayOnState(connection, session, hasBrowser, computer?.name, list.isNotEmpty())
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayOnState(devices.connection.value))
 
     /** The speaker's volume (0..1) while connected, else null. */
@@ -126,6 +156,36 @@ class CastViewModel @Inject constructor(
     fun disconnect() = devices.disconnect()
     fun setVolume(level: Float) = devices.remote.value?.setVolume(level)
 
+    /**
+     * Plays on the computer [output] (it keeps the queue; this phone is its remote): what plays here moves there and this
+     * phone pauses. False when Stash isn't open there any more.
+     */
+    fun connectComputer(output: ComputerOutput): Boolean {
+        // One output at a time: a browser or a speaker playing this phone's queue hands it back first.
+        if (browsers.session.value != null) browsers.disconnect()
+        if (devices.connection.value is CastConnection.Connected || devices.connection.value is CastConnection.Connecting) {
+            devices.disconnect()
+        }
+        if (!output.live) return false
+        val s = player?.playerState?.value ?: return false
+        val moving = s.currentTrack != null && (s.playWhenReady || s.isPlaying)
+        viewModelScope.launch {
+            // This phone pauses first: once the computer is picked, a pause would go to the computer.
+            if (moving) player?.pause()
+            computers.pick(
+                output.device,
+                if (moving) s.queue else emptyList(),
+                s.currentIndex,
+                s.positionMs,
+                playing = true,
+                source = s.source,
+            )
+        }
+        return true
+    }
+
+    fun setComputerVolume(level: Float) = computers.setVolume(level)
+
     /** Plays the queue on [browser]: false when it can't be picked after all (its tab closed meanwhile). */
     fun connectBrowser(browser: BrowserOutput): Boolean = browsers.connect(browser.device)
 
@@ -133,6 +193,7 @@ class CastViewModel @Inject constructor(
 
     /** "This phone": whatever plays elsewhere comes back here; a browser's music carries on (owner's decision D2). */
     fun playHere() {
+        if (computers.current() != null) computers.leave()
         if (browsers.session.value != null) browsers.disconnect()
         if (devices.connection.value is CastConnection.Connected || devices.connection.value is CastConnection.Connecting) {
             devices.disconnect()
