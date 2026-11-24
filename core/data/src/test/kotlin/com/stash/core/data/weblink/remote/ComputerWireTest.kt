@@ -49,6 +49,18 @@ class ComputerWireTest {
     }
 
     @Test
+    fun `the playing song's format reads when the computer says it, and a bad one is left out, not the state`() {
+        val withFormat = state.replace("\"phase\":\"playing\"", "\"phase\":\"playing\",\"format\":{\"codec\":\"FLAC\",\"sampleRate\":44100,\"bitDepth\":16}")
+        assertThat(ComputerWire.readState(withFormat).format).isEqualTo(ComputerFormat("flac", 44_100, 16))
+        val noDepth = state.replace("\"phase\":\"playing\"", "\"phase\":\"playing\",\"format\":{\"codec\":\"flac\",\"sampleRate\":96000}")
+        assertThat(ComputerWire.readState(noDepth).format).isEqualTo(ComputerFormat("flac", 96_000, null))
+        val bad = state.replace("\"phase\":\"playing\"", "\"phase\":\"playing\",\"format\":{\"codec\":\"<b>\",\"sampleRate\":44100}")
+        assertThat(ComputerWire.readState(bad).format).isNull()
+        assertThat(ComputerWire.readState(bad).song?.title).isEqualTo("Pink + White")
+        assertThat(ComputerWire.readState(state).format).isNull()
+    }
+
+    @Test
     fun `another kind, a newer version or a bad field is refused`() {
         assertThrows(HandoffWireException::class.java) { ComputerWire.readState(state.replace("stash-remote-state", "stash-now")) }
         val newer = assertThrows(HandoffWireException::class.java) { ComputerWire.readState(state.replace("\"v\":1", "\"v\":2")) }

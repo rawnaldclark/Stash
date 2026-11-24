@@ -1451,11 +1451,14 @@ fun NowPlayingScreen(
                                             // The live verdict ("Bit-perfect", "Hi-Res") rides on the end;
                                             // tapping opens the full signal path, the only place that
                                             // says when Android resampled the song.
-                                            val badge = signalVerdict?.let { with(com.stash.feature.nowplaying.ui.SignalPathBadge) { it.badge() } }
+                                            // On a computer this phone is the remote for, the line is what the computer said
+                                            // it plays: this phone's own signal path and its verdict say nothing about it.
+                                            val onComputer = playOn.computer != null
+                                            val badge = signalVerdict?.takeUnless { onComputer }?.let { with(com.stash.feature.nowplaying.ui.SignalPathBadge) { it.badge() } }
                                             QualityLine(
                                                 qualityText = if (badge != null) "$qualityText \u00B7 $badge" else qualityText,
-                                                isStreaming = uiState.isStreaming,
-                                                onClick = { showSignalPath = true },
+                                                isStreaming = uiState.isStreaming && !onComputer,
+                                                onClick = if (onComputer) null else { { showSignalPath = true } },
                                                 alignStart = alignStart,
                                             )
                                         }
