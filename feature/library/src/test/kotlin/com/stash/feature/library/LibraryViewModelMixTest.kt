@@ -111,7 +111,7 @@ class LibraryViewModelMixTest {
         Playlist(id = id, name = "PL $id", source = source, type = type)
 
     private fun playerRepoMock(): PlayerRepository = mock {
-        on { playerState } doReturn MutableStateFlow(PlayerState())
+        MutableStateFlow(PlayerState()).let { s -> on { playerState } doReturn s; on { shownState } doReturn s }
     }
 
     private fun musicRepoMock(playlists: List<Playlist>): MusicRepository = mock {

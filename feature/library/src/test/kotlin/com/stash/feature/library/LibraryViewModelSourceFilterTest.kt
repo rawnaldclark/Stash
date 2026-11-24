@@ -85,7 +85,7 @@ class LibraryViewModelSourceFilterTest {
     }
 
     @Test fun stream_only_tap_on_downloaded_row_queues_the_whole_list() = runTest {
-        val playerRepo = mock<PlayerRepository> { on { playerState } doReturn MutableStateFlow(PlayerState()) }
+        val playerRepo = mock<PlayerRepository> { MutableStateFlow(PlayerState()).let { s -> on { playerState } doReturn s; on { shownState } doReturn s } }
         val list = listOf(downloadedOpus, streamOnlyOpus, downloadedFlac)
         val vm = buildVm(musicRepoMock(list), streaming = true, playerRepository = playerRepo)
 
@@ -96,7 +96,7 @@ class LibraryViewModelSourceFilterTest {
     }
 
     @Test fun download_mode_tap_on_downloaded_row_queues_only_downloaded_rows() = runTest {
-        val playerRepo = mock<PlayerRepository> { on { playerState } doReturn MutableStateFlow(PlayerState()) }
+        val playerRepo = mock<PlayerRepository> { MutableStateFlow(PlayerState()).let { s -> on { playerState } doReturn s; on { shownState } doReturn s } }
         val list = listOf(downloadedOpus, streamOnlyOpus, downloadedFlac)
         val vm = buildVm(musicRepoMock(list), streaming = false, playerRepository = playerRepo)
 
@@ -120,7 +120,7 @@ class LibraryViewModelSourceFilterTest {
     private fun buildVm(
         musicRepository: MusicRepository,
         streaming: Boolean = false,
-        playerRepository: PlayerRepository = mock { on { playerState } doReturn MutableStateFlow(PlayerState()) },
+        playerRepository: PlayerRepository = mock { MutableStateFlow(PlayerState()).let { s -> on { playerState } doReturn s; on { shownState } doReturn s } },
     ): LibraryViewModel = LibraryViewModel(
         musicRepository = musicRepository,
         playerRepository = playerRepository,
