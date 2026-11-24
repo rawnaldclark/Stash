@@ -66,7 +66,8 @@ import kotlinx.serialization.json.put
  * Remote v2 (spec 2026-11-03 §2.2): a browser can play this phone's queue, driven through the media session
  * (`core:media` `BrowserOutputs` / `WebCastRemote`). For that:
  * - [pin] keeps the socket open while a browser is the output, in the background too: the one exception to "no socket in the
- *   background". It lives in the foreground media service, as Listen Together's room socket does.
+ *   background", with [hold] (this phone the remote for a computer). It lives in the foreground media service, as Listen
+ *   Together's room socket does.
  * - [sendTo] names the browser; [send] stays for the card's.
  * - [live] has every live browser's state (with its `caps`), [linked] the space's verified browsers by name.
  * - While pinned, a dropped socket keeps the driven browser's last state, marked [BrowserState.lostAt], and holds what couldn't go
@@ -112,6 +113,8 @@ class WebRemote internal constructor(
     private val wanted = MutableStateFlow<Boolean?>(null)
     /** The browser this phone's queue plays on ([pin]): the socket stays open for it, foreground or not. */
     private val pinned = MutableStateFlow<String?>(null)
+    /** This phone is the remote for a computer ([hold]): the socket stays open, foreground or not. */
+    private val computerHeld = MutableStateFlow(false)
     /** How many times [pin] was called (under [pinLock], with [pinned]): an [unpin] is for the pin it followed only. */
     private var pins = 0L
     private val pinLock = Any()
@@ -160,9 +163,9 @@ class WebRemote internal constructor(
         scope.launch {
             // In the foreground, each roster change runs start() again: it opens, keeps or closes the socket to match. A pinned
             // browser keeps it open in the background too.
-            combine(wanted, pinned, store.rosterVersion) { w, p, _ -> w to p }.collectLatest { (w, p) ->
+            combine(wanted, pinned, computerHeld, store.rosterVersion) { w, p, h, _ -> Triple(w, p, h) }.collectLatest { (w, p, h) ->
                 when {
-                    w == true || p != null -> start()
+                    w == true || p != null || h -> start()
                     w == false -> stop()
                     else -> Unit
                 }
@@ -191,6 +194,11 @@ class WebRemote internal constructor(
             pins++
             pinned.value = device
         }
+    }
+
+    override fun hold(on: Boolean) {
+        if (!config.enabled) return
+        computerHeld.value = on
     }
 
     /**

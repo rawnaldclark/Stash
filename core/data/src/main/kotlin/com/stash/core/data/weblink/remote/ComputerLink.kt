@@ -12,4 +12,10 @@ interface ComputerLink {
 
     /** Sends [command] to the computer [device], in order with every other command. */
     fun sendToComputer(device: String, command: ComputerCommand)
+
+    /**
+     * [on]: this phone is the remote for a computer, so the socket stays open in the background too (its notification and lock
+     * screen drive it from there). False: the socket follows the app's foreground again.
+     */
+    fun hold(on: Boolean) = Unit
 }

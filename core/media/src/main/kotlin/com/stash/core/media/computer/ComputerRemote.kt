@@ -93,6 +93,11 @@ class ComputerRemote internal constructor(
     val view: StateFlow<PlayerState?> = combine(attached.onEach { it?.let(::lookUp) }, known) { live, _ -> live?.let(::stateOf) }
         .stateIn(scope, SharingStarted.Eagerly, null)
 
+    init {
+        // The remote for a computer: the socket stays open in the background too, for its notification and lock screen.
+        attached.map { it != null }.distinctUntilChanged().onEach(link::hold).launchIn(scope)
+    }
+
     /** The linked computers for "Play on". */
     val outputs: StateFlow<List<ComputerOutput>> = combine(link.linkedComputers, link.computers) { names, live ->
         names.map { (id, name) ->

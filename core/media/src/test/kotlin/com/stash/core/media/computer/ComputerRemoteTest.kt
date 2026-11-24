@@ -27,6 +27,10 @@ class ComputerRemoteTest {
         override fun sendToComputer(device: String, command: ComputerCommand) {
             sent += command
         }
+        var held = false
+        override fun hold(on: Boolean) {
+            held = on
+        }
     }
 
     private var now = 100_000L
@@ -61,6 +65,8 @@ class ComputerRemoteTest {
     fun `a computer that plays while this phone doesn't is taken up, and shows as the player`() {
         says(playing = true)
         assertThat(remote.current()?.device).isEqualTo(PC)
+        // Its notification drives it from the background too: the socket is held open.
+        assertThat(link.held).isTrue()
         val view = remote.view.value!!
         assertThat(view.currentTrack?.title).isEqualTo("Pink + White")
         assertThat(view.queue.map { it.title }).containsExactly("Pink + White", "Nights", "Solo").inOrder()
@@ -161,6 +167,7 @@ class ComputerRemoteTest {
         says(playing = true)
         val was = remote.leave()!!
         assertThat(link.sent).containsExactly(ComputerCommand.Pause)
+        assertThat(link.held).isFalse()
         // What it played carries on here, from where it was.
         assertThat(was.songs.map { it.title }).containsExactly("Pink + White", "Nights", "Solo").inOrder()
         assertThat(was.positionMs).isEqualTo(10_000)
