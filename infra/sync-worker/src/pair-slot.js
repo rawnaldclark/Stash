@@ -43,9 +43,9 @@ export class PairSlot {
         return { status: r.status, body: r.body ?? null, ...(r.headers ? { headers: r.headers } : {}) };
     }
 
-    async open({ pairId, device, session }) {
+    async open({ pairId, device, session, type }) {
         if (await this.load()) return err(409, "exists", "Slot exists");
-        const r = openSlot(pairId, device, this.now(), { session });
+        const r = openSlot(pairId, device, this.now(), { session, type });
         if (r.state) await this.ctx.storage.setAlarm(r.state.expiresAt + CLAIM_GRACE_MS);
         return this.commit(r);
     }
@@ -58,8 +58,8 @@ export class PairSlot {
         return this.commit(answerSlot(await this.load(), body, this.now()));
     }
 
-    async reply({ caller, body }) {
-        return this.commit(replySlot(await this.load(), caller, body, this.now()));
+    async reply({ caller, body, player = true }) {
+        return this.commit(replySlot(await this.load(), caller, body, this.now(), { player }));
     }
 
     async claim({ caller, mode }) {
@@ -71,8 +71,8 @@ export class PairSlot {
     }
 
     /** The browser's long-poll for the answer. */
-    async poll({ caller }) {
-        return this.longPoll((s, now) => pollSlot(s, caller, now));
+    async poll({ caller, player = true }) {
+        return this.longPoll((s, now) => pollSlot(s, caller, now, { player }));
     }
 
     /** The phone's long-poll for the browser's reply. */
