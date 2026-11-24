@@ -409,6 +409,17 @@ class StashPlaybackService : MediaLibraryService() {
         /** The session of the computer this phone is the remote for (beside the phone's own). */
         private const val COMPUTER_SESSION_ID = "stash-computer"
 
+        /** The media keys that go to the computer this phone is the remote for. */
+        internal fun computerButton(keyCode: Int): Boolean = keyCode in setOf(
+            android.view.KeyEvent.KEYCODE_MEDIA_PLAY,
+            android.view.KeyEvent.KEYCODE_MEDIA_PAUSE,
+            android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            android.view.KeyEvent.KEYCODE_HEADSETHOOK,
+            android.view.KeyEvent.KEYCODE_MEDIA_STOP,
+            android.view.KeyEvent.KEYCODE_MEDIA_NEXT,
+            android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS,
+        )
+
         /**
          * Idle stop while casting. Stopping the service ends the cast session
          * (the speaker drops back to its idle screen and has to be picked
@@ -2646,6 +2657,36 @@ class StashPlaybackService : MediaLibraryService() {
     // ---- MediaLibrarySession.Callback ----
 
     private inner class StashSessionCallback : MediaLibrarySession.Callback {
+
+        /**
+         * A headphone or Bluetooth button while the notification shows a computer this phone is the remote for: Android hands it
+         * to the phone's own session (the one that last played sound), but the listener means the music they hear, so it goes to
+         * the computer. Everything else is Media3's.
+         */
+        @OptIn(UnstableApi::class)
+        override fun onMediaButtonEvent(
+            session: MediaSession,
+            controllerInfo: MediaSession.ControllerInfo,
+            intent: Intent,
+        ): Boolean {
+            val player = computerPlayer?.takeIf { computerSession != null }
+                ?: return super.onMediaButtonEvent(session, controllerInfo, intent)
+            val event = androidx.core.content.IntentCompat.getParcelableExtra(
+                intent, Intent.EXTRA_KEY_EVENT, android.view.KeyEvent::class.java,
+            ) ?: return super.onMediaButtonEvent(session, controllerInfo, intent)
+            val handled = computerButton(event.keyCode)
+            if (!handled) return super.onMediaButtonEvent(session, controllerInfo, intent)
+            if (event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                when (event.keyCode) {
+                    android.view.KeyEvent.KEYCODE_MEDIA_PLAY -> player.play()
+                    android.view.KeyEvent.KEYCODE_MEDIA_PAUSE, android.view.KeyEvent.KEYCODE_MEDIA_STOP -> player.pause()
+                    android.view.KeyEvent.KEYCODE_MEDIA_NEXT -> player.seekToNext()
+                    android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS -> player.seekToPrevious()
+                    else -> if (player.playWhenReady) player.pause() else player.play() // play/pause, the headset's one button
+                }
+            }
+            return true
+        }
 
         @OptIn(UnstableApi::class)
         private suspend fun resolveMediaItem(item: MediaItem, controller: MediaSession.ControllerInfo): MediaItem {
