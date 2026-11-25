@@ -83,7 +83,7 @@ class LikedSongsDetailViewModel @Inject constructor(
 
     val uiState: StateFlow<LikedSongsDetailUiState> = combine(
         tracksFlow.withSearchFilter(_searchQuery),
-        playerRepository.playerState,
+        playerRepository.shownState,
         _searchQuery,
         _showSearch,
     ) { tracks, playerState, query, showSearch ->

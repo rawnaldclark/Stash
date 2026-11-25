@@ -607,7 +607,12 @@ private fun PairingPanel(state: PairingState, onLink: () -> Unit, onClose: () ->
                         buildAnnotatedString {
                             append(stringResource(R.string.settings_web_link_confirm_body_before_code))
                             withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(PairingSession.spaced(state.code)) }
-                            append(stringResource(R.string.settings_web_link_confirm_body_after_code))
+                            append(
+                                stringResource(
+                                    if (state.computer) R.string.settings_web_link_confirm_body_after_code_computer
+                                    else R.string.settings_web_link_confirm_body_after_code,
+                                ),
+                            )
                         },
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -642,7 +647,10 @@ private fun PairingPanel(state: PairingState, onLink: () -> Unit, onClose: () ->
                 }
                 is PairingState.Linked -> {
                     Text(stringResource(R.string.settings_web_link_linked_to, state.browserName), style = MaterialTheme.typography.titleMedium)
-                    Text(stringResource(R.string.settings_web_link_linked_desc), style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        stringResource(if (state.computer) R.string.settings_web_link_linked_desc_computer else R.string.settings_web_link_linked_desc),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                     Button(onClick = onClose) { Text(stringResource(R.string.settings_done)) }
                 }
                 is PairingState.Failed -> {

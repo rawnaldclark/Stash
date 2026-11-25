@@ -3,7 +3,8 @@
  * `{ status, body?, state? }`, where `state` is the slot to store when it changed. src/pair-slot.js keeps it in storage,
  * holds the long-polls and deletes the slot with its alarm.
  *
- * A slot: the browser's device (id, token hash, public key, encrypted label), opened through the player only; then one
+ * A slot: the browser's device (id, token hash, public key, encrypted label), opened through the player only, or a desktop's,
+ * opened by the desktop itself (`browser.type` says which; every rule below is the same for both); then one
  * answer from a phone (its ephemeral key, its encrypted message, and its own device record); maybe one reply from the
  * browser (when it holds the space); then one claim, made by the device that adds the other to a space, which burns it.
  */
@@ -20,12 +21,18 @@ export const POLL_MS = 25_000;
 const expired = () => err(410, "expired", "This code expired. Show a new one.");
 const used = () => err(409, "used", "This code was already used. Show a new one on your computer.");
 const forbidden = () => err(403, "forbidden", "Not a device of this code");
+/** A browser's own calls come only through the player; a desktop makes them itself. */
+const viaPlayerOnly = (s, player) => s?.browser?.type === "web" && !player;
+const notPlayer = () => err(403, "forbidden", "Only through Stash on the web");
 const alive = (s, now) => !!s && now < s.expiresAt + CLAIM_GRACE_MS;
 const is = (caller, rec) => !!caller && !!rec && caller.deviceId === rec.id && sameText(caller.tokenHash, rec.tokenHash);
 
-/** `session` is the player session's hash, for the per-session space quota. */
-export function openSlot(pairId, device, now, { session = null } = {}) {
-    const browser = cleanDevice(device, "web");
+/**
+ * `session` is the player session's hash (or `ip:…` for a desktop), for the space quota. `type`: `web` (through the player) or
+ * `desktop`.
+ */
+export function openSlot(pairId, device, now, { session = null, type = "web" } = {}) {
+    const browser = cleanDevice(device, type === "desktop" ? "desktop" : "web");
     if (!browser) return err(400, "bad_request", "Not a device");
     const state = { v: 1, pairId, browser, session, createdAt: now, expiresAt: now + PAIR_TTL_MS, answer: null, reply: null, claimed: false };
     return { status: 201, body: { pairId, expiresAt: state.expiresAt }, state };
@@ -51,8 +58,9 @@ export function answerSlot(s, body, now) {
 }
 
 /** The browser's long-poll: 200 with the answer, 204 still waiting, 410 gone. */
-export function pollSlot(s, caller, now) {
+export function pollSlot(s, caller, now, { player = true } = {}) {
     if (!alive(s, now)) return expired();
+    if (viaPlayerOnly(s, player)) return notPlayer();
     if (!is(caller, s.browser)) return forbidden();
     if (s.answer) return ok({ phonePub: s.answer.phonePub, ct: s.answer.ct });
     if (now >= s.expiresAt) return expired();
@@ -63,10 +71,11 @@ export function pollSlot(s, caller, now) {
  * The browser's reply when it holds the space and the phone has none (§5.1 step 4): `{ ct }`. One per slot. sync-v1 has the
  * browser add the phone first (which claims the slot) and reply after, so a claimed slot still takes its one reply.
  */
-export function replySlot(s, caller, body, now) {
+export function replySlot(s, caller, body, now, { player = true } = {}) {
     const ct = cleanBox(body?.ct, LIMITS.pairChars);
     if (!ct) return err(400, "bad_request", "Not a reply");
     if (!alive(s, now)) return expired();
+    if (viaPlayerOnly(s, player)) return notPlayer();
     if (!is(caller, s.browser)) return forbidden();
     if (!s.answer) return err(409, "pending", "No answer yet");
     if (s.reply) return used();

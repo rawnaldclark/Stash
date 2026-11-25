@@ -93,7 +93,7 @@ class LibraryViewModelLikedSearchTest {
         }
         return LibraryViewModel(
             musicRepository = musicRepository,
-            playerRepository = mock { on { playerState } doReturn MutableStateFlow(PlayerState()) },
+            playerRepository = mock { MutableStateFlow(PlayerState()).let { s -> on { playerState } doReturn s; on { shownState } doReturn s } },
             tokenManager = mock {
                 on { soundCloudSession } doReturn flowOf(null)
                 on { youTubeAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected)

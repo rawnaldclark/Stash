@@ -308,6 +308,7 @@ export class Space {
                 return { status: 409, body: { error: { code: "epoch", message: "The key changed: send the new device its key" }, epoch: m.epoch } };
             }
             if (labelCt.e !== m.epoch) return { status: 409, body: { error: { code: "epoch", message: "Seal the label with the current key" }, epoch: m.epoch } };
+            // The newcomer is the other side of the code: a phone sponsors a browser or a desktop, either of those a phone.
             return this.capFor(me.type === "phone" ? "web" : "phone");
         });
         if (pre) return pre;
@@ -333,11 +334,14 @@ export class Space {
         return { status: 409, body: { error: { code: "epoch", message: "The key changed: send the new device its key" }, epoch: done.rotated } };
     }
 
+    /** Room for one more of `type`: one phone; four browsers and computers together. */
     capFor(type) {
-        const n = this.one("SELECT COUNT(*) AS n FROM devices WHERE type = ?", type).n;
-        if (type === "phone" && n >= LIMITS.phones) return err(409, "full", "This link already has a phone. Remove it first.");
-        if (type === "web" && n >= LIMITS.browsers) return err(409, "full", "You've linked 4 browsers. Remove one first.");
-        return null;
+        if (type === "phone") {
+            const n = this.one("SELECT COUNT(*) AS n FROM devices WHERE type = 'phone'").n;
+            return n >= LIMITS.phones ? err(409, "full", "This link already has a phone. Remove it first.") : null;
+        }
+        const n = this.one("SELECT COUNT(*) AS n FROM devices WHERE type <> 'phone'").n;
+        return n >= LIMITS.browsers ? err(409, "full", "You've linked 4 browsers and computers. Remove one first.") : null;
     }
 
     // ---------------------------------------------------------------- keys

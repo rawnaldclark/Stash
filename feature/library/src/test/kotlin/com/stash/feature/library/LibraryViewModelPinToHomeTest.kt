@@ -127,7 +127,7 @@ class LibraryViewModelPinToHomeTest {
         sharedMixRepository: com.stash.core.data.share.SharedMixRepository = sharedMock(),
     ): LibraryViewModel {
         val playerRepository: PlayerRepository = mock {
-            on { playerState } doReturn MutableStateFlow(PlayerState())
+            MutableStateFlow(PlayerState()).let { s -> on { playerState } doReturn s; on { shownState } doReturn s }
         }
         return LibraryViewModel(
             musicRepository = musicRepository,

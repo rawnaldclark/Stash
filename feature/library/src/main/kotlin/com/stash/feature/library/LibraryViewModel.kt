@@ -528,7 +528,7 @@ class LibraryViewModel @Inject constructor(
     }.combine(
         // Only the playing song's id: the whole PlayerState changes on every player event (a
         // pause, a buffering flap, a queue edit), and each one re-ran the stages below.
-        playerRepository.playerState.map { it.currentTrack?.id }.distinctUntilChanged(),
+        playerRepository.shownState.map { it.currentTrack?.id }.distinctUntilChanged(),
     ) { libraryState, playingId ->
         // Overlay the currently-playing track ID so the UI can highlight it.
         libraryState.copy(

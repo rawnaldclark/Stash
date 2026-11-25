@@ -482,6 +482,21 @@ class WebRemoteTest {
         assertThat(open).hasSize(1)
     }
 
+    @Test fun `a socket held for a computer's remote stays open in the background, and follows the foreground once let go`() = runTest {
+        linked()
+        val r = remote()
+        r.onForeground()
+        runCurrent()
+        r.hold(true)
+        r.onBackground()
+        runCurrent()
+        assertThat(open).hasSize(1)
+        assertThat(connector.opened).hasSize(1)
+        r.hold(false)
+        runCurrent()
+        assertThat(open).isEmpty()
+    }
+
     @Test fun `sendTo reaches the named browser, not the card's`() = runTest {
         linked(listOf(CHROME to "Chrome on Windows", FIREFOX to "Firefox on Mac"))
         val r = remote()

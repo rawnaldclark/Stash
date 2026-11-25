@@ -70,6 +70,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -138,6 +139,9 @@ class PlayerRepositoryImpl @Inject constructor(
     // The player's check of an add-on's stream: its refusals (the add-on is set aside, its songs resolved again), and
     // which add-on each placeholder's link came from. Null in hand-built tests (only a slot's own origin is read).
     private val addonStreamCheck: com.stash.core.media.streaming.AddonStreamCheck? = null,
+    // This phone as the remote for Stash on a linked computer, which keeps its own queue: while one is attached, the
+    // transport and queue calls go there instead of this phone's player. Null in hand-built tests (never a computer).
+    private val computer: com.stash.core.media.computer.ComputerRemote? = null,
 ) : PlayerRepository {
 
     /**
@@ -527,6 +531,16 @@ class PlayerRepositoryImpl @Inject constructor(
     internal val queueBuildsInFlight = java.util.concurrent.atomic.AtomicInteger(0)
     override val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
 
+    init {
+        // A linked computer is taken up as the output only while this phone plays nothing.
+        computer?.watchPhone(playerState)
+    }
+
+    override val shownState: StateFlow<PlayerState> = computer?.let { pc ->
+        kotlinx.coroutines.flow.combine(playerState, pc.view) { phone, there -> there ?: phone }
+            .stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, playerState.value)
+    } ?: playerState
+
     /**
      * Playback position ticker: 250 ms while playing, and SILENT while
      * paused — see [positionTicker] for why, and for the tests that pin it.
@@ -711,6 +725,7 @@ class PlayerRepositoryImpl @Inject constructor(
     // ---- Public API ----
 
     override suspend fun play() {
+        if (computer?.play() == true) return
         cascadeGuard.onUserTransport()
         val controller = ensureController() ?: return
         // An empty timeline means the service died and took ExoPlayer's queue
@@ -729,6 +744,7 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override suspend fun pause() {
+        if (computer?.pause() == true) return
         // MediaController is main-thread-only (Media3 checks and throws); a
         // background caller — the sleep timer used to be one — must hop.
         withContext(Dispatchers.Main.immediate) { ensureController()?.pause() }
@@ -757,6 +773,7 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override suspend fun skipNext() {
+        if (computer?.next() == true) return
         cascadeGuard.onUserTransport()
         val controller = ensureController() ?: return
         if (inListenTogether) { controller.seekToNext(); return }
@@ -785,6 +802,7 @@ class PlayerRepositoryImpl @Inject constructor(
     override suspend fun skipToPreviousSong() = skipPrevious(restartPastThreshold = false)
 
     private suspend fun skipPrevious(restartPastThreshold: Boolean) {
+        if (computer?.previous() == true) return
         cascadeGuard.onUserTransport()
         val controller = ensureController() ?: return
         if (inListenTogether) { controller.seekToPrevious(); return }
@@ -901,6 +919,7 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override suspend fun seekTo(positionMs: Long) {
+        if (computer?.seekTo(positionMs) == true) return
         cascadeGuard.onUserTransport()
         ensureController()?.seekTo(positionMs)
     }
@@ -909,7 +928,11 @@ class PlayerRepositoryImpl @Inject constructor(
         tracks: List<Track>,
         startIndex: Int,
         source: com.stash.core.model.PlaybackSource,
-    ) = setQueueInternal(tracks, startIndex, startPositionMs = 0L, source = source)
+    ) {
+        // A tapped list plays on the computer this phone is the remote for (unless none of it can play there).
+        if (computer?.setQueue(tracks, startIndex, source) == true) return
+        setQueueInternal(tracks, startIndex, startPositionMs = 0L, source = source)
+    }
 
     /**
      * Backing implementation for [setQueue] that also accepts a start
@@ -1764,6 +1787,7 @@ class PlayerRepositoryImpl @Inject constructor(
         if (pool.isEmpty()) return false
 
         val shuffled = pool.shuffled()
+        if (computer?.setQueue(shuffled, 0, com.stash.core.model.PlaybackSource.Library) == true) return true
         librarySnapshot = shuffled
         libraryShuffleActive = true
         // Mutually exclusive with radio: shuffling the library ends any station.
@@ -1786,6 +1810,25 @@ class PlayerRepositoryImpl @Inject constructor(
         seed: com.stash.core.data.radio.RadioSeed,
         keepCurrent: Boolean,
     ): RadioStartResult {
+        // The remote for a computer: the station is found here and plays there (its first batch; it doesn't grow there).
+        // "Start radio" on the playing song carries on from where the song is.
+        computer?.current()?.let { live ->
+            val (_, found) = radioGenerator.start(seed)
+            if (found.isEmpty()) return RadioStartResult.NoStation
+            // Library ids, as for a station here: the generator's ids name no row.
+            val generated = found.map { it.withQueueIdentity() }
+            val label = when (seed) {
+                is com.stash.core.data.radio.RadioSeed.Artist -> seed.name
+                is com.stash.core.data.radio.RadioSeed.Song -> seed.title
+            }
+            val songSeed = seed as? com.stash.core.data.radio.RadioSeed.Song
+            val seedKey = songSeed?.let { trackIdentity(it.title, it.artist) }
+            val seedTrack = if (keepCurrent && seedKey != null) generated.firstOrNull { trackIdentity(it.title, it.artist) == seedKey } else null
+            val station = listOfNotNull(seedTrack) + generated.filter { it !== seedTrack }
+            val at = if (seedTrack != null) computer.positionNow() ?: live.state.positionMs else 0L
+            return if (computer.setQueue(station, 0, com.stash.core.model.PlaybackSource.Radio(label), at)) RadioStartResult.Started
+            else RadioStartResult.NoStation
+        }
         val controller = ensureController() ?: return RadioStartResult.PlayerNotReady
         // A station is songs found online: Download mode plays only what is on the phone.
         if (!streamAllowed()) return RadioStartResult.DownloadMode
@@ -2580,6 +2623,7 @@ class PlayerRepositoryImpl @Inject constructor(
      * leave a stale count behind.
      */
     override suspend fun addNext(track: Track): Boolean {
+        computer?.takeIf { it.current() != null }?.let { return it.add(listOf(track), next = true) }
         val controller = ensureController() ?: return false
         val streamOk = streamAllowed()
         val playable = track.takeIf {
@@ -2707,6 +2751,7 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override suspend fun addToQueue(track: Track): Boolean {
+        computer?.takeIf { it.current() != null }?.let { return it.add(listOf(track), next = false) }
         val controller = ensureController() ?: return false
         val streamOk = streamAllowed()
         val playable = track.takeIf {
@@ -2747,6 +2792,7 @@ class PlayerRepositoryImpl @Inject constructor(
 
     override suspend fun addToQueue(tracks: List<Track>): Boolean {
         if (tracks.isEmpty()) return false
+        computer?.takeIf { it.current() != null }?.let { return it.add(tracks, next = false) }
         val controller = ensureController() ?: return false
         val streamOk = streamAllowed()
         val playable = withContext(Dispatchers.IO) { tracks.filter { it.isPlayableForQueueAppend(streamOk) } }
@@ -2801,6 +2847,7 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override suspend fun toggleShuffle() {
+        if (computer?.toggleShuffle() == true) return
         val controller = ensureController() ?: return
         controller.sendCustomCommand(
             SessionCommand(StashPlaybackService.COMMAND_TOGGLE_SHUFFLE, Bundle.EMPTY),
@@ -2809,6 +2856,7 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override suspend fun cycleRepeatMode() {
+        if (computer?.cycleRepeat() == true) return
         val controller = ensureController() ?: return
         controller.sendCustomCommand(
             SessionCommand(StashPlaybackService.COMMAND_CYCLE_REPEAT, Bundle.EMPTY),
@@ -2908,6 +2956,7 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override suspend fun removeFromQueue(index: Int) {
+        if (computer?.removeAt(index) == true) return
         if (ghostQueueActive()) {
             removeFromGhostQueue(index)
             return
@@ -2960,6 +3009,8 @@ class PlayerRepositoryImpl @Inject constructor(
      * resolves when reached), so nothing is resolved now and playback is never touched.
      */
     override suspend fun insertInQueue(index: Int, track: Track): Boolean {
+        // The computer adds after the playing song or at the end: the row right after the playing one is Play next.
+        computer?.takeIf { it.current() != null }?.let { return it.add(listOf(track), next = index <= 1) }
         if (ghostQueueActive()) return insertIntoGhostQueue(index, track)
         val controller = ensureController() ?: return false
         // A session owns the player's queue (the sheet isn't offered there); an empty player has
@@ -3027,6 +3078,7 @@ class PlayerRepositoryImpl @Inject constructor(
         }
 
     override suspend fun moveInQueue(from: Int, to: Int) {
+        if (computer?.move(from, to) == true) return
         if (ghostQueueActive()) {
             moveInGhostQueue(from, to)
             return
@@ -3085,6 +3137,7 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override suspend fun skipToQueueIndex(index: Int) {
+        if (computer?.skipTo(index) == true) return
         if (ghostQueueActive()) {
             playGhostQueueFrom(index)
             return
@@ -3391,6 +3444,7 @@ class PlayerRepositoryImpl @Inject constructor(
     // ---- Streaming routing ----
 
     override suspend fun playTrack(track: Track): StreamRoutingResult {
+        if (computer?.setQueue(listOf(track), 0, com.stash.core.model.PlaybackSource.Unknown) == true) return StreamRoutingResult.Item(androidx.media3.common.MediaItem.EMPTY) // started on the computer
         val entity = trackDao.getById(track.id) ?: track.toEntity()
         val result = buildMediaItemForTrack(entity)
         if (result is StreamRoutingResult.Item) {
@@ -3405,6 +3459,7 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override suspend fun playFromStream(item: TrackItem): StreamRoutingResult {
+        if (computer?.playItem(item) == true) return StreamRoutingResult.Item(androidx.media3.common.MediaItem.EMPTY) // started on the computer
         // A Search play takes the same identity road as a queue addition: ensureTrackPersisted
         // dedupes by video id / Spotify URI / canonical identity and inserts otherwise, so the
         // queue carries a LIBRARY id that every resume path (Resume shortcut, idle-resume,

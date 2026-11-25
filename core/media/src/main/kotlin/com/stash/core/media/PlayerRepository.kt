@@ -67,6 +67,12 @@ interface PlayerRepository {
     val playerState: StateFlow<PlayerState>
 
     /**
+     * What the listener is hearing, for screens that mark it (the playing song in a list): [playerState], or while this phone
+     * is the remote for a computer, what that computer plays. Never for what this phone itself does (history, scrobbles).
+     */
+    val shownState: StateFlow<PlayerState> get() = playerState
+
+    /**
      * Emits the current playback position in milliseconds at a regular interval
      * (typically ~250 ms) while playback is active.
      */

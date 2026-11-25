@@ -56,7 +56,7 @@ class LibraryStartRadioTest {
             on { getTracksByArtist(any()) } doReturn flowOf(emptyList())
             on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
         },
-        playerRepository = mock<PlayerRepository> { on { playerState } doReturn MutableStateFlow(PlayerState()) },
+        playerRepository = mock<PlayerRepository> { MutableStateFlow(PlayerState()).let { s -> on { playerState } doReturn s; on { shownState } doReturn s } },
         artistImageDao = mock<ArtistImageDao> { on { observeByName(any()) } doReturn flowOf(null) },
         connectivityMonitor = mock<ConnectivityMonitor> { on { isConnected() } doReturn true },
         radioStarter = starter,

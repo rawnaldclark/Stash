@@ -6,7 +6,8 @@
  *
  * Callers: the phone directly, the browser only through the player Worker (play.stashfm.app's /api/sync/*), which adds
  * `X-Stash-Player-Key` (the PLAYER_KEY secret), `X-Stash-Client-IP` and `X-Stash-Session`. Routes marked "player" refuse
- * anything else, so pairing slots can only be opened from a signed-in player session (no open relay).
+ * anything else, so a browser's pairing slot can only be opened from a signed-in player session (no open relay). Stash on a
+ * computer (type `desktop`) calls directly: it opens its slot at /v1/desktop/pair, held to a quota per IP address instead.
  * Every id is in the path, never in a query (the stashfm.app zone's cache ignores query strings); every answer is no-store.
  */
 import { answer, fail, limitKey, parseDeviceAuth, PLAYER_HEADER, randomId, rpc, sameSecret, tokenHashOf } from "./http.js";
@@ -172,6 +173,21 @@ export async function handle(request, env, _ctx) {
     const playerOnly = () => (env.PLAYER_KEY?.trim() ? fail(403, "forbidden", "Only through Stash on the web") : fail(503, "unavailable", "Pairing is not set up"));
 
     // ------------------------------------------------------------ pairing
+    // Stash on a computer shows its own code: no player and no sign-in, so its codes are counted per IP address (6 per 10
+    // minutes, as a player session's) and so are the spaces made from them.
+    if (path === "/v1/desktop/pair") {
+        if (method !== "POST") return methodNotAllowed("POST");
+        const over = await limited(env.API_RL, ip);
+        if (over) return over;
+        const r = await readJson(request);
+        if ("response" in r) return r.response;
+        if (!cleanDevice(r.value?.device, "desktop")) return fail(400, "bad_request", "Not a device");
+        const session = `ip:${ip}`;
+        const quota = await overQuota(env, session, "code");
+        if (quota) return quota;
+        const pairId = randomId();
+        return answer(await rpc(env.PAIRS.get(env.PAIRS.idFromName(pairId)), "open", { pairId, device: r.value?.device, session, type: "desktop" }));
+    }
     if (path === "/v1/pair") {
         if (method !== "POST") return methodNotAllowed("POST");
         if (!player) return playerOnly();
@@ -195,9 +211,9 @@ export async function handle(request, env, _ctx) {
         const allowed = { "": ["GET"], label: ["GET"], answer: ["POST"], reply: ["GET", "POST"] }[sub];
         if (!allowed.includes(method)) return methodNotAllowed(allowed.join(", "));
         const slot = env.PAIRS.get(env.PAIRS.idFromName(pairId));
-        // The browser's two calls come through the player; the phone's three are public and share PAIR_RL (10/min per IP).
+        // The browser's two calls come through the player (a desktop's, which the slot tells apart, come directly); the phone's
+        // three are public and share PAIR_RL (10/min per IP).
         const fromBrowser = sub === "" || (sub === "reply" && method === "POST");
-        if (fromBrowser && !player) return playerOnly();
         const over = await limited(fromBrowser ? env.API_RL : env.PAIR_RL, ip);
         if (over) return over;
         if (sub === "label") return answer(await rpc(slot, "label"));
@@ -207,10 +223,10 @@ export async function handle(request, env, _ctx) {
         }
         const caller = await deviceCaller(request);
         if (!caller) return noAuth();
-        if (sub === "") return answer(await rpc(slot, "poll", { caller }));
+        if (sub === "") return answer(await rpc(slot, "poll", { caller, player }));
         if (method === "GET") return answer(await rpc(slot, "readReply", { caller }));
         const r = await readJson(request);
-        return "response" in r ? r.response : answer(await rpc(slot, "reply", { caller, body: r.value }));
+        return "response" in r ? r.response : answer(await rpc(slot, "reply", { caller, body: r.value, player }));
     }
 
     // ------------------------------------------------------------ spaces

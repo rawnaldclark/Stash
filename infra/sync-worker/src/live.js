@@ -25,7 +25,7 @@
  * space and a clock, and how to make a socket pair and the 101 answer, so `node --test` drives it with fakes.
  */
 import { tokenHashOf } from "./http.js";
-import { cleanEnv, isDeviceId, LIMITS } from "./validate.js";
+import { cleanEnv, isDeviceId, isPlayerType, LIMITS } from "./validate.js";
 
 export const LIVE = {
     /** One socket per device (1 phone + 4 browsers), and as many again still saying hello. */
@@ -148,8 +148,9 @@ export class Live {
         const msg = parseFrame(data);
         if (!msg) return;
         if (t - a.at >= LIVE.touchMs) ws.serializeAttachment({ ...a, at: t });
-        // Direction: a browser says what it plays, a phone sends commands. Anything else is a newer client's frame: ignored.
-        if (msg.t === "state") return a.type === "web" ? this.relay(ws, a, msg, null) : refuse(ws);
+        // Direction: a browser or a desktop says what it plays, a phone sends commands. Anything else is a newer client's frame:
+        // ignored.
+        if (msg.t === "state") return isPlayerType(a.type) ? this.relay(ws, a, msg, null) : refuse(ws);
         if (msg.t === "cmd") return a.type === "phone" ? this.relay(ws, a, msg, msg.to) : refuse(ws);
     }
 
@@ -210,7 +211,7 @@ export class Live {
         }
         const target = others.find((o) => o.a.device === to);
         if (!target) return put(ws, JSON.stringify({ t: "error", code: "offline", to }));
-        if (target.a.type !== "web") return refuse(ws);
+        if (!isPlayerType(target.a.type)) return refuse(ws);
         put(target.ws, JSON.stringify({ t: "cmd", from: a.device, env }));
     }
 

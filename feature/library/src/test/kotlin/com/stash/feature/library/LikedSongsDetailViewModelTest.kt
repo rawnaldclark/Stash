@@ -71,7 +71,7 @@ class LikedSongsDetailViewModelTest {
             on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
         }
         val playerRepo = mock<PlayerRepository> {
-            on { playerState } doReturn MutableStateFlow(PlayerState())
+            MutableStateFlow(PlayerState()).let { s -> on { playerState } doReturn s; on { shownState } doReturn s }
             onBlocking { setQueue(any(), any(), any()) } doSuspendableAnswer { gate.await() }   
         }
         val vm = buildVm(playerRepository = playerRepo, musicRepository = musicRepo)
@@ -248,7 +248,7 @@ class LikedSongsDetailViewModelTest {
     }
 
     private fun playerRepoMock(): PlayerRepository = mock {
-        on { playerState } doReturn MutableStateFlow(PlayerState())
+        MutableStateFlow(PlayerState()).let { s -> on { playerState } doReturn s; on { shownState } doReturn s }
     }
 
     private fun musicRepoMock(): MusicRepository = mock {
@@ -267,7 +267,7 @@ class LikedSongsDetailViewModelTest {
      */
     private fun buildVm(
         playerRepository: PlayerRepository = mock {
-            on { playerState } doReturn MutableStateFlow(PlayerState())
+            MutableStateFlow(PlayerState()).let { s -> on { playerState } doReturn s; on { shownState } doReturn s }
         },
         musicRepository: MusicRepository = mock {
             on { getPlaylistsByType(any()) } doReturn flowOf(emptyList())

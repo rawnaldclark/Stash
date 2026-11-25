@@ -65,7 +65,7 @@ class MixOfflineTapGuardTest {
         )
         val playlist = playlist(id = 7L)
         val playerRepo = mock<PlayerRepository> {
-            on { playerState } doReturn MutableStateFlow(PlayerState())
+            MutableStateFlow(PlayerState()).let { s -> on { playerState } doReturn s; on { shownState } doReturn s }
         }
         val connectivity = mock<ConnectivityMonitor> {
             on { isConnected() } doReturn false
@@ -105,7 +105,7 @@ class MixOfflineTapGuardTest {
         )
         val playlist = playlist(id = 7L)
         val playerRepo = mock<PlayerRepository> {
-            on { playerState } doReturn MutableStateFlow(PlayerState())
+            MutableStateFlow(PlayerState()).let { s -> on { playerState } doReturn s; on { shownState } doReturn s }
         }
         val connectivity = mock<ConnectivityMonitor> {
             on { isConnected() } doReturn false
@@ -145,7 +145,7 @@ class MixOfflineTapGuardTest {
         )
         val playlist = playlist(id = 7L)
         val playerRepo = mock<PlayerRepository> {
-            on { playerState } doReturn MutableStateFlow(PlayerState())
+            MutableStateFlow(PlayerState()).let { s -> on { playerState } doReturn s; on { shownState } doReturn s }
         }
         val connectivity = mock<ConnectivityMonitor> {
             on { isConnected() } doReturn true
@@ -189,7 +189,7 @@ class MixOfflineTapGuardTest {
         )
         val playlist = playlist(id = 7L)
         val playerRepo = mock<PlayerRepository> {
-            on { playerState } doReturn MutableStateFlow(PlayerState())
+            MutableStateFlow(PlayerState()).let { s -> on { playerState } doReturn s; on { shownState } doReturn s }
         }
         val connectivity = mock<ConnectivityMonitor> { on { isConnected() } doReturn true }
         // The tap reads Download mode (current()); the list is stubbed to show every song either way.
@@ -237,7 +237,7 @@ class MixOfflineTapGuardTest {
         )
         val playlist = playlist(id = 7L)
         val playerRepo = mock<PlayerRepository> {
-            on { playerState } doReturn MutableStateFlow(PlayerState())
+            MutableStateFlow(PlayerState()).let { s -> on { playerState } doReturn s; on { shownState } doReturn s }
         }
         val connectivity = mock<ConnectivityMonitor> { on { isConnected() } doReturn true }
         // The tap reads Download mode (current()); the list is stubbed to show every song either way.

@@ -152,7 +152,7 @@ class HistoryViewModel @VisibleForTesting internal constructor(
     private val queryInput = MutableStateFlow(savedStateHandle.get<String>(ARG_QUERY).orEmpty())
 
     /** The song playing now, so its rows are marked like in every other list. */
-    val nowPlayingTrackId: StateFlow<Long?> = playerRepository.playerState
+    val nowPlayingTrackId: StateFlow<Long?> = playerRepository.shownState
         .map { it.currentTrack?.id }
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)

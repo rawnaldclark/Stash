@@ -74,13 +74,13 @@ object SyncKeys {
         if (d.str("kind") != "stash-label") bad("bad label")
         if (d.int("v") != 1L) bad("newer label")
         val name = d.str("name") ?: bad("bad label")
-        val type = d.str("type")?.takeIf { it == "phone" || it == "web" } ?: bad("bad label")
+        val type = d.str("type")?.takeIf { it == "phone" || it == "web" || it == "desktop" } ?: bad("bad label")
         if (d.str("deviceId") != deviceId) bad("bad label")
         val pub = b64(d.str("pub") ?: bad("bad label"))
         if (!isPubBytes(pub)) bad("bad label")
         val trimmed = cleanName(name)
         val cut = trimmed.substring(0, trimmed.offsetByCodePoints(0, minOf(MAX_LABEL, trimmed.codePointCount(0, trimmed.length))))
-        return Label(cut.ifEmpty { if (type == "phone") "Phone" else "Browser" }, type, deviceId, pub)
+        return Label(cut.ifEmpty { when (type) { "phone" -> "Phone"; "desktop" -> "Computer"; else -> "Browser" } }, type, deviceId, pub)
     }
 
     /**

@@ -57,7 +57,7 @@ class AllSongsViewModel @Inject constructor(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val playingId: StateFlow<Long?> = player.playerState
+    val playingId: StateFlow<Long?> = player.shownState
         .map { it.currentTrack?.id }
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)

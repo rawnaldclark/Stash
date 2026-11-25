@@ -1,6 +1,7 @@
 package com.stash.core.data.weblink
 
 import android.util.Log
+import com.stash.core.data.weblink.WebLinkRepository.Companion.TYPE_DESKTOP
 import com.stash.core.data.weblink.WebLinkRepository.Companion.TYPE_PHONE
 import com.stash.core.data.weblink.WebLinkRepository.Companion.TYPE_WEB
 import com.stash.core.data.weblink.WebLinkRepository.Companion.auth
@@ -34,7 +35,7 @@ sealed interface PairingState {
      * link (the camera app, a chat, a web page), not from the in-app scanner, so the sheet warns that only a computer in front
      * of the user should be linked (the name on the sheet is whatever that browser chose).
      */
-    data class Confirm(val browserName: String, val code: String, val fromLink: Boolean = false) : PairingState
+    data class Confirm(val browserName: String, val code: String, val fromLink: Boolean = false, val computer: Boolean = false) : PairingState
 
     /** Answered; "Waiting for your computer… · 123 456" until the browser's user confirms the same code. */
     data class Waiting(val browserName: String, val code: String) : PairingState
@@ -44,7 +45,7 @@ sealed interface PairingState {
      * result once that browser is unlinked (Unlink everything, Remove, or from the web) instead of showing a stale
      * "Linked to Chrome on Windows". Null only for callers that don't know it.
      */
-    data class Linked(val browserName: String, val browserDeviceId: String? = null) : PairingState
+    data class Linked(val browserName: String, val browserDeviceId: String? = null, val computer: Boolean = false) : PairingState
 
     /** Stopped, with nothing joined, created or pinned. [code] stays on screen when the phone had already shown it. */
     data class Failed(val message: String, val code: String? = null) : PairingState
@@ -135,13 +136,13 @@ class PairingSession(
         } catch (e: SyncCryptoException) {
             return fail(WebLinkCopy.NOT_A_CODE)
         }
-        // The label must be a browser's, and its key the one the server holds for that device (sync-v1 §3.4).
+        // The label must be a browser's or a computer's, and its key the one the server holds for that device (sync-v1 §3.4).
         val serverPub = try {
             Base64Url.decode(info.browser.pub)
         } catch (e: IllegalArgumentException) {
             return fail(WebLinkCopy.NOT_A_CODE)
         }
-        if (browser.type != TYPE_WEB || !SyncCrypto.sameBytes(serverPub, browser.pub)) return fail(WebLinkCopy.NOT_A_CODE)
+        if ((browser.type != TYPE_WEB && browser.type != TYPE_DESKTOP) || !SyncCrypto.sameBytes(serverPub, browser.pub)) return fail(WebLinkCopy.NOT_A_CODE)
 
         // Already linked: the browser joins this space, so check it isn't in it already and that there is room (spec §2.2).
         val linked = store.space()
@@ -153,7 +154,8 @@ class PairingSession(
                     val status = repo.status.value as? WebLinkStatus.Linked
                     if (status != null) {
                         if (status.devices.any { it.id == browser.deviceId }) return fail(WebLinkCopy.ALREADY_LINKED)
-                        if (status.devices.count { it.type == TYPE_WEB } >= MAX_BROWSERS) return fail(WebLinkCopy.FULL)
+                        // Browsers and computers share the space's four places (the sync service counts them together).
+                        if (status.devices.count { it.type == TYPE_WEB || it.type == TYPE_DESKTOP } >= MAX_BROWSERS) return fail(WebLinkCopy.FULL)
                     }
                 }
             }
@@ -164,7 +166,7 @@ class PairingSession(
         val kpair = SyncKeys.pairKey(eP.private, link.eBPub, link.pairSecret, link.pairId, link.eBPub, ePPub, browser.deviceId, browser.pub)
         val code = SyncKeys.pairCode(kpair)
         pending = Pending(link, browser, eP, ePPub, kpair, code)
-        return set(PairingState.Confirm(browser.name, code, fromLink))
+        return set(PairingState.Confirm(browser.name, code, fromLink, computer = browser.type == TYPE_DESKTOP))
     }
 
     private suspend fun confirmInner(p: Pending): PairingState {
@@ -237,7 +239,7 @@ class PairingSession(
         return when (outcome) {
             WebLinkResult.Ok -> {
                 withContext(NonCancellable) { repo.refresh() }
-                set(PairingState.Linked(name, p.browser.deviceId))
+                set(PairingState.Linked(name, p.browser.deviceId, computer = p.browser.type == TYPE_DESKTOP))
             }
             is WebLinkResult.Failed -> fail(outcome.message, p.code)
             is WebLinkResult.Unlinked -> fail(WebLinkCopy.UNFINISHED, p.code)

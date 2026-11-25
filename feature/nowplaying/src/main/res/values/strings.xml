@@ -22,6 +22,11 @@
     <string name="play_on_button_playing">Playing on %1$s</string>
     <string name="play_on_this_phone">This phone</string>
     <string name="play_on_browsers">Browsers</string>
+    <string name="play_on_computers">Computers</string>
+    <string name="play_on_computer_not_open">Open Stash on that computer to play there</string>
+    <string name="play_on_computer_volume">Computer volume</string>
+    <string name="play_on_computer_note">The computer keeps the queue: what you play, add or reorder here goes to it, and it plays on when this phone is closed.</string>
+    <string name="play_on_computer_unavailable">Stash isn\'t open on that computer any more.</string>
     <string name="play_on_speakers">Speakers</string>
     <!-- A browser row's line. -->
     <string name="play_on_browser_ready">Ready</string>
