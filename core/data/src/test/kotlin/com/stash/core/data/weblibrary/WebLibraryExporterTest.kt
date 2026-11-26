@@ -499,6 +499,14 @@ class WebLibraryExporterTest {
         // Never a Stash Mix, the Downloads list, a Liked Songs list (the likes are those) or a saved album.
         assertEquals(listOf("Night drive", "Robin’s mix", "Road trip", "Daily Mix 1", "My Supermix"), file.playlists.map { it.name })
         assertEquals(listOf(null, null, "spotify", "spotify", "youtube"), file.playlists.map { it.from })
+        // Ids the same on every install: the service's own id, your own list's custom_ id; the shared mix as the web has it.
+        val robin = db.playlistDao().findBySourceId("share:Fw12ab34")!!.id
+        assertEquals(
+            listOf("custom_1", "app-$robin", "spotify-37i9dQZF1DXroad", "spotify-daily1", "youtube-RDTMAK5uy_super"),
+            file.playlists.map { it.id },
+        )
+        // The web's file keeps its own ids.
+        assertTrue(web.playlists.all { Regex("^app-[0-9]+$").matches(it.id) })
         // A mix with every song in it, downloaded or not.
         assertEquals(listOf("Daily Song", "Ivy"), file.playlists[3].items.map { it.title })
         // The likes are the web's, every one, downloaded or not.
@@ -552,6 +560,29 @@ class WebLibraryExporterTest {
         assertEquals(1L, most.sentAtMs)
         // Still more than the computer reads: no file at all.
         assertNull(exporter.fitForComputer(file, target = 0, most = 1_000))
+    }
+
+    @Test fun `the computer's playlist ids are the same on every install, each given once, all ids the desktop takes`() {
+        val used = HashSet<String>()
+        fun id(source: MusicSource, sourceId: String, row: Long): String {
+            val p = PlaylistEntity(id = row, name = "p", source = source, sourceId = sourceId)
+            return computerIdOf(p, fromOf(p), fallback = "app-$row", used = used)
+        }
+        assertEquals("spotify-37i9dQZF1DXcBWIGoYBM5M", id(MusicSource.SPOTIFY, "37i9dQZF1DXcBWIGoYBM5M", 1))
+        assertEquals("youtube-RDTMAK5uy_kset8DisdE7LSD4TNjEVvrKRTmG7a56E", id(MusicSource.YOUTUBE, "RDTMAK5uy_kset8DisdE7LSD4TNjEVvrKRTmG7a56E", 2))
+        assertEquals("custom_3f2a6c1e-9b1d-4c2e-8a4f-0d6b7e5c9a11", id(MusicSource.BOTH, "custom_3f2a6c1e-9b1d-4c2e-8a4f-0d6b7e5c9a11", 3))
+        // The longest a service's id can be and still fit the desktop's 64 characters, and one longer.
+        assertEquals("spotify-" + "a".repeat(55), id(MusicSource.SPOTIFY, "a".repeat(55), 4))
+        assertEquals("app-5", id(MusicSource.SPOTIFY, "b".repeat(56), 5))
+        // Not an id the desktop takes, a shared mix, one saved in Stash: as the web's file has them.
+        assertEquals("app-6", id(MusicSource.SPOTIFY, "spotify:playlist:abc", 6))
+        assertEquals("app-7", id(MusicSource.BOTH, "share:Fw12ab34", 7))
+        assertEquals("app-8", id(MusicSource.BOTH, "custom_" + "c".repeat(58), 8))
+        assertEquals("app-9", id(MusicSource.BOTH, "album:qobuz_playlist:42", 9))
+        // The same id twice: the first keeps it, the other has its row's.
+        assertEquals("app-10", id(MusicSource.SPOTIFY, "37i9dQZF1DXcBWIGoYBM5M", 10))
+        assertEquals(10, used.size)
+        used.forEach { assertTrue(it, Regex("^[A-Za-z0-9_-]{1,64}$").matches(it)) }
     }
 
     @Test fun `where a playlist came from goes by its source, never for your own or a shared mix`() {

@@ -6,7 +6,9 @@ import android.provider.DocumentsContract
 import android.util.Log
 import androidx.room.withTransaction
 import com.stash.core.data.db.StashDatabase
+import com.stash.core.data.db.dao.WebLibraryExportDao
 import com.stash.core.data.db.entity.PlaylistEntity
+import com.stash.core.data.db.entity.SharedMixEntity
 import com.stash.core.model.MusicSource
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -90,7 +92,7 @@ class WebLibraryExporter @Inject constructor(
      */
     suspend fun collect(nowMs: Long, generator: String?, selection: ExportSelection = ExportSelection.ALL): WebLibraryFile =
         withContext(Dispatchers.IO) {
-            database.withTransaction { read(nowMs, generator, selection) }
+            database.withTransaction { file(rows(selection, computer = false), nowMs, generator, sentAtMs = null) }
         }
 
     /**
@@ -133,15 +135,18 @@ class WebLibraryExporter @Inject constructor(
      * the web's file ([collect], everything ticked), and besides
      * - every synced mix ([WebLibraryExportDao.syncedMixes]),
      * - each playlist synced from a service saying which ([WebLibraryFile.Playlist.from], [fromOf]),
+     * - each playlist's id the same on every install of Stash ([computerIdOf]),
      * - up to [WebLibraryFile.MAX_COMPUTER_PLAYS] plays, not the web's [WebLibraryFile.MAX_PLAYS],
      * - [sentAtMs], the send's own number, as its list has it.
      *
-     * Read in one transaction, as [collect] is, then cut to fit ([fitForComputer]). Null when even cut it is more than the
-     * computer reads.
+     * The rows are read in one transaction, as [collect]'s are, but made into the file after it: with up to 100,000 plays and
+     * every mix's songs, the database's write lock is held for the reads alone. Then cut to fit ([fitForComputer]). Null
+     * when even cut it is more than the computer reads.
      */
     suspend fun forComputer(nowMs: Long, sentAtMs: Long): WebLibraryFile? = withContext(Dispatchers.IO) {
         val generator = generator()
-        fitForComputer(database.withTransaction { read(nowMs, generator, ExportSelection.ALL, sentAtMs) })
+        val rows = database.withTransaction { rows(ExportSelection.ALL, computer = true) }
+        fitForComputer(file(rows, nowMs, generator, sentAtMs))
     }
 
     /**
@@ -178,41 +183,64 @@ class WebLibraryExporter @Inject constructor(
         return cut.takeIf { bytes <= most }
     }
 
+    /** What a file is made from, as the database has it: read in a transaction, made into the file by [file]. */
+    private class Rows(
+        val likes: List<WebLibraryExportDao.LikedRow>,
+        val follows: Map<Long, SharedMixEntity>,
+        val playlists: List<Pair<PlaylistEntity, List<WebLibraryExportDao.PlaylistItemRow>>>,
+        val plays: List<WebLibraryExportDao.PlayRow>,
+    )
+
     /**
-     * Reads the file. [sentAtMs] is set for Send to computer's file ([forComputer]), which has the synced mixes, where each
-     * playlist came from and more plays; null for the web's, which stays exactly as it always was.
+     * The rows of the file: likes, follows, playlists with their songs, plays. [computer] for Send to computer's file
+     * ([forComputer]), which has the synced mixes and more plays; the web's has neither.
      */
-    private suspend fun read(nowMs: Long, generator: String?, selection: ExportSelection, sentAtMs: Long? = null): WebLibraryFile {
+    private suspend fun rows(selection: ExportSelection, computer: Boolean): Rows {
         val dao = database.webLibraryExportDao()
+        val likes = if (!selection.likes) emptyList() else dao.likes()
+        val follows = dao.followedMixes().associateBy { it.playlistId }
+        val lists = if (computer) dao.playlists() + dao.syncedMixes() else dao.playlists()
+        val playlists = lists.filter { selection.includes(it.id) }.map { it to dao.playlistItems(it.id, WebLibraryFile.MAX_PLAYLIST_ITEMS) }
+        val maxPlays = if (computer) WebLibraryFile.MAX_COMPUTER_PLAYS else WebLibraryFile.MAX_PLAYS
+        val plays = if (!selection.plays) emptyList() else dao.recentPlays(maxPlays)
+        return Rows(likes, follows, playlists, plays)
+    }
+
+    /**
+     * [rows] made into the file. [sentAtMs] is set for Send to computer's file ([forComputer]), which says where each
+     * playlist came from and gives it an id the same on every install; null for the web's, which stays exactly as it
+     * always was.
+     */
+    private fun file(rows: Rows, nowMs: Long, generator: String?, sentAtMs: Long?): WebLibraryFile {
         val computer = sentAtMs != null
 
         val seenLikes = HashSet<Long>()
-        val likes = if (!selection.likes) emptyList() else dao.likes().mapNotNull { row ->
+        val likes = rows.likes.mapNotNull { row ->
             if (!seenLikes.add(row.track.id)) return@mapNotNull null
             val added = row.track.dateAdded
             val song = WebLibraryFile.song(row.track.toTrack(), added) ?: return@mapNotNull null
             WebLibraryFile.Like(song, row.likedAt?.takeIf { it > 0 } ?: added.takeIf { it > 0 } ?: nowMs)
         }
 
-        val follows = dao.followedMixes().associateBy { it.playlistId }
-        val lists = if (computer) dao.playlists() + dao.syncedMixes() else dao.playlists()
-        val playlists = lists.filter { selection.includes(it.id) }.map { p ->
-            val rows = dao.playlistItems(p.id, WebLibraryFile.MAX_PLAYLIST_ITEMS)
+        // The computer's ids given so far: each is given once.
+        val ids = HashSet<String>()
+        val playlists = rows.playlists.map { (p, items) ->
             val created = p.dateAdded.toEpochMilli().takeIf { it > 0 } ?: nowMs
-            val updated = rows.mapNotNull { it.addedAt }.maxOrNull()?.coerceAtLeast(created) ?: created
+            val updated = items.mapNotNull { it.addedAt }.maxOrNull()?.coerceAtLeast(created) ?: created
+            val from = if (computer) fromOf(p) else null
+            val webId = fileIdOf(p.id, p.sourceId)
             WebLibraryFile.Playlist(
-                id = fileIdOf(p.id, p.sourceId),
+                id = if (computer) computerIdOf(p, from, webId, ids) else webId,
                 name = playlistName(p.name),
-                items = rows.mapNotNull { WebLibraryFile.song(it.track.toTrack(), it.track.dateAdded) },
+                items = items.mapNotNull { WebLibraryFile.song(it.track.toTrack(), it.track.dateAdded) },
                 createdAt = created,
                 updatedAt = updated,
-                follow = follows[p.id]?.let { WebLibraryFile.follow(it.shareId, it.version, it.sharedBy) },
-                from = if (computer) fromOf(p) else null,
+                follow = rows.follows[p.id]?.let { WebLibraryFile.follow(it.shareId, it.version, it.sharedBy) },
+                from = from,
             )
         }
 
-        val maxPlays = if (computer) WebLibraryFile.MAX_COMPUTER_PLAYS else WebLibraryFile.MAX_PLAYS
-        val history = if (!selection.plays) emptyList() else dao.recentPlays(maxPlays).mapNotNull { row ->
+        val history = rows.plays.mapNotNull { row ->
             if (row.playedAt <= 0) return@mapNotNull null
             val song = WebLibraryFile.song(row.track.toTrack(), row.track.dateAdded) ?: return@mapNotNull null
             WebLibraryFile.Play(song, row.playedAt)
@@ -363,4 +391,29 @@ internal fun fromOf(p: PlaylistEntity): String? = when {
     p.source == MusicSource.SPOTIFY -> WebLibraryFile.FROM_SPOTIFY
     p.source == MusicSource.YOUTUBE -> WebLibraryFile.FROM_YOUTUBE
     else -> null
+}
+
+/** A synced list's own id at its service that can follow `spotify-` or `youtube-` within the desktop's 64 characters. */
+private val SYNCED_ID = Regex("^[A-Za-z0-9_-]{1,55}$")
+
+/** An id the desktop takes: 1 to 64 letters, digits, `_` and `-`. */
+private val DESKTOP_ID = Regex("^[A-Za-z0-9_-]{1,64}$")
+
+/**
+ * A playlist's id in Send to computer's file, the same on every install of Stash: the desktop keeps playlists by id, and a
+ * phone can have two installs (the release and debug apps), whose row numbers differ.
+ * - A synced list ([from] set): its service and its own id there, `spotify-<id>` or `youtube-<id>`.
+ * - Your own list (a `custom_…` source id): that source id.
+ * - Anything else, or a source id the desktop couldn't take as an id: [fallback], as the web's file has it ([fileIdOf]).
+ *
+ * [used] holds the ids given so far in the file; one given already goes to the later list's `app-<row id>`.
+ */
+internal fun computerIdOf(p: PlaylistEntity, from: String?, fallback: String, used: MutableSet<String>): String {
+    val stable = when {
+        from != null && SYNCED_ID.matches(p.sourceId) -> "$from-${p.sourceId}"
+        from == null && p.sourceId.startsWith("custom_") && DESKTOP_ID.matches(p.sourceId) -> p.sourceId
+        else -> fallback
+    }
+    if (used.add(stable)) return stable
+    return "app-${p.id}".also { used.add(it) }
 }
