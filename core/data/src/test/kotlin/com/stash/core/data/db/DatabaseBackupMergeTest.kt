@@ -856,6 +856,32 @@ class DatabaseBackupMergeTest {
         }
     }
 
+    // ── Row ids kept outside the database (LibrarySwaps) ─────────────────
+    //
+    // A swapped-in library gives its row ids out again, to other songs, so what
+    // is kept by row id outside the database (Send to computer's memory) must
+    // know the library changed. A merge keeps the ids it has.
+
+    @Test
+    fun `a replace-restore tells that the library was swapped, a merge does not`() = runTest {
+        val before = LibrarySwaps.count(context)
+        val merged = buildBackupZip { backup -> backup.trackDao().insert(track("Song", spotifyUri = "spotify:track:m")) }
+        assertTrue(manager.importDatabase(merged, BackupImportScope.LIBRARY_MERGE).isSuccess)
+        assertEquals("a merge gives no id out again", before, LibrarySwaps.count(context))
+
+        val uri = buildBackupZip { backup -> backup.trackDao().insert(track("Other", spotifyUri = "spotify:track:o")) }
+        val liveFile = context.getDatabasePath(StashDatabase.DATABASE_NAME)
+        liveFile.parentFile?.mkdirs()
+        try {
+            val result = manager.importDatabase(uri, BackupImportScope.LIBRARY_REPLACE)
+
+            assertTrue("restore failed: ${result.exceptionOrNull()}", result.isSuccess)
+            assertEquals(before + 1, LibrarySwaps.count(context))
+        } finally {
+            listOf("", "-journal", "-wal", "-shm", ".rollback").forEach { File(liveFile.path + it).delete() }
+        }
+    }
+
     // ── Mix pins from before Favorite (MixPinCleanup) ────────────────────
     //
     // The cleanup's done flag lives in SharedPreferences, which a restore leaves

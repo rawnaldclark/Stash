@@ -34,6 +34,41 @@ class SendMemoryTest {
         assertThat(m.onComputer()).containsExactly(1L, 3L)
     }
 
+    @Test fun `a copy found in the Trash is not taken, even once the Trash is emptied`() {
+        val m = memory()
+        m.startSending(mapOf("1.flac" to Sent(1, 101), "2.flac" to Sent(2, 102)))
+        // 1 taken by the computer, 2 put in the Trash on the phone.
+        assertThat(m.taken(present = emptySet(), trashed = setOf(102))).isEqualTo(1)
+        // The Trash emptied (or purged after 30 days): 2's copy is gone for good, and still was not taken.
+        assertThat(m.taken(present = emptySet(), trashed = emptySet())).isEqualTo(0)
+        assertThat(m.onComputer()).containsExactly(1L)
+        assertThat(memory().onComputer()).containsExactly(1L)
+        assertThat(memory().sending().keys).containsExactly("1.flac")
+    }
+
+    @Test fun `what was kept for a library since swapped by a restore is not trusted`() {
+        val before = memory()
+        before.startSending(mapOf("1.flac" to Sent(1, 101), "2.flac" to Sent(2, 102)))
+        before.taken(present = setOf("2.flac"), trashed = emptySet())
+        assertThat(memory().onComputer()).containsExactly(1L)
+
+        // A restore swapped the library in: its row ids are other songs.
+        val after = SendMemory(file, library = 1L)
+        assertThat(after.onComputer()).isEmpty()
+        assertThat(after.sending()).isEmpty()
+        after.startSending(mapOf("5.flac" to Sent(5, 105)))
+        after.taken(present = emptySet(), trashed = emptySet())
+        assertThat(SendMemory(file, library = 1L).onComputer()).containsExactly(5L)
+        assertThat(memory().onComputer()).isEmpty()
+    }
+
+    @Test fun `a memory from before libraries were told apart belongs to the library never swapped`() {
+        file.writeText("""{"on_computer":[7],"sending":{"8.flac":{"track":8,"media":108}}}""")
+        assertThat(memory().onComputer()).containsExactly(7L)
+        assertThat(memory().sending()).containsExactly("8.flac", Sent(8, 108))
+        assertThat(SendMemory(file, library = 1L).onComputer()).isEmpty()
+    }
+
     @Test fun `an older send's file of the same name in the Trash does not hide a song taken`() {
         val m = memory()
         m.startSending(mapOf("1.flac" to Sent(1, 201)))

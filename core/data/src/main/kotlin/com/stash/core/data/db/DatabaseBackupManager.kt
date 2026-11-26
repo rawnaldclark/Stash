@@ -809,6 +809,7 @@ class DatabaseBackupManager @Inject constructor(
             val rollback = File(dbFile.path + ".rollback")
             if (scope.swapsDatabaseFile) {
                 if (dbFile.exists()) dbFile.copyTo(rollback, overwrite = true) else rollback.delete()
+                noteLibrarySwap()
             }
             try {
                 if (scope.swapsDatabaseFile) {
@@ -918,6 +919,22 @@ class DatabaseBackupManager @Inject constructor(
             throw e
         } catch (e: Exception) {
             android.util.Log.w("BackupManager", "Couldn't re-arm the mix pin cleanup", e)
+        }
+    }
+
+    /**
+     * The swapped-in library gives its row ids out again, to other songs, so what is kept outside the database by row id
+     * (Send to computer's memory of the songs the computer has) must not be trusted after it ([LibrarySwaps]). Noted
+     * before the swap: a phone that dies during it has let go already, and a swap that fails and rolls back only costs
+     * the next send copying every song. Best-effort, like [rearmCanonicalRecompute].
+     */
+    private fun noteLibrarySwap() {
+        try {
+            LibrarySwaps.note(context)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("BackupManager", "Couldn't note the library swap", e)
         }
     }
 

@@ -19,8 +19,12 @@ import java.io.File
  * A song is on the computer once its copy goes from the folder while the send is there: the computer deletes each file
  * once it has it, and the copies of songs it had already. A copy put in the Files app's Trash was not taken: it is told
  * by the file's own id, as a trashed file keeps its name (and the Trash can hold an older send's file of that name).
+ *
+ * Row ids name songs only in the library they were given in: a restore that swaps in a backup's library gives them
+ * out again, to other songs. So the memory is kept under [library] ([com.stash.core.data.db.LibrarySwaps], how many
+ * times the library was swapped), and one kept under another number is not trusted: a send then copies every song.
  */
-class SendMemory(private val file: File) {
+class SendMemory(private val file: File, private val library: Long = 0L) {
 
     /** A file of the send in the folder: the song it is ([track], its row id) and the file's own id there, when known. */
     data class Sent(val track: Long, val media: Long?)
@@ -39,12 +43,15 @@ class SendMemory(private val file: File) {
     /**
      * Every file of the send that is gone from the folder, but not to the Trash, is a song the computer has. [present] are
      * the files' names in the folder now, [trashed] the ids of this app's files there in the Trash. How many more it has.
+     *
+     * A file found in the Trash is decided then, once: it is let go, so the Trash emptied later doesn't make it taken.
      */
     @Synchronized fun taken(present: Set<String>, trashed: Set<Long>): Int {
         val (has, sending) = read()
-        val took = sending.filter { (name, sent) -> name !in present && (sent.media == null || sent.media !in trashed) }
-            .values.map { it.track }.filter { it !in has }.toSet()
-        if (took.isNotEmpty()) write(has + took, sending)
+        val gone = sending.filterKeys { it !in present }
+        val binned = gone.filterValues { it.media != null && it.media in trashed }.keys
+        val took = (gone - binned).values.map { it.track }.filter { it !in has }.toSet()
+        if (took.isNotEmpty() || binned.isNotEmpty()) write(has + took, sending - binned)
         return took.size
     }
 
@@ -62,10 +69,14 @@ class SendMemory(private val file: File) {
 
     private fun read(): Pair<Set<Long>, Map<String, Sent>> = known ?: load().also { known = it }
 
-    /** What the file says; nothing when it is missing or can't be read (a send then copies every song, as before). */
+    /**
+     * What the file says; nothing when it is missing, can't be read, or was kept for another library (a send then
+     * copies every song, as before).
+     */
     private fun load(): Pair<Set<Long>, Map<String, Sent>> = runCatching {
         if (!file.isFile) return@runCatching null
         val root = Json.parseToJsonElement(file.readText()).jsonObject
+        if ((root["library"]?.jsonPrimitive?.longOrNull ?: 0L) != library) return@runCatching null
         val has = root["on_computer"]?.jsonArray?.mapNotNull { it.jsonPrimitive.longOrNull }?.toSet().orEmpty()
         val sending = (root["sending"] as? JsonObject)?.mapNotNull { (name, value) ->
             val sent = value as? JsonObject ?: return@mapNotNull null
@@ -78,6 +89,7 @@ class SendMemory(private val file: File) {
     /** Written whole beside it, then put in its place: a phone that dies mid-write keeps the last good one. */
     private fun write(has: Set<Long>, sending: Map<String, Sent>) {
         val text = buildJsonObject {
+            put("library", JsonPrimitive(library))
             put("on_computer", JsonArray(has.sorted().map(::JsonPrimitive)))
             put(
                 "sending",
