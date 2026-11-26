@@ -236,6 +236,8 @@ class SongSender(private val folder: SendFolder, private val freeBytes: () -> Lo
                 }
             } catch (e: Exception) {
                 context.ensureActive()
+                // The library alone, with no list to go with: it goes, quietly. There are no copies to leave.
+                if (entries.isEmpty()) runCatching { folder.delete(LIBRARY_NAME) }
                 // Not even the list fits: the copies stay, with nothing to take them by (so their room is not freed).
                 if (full(e)) throw NoRoomException((needed ?: (SPARE - (freeBytes() ?: 0L))).coerceAtLeast(0L), copies = entries.size)
                 throw e

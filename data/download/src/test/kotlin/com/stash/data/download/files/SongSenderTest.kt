@@ -437,6 +437,20 @@ class SongSenderTest {
         assertThat(listedFiles()).containsExactly("1.flac")
     }
 
+    @Test fun `the library alone whose list can't be written leaves nothing in the folder, and no copies to remove`() = runTest {
+        folder.listFails = java.io.IOException("write failed: ENOSPC (No space left on device)")
+        val full = runCatching { sender.send(emptyList(), library = library) }.exceptionOrNull()
+        assertThat(full).isInstanceOf(NoRoomException::class.java)
+        assertThat((full as NoRoomException).copies).isEqualTo(0)
+        assertThat(folder.library).isNull()
+
+        folder.listFails = ListInTheWayException()
+        val inTheWay = runCatching { sender.send(emptyList(), library = library) }.exceptionOrNull()
+        assertThat(inTheWay).isInstanceOf(ListInTheWayException::class.java)
+        assertThat(folder.library).isNull()
+        assertThat(folder.files()).isEmpty()
+    }
+
     @Test fun `a cancel during the library's write writes no list`() = runTest {
         lateinit var job: Job
         var ended: Throwable? = null
