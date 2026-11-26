@@ -221,7 +221,7 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
             is SendToComputerState.Waiting -> {
                 Line(pluralStringResource(R.plurals.settings_send_computer_waiting, s.total, s.total), strong = true)
                 Spacer(modifier = Modifier.height(4.dp))
-                val short = s.noRoom
+                val short = s.rest.noRoom
                 if (short != null) {
                     // The phone filled up partway: these go first, the rest once the computer has them (which frees their
                     // room), and once more is freed if even that is not enough.
@@ -232,8 +232,9 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                     }
                     Line(full, error = true)
                     Spacer(modifier = Modifier.height(4.dp))
-                } else if (s.notCopied > 0) {
-                    Line(pluralStringResource(R.plurals.settings_send_computer_not_copied, s.notCopied, s.notCopied), error = true)
+                }
+                if (s.rest.failed > 0) {
+                    Line(pluralStringResource(R.plurals.settings_send_computer_not_copied, s.rest.failed, s.rest.failed), error = true)
                     Spacer(modifier = Modifier.height(4.dp))
                 }
                 if (usb == Usb.FileTransfer) {
@@ -254,12 +255,26 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
             is SendToComputerState.Finished -> {
                 if (s.taken >= s.total) {
                     Line(pluralStringResource(R.plurals.settings_send_computer_finished, s.total, s.total), strong = true)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    if (s.notCopied > 0) {
-                        // Some of the send were never copied: a send again carries them.
-                        val rest = if (s.noRoom) R.plurals.settings_send_computer_finished_rest_full else R.plurals.settings_send_computer_finished_rest
-                        Line(pluralStringResource(rest, s.notCopied, s.notCopied))
-                    } else {
+                    val rest = s.rest
+                    if (rest.full > 0) {
+                        // Left for room: a send again carries them, once there is room enough for them.
+                        val short = rest.noRoom ?: 0L
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Line(
+                            if (short > 0L) {
+                                pluralStringResource(R.plurals.settings_send_computer_finished_rest_free, rest.full, rest.full, size(short))
+                            } else {
+                                pluralStringResource(R.plurals.settings_send_computer_finished_rest_full, rest.full, rest.full)
+                            },
+                        )
+                    }
+                    if (rest.failed > 0) {
+                        // These failed for another reason: a send again is not promised to carry them.
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Line(pluralStringResource(R.plurals.settings_send_computer_finished_failed, rest.failed, rest.failed))
+                    }
+                    if (rest.full == 0) {
+                        Spacer(modifier = Modifier.height(4.dp))
                         Line(stringResource(R.string.settings_send_computer_finished_desc))
                     }
                 } else if (s.chosen) {

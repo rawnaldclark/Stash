@@ -54,12 +54,13 @@ class SendSong(
 )
 
 /**
- * What a send did: the list's entries (the songs in the folder), how many were already there, and how many failed.
- * [noRoom]: the phone filled up partway, so the songs after that were not copied (they are in [failed]); they need
- * this many bytes more than were free then, even once the computer has taken the songs listed (which frees the room
- * their copies take): 0 when that is room enough. The list names the songs copied before it, for the computer to take.
+ * What a send did: the list's entries (the songs in the folder), how many were already there, and how many [failed]
+ * (a file missing or unreadable, a write that didn't take). [full]: the phone filled up partway, so these were not
+ * copied (the song that found it full, and the ones after it, not tried). They need [noRoom] bytes more than were free
+ * then, even once the computer has taken the songs listed (which frees the room their copies take): 0 when that is room
+ * enough, null when the phone didn't fill up. The list names the songs copied before it, for the computer to take.
  */
-data class SendResult(val entries: List<JsonObject>, val reused: Int, val failed: Int, val noRoom: Long? = null)
+data class SendResult(val entries: List<JsonObject>, val reused: Int, val failed: Int, val noRoom: Long? = null, val full: Int = 0)
 
 /**
  * The phone has no room for the copies: they need [needed] bytes more than are free. Nothing more is copied (a full
@@ -131,6 +132,9 @@ class SongSender(private val folder: SendFolder, private val freeBytes: () -> Lo
         val entries = ArrayList<JsonObject>(songs.size)
         val listed = ArrayList<Pair<SendSong, SentFile>>(songs.size)
         var failed = 0
+        // Not copied because the phone is full, told apart from the songs that failed for another reason: those a send
+        // again won't carry.
+        var outOfRoom = 0
         var reused = 0
         // Once the phone is full: what the songs still to copy needed then, with the room to spare, more than was free.
         // No more are tried.
@@ -146,7 +150,7 @@ class SongSender(private val folder: SendFolder, private val freeBytes: () -> Lo
                 continue
             }
             if (needed != null) {
-                failed++
+                outOfRoom++
                 continue
             }
             val written = try {
@@ -160,7 +164,8 @@ class SongSender(private val folder: SendFolder, private val freeBytes: () -> Lo
             // Stopped mid-song: the folder took the half back; say so rather than count the song as failed.
             context.ensureActive()
             if (written == null || written.bytes <= 0L) {
-                failed++
+                // The song that found the phone full is the first of those not copied for room.
+                if (needed != null) outOfRoom++ else failed++
             } else {
                 entries += song.entry(written.name, written.bytes)
                 listed += song to written
@@ -173,7 +178,7 @@ class SongSender(private val folder: SendFolder, private val freeBytes: () -> Lo
         // The room the listed copies take is freed once the computer has them: what the rest need even then.
         val noRoom = needed?.let { (it - listed.sumOf { (_, file) -> file.bytes }).coerceAtLeast(0L) }
         noRoom?.let { if (entries.isEmpty()) throw NoRoomException(it) }
-        val result = SendResult(entries, reused, failed, noRoom)
+        val result = SendResult(entries, reused, failed, noRoom, outOfRoom)
         if (entries.isNotEmpty()) {
             beforeList(listed, result)
             try {

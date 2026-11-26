@@ -189,7 +189,7 @@ class SendToComputerCoordinatorTest {
 
     @Test fun `a send copies the songs, then waits for the computer`() {
         runBlocking { coordinator.copy { _, _ -> } }
-        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Waiting(2, 0))
+        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Waiting(2))
         assertThat(folder.names()).containsExactly("1.flac", "2.flac", SongSender.LIST_NAME)
     }
 
@@ -277,33 +277,44 @@ class SendToComputerCoordinatorTest {
         runBlocking { coordinator.copy { _, _ -> } }
         val waiting = coordinator.state.value as SendToComputerState.Waiting
         assertThat(waiting.total).isEqualTo(1)
-        assertThat(waiting.notCopied).isEqualTo(1)
-        // Song 2 (10 bytes) and the room to spare, with none free, less the 10 bytes song 1's copy frees once taken.
-        assertThat(waiting.noRoom).isEqualTo(SongSender.SPARE)
+        // Song 2 was not copied for room (song 2's 10 bytes and the room to spare, with none free, less the 10 bytes song
+        // 1's copy frees once taken), and none for another reason.
+        val rest = SendMemory.Rest(failed = 0, full = 1, noRoom = SongSender.SPARE)
+        assertThat(waiting.rest).isEqualTo(rest)
         assertThat(folder.names()).containsExactly("1.flac", SongSender.LIST_NAME)
         assertThat(memory().sending().keys).containsExactly("1.flac")
         // Kept with the send, to be told after a restart.
-        assertThat(memory().rest()).isEqualTo(SendMemory.Rest(1, SongSender.SPARE))
+        assertThat(memory().rest()).isEqualTo(rest)
 
-        // The computer takes what was copied: the end says what wasn't, and why.
+        // The computer takes what was copied: the end says what wasn't, why, and what it needs.
         folder.take("1.flac")
         folder.take(SongSender.LIST_NAME)
-        assertThat(awaitState { it is SendToComputerState.Finished })
-            .isEqualTo(SendToComputerState.Finished(1, 1, notCopied = 1, noRoom = true))
+        assertThat(awaitState { it is SendToComputerState.Finished }).isEqualTo(SendToComputerState.Finished(1, 1, rest = rest))
         assertThat(memory().rest()).isEqualTo(SendMemory.Rest())
     }
 
     @Test fun `what a send left out is shown again after a restart`() {
         folder.put("1.flac", 10)
         folder.list = """{"songs":[{"file":"1.flac"}]}"""
-        memory().startSending(sent(1), SendMemory.Rest(notCopied = 1, noRoom = 0L))
+        val rest = SendMemory.Rest(full = 1, noRoom = 0L)
+        memory().startSending(sent(1), rest)
 
         coordinator.resume()
-        assertThat(awaitState { it is SendToComputerState.Waiting }).isEqualTo(SendToComputerState.Waiting(1, 1, 0L))
+        assertThat(awaitState { it is SendToComputerState.Waiting }).isEqualTo(SendToComputerState.Waiting(1, rest))
         folder.take("1.flac")
         folder.take(SongSender.LIST_NAME)
-        assertThat(awaitState { it is SendToComputerState.Finished })
-            .isEqualTo(SendToComputerState.Finished(1, 1, notCopied = 1, noRoom = true))
+        assertThat(awaitState { it is SendToComputerState.Finished }).isEqualTo(SendToComputerState.Finished(1, 1, rest = rest))
+    }
+
+    @Test fun `a song that can't be copied is told apart from the ones left for room`() {
+        // Song 2's file is gone from the phone: no room would carry it.
+        File(tracks[1].filePath!!).delete()
+        runBlocking { coordinator.copy { _, _ -> } }
+        val rest = SendMemory.Rest(failed = 1)
+        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Waiting(1, rest))
+        folder.take("1.flac")
+        folder.take(SongSender.LIST_NAME)
+        assertThat(awaitState { it is SendToComputerState.Finished }).isEqualTo(SendToComputerState.Finished(1, 1, rest = rest))
     }
 
     @Test fun `no room with copies of the send left offers to remove them`() {
@@ -357,7 +368,7 @@ class SendToComputerCoordinatorTest {
 
         // The next look, answered, shows the send waiting.
         coordinator.resume()
-        assertThat(awaitState { it is SendToComputerState.Waiting }).isEqualTo(SendToComputerState.Waiting(2, 0))
+        assertThat(awaitState { it is SendToComputerState.Waiting }).isEqualTo(SendToComputerState.Waiting(2))
     }
 
     @Test fun `the copies the computer left are cleared in a way that outlives the app`() {
@@ -442,7 +453,7 @@ class SendToComputerCoordinatorTest {
         runBlocking { coordinator.copy { _, _ -> } }
         assertThat(clearing.exists()).isFalse()
         assertThat(memory().onComputer()).isEmpty()
-        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Waiting(2, 0))
+        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Waiting(2))
     }
 
     @Test fun `a copy starting during a cancel leaves the cancel's mark`() {

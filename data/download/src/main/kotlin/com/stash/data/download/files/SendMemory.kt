@@ -32,10 +32,11 @@ class SendMemory(private val file: File, private val library: Long = 0L) {
     data class Sent(val track: Long, val media: Long?)
 
     /**
-     * What the send in the folder left out: [notCopied] songs could not be copied. [noRoom]: the phone ran out of room,
-     * and those need this many bytes more even once the computer has the copies ([SendResult.noRoom]).
+     * What the send in the folder left out ([SendResult]): [failed] songs could not be copied, and [full] more were not
+     * because the phone ran out of room; those need [noRoom] bytes more even once the computer has the copies (0: room
+     * enough then).
      */
-    data class Rest(val notCopied: Int = 0, val noRoom: Long? = null)
+    data class Rest(val failed: Int = 0, val full: Int = 0, val noRoom: Long? = null)
 
     private data class Kept(val has: Set<Long>, val sending: Map<String, Sent>, val rest: Rest = Rest())
 
@@ -102,8 +103,12 @@ class SendMemory(private val file: File, private val library: Long = 0L) {
             val track = sent["track"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
             name to Sent(track, sent["media"]?.jsonPrimitive?.longOrNull)
         }?.toMap().orEmpty()
-        val rest = Rest(root["not_copied"]?.jsonPrimitive?.intOrNull ?: 0, root["no_room"]?.jsonPrimitive?.longOrNull)
-        Kept(has, sending, rest)
+        // "not_copied" is every song the send left out; "full", those of them left out for room. A file from before the
+        // two were told apart has no "full": its songs not copied were all the room's once the phone was full.
+        val notCopied = root["not_copied"]?.jsonPrimitive?.intOrNull ?: 0
+        val noRoom = root["no_room"]?.jsonPrimitive?.longOrNull
+        val full = (root["full"]?.jsonPrimitive?.intOrNull ?: if (noRoom != null) notCopied else 0).coerceIn(0, notCopied)
+        Kept(has, sending, Rest(notCopied - full, full, noRoom))
     }.getOrNull() ?: Kept(emptySet(), emptyMap())
 
     /** Written whole beside it, then put in its place: a phone that dies mid-write keeps the last good one. */
@@ -119,7 +124,8 @@ class SendMemory(private val file: File, private val library: Long = 0L) {
                     },
                 ),
             )
-            if (rest.notCopied > 0) put("not_copied", JsonPrimitive(rest.notCopied))
+            if (rest.failed + rest.full > 0) put("not_copied", JsonPrimitive(rest.failed + rest.full))
+            if (rest.full > 0) put("full", JsonPrimitive(rest.full))
             rest.noRoom?.let { put("no_room", JsonPrimitive(it)) }
         }.toString()
         file.parentFile?.mkdirs()

@@ -108,21 +108,40 @@ class SendMemoryTest {
 
     @Test fun `what a send left out is kept with it, after a restart too, until it is over`() {
         val m = memory()
-        m.startSending(mapOf("1.flac" to Sent(1, 101), "2.flac" to Sent(2, 102)), SendMemory.Rest(notCopied = 3, noRoom = 500L))
-        assertThat(memory().rest()).isEqualTo(SendMemory.Rest(3, 500L))
+        // One song that couldn't be copied, and three left for room.
+        val rest = SendMemory.Rest(failed = 1, full = 3, noRoom = 500L)
+        m.startSending(mapOf("1.flac" to Sent(1, 101), "2.flac" to Sent(2, 102)), rest)
+        assertThat(memory().rest()).isEqualTo(rest)
         // The computer taking songs leaves it as it is.
         m.taken(present = setOf("2.flac"), trashed = emptySet())
-        assertThat(memory().rest()).isEqualTo(SendMemory.Rest(3, 500L))
+        assertThat(memory().rest()).isEqualTo(rest)
         m.doneSending()
         assertThat(memory().rest()).isEqualTo(SendMemory.Rest())
         assertThat(memory().onComputer()).containsExactly(1L)
 
         // Out of room with the copies freeing enough: none more needed, still out of room.
-        m.startSending(mapOf("3.flac" to Sent(3, 103)), SendMemory.Rest(notCopied = 2, noRoom = 0L))
-        assertThat(memory().rest()).isEqualTo(SendMemory.Rest(2, 0L))
+        m.startSending(mapOf("3.flac" to Sent(3, 103)), SendMemory.Rest(full = 2, noRoom = 0L))
+        assertThat(memory().rest()).isEqualTo(SendMemory.Rest(full = 2, noRoom = 0L))
+        // Only songs that couldn't be copied.
+        m.startSending(mapOf("3.flac" to Sent(3, 103)), SendMemory.Rest(failed = 2))
+        assertThat(memory().rest()).isEqualTo(SendMemory.Rest(failed = 2))
         // A send that left nothing out says so.
         m.startSending(mapOf("4.flac" to Sent(4, 104)))
         assertThat(memory().rest()).isEqualTo(SendMemory.Rest())
+    }
+
+    @Test fun `what a send left out is read from files written before room and other failures were told apart`() {
+        // Counted together then: with the phone full, every song not copied was the room's.
+        file.writeText("""{"library":0,"on_computer":[],"sending":{"1.flac":{"track":1}},"not_copied":3,"no_room":500}""")
+        assertThat(memory().rest()).isEqualTo(SendMemory.Rest(failed = 0, full = 3, noRoom = 500L))
+        file.writeText("""{"library":0,"on_computer":[],"sending":{"1.flac":{"track":1}},"not_copied":2}""")
+        assertThat(memory().rest()).isEqualTo(SendMemory.Rest(failed = 2))
+        // From before what a send left out was kept.
+        file.writeText("""{"on_computer":[7],"sending":{"1.flac":{"track":1}}}""")
+        assertThat(memory().rest()).isEqualTo(SendMemory.Rest())
+        // Written now, "not_copied" still says every song left out.
+        memory().startSending(mapOf("1.flac" to Sent(1, 101)), SendMemory.Rest(failed = 1, full = 2, noRoom = 0L))
+        assertThat(file.readText()).contains("\"not_copied\":3")
     }
 
     @Test fun `a new send replaces the last one's files`() {
