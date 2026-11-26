@@ -305,7 +305,25 @@ class SendToComputerCoordinator @Inject constructor(
      * CancellationException when cancelled; anything else is shown as the error.
      */
     @RequiresApi(Build.VERSION_CODES.Q)
-    internal suspend fun copy(onProgress: suspend (done: Int, total: Int) -> Unit): Unit = folderBusy.withLock {
+    internal suspend fun copy(onProgress: suspend (done: Int, total: Int) -> Unit) {
+        try {
+            folderBusy.lock()
+        } catch (e: CancellationException) {
+            // Stopped (the notification's Cancel) as it waited behind a clear-up of the copies: nothing was copied, and
+            // the card still says the send is starting. Put right as any stop from outside is.
+            stoppedFromOutside()
+            throw e
+        }
+        try {
+            copyAlone(onProgress)
+        } finally {
+            folderBusy.unlock()
+        }
+    }
+
+    /** [copy], with [folderBusy] held. */
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private suspend fun copyAlone(onProgress: suspend (done: Int, total: Int) -> Unit) {
         val ownClear = synchronized(lock) {
             // Cancelled as the work was starting: leave the state, and the clear-up it marked, to the cancel.
             if (_state.value is SendToComputerState.Cancelling) return

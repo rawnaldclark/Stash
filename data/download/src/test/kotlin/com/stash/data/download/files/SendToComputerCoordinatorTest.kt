@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -612,6 +613,32 @@ class SendToComputerCoordinatorTest {
         }
         awaitState { it is SendToComputerState.Idle }
         assertThat(folder.names()).isEmpty()
+        assertThat(marked()).isFalse()
+    }
+
+    /** The state start() leaves as it hands the send to WorkManager (the work itself is not run here). */
+    private fun preparing() {
+        val field = SendToComputerCoordinator::class.java.getDeclaredField("_state").apply { isAccessible = true }
+        @Suppress("UNCHECKED_CAST")
+        (field.get(coordinator) as MutableStateFlow<SendToComputerState>).value = SendToComputerState.Preparing
+    }
+
+    @Test fun `the notification's Cancel while a send waits behind a clear-up puts the card right`() {
+        // A clear-up holds the folder (the copies the computer left being removed) as Send is tapped.
+        runBlocking { coordinator.folderBusy.lock() }
+        try {
+            preparing()
+            val send = scope.launch { coordinator.copy { _, _ -> } }
+            Thread.sleep(300)
+            assertThat(send.isActive).isTrue()
+            // The notification's Cancel, as the copy waits: not left saying the send is starting with nothing running.
+            send.cancel()
+            awaitState { it is SendToComputerState.Cancelling }
+            awaitTrue { clearing.exists() }
+        } finally {
+            coordinator.folderBusy.unlock()
+        }
+        awaitState { it is SendToComputerState.Idle }
         assertThat(marked()).isFalse()
     }
 
