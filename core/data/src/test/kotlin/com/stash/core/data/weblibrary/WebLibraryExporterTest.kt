@@ -482,7 +482,8 @@ class WebLibraryExporterTest {
         val tracks = db.trackDao()
         val playlists = db.playlistDao()
         val homeSong = tracks.insert(track("Home Song", "Tuber", added = 97, youtubeId = "dddddddddd1"))
-        val supermix = playlists.insert(playlist("My Supermix", PlaylistType.DAILY_MIX, "RDTMAK5uy_super", added = 8).copy(source = MusicSource.YOUTUBE))
+        // A YouTube Music home mix as the sync stores it, by its browse id; a Spotify one by its bare id (Daily Mix 1).
+        val supermix = playlists.insert(playlist("My Supermix", PlaylistType.DAILY_MIX, "VLRDTMAK5uy_super", added = 8).copy(source = MusicSource.YOUTUBE))
         member(supermix, homeSong, 0, added = 990)
         // Neither goes: a mix no longer in the library, and a SoundCloud one (the file can't say it came from SoundCloud).
         member(playlists.insert(playlist("Old Radio", PlaylistType.DAILY_MIX, "radio_old", added = 9).copy(isActive = false)), homeSong, 0, added = 990)
@@ -575,13 +576,21 @@ class WebLibraryExporterTest {
         assertEquals("spotify-" + "a".repeat(55), id(MusicSource.SPOTIFY, "a".repeat(55), 4))
         assertEquals("app-5", id(MusicSource.SPOTIFY, "b".repeat(56), 5))
         // Not an id the desktop takes, a shared mix, one saved in Stash: as the web's file has them.
-        assertEquals("app-6", id(MusicSource.SPOTIFY, "spotify:playlist:abc", 6))
+        assertEquals("app-6", id(MusicSource.SPOTIFY, "spotify:collection:tracks", 6))
         assertEquals("app-7", id(MusicSource.BOTH, "share:Fw12ab34", 7))
         assertEquals("app-8", id(MusicSource.BOTH, "custom_" + "c".repeat(58), 8))
         assertEquals("app-9", id(MusicSource.BOTH, "album:qobuz_playlist:42", 9))
         // The same id twice: the first keeps it, the other has its row's.
         assertEquals("app-10", id(MusicSource.SPOTIFY, "37i9dQZF1DXcBWIGoYBM5M", 10))
-        assertEquals(10, used.size)
+        // As the sync stores them on one install or another: a Spotify URI is its id, a YouTube Music browse id (VL…) its
+        // playlist's, so both installs give one id.
+        assertEquals("spotify-37i9dQZF1E4yrYiQJfy370", id(MusicSource.SPOTIFY, "spotify:playlist:37i9dQZF1E4yrYiQJfy370", 11))
+        assertEquals("spotify-1aBcDeFgHiJkLmNoPqRsTu", id(MusicSource.SPOTIFY, "spotify:user:someone:playlist:1aBcDeFgHiJkLmNoPqRsTu", 12))
+        assertEquals("youtube-RDTMAK5uy_nGQKSMIkpr4o9VI_2i56pkGliD6FQRo", id(MusicSource.YOUTUBE, "VLRDTMAK5uy_nGQKSMIkpr4o9VI_2i56pkGliD6FQRo", 13))
+        assertEquals("youtube-PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", id(MusicSource.YOUTUBE, "VLPLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", 14))
+        // The same playlist stored both ways on one phone: the first keeps the id.
+        assertEquals("app-15", id(MusicSource.YOUTUBE, "PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", 15))
+        assertEquals(15, used.size)
         used.forEach { assertTrue(it, Regex("^[A-Za-z0-9_-]{1,64}$").matches(it)) }
     }
 

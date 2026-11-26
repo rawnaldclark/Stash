@@ -400,17 +400,31 @@ private val SYNCED_ID = Regex("^[A-Za-z0-9_-]{1,55}$")
 private val DESKTOP_ID = Regex("^[A-Za-z0-9_-]{1,64}$")
 
 /**
+ * A synced list's own id at its service, as one install and another may store it. The sync stores Spotify's bare id, but
+ * a Spotify URI (`spotify:playlist:<id>`, `spotify:user:<user>:playlist:<id>`) is taken to its id. YouTube Music's comes
+ * as a playlist id (`RDTMAK5uy_…`, `PL…`) or as the browse id of one (`VLRDTMAK5uy_…`, `VLPL…`), which is taken to the
+ * playlist id: no playlist id starts with `VL`.
+ */
+private fun serviceIdOf(from: String, sourceId: String): String = when (from) {
+    WebLibraryFile.FROM_SPOTIFY ->
+        if (sourceId.startsWith("spotify:")) sourceId.substringAfterLast(":playlist:", missingDelimiterValue = sourceId) else sourceId
+    WebLibraryFile.FROM_YOUTUBE -> sourceId.removePrefix("VL")
+    else -> sourceId
+}
+
+/**
  * A playlist's id in Send to computer's file, the same on every install of Stash: the desktop keeps playlists by id, and a
  * phone can have two installs (the release and debug apps), whose row numbers differ.
- * - A synced list ([from] set): its service and its own id there, `spotify-<id>` or `youtube-<id>`.
+ * - A synced list ([from] set): its service and its own id there, `spotify-<id>` or `youtube-<id>` ([serviceIdOf]).
  * - Your own list (a `custom_…` source id): that source id.
  * - Anything else, or a source id the desktop couldn't take as an id: [fallback], as the web's file has it ([fileIdOf]).
  *
  * [used] holds the ids given so far in the file; one given already goes to the later list's `app-<row id>`.
  */
 internal fun computerIdOf(p: PlaylistEntity, from: String?, fallback: String, used: MutableSet<String>): String {
+    val serviceId = from?.let { serviceIdOf(it, p.sourceId) }
     val stable = when {
-        from != null && SYNCED_ID.matches(p.sourceId) -> "$from-${p.sourceId}"
+        serviceId != null && SYNCED_ID.matches(serviceId) -> "$from-$serviceId"
         from == null && p.sourceId.startsWith("custom_") && DESKTOP_ID.matches(p.sourceId) -> p.sourceId
         else -> fallback
     }
