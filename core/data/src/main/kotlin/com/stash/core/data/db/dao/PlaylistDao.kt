@@ -66,12 +66,33 @@ data class PlaylistDiagnosticsRow(
     val empty: Int,
 )
 
+/** A song in a playlist, by the playlist's name ([PlaylistDao.playlistNamesOfSongs]). */
+data class SongPlaylistName(
+    val trackId: Long,
+    val name: String,
+)
+
 /**
  * Data-access object for [PlaylistEntity] and the
  * [PlaylistTrackCrossRef] join table.
  */
 @Dao
 interface PlaylistDao {
+
+    /**
+     * Every song's playlists by name: the listener's own and the ones synced from a service, not Stash's mixes, its
+     * Downloads list or its own likes (a like travels on its own). Send to computer tells the computer each song's
+     * playlists, to choose songs by.
+     */
+    @Query("""
+        SELECT pt.track_id AS trackId, p.name AS name FROM playlist_tracks pt
+        INNER JOIN playlists p ON p.id = pt.playlist_id
+        WHERE pt.removed_at IS NULL
+          AND p.is_active = 1
+          AND p.type NOT IN ('STASH_MIX', 'DOWNLOADS_MIX', 'STASH_LIKED')
+        ORDER BY p.name
+    """)
+    suspend fun playlistNamesOfSongs(): List<SongPlaylistName>
 
     // ── Inserts ─────────────────────────────────────────────────────────
 

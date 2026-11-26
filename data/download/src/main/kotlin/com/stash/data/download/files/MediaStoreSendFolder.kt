@@ -38,11 +38,13 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
             @Suppress("DEPRECATION")
             resolver.query(MediaStore.setIncludePending(collection), columns, "${MediaStore.Downloads.RELATIVE_PATH} = ?", arrayOf(RELATIVE_PATH), null)
         }
+        // No answer is not an empty folder: taken for one, every song of a send would count as taken.
+        cursor ?: throw NoAnswerException()
         val out = ArrayList<Row>()
-        cursor?.use { c ->
+        cursor.use { c ->
             while (c.moveToNext()) {
                 val name = c.getString(1) ?: continue
-                out += Row(c.getLong(0), SentFile(name, c.getLong(2), pending = c.getInt(3) != 0))
+                out += Row(c.getLong(0), SentFile(name, c.getLong(2), pending = c.getInt(3) != 0, id = c.getLong(0)))
             }
         }
         return out
@@ -70,7 +72,8 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
                     written += n
                 }
             }
-            if (!whole) {
+            // An empty file is no copy: removed, so nothing is left that the list doesn't name.
+            if (!whole || written == 0L) {
                 resolver.delete(uri, null, null)
                 return null
             }
@@ -78,7 +81,7 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
             // The name it really has: MediaStore renames a file whose name is taken ("76 (1).flac").
             val real = resolver.query(uri, arrayOf(MediaStore.Downloads.DISPLAY_NAME), null, null, null)
                 ?.use { c -> if (c.moveToFirst()) c.getString(0) else null } ?: name
-            return SentFile(real, written)
+            return SentFile(real, written, id = runCatching { ContentUris.parseId(uri) }.getOrNull()?.takeIf { it >= 0 })
         } catch (e: Exception) {
             runCatching { resolver.delete(uri, null, null) }
             throw e
@@ -91,17 +94,27 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
         }
     }
 
-    /** Everything of this app's in the folder: a cancelled send leaves nothing. How many were removed. */
-    fun clear(): Int {
+    /**
+     * Everything of this app's in the folder: a cancelled send leaves nothing. The list goes first, so a computer looking
+     * meanwhile finds the send gone, not its songs going one by one (and a clear cut short leaves no list naming copies
+     * that are gone). How many were removed.
+     */
+    override fun clear(): Int {
         var removed = 0
-        for (row in rows()) {
+        for (row in rows().sortedBy { it.file.name != SongSender.LIST_NAME }) {
             if (runCatching { resolver.delete(ContentUris.withAppendedId(collection, row.id), null, null) }.getOrDefault(0) > 0) removed++
         }
         return removed
     }
 
     override fun writeList(text: String) {
-        delete(SongSender.LIST_NAME)
+        // The old list goes first. A look for it that isn't answered is asked once more after a moment; still none, the
+        // list is written anyway, at the end of a long copy: the name it is given is read back below, so a list still in
+        // the way is found there.
+        if (runCatching { delete(SongSender.LIST_NAME) }.isFailure) {
+            Thread.sleep(LIST_RETRY_MS)
+            runCatching { delete(SongSender.LIST_NAME) }
+        }
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, SongSender.LIST_NAME)
             put(MediaStore.Downloads.MIME_TYPE, "application/json")
@@ -109,12 +122,47 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
         val uri = resolver.insert(collection, values) ?: throw IllegalStateException("The song list could not be written.")
-        resolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
-        resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
+        val real = try {
+            resolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
+            resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
+            resolver.query(uri, arrayOf(MediaStore.Downloads.DISPLAY_NAME), null, null, null)
+                ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        } catch (e: Exception) {
+            runCatching { resolver.delete(uri, null, null) }
+            throw e
+        }
+        // MediaStore renames a list whose name is taken by a file this app can't see ("stash-transfer (1).json"): the
+        // computer would never find it.
+        if (real != null && real != SongSender.LIST_NAME) {
+            runCatching { resolver.delete(uri, null, null) }
+            throw ListInTheWayException()
+        }
+    }
+
+    /**
+     * The ids of this app's files in the folder that are in the Trash: the Files app's Delete puts them there, under the
+     * same id (Android 11 and later; before that there is no Trash, so none).
+     */
+    override fun trashed(): Set<Long> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return emptySet()
+        val cursor = resolver.query(
+            collection,
+            arrayOf(MediaStore.Downloads._ID),
+            Bundle().apply {
+                putString(ContentResolver.QUERY_ARG_SQL_SELECTION, "${MediaStore.Downloads.RELATIVE_PATH} = ?")
+                putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, arrayOf(RELATIVE_PATH))
+                putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_ONLY)
+            },
+            null,
+        )
+        cursor ?: throw NoAnswerException()
+        val out = HashSet<Long>()
+        cursor.use { c -> while (c.moveToNext()) out += c.getLong(0) }
+        return out
     }
 
     /** The list's text, when this app's list is in the folder. */
-    fun readList(): String? {
+    override fun readList(): String? {
         val row = rows().firstOrNull { it.file.name == SongSender.LIST_NAME && !it.file.pending } ?: return null
         return resolver.openInputStream(ContentUris.withAppendedId(collection, row.id))?.use { it.readBytes().decodeToString() }
     }
@@ -123,5 +171,7 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
         /** The folder a computer finds: Internal storage › Download › Stash transfer. */
         const val RELATIVE_PATH = "Download/Stash transfer/"
         private const val BUFFER = 256 * 1024
+        /** How long the list's write waits before asking the folder again for an old list. */
+        private const val LIST_RETRY_MS = 250L
     }
 }

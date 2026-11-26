@@ -28,6 +28,11 @@ class SongSenderTest {
         val log = mutableListOf<String>()
         val inTheWay = HashSet<String>()
         var failOn: String? = null
+        /** The phone is full after this many writes: the next one fails as a full phone's does. */
+        var fullAfter: Int? = null
+        /** What writing the list throws, when set. */
+        var listFails: Exception? = null
+        private var writes = 0
 
         /** Called after each block of a write: a test cancels from here. */
         var onBlock: (name: String) -> Unit = {}
@@ -36,6 +41,8 @@ class SongSenderTest {
 
         override fun write(name: String, source: InputStream, keepGoing: () -> Boolean): SentFile? {
             if (name == failOn) return null
+            if (fullAfter?.let { writes >= it } == true) throw java.io.IOException("write failed: ENOSPC (No space left on device)")
+            writes++
             val real = if (name in inTheWay) name.substringBeforeLast('.') + " (1)." + name.substringAfterLast('.') else name
             log += "write $real"
             files[real] = SentFile(real, 0, pending = true)
@@ -57,7 +64,15 @@ class SongSenderTest {
             if (name == SongSender.LIST_NAME) list = null else { files.remove(name); contents.remove(name) }
         }
 
-        override fun writeList(text: String) { log += "list"; list = text }
+        override fun writeList(text: String) {
+            listFails?.let { throw it }
+            log += "list"
+            list = text
+        }
+
+        override fun clear(): Int = files().size.also { files.clear(); contents.clear(); list = null }
+
+        override fun readList(): String? = list
     }
 
     private val folder = FakeFolder()
@@ -158,5 +173,176 @@ class SongSenderTest {
         val result = sender.send(listOf(song(1), song(2, big), song(3)))
         assertThat(result.reused).isEqualTo(1)
         assertThat(folder.log).containsExactly("write 2.flac", "write 3.flac", "list").inOrder()
+    }
+
+    @Test fun `a send that won't fit copies nothing and says how much more room it needs`() = runTest {
+        // Three songs of 10 bytes to copy, and the room to spare besides.
+        val tight = SongSender(folder) { 25L }
+        val e = runCatching { tight.send(listOf(song(1), song(2), song(3))) }.exceptionOrNull()
+        assertThat(e).isInstanceOf(NoRoomException::class.java)
+        assertThat((e as NoRoomException).needed).isEqualTo(30L + SongSender.SPARE - 25L)
+        assertThat(e.copies).isEqualTo(0)
+        assertThat(folder.files).isEmpty()
+        assertThat(folder.list).isNull()
+    }
+
+    @Test fun `a send that won't fit says what an earlier one left in the folder`() = runTest {
+        sender.send(listOf(song(1), song(2)))
+        val e = runCatching { SongSender(folder) { 5L }.send(listOf(song(1), song(2), song(3))) }.exceptionOrNull()
+        assertThat((e as NoRoomException).copies).isEqualTo(2)
+        assertThat(folder.files.keys).containsExactly("1.flac", "2.flac")
+        assertThat(folder.list).isNull()
+    }
+
+    @Test fun `songs already there whole need no room again`() = runTest {
+        sender.send(listOf(song(1), song(2)))
+        val result = SongSender(folder) { SongSender.SPARE + 10L }.send(listOf(song(1), song(2), song(3)))
+        assertThat(result.entries).hasSize(3)
+        assertThat(result.reused).isEqualTo(2)
+    }
+
+    @Test fun `a phone that fills up stops copying, and lists what was copied for the computer to take`() = runTest {
+        folder.fullAfter = 1
+        // Room enough when asked first; then something else on the phone takes it.
+        var asked = 0
+        var told: SendResult? = null
+        val result = SongSender(folder) { if (asked++ == 0) SongSender.SPARE + 30L else 4L }
+            .send(listOf(song(1), song(2), song(3)), beforeList = { _, sent -> told = sent })
+        assertThat(result.entries).hasSize(1)
+        // Both left for room, none for another reason.
+        assertThat(result.full).isEqualTo(2)
+        assertThat(result.failed).isEqualTo(0)
+        // What the two songs not copied need, with the room to spare, more than is free, even once the computer has
+        // taken the one copied (which frees its 10 bytes).
+        assertThat(result.noRoom).isEqualTo(20L + SongSender.SPARE - 4L - 10L)
+        // Told before the list, so it is kept with the send.
+        assertThat(told).isEqualTo(result)
+        assertThat(folder.files.keys).containsExactly("1.flac")
+        assertThat(folder.log).doesNotContain("write 3.flac")
+        assertThat(listedFiles()).containsExactly("1.flac")
+
+        // With room again, it carries on from there.
+        folder.fullAfter = null
+        val again = sender.send(listOf(song(1), song(2), song(3)))
+        assertThat(again.reused).isEqualTo(1)
+        assertThat(again.noRoom).isNull()
+        assertThat(listedFiles()).containsExactly("1.flac", "2.flac", "3.flac").inOrder()
+    }
+
+    @Test fun `a phone full from the first copy still lists the songs already there whole`() = runTest {
+        folder.files["3.flac"] = SentFile("3.flac", 10)
+        folder.fullAfter = 0
+        val result = sender.send(listOf(song(1), song(2), song(3)))
+        assertThat(result.full).isEqualTo(2)
+        assertThat(result.failed).isEqualTo(0)
+        // The copy already there is freed too once the computer has it.
+        assertThat(result.noRoom).isEqualTo(20L + SongSender.SPARE - 10L)
+        assertThat(listedFiles()).containsExactly("3.flac")
+        // Song 2 was not tried once the phone was full.
+        assertThat(folder.log).doesNotContain("write 2.flac")
+    }
+
+    @Test fun `songs that fail for another reason are told apart from the ones left for room`() = runTest {
+        // Song 1 can't be written; song 2 is; the phone is full at song 3, so song 4 is not tried.
+        folder.failOn = "1.flac"
+        folder.fullAfter = 1
+        val result = sender.send(listOf(song(1), song(2), song(3), song(4)))
+        assertThat(listedFiles()).containsExactly("2.flac")
+        assertThat(result.failed).isEqualTo(1)
+        assertThat(result.full).isEqualTo(2)
+        // Songs 3 and 4 and the room to spare, with nothing known free, less song 2's copy once taken.
+        assertThat(result.noRoom).isEqualTo(20L + SongSender.SPARE - 10L)
+
+        // With room, no song is left for it.
+        folder.fullAfter = null
+        val again = sender.send(listOf(song(1), song(2), song(3), song(4)))
+        assertThat(again.failed).isEqualTo(1)
+        assertThat(again.full).isEqualTo(0)
+        assertThat(again.noRoom).isNull()
+    }
+
+    @Test fun `an earlier send's list goes before its copies`() = runTest {
+        folder.files["99.flac"] = SentFile("99.flac", 10)
+        folder.list = """{"songs":[{"file":"99.flac"}]}"""
+        sender.send(listOf(song(1)))
+        assertThat(folder.log.take(2)).containsExactly("delete ${SongSender.LIST_NAME}", "delete 99.flac").inOrder()
+    }
+
+    @Test fun `a phone that fills up needs no more room for the rest when the copies free enough`() = runTest {
+        folder.fullAfter = 2
+        var asked = 0
+        // Full with 5 bytes short; the two copies listed free 20 once the computer has them.
+        val result = SongSender(folder) { if (asked++ == 0) SongSender.SPARE + 30L else SongSender.SPARE + 5L }
+            .send(listOf(song(1), song(2), song(3)))
+        assertThat(result.entries).hasSize(2)
+        assertThat(result.noRoom).isEqualTo(0L)
+    }
+
+    @Test fun `a phone full with nothing copied writes no list and says how much more room it needs`() = runTest {
+        folder.fullAfter = 0
+        val e = runCatching { sender.send(listOf(song(1), song(2))) }.exceptionOrNull()
+        assertThat(e).isInstanceOf(NoRoomException::class.java)
+        assertThat((e as NoRoomException).needed).isEqualTo(20L + SongSender.SPARE)
+        assertThat(e.copies).isEqualTo(0)
+        assertThat(folder.files).isEmpty()
+        assertThat(folder.list).isNull()
+    }
+
+    @Test fun `no room for the list stops the send, with the copies left in the folder`() = runTest {
+        folder.listFails = java.io.IOException("write failed: ENOSPC (No space left on device)")
+        val e = runCatching { sender.send(listOf(song(1), song(2))) }.exceptionOrNull()
+        assertThat(e).isInstanceOf(NoRoomException::class.java)
+        assertThat((e as NoRoomException).copies).isEqualTo(2)
+        assertThat(folder.files.keys).containsExactly("1.flac", "2.flac")
+
+        // Any other failure of the list is its own.
+        folder.listFails = IllegalStateException("The song list could not be written.")
+        assertThat(runCatching { sender.send(listOf(song(1))) }.exceptionOrNull()).isInstanceOf(IllegalStateException::class.java)
+    }
+
+    @Test fun `a cancel told during the last progress call writes no list`() = runTest {
+        lateinit var job: Job
+        var ended: Throwable? = null
+        job = launch {
+            try {
+                sender.send(listOf(song(1), song(2))) { done, total -> if (done == total) job.cancel() }
+            } catch (e: CancellationException) {
+                ended = e
+                throw e
+            }
+        }
+        job.join()
+        assertThat(ended).isInstanceOf(CancellationException::class.java)
+        assertThat(folder.list).isNull()
+        assertThat(folder.log).doesNotContain("list")
+    }
+
+    @Test fun `each song in the list is told with its file just before the list is written`() = runTest {
+        folder.inTheWay += "2.flac"
+        folder.failOn = "3.flac"
+        var told: List<Pair<String, String>> = emptyList()
+        sender.send(listOf(song(1), song(2), song(3)), beforeList = { listed, _ ->
+            folder.log += "told"
+            told = listed.map { (song, file) -> song.name to file.name }
+        })
+        assertThat(told).containsExactly("1.flac" to "1.flac", "2.flac" to "2 (1).flac").inOrder()
+        assertThat(folder.log.takeLast(2)).containsExactly("told", "list").inOrder()
+
+        // Carried on: the songs already there are told too.
+        folder.failOn = null
+        sender.send(listOf(song(1), song(2), song(3)), beforeList = { listed, _ -> told = listed.map { (song, file) -> song.name to file.name } })
+        assertThat(told.map { it.first }).containsExactly("1.flac", "2.flac", "3.flac").inOrder()
+
+        // Nothing copied: nothing told, as there is no list.
+        folder.failOn = "9.flac"
+        var toldAgain = false
+        sender.send(listOf(song(9)), beforeList = { _, _ -> toldAgain = true })
+        assertThat(toldAgain).isFalse()
+    }
+
+    @Test fun `a full phone is told from the error or what caused it`() {
+        assertThat(SongSender.full(java.io.IOException("write failed: ENOSPC (No space left on device)"))).isTrue()
+        assertThat(SongSender.full(RuntimeException("wrapped", java.io.IOException("No space left on device")))).isTrue()
+        assertThat(SongSender.full(java.io.IOException("Broken pipe"))).isFalse()
     }
 }
