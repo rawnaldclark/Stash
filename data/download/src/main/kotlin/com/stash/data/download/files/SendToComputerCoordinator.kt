@@ -56,22 +56,30 @@ sealed interface SendToComputerState {
     data class Copying(val current: Int, val total: Int) : SendToComputerState
     /**
      * [total] songs ready in the folder ([notCopied] could not be copied); the computer has taken none yet. [noRoom]:
-     * the phone ran out of room after these, and the songs not copied need this many bytes more than were free.
+     * the phone ran out of room after these, and the songs not copied need this many bytes more even once the computer
+     * has these (which frees the room their copies take): 0 when that is room enough.
      */
     data class Waiting(val total: Int, val notCopied: Int, val noRoom: Long? = null) : SendToComputerState
     data class Taking(val taken: Int, val total: Int) : SendToComputerState
     /**
      * The computer took [taken] of [total]: all of them (the folder is gone), the ones chosen on it ([chosen]: it removed
-     * the list, and the copies it did not want were cleared), or it stopped with some left.
+     * the list, and the copies it did not want were cleared), or it stopped with some left. With all taken, [notCopied]
+     * more songs of the send could not be copied ([noRoom]: the phone ran out of room), and a send again carries them.
      */
-    data class Finished(val taken: Int, val total: Int, val chosen: Boolean = false) : SendToComputerState
+    data class Finished(
+        val taken: Int,
+        val total: Int,
+        val chosen: Boolean = false,
+        val notCopied: Int = 0,
+        val noRoom: Boolean = false,
+    ) : SendToComputerState
     /** The copy is being stopped and its files removed. */
     data object Cancelling : SendToComputerState
     /**
-     * The send stopped: [message] says why. [copiesLeft]: there was no room, and copies of the send are left in the
-     * folder with no list (a [SendToComputerCoordinator.cancel] removes them). [listInTheWay]: another copy of Stash's
-     * list is in the folder ([ListInTheWayException]). [noAnswer]: the phone's storage did not answer
-     * ([NoAnswerException]).
+     * The send stopped: [message] says why. [copiesLeft]: copies of the send are left in the folder with no list (there
+     * was no room, or another list is in the way), and a [SendToComputerCoordinator.cancel] removes them. [listInTheWay]:
+     * another copy of Stash's list is in the folder ([ListInTheWayException]). [noAnswer]: the phone's storage did not
+     * answer ([NoAnswerException]).
      */
     data class Error(
         val message: String,
@@ -220,10 +228,12 @@ class SendToComputerCoordinator @Inject constructor(
                 }
                 return@launch
             }
+            // What the send left out is told again, as it was before the app closed.
+            val rest = runCatching { memory.rest() }.getOrDefault(SendMemory.Rest())
             synchronized(lock) {
                 if (_state.value !is SendToComputerState.Idle) return@launch
-                _state.value = SendToComputerState.Waiting(total, 0)
-                watchJob = scope.launch { runCatching { watch(total) } }
+                _state.value = SendToComputerState.Waiting(total, rest.notCopied, rest.noRoom)
+                watchJob = scope.launch { runCatching { watch(total, rest) } }
             }
         }
     }
@@ -309,9 +319,15 @@ class SendToComputerCoordinator @Inject constructor(
             var told = 0L
             val result = SongSender(folder(), ::freeBytes).send(
                 songs.map { sendSong(it, playlists[it.id].orEmpty()) },
-                // Which song each file is, kept before the computer can take any (a send goes on without it).
-                beforeList = { listed ->
-                    runCatching { memory.startSending(listed.associate { (song, file) -> file.name to SendMemory.Sent(song.id, file.id) }) }
+                // Which song each file is, and what the send left out, kept before the computer can take any (a send
+                // goes on without it).
+                beforeList = { listed, sent ->
+                    runCatching {
+                        memory.startSending(
+                            listed.associate { (song, file) -> file.name to SendMemory.Sent(song.id, file.id) },
+                            SendMemory.Rest(sent.failed, sent.noRoom),
+                        )
+                    }
                 },
             ) { done, total ->
                 if (_state.value !is SendToComputerState.Cancelling) _state.value = SendToComputerState.Copying(done.coerceAtMost(total - 1), total)
@@ -332,7 +348,8 @@ class SendToComputerCoordinator @Inject constructor(
                 if (_state.value is SendToComputerState.Cancelling) return
                 _state.value = SendToComputerState.Waiting(result.entries.size, result.failed, result.noRoom)
                 watchJob?.cancel()
-                watchJob = scope.launch { runCatching { watch(result.entries.size) } }
+                val rest = SendMemory.Rest(result.failed, result.noRoom)
+                watchJob = scope.launch { runCatching { watch(result.entries.size, rest) } }
             }
         } catch (e: CancellationException) {
             stoppedFromOutside()
@@ -345,10 +362,10 @@ class SendToComputerCoordinator @Inject constructor(
             }
         } catch (e: ListInTheWayException) {
             // Nothing is noted as taken (the computer may delete the folder with the other send in it), and the copies
-            // stay for the next send.
+            // stay for the next send, or go with Remove the copies (there are some: a list is only written to name them).
             runCatching { memory.doneSending() }
             if (_state.value !is SendToComputerState.Cancelling) {
-                _state.value = SendToComputerState.Error(e.message.orEmpty(), listInTheWay = true)
+                _state.value = SendToComputerState.Error(e.message.orEmpty(), copiesLeft = true, listInTheWay = true)
             }
         } catch (e: NoAnswerException) {
             // Said plainly on the card ([SendToComputerState.Error.noAnswer]).
@@ -467,10 +484,10 @@ class SendToComputerCoordinator @Inject constructor(
      * (it removed the list: the copies it did not want are cleared, the songs stay in the library). Once it has
      * started, a minute with nothing more taken shows it stopped ([Finished] with some left), and the count goes on: a
      * computer that carries on (the phone plugged back in) is shown taking again. Ends with all taken, [cancel] or
-     * [dismiss].
+     * [dismiss]. [rest]: what the send left out, told once the computer has all of it.
      */
     @RequiresApi(Build.VERSION_CODES.Q)
-    private suspend fun watch(total: Int) {
+    private suspend fun watch(total: Int, rest: SendMemory.Rest = SendMemory.Rest()) {
         val job = currentCoroutineContext()[Job]
         // Shown unless the watch was stopped meanwhile ([cancel], [dismiss]): a look under way doesn't undo that.
         fun show(s: SendToComputerState) {
@@ -499,7 +516,7 @@ class SendToComputerCoordinator @Inject constructor(
             val songsLeft = files.size - if (listLeft) 1 else 0
             if (songsLeft == 0 && !listLeft) {
                 letGo(all)
-                show(SendToComputerState.Finished(total, total))
+                show(SendToComputerState.Finished(total, total, notCopied = rest.notCopied, noRoom = rest.noRoom != null))
                 return
             }
             if (!listLeft) {

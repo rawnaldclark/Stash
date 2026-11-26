@@ -827,8 +827,12 @@
         <item quantity="other">%1$d songs could not be copied.</item>
     </plurals>
     <plurals name="settings_send_computer_full">
-        <item quantity="one">The phone ran out of room after %1$d song. The rest need %2$s more: once your computer has this one, free some space, then tap Send to computer again.</item>
-        <item quantity="other">The phone ran out of room after %1$d songs. The rest need %2$s more: once your computer has these, free some space, then tap Send to computer again.</item>
+        <item quantity="one">The phone ran out of room. %1$d song is ready for your computer. The rest need %2$s more even once it has it: free some space, then tap Send to computer again.</item>
+        <item quantity="other">The phone ran out of room. %1$d songs are ready for your computer. The rest need %2$s more even once it has them: free some space, then tap Send to computer again.</item>
+    </plurals>
+    <plurals name="settings_send_computer_full_room">
+        <item quantity="one">The phone ran out of room. %1$d song is ready for your computer: once it has it, tap Send to computer again for the rest.</item>
+        <item quantity="other">The phone ran out of room. %1$d songs are ready for your computer: once it has them, tap Send to computer again for the rest.</item>
     </plurals>
     <string name="settings_send_computer_remove_copies">Remove the copies</string>
     <string name="settings_send_computer_list_in_the_way">An older stash-transfer.json from another copy of Stash is in Download › Stash transfer. Delete it in the Files app (or let your computer take that send), then tap Send to computer again.</string>
@@ -840,6 +844,14 @@
         <item quantity="other">All %1$d songs are on your computer.</item>
     </plurals>
     <string name="settings_send_computer_finished_desc">You can unplug the phone. Your downloads stay on it too.</string>
+    <plurals name="settings_send_computer_finished_rest">
+        <item quantity="one">%1$d more wasn\'t copied: tap Send to computer again to send it.</item>
+        <item quantity="other">%1$d more weren\'t copied: tap Send to computer again to send them.</item>
+    </plurals>
+    <plurals name="settings_send_computer_finished_rest_full">
+        <item quantity="one">%1$d more wasn\'t copied, because the phone ran out of room: tap Send to computer again to send it.</item>
+        <item quantity="other">%1$d more weren\'t copied, because the phone ran out of room: tap Send to computer again to send them.</item>
+    </plurals>
     <string name="settings_send_computer_partly">Your computer took %1$d of %2$d songs.</string>
     <string name="settings_send_computer_chosen">Your computer has %1$d of the %2$d songs now.</string>
     <string name="settings_send_computer_chosen_desc">It left the others, as you chose there. You can unplug the phone. All your downloads stay on it.</string>

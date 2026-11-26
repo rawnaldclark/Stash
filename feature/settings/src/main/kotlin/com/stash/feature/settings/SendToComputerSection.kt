@@ -223,8 +223,14 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                 Spacer(modifier = Modifier.height(4.dp))
                 val short = s.noRoom
                 if (short != null) {
-                    // The phone filled up partway: these go first, the rest once there is room.
-                    Line(pluralStringResource(R.plurals.settings_send_computer_full, s.total, s.total, size(short)), error = true)
+                    // The phone filled up partway: these go first, the rest once the computer has them (which frees their
+                    // room), and once more is freed if even that is not enough.
+                    val full = if (short > 0L) {
+                        pluralStringResource(R.plurals.settings_send_computer_full, s.total, s.total, size(short))
+                    } else {
+                        pluralStringResource(R.plurals.settings_send_computer_full_room, s.total, s.total)
+                    }
+                    Line(full, error = true)
                     Spacer(modifier = Modifier.height(4.dp))
                 } else if (s.notCopied > 0) {
                     Line(pluralStringResource(R.plurals.settings_send_computer_not_copied, s.notCopied, s.notCopied), error = true)
@@ -249,7 +255,13 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                 if (s.taken >= s.total) {
                     Line(pluralStringResource(R.plurals.settings_send_computer_finished, s.total, s.total), strong = true)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Line(stringResource(R.string.settings_send_computer_finished_desc))
+                    if (s.notCopied > 0) {
+                        // Some of the send were never copied: a send again carries them.
+                        val rest = if (s.noRoom) R.plurals.settings_send_computer_finished_rest_full else R.plurals.settings_send_computer_finished_rest
+                        Line(pluralStringResource(rest, s.notCopied, s.notCopied))
+                    } else {
+                        Line(stringResource(R.string.settings_send_computer_finished_desc))
+                    }
                 } else if (s.chosen) {
                     Line(stringResource(R.string.settings_send_computer_chosen, s.taken, s.total), strong = true)
                     Spacer(modifier = Modifier.height(4.dp))
@@ -270,7 +282,7 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                     },
                     error = true,
                 )
-                // No room, with copies left that nothing takes: they can go, to win the room back.
+                // Copies left that nothing takes (no room, or another list in the way): they can go, to win the room back.
                 if (s.copiesLeft) Action(stringResource(R.string.settings_send_computer_remove_copies), filled = false, onClick = viewModel::cancel)
                 Action(stringResource(R.string.settings_storage_dismiss_button), filled = false, onClick = viewModel::dismiss)
             }

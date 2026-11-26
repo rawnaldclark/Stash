@@ -263,6 +263,12 @@ class SendToComputerCoordinatorTest {
         // Not being sent: the copies going later (the computer deleting the folder with the other send) is no taking.
         assertThat(memory().sending()).isEmpty()
         assertThat(memory().onComputer()).isEmpty()
+
+        // The copies, which nothing takes now, can be removed from the card.
+        assertThat(error.copiesLeft).isTrue()
+        coordinator.cancel()
+        awaitState { it is SendToComputerState.Idle }
+        assertThat(folder.names()).isEmpty()
     }
 
     @Test fun `a phone that fills up partway waits for the computer with what was copied`() {
@@ -272,9 +278,32 @@ class SendToComputerCoordinatorTest {
         val waiting = coordinator.state.value as SendToComputerState.Waiting
         assertThat(waiting.total).isEqualTo(1)
         assertThat(waiting.notCopied).isEqualTo(1)
-        assertThat(waiting.noRoom).isEqualTo(10L + SongSender.SPARE)
+        // Song 2 (10 bytes) and the room to spare, with none free, less the 10 bytes song 1's copy frees once taken.
+        assertThat(waiting.noRoom).isEqualTo(SongSender.SPARE)
         assertThat(folder.names()).containsExactly("1.flac", SongSender.LIST_NAME)
         assertThat(memory().sending().keys).containsExactly("1.flac")
+        // Kept with the send, to be told after a restart.
+        assertThat(memory().rest()).isEqualTo(SendMemory.Rest(1, SongSender.SPARE))
+
+        // The computer takes what was copied: the end says what wasn't, and why.
+        folder.take("1.flac")
+        folder.take(SongSender.LIST_NAME)
+        assertThat(awaitState { it is SendToComputerState.Finished })
+            .isEqualTo(SendToComputerState.Finished(1, 1, notCopied = 1, noRoom = true))
+        assertThat(memory().rest()).isEqualTo(SendMemory.Rest())
+    }
+
+    @Test fun `what a send left out is shown again after a restart`() {
+        folder.put("1.flac", 10)
+        folder.list = """{"songs":[{"file":"1.flac"}]}"""
+        memory().startSending(sent(1), SendMemory.Rest(notCopied = 1, noRoom = 0L))
+
+        coordinator.resume()
+        assertThat(awaitState { it is SendToComputerState.Waiting }).isEqualTo(SendToComputerState.Waiting(1, 1, 0L))
+        folder.take("1.flac")
+        folder.take(SongSender.LIST_NAME)
+        assertThat(awaitState { it is SendToComputerState.Finished })
+            .isEqualTo(SendToComputerState.Finished(1, 1, notCopied = 1, noRoom = true))
     }
 
     @Test fun `no room with copies of the send left offers to remove them`() {

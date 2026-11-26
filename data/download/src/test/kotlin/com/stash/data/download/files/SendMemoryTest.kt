@@ -106,6 +106,25 @@ class SendMemoryTest {
         assertThat(m.sending().keys).containsExactly("1.flac", "2.flac")
     }
 
+    @Test fun `what a send left out is kept with it, after a restart too, until it is over`() {
+        val m = memory()
+        m.startSending(mapOf("1.flac" to Sent(1, 101), "2.flac" to Sent(2, 102)), SendMemory.Rest(notCopied = 3, noRoom = 500L))
+        assertThat(memory().rest()).isEqualTo(SendMemory.Rest(3, 500L))
+        // The computer taking songs leaves it as it is.
+        m.taken(present = setOf("2.flac"), trashed = emptySet())
+        assertThat(memory().rest()).isEqualTo(SendMemory.Rest(3, 500L))
+        m.doneSending()
+        assertThat(memory().rest()).isEqualTo(SendMemory.Rest())
+        assertThat(memory().onComputer()).containsExactly(1L)
+
+        // Out of room with the copies freeing enough: none more needed, still out of room.
+        m.startSending(mapOf("3.flac" to Sent(3, 103)), SendMemory.Rest(notCopied = 2, noRoom = 0L))
+        assertThat(memory().rest()).isEqualTo(SendMemory.Rest(2, 0L))
+        // A send that left nothing out says so.
+        m.startSending(mapOf("4.flac" to Sent(4, 104)))
+        assertThat(memory().rest()).isEqualTo(SendMemory.Rest())
+    }
+
     @Test fun `a new send replaces the last one's files`() {
         val m = memory()
         m.startSending(mapOf("1.flac" to Sent(1, 101)))
