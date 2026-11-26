@@ -122,6 +122,7 @@ internal fun settingsSearchIndex(s: (Int) -> String): List<SettingsSearchEntry> 
         SettingsSearchEntry(s(R.string.settings_storage_move_library_title), SettingsPage.LIBRARY, listOf("sd card", "external", "move library")),
         SettingsSearchEntry(s(R.string.settings_storage_reorganize_title), SettingsPage.LIBRARY, listOf("organize", "folders")),
         SettingsSearchEntry(s(R.string.settings_storage_backup_title), SettingsPage.LIBRARY, listOf("restore", "export", "import")),
+        SettingsSearchEntry(s(R.string.settings_send_computer_title), SettingsPage.LIBRARY, listOf("transfer", "usb", "pc", "desktop", "copy", "file transfer", "stash for desktop")),
         SettingsSearchEntry(s(R.string.settings_download_recommendations_title), SettingsPage.LIBRARY, listOf("run recommendations when", "wifi", "charging", "any network", "downloads")),
         SettingsSearchEntry(s(R.string.settings_stash_mixes_title), SettingsPage.LIBRARY, listOf("daily discover", "deep cuts", "first listen")),
         SettingsSearchEntry(s(R.string.settings_qobuz_discovery_title), SettingsPage.LIBRARY, listOf("new releases", "qobuz playlists", "top albums")),

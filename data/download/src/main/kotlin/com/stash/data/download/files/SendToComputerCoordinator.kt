@@ -10,6 +10,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -26,6 +27,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.io.File
@@ -47,8 +49,11 @@ sealed interface SendToComputerState {
     /** [total] songs ready in the folder ([notCopied] could not be copied); the computer has taken none yet. */
     data class Waiting(val total: Int, val notCopied: Int) : SendToComputerState
     data class Taking(val taken: Int, val total: Int) : SendToComputerState
-    /** The computer took [taken] of [total]: all of them (the folder is gone), or it stopped with some left. */
-    data class Finished(val taken: Int, val total: Int) : SendToComputerState
+    /**
+     * The computer took [taken] of [total]: all of them (the folder is gone), the ones chosen on it ([chosen]: it removed
+     * the list, and the copies it did not want were cleared), or it stopped with some left.
+     */
+    data class Finished(val taken: Int, val total: Int, val chosen: Boolean = false) : SendToComputerState
     /** The copy is being stopped and its files removed. */
     data object Cancelling : SendToComputerState
     data class Error(val message: String) : SendToComputerState
@@ -56,9 +61,10 @@ sealed interface SendToComputerState {
 
 /**
  * "Send to computer": copies every downloaded song into `Download/Stash transfer/`, where a computer sees it over USB
- * ("File transfer"), with `stash-transfer.json` saying which song each file is. Stash for desktop, with the phone
- * plugged in, takes the files into its library as downloaded songs (matched by ISRC, YouTube id, then title and
- * artist), deleting each from the phone once it has it, and the folder at the end.
+ * ("File transfer"), with `stash-transfer.json` saying which song each file is (and its format, quality and playlists,
+ * to choose by). Stash for desktop, with the phone plugged in, takes the songs chosen there into its library as
+ * downloaded songs (matched by ISRC, then title and artist), deleting each from the phone once it has it; then the
+ * folder, or, with songs not chosen left in it, just the list, and the phone clears those copies.
  *
  * Downloads live in the app's private storage (or a picked folder), which a computer cannot reach; this copy is the
  * one way across that needs no developer options. It goes through MediaStore's Downloads collection
@@ -78,6 +84,7 @@ sealed interface SendToComputerState {
 class SendToComputerCoordinator @Inject constructor(
     @ApplicationContext private val context: Context,
     private val trackDao: TrackDao,
+    private val playlistDao: PlaylistDao,
 ) {
     private val _state = MutableStateFlow<SendToComputerState>(SendToComputerState.Idle)
     val state: StateFlow<SendToComputerState> = _state.asStateFlow()
@@ -178,8 +185,10 @@ class SendToComputerCoordinator @Inject constructor(
                 _state.value = SendToComputerState.Error("There are no downloaded songs to send.")
                 return
             }
+            // Each song's playlists, for choosing on the computer; a send goes without them rather than not at all.
+            val playlists = runCatching { playlistDao.playlistNamesOfSongs() }.getOrDefault(emptyList()).groupBy({ it.trackId }, { it.name })
             var told = 0L
-            val result = SongSender(folder()).send(songs.map(::sendSong)) { done, total ->
+            val result = SongSender(folder(), ::freeBytes).send(songs.map { sendSong(it, playlists[it.id].orEmpty()) }) { done, total ->
                 if (_state.value !is SendToComputerState.Cancelling) _state.value = SendToComputerState.Copying(done.coerceAtMost(total - 1), total)
                 val now = System.currentTimeMillis()
                 if (now - told >= NOTIFY_EVERY_MS || done == total) {
@@ -200,6 +209,8 @@ class SendToComputerCoordinator @Inject constructor(
         } catch (e: kotlinx.coroutines.CancellationException) {
             stoppedFromOutside()
             throw e
+        } catch (e: NoRoomException) {
+            if (_state.value !is SendToComputerState.Cancelling) _state.value = SendToComputerState.Error(noRoom(e.needed))
         } catch (e: Exception) {
             if (_state.value !is SendToComputerState.Cancelling) _state.value = SendToComputerState.Error(e.message ?: "The songs could not be copied.")
         }
@@ -246,7 +257,8 @@ class SendToComputerCoordinator @Inject constructor(
     }
 
     /**
-     * Counts what the computer has taken, every second, until it has all of it (the folder is empty). Once it has
+     * Counts what the computer has taken, every second, until it has all of it (the folder is empty), or all it chose
+     * (it removed the list: the copies it did not want are cleared, the songs stay in the library). Once it has
      * started, a minute with nothing more taken shows it stopped ([Finished] with some left), and the count goes on: a
      * computer that carries on (the phone plugged back in) is shown taking again. Ends with all taken, [cancel] or
      * [dismiss].
@@ -264,6 +276,12 @@ class SendToComputerCoordinator @Inject constructor(
                 _state.value = SendToComputerState.Finished(total, total)
                 return
             }
+            if (!listLeft) {
+                val took = (total - songsLeft).coerceIn(0, total)
+                runCatching { folder().clear() }
+                _state.value = SendToComputerState.Finished(took, total, chosen = true)
+                return
+            }
             val nowTaken = (total - songsLeft).coerceIn(0, total)
             if (nowTaken != taken) {
                 taken = nowTaken
@@ -278,11 +296,11 @@ class SendToComputerCoordinator @Inject constructor(
         }
     }
 
-    private fun sendSong(track: TrackEntity): SendSong = SendSong(
+    private fun sendSong(track: TrackEntity, playlists: List<String>): SendSong = SendSong(
         name = fileName(track),
         bytes = sizeOf(track),
         open = { open(track) },
-        entry = { name, bytes -> entry(track, name, bytes) },
+        entry = { name, bytes -> entry(track, name, bytes, playlists) },
     )
 
     private fun open(track: TrackEntity): InputStream? {
@@ -293,6 +311,10 @@ class SendToComputerCoordinator @Inject constructor(
             File(path).takeIf { it.isFile }?.inputStream()
         }
     }
+
+    /** The room left where the copies go (shared storage), or null when it can't be asked. */
+    private fun freeBytes(): Long? =
+        runCatching { android.os.StatFs(android.os.Environment.getExternalStorageDirectory().path).availableBytes }.getOrNull()
 
     /** The file's real size now (not the library's note of it), or null when it can't be asked. */
     private fun sizeOf(track: TrackEntity): Long? {
@@ -316,6 +338,13 @@ class SendToComputerCoordinator @Inject constructor(
         private const val STOP_WAIT_MS = 30_000L
         private const val NOTIFY_EVERY_MS = 1_000L
 
+        /** What a send that has no room says: how much more it needs, and where room often hides. */
+        internal fun noRoom(needed: Long): String {
+            val size = if (needed >= 1_000_000_000L) "%.1f GB".format(java.util.Locale.ROOT, needed / 1e9) else "${(needed / 1_000_000L).coerceAtLeast(1)} MB"
+            return "Not enough room on this phone: the copies need $size more. Free some space, then tap Send to computer again: " +
+                "it carries on where it stopped. Files you deleted may still be taking room in the Files app's Trash."
+        }
+
         /** The file's name in the folder: the song's row id (unique) and its own extension. */
         internal fun fileName(track: TrackEntity): String {
             val path = track.filePath.orEmpty()
@@ -325,8 +354,8 @@ class SendToComputerCoordinator @Inject constructor(
             return "${track.id}.$ext"
         }
 
-        /** What the computer needs to know about the song in `name`. */
-        internal fun entry(t: TrackEntity, name: String, bytes: Long): JsonObject = buildJsonObject {
+        /** What the computer needs to know about the song in `name`, and what it is chosen by there (its [playlists]). */
+        internal fun entry(t: TrackEntity, name: String, bytes: Long, playlists: List<String> = emptyList()): JsonObject = buildJsonObject {
             put("file", name)
             put("bytes", bytes)
             put("title", t.title)
@@ -342,6 +371,8 @@ class SendToComputerCoordinator @Inject constructor(
             t.sampleRateHz?.let { put("sample_rate", it) }
             t.albumArtUrl?.takeIf { it.startsWith("https://") }?.let { put("art_url", it) }
             if (t.stashLikedAt != null) put("liked", true)
+            val named = playlists.map(String::trim).filter(String::isNotEmpty).distinct()
+            if (named.isNotEmpty()) put("playlists", JsonArray(named.map(::JsonPrimitive)))
         }
     }
 }

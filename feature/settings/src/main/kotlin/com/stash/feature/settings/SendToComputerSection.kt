@@ -214,6 +214,10 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                     Line(pluralStringResource(R.plurals.settings_send_computer_finished, s.total, s.total), strong = true)
                     Spacer(modifier = Modifier.height(4.dp))
                     Line(stringResource(R.string.settings_send_computer_finished_desc))
+                } else if (s.chosen) {
+                    Line(stringResource(R.string.settings_send_computer_partly, s.taken, s.total), strong = true)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Line(stringResource(R.string.settings_send_computer_chosen_desc))
                 } else {
                     Line(stringResource(R.string.settings_send_computer_partly, s.taken, s.total), strong = true)
                     Spacer(modifier = Modifier.height(4.dp))

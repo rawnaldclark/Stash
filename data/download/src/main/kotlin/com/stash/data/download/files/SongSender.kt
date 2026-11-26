@@ -43,14 +43,23 @@ class SendSong(
 data class SendResult(val entries: List<JsonObject>, val reused: Int, val failed: Int)
 
 /**
+ * The phone has no room for the copies: they need [needed] bytes more than are free. Nothing more is copied (a full
+ * phone fails everything on it), and what was copied stays, for the send to carry on once there is room.
+ */
+class NoRoomException(val needed: Long) : Exception("There is not enough room on this phone for the copies.")
+
+/**
  * Copies songs into the send folder so that an interrupted send costs little: a song already there whole (its own
  * name, the size of the phone's file, finished) is left as it is, anything else in the folder is removed first, and the
  * list is written only when every song has been tried. So a send that was stopped (the app closed, the phone
  * restarted, a cancel) is carried on by starting it again, and never leaves two copies of a song.
  *
  * The list names each file as the folder really named it: asking for `76.flac` can give `76 (1).flac`.
+ *
+ * The copies must fit: what is still to copy, and [SPARE] besides, is weighed against [freeBytes] (null: not known)
+ * before anything is copied, and a copy that finds the phone full stops the send ([NoRoomException]).
  */
-class SongSender(private val folder: SendFolder) {
+class SongSender(private val folder: SendFolder, private val freeBytes: () -> Long? = { null }) {
 
     /** [onProgress] is told before each song: how many are done, of how many. Cancelling the coroutine stops between blocks. */
     suspend fun send(songs: List<SendSong>, onProgress: suspend (done: Int, total: Int) -> Unit = { _, _ -> }): SendResult {
@@ -69,6 +78,13 @@ class SongSender(private val folder: SendFolder) {
             }
         }
 
+        // What is still to copy (from the [from]th song on) has to fit, with room to spare.
+        fun stillToCopy(from: Int) = songs.drop(from).filter { kept[it.name] == null }.sumOf { it.bytes ?: 0L }
+        freeBytes()?.let { free ->
+            val needed = stillToCopy(0) + SPARE - free
+            if (needed > 0) throw NoRoomException(needed)
+        }
+
         val entries = ArrayList<JsonObject>(songs.size)
         var failed = 0
         var reused = 0
@@ -81,9 +97,14 @@ class SongSender(private val folder: SendFolder) {
                 reused++
                 continue
             }
-            val written = runCatching {
+            val written = try {
                 song.open()?.use { source -> folder.write(song.name, source) { context[kotlinx.coroutines.Job]?.isActive != false } }
-            }.getOrNull()
+            } catch (e: Exception) {
+                context.ensureActive()
+                // The phone is full: every song after this one would fail too.
+                if (full(e)) throw NoRoomException((stillToCopy(i) + SPARE - (freeBytes() ?: 0L)).coerceAtLeast(0L))
+                null
+            }
             // Stopped mid-song: the folder took the half back; say so rather than count the song as failed.
             context.ensureActive()
             if (written == null || written.bytes <= 0L) failed++ else entries += song.entry(written.name, written.bytes)
@@ -96,6 +117,13 @@ class SongSender(private val folder: SendFolder) {
 
     companion object {
         const val LIST_NAME = "stash-transfer.json"
+
+        /** Left free beyond the copies: a phone with no room at all stops working well. */
+        const val SPARE = 1_000_000_000L
+
+        /** Whether [e] says the storage is full (ENOSPC), here or in what caused it. */
+        internal fun full(e: Throwable): Boolean =
+            generateSequence(e) { it.cause }.take(5).any { it.message.orEmpty().let { m -> "ENOSPC" in m || "No space left" in m } }
 
         fun listText(entries: List<JsonObject>, sentAtMs: Long = System.currentTimeMillis()): String =
             kotlinx.serialization.json.buildJsonObject {

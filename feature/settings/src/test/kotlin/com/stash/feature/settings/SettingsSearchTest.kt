@@ -99,6 +99,15 @@ class SettingsSearchTest {
         assertThat(app.single { it.title == title }.page).isEqualTo(SettingsPage.LIBRARY)
     }
 
+    @Test fun `the real index finds Send to computer on Library and Storage`() {
+        val title = "Send to computer"
+        val app = settingsSearchIndex { id -> if (id == R.string.settings_send_computer_title) title else "zz$id" }
+        fun found(q: String) = searchSettings(q, app) { "Library & Storage" }.map { it.title }
+        for (q in listOf("send", "send to computer", "computer")) assertThat(found(q).first()).isEqualTo(title)
+        for (q in listOf("transfer", "usb", "pc", "desktop", "copy")) assertThat(found(q)).contains(title)
+        assertThat(app.single { it.title == title }.page).isEqualTo(SettingsPage.LIBRARY)
+    }
+
     @Test fun `case and punctuation do not matter`() {
         assertThat(search("HI-RES")).containsExactly("Hi-Res output")
         assertThat(search("amoled")).containsExactly("Pure black (AMOLED)")
