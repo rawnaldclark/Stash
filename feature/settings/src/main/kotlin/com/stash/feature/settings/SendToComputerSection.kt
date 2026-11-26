@@ -225,28 +225,42 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                 Action(stringResource(R.string.settings_cancel), filled = false, onClick = viewModel::cancel)
             }
             is SendToComputerState.Waiting -> {
-                Line(pluralStringResource(R.plurals.settings_send_computer_waiting, s.total, s.total), strong = true)
-                Spacer(modifier = Modifier.height(4.dp))
-                val short = s.rest.noRoom
-                if (short != null) {
-                    // The phone filled up partway: these go first, the rest once the computer has them (which frees their
-                    // room), and once more is freed if even that is not enough.
-                    val full = if (short > 0L) {
-                        pluralStringResource(R.plurals.settings_send_computer_full, s.total, s.total, size(short))
-                    } else {
-                        pluralStringResource(R.plurals.settings_send_computer_full_room, s.total, s.total)
+                if (s.libraryOnly) {
+                    // Your likes, playlists and plays alone: no songs to choose on the computer, only to bring in.
+                    Line(stringResource(R.string.settings_send_computer_waiting_library), strong = true)
+                    if (usb != Usb.FileTransfer) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        UsbLine()
                     }
-                    Line(full, error = true)
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
-                if (s.rest.failed > 0) {
-                    Line(pluralStringResource(R.plurals.settings_send_computer_not_copied, s.rest.failed, s.rest.failed), error = true)
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
-                if (usb == Usb.FileTransfer) {
-                    Line(stringResource(R.string.settings_send_computer_waiting_desc))
                 } else {
-                    UsbLine()
+                    Line(pluralStringResource(R.plurals.settings_send_computer_waiting, s.total, s.total), strong = true)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    val short = s.rest.noRoom
+                    if (short != null) {
+                        // The phone filled up partway: these go first, the rest once the computer has them (which frees
+                        // their room), and once more is freed if even that is not enough.
+                        val full = if (short > 0L) {
+                            pluralStringResource(R.plurals.settings_send_computer_full, s.total, s.total, size(short))
+                        } else {
+                            pluralStringResource(R.plurals.settings_send_computer_full_room, s.total, s.total)
+                        }
+                        Line(full, error = true)
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                    if (s.rest.failed > 0) {
+                        Line(pluralStringResource(R.plurals.settings_send_computer_not_copied, s.rest.failed, s.rest.failed), error = true)
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                    if (s.libraryLeftOut) {
+                        // The row said they go with the songs: they didn't this time.
+                        Line(stringResource(R.string.settings_send_computer_library_left_out))
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                    if (usb == Usb.FileTransfer) {
+                        Line(stringResource(R.string.settings_send_computer_waiting_desc))
+                    } else {
+                        UsbLine()
+                    }
                 }
                 Bar(null)
                 Action(stringResource(R.string.settings_cancel), filled = false, onClick = viewModel::cancel)
@@ -259,7 +273,11 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                 Action(stringResource(R.string.settings_cancel), filled = false, onClick = viewModel::cancel)
             }
             is SendToComputerState.Finished -> {
-                if (s.taken >= s.total) {
+                if (s.libraryOnly) {
+                    Line(stringResource(R.string.settings_send_computer_finished_library), strong = true)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Line(stringResource(R.string.settings_send_computer_finished_desc))
+                } else if (s.taken >= s.total) {
                     Line(pluralStringResource(R.plurals.settings_send_computer_finished, s.total, s.total), strong = true)
                     val rest = s.rest
                     if (rest.full > 0) {

@@ -820,6 +820,8 @@
         <item quantity="other">%1$d songs ready. Waiting for your computer…</item>
     </plurals>
     <string name="settings_send_computer_waiting_desc">Open Stash on your computer and choose which songs to take.</string>
+    <string name="settings_send_computer_waiting_library">Your likes, playlists and plays are ready. Open Stash on your computer to bring them in.</string>
+    <string name="settings_send_computer_library_left_out">Your likes, playlists and plays couldn\'t go with them this time.</string>
     <plurals name="settings_send_computer_not_copied">
         <item quantity="one">%1$d song could not be copied.</item>
         <item quantity="other">%1$d songs could not be copied.</item>
@@ -842,6 +844,7 @@
         <item quantity="other">All %1$d songs are on your computer.</item>
     </plurals>
     <string name="settings_send_computer_finished_desc">You can unplug the phone. Your downloads stay on it too.</string>
+    <string name="settings_send_computer_finished_library">Your likes, playlists and plays are on your computer.</string>
     <plurals name="settings_send_computer_finished_rest_full">
         <item quantity="one">%1$d more wasn\'t copied, because the phone ran out of room: tap Send to computer again to send it.</item>
         <item quantity="other">%1$d more weren\'t copied, because the phone ran out of room: tap Send to computer again to send them.</item>
