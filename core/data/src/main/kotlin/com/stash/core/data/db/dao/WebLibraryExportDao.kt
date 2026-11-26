@@ -10,7 +10,8 @@ import com.stash.core.model.Track
 import kotlinx.coroutines.flow.Flow
 
 /**
- * Read-only queries behind "Export for Stash on the web" (WebLibraryExporter). Nothing here writes.
+ * Read-only queries behind "Export for Stash on the web" (WebLibraryExporter), and Send to computer's library file, made the
+ * same way. Nothing here writes.
  *
  * Blocked songs never leave: every query drops a track the blocklist matches, by the same three keys
  * the Library's playlist feed uses ([TrackDao.getByPlaylist]).
@@ -133,6 +134,23 @@ interface WebLibraryExportDao {
         """,
     )
     suspend fun playlists(): List<PlaylistEntity>
+
+    /**
+     * The mixes synced from Spotify and YouTube Music ([com.stash.core.model.PlaylistType.DAILY_MIX]: Spotify's home mixes, Daily
+     * Mixes, Radios, Your Top Songs, YouTube Music's home mixes) while active, for Send to computer's library file only (the
+     * web's file has no mixes). A SoundCloud mix is left out: the file can name only those two services as where a playlist came
+     * from. Spotify's first, then YouTube Music's, each in its mixes' order.
+     */
+    @Query(
+        """
+        SELECT p.* FROM playlists p
+        WHERE p.type = 'DAILY_MIX'
+          AND p.is_active = 1
+          AND p.source IN ('SPOTIFY', 'YOUTUBE')
+        ORDER BY p.source ASC, p.mix_number IS NULL, p.mix_number ASC, p.date_added ASC, p.id ASC
+        """,
+    )
+    suspend fun syncedMixes(): List<PlaylistEntity>
 
     /** A playlist's first [limit] songs in its order (removed ones left out). */
     @Query(

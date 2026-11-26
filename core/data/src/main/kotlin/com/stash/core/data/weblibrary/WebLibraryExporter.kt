@@ -6,6 +6,8 @@ import android.provider.DocumentsContract
 import android.util.Log
 import androidx.room.withTransaction
 import com.stash.core.data.db.StashDatabase
+import com.stash.core.data.db.entity.PlaylistEntity
+import com.stash.core.model.MusicSource
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -69,6 +71,8 @@ data class ExportCatalog(
  *
  * When asked, a saved file also carries `listens` ([WebLibraryListens]): every play and skip made on this phone (never a
  * mirrored or imported one), streamed from the database, for Your record on the web.
+ *
+ * Send to computer carries the same file, with the synced mixes and more plays besides ([forComputer]).
  */
 @Singleton
 class WebLibraryExporter @Inject constructor(
@@ -124,8 +128,63 @@ class WebLibraryExporter @Inject constructor(
         return listOfNotNull("Stash for Android", version).joinToString(" ")
     }
 
-    private suspend fun read(nowMs: Long, generator: String?, selection: ExportSelection): WebLibraryFile {
+    /**
+     * The library as Send to computer carries it beside the songs (`stash-library.json`, which Stash for desktop brings in):
+     * the web's file ([collect], everything ticked), and besides
+     * - every synced mix ([WebLibraryExportDao.syncedMixes]),
+     * - each playlist synced from a service saying which ([WebLibraryFile.Playlist.from], [fromOf]),
+     * - up to [WebLibraryFile.MAX_COMPUTER_PLAYS] plays, not the web's [WebLibraryFile.MAX_PLAYS],
+     * - [sentAtMs], the send's own number, as its list has it.
+     *
+     * Read in one transaction, as [collect] is, then cut to fit ([fitForComputer]). Null when even cut it is more than the
+     * computer reads.
+     */
+    suspend fun forComputer(nowMs: Long, sentAtMs: Long): WebLibraryFile? = withContext(Dispatchers.IO) {
+        val generator = generator()
+        fitForComputer(database.withTransaction { read(nowMs, generator, ExportSelection.ALL, sentAtMs) })
+    }
+
+    /**
+     * [file], kept to about [target] bytes: over it, the oldest plays go first (as many as it takes), then the oldest likes
+     * beyond [WebLibraryFile.COMPUTER_LIKES_KEPT]. Null when it is still more than [most], the most the computer reads: the
+     * send then goes without it.
+     */
+    internal fun fitForComputer(
+        file: WebLibraryFile,
+        target: Long = WebLibraryFile.COMPUTER_BYTES,
+        most: Long = WebLibraryReader.MAX_BYTES.toLong(),
+    ): WebLibraryFile? {
+        var size = WebLibraryFile.bytes(WebLibraryFile.serializer(), file)
+        if (size <= target) return file
+        // Each one taken out takes its own bytes and the comma before it (the first in a list has none).
+        var plays = file.history.size
+        while (size > target && plays > 0) {
+            plays--
+            size -= WebLibraryFile.bytes(WebLibraryFile.Play.serializer(), file.history[plays]) + if (plays > 0) 1 else 0
+        }
+        var likes = file.likes.size
+        while (size > target && likes > WebLibraryFile.COMPUTER_LIKES_KEPT) {
+            likes--
+            size -= WebLibraryFile.bytes(WebLibraryFile.Like.serializer(), file.likes[likes]) + 1
+        }
+        val cut = file.copy(likes = file.likes.take(likes), history = file.history.take(plays))
+        // Counted again whole, so the last word is the file's real size, not the sum.
+        val bytes = WebLibraryFile.bytes(WebLibraryFile.serializer(), cut)
+        Log.i(
+            TAG,
+            "Send to computer's library cut to $bytes bytes: ${file.history.size - plays} of ${file.history.size} plays and " +
+                "${file.likes.size - likes} of ${file.likes.size} likes left out",
+        )
+        return cut.takeIf { bytes <= most }
+    }
+
+    /**
+     * Reads the file. [sentAtMs] is set for Send to computer's file ([forComputer]), which has the synced mixes, where each
+     * playlist came from and more plays; null for the web's, which stays exactly as it always was.
+     */
+    private suspend fun read(nowMs: Long, generator: String?, selection: ExportSelection, sentAtMs: Long? = null): WebLibraryFile {
         val dao = database.webLibraryExportDao()
+        val computer = sentAtMs != null
 
         val seenLikes = HashSet<Long>()
         val likes = if (!selection.likes) emptyList() else dao.likes().mapNotNull { row ->
@@ -136,7 +195,8 @@ class WebLibraryExporter @Inject constructor(
         }
 
         val follows = dao.followedMixes().associateBy { it.playlistId }
-        val playlists = dao.playlists().filter { selection.includes(it.id) }.map { p ->
+        val lists = if (computer) dao.playlists() + dao.syncedMixes() else dao.playlists()
+        val playlists = lists.filter { selection.includes(it.id) }.map { p ->
             val rows = dao.playlistItems(p.id, WebLibraryFile.MAX_PLAYLIST_ITEMS)
             val created = p.dateAdded.toEpochMilli().takeIf { it > 0 } ?: nowMs
             val updated = rows.mapNotNull { it.addedAt }.maxOrNull()?.coerceAtLeast(created) ?: created
@@ -147,10 +207,12 @@ class WebLibraryExporter @Inject constructor(
                 createdAt = created,
                 updatedAt = updated,
                 follow = follows[p.id]?.let { WebLibraryFile.follow(it.shareId, it.version, it.sharedBy) },
+                from = if (computer) fromOf(p) else null,
             )
         }
 
-        val history = if (!selection.plays) emptyList() else dao.recentPlays(WebLibraryFile.MAX_PLAYS).mapNotNull { row ->
+        val maxPlays = if (computer) WebLibraryFile.MAX_COMPUTER_PLAYS else WebLibraryFile.MAX_PLAYS
+        val history = if (!selection.plays) emptyList() else dao.recentPlays(maxPlays).mapNotNull { row ->
             if (row.playedAt <= 0) return@mapNotNull null
             val song = WebLibraryFile.song(row.track.toTrack(), row.track.dateAdded) ?: return@mapNotNull null
             WebLibraryFile.Play(song, row.playedAt)
@@ -162,6 +224,7 @@ class WebLibraryExporter @Inject constructor(
             likes = likes,
             playlists = playlists,
             history = history,
+            sentAtMs = sentAtMs,
         )
     }
 
@@ -284,6 +347,20 @@ class WebLibraryExporter @Inject constructor(
         fun fileIdOf(playlistId: Long, sourceId: String): String =
             sourceId.removePrefix(WebLibraryImporter.WEB_SOURCE_PREFIX).takeIf { sourceId.startsWith(WebLibraryImporter.WEB_SOURCE_PREFIX) && FILE_ID.matches(it) }
                 ?: "app-$playlistId"
+
         const val WRITE_BUFFER = 64 * 1024
     }
+}
+
+/**
+ * Where a playlist synced from a service came from, for Send to computer's file ([WebLibraryFile.Playlist.from]): Spotify or
+ * YouTube Music, by the playlist's source. Null for your own (made in Stash: a `custom_…` source id, the web's and the mirror's
+ * too), a shared mix (`share:…`), and anything else: one saved in Stash, a SoundCloud one (the file can't name SoundCloud). The
+ * same rule the web mirror tells a synced playlist by.
+ */
+internal fun fromOf(p: PlaylistEntity): String? = when {
+    p.sourceId.startsWith("custom_") || p.sourceId.startsWith("share:") -> null
+    p.source == MusicSource.SPOTIFY -> WebLibraryFile.FROM_SPOTIFY
+    p.source == MusicSource.YOUTUBE -> WebLibraryFile.FROM_YOUTUBE
+    else -> null
 }

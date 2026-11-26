@@ -3,6 +3,7 @@ package com.stash.core.data.weblibrary
 import android.content.Context
 import android.net.Uri
 import androidx.room.Room
+import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.ListeningEventEntity
@@ -463,6 +464,106 @@ class WebLibraryExporterTest {
         // A saved Qobuz PLAYLIST shares the album: key and is still a playlist.
         playlists.insert(playlist("Qobuz picks", PlaylistType.CUSTOM, "album:qobuz_playlist:42", added = 5).copy(source = MusicSource.BOTH))
         assertEquals(listOf("Night drive", "Qobuz picks"), db.mirrorDao().playlists().map { it.name })
+    }
+
+    // ── Send to computer's library file (stash-library.json) ─────────────────────────────────────────────────────────────
+
+    @Test fun `the web's file has neither of Send to computer's fields, not even empty`() = runTest {
+        val text = golden().toString(Charsets.UTF_8)
+        assertFalse(text.contains("sent_at_ms"))
+        assertFalse(text.contains("\"from\""))
+        Json.parseToJsonElement(text).jsonObject["playlists"]!!.jsonArray.forEach {
+            assertEquals(setOf("id", "name", "items", "createdAt", "updatedAt"), it.jsonObject.keys - "follow")
+        }
+    }
+
+    @Test fun `the computer's file adds the synced mixes and says where each synced playlist came from`() = runTest {
+        fill()
+        val tracks = db.trackDao()
+        val playlists = db.playlistDao()
+        val homeSong = tracks.insert(track("Home Song", "Tuber", added = 97, youtubeId = "dddddddddd1"))
+        val supermix = playlists.insert(playlist("My Supermix", PlaylistType.DAILY_MIX, "RDTMAK5uy_super", added = 8).copy(source = MusicSource.YOUTUBE))
+        member(supermix, homeSong, 0, added = 990)
+        // Neither goes: a mix no longer in the library, and a SoundCloud one (the file can't say it came from SoundCloud).
+        member(playlists.insert(playlist("Old Radio", PlaylistType.DAILY_MIX, "radio_old", added = 9).copy(isActive = false)), homeSong, 0, added = 990)
+        member(playlists.insert(playlist("SoundCloud Weekly", PlaylistType.DAILY_MIX, "sc_mix_1", added = 10).copy(source = MusicSource.SOUNDCLOUD)), homeSong, 0, added = 990)
+        // One of your Spotify playlists, synced.
+        val roadTrip = playlists.insert(playlist("Road trip", PlaylistType.CUSTOM, "37i9dQZF1DXroad", added = 11))
+        member(roadTrip, homeSong, 0, added = 995)
+
+        val web = exporter.collect(T + 5_000, null)
+        val file = exporter.forComputer(T + 5_000, sentAtMs = 1_764_000_000_123L)!!
+
+        assertEquals(1_764_000_000_123L, file.sentAtMs)
+        // Your own playlists and the shared mix first, as the web has them, then the mixes: Spotify's, then YouTube Music's.
+        // Never a Stash Mix, the Downloads list, a Liked Songs list (the likes are those) or a saved album.
+        assertEquals(listOf("Night drive", "Robin’s mix", "Road trip", "Daily Mix 1", "My Supermix"), file.playlists.map { it.name })
+        assertEquals(listOf(null, null, "spotify", "spotify", "youtube"), file.playlists.map { it.from })
+        // A mix with every song in it, downloaded or not.
+        assertEquals(listOf("Daily Song", "Ivy"), file.playlists[3].items.map { it.title })
+        // The likes are the web's, every one, downloaded or not.
+        assertEquals(web.likes, file.likes)
+        assertEquals(web.history, file.history)
+
+        // In the text: the send's number at the top; "from" only where it is set.
+        val root = Json.parseToJsonElement(bytesOf(file).toString(Charsets.UTF_8)).jsonObject
+        assertEquals("1764000000123", root["sent_at_ms"]!!.jsonPrimitive.content)
+        val froms = root["playlists"]!!.jsonArray.map { it.jsonObject["from"]?.jsonPrimitive?.content }
+        assertEquals(listOf(null, null, "spotify", "spotify", "youtube"), froms)
+        assertFalse(root["playlists"]!!.jsonArray[0].jsonObject.containsKey("from"))
+    }
+
+    @Test fun `the computer's file keeps more plays than the web's 5,000`() = runTest {
+        val song = db.trackDao().insert(track("Ivy", "Frank Ocean", added = 10, youtubeId = "AE005nZeF-A"))
+        val events = db.listeningEventDao()
+        db.withTransaction {
+            repeat(WebLibraryFile.MAX_PLAYS + 236) { i -> events.insert(ListeningEventEntity(trackId = song, startedAt = T + 1_000 + i)) }
+        }
+
+        assertEquals(WebLibraryFile.MAX_PLAYS, exporter.collect(T, null).history.size)
+        val history = exporter.forComputer(T, sentAtMs = 1L)!!.history
+        assertEquals(WebLibraryFile.MAX_PLAYS + 236, history.size)
+        assertEquals("newest first", T + 1_000 + WebLibraryFile.MAX_PLAYS + 235, history.first().playedAt)
+    }
+
+    @Test fun `a file too big for the computer loses its oldest plays first, then the likes beyond 50,000`() {
+        val song = WebLibraryFile.Song(title = "Song", artist = "Band")
+        val plays = List(10) { WebLibraryFile.Play(song, playedAt = T - it) }
+        val likes = List(WebLibraryFile.COMPUTER_LIKES_KEPT + 10) { WebLibraryFile.Like(song, likedAt = T - it) }
+        val file = WebLibraryFile(exportedAt = "x", likes = likes, playlists = emptyList(), history = plays, sentAtMs = 1L)
+        fun bytes(f: WebLibraryFile) = WebLibraryFile.bytes(WebLibraryFile.serializer(), f)
+        val whole = bytes(file)
+
+        // Small enough: as it was.
+        assertTrue(exporter.fitForComputer(file, target = whole) === file)
+        // A little over: the oldest play goes, nothing else.
+        val oneOver = exporter.fitForComputer(file, target = whole - 1)!!
+        assertEquals(plays.dropLast(1), oneOver.history)
+        assertEquals(likes, oneOver.likes)
+        // Over by more than every play: every play goes, then the oldest like.
+        val noPlays = bytes(file.copy(history = emptyList()))
+        val more = exporter.fitForComputer(file, target = noPlays - 1)!!
+        assertTrue(more.history.isEmpty())
+        assertEquals(likes.dropLast(1), more.likes)
+        assertTrue(bytes(more) <= noPlays - 1)
+        // However big, the newest 50,000 likes stay, and the send's number with them.
+        val most = exporter.fitForComputer(file, target = 0, most = Long.MAX_VALUE)!!
+        assertEquals(likes.take(WebLibraryFile.COMPUTER_LIKES_KEPT), most.likes)
+        assertEquals(1L, most.sentAtMs)
+        // Still more than the computer reads: no file at all.
+        assertNull(exporter.fitForComputer(file, target = 0, most = 1_000))
+    }
+
+    @Test fun `where a playlist came from goes by its source, never for your own or a shared mix`() {
+        fun from(source: MusicSource, sourceId: String) =
+            fromOf(PlaylistEntity(name = "p", source = source, sourceId = sourceId))
+        assertEquals("spotify", from(MusicSource.SPOTIFY, "37i9dQZF1DX"))
+        assertEquals("youtube", from(MusicSource.YOUTUBE, "PLxyz"))
+        assertNull("made in Stash", from(MusicSource.SPOTIFY, "custom_1"))
+        assertNull("made in Stash", from(MusicSource.BOTH, "custom_3f2a"))
+        assertNull("from Stash on the web", from(MusicSource.BOTH, "custom_web_abc"))
+        assertNull("a shared mix", from(MusicSource.BOTH, "share:Fw12ab34"))
+        assertNull("SoundCloud can't be named", from(MusicSource.SOUNDCLOUD, "sc_1"))
     }
 
     /** The exact bytes for the fixed library; the web player imports the same file in its tests. */
