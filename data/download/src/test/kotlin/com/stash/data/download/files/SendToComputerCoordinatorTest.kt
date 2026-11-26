@@ -70,6 +70,8 @@ class SendToComputerCoordinatorTest {
         /** Runs as the folder is listed, before it answers: a test holds a look of the watch here. */
         @Volatile var onFiles: () -> Unit = {}
         @Volatile var listInTheWay = false
+        /** The phone is full as the list is written. */
+        @Volatile var listFull = false
         /** The phone is full after this many writes: the next one fails as a full phone's does, after [onFull]. */
         @Volatile var fullAfter: Int? = null
         @Volatile var onFull: () -> Unit = {}
@@ -131,6 +133,7 @@ class SendToComputerCoordinatorTest {
         override fun writeList(text: String) {
             onList()
             if (listInTheWay) throw ListInTheWayException()
+            if (listFull) throw IOException("write failed: ENOSPC (No space left on device)")
             list = text
             written += "list"
         }
@@ -152,6 +155,13 @@ class SendToComputerCoordinatorTest {
             if (listUnanswered.getAndUpdate { (it - 1).coerceAtLeast(0) } > 0) throw NoAnswerException()
             return list
         }
+    }
+
+    /** The computer has songs 1 and 2 already: a send is the library alone. */
+    private fun allOnComputer() = memory().apply {
+        startSending(sent(1, 2))
+        taken(present = emptySet(), trashed = emptySet())
+        doneSending()
     }
 
     /** A list naming songs 1 and 2, as a send of them leaves it. */
@@ -250,19 +260,19 @@ class SendToComputerCoordinatorTest {
         assertThat(File(context.filesDir, "send_to_computer.json").readText()).doesNotContain(SongSender.LIBRARY_NAME)
     }
 
-    @Test fun `a library file that can't be written still sends the songs`() {
+    @Test fun `a library file that can't be written still sends the songs, and the card says it didn't go`() {
         folder.libraryFails = IOException("write failed")
         runBlocking { coordinator.copy { _, _ -> } }
-        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Waiting(2))
+        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Waiting(2, libraryLeftOut = true))
         assertThat(folder.names()).containsExactly("1.flac", "2.flac", SongSender.LIST_NAME)
         assertThat(memory().sending().keys).containsExactly("1.flac", "2.flac")
     }
 
-    @Test fun `a library that can't be read, or is too big, still sends the songs`() {
+    @Test fun `a library that can't be read, or is too big, still sends the songs, and the card says it didn't go`() {
         for (read in listOf<(Long) -> WebLibraryFile?>({ throw IllegalStateException("no database") }, { null }, { throw OutOfMemoryError() })) {
             readLibrary = read
             runBlocking { coordinator.copy { _, _ -> } }
-            assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Waiting(2))
+            assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Waiting(2, libraryLeftOut = true))
             assertThat(folder.names()).containsExactly("1.flac", "2.flac", SongSender.LIST_NAME)
             coordinator.cancel()
             awaitState { it is SendToComputerState.Idle }
@@ -270,15 +280,11 @@ class SendToComputerCoordinatorTest {
     }
 
     @Test fun `with every song on the computer, a send carries the library alone, with a list of no songs`() {
-        memory().apply {
-            startSending(sent(1, 2))
-            taken(present = emptySet(), trashed = emptySet())
-            doneSending()
-        }
+        allOnComputer()
         // An earlier send's copies, which this one clears.
         folder.put("1.flac", 10)
         runBlocking { coordinator.copy { _, _ -> } }
-        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Waiting(0))
+        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Waiting(0, libraryOnly = true))
         assertThat(folder.names()).containsExactly(SongSender.LIBRARY_NAME, SongSender.LIST_NAME)
         assertThat(folder.written).containsExactly("library", "list").inOrder()
         val list = kotlinx.serialization.json.Json.parseToJsonElement(folder.list!!) as kotlinx.serialization.json.JsonObject
@@ -288,21 +294,55 @@ class SendToComputerCoordinatorTest {
         // The computer brings the library in: it removes the library file, then the list. Nothing more is on it.
         folder.take(SongSender.LIBRARY_NAME)
         folder.take(SongSender.LIST_NAME)
-        assertThat(awaitState { it is SendToComputerState.Finished }).isEqualTo(SendToComputerState.Finished(0, 0))
+        assertThat(awaitState { it is SendToComputerState.Finished })
+            .isEqualTo(SendToComputerState.Finished(0, 0, libraryOnly = true))
         assertThat(memory().onComputer()).containsExactly(1L, 2L)
         assertThat(memory().sending()).isEmpty()
     }
 
     @Test fun `a send of the library alone that can't write it says so, and leaves no list`() {
-        memory().apply {
-            startSending(sent(1, 2))
-            taken(present = emptySet(), trashed = emptySet())
-            doneSending()
-        }
+        allOnComputer()
         folder.libraryFails = IOException("write failed")
         runBlocking { coordinator.copy { _, _ -> } }
         assertThat(coordinator.state.value)
             .isEqualTo(SendToComputerState.Error("Your likes, playlists and plays could not be copied. Tap Send to computer again."))
+        assertThat(folder.names()).isEmpty()
+    }
+
+    @Test fun `a send of the library alone that is too big says so, and not to try again`() {
+        allOnComputer()
+        for (read in listOf<(Long) -> WebLibraryFile?>({ null }, { throw OutOfMemoryError() })) {
+            readLibrary = read
+            runBlocking { coordinator.copy { _, _ -> } }
+            assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Error("Your library is too big to send this way."))
+            assertThat(folder.names()).isEmpty()
+            coordinator.dismiss()
+        }
+    }
+
+    @Test fun `a send of the library alone with no room for it talks of no copies, and leaves nothing`() {
+        allOnComputer()
+        // No room for the library file, then none for the list once the library file is written.
+        folder.libraryFails = IOException("write failed: ENOSPC (No space left on device)")
+        runBlocking { coordinator.copy { _, _ -> } }
+        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Error(SendToComputerCoordinator.LIBRARY_NO_ROOM))
+        coordinator.dismiss()
+
+        folder.libraryFails = null
+        folder.listFull = true
+        runBlocking { coordinator.copy { _, _ -> } }
+        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Error(SendToComputerCoordinator.LIBRARY_NO_ROOM, copiesLeft = false))
+        assertThat(folder.names()).isEmpty()
+    }
+
+    @Test fun `a send of the library alone with another list in the way offers no copies to remove`() {
+        allOnComputer()
+        folder.listInTheWay = true
+        runBlocking { coordinator.copy { _, _ -> } }
+        val error = coordinator.state.value as SendToComputerState.Error
+        assertThat(error.listInTheWay).isTrue()
+        assertThat(error.copiesLeft).isFalse()
+        // Its library file went quietly.
         assertThat(folder.names()).isEmpty()
     }
 
@@ -336,9 +376,10 @@ class SendToComputerCoordinatorTest {
         folder.library = """{"sent_at_ms":1}"""
         folder.list = """{"stash_transfer":1,"sent_at_ms":1,"songs":[]}"""
         coordinator.resume()
-        assertThat(awaitState { it is SendToComputerState.Waiting }).isEqualTo(SendToComputerState.Waiting(0))
+        assertThat(awaitState { it is SendToComputerState.Waiting }).isEqualTo(SendToComputerState.Waiting(0, libraryOnly = true))
         folder.take(SongSender.LIST_NAME)
-        assertThat(awaitState { it is SendToComputerState.Finished }).isEqualTo(SendToComputerState.Finished(0, 0))
+        assertThat(awaitState { it is SendToComputerState.Finished })
+            .isEqualTo(SendToComputerState.Finished(0, 0, libraryOnly = true))
         // The library file the computer left goes too.
         awaitTrue { folder.names().isEmpty() }
     }
@@ -448,6 +489,8 @@ class SendToComputerCoordinatorTest {
         // 1's copy frees once taken), and none for another reason.
         val rest = SendMemory.Rest(failed = 0, full = 1, noRoom = SongSender.SPARE)
         assertThat(waiting.rest).isEqualTo(rest)
+        // No library either: it would take the room the list needs. The card says it didn't go.
+        assertThat(waiting.libraryLeftOut).isTrue()
         assertThat(folder.names()).containsExactly("1.flac", SongSender.LIST_NAME)
         assertThat(memory().sending().keys).containsExactly("1.flac")
         // Kept with the send, to be told after a restart.
@@ -467,7 +510,9 @@ class SendToComputerCoordinatorTest {
         memory().startSending(sent(1), rest)
 
         coordinator.resume()
-        assertThat(awaitState { it is SendToComputerState.Waiting }).isEqualTo(SendToComputerState.Waiting(1, rest))
+        // No library file beside the list: the songs went without it (the phone filled up), and that is told again too.
+        assertThat(awaitState { it is SendToComputerState.Waiting })
+            .isEqualTo(SendToComputerState.Waiting(1, rest, libraryLeftOut = true))
         folder.take("1.flac")
         folder.take(SongSender.LIST_NAME)
         assertThat(awaitState { it is SendToComputerState.Finished }).isEqualTo(SendToComputerState.Finished(1, 1, rest = rest))
@@ -521,6 +566,7 @@ class SendToComputerCoordinatorTest {
     @Test fun `a look for the list that isn't answered is no news, and the send waiting stays as it is`() {
         folder.put("1.flac", 10)
         folder.put("2.flac", 10)
+        folder.library = """{"sent_at_ms":1}"""
         folder.list = listOfTwo
         memory().startSending(sent(1, 2))
         folder.listUnanswered.set(1)
@@ -530,10 +576,10 @@ class SendToComputerCoordinatorTest {
         Thread.sleep(500)
         // Not taken for a send the computer finished: nothing let go, nothing removed, nothing shown.
         assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Idle)
-        assertThat(folder.names()).containsExactly("1.flac", "2.flac", SongSender.LIST_NAME)
+        assertThat(folder.names()).containsExactly("1.flac", "2.flac", SongSender.LIBRARY_NAME, SongSender.LIST_NAME)
         assertThat(memory().sending().keys).containsExactly("1.flac", "2.flac")
 
-        // The next look, answered, shows the send waiting.
+        // The next look, answered, shows the send waiting, its library beside it.
         coordinator.resume()
         assertThat(awaitState { it is SendToComputerState.Waiting }).isEqualTo(SendToComputerState.Waiting(2))
     }
