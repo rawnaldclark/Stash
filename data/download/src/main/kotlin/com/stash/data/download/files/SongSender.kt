@@ -25,11 +25,20 @@ interface SendFolder {
 
     fun delete(name: String)
 
-    /** Writes the list last, replacing an earlier one. */
+    /**
+     * Writes the list last, replacing an earlier one. Throws [ListInTheWayException] when it can't have its own name
+     * (nothing of it is left then).
+     */
     fun writeList(text: String)
 
     /** The ids of this app's files in the folder that are in the Trash (put there in the Files app). */
     fun trashed(): Set<Long> = emptySet()
+
+    /** Removes every file of this app's in the folder (a cancelled send leaves nothing): how many went. */
+    fun clear(): Int
+
+    /** The list's text, when this app's list is in the folder. */
+    fun readList(): String?
 }
 
 /** A song to send: the file's name in the folder, how to read it, its size when known, and what the list says of it. */
@@ -44,14 +53,26 @@ class SendSong(
     val id: Long = 0L,
 )
 
-/** What a send did: the list's entries (the songs in the folder), how many were already there, and how many failed. */
-data class SendResult(val entries: List<JsonObject>, val reused: Int, val failed: Int)
+/**
+ * What a send did: the list's entries (the songs in the folder), how many were already there, and how many failed.
+ * [noRoom]: the phone filled up partway, so the songs after that were not copied (they are in [failed]); they need
+ * this many bytes more than were free then. The list names the songs copied before it, for the computer to take.
+ */
+data class SendResult(val entries: List<JsonObject>, val reused: Int, val failed: Int, val noRoom: Long? = null)
 
 /**
  * The phone has no room for the copies: they need [needed] bytes more than are free. Nothing more is copied (a full
- * phone fails everything on it), and what was copied stays, for the send to carry on once there is room.
+ * phone fails everything on it), and what was copied stays, for the send to carry on once there is room: [copies]
+ * whole copies of this send are in the folder, with no list.
  */
-class NoRoomException(val needed: Long) : Exception("There is not enough room on this phone for the copies.")
+class NoRoomException(val needed: Long, val copies: Int = 0) : Exception("There is not enough room on this phone for the copies.")
+
+/**
+ * The list could not have its own name ([SongSender.LIST_NAME]): the folder holds a list this app can't see, another
+ * copy of Stash's (the release and debug apps on one phone) or one left by an uninstall. A computer reads only that
+ * name, so it would take the other send and never this one.
+ */
+class ListInTheWayException : Exception("Another copy of Stash has a stash-transfer.json in Download/Stash transfer.")
 
 /**
  * Copies songs into the send folder so that an interrupted send costs little: a song already there whole (its own
@@ -62,7 +83,9 @@ class NoRoomException(val needed: Long) : Exception("There is not enough room on
  * The list names each file as the folder really named it: asking for `76.flac` can give `76 (1).flac`.
  *
  * The copies must fit: what is still to copy, and [SPARE] besides, is weighed against [freeBytes] (null: not known)
- * before anything is copied, and a copy that finds the phone full stops the send ([NoRoomException]).
+ * before anything is copied ([NoRoomException]). A copy that finds the phone full stops the copying: the songs copied
+ * until then are listed, so the computer can take them (which frees their room), and the rest are not tried
+ * ([SendResult.noRoom]); with none copied, or no room left for the list, the send stops ([NoRoomException]).
  */
 class SongSender(private val folder: SendFolder, private val freeBytes: () -> Long? = { null }) {
 
@@ -95,13 +118,15 @@ class SongSender(private val folder: SendFolder, private val freeBytes: () -> Lo
         fun stillToCopy(from: Int) = songs.drop(from).filter { kept[it.name] == null }.sumOf { it.bytes ?: 0L }
         freeBytes()?.let { free ->
             val needed = stillToCopy(0) + SPARE - free
-            if (needed > 0) throw NoRoomException(needed)
+            if (needed > 0) throw NoRoomException(needed, copies = kept.size)
         }
 
         val entries = ArrayList<JsonObject>(songs.size)
         val listed = ArrayList<Pair<SendSong, SentFile>>(songs.size)
         var failed = 0
         var reused = 0
+        // Once the phone is full: what the songs still to copy need, more than is free. No more are tried.
+        var noRoom: Long? = null
         for ((i, song) in songs.withIndex()) {
             context.ensureActive()
             onProgress(i, songs.size)
@@ -112,12 +137,16 @@ class SongSender(private val folder: SendFolder, private val freeBytes: () -> Lo
                 reused++
                 continue
             }
+            if (noRoom != null) {
+                failed++
+                continue
+            }
             val written = try {
                 song.open()?.use { source -> folder.write(song.name, source) { context[kotlinx.coroutines.Job]?.isActive != false } }
             } catch (e: Exception) {
                 context.ensureActive()
-                // The phone is full: every song after this one would fail too.
-                if (full(e)) throw NoRoomException((stillToCopy(i) + SPARE - (freeBytes() ?: 0L)).coerceAtLeast(0L))
+                // The phone is full: every song after this one would fail too, so none is tried. Those copied stay.
+                if (full(e)) noRoom = (stillToCopy(i) + SPARE - (freeBytes() ?: 0L)).coerceAtLeast(0L)
                 null
             }
             // Stopped mid-song: the folder took the half back; say so rather than count the song as failed.
@@ -131,11 +160,21 @@ class SongSender(private val folder: SendFolder, private val freeBytes: () -> Lo
         }
         context.ensureActive()
         onProgress(songs.size, songs.size)
+        // A cancel told during that last call: no list for a send that was stopped.
+        context.ensureActive()
+        noRoom?.let { if (entries.isEmpty()) throw NoRoomException(it) }
         if (entries.isNotEmpty()) {
             beforeList(listed)
-            folder.writeList(listText(entries))
+            try {
+                folder.writeList(listText(entries))
+            } catch (e: Exception) {
+                context.ensureActive()
+                // Not even the list fits: the copies stay, with nothing to take them by.
+                if (full(e)) throw NoRoomException(noRoom ?: (SPARE - (freeBytes() ?: 0L)).coerceAtLeast(0L), copies = entries.size)
+                throw e
+            }
         }
-        return SendResult(entries, reused, failed)
+        return SendResult(entries, reused, failed, noRoom)
     }
 
     companion object {

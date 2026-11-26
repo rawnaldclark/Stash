@@ -38,8 +38,10 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
             @Suppress("DEPRECATION")
             resolver.query(MediaStore.setIncludePending(collection), columns, "${MediaStore.Downloads.RELATIVE_PATH} = ?", arrayOf(RELATIVE_PATH), null)
         }
+        // No answer is not an empty folder: taken for one, every song of a send would count as taken.
+        cursor ?: throw IllegalStateException(NO_ANSWER)
         val out = ArrayList<Row>()
-        cursor?.use { c ->
+        cursor.use { c ->
             while (c.moveToNext()) {
                 val name = c.getString(1) ?: continue
                 out += Row(c.getLong(0), SentFile(name, c.getLong(2), pending = c.getInt(3) != 0, id = c.getLong(0)))
@@ -70,7 +72,8 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
                     written += n
                 }
             }
-            if (!whole) {
+            // An empty file is no copy: removed, so nothing is left that the list doesn't name.
+            if (!whole || written == 0L) {
                 resolver.delete(uri, null, null)
                 return null
             }
@@ -92,7 +95,7 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
     }
 
     /** Everything of this app's in the folder: a cancelled send leaves nothing. How many were removed. */
-    fun clear(): Int {
+    override fun clear(): Int {
         var removed = 0
         for (row in rows()) {
             if (runCatching { resolver.delete(ContentUris.withAppendedId(collection, row.id), null, null) }.getOrDefault(0) > 0) removed++
@@ -109,8 +112,21 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
         val uri = resolver.insert(collection, values) ?: throw IllegalStateException("The song list could not be written.")
-        resolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
-        resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
+        val real = try {
+            resolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
+            resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
+            resolver.query(uri, arrayOf(MediaStore.Downloads.DISPLAY_NAME), null, null, null)
+                ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        } catch (e: Exception) {
+            runCatching { resolver.delete(uri, null, null) }
+            throw e
+        }
+        // MediaStore renames a list whose name is taken by a file this app can't see ("stash-transfer (1).json"): the
+        // computer would never find it.
+        if (real != null && real != SongSender.LIST_NAME) {
+            runCatching { resolver.delete(uri, null, null) }
+            throw ListInTheWayException()
+        }
     }
 
     /**
@@ -129,13 +145,14 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
             },
             null,
         )
+        cursor ?: throw IllegalStateException(NO_ANSWER)
         val out = HashSet<Long>()
-        cursor?.use { c -> while (c.moveToNext()) out += c.getLong(0) }
+        cursor.use { c -> while (c.moveToNext()) out += c.getLong(0) }
         return out
     }
 
     /** The list's text, when this app's list is in the folder. */
-    fun readList(): String? {
+    override fun readList(): String? {
         val row = rows().firstOrNull { it.file.name == SongSender.LIST_NAME && !it.file.pending } ?: return null
         return resolver.openInputStream(ContentUris.withAppendedId(collection, row.id))?.use { it.readBytes().decodeToString() }
     }
@@ -144,5 +161,6 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
         /** The folder a computer finds: Internal storage › Download › Stash transfer. */
         const val RELATIVE_PATH = "Download/Stash transfer/"
         private const val BUFFER = 256 * 1024
+        private const val NO_ANSWER = "MediaStore did not answer."
     }
 }
