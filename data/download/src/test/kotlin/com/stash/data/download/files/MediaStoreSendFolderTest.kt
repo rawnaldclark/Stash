@@ -167,11 +167,37 @@ class MediaStoreSendFolderTest {
     @Test fun `a clear takes the list first, then the copies`() {
         folder.write("1.flac", ByteArray(10) { 1 }.inputStream()) { true }
         folder.write("2.flac", ByteArray(10) { 2 }.inputStream()) { true }
+        folder.writeLibrary { it.write("{}".toByteArray()) }
         folder.writeList("""{"songs":[]}""")
         store.deleted.clear()
-        assertThat(folder.clear()).isEqualTo(3)
-        // A computer looking as it clears finds the send gone, not a list naming copies that are going.
-        assertThat(store.deleted).containsExactly(SongSender.LIST_NAME, "1.flac", "2.flac").inOrder()
+        assertThat(folder.clear()).isEqualTo(4)
+        // A computer looking as it clears finds the send gone, not a list naming copies that are going. The library file
+        // goes with the copies: every row of the folder.
+        assertThat(store.deleted).containsExactly(SongSender.LIST_NAME, "1.flac", "2.flac", SongSender.LIBRARY_NAME).inOrder()
+        assertThat(store.rows).isEmpty()
+    }
+
+    @Test fun `the library file is written whole under its own name, in place of an earlier one`() {
+        folder.writeLibrary { it.write("""{"sent_at_ms":1}""".toByteArray()) }
+        folder.writeLibrary { it.write("""{"sent_at_ms":2}""".toByteArray()) }
+        val rows = store.named(SongSender.LIBRARY_NAME)
+        assertThat(rows).hasSize(1)
+        assertThat(rows.single().pending).isFalse()
+        assertThat(rows.single().file.readText()).isEqualTo("""{"sent_at_ms":2}""")
+        // Neither a song nor the list.
+        assertThat(folder.readList()).isNull()
+    }
+
+    @Test fun `a library file that can't have its own name is taken back, and the send told`() {
+        // Another copy of Stash's library file is there, which this app can't see.
+        store.othersNames += SongSender.LIBRARY_NAME
+        assertThat(runCatching { folder.writeLibrary { it.write("{}".toByteArray()) } }.isFailure).isTrue()
+        assertThat(store.rows).isEmpty()
+    }
+
+    @Test fun `a library file that fails as it is written leaves nothing`() {
+        val e = runCatching { folder.writeLibrary { it.write("{\"likes\":[".toByteArray()); throw java.io.IOException("ENOSPC") } }.exceptionOrNull()
+        assertThat(e).isInstanceOf(java.io.IOException::class.java)
         assertThat(store.rows).isEmpty()
     }
 
