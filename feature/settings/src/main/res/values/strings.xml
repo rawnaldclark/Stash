@@ -801,10 +801,8 @@
         <item quantity="one">%1$d song is on your computer already, so it isn\'t copied again.</item>
         <item quantity="other">%1$d songs are on your computer already, so they aren\'t copied again.</item>
     </plurals>
-    <plurals name="settings_send_computer_all_there">
-        <item quantity="one">Your computer has your download already.</item>
-        <item quantity="other">Your computer has all %1$d of your downloads already.</item>
-    </plurals>
+    <string name="settings_send_computer_library_only">Your computer has all your downloads. Send your latest likes, playlists and plays to it.</string>
+    <string name="settings_send_computer_library_too">Your likes, playlists and plays go with them.</string>
     <string name="settings_send_computer_copy_too">Copy those too</string>
     <string name="settings_send_computer_send_again">Send them again</string>
     <string name="settings_send_computer_button">Send to computer</string>

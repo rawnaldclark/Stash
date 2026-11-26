@@ -92,9 +92,9 @@ private const val USB_STATE = "android.hardware.usb.action.USB_STATE"
 
 /**
  * The Storage card's "Send to computer" row, one step at a time: what a send copies (leaving out the songs the computer
- * has, with a way to send those too) and whether the phone is plugged into a computer with File transfer on; the songs
- * being copied out; waiting for Stash on the computer; the computer taking them (counted as they leave the folder); and
- * the end. Hidden with no downloads.
+ * has, with a way to send those too; your likes, playlists and plays always go, alone when the computer has every song)
+ * and whether the phone is plugged into a computer with File transfer on; the songs being copied out; waiting for Stash
+ * on the computer; the computer taking them (counted as they leave the folder); and the end. Hidden with no downloads.
  */
 @Composable
 internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltViewModel()) {
@@ -171,8 +171,12 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 if (c.songs == 0) {
-                    // The computer has every song: nothing to send unless asked to send them again.
-                    Line(pluralStringResource(R.plurals.settings_send_computer_all_there, c.onComputer, c.onComputer))
+                    // The computer has every song: a send carries the latest likes, playlists and plays alone, unless asked
+                    // to send the songs again too.
+                    Line(stringResource(R.string.settings_send_computer_library_only))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    UsbLine()
+                    Action(stringResource(R.string.settings_send_computer_button), filled = true, onClick = viewModel::start)
                     Action(stringResource(R.string.settings_send_computer_send_again), filled = false) {
                         scope.launch {
                             viewModel.forget()
@@ -182,6 +186,8 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                 } else {
                     val desc = if (c.onComputer > 0) R.plurals.settings_send_computer_desc_new else R.plurals.settings_send_computer_desc
                     Line(pluralStringResource(desc, c.songs, c.songs, size(c.bytes)))
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Line(stringResource(R.string.settings_send_computer_library_too))
                     if (c.onComputer > 0) {
                         Spacer(modifier = Modifier.height(4.dp))
                         Line(pluralStringResource(R.plurals.settings_send_computer_there, c.onComputer, c.onComputer))
