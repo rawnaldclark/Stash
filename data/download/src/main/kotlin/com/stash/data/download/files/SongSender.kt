@@ -5,8 +5,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.json.JsonObject
 import java.io.InputStream
 
-/** A file in the send folder, as the folder itself reports it. */
-data class SentFile(val name: String, val bytes: Long, val pending: Boolean = false)
+/** A file in the send folder, as the folder itself reports it ([id]: its own id there, when it has one). */
+data class SentFile(val name: String, val bytes: Long, val pending: Boolean = false, val id: Long? = null)
 
 /**
  * The folder a computer finds the songs in (`Download/Stash transfer/`), reduced to what a send needs. The real one is
@@ -27,6 +27,9 @@ interface SendFolder {
 
     /** Writes the list last, replacing an earlier one. */
     fun writeList(text: String)
+
+    /** The ids of this app's files in the folder that are in the Trash (put there in the Files app). */
+    fun trashed(): Set<Long> = emptySet()
 }
 
 /** A song to send: the file's name in the folder, how to read it, its size when known, and what the list says of it. */
@@ -37,6 +40,8 @@ class SendSong(
     val open: () -> InputStream?,
     /** The list's entry for the song, given the name and size it has in the folder. */
     val entry: (name: String, bytes: Long) -> JsonObject,
+    /** The song's row id, to remember it by once the computer has it. */
+    val id: Long = 0L,
 )
 
 /** What a send did: the list's entries (the songs in the folder), how many were already there, and how many failed. */
@@ -61,8 +66,16 @@ class NoRoomException(val needed: Long) : Exception("There is not enough room on
  */
 class SongSender(private val folder: SendFolder, private val freeBytes: () -> Long? = { null }) {
 
-    /** [onProgress] is told before each song: how many are done, of how many. Cancelling the coroutine stops between blocks. */
-    suspend fun send(songs: List<SendSong>, onProgress: suspend (done: Int, total: Int) -> Unit = { _, _ -> }): SendResult {
+    /**
+     * [onProgress] is told before each song: how many are done, of how many. [beforeList] is told each song in the list
+     * and its file, just before the list is written (the computer takes nothing before there is a list). Cancelling the
+     * coroutine stops between blocks.
+     */
+    suspend fun send(
+        songs: List<SendSong>,
+        beforeList: (List<Pair<SendSong, SentFile>>) -> Unit = {},
+        onProgress: suspend (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): SendResult {
         val context = currentCoroutineContext()
         val wanted = songs.associateBy { it.name }
         // What a stopped send left: whole files of this send are kept, everything else goes (halves, renamed doubles,
@@ -86,6 +99,7 @@ class SongSender(private val folder: SendFolder, private val freeBytes: () -> Lo
         }
 
         val entries = ArrayList<JsonObject>(songs.size)
+        val listed = ArrayList<Pair<SendSong, SentFile>>(songs.size)
         var failed = 0
         var reused = 0
         for ((i, song) in songs.withIndex()) {
@@ -94,6 +108,7 @@ class SongSender(private val folder: SendFolder, private val freeBytes: () -> Lo
             val there = kept[song.name]
             if (there != null) {
                 entries += song.entry(there.name, there.bytes)
+                listed += song to there
                 reused++
                 continue
             }
@@ -107,11 +122,19 @@ class SongSender(private val folder: SendFolder, private val freeBytes: () -> Lo
             }
             // Stopped mid-song: the folder took the half back; say so rather than count the song as failed.
             context.ensureActive()
-            if (written == null || written.bytes <= 0L) failed++ else entries += song.entry(written.name, written.bytes)
+            if (written == null || written.bytes <= 0L) {
+                failed++
+            } else {
+                entries += song.entry(written.name, written.bytes)
+                listed += song to written
+            }
         }
         context.ensureActive()
         onProgress(songs.size, songs.size)
-        if (entries.isNotEmpty()) folder.writeList(listText(entries))
+        if (entries.isNotEmpty()) {
+            beforeList(listed)
+            folder.writeList(listText(entries))
+        }
         return SendResult(entries, reused, failed)
     }
 

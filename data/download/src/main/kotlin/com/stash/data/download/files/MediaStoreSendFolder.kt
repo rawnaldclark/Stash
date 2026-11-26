@@ -42,7 +42,7 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
         cursor?.use { c ->
             while (c.moveToNext()) {
                 val name = c.getString(1) ?: continue
-                out += Row(c.getLong(0), SentFile(name, c.getLong(2), pending = c.getInt(3) != 0))
+                out += Row(c.getLong(0), SentFile(name, c.getLong(2), pending = c.getInt(3) != 0, id = c.getLong(0)))
             }
         }
         return out
@@ -78,7 +78,7 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
             // The name it really has: MediaStore renames a file whose name is taken ("76 (1).flac").
             val real = resolver.query(uri, arrayOf(MediaStore.Downloads.DISPLAY_NAME), null, null, null)
                 ?.use { c -> if (c.moveToFirst()) c.getString(0) else null } ?: name
-            return SentFile(real, written)
+            return SentFile(real, written, id = runCatching { ContentUris.parseId(uri) }.getOrNull()?.takeIf { it >= 0 })
         } catch (e: Exception) {
             runCatching { resolver.delete(uri, null, null) }
             throw e
@@ -111,6 +111,27 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
         val uri = resolver.insert(collection, values) ?: throw IllegalStateException("The song list could not be written.")
         resolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
         resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
+    }
+
+    /**
+     * The ids of this app's files in the folder that are in the Trash: the Files app's Delete puts them there, under the
+     * same id (Android 11 and later; before that there is no Trash, so none).
+     */
+    override fun trashed(): Set<Long> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return emptySet()
+        val cursor = resolver.query(
+            collection,
+            arrayOf(MediaStore.Downloads._ID),
+            Bundle().apply {
+                putString(ContentResolver.QUERY_ARG_SQL_SELECTION, "${MediaStore.Downloads.RELATIVE_PATH} = ?")
+                putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, arrayOf(RELATIVE_PATH))
+                putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_ONLY)
+            },
+            null,
+        )
+        val out = HashSet<Long>()
+        cursor?.use { c -> while (c.moveToNext()) out += c.getLong(0) }
+        return out
     }
 
     /** The list's text, when this app's list is in the folder. */

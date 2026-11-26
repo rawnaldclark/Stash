@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -59,6 +60,9 @@ sealed interface SendToComputerState {
     data class Error(val message: String) : SendToComputerState
 }
 
+/** What a send would copy: [songs] downloaded songs, [bytes] in all, leaving out the [onComputer] the computer has. */
+data class SendCount(val songs: Int, val bytes: Long, val onComputer: Int)
+
 /**
  * "Send to computer": copies every downloaded song into `Download/Stash transfer/`, where a computer sees it over USB
  * ("File transfer"), with `stash-transfer.json` saying which song each file is (and its format, quality and playlists,
@@ -79,6 +83,9 @@ sealed interface SendToComputerState {
  *
  * After the copy it watches the folder and counts what the computer has taken, so the phone says how far along it is.
  * Nothing in the library changes: the phone keeps its downloads.
+ *
+ * It remembers the songs the computer has ([SendMemory]): each one whose copy the computer took (or deleted, having it
+ * already), so the next send copies only the others, until [forget].
  */
 @Singleton
 class SendToComputerCoordinator @Inject constructor(
@@ -95,10 +102,19 @@ class SendToComputerCoordinator @Inject constructor(
 
     private val workManager get() = WorkManager.getInstance(context)
 
-    /** How many downloaded songs a send would copy, and their size in bytes. */
-    suspend fun count(): Pair<Int, Long> {
+    private val memory by lazy { SendMemory(File(context.filesDir, MEMORY_FILE)) }
+
+    /** What a send would copy: the downloaded songs the computer doesn't have, their size, and how many it has. */
+    suspend fun count(): SendCount {
         val songs = trackDao.getAllDownloaded().filter { !it.filePath.isNullOrBlank() }
-        return songs.size to songs.sumOf { it.fileSizeBytes.coerceAtLeast(0) }
+        val has = withContext(Dispatchers.IO) { runCatching { memory.onComputer() }.getOrDefault(emptySet()) }
+        val (there, toSend) = songs.partition { it.id in has }
+        return SendCount(toSend.size, toSend.sumOf { it.fileSizeBytes.coerceAtLeast(0) }, there.size)
+    }
+
+    /** From now on a send copies every song again, the ones the computer has too. */
+    suspend fun forget() {
+        withContext(Dispatchers.IO) { runCatching { memory.forget() } }
     }
 
     /** Begins a send, unless one is under way. The state says so before this returns: a second tap finds it busy. */
@@ -131,7 +147,15 @@ class SendToComputerCoordinator @Inject constructor(
                 synchronized(lock) { if (_state.value is SendToComputerState.Idle) _state.value = SendToComputerState.Preparing }
                 return@launch
             }
-            val total = runCatching { sentBefore() }.getOrNull() ?: return@launch
+            val total = runCatching { sentBefore() }.getOrNull()
+            if (total == null) {
+                // The computer finished with a send while the app was away: what it took is kept, the copies left go.
+                if (runCatching { memory.sending().isNotEmpty() }.getOrDefault(false)) {
+                    letGo()
+                    runCatching { folder().clear() }
+                }
+                return@launch
+            }
             synchronized(lock) {
                 if (_state.value !is SendToComputerState.Idle) return@launch
                 _state.value = SendToComputerState.Waiting(total, 0)
@@ -153,7 +177,10 @@ class SendToComputerCoordinator @Inject constructor(
                 workManager.cancelUniqueWork(WORK_NAME)
                 // The copy stops between blocks; nothing is removed until it has, or it would write on behind us.
                 withTimeoutOrNull(STOP_WAIT_MS) { workManager.getWorkInfosForUniqueWorkFlow(WORK_NAME).first { infos -> infos.all { it.state.isFinished } } }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) folder().clear()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    letGo()
+                    folder().clear()
+                }
             }
             _state.value = SendToComputerState.Idle
         }
@@ -179,16 +206,28 @@ class SendToComputerCoordinator @Inject constructor(
         // Cancelled as the work was starting: leave the state to the cancel.
         if (_state.value is SendToComputerState.Cancelling) return
         try {
-            val songs = trackDao.getAllDownloaded().filter { !it.filePath.isNullOrBlank() }
+            // A send from before is cleared by this one: what the computer took of it is kept first.
+            letGo()
+            val downloaded = trackDao.getAllDownloaded().filter { !it.filePath.isNullOrBlank() }
+            val has = runCatching { memory.onComputer() }.getOrDefault(emptySet())
+            val songs = downloaded.filter { it.id !in has }
             if (songs.isEmpty()) {
                 folder().clear()
-                _state.value = SendToComputerState.Error("There are no downloaded songs to send.")
+                _state.value = SendToComputerState.Error(
+                    if (downloaded.isEmpty()) "There are no downloaded songs to send." else "Your computer has all your downloaded songs already.",
+                )
                 return
             }
             // Each song's playlists, for choosing on the computer; a send goes without them rather than not at all.
             val playlists = runCatching { playlistDao.playlistNamesOfSongs() }.getOrDefault(emptyList()).groupBy({ it.trackId }, { it.name })
             var told = 0L
-            val result = SongSender(folder(), ::freeBytes).send(songs.map { sendSong(it, playlists[it.id].orEmpty()) }) { done, total ->
+            val result = SongSender(folder(), ::freeBytes).send(
+                songs.map { sendSong(it, playlists[it.id].orEmpty()) },
+                // Which song each file is, kept before the computer can take any (a send goes on without it).
+                beforeList = { listed ->
+                    runCatching { memory.startSending(listed.associate { (song, file) -> file.name to SendMemory.Sent(song.id, file.id) }) }
+                },
+            ) { done, total ->
                 if (_state.value !is SendToComputerState.Cancelling) _state.value = SendToComputerState.Copying(done.coerceAtMost(total - 1), total)
                 val now = System.currentTimeMillis()
                 if (now - told >= NOTIFY_EVERY_MS || done == total) {
@@ -233,9 +272,34 @@ class SendToComputerCoordinator @Inject constructor(
                 if (_state.value !is SendToComputerState.Preparing && _state.value !is SendToComputerState.Copying) return@launch
                 _state.value = SendToComputerState.Cancelling
             }
-            runCatching { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) folder().clear() }
+            runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    letGo()
+                    folder().clear()
+                }
+            }
             _state.value = SendToComputerState.Idle
         }
+    }
+
+    /**
+     * Keeps what the computer has taken of the send in the folder: every file of it gone, but not to the Trash. [present]
+     * is what the folder holds now, when just asked.
+     */
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun noteTaken(present: List<SentFile>? = null) {
+        runCatching {
+            if (memory.sending().isEmpty()) return
+            val folder = folder()
+            memory.taken((present ?: folder.files()).map { it.name }.toSet(), folder.trashed())
+        }
+    }
+
+    /** The send in the folder is over: what the computer took of it is kept, and it is let go. */
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun letGo() {
+        noteTaken()
+        runCatching { memory.doneSending() }
     }
 
     private fun busy(state: SendToComputerState) = state is SendToComputerState.Preparing || state is SendToComputerState.Copying ||
@@ -267,17 +331,27 @@ class SendToComputerCoordinator @Inject constructor(
     private suspend fun watch(total: Int) {
         var taken = 0
         var changedAt = System.currentTimeMillis()
+        var seen = -1
         while (true) {
             delay(WATCH_EVERY_MS)
-            val files = folder().files().filter { !it.pending }
+            val all = folder().files()
+            // Each song the computer takes is kept as it goes, so a send stopped partway still counts.
+            if (all.size != seen) {
+                seen = all.size
+                noteTaken(all)
+            }
+            val files = all.filter { !it.pending }
             val listLeft = files.any { it.name == SongSender.LIST_NAME }
             val songsLeft = files.size - if (listLeft) 1 else 0
             if (songsLeft == 0 && !listLeft) {
+                letGo()
                 _state.value = SendToComputerState.Finished(total, total)
                 return
             }
             if (!listLeft) {
                 val took = (total - songsLeft).coerceIn(0, total)
+                // Let go before the copies left are cleared: those were not taken.
+                letGo()
                 runCatching { folder().clear() }
                 _state.value = SendToComputerState.Finished(took, total, chosen = true)
                 return
@@ -301,6 +375,7 @@ class SendToComputerCoordinator @Inject constructor(
         bytes = sizeOf(track),
         open = { open(track) },
         entry = { name, bytes -> entry(track, name, bytes, playlists) },
+        id = track.id,
     )
 
     private fun open(track: TrackEntity): InputStream? {
@@ -331,6 +406,8 @@ class SendToComputerCoordinator @Inject constructor(
 
     companion object {
         const val WORK_NAME = "send_to_computer"
+        /** [SendMemory]'s file, in the app's own storage. */
+        private const val MEMORY_FILE = "send_to_computer.json"
         private const val WATCH_EVERY_MS = 1_000L
         /** Once the computer has started, this long with nothing more taken means it has stopped. */
         private const val STOPPED_AFTER_MS = 60_000L

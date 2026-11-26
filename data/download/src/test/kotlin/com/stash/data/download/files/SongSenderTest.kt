@@ -197,6 +197,29 @@ class SongSenderTest {
         assertThat(listedFiles()).containsExactly("1.flac", "2.flac", "3.flac").inOrder()
     }
 
+    @Test fun `each song in the list is told with its file just before the list is written`() = runTest {
+        folder.inTheWay += "2.flac"
+        folder.failOn = "3.flac"
+        var told: List<Pair<String, String>> = emptyList()
+        sender.send(listOf(song(1), song(2), song(3)), beforeList = { listed ->
+            folder.log += "told"
+            told = listed.map { (song, file) -> song.name to file.name }
+        })
+        assertThat(told).containsExactly("1.flac" to "1.flac", "2.flac" to "2 (1).flac").inOrder()
+        assertThat(folder.log.takeLast(2)).containsExactly("told", "list").inOrder()
+
+        // Carried on: the songs already there are told too.
+        folder.failOn = null
+        sender.send(listOf(song(1), song(2), song(3)), beforeList = { listed -> told = listed.map { (song, file) -> song.name to file.name } })
+        assertThat(told.map { it.first }).containsExactly("1.flac", "2.flac", "3.flac").inOrder()
+
+        // Nothing copied: nothing told, as there is no list.
+        folder.failOn = "9.flac"
+        var toldAgain = false
+        sender.send(listOf(song(9)), beforeList = { toldAgain = true })
+        assertThat(toldAgain).isFalse()
+    }
+
     @Test fun `a full phone is told from the error or what caused it`() {
         assertThat(SongSender.full(java.io.IOException("write failed: ENOSPC (No space left on device)"))).isTrue()
         assertThat(SongSender.full(RuntimeException("wrapped", java.io.IOException("No space left on device")))).isTrue()

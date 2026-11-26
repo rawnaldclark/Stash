@@ -793,6 +793,20 @@
         <item quantity="one">Puts your %1$d download (%2$s) on your computer. Plug this phone in, choose File transfer, open Stash on the computer, then tap Send to computer.</item>
         <item quantity="other">Puts your %1$d downloads (%2$s) on your computer. Plug this phone in, choose File transfer, open Stash on the computer, then tap Send to computer.</item>
     </plurals>
+    <plurals name="settings_send_computer_desc_new">
+        <item quantity="one">Puts the %1$d download your computer doesn\'t have yet (%2$s) on it. Plug this phone in, choose File transfer, open Stash on the computer, then tap Send to computer.</item>
+        <item quantity="other">Puts the %1$d downloads your computer doesn\'t have yet (%2$s) on it. Plug this phone in, choose File transfer, open Stash on the computer, then tap Send to computer.</item>
+    </plurals>
+    <plurals name="settings_send_computer_there">
+        <item quantity="one">%1$d song is on your computer already, so it isn\'t copied again.</item>
+        <item quantity="other">%1$d songs are on your computer already, so they aren\'t copied again.</item>
+    </plurals>
+    <plurals name="settings_send_computer_all_there">
+        <item quantity="one">Your computer has your download already.</item>
+        <item quantity="other">Your computer has all %1$d of your downloads already.</item>
+    </plurals>
+    <string name="settings_send_computer_copy_too">Copy those too</string>
+    <string name="settings_send_computer_send_again">Send them again</string>
     <string name="settings_send_computer_button">Send to computer</string>
     <string name="settings_send_computer_usb_unplugged">Not plugged into a computer yet.</string>
     <string name="settings_send_computer_usb_no_mtp">Plugged in, but File transfer is off: tap the USB notification and choose File transfer.</string>
@@ -820,7 +834,8 @@
     </plurals>
     <string name="settings_send_computer_finished_desc">You can unplug the phone. Your downloads stay on it too.</string>
     <string name="settings_send_computer_partly">Your computer took %1$d of %2$d songs.</string>
-    <string name="settings_send_computer_chosen_desc">Those are the ones you chose on the computer. You can unplug the phone. All your downloads stay on it.</string>
+    <string name="settings_send_computer_chosen">Your computer has %1$d of the %2$d songs now.</string>
+    <string name="settings_send_computer_chosen_desc">It left the others, as you chose there. You can unplug the phone. All your downloads stay on it.</string>
     <string name="settings_send_computer_partly_desc">It stopped before the rest. Plug the phone back in (File transfer) to finish, or tap Send to computer again.</string>
     <plurals name="settings_storage_reorganize_desc">
         <item quantity="one">%1$d downloaded track doesn\'t follow the \"%2$s\" structure yet. Move them now? New downloads already use it.</item>

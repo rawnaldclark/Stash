@@ -22,6 +22,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -31,9 +32,11 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import com.stash.data.download.files.SendCount
 import com.stash.data.download.files.SendToComputerCoordinator
 import com.stash.data.download.files.SendToComputerState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /** "Send to computer" in Settings › Library & storage ([SendToComputerCoordinator]). */
@@ -48,7 +51,8 @@ class SendToComputerViewModel @Inject constructor(
         coordinator.resume()
     }
 
-    suspend fun count(): Pair<Int, Long> = coordinator.count()
+    suspend fun count(): SendCount = coordinator.count()
+    suspend fun forget() = coordinator.forget()
     fun start() = coordinator.start()
     fun cancel() = coordinator.cancel()
     fun dismiss() = coordinator.dismiss()
@@ -87,17 +91,19 @@ private fun rememberUsb(): Usb {
 private const val USB_STATE = "android.hardware.usb.action.USB_STATE"
 
 /**
- * The Storage card's "Send to computer" row, one step at a time: what a send copies and whether the phone is plugged
- * into a computer with File transfer on; the songs being copied out; waiting for Stash on the computer; the computer
- * taking them (counted as they leave the folder); and the end. Hidden with no downloads.
+ * The Storage card's "Send to computer" row, one step at a time: what a send copies (leaving out the songs the computer
+ * has, with a way to send those too) and whether the phone is plugged into a computer with File transfer on; the songs
+ * being copied out; waiting for Stash on the computer; the computer taking them (counted as they leave the folder); and
+ * the end. Hidden with no downloads.
  */
 @Composable
 internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
-    var count by remember { mutableStateOf<Pair<Int, Long>?>(null) }
+    var count by remember { mutableStateOf<SendCount?>(null) }
     LaunchedEffect(state is SendToComputerState.Idle) {
         if (state is SendToComputerState.Idle) count = runCatching { viewModel.count() }.getOrNull()
     }
+    val scope = rememberCoroutineScope()
     val usb = rememberUsb()
     val context = LocalContext.current
     val size = { bytes: Long -> Formatter.formatShortFileSize(context, bytes) }
@@ -156,18 +162,42 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
     Column {
         when (val s = state) {
             SendToComputerState.Idle -> {
-                val (songs, bytes) = count ?: return@Column
-                if (songs == 0) return@Column
+                val c = count ?: return@Column
+                if (c.songs == 0 && c.onComputer == 0) return@Column
                 Text(
                     text = stringResource(R.string.settings_send_computer_title),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                Line(pluralStringResource(R.plurals.settings_send_computer_desc, songs, songs, size(bytes)))
-                Spacer(modifier = Modifier.height(6.dp))
-                UsbLine()
-                Action(stringResource(R.string.settings_send_computer_button), filled = true, onClick = viewModel::start)
+                if (c.songs == 0) {
+                    // The computer has every song: nothing to send unless asked to send them again.
+                    Line(pluralStringResource(R.plurals.settings_send_computer_all_there, c.onComputer, c.onComputer))
+                    Action(stringResource(R.string.settings_send_computer_send_again), filled = false) {
+                        scope.launch {
+                            viewModel.forget()
+                            viewModel.start()
+                        }
+                    }
+                } else {
+                    val desc = if (c.onComputer > 0) R.plurals.settings_send_computer_desc_new else R.plurals.settings_send_computer_desc
+                    Line(pluralStringResource(desc, c.songs, c.songs, size(c.bytes)))
+                    if (c.onComputer > 0) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Line(pluralStringResource(R.plurals.settings_send_computer_there, c.onComputer, c.onComputer))
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    UsbLine()
+                    Action(stringResource(R.string.settings_send_computer_button), filled = true, onClick = viewModel::start)
+                    if (c.onComputer > 0) {
+                        Action(stringResource(R.string.settings_send_computer_copy_too), filled = false) {
+                            scope.launch {
+                                viewModel.forget()
+                                count = runCatching { viewModel.count() }.getOrNull()
+                            }
+                        }
+                    }
+                }
             }
             SendToComputerState.Preparing -> {
                 Line(stringResource(R.string.settings_send_computer_preparing), strong = true)
@@ -215,7 +245,7 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                     Spacer(modifier = Modifier.height(4.dp))
                     Line(stringResource(R.string.settings_send_computer_finished_desc))
                 } else if (s.chosen) {
-                    Line(stringResource(R.string.settings_send_computer_partly, s.taken, s.total), strong = true)
+                    Line(stringResource(R.string.settings_send_computer_chosen, s.taken, s.total), strong = true)
                     Spacer(modifier = Modifier.height(4.dp))
                     Line(stringResource(R.string.settings_send_computer_chosen_desc))
                 } else {
