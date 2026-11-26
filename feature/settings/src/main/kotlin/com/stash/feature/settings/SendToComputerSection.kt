@@ -221,7 +221,12 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
             is SendToComputerState.Waiting -> {
                 Line(pluralStringResource(R.plurals.settings_send_computer_waiting, s.total, s.total), strong = true)
                 Spacer(modifier = Modifier.height(4.dp))
-                if (s.notCopied > 0) {
+                val short = s.noRoom
+                if (short != null) {
+                    // The phone filled up partway: these go first, the rest once there is room.
+                    Line(pluralStringResource(R.plurals.settings_send_computer_full, s.total, s.total, size(short)), error = true)
+                    Spacer(modifier = Modifier.height(4.dp))
+                } else if (s.notCopied > 0) {
                     Line(pluralStringResource(R.plurals.settings_send_computer_not_copied, s.notCopied, s.notCopied), error = true)
                     Spacer(modifier = Modifier.height(4.dp))
                 }
@@ -238,6 +243,7 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                 Spacer(modifier = Modifier.height(4.dp))
                 Line(stringResource(R.string.settings_send_computer_taking_desc))
                 Bar(if (s.total == 0) 0f else s.taken.toFloat() / s.total)
+                Action(stringResource(R.string.settings_cancel), filled = false, onClick = viewModel::cancel)
             }
             is SendToComputerState.Finished -> {
                 if (s.taken >= s.total) {
@@ -256,7 +262,9 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                 Action(stringResource(R.string.settings_storage_dismiss_button), filled = false, onClick = viewModel::dismiss)
             }
             is SendToComputerState.Error -> {
-                Line(s.message, error = true)
+                Line(if (s.listInTheWay) stringResource(R.string.settings_send_computer_list_in_the_way) else s.message, error = true)
+                // No room, with copies left that nothing takes: they can go, to win the room back.
+                if (s.copiesLeft) Action(stringResource(R.string.settings_send_computer_remove_copies), filled = false, onClick = viewModel::cancel)
                 Action(stringResource(R.string.settings_storage_dismiss_button), filled = false, onClick = viewModel::dismiss)
             }
         }

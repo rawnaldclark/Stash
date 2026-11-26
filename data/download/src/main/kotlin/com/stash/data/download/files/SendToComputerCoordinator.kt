@@ -5,25 +5,32 @@ import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
 import androidx.annotation.RequiresApi
+import androidx.annotation.VisibleForTesting
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import com.stash.core.data.db.LibrarySwaps
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
@@ -47,8 +54,11 @@ sealed interface SendToComputerState {
     /** Asked for; the copy has not said how many songs yet. */
     data object Preparing : SendToComputerState
     data class Copying(val current: Int, val total: Int) : SendToComputerState
-    /** [total] songs ready in the folder ([notCopied] could not be copied); the computer has taken none yet. */
-    data class Waiting(val total: Int, val notCopied: Int) : SendToComputerState
+    /**
+     * [total] songs ready in the folder ([notCopied] could not be copied); the computer has taken none yet. [noRoom]:
+     * the phone ran out of room after these, and the songs not copied need this many bytes more than were free.
+     */
+    data class Waiting(val total: Int, val notCopied: Int, val noRoom: Long? = null) : SendToComputerState
     data class Taking(val taken: Int, val total: Int) : SendToComputerState
     /**
      * The computer took [taken] of [total]: all of them (the folder is gone), the ones chosen on it ([chosen]: it removed
@@ -57,7 +67,12 @@ sealed interface SendToComputerState {
     data class Finished(val taken: Int, val total: Int, val chosen: Boolean = false) : SendToComputerState
     /** The copy is being stopped and its files removed. */
     data object Cancelling : SendToComputerState
-    data class Error(val message: String) : SendToComputerState
+    /**
+     * The send stopped: [message] says why. [copiesLeft]: there was no room, and copies of the send are left in the
+     * folder with no list (a [SendToComputerCoordinator.cancel] removes them). [listInTheWay]: another copy of Stash's
+     * list is in the folder ([ListInTheWayException]).
+     */
+    data class Error(val message: String, val copiesLeft: Boolean = false, val listInTheWay: Boolean = false) : SendToComputerState
 }
 
 /** What a send would copy: [songs] downloaded songs, [bytes] in all, leaving out the [onComputer] the computer has. */
@@ -79,7 +94,8 @@ data class SendCount(val songs: Int, val bytes: Long, val onComputer: Int)
  *   notification, so Android does not freeze it when the app leaves the screen or the screen turns off;
  * - there is only ever one: [start] marks the send as begun before it returns, and the work is unique;
  * - a send that was stopped (the app closed, the phone restarted) is carried on, not begun again ([SongSender]);
- * - [cancel] waits for the copy to really stop, then removes everything it wrote.
+ * - [cancel] waits for the copy to really stop, then removes everything it wrote (finished at the next look when the
+ *   app is killed meanwhile).
  *
  * After the copy it watches the folder and counts what the computer has taken, so the phone says how far along it is.
  * Nothing in the library changes: the phone keeps its downloads.
@@ -102,7 +118,19 @@ class SendToComputerCoordinator @Inject constructor(
 
     private val workManager get() = WorkManager.getInstance(context)
 
-    private val memory by lazy { SendMemory(File(context.filesDir, MEMORY_FILE)) }
+    private val memory by lazy { SendMemory(File(context.filesDir, MEMORY_FILE), LibrarySwaps.count(context)) }
+
+    /** Held while [copy] runs: a cancel removes nothing until the copy has returned, or it would write on behind it. */
+    private val copying = Mutex()
+
+    /**
+     * There while a cancel removes the copies ([clearCopies]): a clear-up cut short (the app killed during it) is
+     * finished by [resume], so the copies, tens of gigabytes, are not left in the folder unseen.
+     */
+    private val clearing get() = File(context.filesDir, CLEARING_FILE)
+
+    /** A test's folder, in place of MediaStore's. */
+    @VisibleForTesting internal var folderForTest: SendFolder? = null
 
     /** What a send would copy: the downloaded songs the computer doesn't have, their size, and how many it has. */
     suspend fun count(): SendCount {
@@ -138,13 +166,30 @@ class SendToComputerCoordinator @Inject constructor(
 
     /**
      * What is there from before, shown where it is: the copy still running (the app's screen was closed, or Android
-     * restarted the work), or a finished send the computer has not taken yet. Nothing when idle with no send there.
+     * restarted the work), a cancel whose clear-up was cut short (finished now), or a finished send the computer has not
+     * taken yet. Nothing when idle with no send there.
      */
     fun resume() {
         if (_state.value !is SendToComputerState.Idle || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
         scope.launch {
             if (copyUnderWay()) {
                 synchronized(lock) { if (_state.value is SendToComputerState.Idle) _state.value = SendToComputerState.Preparing }
+                return@launch
+            }
+            if (clearing.exists()) {
+                // A cancel's clear-up was cut short (the app killed during it): finished now, and nothing left shown.
+                synchronized(lock) {
+                    if (_state.value !is SendToComputerState.Idle) return@launch
+                    _state.value = SendToComputerState.Cancelling
+                }
+                try {
+                    clearCopies()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Tried again at the next look.
+                }
+                _state.value = SendToComputerState.Idle
                 return@launch
             }
             val total = runCatching { sentBefore() }.getOrNull()
@@ -173,14 +218,20 @@ class SendToComputerCoordinator @Inject constructor(
             watchJob = null
         }
         scope.launch {
-            runCatching {
+            try {
                 workManager.cancelUniqueWork(WORK_NAME)
-                // The copy stops between blocks; nothing is removed until it has, or it would write on behind us.
-                withTimeoutOrNull(STOP_WAIT_MS) { workManager.getWorkInfosForUniqueWorkFlow(WORK_NAME).first { infos -> infos.all { it.state.isFinished } } }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    letGo()
-                    folder().clear()
+                // The copy stops between blocks; nothing is removed until it has returned, or it would write on behind
+                // us. The work reads as cancelled before its copy has stopped, so the copy itself is waited for too
+                // (the work, in case it had not started).
+                withTimeoutOrNull(STOP_WAIT_MS) {
+                    workManager.getWorkInfosForUniqueWorkFlow(WORK_NAME).first { infos -> infos.all { it.state.isFinished } }
+                    copying.withLock {}
                 }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) clearCopies()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // What is left goes with the next send, or the next look once the clear-up has begun.
             }
             _state.value = SendToComputerState.Idle
         }
@@ -202,9 +253,11 @@ class SendToComputerCoordinator @Inject constructor(
      * CancellationException when cancelled; anything else is shown as the error.
      */
     @RequiresApi(Build.VERSION_CODES.Q)
-    internal suspend fun copy(onProgress: suspend (done: Int, total: Int) -> Unit) {
+    internal suspend fun copy(onProgress: suspend (done: Int, total: Int) -> Unit): Unit = copying.withLock {
         // Cancelled as the work was starting: leave the state to the cancel.
         if (_state.value is SendToComputerState.Cancelling) return
+        // This send clears the folder itself: a cancel's clear-up cut short is done with.
+        clearing.delete()
         try {
             // A send from before is cleared by this one: what the computer took of it is kept first.
             letGo()
@@ -235,21 +288,35 @@ class SendToComputerCoordinator @Inject constructor(
                     runCatching { onProgress(done, total) }
                 }
             }
+            // A cancel that came during the last progress call or the list's write (the notification's Cancel stops
+            // the work, not this): carried out, rather than the send left waiting for the computer.
+            currentCoroutineContext().ensureActive()
             if (result.entries.isEmpty()) {
                 _state.value = SendToComputerState.Error("None of the songs could be copied.")
                 return
             }
             synchronized(lock) {
                 if (_state.value is SendToComputerState.Cancelling) return
-                _state.value = SendToComputerState.Waiting(result.entries.size, result.failed)
+                _state.value = SendToComputerState.Waiting(result.entries.size, result.failed, result.noRoom)
                 watchJob?.cancel()
                 watchJob = scope.launch { runCatching { watch(result.entries.size) } }
             }
-        } catch (e: kotlinx.coroutines.CancellationException) {
+        } catch (e: CancellationException) {
             stoppedFromOutside()
             throw e
         } catch (e: NoRoomException) {
-            if (_state.value !is SendToComputerState.Cancelling) _state.value = SendToComputerState.Error(noRoom(e.needed))
+            // There is no list, so nothing of it can be taken: the copies stay for the send to carry on, unnoted.
+            runCatching { memory.doneSending() }
+            if (_state.value !is SendToComputerState.Cancelling) {
+                _state.value = SendToComputerState.Error(noRoom(e.needed), copiesLeft = e.copies > 0)
+            }
+        } catch (e: ListInTheWayException) {
+            // Nothing is noted as taken (the computer may delete the folder with the other send in it), and the copies
+            // stay for the next send.
+            runCatching { memory.doneSending() }
+            if (_state.value !is SendToComputerState.Cancelling) {
+                _state.value = SendToComputerState.Error(e.message.orEmpty(), listInTheWay = true)
+            }
         } catch (e: Exception) {
             if (_state.value !is SendToComputerState.Cancelling) _state.value = SendToComputerState.Error(e.message ?: "The songs could not be copied.")
         }
@@ -272,14 +339,29 @@ class SendToComputerCoordinator @Inject constructor(
                 if (_state.value !is SendToComputerState.Preparing && _state.value !is SendToComputerState.Copying) return@launch
                 _state.value = SendToComputerState.Cancelling
             }
-            runCatching {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    letGo()
-                    folder().clear()
-                }
+            try {
+                // The copy is returning (this is called from it): nothing is removed before it has.
+                withTimeoutOrNull(STOP_WAIT_MS) { copying.withLock {} }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) clearCopies()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // What is left goes with the next send, or the next look once the clear-up has begun.
             }
             _state.value = SendToComputerState.Idle
         }
+    }
+
+    /**
+     * Lets the send in the folder go and removes every copy, in a way that outlives the app: [clearing] is there until
+     * the copies are gone, and [resume] finishes a clear-up it finds. Throws when the folder can't be cleared.
+     */
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun clearCopies() {
+        runCatching { clearing.createNewFile() }
+        letGo()
+        folder().clear()
+        clearing.delete()
     }
 
     /**
@@ -295,10 +377,13 @@ class SendToComputerCoordinator @Inject constructor(
         }
     }
 
-    /** The send in the folder is over: what the computer took of it is kept, and it is let go. */
+    /**
+     * The send in the folder is over: what the computer took of it is kept, and it is let go. [present]: what the folder
+     * holds now, when just asked (the record then goes by the same answer as the one that ended the send).
+     */
     @RequiresApi(Build.VERSION_CODES.Q)
-    private fun letGo() {
-        noteTaken()
+    private fun letGo(present: List<SentFile>? = null) {
+        noteTaken(present)
         runCatching { memory.doneSending() }
     }
 
@@ -310,7 +395,7 @@ class SendToComputerCoordinator @Inject constructor(
     }.getOrDefault(false)
 
     @RequiresApi(Build.VERSION_CODES.Q)
-    private fun folder() = MediaStoreSendFolder(context.contentResolver)
+    private fun folder(): SendFolder = folderForTest ?: MediaStoreSendFolder(context.contentResolver)
 
     /** How many songs the list in the folder names, when this app's list is there. */
     @RequiresApi(Build.VERSION_CODES.Q)
@@ -334,7 +419,14 @@ class SendToComputerCoordinator @Inject constructor(
         var seen = -1
         while (true) {
             delay(WATCH_EVERY_MS)
-            val all = folder().files()
+            val all = try {
+                folder().files()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // No answer from the folder this time is no news: it is asked again next time.
+                continue
+            }
             // Each song the computer takes is kept as it goes, so a send stopped partway still counts.
             if (all.size != seen) {
                 seen = all.size
@@ -344,14 +436,14 @@ class SendToComputerCoordinator @Inject constructor(
             val listLeft = files.any { it.name == SongSender.LIST_NAME }
             val songsLeft = files.size - if (listLeft) 1 else 0
             if (songsLeft == 0 && !listLeft) {
-                letGo()
+                letGo(all)
                 _state.value = SendToComputerState.Finished(total, total)
                 return
             }
             if (!listLeft) {
                 val took = (total - songsLeft).coerceIn(0, total)
                 // Let go before the copies left are cleared: those were not taken.
-                letGo()
+                letGo(all)
                 runCatching { folder().clear() }
                 _state.value = SendToComputerState.Finished(took, total, chosen = true)
                 return
@@ -408,6 +500,8 @@ class SendToComputerCoordinator @Inject constructor(
         const val WORK_NAME = "send_to_computer"
         /** [SendMemory]'s file, in the app's own storage. */
         private const val MEMORY_FILE = "send_to_computer.json"
+        /** There while a cancel removes the copies ([clearing]). */
+        private const val CLEARING_FILE = "send_to_computer.clearing"
         private const val WATCH_EVERY_MS = 1_000L
         /** Once the computer has started, this long with nothing more taken means it has stopped. */
         private const val STOPPED_AFTER_MS = 60_000L
@@ -418,7 +512,13 @@ class SendToComputerCoordinator @Inject constructor(
         /** What a send that has no room says: how much more it needs, and where room often hides. */
         internal fun noRoom(needed: Long): String {
             val size = if (needed >= 1_000_000_000L) "%.1f GB".format(java.util.Locale.ROOT, needed / 1e9) else "${(needed / 1_000_000L).coerceAtLeast(1)} MB"
-            return "Not enough room on this phone: the copies need $size more. Free some space, then tap Send to computer again: " +
+            // No more than the room kept free is missing: the copies themselves fit.
+            val what = if (needed <= SongSender.SPARE) {
+                "the copies would leave it less than 1 GB free, which it needs to keep working well. Free $size more"
+            } else {
+                "the copies need $size more. Free some space"
+            }
+            return "Not enough room on this phone: $what, then tap Send to computer again: " +
                 "it carries on where it stopped. Files you deleted may still be taking room in the Files app's Trash."
         }
 

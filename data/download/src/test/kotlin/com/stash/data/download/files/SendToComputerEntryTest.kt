@@ -42,4 +42,11 @@ class SendToComputerEntryTest {
         assertThat(SendToComputerCoordinator.noRoom(1L)).contains("1 MB more")
         assertThat(SendToComputerCoordinator.noRoom(1L)).contains("Trash")
     }
+
+    @Test fun `a send that fits but would leave too little free says so`() {
+        // The copies fit: only part of the room kept free is missing.
+        assertThat(SendToComputerCoordinator.noRoom(250_000_000L)).contains("less than 1 GB free")
+        assertThat(SendToComputerCoordinator.noRoom(250_000_000L)).doesNotContain("the copies need")
+        assertThat(SendToComputerCoordinator.noRoom(SongSender.SPARE + 1)).contains("the copies need 1.0 GB more")
+    }
 }

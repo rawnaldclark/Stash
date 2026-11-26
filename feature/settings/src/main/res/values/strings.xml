@@ -826,6 +826,12 @@
         <item quantity="one">%1$d song could not be copied.</item>
         <item quantity="other">%1$d songs could not be copied.</item>
     </plurals>
+    <plurals name="settings_send_computer_full">
+        <item quantity="one">The phone ran out of room after %1$d song. The rest need %2$s more: once your computer has this one, free some space, then tap Send to computer again.</item>
+        <item quantity="other">The phone ran out of room after %1$d songs. The rest need %2$s more: once your computer has these, free some space, then tap Send to computer again.</item>
+    </plurals>
+    <string name="settings_send_computer_remove_copies">Remove the copies</string>
+    <string name="settings_send_computer_list_in_the_way">An older stash-transfer.json from another copy of Stash is in Download › Stash transfer. Delete it in the Files app (or let your computer take that send), then tap Send to computer again.</string>
     <string name="settings_send_computer_taking">Your computer is taking them: %1$d of %2$d</string>
     <string name="settings_send_computer_taking_desc">Keep the phone plugged in.</string>
     <plurals name="settings_send_computer_finished">
