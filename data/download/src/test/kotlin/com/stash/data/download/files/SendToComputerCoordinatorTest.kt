@@ -49,27 +49,46 @@ class SendToComputerCoordinatorTest {
     /** The send folder, in memory, safe to use from the coordinator's threads and the test's. */
     private class Folder : SendFolder {
         private val files = LinkedHashMap<String, SentFile>()
+        /** The ids of this app's files in the Files app's Trash. */
+        private val bin = HashSet<Long>()
+        private var nextId = 100L
         @Volatile var list: String? = null
         /** Runs as the list is written, before it is there: a test holds the copy here, or cancels it. */
         @Volatile var onList: () -> Unit = {}
         /** Runs as the folder is cleared, before anything goes. */
         @Volatile var onClear: () -> Unit = {}
+        /** Runs as the folder is listed, before it answers: a test holds a look of the watch here. */
+        @Volatile var onFiles: () -> Unit = {}
         @Volatile var listInTheWay = false
         /** The phone is full after this many writes: the next one fails as a full phone's does, after [onFull]. */
         @Volatile var fullAfter: Int? = null
         @Volatile var onFull: () -> Unit = {}
         /** How many listings to come go unanswered. */
         val unanswered = AtomicInteger()
+        /** How many reads of the list to come go unanswered. */
+        val listUnanswered = AtomicInteger()
+        /** How many looks in the Trash to come go unanswered, once something is in it. */
+        val trashUnanswered = AtomicInteger()
         private var writes = 0
 
         @Synchronized fun names(): Set<String> = files.keys.toSet() + listOfNotNull(list?.let { SongSender.LIST_NAME })
         @Synchronized fun put(name: String, bytes: Long) { files[name] = SentFile(name, bytes) }
         /** The computer takes [name]: it deletes the file. */
         @Synchronized fun take(name: String) { if (name == SongSender.LIST_NAME) list = null else files.remove(name) }
+        /** [name] is put in the Trash on the phone: gone from the folder, under its own id in the Trash. */
+        @Synchronized fun trash(name: String) { files.remove(name)?.id?.let { bin += it } }
+        @Synchronized fun emptyTrash() { bin.clear() }
 
         override fun files(): List<SentFile> {
-            if (unanswered.getAndUpdate { (it - 1).coerceAtLeast(0) } > 0) throw IllegalStateException("MediaStore did not answer.")
+            onFiles()
+            if (unanswered.getAndUpdate { (it - 1).coerceAtLeast(0) } > 0) throw NoAnswerException()
             return synchronized(this) { files.values.toList() + listOfNotNull(list?.let { SentFile(SongSender.LIST_NAME, it.length.toLong()) }) }
+        }
+
+        override fun trashed(): Set<Long> {
+            val binned = synchronized(this) { bin.toSet() }
+            if (binned.isNotEmpty() && trashUnanswered.getAndUpdate { (it - 1).coerceAtLeast(0) } > 0) throw NoAnswerException()
+            return binned
         }
 
         override fun write(name: String, source: InputStream, keepGoing: () -> Boolean): SentFile? {
@@ -81,7 +100,7 @@ class SendToComputerCoordinatorTest {
             val bytes = source.readBytes()
             return synchronized(this) {
                 writes++
-                SentFile(name, bytes.size.toLong()).also { files[name] = it }
+                SentFile(name, bytes.size.toLong(), id = nextId++).also { files[name] = it }
             }
         }
 
@@ -98,8 +117,15 @@ class SendToComputerCoordinatorTest {
             return synchronized(this) { names().size.also { files.clear(); list = null } }
         }
 
-        override fun readList(): String? = list
+        override fun readList(): String? {
+            if (listUnanswered.getAndUpdate { (it - 1).coerceAtLeast(0) } > 0) throw NoAnswerException()
+            return list
+        }
     }
+
+    /** A list naming songs 1 and 2, as a send of them leaves it. */
+    private val listOfTwo = """{"songs":[{"file":"1.flac"},{"file":"2.flac"}]}"""
+    private fun sent(vararg ids: Long) = ids.associate { "$it.flac" to SendMemory.Sent(it, null) }
 
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val folder = Folder()
@@ -191,6 +217,8 @@ class SendToComputerCoordinatorTest {
         assertThat(writing.await(10, TimeUnit.SECONDS)).isTrue()
 
         coordinator.cancel()
+        // Marked at once, before the wait for the copy: the app killed now still has the clear-up finished.
+        assertThat(clearing.exists()).isTrue()
         Thread.sleep(500)
         // Still writing the list: nothing removed behind it.
         assertThat(folder.names()).containsExactly("1.flac", "2.flac")
@@ -281,5 +309,199 @@ class SendToComputerCoordinatorTest {
         folder.take(SongSender.LIST_NAME)
         assertThat(awaitState { it is SendToComputerState.Finished }).isEqualTo(SendToComputerState.Finished(2, 2))
         assertThat(memory().onComputer()).containsExactly(1L, 2L)
+    }
+
+    @Test fun `a look for the list that isn't answered is no news, and the send waiting stays as it is`() {
+        folder.put("1.flac", 10)
+        folder.put("2.flac", 10)
+        folder.list = listOfTwo
+        memory().startSending(sent(1, 2))
+        folder.listUnanswered.set(1)
+
+        coordinator.resume()
+        awaitTrue { folder.listUnanswered.get() == 0 }
+        Thread.sleep(500)
+        // Not taken for a send the computer finished: nothing let go, nothing removed, nothing shown.
+        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Idle)
+        assertThat(folder.names()).containsExactly("1.flac", "2.flac", SongSender.LIST_NAME)
+        assertThat(memory().sending().keys).containsExactly("1.flac", "2.flac")
+
+        // The next look, answered, shows the send waiting.
+        coordinator.resume()
+        assertThat(awaitState { it is SendToComputerState.Waiting }).isEqualTo(SendToComputerState.Waiting(2, 0))
+    }
+
+    @Test fun `the copies the computer left are cleared in a way that outlives the app`() {
+        runBlocking { coordinator.copy { _, _ -> } }
+        val marked = AtomicBoolean()
+        folder.onClear = { marked.set(clearing.exists()) }
+        // The computer took song 1 and removed the list: song 2 was not chosen there.
+        folder.take("1.flac")
+        folder.take(SongSender.LIST_NAME)
+        assertThat(awaitState { it is SendToComputerState.Finished }).isEqualTo(SendToComputerState.Finished(1, 2, chosen = true))
+        assertThat(marked.get()).isTrue()
+        assertThat(clearing.exists()).isFalse()
+        assertThat(folder.names()).isEmpty()
+        assertThat(memory().onComputer()).containsExactly(1L)
+        assertThat(memory().sending()).isEmpty()
+    }
+
+    @Test fun `a send the computer finished while the app was away is cleared in a way that outlives the app`() {
+        // The computer took song 1 and removed the list while the app was closed.
+        folder.put("2.flac", 10)
+        memory().startSending(sent(1, 2))
+        val marked = AtomicBoolean()
+        folder.onClear = { marked.set(clearing.exists()) }
+
+        coordinator.resume()
+        awaitTrue { marked.get() && folder.names().isEmpty() && !clearing.exists() }
+        assertThat(memory().onComputer()).containsExactly(1L)
+        assertThat(memory().sending()).isEmpty()
+        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Idle)
+    }
+
+    @Test fun `a clear-up cut short before it removed anything notes what the computer took`() {
+        // Cancel was tapped and the app killed at once; the computer had taken song 1.
+        folder.put("2.flac", 10)
+        folder.list = listOfTwo
+        memory().startSending(sent(1, 2))
+        clearing.createNewFile()
+
+        coordinator.resume()
+        awaitTrue { !clearing.exists() && coordinator.state.value is SendToComputerState.Idle }
+        assertThat(folder.names()).isEmpty()
+        assertThat(memory().onComputer()).containsExactly(1L)
+        assertThat(memory().sending()).isEmpty()
+    }
+
+    @Test fun `a clear-up cut short once it was removing notes nothing it removed itself`() {
+        // The clear had removed song 1's copy when the app was killed, before the send was let go.
+        folder.put("2.flac", 10)
+        memory().startSending(sent(1, 2))
+        clearing.writeText("cleared")
+
+        coordinator.resume()
+        awaitTrue { !clearing.exists() && coordinator.state.value is SendToComputerState.Idle }
+        assertThat(folder.names()).isEmpty()
+        assertThat(memory().onComputer()).isEmpty()
+        assertThat(memory().sending()).isEmpty()
+    }
+
+    @Test fun `a phone too full to let the send go is cleared anyway, and let go once there is room`() {
+        runBlocking { coordinator.copy { _, _ -> } }
+        // The memory can't be written, as on a full phone.
+        val blocked = File(context.filesDir, "send_to_computer.json.new").apply { mkdirs() }
+
+        coordinator.cancel()
+        awaitState { it is SendToComputerState.Idle }
+        // The copies went, which frees room; the mark stays, saying the clear-up removed them, as the send isn't let go.
+        assertThat(folder.names()).isEmpty()
+        assertThat(clearing.readText()).isEqualTo("cleared")
+        assertThat(memory().sending().keys).containsExactly("1.flac", "2.flac")
+
+        // With room, the next look lets it go, and the copies the clear-up removed are not taken.
+        blocked.delete()
+        coordinator.resume()
+        awaitTrue { !clearing.exists() && coordinator.state.value is SendToComputerState.Idle }
+        assertThat(memory().sending()).isEmpty()
+        assertThat(memory().onComputer()).isEmpty()
+    }
+
+    @Test fun `a new send after a clear-up cut short while removing notes nothing it removed`() {
+        memory().startSending(sent(1, 2))
+        clearing.writeText("cleared")
+        runBlocking { coordinator.copy { _, _ -> } }
+        assertThat(clearing.exists()).isFalse()
+        assertThat(memory().onComputer()).isEmpty()
+        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Waiting(2, 0))
+    }
+
+    @Test fun `a copy starting during a cancel leaves the cancel's mark`() {
+        runBlocking { coordinator.copy { _, _ -> } }
+        val clearingNow = CountDownLatch(1)
+        val goOn = CountDownLatch(1)
+        folder.onClear = {
+            clearingNow.countDown()
+            goOn.await(10, TimeUnit.SECONDS)
+        }
+        coordinator.cancel()
+        assertThat(clearingNow.await(10, TimeUnit.SECONDS)).isTrue()
+
+        // The work starting now, as it can when cancelled as it starts: it leaves the state and the mark to the cancel.
+        runBlocking { coordinator.copy { _, _ -> } }
+        assertThat(clearing.exists()).isTrue()
+        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Cancelling)
+
+        goOn.countDown()
+        awaitState { it is SendToComputerState.Idle }
+        assertThat(clearing.exists()).isFalse()
+        assertThat(folder.names()).isEmpty()
+    }
+
+    @Test fun `a look under way as Cancel is tapped does not show the computer taking`() {
+        runBlocking { coordinator.copy { _, _ -> } }
+        val looking = CountDownLatch(1)
+        val answer = CountDownLatch(1)
+        val held = AtomicBoolean()
+        folder.onFiles = {
+            if (held.compareAndSet(false, true)) {
+                looking.countDown()
+                answer.await(10, TimeUnit.SECONDS)
+            }
+        }
+        // The computer takes song 1: the look held now would show it taking.
+        folder.take("1.flac")
+        assertThat(looking.await(10, TimeUnit.SECONDS)).isTrue()
+        val clearingNow = CountDownLatch(1)
+        val goOn = CountDownLatch(1)
+        folder.onClear = {
+            clearingNow.countDown()
+            goOn.await(10, TimeUnit.SECONDS)
+        }
+        coordinator.cancel()
+        assertThat(clearingNow.await(10, TimeUnit.SECONDS)).isTrue()
+
+        // The look answers while the copies are being removed.
+        answer.countDown()
+        Thread.sleep(500)
+        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Cancelling)
+
+        goOn.countDown()
+        awaitState { it is SendToComputerState.Idle }
+        Thread.sleep(300)
+        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Idle)
+    }
+
+    @Test fun `a look whose Trash doesn't answer is noted at the next, so a copy put in the Trash is never taken`() {
+        runBlocking { coordinator.copy { _, _ -> } }
+        // Song 2's copy goes to the Trash on the phone, and the Trash doesn't answer the look that finds it gone.
+        folder.trashUnanswered.set(1)
+        folder.trash("2.flac")
+        awaitTrue { "2.flac" !in memory().sending() }
+        assertThat(folder.trashUnanswered.get()).isEqualTo(0)
+
+        // The Trash emptied, then the computer takes song 1: song 2 was not taken.
+        folder.emptyTrash()
+        folder.take("1.flac")
+        folder.take(SongSender.LIST_NAME)
+        awaitState { it is SendToComputerState.Finished }
+        assertThat(memory().onComputer()).containsExactly(1L)
+    }
+
+    @Test fun `a folder that doesn't answer stops the send with a plain message`() {
+        folder.unanswered.set(1)
+        runBlocking { coordinator.copy { _, _ -> } }
+        assertThat((coordinator.state.value as SendToComputerState.Error).noAnswer).isTrue()
+    }
+
+    @Test fun `a computer with every song is told so even when the old copies can't be removed`() {
+        val m = memory()
+        m.startSending(sent(1, 2))
+        m.taken(present = emptySet(), trashed = emptySet())
+        m.doneSending()
+        folder.onClear = { throw NoAnswerException() }
+
+        runBlocking { coordinator.copy { _, _ -> } }
+        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Error("Your computer has all your downloaded songs already."))
     }
 }

@@ -262,7 +262,14 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                 Action(stringResource(R.string.settings_storage_dismiss_button), filled = false, onClick = viewModel::dismiss)
             }
             is SendToComputerState.Error -> {
-                Line(if (s.listInTheWay) stringResource(R.string.settings_send_computer_list_in_the_way) else s.message, error = true)
+                Line(
+                    when {
+                        s.listInTheWay -> stringResource(R.string.settings_send_computer_list_in_the_way)
+                        s.noAnswer -> stringResource(R.string.settings_send_computer_no_answer)
+                        else -> s.message
+                    },
+                    error = true,
+                )
                 // No room, with copies left that nothing takes: they can go, to win the room back.
                 if (s.copiesLeft) Action(stringResource(R.string.settings_send_computer_remove_copies), filled = false, onClick = viewModel::cancel)
                 Action(stringResource(R.string.settings_storage_dismiss_button), filled = false, onClick = viewModel::dismiss)

@@ -70,9 +70,15 @@ sealed interface SendToComputerState {
     /**
      * The send stopped: [message] says why. [copiesLeft]: there was no room, and copies of the send are left in the
      * folder with no list (a [SendToComputerCoordinator.cancel] removes them). [listInTheWay]: another copy of Stash's
-     * list is in the folder ([ListInTheWayException]).
+     * list is in the folder ([ListInTheWayException]). [noAnswer]: the phone's storage did not answer
+     * ([NoAnswerException]).
      */
-    data class Error(val message: String, val copiesLeft: Boolean = false, val listInTheWay: Boolean = false) : SendToComputerState
+    data class Error(
+        val message: String,
+        val copiesLeft: Boolean = false,
+        val listInTheWay: Boolean = false,
+        val noAnswer: Boolean = false,
+    ) : SendToComputerState
 }
 
 /** What a send would copy: [songs] downloaded songs, [bytes] in all, leaving out the [onComputer] the computer has. */
@@ -124,8 +130,9 @@ class SendToComputerCoordinator @Inject constructor(
     private val copying = Mutex()
 
     /**
-     * There while a cancel removes the copies ([clearCopies]): a clear-up cut short (the app killed during it) is
-     * finished by [resume], so the copies, tens of gigabytes, are not left in the folder unseen.
+     * There from a cancel's tap until the copies are gone ([clearCopies]): a clear-up cut short (the app killed before or
+     * during it) is finished by [resume], so the copies, tens of gigabytes, are not left in the folder unseen. It says
+     * [CLEARED] once the removing has begun: from then on a copy gone is the clear-up's own, not one the computer took.
      */
     private val clearing get() = File(context.filesDir, CLEARING_FILE)
 
@@ -177,7 +184,7 @@ class SendToComputerCoordinator @Inject constructor(
                 return@launch
             }
             if (clearing.exists()) {
-                // A cancel's clear-up was cut short (the app killed during it): finished now, and nothing left shown.
+                // A clear-up was cut short (the app killed before or during it): finished now, and nothing left shown.
                 synchronized(lock) {
                     if (_state.value !is SendToComputerState.Idle) return@launch
                     _state.value = SendToComputerState.Cancelling
@@ -192,12 +199,24 @@ class SendToComputerCoordinator @Inject constructor(
                 _state.value = SendToComputerState.Idle
                 return@launch
             }
-            val total = runCatching { sentBefore() }.getOrNull()
+            val total = try {
+                sentBefore()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // The folder didn't answer: no news. Nothing is let go or removed; the next look decides.
+                return@launch
+            }
             if (total == null) {
                 // The computer finished with a send while the app was away: what it took is kept, the copies left go.
                 if (runCatching { memory.sending().isNotEmpty() }.getOrDefault(false)) {
-                    letGo()
-                    runCatching { folder().clear() }
+                    try {
+                        clearCopies()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // Finished at the next look.
+                    }
                 }
                 return@launch
             }
@@ -214,6 +233,9 @@ class SendToComputerCoordinator @Inject constructor(
         synchronized(lock) {
             if (_state.value is SendToComputerState.Cancelling || _state.value is SendToComputerState.Idle) return
             _state.value = SendToComputerState.Cancelling
+            // Marked at once: the app killed from here on (swiped away during the wait below) still has the copies, and
+            // a list the copy writes meanwhile, removed at the next look.
+            markClearing()
             watchJob?.cancel()
             watchJob = null
         }
@@ -254,18 +276,29 @@ class SendToComputerCoordinator @Inject constructor(
      */
     @RequiresApi(Build.VERSION_CODES.Q)
     internal suspend fun copy(onProgress: suspend (done: Int, total: Int) -> Unit): Unit = copying.withLock {
-        // Cancelled as the work was starting: leave the state to the cancel.
-        if (_state.value is SendToComputerState.Cancelling) return
-        // This send clears the folder itself: a cancel's clear-up cut short is done with.
-        clearing.delete()
+        val ownClear = synchronized(lock) {
+            // Cancelled as the work was starting: leave the state, and the clear-up it marked, to the cancel.
+            if (_state.value is SendToComputerState.Cancelling) return
+            // This send clears the folder itself: a clear-up cut short is done with. Once it had begun removing, the
+            // copies gone were its own, not taken.
+            clearBegun().also { clearing.delete() }
+        }
         try {
             // A send from before is cleared by this one: what the computer took of it is kept first.
-            letGo()
+            if (ownClear) runCatching { memory.doneSending() } else letGo()
             val downloaded = trackDao.getAllDownloaded().filter { !it.filePath.isNullOrBlank() }
             val has = runCatching { memory.onComputer() }.getOrDefault(emptySet())
             val songs = downloaded.filter { it.id !in has }
             if (songs.isEmpty()) {
-                folder().clear()
+                // An earlier send's copies go; ones that can't be removed now go with the next send, and this is still
+                // the answer.
+                try {
+                    folder().clear()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Left for the next send.
+                }
                 _state.value = SendToComputerState.Error(
                     if (downloaded.isEmpty()) "There are no downloaded songs to send." else "Your computer has all your downloaded songs already.",
                 )
@@ -317,6 +350,9 @@ class SendToComputerCoordinator @Inject constructor(
             if (_state.value !is SendToComputerState.Cancelling) {
                 _state.value = SendToComputerState.Error(e.message.orEmpty(), listInTheWay = true)
             }
+        } catch (e: NoAnswerException) {
+            // Said plainly on the card ([SendToComputerState.Error.noAnswer]).
+            if (_state.value !is SendToComputerState.Cancelling) _state.value = SendToComputerState.Error(e.message.orEmpty(), noAnswer = true)
         } catch (e: Exception) {
             if (_state.value !is SendToComputerState.Cancelling) _state.value = SendToComputerState.Error(e.message ?: "The songs could not be copied.")
         }
@@ -338,6 +374,8 @@ class SendToComputerCoordinator @Inject constructor(
             synchronized(lock) {
                 if (_state.value !is SendToComputerState.Preparing && _state.value !is SendToComputerState.Copying) return@launch
                 _state.value = SendToComputerState.Cancelling
+                // Marked at once, as a cancel is: finished at the next look if the app is killed before it is done.
+                markClearing()
             }
             try {
                 // The copy is returning (this is called from it): nothing is removed before it has.
@@ -354,28 +392,47 @@ class SendToComputerCoordinator @Inject constructor(
 
     /**
      * Lets the send in the folder go and removes every copy, in a way that outlives the app: [clearing] is there until
-     * the copies are gone, and [resume] finishes a clear-up it finds. Throws when the folder can't be cleared.
+     * it is all done, and [resume] finishes a clear-up it finds. What the computer took is noted first ([present]: what
+     * the folder holds now, when just asked), unless an earlier go had begun removing. A phone too full to write the
+     * let-go is cleared anyway (that frees room) and let go after. Throws when the folder can't be cleared or the send
+     * can't be let go; the mark stays then.
      */
     @RequiresApi(Build.VERSION_CODES.Q)
-    private fun clearCopies() {
-        runCatching { clearing.createNewFile() }
-        letGo()
+    private fun clearCopies(present: List<SentFile>? = null) {
+        markClearing()
+        if (!clearBegun()) noteTaken(present)
+        runCatching { memory.doneSending() }
+        // From here on a copy gone is this clear-up's own. Not marked on a phone too full: marked once the clear has
+        // freed room.
+        val marked = markCleared()
         folder().clear()
+        if (!marked) markCleared()
+        memory.doneSending()
         clearing.delete()
     }
 
+    /** A clear-up has begun: [clearing] is there (what it says, it keeps). */
+    private fun markClearing() {
+        runCatching { clearing.createNewFile() }
+    }
+
+    /** The clear-up is removing copies ([CLEARED]): whether that could be written. */
+    private fun markCleared(): Boolean = runCatching { clearing.writeText(CLEARED) }.isSuccess
+
+    /** Whether a clear-up under way had begun removing copies, so the copies gone since are its own. */
+    private fun clearBegun(): Boolean = runCatching { clearing.isFile && clearing.readText() == CLEARED }.getOrDefault(false)
+
     /**
      * Keeps what the computer has taken of the send in the folder: every file of it gone, but not to the Trash. [present]
-     * is what the folder holds now, when just asked.
+     * is what the folder holds now, when just asked. False when it could not be told (the folder or the Trash didn't
+     * answer, or the memory couldn't be written): nothing was decided, and the next look tries again.
      */
     @RequiresApi(Build.VERSION_CODES.Q)
-    private fun noteTaken(present: List<SentFile>? = null) {
-        runCatching {
-            if (memory.sending().isEmpty()) return
-            val folder = folder()
-            memory.taken((present ?: folder.files()).map { it.name }.toSet(), folder.trashed())
-        }
-    }
+    private fun noteTaken(present: List<SentFile>? = null): Boolean = runCatching {
+        if (memory.sending().isEmpty()) return true
+        val folder = folder()
+        memory.taken((present ?: folder.files()).map { it.name }.toSet(), folder.trashed())
+    }.isSuccess
 
     /**
      * The send in the folder is over: what the computer took of it is kept, and it is let go. [present]: what the folder
@@ -414,6 +471,13 @@ class SendToComputerCoordinator @Inject constructor(
      */
     @RequiresApi(Build.VERSION_CODES.Q)
     private suspend fun watch(total: Int) {
+        val job = currentCoroutineContext()[Job]
+        // Shown unless the watch was stopped meanwhile ([cancel], [dismiss]): a look under way doesn't undo that.
+        fun show(s: SendToComputerState) {
+            synchronized(lock) {
+                if (job?.isActive != false && _state.value !is SendToComputerState.Cancelling) _state.value = s
+            }
+        }
         var taken = 0
         var changedAt = System.currentTimeMillis()
         var seen = -1
@@ -427,25 +491,29 @@ class SendToComputerCoordinator @Inject constructor(
                 // No answer from the folder this time is no news: it is asked again next time.
                 continue
             }
-            // Each song the computer takes is kept as it goes, so a send stopped partway still counts.
-            if (all.size != seen) {
-                seen = all.size
-                noteTaken(all)
-            }
+            // Each song the computer takes is kept as it goes, so a send stopped partway still counts. A look that could
+            // not be noted (the Trash didn't answer) is noted at the next.
+            if (all.size != seen && noteTaken(all)) seen = all.size
             val files = all.filter { !it.pending }
             val listLeft = files.any { it.name == SongSender.LIST_NAME }
             val songsLeft = files.size - if (listLeft) 1 else 0
             if (songsLeft == 0 && !listLeft) {
                 letGo(all)
-                _state.value = SendToComputerState.Finished(total, total)
+                show(SendToComputerState.Finished(total, total))
                 return
             }
             if (!listLeft) {
                 val took = (total - songsLeft).coerceIn(0, total)
-                // Let go before the copies left are cleared: those were not taken.
-                letGo(all)
-                runCatching { folder().clear() }
-                _state.value = SendToComputerState.Finished(took, total, chosen = true)
+                // What it took is noted before the copies left are cleared (those were not taken), in a way that outlives
+                // the app.
+                try {
+                    clearCopies(all)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Finished at the next look.
+                }
+                show(SendToComputerState.Finished(took, total, chosen = true))
                 return
             }
             val nowTaken = (total - songsLeft).coerceIn(0, total)
@@ -454,11 +522,13 @@ class SendToComputerCoordinator @Inject constructor(
                 changedAt = System.currentTimeMillis()
             }
             if (taken == 0) continue
-            _state.value = if (System.currentTimeMillis() - changedAt > STOPPED_AFTER_MS) {
-                SendToComputerState.Finished(taken, total)
-            } else {
-                SendToComputerState.Taking(taken, total)
-            }
+            show(
+                if (System.currentTimeMillis() - changedAt > STOPPED_AFTER_MS) {
+                    SendToComputerState.Finished(taken, total)
+                } else {
+                    SendToComputerState.Taking(taken, total)
+                },
+            )
         }
     }
 
@@ -502,6 +572,8 @@ class SendToComputerCoordinator @Inject constructor(
         private const val MEMORY_FILE = "send_to_computer.json"
         /** There while a cancel removes the copies ([clearing]). */
         private const val CLEARING_FILE = "send_to_computer.clearing"
+        /** What [clearing] says once the clear-up has begun removing copies. */
+        private const val CLEARED = "cleared"
         private const val WATCH_EVERY_MS = 1_000L
         /** Once the computer has started, this long with nothing more taken means it has stopped. */
         private const val STOPPED_AFTER_MS = 60_000L

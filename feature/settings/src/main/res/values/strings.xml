@@ -832,6 +832,7 @@
     </plurals>
     <string name="settings_send_computer_remove_copies">Remove the copies</string>
     <string name="settings_send_computer_list_in_the_way">An older stash-transfer.json from another copy of Stash is in Download › Stash transfer. Delete it in the Files app (or let your computer take that send), then tap Send to computer again.</string>
+    <string name="settings_send_computer_no_answer">Your phone\'s storage didn\'t answer. Tap Send to computer again.</string>
     <string name="settings_send_computer_taking">Your computer is taking them: %1$d of %2$d</string>
     <string name="settings_send_computer_taking_desc">Keep the phone plugged in.</string>
     <plurals name="settings_send_computer_finished">

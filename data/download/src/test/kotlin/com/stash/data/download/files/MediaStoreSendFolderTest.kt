@@ -37,6 +37,8 @@ class MediaStoreSendFolderTest {
         val othersNames = HashSet<String>()
         /** Listings of the folder go unanswered (a null cursor), as when MediaStore can't be reached. */
         var unanswered = false
+        /** This many listings to come go unanswered. */
+        var unansweredNext = 0
         private var next = 1L
         private lateinit var dir: File
 
@@ -85,6 +87,10 @@ class MediaStoreSendFolderTest {
         private fun answer(uri: Uri, projection: Array<out String>?, path: String?, trashedOnly: Boolean): Cursor? {
             val id = idOf(uri)
             if (id == null && unanswered) return null
+            if (id == null && unansweredNext > 0) {
+                unansweredNext--
+                return null
+            }
             val columns = projection ?: arrayOf(MediaStore.Downloads._ID)
             val matching = when {
                 id != null -> listOfNotNull(rows[id])
@@ -159,9 +165,26 @@ class MediaStoreSendFolderTest {
     @Test fun `a folder that doesn't answer is not an empty one`() {
         folder.write("1.flac", ByteArray(10).inputStream()) { true }
         store.unanswered = true
-        assertThat(runCatching { folder.files() }.exceptionOrNull()).isInstanceOf(IllegalStateException::class.java)
-        assertThat(runCatching { folder.trashed() }.exceptionOrNull()).isInstanceOf(IllegalStateException::class.java)
+        assertThat(runCatching { folder.files() }.exceptionOrNull()).isInstanceOf(NoAnswerException::class.java)
+        assertThat(runCatching { folder.trashed() }.exceptionOrNull()).isInstanceOf(NoAnswerException::class.java)
         store.unanswered = false
         assertThat(folder.files().map { it.name }).containsExactly("1.flac")
+    }
+
+    @Test fun `the look for an old list is asked again when it isn't answered`() {
+        folder.writeList("""{"songs":["old"]}""")
+        store.unansweredNext = 1
+        folder.writeList("""{"songs":["new"]}""")
+        // The old list went on the second asking, so the new one has the name.
+        assertThat(store.named(SongSender.LIST_NAME)).hasSize(1)
+        assertThat(folder.readList()).isEqualTo("""{"songs":["new"]}""")
+    }
+
+    @Test fun `a list is written even when the folder never answers the look for an old one`() {
+        store.unanswered = true
+        folder.writeList("""{"songs":[]}""")
+        store.unanswered = false
+        assertThat(store.named(SongSender.LIST_NAME)).hasSize(1)
+        assertThat(folder.readList()).isEqualTo("""{"songs":[]}""")
     }
 }

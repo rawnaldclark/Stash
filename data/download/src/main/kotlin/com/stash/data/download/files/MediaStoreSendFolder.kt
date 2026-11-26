@@ -39,7 +39,7 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
             resolver.query(MediaStore.setIncludePending(collection), columns, "${MediaStore.Downloads.RELATIVE_PATH} = ?", arrayOf(RELATIVE_PATH), null)
         }
         // No answer is not an empty folder: taken for one, every song of a send would count as taken.
-        cursor ?: throw IllegalStateException(NO_ANSWER)
+        cursor ?: throw NoAnswerException()
         val out = ArrayList<Row>()
         cursor.use { c ->
             while (c.moveToNext()) {
@@ -104,7 +104,13 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
     }
 
     override fun writeList(text: String) {
-        delete(SongSender.LIST_NAME)
+        // The old list goes first. A look for it that isn't answered is asked once more after a moment; still none, the
+        // list is written anyway, at the end of a long copy: the name it is given is read back below, so a list still in
+        // the way is found there.
+        if (runCatching { delete(SongSender.LIST_NAME) }.isFailure) {
+            Thread.sleep(LIST_RETRY_MS)
+            runCatching { delete(SongSender.LIST_NAME) }
+        }
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, SongSender.LIST_NAME)
             put(MediaStore.Downloads.MIME_TYPE, "application/json")
@@ -145,7 +151,7 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
             },
             null,
         )
-        cursor ?: throw IllegalStateException(NO_ANSWER)
+        cursor ?: throw NoAnswerException()
         val out = HashSet<Long>()
         cursor.use { c -> while (c.moveToNext()) out += c.getLong(0) }
         return out
@@ -161,6 +167,7 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
         /** The folder a computer finds: Internal storage › Download › Stash transfer. */
         const val RELATIVE_PATH = "Download/Stash transfer/"
         private const val BUFFER = 256 * 1024
-        private const val NO_ANSWER = "MediaStore did not answer."
+        /** How long the list's write waits before asking the folder again for an old list. */
+        private const val LIST_RETRY_MS = 250L
     }
 }
