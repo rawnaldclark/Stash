@@ -110,9 +110,10 @@ class SongSender(private val folder: SendFolder, private val freeBytes: () -> Lo
         val context = currentCoroutineContext()
         val wanted = songs.associateBy { it.name }
         // What a stopped send left: whole files of this send are kept, everything else goes (halves, renamed doubles,
-        // another send's songs, the old list).
+        // another send's songs, the old list). The old list first: a computer looking meanwhile finds that send gone,
+        // not its songs going one by one.
         val kept = HashMap<String, SentFile>()
-        for (file in folder.files()) {
+        for (file in folder.files().sortedBy { it.name != LIST_NAME }) {
             context.ensureActive()
             val song = wanted[file.name]
             if (song != null && !file.pending && song.bytes != null && song.bytes > 0 && file.bytes == song.bytes) {

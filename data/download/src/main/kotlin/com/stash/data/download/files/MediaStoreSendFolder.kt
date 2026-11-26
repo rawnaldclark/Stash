@@ -94,10 +94,14 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
         }
     }
 
-    /** Everything of this app's in the folder: a cancelled send leaves nothing. How many were removed. */
+    /**
+     * Everything of this app's in the folder: a cancelled send leaves nothing. The list goes first, so a computer looking
+     * meanwhile finds the send gone, not its songs going one by one (and a clear cut short leaves no list naming copies
+     * that are gone). How many were removed.
+     */
     override fun clear(): Int {
         var removed = 0
-        for (row in rows()) {
+        for (row in rows().sortedBy { it.file.name != SongSender.LIST_NAME }) {
             if (runCatching { resolver.delete(ContentUris.withAppendedId(collection, row.id), null, null) }.getOrDefault(0) > 0) removed++
         }
         return removed

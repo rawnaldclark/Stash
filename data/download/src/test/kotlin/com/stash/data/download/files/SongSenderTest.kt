@@ -261,6 +261,13 @@ class SongSenderTest {
         assertThat(again.noRoom).isNull()
     }
 
+    @Test fun `an earlier send's list goes before its copies`() = runTest {
+        folder.files["99.flac"] = SentFile("99.flac", 10)
+        folder.list = """{"songs":[{"file":"99.flac"}]}"""
+        sender.send(listOf(song(1)))
+        assertThat(folder.log.take(2)).containsExactly("delete ${SongSender.LIST_NAME}", "delete 99.flac").inOrder()
+    }
+
     @Test fun `a phone that fills up needs no more room for the rest when the copies free enough`() = runTest {
         folder.fullAfter = 2
         var asked = 0

@@ -39,6 +39,8 @@ class MediaStoreSendFolderTest {
         var unanswered = false
         /** This many listings to come go unanswered. */
         var unansweredNext = 0
+        /** The names of the rows deleted, in order. */
+        val deleted = mutableListOf<String>()
         private var next = 1L
         private lateinit var dir: File
 
@@ -73,7 +75,7 @@ class MediaStoreSendFolderTest {
         }
 
         override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int =
-            if (rows.remove(idOf(uri)) != null) 1 else 0
+            rows.remove(idOf(uri))?.let { deleted += it.name; 1 } ?: 0
 
         override fun query(uri: Uri, projection: Array<out String>?, queryArgs: Bundle?, cancellationSignal: CancellationSignal?): Cursor? {
             val trashedOnly = queryArgs?.getInt(MediaStore.QUERY_ARG_MATCH_TRASHED) == MediaStore.MATCH_ONLY
@@ -160,6 +162,17 @@ class MediaStoreSendFolderTest {
         assertThat(e).isInstanceOf(ListInTheWayException::class.java)
         assertThat(store.rows).isEmpty()
         assertThat(folder.readList()).isNull()
+    }
+
+    @Test fun `a clear takes the list first, then the copies`() {
+        folder.write("1.flac", ByteArray(10) { 1 }.inputStream()) { true }
+        folder.write("2.flac", ByteArray(10) { 2 }.inputStream()) { true }
+        folder.writeList("""{"songs":[]}""")
+        store.deleted.clear()
+        assertThat(folder.clear()).isEqualTo(3)
+        // A computer looking as it clears finds the send gone, not a list naming copies that are going.
+        assertThat(store.deleted).containsExactly(SongSender.LIST_NAME, "1.flac", "2.flac").inOrder()
+        assertThat(store.rows).isEmpty()
     }
 
     @Test fun `a folder that doesn't answer is not an empty one`() {

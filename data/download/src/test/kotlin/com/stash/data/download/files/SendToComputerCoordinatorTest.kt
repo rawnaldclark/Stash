@@ -37,6 +37,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * [SendToComputerCoordinator] with the send folder in memory and a test WorkManager (no send work runs: the copy is
@@ -135,7 +136,13 @@ class SendToComputerCoordinatorTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var coordinator: SendToComputerCoordinator
 
+    /** A cancel's clear-up under way. */
     private val clearing get() = File(context.filesDir, "send_to_computer.clearing")
+    /** A clear-up of the copies the computer left under way. */
+    private val left get() = File(context.filesDir, "send_to_computer.clearing-left")
+    /** The clear-up under way has begun removing. */
+    private val cleared get() = File(context.filesDir, "send_to_computer.cleared")
+    private fun marked() = clearing.exists() || left.exists() || cleared.exists()
     private fun memory() = SendMemory(File(context.filesDir, "send_to_computer.json"))
 
     @Before fun setUp() {
@@ -240,17 +247,22 @@ class SendToComputerCoordinatorTest {
         folder.list = """{"songs":[{"file":"1.flac"},{"file":"2.flac"}]}"""
         clearing.createNewFile()
         val seen = recordStates()
+        val shown = AtomicReference<SendToComputerState>()
+        folder.onClear = { shown.set(coordinator.state.value) }
 
         coordinator.resume()
         awaitTrue { !clearing.exists() && coordinator.state.value is SendToComputerState.Idle }
         assertThat(folder.names()).isEmpty()
         assertThat(seen.none { it is SendToComputerState.Waiting }).isTrue()
+        // A cancel's clear-up says it is stopping.
+        assertThat(shown.get()).isEqualTo(SendToComputerState.Cancelling)
     }
 
     @Test fun `a new send drops what a cancel cut short left marked`() {
         clearing.createNewFile()
+        left.createNewFile()
         runBlocking { coordinator.copy { _, _ -> } }
-        assertThat(clearing.exists()).isFalse()
+        assertThat(marked()).isFalse()
         assertThat(coordinator.state.value).isInstanceOf(SendToComputerState.Waiting::class.java)
     }
 
@@ -373,31 +385,126 @@ class SendToComputerCoordinatorTest {
 
     @Test fun `the copies the computer left are cleared in a way that outlives the app`() {
         runBlocking { coordinator.copy { _, _ -> } }
-        val marked = AtomicBoolean()
-        folder.onClear = { marked.set(clearing.exists()) }
+        // As the copies go: the clear-up's kind is marked, and that it has begun removing, each as an empty file (a phone
+        // too full to write any data can still make one).
+        val marks = AtomicReference<List<Long?>>()
+        val shown = AtomicReference<SendToComputerState>()
+        folder.onClear = {
+            marks.set(listOf(left, cleared, clearing).map { f -> f.takeIf { it.isFile }?.length() })
+            shown.set(coordinator.state.value)
+        }
+        val seen = recordStates()
         // The computer took song 1 and removed the list: song 2 was not chosen there.
         folder.take("1.flac")
         folder.take(SongSender.LIST_NAME)
         assertThat(awaitState { it is SendToComputerState.Finished }).isEqualTo(SendToComputerState.Finished(1, 2, chosen = true))
-        assertThat(marked.get()).isTrue()
-        assertThat(clearing.exists()).isFalse()
-        assertThat(folder.names()).isEmpty()
+        awaitTrue { folder.names().isEmpty() && !marked() }
+        assertThat(marks.get()).containsExactly(0L, 0L, null).inOrder()
         assertThat(memory().onComputer()).containsExactly(1L)
         assertThat(memory().sending()).isEmpty()
+        // The computer finished: nothing was stopped, and the end is shown as the copies go.
+        assertThat(shown.get()).isEqualTo(SendToComputerState.Finished(1, 2, chosen = true))
+        assertThat(seen.none { it is SendToComputerState.Cancelling }).isTrue()
     }
 
     @Test fun `a send the computer finished while the app was away is cleared in a way that outlives the app`() {
         // The computer took song 1 and removed the list while the app was closed.
         folder.put("2.flac", 10)
         memory().startSending(sent(1, 2))
-        val marked = AtomicBoolean()
-        folder.onClear = { marked.set(clearing.exists()) }
+        val wasMarked = AtomicBoolean()
+        val shown = AtomicReference<SendToComputerState>()
+        folder.onClear = {
+            wasMarked.set(left.exists() && cleared.exists())
+            shown.set(coordinator.state.value)
+        }
+        val seen = recordStates()
 
         coordinator.resume()
-        awaitTrue { marked.get() && folder.names().isEmpty() && !clearing.exists() }
+        awaitTrue { wasMarked.get() && folder.names().isEmpty() && !marked() }
         assertThat(memory().onComputer()).containsExactly(1L)
         assertThat(memory().sending()).isEmpty()
         assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Idle)
+        // Nothing was stopped: nothing is shown as the copies go.
+        assertThat(shown.get()).isEqualTo(SendToComputerState.Idle)
+        assertThat(seen.none { it is SendToComputerState.Cancelling }).isTrue()
+    }
+
+    @Test fun `a clear-up of the copies the computer left, cut short, is finished with nothing shown`() {
+        // The computer took song 1 and removed the list; the app was killed before song 2's copy went.
+        folder.put("2.flac", 10)
+        memory().startSending(sent(1, 2))
+        left.createNewFile()
+        val seen = recordStates()
+        val shown = AtomicReference<SendToComputerState>()
+        folder.onClear = { shown.set(coordinator.state.value) }
+
+        coordinator.resume()
+        awaitTrue { folder.names().isEmpty() && !marked() }
+        Thread.sleep(200)
+        // Not "Stopping…": nothing was stopped.
+        assertThat(shown.get()).isEqualTo(SendToComputerState.Idle)
+        assertThat(seen.all { it is SendToComputerState.Idle }).isTrue()
+        assertThat(memory().onComputer()).containsExactly(1L)
+        assertThat(memory().sending()).isEmpty()
+    }
+
+    @Test fun `a send tapped while the copies the computer left are cleared copies once they are gone`() {
+        // The computer took song 1 and removed the list while the app was closed; song 2's copy is left.
+        folder.put("2.flac", 10)
+        memory().startSending(sent(1, 2))
+        val clearingNow = CountDownLatch(1)
+        val goOn = CountDownLatch(1)
+        folder.onClear = {
+            clearingNow.countDown()
+            goOn.await(10, TimeUnit.SECONDS)
+        }
+        coordinator.resume()
+        assertThat(clearingNow.await(10, TimeUnit.SECONDS)).isTrue()
+
+        // Send is tapped during the clear-up: the copy waits for it.
+        val send = scope.launch { coordinator.copy { _, _ -> } }
+        Thread.sleep(500)
+        assertThat(send.isActive).isTrue()
+        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Idle)
+
+        goOn.countDown()
+        runBlocking { withTimeout(10_000L) { send.join() } }
+        // The new send is whole: its copy, its list, and which song each file is, none of it touched by the clear-up.
+        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Waiting(1))
+        assertThat(folder.names()).containsExactly("2.flac", SongSender.LIST_NAME)
+        assertThat(memory().sending().keys).containsExactly("2.flac")
+        assertThat(memory().onComputer()).containsExactly(1L)
+        assertThat(marked()).isFalse()
+    }
+
+    @Test fun `a send tapped while the copies the computer did not choose are cleared copies once they are gone`() {
+        runBlocking { coordinator.copy { _, _ -> } }
+        val clearingNow = CountDownLatch(1)
+        val goOn = CountDownLatch(1)
+        folder.onClear = {
+            clearingNow.countDown()
+            goOn.await(10, TimeUnit.SECONDS)
+        }
+        // The computer took song 1 and removed the list: song 2 was not chosen there. The end is shown as its copy goes.
+        folder.take("1.flac")
+        folder.take(SongSender.LIST_NAME)
+        assertThat(awaitState { it is SendToComputerState.Finished }).isEqualTo(SendToComputerState.Finished(1, 2, chosen = true))
+        assertThat(clearingNow.await(10, TimeUnit.SECONDS)).isTrue()
+
+        // Dismissed, and Send tapped during the clear-up: the copy waits for it.
+        coordinator.dismiss()
+        val send = scope.launch { coordinator.copy { _, _ -> } }
+        Thread.sleep(500)
+        assertThat(send.isActive).isTrue()
+        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Idle)
+
+        goOn.countDown()
+        runBlocking { withTimeout(10_000L) { send.join() } }
+        assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Waiting(1))
+        assertThat(folder.names()).containsExactly("2.flac", SongSender.LIST_NAME)
+        assertThat(memory().sending().keys).containsExactly("2.flac")
+        assertThat(memory().onComputer()).containsExactly(1L)
+        assertThat(marked()).isFalse()
     }
 
     @Test fun `a clear-up cut short before it removed anything notes what the computer took`() {
@@ -418,10 +525,11 @@ class SendToComputerCoordinatorTest {
         // The clear had removed song 1's copy when the app was killed, before the send was let go.
         folder.put("2.flac", 10)
         memory().startSending(sent(1, 2))
-        clearing.writeText("cleared")
+        clearing.createNewFile()
+        cleared.createNewFile()
 
         coordinator.resume()
-        awaitTrue { !clearing.exists() && coordinator.state.value is SendToComputerState.Idle }
+        awaitTrue { !marked() && coordinator.state.value is SendToComputerState.Idle }
         assertThat(folder.names()).isEmpty()
         assertThat(memory().onComputer()).isEmpty()
         assertThat(memory().sending()).isEmpty()
@@ -434,29 +542,31 @@ class SendToComputerCoordinatorTest {
 
         coordinator.cancel()
         awaitState { it is SendToComputerState.Idle }
-        // The copies went, which frees room; the mark stays, saying the clear-up removed them, as the send isn't let go.
+        // The copies went, which frees room; the marks stay, saying the clear-up removed them, as the send isn't let go.
         assertThat(folder.names()).isEmpty()
-        assertThat(clearing.readText()).isEqualTo("cleared")
+        assertThat(clearing.exists()).isTrue()
+        assertThat(cleared.exists()).isTrue()
         assertThat(memory().sending().keys).containsExactly("1.flac", "2.flac")
 
         // With room, the next look lets it go, and the copies the clear-up removed are not taken.
         blocked.delete()
         coordinator.resume()
-        awaitTrue { !clearing.exists() && coordinator.state.value is SendToComputerState.Idle }
+        awaitTrue { !marked() && coordinator.state.value is SendToComputerState.Idle }
         assertThat(memory().sending()).isEmpty()
         assertThat(memory().onComputer()).isEmpty()
     }
 
     @Test fun `a new send after a clear-up cut short while removing notes nothing it removed`() {
         memory().startSending(sent(1, 2))
-        clearing.writeText("cleared")
+        left.createNewFile()
+        cleared.createNewFile()
         runBlocking { coordinator.copy { _, _ -> } }
-        assertThat(clearing.exists()).isFalse()
+        assertThat(marked()).isFalse()
         assertThat(memory().onComputer()).isEmpty()
         assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Waiting(2))
     }
 
-    @Test fun `a copy starting during a cancel leaves the cancel's mark`() {
+    @Test fun `a copy starting during a cancel's clear-up waits for it, and leaves the cancel's mark`() {
         runBlocking { coordinator.copy { _, _ -> } }
         val clearingNow = CountDownLatch(1)
         val goOn = CountDownLatch(1)
@@ -467,15 +577,42 @@ class SendToComputerCoordinatorTest {
         coordinator.cancel()
         assertThat(clearingNow.await(10, TimeUnit.SECONDS)).isTrue()
 
-        // The work starting now, as it can when cancelled as it starts: it leaves the state and the mark to the cancel.
-        runBlocking { coordinator.copy { _, _ -> } }
+        // The work starting now, as it can when cancelled as it starts: it waits for the clear-up, and leaves the state
+        // and the mark to the cancel.
+        val work = scope.launch { coordinator.copy { _, _ -> } }
+        Thread.sleep(300)
+        assertThat(work.isActive).isTrue()
         assertThat(clearing.exists()).isTrue()
         assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Cancelling)
+        // WorkManager stops it, as the work was cancelled.
+        work.cancel()
 
         goOn.countDown()
         awaitState { it is SendToComputerState.Idle }
-        assertThat(clearing.exists()).isFalse()
+        runBlocking { withTimeout(10_000L) { work.join() } }
+        assertThat(marked()).isFalse()
         assertThat(folder.names()).isEmpty()
+    }
+
+    @Test fun `the notification's Cancel marks the clear-up before it waits for the copy`() {
+        val job: Job = scope.launch(start = CoroutineStart.LAZY) { coordinator.copy { _, _ -> } }
+        folder.onList = { job.cancel() }
+        job.start()
+        runBlocking { job.join() }
+        // The folder held (as by a copy still returning): the clear-up waits.
+        runBlocking { coordinator.folderBusy.lock() }
+        try {
+            // The work reads as cancelled: marked then, before the wait, so the app killed now still has it finished.
+            awaitTrue { clearing.exists() }
+            assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Cancelling)
+            Thread.sleep(300)
+            assertThat(folder.names()).containsExactly("1.flac", "2.flac", SongSender.LIST_NAME)
+        } finally {
+            coordinator.folderBusy.unlock()
+        }
+        awaitState { it is SendToComputerState.Idle }
+        assertThat(folder.names()).isEmpty()
+        assertThat(marked()).isFalse()
     }
 
     @Test fun `a look under way as Cancel is tapped does not show the computer taking`() {
@@ -510,6 +647,31 @@ class SendToComputerCoordinatorTest {
         awaitState { it is SendToComputerState.Idle }
         Thread.sleep(300)
         assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Idle)
+    }
+
+    @Test fun `a look that answers after Cancel notes nothing of what the clear-up removed`() {
+        runBlocking { coordinator.copy { _, _ -> } }
+        val looking = CountDownLatch(1)
+        val answer = CountDownLatch(1)
+        val held = AtomicBoolean()
+        folder.onFiles = {
+            if (held.compareAndSet(false, true)) {
+                looking.countDown()
+                answer.await(10, TimeUnit.SECONDS)
+            }
+        }
+        assertThat(looking.await(10, TimeUnit.SECONDS)).isTrue()
+        // The phone is full: the send can't be let go, so it is still known which song each copy was.
+        val blocked = File(context.filesDir, "send_to_computer.json.new").apply { mkdirs() }
+        coordinator.cancel()
+        awaitState { it is SendToComputerState.Idle }
+        assertThat(folder.names()).isEmpty()
+
+        // The clear freed room; then the look under way answers, with the copies the clear-up removed gone.
+        blocked.delete()
+        answer.countDown()
+        Thread.sleep(500)
+        assertThat(memory().onComputer()).isEmpty()
     }
 
     @Test fun `a look whose Trash doesn't answer is noted at the next, so a copy put in the Trash is never taken`() {
