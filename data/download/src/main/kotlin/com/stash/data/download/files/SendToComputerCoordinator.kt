@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
+import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.annotation.VisibleForTesting
 import androidx.work.ExistingWorkPolicy
@@ -15,6 +16,8 @@ import com.stash.core.data.db.LibrarySwaps
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.weblibrary.WebLibraryExporter
+import com.stash.core.data.weblibrary.WebLibraryFile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -116,12 +119,18 @@ data class SendCount(val songs: Int, val bytes: Long, val onComputer: Int)
  *
  * It remembers the songs the computer has ([SendMemory]): each one whose copy the computer took (or deleted, having it
  * already), so the next send copies only the others, until [forget].
+ *
+ * Each send also carries the library ([SongSender.LIBRARY_NAME], [writeLibrary]): the likes, playlists and plays, for the
+ * computer to bring in. It is neither a song nor the list: the computer taking it, leaving it or never getting it changes
+ * nothing of what the phone counts as taken, and a send goes without it when it can't be written. With every song on the
+ * computer already, a send carries it alone, with a list of no songs.
  */
 @Singleton
 class SendToComputerCoordinator @Inject constructor(
     @ApplicationContext private val context: Context,
     private val trackDao: TrackDao,
     private val playlistDao: PlaylistDao,
+    private val library: WebLibraryExporter,
 ) {
     private val _state = MutableStateFlow<SendToComputerState>(SendToComputerState.Idle)
     val state: StateFlow<SendToComputerState> = _state.asStateFlow()
@@ -247,6 +256,10 @@ class SendToComputerCoordinator @Inject constructor(
                         } catch (e: Exception) {
                             // Finished at the next look.
                         }
+                    } else {
+                        // A library file left with no list (the computer normally removes it) goes: no send names it. Only
+                        // that file: copies kept for a send to carry on stay.
+                        runCatching { folder().delete(SongSender.LIBRARY_NAME) }
                     }
                     return@launch
                 }
@@ -335,9 +348,7 @@ class SendToComputerCoordinator @Inject constructor(
             // A send from before is cleared by this one: what the computer took of it is kept first.
             if (ownClear) runCatching { memory.doneSending() } else letGo()
             val downloaded = trackDao.getAllDownloaded().filter { !it.filePath.isNullOrBlank() }
-            val has = runCatching { memory.onComputer() }.getOrDefault(emptySet())
-            val songs = downloaded.filter { it.id !in has }
-            if (songs.isEmpty()) {
+            if (downloaded.isEmpty()) {
                 // An earlier send's copies go; ones that can't be removed now go with the next send, and this is still
                 // the answer.
                 try {
@@ -347,13 +358,16 @@ class SendToComputerCoordinator @Inject constructor(
                 } catch (e: Exception) {
                     // Left for the next send.
                 }
-                _state.value = SendToComputerState.Error(
-                    if (downloaded.isEmpty()) "There are no downloaded songs to send." else "Your computer has all your downloaded songs already.",
-                )
+                _state.value = SendToComputerState.Error("There are no downloaded songs to send.")
                 return
             }
+            val has = runCatching { memory.onComputer() }.getOrDefault(emptySet())
+            // None when the computer has every song: the send is then the library alone, with a list of no songs.
+            val songs = downloaded.filter { it.id !in has }
             // Each song's playlists, for choosing on the computer; a send goes without them rather than not at all.
-            val playlists = runCatching { playlistDao.playlistNamesOfSongs() }.getOrDefault(emptyList()).groupBy({ it.trackId }, { it.name })
+            val playlists = if (songs.isEmpty()) emptyMap() else {
+                runCatching { playlistDao.playlistNamesOfSongs() }.getOrDefault(emptyList()).groupBy({ it.trackId }, { it.name })
+            }
             var told = 0L
             val result = SongSender(folder(), ::freeBytes).send(
                 songs.map { sendSong(it, playlists[it.id].orEmpty()) },
@@ -367,8 +381,12 @@ class SendToComputerCoordinator @Inject constructor(
                         )
                     }
                 },
+                library = ::writeLibrary,
             ) { done, total ->
-                if (_state.value !is SendToComputerState.Cancelling) _state.value = SendToComputerState.Copying(done.coerceAtMost(total - 1), total)
+                // A send of the library alone has no songs to count: it stays "Getting songs ready…".
+                if (total > 0 && _state.value !is SendToComputerState.Cancelling) {
+                    _state.value = SendToComputerState.Copying(done.coerceAtMost(total - 1), total)
+                }
                 val now = System.currentTimeMillis()
                 if (now - told >= NOTIFY_EVERY_MS || done == total) {
                     told = now
@@ -378,8 +396,10 @@ class SendToComputerCoordinator @Inject constructor(
             // A cancel that came during the last progress call or the list's write (the notification's Cancel stops
             // the work, not this): carried out, rather than the send left waiting for the computer.
             currentCoroutineContext().ensureActive()
-            if (result.entries.isEmpty()) {
-                _state.value = SendToComputerState.Error("None of the songs could be copied.")
+            if (result.entries.isEmpty() && !result.library) {
+                _state.value = SendToComputerState.Error(
+                    if (songs.isEmpty()) "Your likes, playlists and plays could not be copied. Tap Send to computer again." else "None of the songs could be copied.",
+                )
                 return
             }
             synchronized(lock) {
@@ -535,12 +555,37 @@ class SendToComputerCoordinator @Inject constructor(
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun folder(): SendFolder = folderForTest ?: MediaStoreSendFolder(context.contentResolver)
 
-    /** How many songs the list in the folder names, when this app's list is there. */
+    /** How many songs the list in the folder names, when this app's list is there (none: a send of the library alone). */
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun sentBefore(): Int? {
         val text = folder().readList() ?: return null
         val songs = (kotlinx.serialization.json.Json.parseToJsonElement(text) as? JsonObject)?.get("songs") as? JsonArray
-        return songs?.size?.takeIf { it > 0 }
+        return songs?.size
+    }
+
+    /**
+     * Writes the library file of the send numbered [sentAtMs] ([SongSender.LIBRARY_NAME]: likes, playlists and plays, as
+     * [WebLibraryExporter.forComputer] reads them). True when it was written. It throws only when cancelled: a library that
+     * can't be read, is too big for the computer or can't be written is logged, and the send goes without it.
+     */
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private suspend fun writeLibrary(sentAtMs: Long): Boolean {
+        val why = try {
+            val file = library.forComputer(System.currentTimeMillis(), sentAtMs)
+            if (file != null) {
+                folder().writeLibrary { out -> WebLibraryFile.write(file, out) }
+                Log.i(TAG, "Library file written: ${file.likes.size} likes, ${file.playlists.size} playlists, ${file.history.size} plays")
+                return true
+            }
+            IllegalStateException("too big for the computer to read")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            // Whatever it is (a library too big to hold in memory too), the songs still go.
+            e
+        }
+        Log.w(TAG, "The library file was not written, so the songs go without it", why)
+        return false
     }
 
     /**
@@ -580,9 +625,12 @@ class SendToComputerCoordinator @Inject constructor(
             if (all.size != seen && noteTaken(all)) seen = all.size
             val files = all.filter { !it.pending }
             val listLeft = files.any { it.name == SongSender.LIST_NAME }
-            val songsLeft = files.size - if (listLeft) 1 else 0
+            // The library file is neither a song nor the list: there or gone, it is no song left or taken.
+            val songsLeft = files.count { it.name != SongSender.LIST_NAME && it.name != SongSender.LIBRARY_NAME }
             if (songsLeft == 0 && !listLeft) {
                 letGo(all)
+                // The computer normally removes the library file; one it left goes now.
+                if (all.any { it.name == SongSender.LIBRARY_NAME }) removeLibrary()
                 show(SendToComputerState.Finished(total, total, rest = rest))
                 return
             }
@@ -613,6 +661,25 @@ class SendToComputerCoordinator @Inject constructor(
                     SendToComputerState.Taking(taken, total)
                 },
             )
+        }
+    }
+
+    /**
+     * Removes a library file the computer left once it had the whole send, with the folder to itself ([folderBusy]) and
+     * only while the watch is still on: a send tapped since (which stops the watch) writes its own, never removed here. One
+     * that can't be removed now goes with the next send.
+     */
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private suspend fun removeLibrary() {
+        try {
+            folderBusy.withLock {
+                currentCoroutineContext().ensureActive()
+                folder().delete(SongSender.LIBRARY_NAME)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Left for the next send.
         }
     }
 
@@ -652,6 +719,7 @@ class SendToComputerCoordinator @Inject constructor(
 
     companion object {
         const val WORK_NAME = "send_to_computer"
+        private const val TAG = "SendToComputer"
         /** [SendMemory]'s file, in the app's own storage. */
         private const val MEMORY_FILE = "send_to_computer.json"
         /** There while a cancel's clear-up removes the copies ([stopMark]). */
