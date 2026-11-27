@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.provider.MediaStore
 import androidx.annotation.RequiresApi
 import java.io.InputStream
+import java.io.OutputStream
 
 /**
  * [SendFolder] as `Download/Stash transfer/` in MediaStore's Downloads collection: this app's own files there, which
@@ -136,6 +137,41 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
         if (real != null && real != SongSender.LIST_NAME) {
             runCatching { resolver.delete(uri, null, null) }
             throw ListInTheWayException()
+        }
+    }
+
+    /**
+     * The library file: the old one goes first, then the new one is streamed in, published only once it is whole. A file
+     * this app can't see in the way of its name (another copy of Stash's) would get it renamed, and the computer reads only
+     * its own name: it is taken back then, and that is a failure. Any failure leaves nothing of it.
+     */
+    override fun writeLibrary(write: (OutputStream) -> Unit) {
+        runCatching { delete(SongSender.LIBRARY_NAME) }
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, SongSender.LIBRARY_NAME)
+            put(MediaStore.Downloads.MIME_TYPE, "application/json")
+            put(MediaStore.Downloads.RELATIVE_PATH, RELATIVE_PATH)
+            put(MediaStore.Downloads.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(collection, values) ?: throw IllegalStateException("The library file could not be written.")
+        val real = try {
+            val out = resolver.openOutputStream(uri) ?: throw IllegalStateException("The library file could not be written.")
+            out.use { raw ->
+                val buffered = raw.buffered(BUFFER)
+                write(buffered)
+                buffered.flush()
+            }
+            resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
+            resolver.query(uri, arrayOf(MediaStore.Downloads.DISPLAY_NAME), null, null, null)
+                ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        } catch (e: Throwable) {
+            // Out of memory too: a half-written file is never left.
+            runCatching { resolver.delete(uri, null, null) }
+            throw e
+        }
+        if (real != null && real != SongSender.LIBRARY_NAME) {
+            runCatching { resolver.delete(uri, null, null) }
+            throw LibraryInTheWayException()
         }
     }
 

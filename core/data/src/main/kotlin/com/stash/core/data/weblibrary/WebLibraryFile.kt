@@ -3,7 +3,9 @@ package com.stash.core.data.weblibrary
 import com.stash.core.model.Track
 import com.stash.core.model.share.toSharedTrackWithArt
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationStrategy
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToStream
 import java.io.OutputStream
@@ -21,6 +23,10 @@ import java.time.format.DateTimeFormatter
  *
  * The optional `listens` section (a phone's whole history, added 2026-10-23) is not a field here: it is too big to hold in
  * memory, so [WebLibraryListens] streams it into a saved file after these fields. Without it, the bytes are exactly v1's.
+ *
+ * Send to computer writes the same file beside the songs (`stash-library.json`, for Stash for desktop), with fields more:
+ * [sentAtMs], each like's [Like.likedOn], each playlist's [Playlist.from] and [Playlist.kind]. A file for the web never has
+ * them: null, they are not written at all.
  */
 @Serializable
 data class WebLibraryFile(
@@ -33,6 +39,11 @@ data class WebLibraryFile(
     val likes: List<Like>,
     val playlists: List<Playlist>,
     val history: List<Play>,
+    /**
+     * Send to computer only: the send this file goes with, the same number as that send's list (`stash-transfer.json`) has.
+     * The computer ignores a file whose number isn't its list's (one left from an earlier send).
+     */
+    @SerialName("sent_at_ms") val sentAtMs: Long? = null,
 ) {
     /** A song as the web knows it (its `LibraryItem` minus what it works out itself). */
     @Serializable
@@ -55,7 +66,15 @@ data class WebLibraryFile(
     data class Artwork(val url: String)
 
     @Serializable
-    data class Like(val item: Song, val likedAt: Long)
+    data class Like(
+        val item: Song,
+        val likedAt: Long,
+        /**
+         * Send to computer only: where the song is liked, of [LIKED_STASH], [FROM_SPOTIFY], [FROM_YOUTUBE] and
+         * [FROM_SOUNDCLOUD], in that order.
+         */
+        @SerialName("liked_on") val likedOn: List<String>? = null,
+    )
 
     @Serializable
     data class Playlist(
@@ -67,6 +86,17 @@ data class WebLibraryFile(
         val updatedAt: Long,
         /** Set for a shared mix someone else owns: the web follows it too, and keeps it up to date there. */
         val follow: Follow? = null,
+        /**
+         * Send to computer only: the service a playlist synced from one came from ([FROM_SPOTIFY], [FROM_YOUTUBE],
+         * [FROM_SOUNDCLOUD]), or an album's service. Not set for your own playlists (made in Stash), shared mixes and Stash
+         * Mixes.
+         */
+        val from: String? = null,
+        /**
+         * Send to computer only: what the list is ([KIND_PLAYLIST], [KIND_ALBUM], [KIND_MIX], [KIND_RADIO],
+         * [KIND_STASH_MIX]).
+         */
+        val kind: String? = null,
     )
 
     @Serializable
@@ -81,6 +111,45 @@ data class WebLibraryFile(
 
         /** The web keeps this many plays (newest first); the export sends no more. */
         const val MAX_PLAYS = 5_000
+
+        /** Send to computer carries this many plays (newest first): the web's [MAX_PLAYS] is not the computer's. */
+        const val MAX_COMPUTER_PLAYS = 100_000
+
+        /**
+         * Send to computer's file is kept to about this size (the computer reads at most [WebLibraryReader.MAX_BYTES]): over it,
+         * the oldest plays go first, then the likes beyond [COMPUTER_LIKES_KEPT].
+         */
+        const val COMPUTER_BYTES = 48L * 1024 * 1024
+
+        /** The likes Send to computer's file keeps however big it is (the newest). */
+        const val COMPUTER_LIKES_KEPT = 50_000
+
+        /** [Playlist.from] of a playlist synced from Spotify. */
+        const val FROM_SPOTIFY = "spotify"
+
+        /** [Playlist.from] of a playlist synced from YouTube Music. */
+        const val FROM_YOUTUBE = "youtube"
+
+        /** [Playlist.from] of a playlist synced from SoundCloud. */
+        const val FROM_SOUNDCLOUD = "soundcloud"
+
+        /** [Like.likedOn]: liked in Stash. The services' are the [Playlist.from] names. */
+        const val LIKED_STASH = "stash"
+
+        /** [Playlist.kind]: a playlist (yours, shared with you, or synced). */
+        const val KIND_PLAYLIST = "playlist"
+
+        /** [Playlist.kind]: a saved album. */
+        const val KIND_ALBUM = "album"
+
+        /** [Playlist.kind]: a mix a service makes (Daily Mix, Your Top Songs, home mixes). */
+        const val KIND_MIX = "mix"
+
+        /** [Playlist.kind]: a service's radio (a mix whose name ends in "Radio"). */
+        const val KIND_RADIO = "radio"
+
+        /** [Playlist.kind]: a Stash Mix, made on the phone. */
+        const val KIND_STASH_MIX = "stash_mix"
 
         /** The web reads at most this many songs a playlist. */
         const val MAX_PLAYLIST_ITEMS = 10_000
@@ -113,6 +182,18 @@ data class WebLibraryFile(
 
         /** The same text [write] streams, as one string (a one-off send seals it whole). */
         fun text(file: WebLibraryFile): String = json.encodeToString(serializer(), file)
+
+        /** How many bytes [value] takes as [write] writes it, counted as it streams (nothing is held). */
+        @OptIn(ExperimentalSerializationApi::class)
+        internal fun <T> bytes(serializer: SerializationStrategy<T>, value: T): Long {
+            val counter = object : OutputStream() {
+                var count = 0L
+                override fun write(b: Int) { count++ }
+                override fun write(b: ByteArray, off: Int, len: Int) { count += len }
+            }
+            json.encodeToStream(serializer, value, counter)
+            return counter.count
+        }
 
         fun isoMillis(epochMs: Long): String = ISO_MILLIS.format(Instant.ofEpochMilli(epochMs))
 

@@ -96,6 +96,29 @@ class SendMemoryTest {
         assertThat(later.sending()).isEmpty()
     }
 
+    @Test fun `songs the computer left are left out until sent again, and one it takes later is not`() {
+        val m = memory()
+        m.startSending(mapOf("1.flac" to Sent(1, 101), "2.flac" to Sent(2, 102), "3.flac" to Sent(3, 103)))
+        // The computer took 1 and was done: 2 and 3 were not chosen there.
+        m.taken(present = setOf("2.flac", "3.flac"), trashed = emptySet())
+        m.leaveOut()
+        m.doneSending()
+        assertThat(m.leftOut()).containsExactly(2L, 3L)
+        assertThat(memory().leftOut()).containsExactly(2L, 3L)
+        assertThat(memory().onComputer()).containsExactly(1L)
+        // Sent again ("Send them too"), and 3 taken this time: only 2 is left out again.
+        m.sendLeftOutAgain()
+        assertThat(memory().leftOut()).isEmpty()
+        m.startSending(mapOf("2.flac" to Sent(2, 202), "3.flac" to Sent(3, 203)))
+        m.taken(present = setOf("2.flac"), trashed = emptySet())
+        m.leaveOut()
+        assertThat(memory().leftOut()).containsExactly(2L)
+        assertThat(memory().onComputer()).containsExactly(1L, 3L)
+        // Forgetting sends every song again, those left out too.
+        m.forget()
+        assertThat(memory().leftOut()).isEmpty()
+    }
+
     @Test fun `forgetting sends every song again, and leaves a send in the folder known`() {
         val m = memory()
         m.startSending(mapOf("1.flac" to Sent(1, 101), "2.flac" to Sent(2, 102)))

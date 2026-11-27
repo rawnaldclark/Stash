@@ -10,7 +10,8 @@ import com.stash.core.model.Track
 import kotlinx.coroutines.flow.Flow
 
 /**
- * Read-only queries behind "Export for Stash on the web" (WebLibraryExporter). Nothing here writes.
+ * Read-only queries behind "Export for Stash on the web" (WebLibraryExporter), and Send to computer's library file, made the
+ * same way. Nothing here writes.
  *
  * Blocked songs never leave: every query drops a track the blocklist matches, by the same three keys
  * the Library's playlist feed uses ([TrackDao.getByPlaylist]).
@@ -133,6 +134,74 @@ interface WebLibraryExportDao {
         """,
     )
     suspend fun playlists(): List<PlaylistEntity>
+
+    // ── Send to computer's library file only: everything the phone has synced ─────────────────────────────────────────────
+
+    /**
+     * The mixes synced from Spotify, YouTube Music and SoundCloud ([com.stash.core.model.PlaylistType.DAILY_MIX]: Spotify's
+     * home mixes, Daily Mixes, Radios, Your Top Songs, YouTube Music's home mixes, SoundCloud's mixes) while active. Each
+     * service's in its mixes' order.
+     */
+    @Query(
+        """
+        SELECT p.* FROM playlists p
+        WHERE p.type = 'DAILY_MIX'
+          AND p.is_active = 1
+          AND p.source IN ('SPOTIFY', 'YOUTUBE', 'SOUNDCLOUD')
+        ORDER BY p.source ASC, p.mix_number IS NULL, p.mix_number ASC, p.date_added ASC, p.id ASC
+        """,
+    )
+    suspend fun syncedMixes(): List<PlaylistEntity>
+
+    /** Every saved album while active ([SAVED_ALBUM]: synced or saved in Stash), oldest first. */
+    @Query(
+        """
+        SELECT p.* FROM playlists p
+        WHERE p.is_active = 1 AND """ + SAVED_ALBUM + """
+        ORDER BY p.date_added ASC, p.id ASC
+        """,
+    )
+    suspend fun savedAlbums(): List<PlaylistEntity>
+
+    /** A Stash Mix's recipe, for the id Send to computer gives its list: the list it fills ([playlistId]), and what names it. */
+    data class StashMixKey(
+        @ColumnInfo(name = "playlist_id") val playlistId: Long,
+        val name: String,
+        @ColumnInfo(name = "is_builtin") val isBuiltin: Boolean,
+        @ColumnInfo(name = "created_at") val createdAt: Long,
+    )
+
+    /** Every Stash Mix recipe with its list. */
+    @Query("SELECT playlist_id, name, is_builtin, created_at FROM stash_mix_recipes WHERE playlist_id IS NOT NULL")
+    suspend fun stashMixKeys(): List<StashMixKey>
+
+    /** Every Stash Mix while active, oldest first. */
+    @Query("SELECT p.* FROM playlists p WHERE p.type = 'STASH_MIX' AND p.is_active = 1 ORDER BY p.date_added ASC, p.id ASC")
+    suspend fun stashMixes(): List<PlaylistEntity>
+
+    /** A liked song and one place it is liked ([likePlaces]); [place] null for a Liked Songs list of another source. */
+    data class LikePlace(@ColumnInfo(name = "track_id") val trackId: Long, val place: String?)
+
+    /**
+     * Where each song [likes] returns is liked: `stash` for a Stash like (`stash_liked_at`, or in Stash's own Liked Songs),
+     * `spotify`, `youtube` or `soundcloud` for a song still in that service's Liked Songs list.
+     */
+    @Query(
+        """
+        SELECT t.id AS track_id, 'stash' AS place FROM tracks t WHERE t.stash_liked_at IS NOT NULL
+        UNION
+        SELECT pt.track_id AS track_id, CASE
+            WHEN p.type = 'STASH_LIKED' THEN 'stash'
+            WHEN p.source = 'SPOTIFY' THEN 'spotify'
+            WHEN p.source = 'YOUTUBE' THEN 'youtube'
+            WHEN p.source = 'SOUNDCLOUD' THEN 'soundcloud'
+        END AS place
+        FROM playlist_tracks pt
+        JOIN playlists p ON p.id = pt.playlist_id
+        WHERE pt.removed_at IS NULL AND p.type IN ('LIKED_SONGS', 'STASH_LIKED')
+        """,
+    )
+    suspend fun likePlaces(): List<LikePlace>
 
     /** A playlist's first [limit] songs in its order (removed ones left out). */
     @Query(

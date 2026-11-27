@@ -32,12 +32,19 @@ class SongSenderTest {
         var fullAfter: Int? = null
         /** What writing the list throws, when set. */
         var listFails: Exception? = null
+        /** What the next write of the list throws, once. */
+        var listFailsOnce: Exception? = null
+        /** The library file's text, while it is there. */
+        var library: String? = null
         private var writes = 0
 
         /** Called after each block of a write: a test cancels from here. */
         var onBlock: (name: String) -> Unit = {}
 
-        override fun files(): List<SentFile> = files.values.toList() + listOfNotNull(list?.let { SentFile(SongSender.LIST_NAME, it.length.toLong()) })
+        override fun files(): List<SentFile> = files.values.toList() + listOfNotNull(
+            library?.let { SentFile(SongSender.LIBRARY_NAME, it.length.toLong()) },
+            list?.let { SentFile(SongSender.LIST_NAME, it.length.toLong()) },
+        )
 
         override fun write(name: String, source: InputStream, keepGoing: () -> Boolean): SentFile? {
             if (name == failOn) return null
@@ -61,16 +68,26 @@ class SongSenderTest {
 
         override fun delete(name: String) {
             log += "delete $name"
-            if (name == SongSender.LIST_NAME) list = null else { files.remove(name); contents.remove(name) }
+            when (name) {
+                SongSender.LIST_NAME -> list = null
+                SongSender.LIBRARY_NAME -> library = null
+                else -> { files.remove(name); contents.remove(name) }
+            }
         }
 
         override fun writeList(text: String) {
             listFails?.let { throw it }
+            listFailsOnce?.let { listFailsOnce = null; throw it }
             log += "list"
             list = text
         }
 
-        override fun clear(): Int = files().size.also { files.clear(); contents.clear(); list = null }
+        override fun writeLibrary(write: (java.io.OutputStream) -> Unit) {
+            log += "library"
+            library = java.io.ByteArrayOutputStream().also(write).toString(Charsets.UTF_8.name())
+        }
+
+        override fun clear(): Int = files().size.also { files.clear(); contents.clear(); list = null; library = null }
 
         override fun readList(): String? = list
     }
@@ -86,6 +103,14 @@ class SongSenderTest {
     )
 
     private fun listed(): List<JsonObject> = Json.parseToJsonElement(folder.list!!).jsonObject["songs"]!!.jsonArray.map { it.jsonObject }
+
+    /** A library that writes its file with the send's number, as the coordinator's does. */
+    private val library: suspend (Long) -> Boolean = { sentAt ->
+        folder.writeLibrary { it.write("""{"sent_at_ms":$sentAt}""".toByteArray()) }
+        true
+    }
+
+    private fun sentAt(text: String?) = Json.parseToJsonElement(text!!).jsonObject["sent_at_ms"]!!.jsonPrimitive.content.toLong()
     private fun listedFiles() = listed().map { it["file"]!!.jsonPrimitive.content }
 
     @Test fun `every song is copied, then the list is written last`() = runTest {
@@ -338,6 +363,108 @@ class SongSenderTest {
         var toldAgain = false
         sender.send(listOf(song(9)), beforeList = { _, _ -> toldAgain = true })
         assertThat(toldAgain).isFalse()
+    }
+
+    @Test fun `the library file is written after the copies and before the list, with the list's number`() = runTest {
+        val result = sender.send(listOf(song(1), song(2)), library = library)
+        assertThat(result.library).isTrue()
+        assertThat(folder.log).containsExactly("write 1.flac", "write 2.flac", "library", "list").inOrder()
+        assertThat(sentAt(folder.library)).isEqualTo(sentAt(folder.list))
+    }
+
+    @Test fun `an earlier send's library file goes with its other files, before anything is copied`() = runTest {
+        sender.send(listOf(song(1)), library = library)
+        folder.log.clear()
+        sender.send(listOf(song(1), song(2)), library = library)
+        assertThat(folder.log).containsExactly(
+            "delete ${SongSender.LIST_NAME}", "delete ${SongSender.LIBRARY_NAME}", "write 2.flac", "library", "list",
+        ).inOrder()
+    }
+
+    @Test fun `with no songs to send, the send is the library alone, with a list of no songs`() = runTest {
+        folder.files["99.flac"] = SentFile("99.flac", 10)
+        // No room is weighed: there are no copies to make.
+        val result = SongSender(folder) { 0L }.send(emptyList(), library = library)
+        assertThat(result.library).isTrue()
+        assertThat(result.entries).isEmpty()
+        assertThat(folder.log).containsExactly("delete 99.flac", "library", "list").inOrder()
+        assertThat(listed()).isEmpty()
+        assertThat(folder.files).isEmpty()
+
+        // Without a library, a send of no songs writes nothing, as before.
+        folder.log.clear()
+        val bare = sender.send(emptyList())
+        assertThat(bare.library).isFalse()
+        assertThat(folder.log).doesNotContain("list")
+    }
+
+    @Test fun `a library that fails leaves the songs to go without it`() = runTest {
+        for (failing in listOf<suspend (Long) -> Boolean>({ false }, { throw java.io.IOException("no room for it") })) {
+            folder.list = null
+            val result = sender.send(listOf(song(1), song(2)), library = failing)
+            assertThat(result.library).isFalse()
+            assertThat(listedFiles()).containsExactly("1.flac", "2.flac").inOrder()
+        }
+        // The library alone, failing, is no send: no list.
+        folder.list = null
+        val alone = sender.send(emptyList(), library = { false })
+        assertThat(alone.library).isFalse()
+        assertThat(folder.list).isNull()
+    }
+
+    @Test fun `no library is written when nothing could be copied, or the phone filled up`() = runTest {
+        var asked = 0
+        val counting: suspend (Long) -> Boolean = { asked++; true }
+        folder.failOn = "1.flac"
+        sender.send(listOf(song(1)), library = counting)
+        assertThat(asked).isEqualTo(0)
+        assertThat(folder.list).isNull()
+
+        // Full partway: what was copied is listed, and the room left is the list's.
+        folder.failOn = null
+        folder.fullAfter = 1
+        val result = sender.send(listOf(song(1), song(2)), library = counting)
+        assertThat(asked).isEqualTo(0)
+        assertThat(result.library).isFalse()
+        assertThat(listedFiles()).containsExactly("1.flac")
+    }
+
+    @Test fun `a list left no room by the library goes without the library`() = runTest {
+        folder.listFailsOnce = java.io.IOException("write failed: ENOSPC (No space left on device)")
+        val result = sender.send(listOf(song(1)), library = library)
+        assertThat(result.library).isFalse()
+        assertThat(folder.library).isNull()
+        assertThat(listedFiles()).containsExactly("1.flac")
+    }
+
+    @Test fun `the library alone whose list can't be written leaves nothing in the folder, and no copies to remove`() = runTest {
+        folder.listFails = java.io.IOException("write failed: ENOSPC (No space left on device)")
+        val full = runCatching { sender.send(emptyList(), library = library) }.exceptionOrNull()
+        assertThat(full).isInstanceOf(NoRoomException::class.java)
+        assertThat((full as NoRoomException).copies).isEqualTo(0)
+        assertThat(folder.library).isNull()
+
+        folder.listFails = ListInTheWayException()
+        val inTheWay = runCatching { sender.send(emptyList(), library = library) }.exceptionOrNull()
+        assertThat(inTheWay).isInstanceOf(ListInTheWayException::class.java)
+        assertThat(folder.library).isNull()
+        assertThat(folder.files()).isEmpty()
+    }
+
+    @Test fun `a cancel during the library's write writes no list`() = runTest {
+        lateinit var job: Job
+        var ended: Throwable? = null
+        job = launch {
+            try {
+                sender.send(listOf(song(1)), library = { job.cancel(); true })
+            } catch (e: CancellationException) {
+                ended = e
+                throw e
+            }
+        }
+        job.join()
+        assertThat(ended).isInstanceOf(CancellationException::class.java)
+        assertThat(folder.list).isNull()
     }
 
     @Test fun `a full phone is told from the error or what caused it`() {

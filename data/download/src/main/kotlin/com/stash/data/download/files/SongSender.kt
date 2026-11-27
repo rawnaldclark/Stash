@@ -1,9 +1,11 @@
 package com.stash.data.download.files
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.json.JsonObject
 import java.io.InputStream
+import java.io.OutputStream
 
 /** A file in the send folder, as the folder itself reports it ([id]: its own id there, when it has one). */
 data class SentFile(val name: String, val bytes: Long, val pending: Boolean = false, val id: Long? = null)
@@ -30,6 +32,12 @@ interface SendFolder {
      * (nothing of it is left then).
      */
     fun writeList(text: String)
+
+    /**
+     * Writes the library file ([SongSender.LIBRARY_NAME]) as [write] streams it, replacing an earlier one. Throws when it
+     * can't be written whole under its own name (nothing of it is left then).
+     */
+    fun writeLibrary(write: (OutputStream) -> Unit)
 
     /** The ids of this app's files in the folder that are in the Trash (put there in the Files app). */
     fun trashed(): Set<Long> = emptySet()
@@ -59,8 +67,16 @@ class SendSong(
  * copied (the song that found it full, and the ones after it, not tried). They need [noRoom] bytes more than were free
  * then, even once the computer has taken the songs listed (which frees the room their copies take): 0 when that is room
  * enough, null when the phone didn't fill up. The list names the songs copied before it, for the computer to take.
+ * [library]: the library file ([SongSender.LIBRARY_NAME]) went with them.
  */
-data class SendResult(val entries: List<JsonObject>, val reused: Int, val failed: Int, val noRoom: Long? = null, val full: Int = 0)
+data class SendResult(
+    val entries: List<JsonObject>,
+    val reused: Int,
+    val failed: Int,
+    val noRoom: Long? = null,
+    val full: Int = 0,
+    val library: Boolean = false,
+)
 
 /**
  * The phone has no room for the copies: they need [needed] bytes more than are free. Nothing more is copied (a full
@@ -75,6 +91,9 @@ class NoRoomException(val needed: Long, val copies: Int = 0) : Exception("There 
  * name, so it would take the other send and never this one.
  */
 class ListInTheWayException : Exception("Another copy of Stash has a stash-transfer.json in Download/Stash transfer.")
+
+/** Another copy of Stash's library file is in the folder, so this one's can't have its name ([SendFolder.writeLibrary]). */
+class LibraryInTheWayException : Exception("Another copy of Stash has a stash-library.json in Download/Stash transfer.")
 
 /**
  * The folder was asked what it holds and gave no answer (MediaStore returned no cursor): not an empty folder, which
@@ -94,6 +113,10 @@ class NoAnswerException : IllegalStateException("MediaStore did not answer.")
  * before anything is copied ([NoRoomException]). A copy that finds the phone full stops the copying: the songs copied
  * until then are listed, so the computer can take them (which frees their room), and the rest are not tried
  * ([SendResult.noRoom]); with none copied, or no room left for the list, the send stops ([NoRoomException]).
+ *
+ * The library file ([LIBRARY_NAME]: likes, playlists and plays) is written after the copies and before the list, which
+ * still says the send is whole; both carry the same `sent_at_ms`. It never stops the songs: written or not, they go. With
+ * no songs to send, a send carries it alone, with a list of no songs.
  */
 class SongSender(private val folder: SendFolder, private val freeBytes: () -> Long? = { null }) {
 
@@ -101,10 +124,15 @@ class SongSender(private val folder: SendFolder, private val freeBytes: () -> Lo
      * [onProgress] is told before each song: how many are done, of how many. [beforeList] is told each song in the list
      * and its file, and what the send did (what [send] returns), just before the list is written (the computer takes
      * nothing before there is a list). Cancelling the coroutine stops between blocks.
+     *
+     * [library] writes the library file for the send numbered `sentAtMs` (the list's number too), true when it did. It is
+     * asked only when a list follows: some song was copied, or there are none to copy (the send is then the library
+     * alone). Not when the phone filled up: the library would take the room the list needs. Failing, it is left out.
      */
     suspend fun send(
         songs: List<SendSong>,
         beforeList: (listed: List<Pair<SendSong, SentFile>>, result: SendResult) -> Unit = { _, _ -> },
+        library: (suspend (sentAtMs: Long) -> Boolean)? = null,
         onProgress: suspend (done: Int, total: Int) -> Unit = { _, _ -> },
     ): SendResult {
         val context = currentCoroutineContext()
@@ -123,11 +151,14 @@ class SongSender(private val folder: SendFolder, private val freeBytes: () -> Lo
             }
         }
 
-        // What is still to copy (from the [from]th song on) has to fit, with room to spare.
+        // What is still to copy (from the [from]th song on) has to fit, with room to spare. A send of the library alone
+        // copies no songs, so it is not weighed.
         fun stillToCopy(from: Int) = songs.drop(from).filter { kept[it.name] == null }.sumOf { it.bytes ?: 0L }
-        freeBytes()?.let { free ->
-            val needed = stillToCopy(0) + SPARE - free
-            if (needed > 0) throw NoRoomException(needed, copies = kept.size)
+        if (songs.isNotEmpty()) {
+            freeBytes()?.let { free ->
+                val needed = stillToCopy(0) + SPARE - free
+                if (needed > 0) throw NoRoomException(needed, copies = kept.size)
+            }
         }
 
         val entries = ArrayList<JsonObject>(songs.size)
@@ -179,13 +210,37 @@ class SongSender(private val folder: SendFolder, private val freeBytes: () -> Lo
         // The room the listed copies take is freed once the computer has them: what the rest need even then.
         val noRoom = needed?.let { (it - listed.sumOf { (_, file) -> file.bytes }).coerceAtLeast(0L) }
         noRoom?.let { if (entries.isEmpty()) throw NoRoomException(it) }
-        val result = SendResult(entries, reused, failed, noRoom, outOfRoom)
-        if (entries.isNotEmpty()) {
-            beforeList(listed, result)
+        // One number for the library file and the list: the computer reads the library only with the list it goes with.
+        val sentAt = System.currentTimeMillis()
+        val withLibrary = library != null && needed == null && (entries.isNotEmpty() || songs.isEmpty()) &&
             try {
-                folder.writeList(listText(entries))
+                library(sentAt)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                false
+            }
+        // A cancel during the library's write: no list for a send that was stopped.
+        context.ensureActive()
+        var result = SendResult(entries, reused, failed, noRoom, outOfRoom, withLibrary)
+        if (entries.isNotEmpty() || withLibrary) {
+            beforeList(listed, result)
+            val text = listText(entries, sentAt)
+            try {
+                try {
+                    folder.writeList(text)
+                } catch (e: Exception) {
+                    context.ensureActive()
+                    // The library took the room the list needs: it goes, and the songs go without it.
+                    if (!withLibrary || entries.isEmpty() || !full(e)) throw e
+                    runCatching { folder.delete(LIBRARY_NAME) }
+                    folder.writeList(text)
+                    result = result.copy(library = false)
+                }
             } catch (e: Exception) {
                 context.ensureActive()
+                // The library alone, with no list to go with: it goes, quietly. There are no copies to leave.
+                if (entries.isEmpty()) runCatching { folder.delete(LIBRARY_NAME) }
                 // Not even the list fits: the copies stay, with nothing to take them by (so their room is not freed).
                 if (full(e)) throw NoRoomException((needed ?: (SPARE - (freeBytes() ?: 0L))).coerceAtLeast(0L), copies = entries.size)
                 throw e
@@ -196,6 +251,12 @@ class SongSender(private val folder: SendFolder, private val freeBytes: () -> Lo
 
     companion object {
         const val LIST_NAME = "stash-transfer.json"
+
+        /**
+         * The library file of a send: likes, playlists and plays, as Stash on the web's library file (`stash-web-library`
+         * v1) with the send's `sent_at_ms` besides. Neither a song nor the list.
+         */
+        const val LIBRARY_NAME = "stash-library.json"
 
         /** Left free beyond the copies: a phone with no room at all stops working well. */
         const val SPARE = 1_000_000_000L

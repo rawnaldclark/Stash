@@ -53,6 +53,12 @@ class SendToComputerViewModel @Inject constructor(
 
     suspend fun count(): SendCount = coordinator.count()
     suspend fun forget() = coordinator.forget()
+
+    /** "Send them too": a send with the songs the computer left out before. */
+    suspend fun sendLeftOutToo() {
+        coordinator.includeLeftOut()
+        coordinator.start()
+    }
     fun start() = coordinator.start()
     fun cancel() = coordinator.cancel()
     fun dismiss() = coordinator.dismiss()
@@ -92,9 +98,9 @@ private const val USB_STATE = "android.hardware.usb.action.USB_STATE"
 
 /**
  * The Storage card's "Send to computer" row, one step at a time: what a send copies (leaving out the songs the computer
- * has, with a way to send those too) and whether the phone is plugged into a computer with File transfer on; the songs
- * being copied out; waiting for Stash on the computer; the computer taking them (counted as they leave the folder); and
- * the end. Hidden with no downloads.
+ * has, with a way to send those too; your likes, playlists and plays always go, alone when the computer has every song)
+ * and whether the phone is plugged into a computer with File transfer on; the songs being copied out; waiting for Stash
+ * on the computer; the computer taking them (counted as they leave the folder); and the end. Hidden with no downloads.
  */
 @Composable
 internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltViewModel()) {
@@ -131,6 +137,14 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
         strong = usb == Usb.FileTransfer,
     )
 
+    /** The songs the computer left out before, which a send doesn't copy again ("Send them too" does). */
+    @Composable
+    fun LeftOutLine(songs: Int) {
+        if (songs <= 0) return
+        Spacer(modifier = Modifier.height(4.dp))
+        Line(pluralStringResource(R.plurals.settings_send_computer_left_out, songs, songs))
+    }
+
     @Composable
     fun Bar(progress: Float?) {
         Spacer(modifier = Modifier.height(8.dp))
@@ -163,7 +177,7 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
         when (val s = state) {
             SendToComputerState.Idle -> {
                 val c = count ?: return@Column
-                if (c.songs == 0 && c.onComputer == 0) return@Column
+                if (c.songs == 0 && c.onComputer == 0 && c.leftOut == 0) return@Column
                 Text(
                     text = stringResource(R.string.settings_send_computer_title),
                     style = MaterialTheme.typography.labelMedium,
@@ -171,8 +185,14 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 if (c.songs == 0) {
-                    // The computer has every song: nothing to send unless asked to send them again.
-                    Line(pluralStringResource(R.plurals.settings_send_computer_all_there, c.onComputer, c.onComputer))
+                    // The computer has every song (or left the rest out): a send carries the latest likes, playlists and
+                    // plays alone, unless asked to send the songs again too.
+                    Line(stringResource(if (c.leftOut > 0) R.string.settings_send_computer_library_only_chosen else R.string.settings_send_computer_library_only))
+                    LeftOutLine(c.leftOut)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    UsbLine()
+                    Action(stringResource(R.string.settings_send_computer_button), filled = true, onClick = viewModel::start)
+                    if (c.leftOut > 0) Action(stringResource(R.string.settings_send_computer_left_out_too), filled = false) { scope.launch { viewModel.sendLeftOutToo() } }
                     Action(stringResource(R.string.settings_send_computer_send_again), filled = false) {
                         scope.launch {
                             viewModel.forget()
@@ -182,13 +202,17 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                 } else {
                     val desc = if (c.onComputer > 0) R.plurals.settings_send_computer_desc_new else R.plurals.settings_send_computer_desc
                     Line(pluralStringResource(desc, c.songs, c.songs, size(c.bytes)))
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Line(stringResource(R.string.settings_send_computer_library_too))
                     if (c.onComputer > 0) {
                         Spacer(modifier = Modifier.height(4.dp))
                         Line(pluralStringResource(R.plurals.settings_send_computer_there, c.onComputer, c.onComputer))
                     }
+                    LeftOutLine(c.leftOut)
                     Spacer(modifier = Modifier.height(6.dp))
                     UsbLine()
                     Action(stringResource(R.string.settings_send_computer_button), filled = true, onClick = viewModel::start)
+                    if (c.leftOut > 0) Action(stringResource(R.string.settings_send_computer_left_out_too), filled = false) { scope.launch { viewModel.sendLeftOutToo() } }
                     if (c.onComputer > 0) {
                         Action(stringResource(R.string.settings_send_computer_copy_too), filled = false) {
                             scope.launch {
@@ -219,28 +243,42 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                 Action(stringResource(R.string.settings_cancel), filled = false, onClick = viewModel::cancel)
             }
             is SendToComputerState.Waiting -> {
-                Line(pluralStringResource(R.plurals.settings_send_computer_waiting, s.total, s.total), strong = true)
-                Spacer(modifier = Modifier.height(4.dp))
-                val short = s.rest.noRoom
-                if (short != null) {
-                    // The phone filled up partway: these go first, the rest once the computer has them (which frees their
-                    // room), and once more is freed if even that is not enough.
-                    val full = if (short > 0L) {
-                        pluralStringResource(R.plurals.settings_send_computer_full, s.total, s.total, size(short))
-                    } else {
-                        pluralStringResource(R.plurals.settings_send_computer_full_room, s.total, s.total)
+                if (s.libraryOnly) {
+                    // Your likes, playlists and plays alone: no songs to choose on the computer, only to bring in.
+                    Line(stringResource(R.string.settings_send_computer_waiting_library), strong = true)
+                    if (usb != Usb.FileTransfer) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        UsbLine()
                     }
-                    Line(full, error = true)
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
-                if (s.rest.failed > 0) {
-                    Line(pluralStringResource(R.plurals.settings_send_computer_not_copied, s.rest.failed, s.rest.failed), error = true)
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
-                if (usb == Usb.FileTransfer) {
-                    Line(stringResource(R.string.settings_send_computer_waiting_desc))
                 } else {
-                    UsbLine()
+                    Line(pluralStringResource(R.plurals.settings_send_computer_waiting, s.total, s.total), strong = true)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    val short = s.rest.noRoom
+                    if (short != null) {
+                        // The phone filled up partway: these go first, the rest once the computer has them (which frees
+                        // their room), and once more is freed if even that is not enough.
+                        val full = if (short > 0L) {
+                            pluralStringResource(R.plurals.settings_send_computer_full, s.total, s.total, size(short))
+                        } else {
+                            pluralStringResource(R.plurals.settings_send_computer_full_room, s.total, s.total)
+                        }
+                        Line(full, error = true)
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                    if (s.rest.failed > 0) {
+                        Line(pluralStringResource(R.plurals.settings_send_computer_not_copied, s.rest.failed, s.rest.failed), error = true)
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                    if (s.libraryLeftOut) {
+                        // The row said they go with the songs: they didn't this time.
+                        Line(stringResource(R.string.settings_send_computer_library_left_out))
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                    if (usb == Usb.FileTransfer) {
+                        Line(stringResource(R.string.settings_send_computer_waiting_desc))
+                    } else {
+                        UsbLine()
+                    }
                 }
                 Bar(null)
                 Action(stringResource(R.string.settings_cancel), filled = false, onClick = viewModel::cancel)
@@ -253,7 +291,11 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                 Action(stringResource(R.string.settings_cancel), filled = false, onClick = viewModel::cancel)
             }
             is SendToComputerState.Finished -> {
-                if (s.taken >= s.total) {
+                if (s.libraryOnly) {
+                    Line(stringResource(R.string.settings_send_computer_finished_library), strong = true)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Line(stringResource(R.string.settings_send_computer_finished_desc))
+                } else if (s.taken >= s.total) {
                     Line(pluralStringResource(R.plurals.settings_send_computer_finished, s.total, s.total), strong = true)
                     val rest = s.rest
                     if (rest.full > 0) {
@@ -292,6 +334,7 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                 Line(
                     when {
                         s.listInTheWay -> stringResource(R.string.settings_send_computer_list_in_the_way)
+                        s.libraryInTheWay -> stringResource(R.string.settings_send_computer_library_in_the_way)
                         s.noAnswer -> stringResource(R.string.settings_send_computer_no_answer)
                         else -> s.message
                     },

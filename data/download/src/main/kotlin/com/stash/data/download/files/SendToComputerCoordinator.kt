@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
+import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.annotation.VisibleForTesting
 import androidx.work.ExistingWorkPolicy
@@ -15,6 +16,8 @@ import com.stash.core.data.db.LibrarySwaps
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.weblibrary.WebLibraryExporter
+import com.stash.core.data.weblibrary.WebLibraryFile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -57,39 +60,50 @@ sealed interface SendToComputerState {
     /**
      * [total] songs ready in the folder; the computer has taken none yet. [rest]: what the send left out (the phone ran
      * out of room after these, and what the rest need even once the computer has these, which frees the room their
-     * copies take).
+     * copies take). [libraryOnly]: the send is your likes, playlists and plays alone, with no songs (the computer has
+     * every one). [libraryLeftOut]: the songs went without them (the library couldn't be read or written, was too big, or
+     * the phone filled up).
      */
-    data class Waiting(val total: Int, val rest: SendMemory.Rest = SendMemory.Rest()) : SendToComputerState
+    data class Waiting(
+        val total: Int,
+        val rest: SendMemory.Rest = SendMemory.Rest(),
+        val libraryOnly: Boolean = false,
+        val libraryLeftOut: Boolean = false,
+    ) : SendToComputerState
     data class Taking(val taken: Int, val total: Int) : SendToComputerState
     /**
      * The computer took [taken] of [total]: all of them (the folder is gone), the ones chosen on it ([chosen]: it removed
      * the list, and the copies it did not want are cleared), or it stopped with some left. With all taken, [rest] is what
-     * the send left out: a send again carries the songs left for room, once there is room for them.
+     * the send left out: a send again carries the songs left for room, once there is room for them. [libraryOnly]: the
+     * send was your likes, playlists and plays alone, and the computer has them.
      */
     data class Finished(
         val taken: Int,
         val total: Int,
         val chosen: Boolean = false,
         val rest: SendMemory.Rest = SendMemory.Rest(),
+        val libraryOnly: Boolean = false,
     ) : SendToComputerState
     /** A cancel is being carried out: the copy stopped and its files removed. */
     data object Cancelling : SendToComputerState
     /**
      * The send stopped: [message] says why. [copiesLeft]: copies of the send are left in the folder with no list (there
      * was no room, or another list is in the way), and a [SendToComputerCoordinator.cancel] removes them. [listInTheWay]:
-     * another copy of Stash's list is in the folder ([ListInTheWayException]). [noAnswer]: the phone's storage did not
-     * answer ([NoAnswerException]).
+     * another copy of Stash's list is in the folder ([ListInTheWayException]). [libraryInTheWay]: a send of the library
+     * alone found another copy of Stash's library file there ([LibraryInTheWayException]). [noAnswer]: the phone's storage
+     * did not answer ([NoAnswerException]).
      */
     data class Error(
         val message: String,
         val copiesLeft: Boolean = false,
         val listInTheWay: Boolean = false,
         val noAnswer: Boolean = false,
+        val libraryInTheWay: Boolean = false,
     ) : SendToComputerState
 }
 
 /** What a send would copy: [songs] downloaded songs, [bytes] in all, leaving out the [onComputer] the computer has. */
-data class SendCount(val songs: Int, val bytes: Long, val onComputer: Int)
+data class SendCount(val songs: Int, val bytes: Long, val onComputer: Int, val leftOut: Int = 0)
 
 /**
  * "Send to computer": copies every downloaded song into `Download/Stash transfer/`, where a computer sees it over USB
@@ -116,12 +130,18 @@ data class SendCount(val songs: Int, val bytes: Long, val onComputer: Int)
  *
  * It remembers the songs the computer has ([SendMemory]): each one whose copy the computer took (or deleted, having it
  * already), so the next send copies only the others, until [forget].
+ *
+ * Each send also carries the library ([SongSender.LIBRARY_NAME], [writeLibrary]): the likes, playlists and plays, for the
+ * computer to bring in. It is neither a song nor the list: the computer taking it, leaving it or never getting it changes
+ * nothing of what the phone counts as taken, and a send goes without it when it can't be written. With every song on the
+ * computer already, a send carries it alone, with a list of no songs.
  */
 @Singleton
 class SendToComputerCoordinator @Inject constructor(
     @ApplicationContext private val context: Context,
     private val trackDao: TrackDao,
     private val playlistDao: PlaylistDao,
+    private val library: WebLibraryExporter,
 ) {
     private val _state = MutableStateFlow<SendToComputerState>(SendToComputerState.Idle)
     val state: StateFlow<SendToComputerState> = _state.asStateFlow()
@@ -161,12 +181,23 @@ class SendToComputerCoordinator @Inject constructor(
     /** A test's folder, in place of MediaStore's. */
     @VisibleForTesting internal var folderForTest: SendFolder? = null
 
-    /** What a send would copy: the downloaded songs the computer doesn't have, their size, and how many it has. */
+    /**
+     * What a send would copy: the downloaded songs the computer doesn't have and didn't leave out before, their size, how
+     * many it has, and how many it left out.
+     */
     suspend fun count(): SendCount {
         val songs = trackDao.getAllDownloaded().filter { !it.filePath.isNullOrBlank() }
-        val has = withContext(Dispatchers.IO) { runCatching { memory.onComputer() }.getOrDefault(emptySet()) }
-        val (there, toSend) = songs.partition { it.id in has }
-        return SendCount(toSend.size, toSend.sumOf { it.fileSizeBytes.coerceAtLeast(0) }, there.size)
+        val (has, leftOut) = withContext(Dispatchers.IO) {
+            runCatching { memory.onComputer() to memory.leftOut() }.getOrDefault(emptySet<Long>() to emptySet())
+        }
+        val (there, notThere) = songs.partition { it.id in has }
+        val (left, toSend) = notThere.partition { it.id in leftOut }
+        return SendCount(toSend.size, toSend.sumOf { it.fileSizeBytes.coerceAtLeast(0) }, there.size, left.size)
+    }
+
+    /** The songs the computer left out before are copied again from the next send on. */
+    suspend fun includeLeftOut() {
+        withContext(Dispatchers.IO) { runCatching { memory.sendLeftOutAgain() } }
     }
 
     /** From now on a send copies every song again, the ones the computer has too. */
@@ -247,15 +278,24 @@ class SendToComputerCoordinator @Inject constructor(
                         } catch (e: Exception) {
                             // Finished at the next look.
                         }
+                    } else {
+                        // A library file left with no list (the computer normally removes it) goes: no send names it. Only
+                        // that file: copies kept for a send to carry on stay.
+                        runCatching { folder().delete(SongSender.LIBRARY_NAME) }
                     }
                     return@launch
                 }
-                // What the send left out is told again, as it was before the app closed.
+                // What the send left out is told again, as it was before the app closed: songs it didn't copy, and the
+                // library when no library file is beside the list (the computer removes it only with the list). A list
+                // of no songs is the library alone. A look that isn't answered claims nothing left out.
                 val rest = runCatching { memory.rest() }.getOrDefault(SendMemory.Rest())
+                val libraryOnly = total == 0
+                val libraryLeftOut = !libraryOnly &&
+                    runCatching { folder().files().none { it.name == SongSender.LIBRARY_NAME && !it.pending } }.getOrDefault(false)
                 synchronized(lock) {
                     if (_state.value !is SendToComputerState.Idle) return@launch
-                    _state.value = SendToComputerState.Waiting(total, rest)
-                    watchJob = scope.launch { runCatching { watch(total, rest) } }
+                    _state.value = SendToComputerState.Waiting(total, rest, libraryOnly, libraryLeftOut)
+                    watchJob = scope.launch { runCatching { watch(total, rest, libraryOnly) } }
                 }
             }
         }
@@ -331,13 +371,15 @@ class SendToComputerCoordinator @Inject constructor(
             // copies gone were its own, not taken.
             clearBegun().also { unmark() }
         }
+        // A send of the library alone (the computer has every song), and why its library file wasn't written, when it
+        // wasn't: what the card says when it stops is about that, not about copies.
+        var libraryAlone = false
+        var noLibrary: NoLibrary? = null
         try {
             // A send from before is cleared by this one: what the computer took of it is kept first.
             if (ownClear) runCatching { memory.doneSending() } else letGo()
             val downloaded = trackDao.getAllDownloaded().filter { !it.filePath.isNullOrBlank() }
-            val has = runCatching { memory.onComputer() }.getOrDefault(emptySet())
-            val songs = downloaded.filter { it.id !in has }
-            if (songs.isEmpty()) {
+            if (downloaded.isEmpty()) {
                 // An earlier send's copies go; ones that can't be removed now go with the next send, and this is still
                 // the answer.
                 try {
@@ -347,13 +389,20 @@ class SendToComputerCoordinator @Inject constructor(
                 } catch (e: Exception) {
                     // Left for the next send.
                 }
-                _state.value = SendToComputerState.Error(
-                    if (downloaded.isEmpty()) "There are no downloaded songs to send." else "Your computer has all your downloaded songs already.",
-                )
+                _state.value = SendToComputerState.Error("There are no downloaded songs to send.")
                 return
             }
+            val has = runCatching { memory.onComputer() }.getOrDefault(emptySet())
+            // Nor those the computer left out of a send before (the listener didn't want them there), until asked again.
+            val leftOut = runCatching { memory.leftOut() }.getOrDefault(emptySet())
+            // None when the computer has every song (or left the rest out): the send is then the library alone, with a list
+            // of no songs.
+            val songs = downloaded.filter { it.id !in has && it.id !in leftOut }
+            libraryAlone = songs.isEmpty()
             // Each song's playlists, for choosing on the computer; a send goes without them rather than not at all.
-            val playlists = runCatching { playlistDao.playlistNamesOfSongs() }.getOrDefault(emptyList()).groupBy({ it.trackId }, { it.name })
+            val playlists = if (songs.isEmpty()) emptyMap() else {
+                runCatching { playlistDao.playlistNamesOfSongs() }.getOrDefault(emptyList()).groupBy({ it.trackId }, { it.name })
+            }
             var told = 0L
             val result = SongSender(folder(), ::freeBytes).send(
                 songs.map { sendSong(it, playlists[it.id].orEmpty()) },
@@ -367,8 +416,12 @@ class SendToComputerCoordinator @Inject constructor(
                         )
                     }
                 },
+                library = { sentAt -> writeLibrary(sentAt).also { noLibrary = it } == null },
             ) { done, total ->
-                if (_state.value !is SendToComputerState.Cancelling) _state.value = SendToComputerState.Copying(done.coerceAtMost(total - 1), total)
+                // A send of the library alone has no songs to count: it stays "Getting songs ready…".
+                if (total > 0 && _state.value !is SendToComputerState.Cancelling) {
+                    _state.value = SendToComputerState.Copying(done.coerceAtMost(total - 1), total)
+                }
                 val now = System.currentTimeMillis()
                 if (now - told >= NOTIFY_EVERY_MS || done == total) {
                     told = now
@@ -378,32 +431,49 @@ class SendToComputerCoordinator @Inject constructor(
             // A cancel that came during the last progress call or the list's write (the notification's Cancel stops
             // the work, not this): carried out, rather than the send left waiting for the computer.
             currentCoroutineContext().ensureActive()
-            if (result.entries.isEmpty()) {
-                _state.value = SendToComputerState.Error("None of the songs could be copied.")
+            if (result.entries.isEmpty() && !result.library) {
+                // Another copy of Stash's library file is in the folder: sending again can't help while it is, so the card
+                // says how to clear it, as for another list in the way. There are no copies to remove.
+                if (libraryAlone && noLibrary == NoLibrary.IN_THE_WAY) {
+                    _state.value = SendToComputerState.Error(LibraryInTheWayException().message.orEmpty(), libraryInTheWay = true)
+                    return
+                }
+                _state.value = SendToComputerState.Error(
+                    when {
+                        !libraryAlone -> "None of the songs could be copied."
+                        // Sending again can't help: it is as big next time.
+                        noLibrary == NoLibrary.TOO_BIG -> "Your library is too big to send this way."
+                        noLibrary == NoLibrary.NO_ROOM -> LIBRARY_NO_ROOM
+                        else -> "Your likes, playlists and plays could not be copied. Tap Send to computer again."
+                    },
+                )
                 return
             }
             synchronized(lock) {
                 if (_state.value is SendToComputerState.Cancelling) return
                 val rest = SendMemory.Rest(result.failed, result.full, result.noRoom)
-                _state.value = SendToComputerState.Waiting(result.entries.size, rest)
+                val libraryOnly = result.entries.isEmpty()
+                _state.value = SendToComputerState.Waiting(result.entries.size, rest, libraryOnly, libraryLeftOut = !result.library)
                 watchJob?.cancel()
-                watchJob = scope.launch { runCatching { watch(result.entries.size, rest) } }
+                watchJob = scope.launch { runCatching { watch(result.entries.size, rest, libraryOnly) } }
             }
         } catch (e: CancellationException) {
             stoppedFromOutside()
             throw e
         } catch (e: NoRoomException) {
-            // There is no list, so nothing of it can be taken: the copies stay for the send to carry on, unnoted.
+            // There is no list, so nothing of it can be taken: the copies stay for the send to carry on, unnoted. The
+            // library alone has no copies: its file is gone already ([SongSender]), and the room it needs is said plainly.
             runCatching { memory.doneSending() }
             if (_state.value !is SendToComputerState.Cancelling) {
-                _state.value = SendToComputerState.Error(noRoom(e.needed), copiesLeft = e.copies > 0)
+                _state.value = SendToComputerState.Error(if (libraryAlone) LIBRARY_NO_ROOM else noRoom(e.needed), copiesLeft = e.copies > 0)
             }
         } catch (e: ListInTheWayException) {
             // Nothing is noted as taken (the computer may delete the folder with the other send in it), and the copies
             // stay for the next send, or go with Remove the copies (there are some: a list is only written to name them).
+            // The library alone leaves none: its file is gone already ([SongSender]), so there is nothing to remove.
             runCatching { memory.doneSending() }
             if (_state.value !is SendToComputerState.Cancelling) {
-                _state.value = SendToComputerState.Error(e.message.orEmpty(), copiesLeft = true, listInTheWay = true)
+                _state.value = SendToComputerState.Error(e.message.orEmpty(), copiesLeft = !libraryAlone, listInTheWay = true)
             }
         } catch (e: NoAnswerException) {
             // Said plainly on the card ([SendToComputerState.Error.noAnswer]).
@@ -476,7 +546,12 @@ class SendToComputerCoordinator @Inject constructor(
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun clearCopies(marker: File, present: List<SentFile>? = null) {
         mark(marker)
-        if (!clearBegun()) noteTaken(present)
+        if (!clearBegun()) {
+            noteTaken(present)
+            // The computer's own end (not a cancel): the songs whose copies it left were not chosen there, so the next
+            // sends don't copy them again.
+            if (marker.name == LEFT_FILE) runCatching { memory.leaveOut() }
+        }
         runCatching { memory.doneSending() }
         // From here on a copy gone is this clear-up's own.
         mark(clearedMark)
@@ -535,12 +610,47 @@ class SendToComputerCoordinator @Inject constructor(
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun folder(): SendFolder = folderForTest ?: MediaStoreSendFolder(context.contentResolver)
 
-    /** How many songs the list in the folder names, when this app's list is there. */
+    /** How many songs the list in the folder names, when this app's list is there (none: a send of the library alone). */
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun sentBefore(): Int? {
         val text = folder().readList() ?: return null
         val songs = (kotlinx.serialization.json.Json.parseToJsonElement(text) as? JsonObject)?.get("songs") as? JsonArray
-        return songs?.size?.takeIf { it > 0 }
+        return songs?.size
+    }
+
+    /** Why a send's library file wasn't written: it is too big to send, the phone has no room for it, or it failed. */
+    private enum class NoLibrary { TOO_BIG, NO_ROOM, IN_THE_WAY, FAILED }
+
+    /**
+     * Writes the library file of the send numbered [sentAtMs] ([SongSender.LIBRARY_NAME]: likes, playlists and plays, as
+     * [WebLibraryExporter.forComputer] reads them). Null when it was written, else why not. It throws only when cancelled:
+     * a library that can't be read, is too big for the computer or can't be written is logged, and the send goes without
+     * it.
+     */
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private suspend fun writeLibrary(sentAtMs: Long): NoLibrary? {
+        val why = try {
+            val file = library.forComputer(System.currentTimeMillis(), sentAtMs)
+            if (file == null) {
+                Log.w(TAG, "The library is too big for the computer to read, so the songs go without it")
+                return NoLibrary.TOO_BIG
+            }
+            folder().writeLibrary { out -> WebLibraryFile.write(file, out) }
+            Log.i(TAG, "Library file written: ${file.likes.size} likes, ${file.playlists.size} playlists, ${file.history.size} plays")
+            return null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            // Whatever it is (a library too big to hold in memory too), the songs still go.
+            e
+        }
+        Log.w(TAG, "The library file was not written, so the songs go without it", why)
+        return when {
+            why is OutOfMemoryError -> NoLibrary.TOO_BIG
+            why is LibraryInTheWayException -> NoLibrary.IN_THE_WAY
+            SongSender.full(why) -> NoLibrary.NO_ROOM
+            else -> NoLibrary.FAILED
+        }
     }
 
     /**
@@ -548,10 +658,11 @@ class SendToComputerCoordinator @Inject constructor(
      * (it removed the list: the copies it did not want are cleared, the songs stay in the library). Once it has
      * started, a minute with nothing more taken shows it stopped ([Finished] with some left), and the count goes on: a
      * computer that carries on (the phone plugged back in) is shown taking again. Ends with all taken, [cancel] or
-     * [dismiss]. [rest]: what the send left out, told once the computer has all of it.
+     * [dismiss]. [rest]: what the send left out, told once the computer has all of it. [libraryOnly]: the send is the
+     * library alone, and its end says so.
      */
     @RequiresApi(Build.VERSION_CODES.Q)
-    private suspend fun watch(total: Int, rest: SendMemory.Rest = SendMemory.Rest()) {
+    private suspend fun watch(total: Int, rest: SendMemory.Rest = SendMemory.Rest(), libraryOnly: Boolean = false) {
         val job = currentCoroutineContext()[Job]
         // Shown unless the watch was stopped meanwhile ([cancel], [dismiss]): a look under way doesn't undo that.
         fun show(s: SendToComputerState) {
@@ -580,10 +691,13 @@ class SendToComputerCoordinator @Inject constructor(
             if (all.size != seen && noteTaken(all)) seen = all.size
             val files = all.filter { !it.pending }
             val listLeft = files.any { it.name == SongSender.LIST_NAME }
-            val songsLeft = files.size - if (listLeft) 1 else 0
+            // The library file is neither a song nor the list: there or gone, it is no song left or taken.
+            val songsLeft = files.count { it.name != SongSender.LIST_NAME && it.name != SongSender.LIBRARY_NAME }
             if (songsLeft == 0 && !listLeft) {
                 letGo(all)
-                show(SendToComputerState.Finished(total, total, rest = rest))
+                // The computer normally removes the library file; one it left goes now.
+                if (all.any { it.name == SongSender.LIBRARY_NAME }) removeLibrary()
+                show(SendToComputerState.Finished(total, total, rest = rest, libraryOnly = libraryOnly))
                 return
             }
             if (!listLeft) {
@@ -613,6 +727,25 @@ class SendToComputerCoordinator @Inject constructor(
                     SendToComputerState.Taking(taken, total)
                 },
             )
+        }
+    }
+
+    /**
+     * Removes a library file the computer left once it had the whole send, with the folder to itself ([folderBusy]) and
+     * only while the watch is still on: a send tapped since (which stops the watch) writes its own, never removed here. One
+     * that can't be removed now goes with the next send.
+     */
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private suspend fun removeLibrary() {
+        try {
+            folderBusy.withLock {
+                currentCoroutineContext().ensureActive()
+                folder().delete(SongSender.LIBRARY_NAME)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Left for the next send.
         }
     }
 
@@ -652,6 +785,7 @@ class SendToComputerCoordinator @Inject constructor(
 
     companion object {
         const val WORK_NAME = "send_to_computer"
+        private const val TAG = "SendToComputer"
         /** [SendMemory]'s file, in the app's own storage. */
         private const val MEMORY_FILE = "send_to_computer.json"
         /** There while a cancel's clear-up removes the copies ([stopMark]). */
@@ -666,6 +800,10 @@ class SendToComputerCoordinator @Inject constructor(
         /** How long a cancel waits for the copy to stop before removing the files anyway. */
         private const val STOP_WAIT_MS = 30_000L
         private const val NOTIFY_EVERY_MS = 1_000L
+
+        /** What a send of the library alone says when the phone has no room for it. */
+        internal const val LIBRARY_NO_ROOM =
+            "Not enough room on this phone for your likes, playlists and plays. Free some space, then tap Send to computer again."
 
         /** What a send that has no room says: how much more it needs, and where room often hides. */
         internal fun noRoom(needed: Long): String {
