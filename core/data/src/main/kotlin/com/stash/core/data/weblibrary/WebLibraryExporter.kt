@@ -132,12 +132,17 @@ class WebLibraryExporter @Inject constructor(
 
     /**
      * The library as Send to computer carries it beside the songs (`stash-library.json`, which Stash for desktop brings in):
-     * the web's file ([collect], everything ticked), and besides
-     * - every synced mix ([WebLibraryExportDao.syncedMixes]),
-     * - each playlist synced from a service saying which ([WebLibraryFile.Playlist.from], [fromOf]),
-     * - each playlist's id the same on every install of Stash ([computerIdOf]),
+     * everything the phone has synced. The web's file ([collect], everything ticked), and besides
+     * - each like saying where it is liked ([WebLibraryFile.Like.likedOn]): in Stash, on Spotify, YouTube Music, SoundCloud,
+     * - every saved album, Stash Mix, synced mix and radio (playlists, SoundCloud's too, are the web's), in the order
+     *   [computerLists] gives,
+     * - each list saying what it is ([WebLibraryFile.Playlist.kind]) and where it came from ([WebLibraryFile.Playlist.from]),
+     * - each list's id the same on every install of Stash ([computerIdOf]),
      * - up to [WebLibraryFile.MAX_COMPUTER_PLAYS] plays, not the web's [WebLibraryFile.MAX_PLAYS],
      * - [sentAtMs], the send's own number, as its list has it.
+     *
+     * Liked Songs lists, Stash's own Liked Songs and the Downloads list are never lists here: the likes and the files are
+     * them.
      *
      * The rows are read in one transaction, as [collect]'s are, but made into the file after it: with up to 100,000 plays and
      * every mix's songs, the database's write lock is held for the reads alone. Then cut to fit ([fitForComputer]). Null
@@ -186,24 +191,33 @@ class WebLibraryExporter @Inject constructor(
     /** What a file is made from, as the database has it: read in a transaction, made into the file by [file]. */
     private class Rows(
         val likes: List<WebLibraryExportDao.LikedRow>,
+        /** Send to computer's only: where each like is liked. */
+        val likePlaces: List<WebLibraryExportDao.LikePlace>,
         val follows: Map<Long, SharedMixEntity>,
-        val playlists: List<Pair<PlaylistEntity, List<WebLibraryExportDao.PlaylistItemRow>>>,
+        val playlists: List<Pair<ExportList, List<WebLibraryExportDao.PlaylistItemRow>>>,
         val plays: List<WebLibraryExportDao.PlayRow>,
     )
 
     /**
      * The rows of the file: likes, follows, playlists with their songs, plays. [computer] for Send to computer's file
-     * ([forComputer]), which has the synced mixes and more plays; the web's has neither.
+     * ([forComputer]), which has where each like is liked, every list the phone has synced and more plays; the web's has
+     * none of it.
      */
     private suspend fun rows(selection: ExportSelection, computer: Boolean): Rows {
         val dao = database.webLibraryExportDao()
         val likes = if (!selection.likes) emptyList() else dao.likes()
+        val likePlaces = if (computer && selection.likes) dao.likePlaces() else emptyList()
         val follows = dao.followedMixes().associateBy { it.playlistId }
-        val lists = if (computer) dao.playlists() + dao.syncedMixes() else dao.playlists()
-        val playlists = lists.filter { selection.includes(it.id) }.map { it to dao.playlistItems(it.id, WebLibraryFile.MAX_PLAYLIST_ITEMS) }
+        val lists = if (computer) {
+            computerLists(dao.playlists(), dao.savedAlbums(), dao.stashMixes(), dao.syncedMixes())
+        } else {
+            dao.playlists().map { ExportList(it, kind = null, from = null) }
+        }
+        val playlists = lists.filter { selection.includes(it.playlist.id) }
+            .map { it to dao.playlistItems(it.playlist.id, WebLibraryFile.MAX_PLAYLIST_ITEMS) }
         val maxPlays = if (computer) WebLibraryFile.MAX_COMPUTER_PLAYS else WebLibraryFile.MAX_PLAYS
         val plays = if (!selection.plays) emptyList() else dao.recentPlays(maxPlays)
-        return Rows(likes, follows, playlists, plays)
+        return Rows(likes, likePlaces, follows, playlists, plays)
     }
 
     /**
@@ -215,28 +229,31 @@ class WebLibraryExporter @Inject constructor(
         val computer = sentAtMs != null
 
         val seenLikes = HashSet<Long>()
+        val places = rows.likePlaces.groupBy({ it.trackId }, { it.place })
         val likes = rows.likes.mapNotNull { row ->
             if (!seenLikes.add(row.track.id)) return@mapNotNull null
             val added = row.track.dateAdded
             val song = WebLibraryFile.song(row.track.toTrack(), added) ?: return@mapNotNull null
-            WebLibraryFile.Like(song, row.likedAt?.takeIf { it > 0 } ?: added.takeIf { it > 0 } ?: nowMs)
+            val likedOn = if (computer) places[row.track.id].orEmpty().let { here -> LIKED_ORDER.filter { it in here } } else null
+            WebLibraryFile.Like(song, row.likedAt?.takeIf { it > 0 } ?: added.takeIf { it > 0 } ?: nowMs, likedOn)
         }
 
         // The computer's ids given so far: each is given once.
         val ids = HashSet<String>()
-        val playlists = rows.playlists.map { (p, items) ->
+        val playlists = rows.playlists.map { (list, items) ->
+            val p = list.playlist
             val created = p.dateAdded.toEpochMilli().takeIf { it > 0 } ?: nowMs
             val updated = items.mapNotNull { it.addedAt }.maxOrNull()?.coerceAtLeast(created) ?: created
-            val from = if (computer) fromOf(p) else null
             val webId = fileIdOf(p.id, p.sourceId)
             WebLibraryFile.Playlist(
-                id = if (computer) computerIdOf(p, from, webId, ids) else webId,
+                id = if (computer) computerIdOf(p, list.from, list.kind, webId, ids) else webId,
                 name = playlistName(p.name),
                 items = items.mapNotNull { WebLibraryFile.song(it.track.toTrack(), it.track.dateAdded) },
                 createdAt = created,
                 updatedAt = updated,
                 follow = rows.follows[p.id]?.let { WebLibraryFile.follow(it.shareId, it.version, it.sharedBy) },
-                from = from,
+                from = list.from,
+                kind = list.kind,
             )
         }
 
@@ -377,20 +394,91 @@ class WebLibraryExporter @Inject constructor(
                 ?: "app-$playlistId"
 
         const val WRITE_BUFFER = 64 * 1024
+
+        /** The order of a like's places ([WebLibraryFile.Like.likedOn]). */
+        val LIKED_ORDER = listOf(
+            WebLibraryFile.LIKED_STASH,
+            WebLibraryFile.FROM_SPOTIFY,
+            WebLibraryFile.FROM_YOUTUBE,
+            WebLibraryFile.FROM_SOUNDCLOUD,
+        )
     }
 }
 
 /**
- * Where a playlist synced from a service came from, for Send to computer's file ([WebLibraryFile.Playlist.from]): Spotify or
- * YouTube Music, by the playlist's source. Null for your own (made in Stash: a `custom_…` source id, the web's and the mirror's
- * too), a shared mix (`share:…`), and anything else: one saved in Stash, a SoundCloud one (the file can't name SoundCloud). The
- * same rule the web mirror tells a synced playlist by.
+ * Where a playlist or mix synced from a service came from, for Send to computer's file ([WebLibraryFile.Playlist.from]):
+ * Spotify, YouTube Music or SoundCloud, by its source. Null for your own (made in Stash: a `custom_…` source id, the web's
+ * and the mirror's too), a shared mix (`share:…`), and anything else (one saved in Stash). The same rule the web mirror
+ * tells a synced playlist by. An album goes by [albumFromOf].
  */
 internal fun fromOf(p: PlaylistEntity): String? = when {
     p.sourceId.startsWith("custom_") || p.sourceId.startsWith("share:") -> null
     p.source == MusicSource.SPOTIFY -> WebLibraryFile.FROM_SPOTIFY
     p.source == MusicSource.YOUTUBE -> WebLibraryFile.FROM_YOUTUBE
+    p.source == MusicSource.SOUNDCLOUD -> WebLibraryFile.FROM_SOUNDCLOUD
     else -> null
+}
+
+/**
+ * A saved album's service, by its key ([com.stash.core.data.album.SavedAlbums]): Spotify's (`album:spotify:…`) or YouTube
+ * Music's (`album:youtube:MPREb…`, or `MPREb…` synced), saved in Stash or synced. Null for another's (`album:qobuz:…`).
+ */
+internal fun albumFromOf(p: PlaylistEntity): String? = when {
+    p.sourceId.startsWith(SPOTIFY_ALBUM_KEY, ignoreCase = true) -> WebLibraryFile.FROM_SPOTIFY
+    p.sourceId.startsWith(YOUTUBE_ALBUM_KEY, ignoreCase = true) || p.sourceId.startsWith(YOUTUBE_ALBUM) ->
+        WebLibraryFile.FROM_YOUTUBE
+    else -> null
+}
+
+/** How a Spotify album saved in Stash or synced is keyed ([com.stash.core.data.album.SavedAlbums.sourceId]). */
+private const val SPOTIFY_ALBUM_KEY = "album:spotify:"
+
+/** How a YouTube Music album saved in Stash is keyed ([com.stash.core.data.album.SavedAlbums.sourceId]). */
+private const val YOUTUBE_ALBUM_KEY = "album:youtube:"
+
+/** A YouTube Music album's browse id starts so: a synced one is keyed by it alone. */
+private const val YOUTUBE_ALBUM = "MPREb"
+
+/**
+ * A service's mix that is a radio: its name, trimmed, ends with "Radio", as Home's rails tell one (feature/home MixRail.kt),
+ * where a SoundCloud mix is never one.
+ */
+internal fun isRadio(p: PlaylistEntity): Boolean =
+    !(p.source == MusicSource.SOUNDCLOUD && p.sourceId.startsWith("soundcloud_mix_")) &&
+        p.name.trim().endsWith("Radio", ignoreCase = true)
+
+/**
+ * A list in the file: its row, and for Send to computer's file what it is ([WebLibraryFile.Playlist.kind]) and where it came
+ * from ([WebLibraryFile.Playlist.from]). Both null in the web's.
+ */
+internal class ExportList(val playlist: PlaylistEntity, val kind: String?, val from: String?)
+
+/**
+ * Send to computer's lists, in the file's order: your own playlists (and shared mixes), then the Stash Mixes; then for each
+ * service in turn (Spotify, YouTube Music, SoundCloud) its playlists, its albums, its mixes, its radios; then the albums of
+ * no service of these (saved in Stash from another). [playlists] are the playlists, [albums] the saved albums, [stashMixes]
+ * the Stash Mixes, [mixes] the services' mixes and radios, each in its own order.
+ */
+internal fun computerLists(
+    playlists: List<PlaylistEntity>,
+    albums: List<PlaylistEntity>,
+    stashMixes: List<PlaylistEntity>,
+    mixes: List<PlaylistEntity>,
+): List<ExportList> {
+    val lists = playlists.map { ExportList(it, WebLibraryFile.KIND_PLAYLIST, fromOf(it)) }
+    val albumLists = albums.map { ExportList(it, WebLibraryFile.KIND_ALBUM, albumFromOf(it)) }
+    val mixLists = mixes.map { ExportList(it, if (isRadio(it)) WebLibraryFile.KIND_RADIO else WebLibraryFile.KIND_MIX, fromOf(it)) }
+    val out = ArrayList<ExportList>()
+    out += lists.filter { it.from == null }
+    out += stashMixes.map { ExportList(it, WebLibraryFile.KIND_STASH_MIX, from = null) }
+    for (service in listOf(WebLibraryFile.FROM_SPOTIFY, WebLibraryFile.FROM_YOUTUBE, WebLibraryFile.FROM_SOUNDCLOUD)) {
+        out += lists.filter { it.from == service }
+        out += albumLists.filter { it.from == service }
+        out += mixLists.filter { it.from == service && it.kind == WebLibraryFile.KIND_MIX }
+        out += mixLists.filter { it.from == service && it.kind == WebLibraryFile.KIND_RADIO }
+    }
+    out += albumLists.filter { it.from == null }
+    return out
 }
 
 /** A synced list's own id at its service that can follow `spotify-` or `youtube-` within the desktop's 64 characters. */
@@ -399,35 +487,61 @@ private val SYNCED_ID = Regex("^[A-Za-z0-9_-]{1,55}$")
 /** An id the desktop takes: 1 to 64 letters, digits, `_` and `-`. */
 private val DESKTOP_ID = Regex("^[A-Za-z0-9_-]{1,64}$")
 
+/** What a SoundCloud id can't have in the desktop's ids: anything but letters, digits, `_` and `-`. */
+private val NOT_ID = Regex("[^A-Za-z0-9_-]")
+
 /**
  * A synced list's own id at its service, as one install and another may store it. The sync stores Spotify's bare id, but
  * a Spotify URI (`spotify:playlist:<id>`, `spotify:user:<user>:playlist:<id>`) is taken to its id. YouTube Music's comes
  * as a playlist id (`RDTMAK5uy_…`, `PL…`) or as the browse id of one (`VLRDTMAK5uy_…`, `VLPL…`), which is taken to the
- * playlist id: no playlist id starts with `VL`.
+ * playlist id: no playlist id starts with `VL`. SoundCloud's (`soundcloud_playlist_<user>_<id>`,
+ * `soundcloud_mix_<user>_<id>`) loses its `soundcloud_` and has anything an id can't have made a `-`.
  */
 private fun serviceIdOf(from: String, sourceId: String): String = when (from) {
     WebLibraryFile.FROM_SPOTIFY ->
         if (sourceId.startsWith("spotify:")) sourceId.substringAfterLast(":playlist:", missingDelimiterValue = sourceId) else sourceId
     WebLibraryFile.FROM_YOUTUBE -> sourceId.removePrefix("VL")
+    WebLibraryFile.FROM_SOUNDCLOUD -> sourceId.removePrefix("soundcloud_").replace(NOT_ID, "-")
     else -> sourceId
 }
 
 /**
- * A playlist's id in Send to computer's file, the same on every install of Stash: the desktop keeps playlists by id, and a
- * phone can have two installs (the release and debug apps), whose row numbers differ.
- * - A synced list ([from] set): its service and its own id there, `spotify-<id>` or `youtube-<id>` ([serviceIdOf]).
- * - Your own list (a `custom_…` source id): that source id.
- * - Anything else, or a source id the desktop couldn't take as an id: [fallback], as the web's file has it ([fileIdOf]).
- *
- * [used] holds the ids given so far in the file; one given already goes to the later list's `app-<row id>`.
+ * A saved album's id: Spotify's `album:spotify:<id>` as `spotify-album-<id>`, YouTube Music's `MPREb…` (synced, or saved as
+ * `album:youtube:MPREb…`) as `youtube-MPREb…`, so one album has one id however it was saved. Null for another service's,
+ * or one the desktop couldn't take as an id.
  */
-internal fun computerIdOf(p: PlaylistEntity, from: String?, fallback: String, used: MutableSet<String>): String {
+private fun albumIdOf(sourceId: String): String? {
+    val id = when {
+        sourceId.startsWith(SPOTIFY_ALBUM_KEY, ignoreCase = true) -> "spotify-album-" + sourceId.substring(SPOTIFY_ALBUM_KEY.length)
+        sourceId.startsWith(YOUTUBE_ALBUM) -> "youtube-$sourceId"
+        sourceId.startsWith(YOUTUBE_ALBUM_KEY + YOUTUBE_ALBUM, ignoreCase = true) -> "youtube-" + sourceId.substring(YOUTUBE_ALBUM_KEY.length)
+        else -> return null
+    }
+    return id.takeIf { DESKTOP_ID.matches(it) }
+}
+
+/**
+ * A list's id in Send to computer's file, the same on every install of Stash: the desktop keeps lists by id, and a phone can
+ * have two installs (the release and debug apps), whose row numbers differ. By its [kind]:
+ * - a saved album: `spotify-album-<id>` or `youtube-MPREb…` ([albumIdOf]);
+ * - a Stash Mix: `stash-mix-<its source id>`;
+ * - a synced list ([from] set): its service and its own id there, `spotify-<id>`, `youtube-<id>` (the id 1 to 55 long), or
+ *   `soundcloud-<id>` ([serviceIdOf]);
+ * - your own list (a `custom_…` source id): that source id.
+ *
+ * Anything else, or an id the desktop couldn't take (1 to 64 of `[A-Za-z0-9_-]`), is [fallback], as the web's file has it
+ * ([fileIdOf]). [used] holds the ids given so far in the file; one given already goes to the later list's `app-<row id>`.
+ */
+internal fun computerIdOf(p: PlaylistEntity, from: String?, kind: String?, fallback: String, used: MutableSet<String>): String {
     val serviceId = from?.let { serviceIdOf(it, p.sourceId) }
     val stable = when {
-        serviceId != null && SYNCED_ID.matches(serviceId) -> "$from-$serviceId"
-        from == null && p.sourceId.startsWith("custom_") && DESKTOP_ID.matches(p.sourceId) -> p.sourceId
-        else -> fallback
-    }
+        kind == WebLibraryFile.KIND_ALBUM -> albumIdOf(p.sourceId)
+        kind == WebLibraryFile.KIND_STASH_MIX -> "stash-mix-${p.sourceId}".takeIf { DESKTOP_ID.matches(it) }
+        from == WebLibraryFile.FROM_SOUNDCLOUD -> "soundcloud-$serviceId".takeIf { !serviceId.isNullOrEmpty() && DESKTOP_ID.matches(it) }
+        serviceId != null -> "$from-$serviceId".takeIf { SYNCED_ID.matches(serviceId) }
+        p.sourceId.startsWith("custom_") && DESKTOP_ID.matches(p.sourceId) -> p.sourceId
+        else -> null
+    } ?: fallback
     if (used.add(stable)) return stable
     return "app-${p.id}".also { used.add(it) }
 }
