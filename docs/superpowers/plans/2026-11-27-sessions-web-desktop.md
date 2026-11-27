@@ -109,4 +109,4 @@ Plus vite dev's upgrade handler (like `syncSocket` in `vite.config.ts`), and vit
 5. Flip `SESSIONS = "1"`, through the deploy that sets `[vars]`.
 
 The web is then live first: store apps (0.9.125) have no Sessions. The desktop and the Android app ship together in
-the next release ([[feedback_pc_and_app_release_together]]).
+the next release (owner: the PC and Android ship in one release).
