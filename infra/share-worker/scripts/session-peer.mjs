@@ -39,7 +39,9 @@ const SONGS = [
 ];
 const NAMES = ["Maya", "Sam", "Jo", "Ana", "Lee", "Ben", "Kai", "Rin", "Tess", "Noor"];
 const EMOJI = ["❤️", "🔥", "😂", "😮", "👏", "🎶"];
-const ANIMS = ["a:applause", "a:fire", "a:hearts", "a:dancing", "a:mindblown", "a:lighter", "a:headphones", "a:rewind", "a:laughing", "a:bassdrop", "a:wave", "a:clap"];
+/** A session's reactions: text faces by id (room.js FACES), the last five big. The six EMOJI are a private room's. */
+const FACES = ["k:shrug", "k:lenny", "k:yay", "k:love", "k:cool", "k:look", "k:wow", "k:cry", "k:wave", "k:notes", "k:heart", "k:bear", "k:tableflip", "k:unflip", "k:dance", "k:rockon", "k:sparkle"];
+const BIG = FACES.slice(12);
 const KEY_HEADER = "X-Stash-Community-Key";
 const wsOrigin = origin.replace(/^http/, "ws");
 const t0 = Date.now();
@@ -166,7 +168,7 @@ if (mode === "host") {
         // KEY=<43 characters>: the first listener's Community key, so its regular's count can be seeded for a test.
         const l = phone(live.room, { t: "hello", v: 3, name: NAMES[i] ?? `Listener ${i + 1}`, communityKey: i === 0 && process.env.KEY ? process.env.KEY : newKey() }, `listener${i + 1}`, n > 1);
         let e = i;
-        setInterval(() => { try { l.send({ t: "react", emoji: EMOJI[e++ % EMOJI.length] }); } catch { /* closed */ } }, 10_000);
+        setInterval(() => { try { l.send({ t: "react", emoji: FACES[e++ % 12] }); } catch { /* closed */ } }, 10_000);
         l.onFrame = (m) => {
             if (m.t === "ended") { log(`listener${i + 1} ended: ${m.reason}`); if (n === 1) process.exit(0); }
             // LIFE=1: each listener says a phrase 4 s in and every 12 s after (the first three all say "tune", so the
@@ -176,7 +178,7 @@ if (mode === "host") {
                 let k = 0;
                 setTimeout(() => l.send({ t: "say", phrase: phrases[i % phrases.length] }), 4_000);
                 setInterval(() => { try { l.send({ t: "say", phrase: phrases[(i + ++k) % phrases.length] }); } catch { /* closed */ } }, 12_000 + i * 700);
-                setInterval(() => { try { l.send({ t: "react", emoji: ANIMS[(i + k) % ANIMS.length] }); } catch { /* closed */ } }, 7_000 + i * 300);
+                setInterval(() => { try { l.send({ t: "react", emoji: BIG[(i + k) % BIG.length] }); } catch { /* closed */ } }, 7_000 + i * 300);
             }
             if (process.env.LIFE && (m.t === "prepare" || (m.t === "welcome" && m.state.trackKey))) {
                 const key = m.t === "prepare" ? m.trackKey : m.state.trackKey;

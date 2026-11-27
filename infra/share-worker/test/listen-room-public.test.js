@@ -255,7 +255,7 @@ test("a reaction a second a socket, held by the shell; in a session no reaction 
     let puts = 0;
     const put = ctx.storage.put;
     ctx.storage.put = async (...a) => { puts++; return put(...a); };
-    const react = (emoji = "\u{1F525}") => room.webSocketMessage(sam, JSON.stringify({ t: "react", emoji }));
+    const react = (emoji = "k:yay") => room.webSocketMessage(sam, JSON.stringify({ t: "react", emoji }));
     const reactions = () => host.sent.filter((m) => m.t === "reaction").length;
     await react();
     assert.equal(reactions(), 1);
@@ -293,14 +293,14 @@ test("a phrase every 3 s a socket, held by the shell, and only a listener's firs
     assert.equal(puts, 2, "Sam's first and Jo's first, for the scoreboard; Sam's second stored nothing");
 });
 
-test("an animated reaction passes the shell as an emoji does", async () => {
+test("a text face passes the shell as an emoji does", async () => {
     const clock = { t: 1_000 };
     const { ctx, room } = await openSession(clock);
     const host = await connect(ctx, room, { name: "Rawn", hostKey: "KEY" });
     const sam = await connect(ctx, room, { name: "Sam", communityKey: communityKey(4) });
-    await room.webSocketMessage(sam, JSON.stringify({ t: "react", emoji: "a:fire" }));
-    assert.equal(host.sent.filter((m) => m.t === "reaction" && m.emoji === "a:fire").length, 1);
+    await room.webSocketMessage(sam, JSON.stringify({ t: "react", emoji: "k:shrug" }));
+    assert.equal(host.sent.filter((m) => m.t === "reaction" && m.emoji === "k:shrug").length, 1);
     clock.t += 1_000;
-    await room.webSocketMessage(sam, JSON.stringify({ t: "react", emoji: "a:nope" }));
+    await room.webSocketMessage(sam, JSON.stringify({ t: "react", emoji: "k:nope" }));
     assert.equal(host.sent.filter((m) => m.t === "reaction").length, 1);
 });

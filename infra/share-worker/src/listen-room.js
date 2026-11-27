@@ -3,7 +3,7 @@
  * pure src/room.js: it keeps the room in storage (hibernation drops memory), binds each socket to its
  * member with serializeAttachment, sends what step() says to send, and arms the single alarm.
  */
-import { step, preview, capacity, EMOJI, ANIMS, REACT_GAP_MS, SAY_GAP_MS } from "./room.js";
+import { step, preview, capacity, EMOJI, FACES, REACT_GAP_MS, SAY_GAP_MS } from "./room.js";
 import { addSessionStats, countRegulars, removeLive, visitsOf, writeLive } from "./stations-api.js";
 import { sameHex, sha256Hex } from "./store.js";
 import { validEditKey } from "./validate.js";
@@ -126,7 +126,7 @@ export class ListenRoom {
         // A reaction a REACT_GAP_MS a socket, held here in memory: a session's room keeps no clock for them (it would have to
         // store the room for every one). A private room still keeps its own, which allows exactly what this does.
         if (msg.t === "react") {
-            if (!EMOJI.includes(msg.emoji) && !ANIMS.includes(msg.emoji)) return;
+            if (!EMOJI.includes(msg.emoji) && !FACES.includes(msg.emoji)) return;
             const now = this.now();
             const last = this.reacts.get(ws);
             if (last !== undefined && now - last < REACT_GAP_MS) return;

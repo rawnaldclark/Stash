@@ -194,7 +194,7 @@ The welcome's `state` has `v: 3`, `session` and `suggestions: []`. Then that mem
 | `requestCancel {id}` | listeners | takes back the sender's own waiting request; one already answered, or someone else's, does nothing |
 | `request {track}` | listeners | answered `requestAnswer {state}`: `queued` (Auto-accept), `waiting`, or `full` (3 waiting each, 30 in all) |
 | `react {emoji}`, `ping {c}`, `status` | everyone | as in a private room (only the host's `status` counts) |
-| `react {emoji}` with an animated one | everyone | `emoji` may also be one of the 12 ids in `ANIMS` (`a:fire`, `a:applause`, …), passed on as `reaction` like the six emoji. A private room takes only the six |
+| `react {emoji}` in a session | everyone | `emoji` is one of the 17 text faces in `FACES`, by id (`k:shrug` is ¯\\\_(ツ)\_/¯, `k:tableflip`, …), passed on as `reaction`. A session takes only these and a private room only the six emoji (the store app sends them). Each app draws the faces from its own copy of the list; the last five are big ones |
 | `say {phrase}` | everyone | one of the 10 ids in `PHRASES` (`hi`, `who`, `tune`, `again`, `louder`, `more`, `chills`, `thanks`, `morning`, `night`), passed on to all as `said {from, phrase}`. Ids only, never text: each app says them in its own language |
 | `saved {trackKey}` | everyone | this person saved the playing song: counted once each, for the song with that key only |
 | `settings`, `makeHost`, `suggest`, `suggestion` | | no effect |
