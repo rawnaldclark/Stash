@@ -470,7 +470,9 @@ class WebLibraryExporterTest {
 
     @Test fun `the web's file has none of Send to computer's fields, not even empty`() = runTest {
         val text = golden().toString(Charsets.UTF_8)
-        listOf("sent_at_ms", "\"from\"", "\"kind\":\"", "liked_on").forEach { assertFalse("leaked: $it", text.contains(it)) }
+        listOf("sent_at_ms", "\"from\"", "liked_on").forEach { assertFalse("leaked: $it", text.contains(it)) }
+        // The file's own "kind" (stash-web-library) and no other: a playlist's kind is Send to computer's only.
+        assertEquals(1, Regex("\"kind\":").findAll(text).count())
         val root = Json.parseToJsonElement(text).jsonObject
         root["playlists"]!!.jsonArray.forEach {
             assertEquals(setOf("id", "name", "items", "createdAt", "updatedAt"), it.jsonObject.keys - "follow")
