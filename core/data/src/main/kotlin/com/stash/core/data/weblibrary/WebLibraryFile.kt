@@ -24,8 +24,9 @@ import java.time.format.DateTimeFormatter
  * The optional `listens` section (a phone's whole history, added 2026-10-23) is not a field here: it is too big to hold in
  * memory, so [WebLibraryListens] streams it into a saved file after these fields. Without it, the bytes are exactly v1's.
  *
- * Send to computer writes the same file beside the songs (`stash-library.json`, for Stash for desktop), with two fields more:
- * [sentAtMs] and each playlist's [Playlist.from]. A file for the web never has them: null, they are not written at all.
+ * Send to computer writes the same file beside the songs (`stash-library.json`, for Stash for desktop), with fields more:
+ * [sentAtMs], each like's [Like.likedOn], each playlist's [Playlist.from] and [Playlist.kind]. A file for the web never has
+ * them: null, they are not written at all.
  */
 @Serializable
 data class WebLibraryFile(
@@ -65,7 +66,15 @@ data class WebLibraryFile(
     data class Artwork(val url: String)
 
     @Serializable
-    data class Like(val item: Song, val likedAt: Long)
+    data class Like(
+        val item: Song,
+        val likedAt: Long,
+        /**
+         * Send to computer only: where the song is liked, of [LIKED_STASH], [FROM_SPOTIFY], [FROM_YOUTUBE] and
+         * [FROM_SOUNDCLOUD], in that order.
+         */
+        @SerialName("liked_on") val likedOn: List<String>? = null,
+    )
 
     @Serializable
     data class Playlist(
@@ -78,10 +87,16 @@ data class WebLibraryFile(
         /** Set for a shared mix someone else owns: the web follows it too, and keeps it up to date there. */
         val follow: Follow? = null,
         /**
-         * Send to computer only: the service a playlist synced from one came from ([FROM_SPOTIFY], [FROM_YOUTUBE]). Not set for
-         * your own playlists (made in Stash) or shared mixes.
+         * Send to computer only: the service a playlist synced from one came from ([FROM_SPOTIFY], [FROM_YOUTUBE],
+         * [FROM_SOUNDCLOUD]), or an album's service. Not set for your own playlists (made in Stash), shared mixes and Stash
+         * Mixes.
          */
         val from: String? = null,
+        /**
+         * Send to computer only: what the list is ([KIND_PLAYLIST], [KIND_ALBUM], [KIND_MIX], [KIND_RADIO],
+         * [KIND_STASH_MIX]).
+         */
+        val kind: String? = null,
     )
 
     @Serializable
@@ -114,6 +129,27 @@ data class WebLibraryFile(
 
         /** [Playlist.from] of a playlist synced from YouTube Music. */
         const val FROM_YOUTUBE = "youtube"
+
+        /** [Playlist.from] of a playlist synced from SoundCloud. */
+        const val FROM_SOUNDCLOUD = "soundcloud"
+
+        /** [Like.likedOn]: liked in Stash. The services' are the [Playlist.from] names. */
+        const val LIKED_STASH = "stash"
+
+        /** [Playlist.kind]: a playlist (yours, shared with you, or synced). */
+        const val KIND_PLAYLIST = "playlist"
+
+        /** [Playlist.kind]: a saved album. */
+        const val KIND_ALBUM = "album"
+
+        /** [Playlist.kind]: a mix a service makes (Daily Mix, Your Top Songs, home mixes). */
+        const val KIND_MIX = "mix"
+
+        /** [Playlist.kind]: a service's radio (a mix whose name ends in "Radio"). */
+        const val KIND_RADIO = "radio"
+
+        /** [Playlist.kind]: a Stash Mix, made on the phone. */
+        const val KIND_STASH_MIX = "stash_mix"
 
         /** The web reads at most this many songs a playlist. */
         const val MAX_PLAYLIST_ITEMS = 10_000
