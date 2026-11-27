@@ -316,6 +316,7 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                 Line(
                     when {
                         s.listInTheWay -> stringResource(R.string.settings_send_computer_list_in_the_way)
+                        s.libraryInTheWay -> stringResource(R.string.settings_send_computer_library_in_the_way)
                         s.noAnswer -> stringResource(R.string.settings_send_computer_no_answer)
                         else -> s.message
                     },

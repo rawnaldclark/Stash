@@ -6,10 +6,12 @@ import androidx.room.Room
 import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
 import com.stash.core.data.db.StashDatabase
+import com.stash.core.data.db.dao.WebLibraryExportDao
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.SharedMixEntity
+import com.stash.core.data.db.entity.StashMixRecipeEntity
 import com.stash.core.data.db.entity.TrackBlocklistEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.MusicSource
@@ -501,7 +503,16 @@ class WebLibraryExporterTest {
         add(active("Blonde", PlaylistType.CUSTOM, "album:spotify:3mH6qwIy9crq0I9YQbOuDf", added = 13))
         add(active("Blonde", PlaylistType.CUSTOM, "MPREb_blonde", added = 14, source = MusicSource.YOUTUBE))
         add(active("Blonde", PlaylistType.CUSTOM, "album:qobuz:0886446224536", added = 15, source = MusicSource.BOTH))
-        add(active("Your Mix", PlaylistType.STASH_MIX, "stash_mix_2", added = 16, source = MusicSource.BOTH))
+        val yourMix = add(active("Your Mix", PlaylistType.STASH_MIX, "stash_mix_2", added = 16, source = MusicSource.BOTH))
+        // The Stash Mixes' recipes: Daily Discover is built in, Your Mix made in Mix Builder.
+        val recipes = db.stashMixRecipeDao()
+        val daily = playlists.findBySourceId("stash_mix_1")!!.id
+        recipes.insert(StashMixRecipeEntity(name = "Daily Discover", isBuiltin = true, playlistId = daily, createdAt = 1))
+        recipes.insert(StashMixRecipeEntity(name = "Your Mix", isBuiltin = false, playlistId = yourMix, createdAt = 1_700_000_000_000))
+        // The YouTube Music album synced above (MPREb_blonde), saved in Stash too, with another song.
+        val saved = playlists.insert(active("Blonde", PlaylistType.CUSTOM, "album:youtube:MPREb_blonde", added = 20, source = MusicSource.BOTH))
+        member(saved, homeSong, 0, added = 991)
+        member(saved, tracks.insert(track("Saved Song", "Tuber", added = 98, youtubeId = "dddddddddd2")), 1, added = 992)
         // None of these: no longer in the library.
         add(active("Old Radio", PlaylistType.DAILY_MIX, "radio_old", added = 17).copy(isActive = false))
         add(active("Old Mix", PlaylistType.STASH_MIX, "stash_mix_3", added = 18, source = MusicSource.BOTH).copy(isActive = false))
@@ -512,8 +523,6 @@ class WebLibraryExporterTest {
         fillEverything()
         val web = exporter.collect(T + 5_000, null)
         val file = exporter.forComputer(T + 5_000, sentAtMs = 1_764_000_000_123L)!!
-        val robin = db.playlistDao().findBySourceId("share:Fw12ab34")!!.id
-        val qobuz = db.playlistDao().findBySourceId("album:qobuz:0886446224536")!!.id
 
         assertEquals(1_764_000_000_123L, file.sentAtMs)
         // Your own playlists and the shared mix, then the Stash Mixes; then each service's playlists, albums, mixes, radios;
@@ -521,9 +530,10 @@ class WebLibraryExporterTest {
         val expected = listOf(
             // name, kind, from, id
             listOf("Night drive", "playlist", null, "custom_1"),
-            listOf("Robin’s mix", "playlist", null, "app-$robin"),
-            listOf("Daily Discover", "stash_mix", null, "stash-mix-stash_mix_1"),
-            listOf("Your Mix", "stash_mix", null, "stash-mix-stash_mix_2"),
+            listOf("Robin’s mix", "playlist", null, "share-Fw12ab34"),
+            // By their recipes, not their rows' numbers: a built-in one by its name, one made in Mix Builder by when.
+            listOf("Daily Discover", "stash_mix", null, "stash-mix-daily-discover"),
+            listOf("Your Mix", "stash_mix", null, "stash-mix-c1700000000000"),
             listOf("Road trip", "playlist", "spotify", "spotify-37i9dQZF1DXroad"),
             listOf("Blonde", "album", "spotify", "spotify-album-3mH6qwIy9crq0I9YQbOuDf"),
             listOf("Daily Mix 1", "mix", "spotify", "spotify-daily1"),
@@ -532,12 +542,13 @@ class WebLibraryExporterTest {
             listOf("My Supermix", "mix", "youtube", "youtube-RDTMAK5uy_super"),
             listOf("Late night SC", "playlist", "soundcloud", "soundcloud-playlist_42_7"),
             listOf("SoundCloud Weekly", "mix", "soundcloud", "soundcloud-mix_42_weekly"),
-            listOf("Blonde", "album", null, "app-$qobuz"),
+            listOf("Blonde", "album", null, "qobuz-album-0886446224536"),
         )
         assertEquals(expected, file.playlists.map { listOf(it.name, it.kind, it.from, it.id) })
         // Every list with all its songs, downloaded or not.
         assertEquals(listOf("Daily Song", "Ivy"), file.playlists.single { it.name == "Daily Mix 1" }.items.map { it.title })
-        assertEquals(listOf("Home Song"), file.playlists.single { it.id == "youtube-MPREb_blonde" }.items.map { it.title })
+        // The album synced and saved in Stash is one list, with the songs of both.
+        assertEquals(listOf("Home Song", "Saved Song"), file.playlists.single { it.id == "youtube-MPREb_blonde" }.items.map { it.title })
         // The web's file is as it was: the playlists alone (no album, no mix), in their own order, under its own ids, with
         // neither field.
         assertEquals(listOf("Night drive", "Robin’s mix", "Late night SC", "Road trip"), web.playlists.map { it.name })
@@ -631,49 +642,69 @@ class WebLibraryExporterTest {
         assertNull(exporter.fitForComputer(file, target = 0, most = 1_000))
     }
 
-    @Test fun `the computer's playlist ids are the same on every install, each given once, all ids the desktop takes`() {
-        val used = HashSet<String>()
-        fun id(source: MusicSource, sourceId: String, row: Long, kind: String = WebLibraryFile.KIND_PLAYLIST): String {
+    @Test fun `the computer's playlist ids are the same on every install, all ids the desktop takes`() {
+        val used = ArrayList<String>()
+        fun id(
+            source: MusicSource,
+            sourceId: String,
+            row: Long,
+            kind: String = WebLibraryFile.KIND_PLAYLIST,
+            mix: WebLibraryExportDao.StashMixKey? = null,
+        ): String {
             val p = PlaylistEntity(id = row, name = "p", source = source, sourceId = sourceId)
             val from = if (kind == WebLibraryFile.KIND_ALBUM) albumFromOf(p) else if (kind == WebLibraryFile.KIND_STASH_MIX) null else fromOf(p)
-            return computerIdOf(p, from, kind, fallback = "app-$row", used = used)
+            return computerIdOf(p, from, kind, fallback = "app-$row", mix = mix).also { used += it }
         }
+        fun hashed(prefix: String, key: String) = hashedId(prefix, key).also { assertTrue(it, Regex("^$prefix-h[0-9a-f]{32}$").matches(it)) }
         assertEquals("spotify-37i9dQZF1DXcBWIGoYBM5M", id(MusicSource.SPOTIFY, "37i9dQZF1DXcBWIGoYBM5M", 1))
         assertEquals("youtube-RDTMAK5uy_kset8DisdE7LSD4TNjEVvrKRTmG7a56E", id(MusicSource.YOUTUBE, "RDTMAK5uy_kset8DisdE7LSD4TNjEVvrKRTmG7a56E", 2))
         assertEquals("custom_3f2a6c1e-9b1d-4c2e-8a4f-0d6b7e5c9a11", id(MusicSource.BOTH, "custom_3f2a6c1e-9b1d-4c2e-8a4f-0d6b7e5c9a11", 3))
         // The longest a service's id can be and still fit the desktop's 64 characters, and one longer.
         assertEquals("spotify-" + "a".repeat(55), id(MusicSource.SPOTIFY, "a".repeat(55), 4))
-        assertEquals("app-5", id(MusicSource.SPOTIFY, "b".repeat(56), 5))
-        // Not an id the desktop takes, a shared mix, one saved in Stash: as the web's file has them.
-        assertEquals("app-6", id(MusicSource.SPOTIFY, "spotify:collection:tracks", 6))
-        assertEquals("app-7", id(MusicSource.BOTH, "share:Fw12ab34", 7))
-        assertEquals("app-8", id(MusicSource.BOTH, "custom_" + "c".repeat(58), 8))
-        assertEquals("app-9", id(MusicSource.BOTH, "album:qobuz_playlist:42", 9))
-        // The same id twice: the first keeps it, the other has its row's.
-        assertEquals("app-10", id(MusicSource.SPOTIFY, "37i9dQZF1DXcBWIGoYBM5M", 10))
+        // Longer, or not an id the desktop takes: by its source id's hash, the same on every install.
+        assertEquals(hashed("spotify", "b".repeat(56)), id(MusicSource.SPOTIFY, "b".repeat(56), 5))
+        assertEquals(hashed("spotify", "spotify:collection:tracks"), id(MusicSource.SPOTIFY, "spotify:collection:tracks", 6))
+        assertEquals(hashed("list", "custom_" + "c".repeat(58)), id(MusicSource.BOTH, "custom_" + "c".repeat(58), 8))
+        assertEquals(hashed("list", "custom_link_soundcloud_https://on.soundcloud.com/x"), id(MusicSource.BOTH, "custom_link_soundcloud_https://on.soundcloud.com/x", 27))
+        // A shared mix and a Qobuz playlist saved in Stash, by their own ids.
+        assertEquals("share-Fw12ab34", id(MusicSource.BOTH, "share:Fw12ab34", 7))
+        assertEquals("qobuz-playlist-42", id(MusicSource.BOTH, "album:qobuz_playlist:42", 9))
+        // The same list twice gives the same id (the file makes them one list).
+        assertEquals("spotify-37i9dQZF1DXcBWIGoYBM5M", id(MusicSource.SPOTIFY, "37i9dQZF1DXcBWIGoYBM5M", 10))
         // As the sync stores them on one install or another: a Spotify URI is its id, a YouTube Music browse id (VL…) its
         // playlist's, so both installs give one id.
         assertEquals("spotify-37i9dQZF1E4yrYiQJfy370", id(MusicSource.SPOTIFY, "spotify:playlist:37i9dQZF1E4yrYiQJfy370", 11))
         assertEquals("spotify-1aBcDeFgHiJkLmNoPqRsTu", id(MusicSource.SPOTIFY, "spotify:user:someone:playlist:1aBcDeFgHiJkLmNoPqRsTu", 12))
         assertEquals("youtube-RDTMAK5uy_nGQKSMIkpr4o9VI_2i56pkGliD6FQRo", id(MusicSource.YOUTUBE, "VLRDTMAK5uy_nGQKSMIkpr4o9VI_2i56pkGliD6FQRo", 13))
         assertEquals("youtube-PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", id(MusicSource.YOUTUBE, "VLPLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", 14))
-        // The same playlist stored both ways on one phone: the first keeps the id.
-        assertEquals("app-15", id(MusicSource.YOUTUBE, "PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", 15))
+        // The same playlist stored both ways on one phone: one id.
+        assertEquals("youtube-PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", id(MusicSource.YOUTUBE, "PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", 15))
         // Saved albums: Spotify's, YouTube Music's synced and saved in Stash (one album, one id), another's.
         val album = WebLibraryFile.KIND_ALBUM
         assertEquals("spotify-album-3mH6qwIy9crq0I9YQbOuDf", id(MusicSource.SPOTIFY, "album:spotify:3mH6qwIy9crq0I9YQbOuDf", 16, album))
         assertEquals("youtube-MPREb_4KjXbYbGvh9", id(MusicSource.YOUTUBE, "MPREb_4KjXbYbGvh9", 17, album))
-        assertEquals("app-18", id(MusicSource.BOTH, "album:youtube:MPREb_4KjXbYbGvh9", 18, album))
+        assertEquals("youtube-MPREb_4KjXbYbGvh9", id(MusicSource.BOTH, "album:youtube:MPREb_4KjXbYbGvh9", 18, album))
         assertEquals("youtube-MPREb_saved", id(MusicSource.BOTH, "album:youtube:MPREb_saved", 19, album))
-        assertEquals("app-20", id(MusicSource.BOTH, "album:qobuz:0886446224536", 20, album))
-        assertEquals("app-26", id(MusicSource.BOTH, "album:youtube:OLAK5uy_notAnAlbumId", 26, album))
-        assertEquals("app-21", id(MusicSource.SPOTIFY, "album:spotify:" + "d".repeat(51), 21, album))
-        // Stash Mixes, and SoundCloud's lists, made into ids the desktop takes.
-        assertEquals("stash-mix-stash_mix_4", id(MusicSource.BOTH, "stash_mix_4", 22, WebLibraryFile.KIND_STASH_MIX))
+        assertEquals("qobuz-album-0886446224536", id(MusicSource.BOTH, "album:qobuz:0886446224536", 20, album))
+        assertEquals(hashed("youtube", "album:youtube:OLAK5uy_notAnAlbumId"), id(MusicSource.BOTH, "album:youtube:OLAK5uy_notAnAlbumId", 26, album))
+        assertEquals(hashed("spotify", "album:spotify:" + "d".repeat(51)), id(MusicSource.SPOTIFY, "album:spotify:" + "d".repeat(51), 21, album))
+        // Stash Mixes by their recipes: a built-in one by its name, one made in Mix Builder by when it was made; with no
+        // recipe, as the web's file has it.
+        val mix = WebLibraryFile.KIND_STASH_MIX
+        fun recipe(name: String, builtin: Boolean, at: Long) = WebLibraryExportDao.StashMixKey(22, name, builtin, at)
+        assertEquals("stash-mix-daily-discover", id(MusicSource.BOTH, "stash_mix_4", 22, mix, recipe("Daily Discover", true, 1)))
+        assertEquals("stash-mix-daily-discover", id(MusicSource.BOTH, "stash_mix_9", 28, mix, recipe(" Daily  Discover! ", true, 2)))
+        assertEquals("stash-mix-c1700000000000", id(MusicSource.BOTH, "stash_mix_5", 29, mix, recipe("Gym", false, 1_700_000_000_000)))
+        assertEquals(hashed("stash-mix", "日々"), id(MusicSource.BOTH, "stash_mix_6", 30, mix, recipe("日々", true, 3)))
+        assertEquals("app-31", id(MusicSource.BOTH, "stash_mix_7", 31, mix))
+        // SoundCloud's lists, made into ids the desktop takes; a mix too long for one (its user's id is in it twice) by
+        // its hash.
         assertEquals("soundcloud-playlist_42_7", id(MusicSource.SOUNDCLOUD, "soundcloud_playlist_42_7", 23))
         assertEquals("soundcloud-mix_42_soundcloud-system-playlists-weekly", id(MusicSource.SOUNDCLOUD, "soundcloud_mix_42_soundcloud:system-playlists:weekly", 24, WebLibraryFile.KIND_MIX))
-        assertEquals("app-25", id(MusicSource.SOUNDCLOUD, "soundcloud_mix_" + "e".repeat(60), 25, WebLibraryFile.KIND_MIX))
-        assertEquals(26, used.size)
+        val moods = "soundcloud_mix_123456789_soundcloud:system-playlists:your-moods:123456789:3"
+        assertEquals(hashed("soundcloud", moods), id(MusicSource.SOUNDCLOUD, moods, 25, WebLibraryFile.KIND_MIX))
+        // A list with no source id at all: its row's, as the web's file has it.
+        assertEquals("app-32", id(MusicSource.BOTH, "", 32))
         used.forEach { assertTrue(it, Regex("^[A-Za-z0-9_-]{1,64}$").matches(it)) }
     }
 

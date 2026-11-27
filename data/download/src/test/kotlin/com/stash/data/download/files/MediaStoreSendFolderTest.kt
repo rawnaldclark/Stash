@@ -191,7 +191,8 @@ class MediaStoreSendFolderTest {
     @Test fun `a library file that can't have its own name is taken back, and the send told`() {
         // Another copy of Stash's library file is there, which this app can't see.
         store.othersNames += SongSender.LIBRARY_NAME
-        assertThat(runCatching { folder.writeLibrary { it.write("{}".toByteArray()) } }.isFailure).isTrue()
+        val e = runCatching { folder.writeLibrary { it.write("{}".toByteArray()) } }.exceptionOrNull()
+        assertThat(e).isInstanceOf(LibraryInTheWayException::class.java)
         assertThat(store.rows).isEmpty()
     }
 

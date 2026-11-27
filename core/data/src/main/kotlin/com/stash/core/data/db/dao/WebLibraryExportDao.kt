@@ -163,6 +163,18 @@ interface WebLibraryExportDao {
     )
     suspend fun savedAlbums(): List<PlaylistEntity>
 
+    /** A Stash Mix's recipe, for the id Send to computer gives its list: the list it fills ([playlistId]), and what names it. */
+    data class StashMixKey(
+        @ColumnInfo(name = "playlist_id") val playlistId: Long,
+        val name: String,
+        @ColumnInfo(name = "is_builtin") val isBuiltin: Boolean,
+        @ColumnInfo(name = "created_at") val createdAt: Long,
+    )
+
+    /** Every Stash Mix recipe with its list. */
+    @Query("SELECT playlist_id, name, is_builtin, created_at FROM stash_mix_recipes WHERE playlist_id IS NOT NULL")
+    suspend fun stashMixKeys(): List<StashMixKey>
+
     /** Every Stash Mix while active, oldest first. */
     @Query("SELECT p.* FROM playlists p WHERE p.type = 'STASH_MIX' AND p.is_active = 1 ORDER BY p.date_added ASC, p.id ASC")
     suspend fun stashMixes(): List<PlaylistEntity>

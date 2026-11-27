@@ -171,7 +171,7 @@ class MediaStoreSendFolder(private val resolver: ContentResolver) : SendFolder {
         }
         if (real != null && real != SongSender.LIBRARY_NAME) {
             runCatching { resolver.delete(uri, null, null) }
-            throw IllegalStateException("Another copy of Stash has a ${SongSender.LIBRARY_NAME} in Download/Stash transfer.")
+            throw LibraryInTheWayException()
         }
     }
 

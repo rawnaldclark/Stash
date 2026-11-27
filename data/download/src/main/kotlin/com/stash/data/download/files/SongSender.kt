@@ -92,6 +92,9 @@ class NoRoomException(val needed: Long, val copies: Int = 0) : Exception("There 
  */
 class ListInTheWayException : Exception("Another copy of Stash has a stash-transfer.json in Download/Stash transfer.")
 
+/** Another copy of Stash's library file is in the folder, so this one's can't have its name ([SendFolder.writeLibrary]). */
+class LibraryInTheWayException : Exception("Another copy of Stash has a stash-library.json in Download/Stash transfer.")
+
 /**
  * The folder was asked what it holds and gave no answer (MediaStore returned no cursor): not an empty folder, which
  * would read as every song of a send taken.

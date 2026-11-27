@@ -17,6 +17,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.FilterOutputStream
 import java.io.OutputStream
+import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -196,6 +197,8 @@ class WebLibraryExporter @Inject constructor(
         val follows: Map<Long, SharedMixEntity>,
         val playlists: List<Pair<ExportList, List<WebLibraryExportDao.PlaylistItemRow>>>,
         val plays: List<WebLibraryExportDao.PlayRow>,
+        /** Send to computer's only: each Stash Mix's recipe, by the list it fills. */
+        val mixKeys: Map<Long, WebLibraryExportDao.StashMixKey> = emptyMap(),
     )
 
     /**
@@ -217,7 +220,8 @@ class WebLibraryExporter @Inject constructor(
             .map { it to dao.playlistItems(it.playlist.id, WebLibraryFile.MAX_PLAYLIST_ITEMS) }
         val maxPlays = if (computer) WebLibraryFile.MAX_COMPUTER_PLAYS else WebLibraryFile.MAX_PLAYS
         val plays = if (!selection.plays) emptyList() else dao.recentPlays(maxPlays)
-        return Rows(likes, likePlaces, follows, playlists, plays)
+        val mixKeys = if (computer) dao.stashMixKeys().associateBy { it.playlistId } else emptyMap()
+        return Rows(likes, likePlaces, follows, playlists, plays, mixKeys)
     }
 
     /**
@@ -238,17 +242,31 @@ class WebLibraryExporter @Inject constructor(
             WebLibraryFile.Like(song, row.likedAt?.takeIf { it > 0 } ?: added.takeIf { it > 0 } ?: nowMs, likedOn)
         }
 
-        // The computer's ids given so far: each is given once.
-        val ids = HashSet<String>()
-        val playlists = rows.playlists.map { (list, items) ->
+        // The computer's ids given so far, each with where its list is in [playlists].
+        val ids = HashMap<String, Int>()
+        val playlists = ArrayList<WebLibraryFile.Playlist>(rows.playlists.size)
+        for ((list, items) in rows.playlists) {
             val p = list.playlist
             val created = p.dateAdded.toEpochMilli().takeIf { it > 0 } ?: nowMs
             val updated = items.mapNotNull { it.addedAt }.maxOrNull()?.coerceAtLeast(created) ?: created
             val webId = fileIdOf(p.id, p.sourceId)
-            WebLibraryFile.Playlist(
-                id = if (computer) computerIdOf(p, list.from, list.kind, webId, ids) else webId,
+            val id = if (computer) computerIdOf(p, list.from, list.kind, webId, rows.mixKeys[p.id]) else webId
+            val songs = items.mapNotNull { WebLibraryFile.song(it.track.toTrack(), it.track.dateAdded) }
+            val same = if (computer) ids[id] else null
+            if (same != null) {
+                // One list kept twice (a YouTube Music album synced and saved in Stash): one list, with the songs of both.
+                val first = playlists[same]
+                playlists[same] = first.copy(
+                    items = (first.items + songs).distinct().take(WebLibraryFile.MAX_PLAYLIST_ITEMS),
+                    updatedAt = maxOf(first.updatedAt, updated),
+                )
+                continue
+            }
+            if (computer) ids[id] = playlists.size
+            playlists += WebLibraryFile.Playlist(
+                id = id,
                 name = playlistName(p.name),
-                items = items.mapNotNull { WebLibraryFile.song(it.track.toTrack(), it.track.dateAdded) },
+                items = songs,
                 createdAt = created,
                 updatedAt = updated,
                 follow = rows.follows[p.id]?.let { WebLibraryFile.follow(it.shareId, it.version, it.sharedBy) },
@@ -515,33 +533,72 @@ private fun albumIdOf(sourceId: String): String? {
         sourceId.startsWith(SPOTIFY_ALBUM_KEY, ignoreCase = true) -> "spotify-album-" + sourceId.substring(SPOTIFY_ALBUM_KEY.length)
         sourceId.startsWith(YOUTUBE_ALBUM) -> "youtube-$sourceId"
         sourceId.startsWith(YOUTUBE_ALBUM_KEY + YOUTUBE_ALBUM, ignoreCase = true) -> "youtube-" + sourceId.substring(YOUTUBE_ALBUM_KEY.length)
+        sourceId.startsWith(QOBUZ_ALBUM_KEY) -> "qobuz-album-" + sourceId.substring(QOBUZ_ALBUM_KEY.length)
         else -> return null
     }
     return id.takeIf { DESKTOP_ID.matches(it) }
 }
 
+/** How a Qobuz album saved in Stash is keyed ([com.stash.core.data.album.SavedAlbums.sourceId]). */
+private const val QOBUZ_ALBUM_KEY = "album:qobuz:"
+
+/** How a Qobuz playlist saved in Stash is keyed. */
+private const val QOBUZ_PLAYLIST_KEY = "album:qobuz_playlist:"
+
+/** How a shared mix followed is keyed: `share:<its share id>`. */
+private const val SHARE_KEY = "share:"
+
 /**
  * A list's id in Send to computer's file, the same on every install of Stash: the desktop keeps lists by id, and a phone can
  * have two installs (the release and debug apps), whose row numbers differ. By its [kind]:
- * - a saved album: `spotify-album-<id>` or `youtube-MPREb…` ([albumIdOf]);
- * - a Stash Mix: `stash-mix-<its source id>`;
+ * - a saved album: `spotify-album-<id>`, `youtube-MPREb…` or `qobuz-album-<id>` ([albumIdOf]);
+ * - a Stash Mix: by its recipe ([mix], [stashMixIdOf]), its row's number differing from one install to another;
  * - a synced list ([from] set): its service and its own id there, `spotify-<id>`, `youtube-<id>` (the id 1 to 55 long), or
  *   `soundcloud-<id>` ([serviceIdOf]);
- * - your own list (a `custom_…` source id): that source id.
+ * - your own list (a `custom_…` source id): that source id;
+ * - a shared mix: `share-<its share id>`; a Qobuz playlist saved in Stash: `qobuz-playlist-<id>`.
  *
- * Anything else, or an id the desktop couldn't take (1 to 64 of `[A-Za-z0-9_-]`), is [fallback], as the web's file has it
- * ([fileIdOf]). [used] holds the ids given so far in the file; one given already goes to the later list's `app-<row id>`.
+ * One of these the desktop couldn't take (1 to 64 of `[A-Za-z0-9_-]`, as a SoundCloud mix's often isn't), or any other
+ * list, goes by its source id's hash ([hashedId]); only a list with no source id, or a Stash Mix with no recipe, is
+ * [fallback], as the web's file has it ([fileIdOf]). Two lists with one id are one list kept twice (an album synced and
+ * saved in Stash): the file makes them one.
  */
-internal fun computerIdOf(p: PlaylistEntity, from: String?, kind: String?, fallback: String, used: MutableSet<String>): String {
-    val serviceId = from?.let { serviceIdOf(it, p.sourceId) }
-    val stable = when {
-        kind == WebLibraryFile.KIND_ALBUM -> albumIdOf(p.sourceId)
-        kind == WebLibraryFile.KIND_STASH_MIX -> "stash-mix-${p.sourceId}".takeIf { DESKTOP_ID.matches(it) }
-        from == WebLibraryFile.FROM_SOUNDCLOUD -> "soundcloud-$serviceId".takeIf { !serviceId.isNullOrEmpty() && DESKTOP_ID.matches(it) }
+internal fun computerIdOf(p: PlaylistEntity, from: String?, kind: String?, fallback: String, mix: WebLibraryExportDao.StashMixKey? = null): String {
+    val source = p.sourceId
+    val serviceId = from?.let { serviceIdOf(it, source) }
+    if (kind == WebLibraryFile.KIND_STASH_MIX) return mix?.let(::stashMixIdOf) ?: fallback
+    val exact = when {
+        kind == WebLibraryFile.KIND_ALBUM -> albumIdOf(source)
+        from == WebLibraryFile.FROM_SOUNDCLOUD -> "soundcloud-$serviceId".takeIf { !serviceId.isNullOrEmpty() }
         serviceId != null -> "$from-$serviceId".takeIf { SYNCED_ID.matches(serviceId) }
-        p.sourceId.startsWith("custom_") && DESKTOP_ID.matches(p.sourceId) -> p.sourceId
+        source.startsWith("custom_") -> source
+        source.startsWith(SHARE_KEY) -> "share-" + source.substring(SHARE_KEY.length)
+        source.startsWith(QOBUZ_PLAYLIST_KEY) -> "qobuz-playlist-" + source.substring(QOBUZ_PLAYLIST_KEY.length)
         else -> null
-    } ?: fallback
-    if (used.add(stable)) return stable
-    return "app-${p.id}".also { used.add(it) }
+    }
+    return when {
+        exact != null && DESKTOP_ID.matches(exact) -> exact
+        source.isNotBlank() -> hashedId(from ?: if (kind == WebLibraryFile.KIND_ALBUM) "album" else "list", source)
+        else -> fallback
+    }
+}
+
+/**
+ * A Stash Mix's id, the same on every install: a built-in one's by its name (`stash-mix-daily-discover`; Stash makes the
+ * built-in ones again, under new numbers, as they change), one made in Mix Builder by when it was made
+ * (`stash-mix-c<ms>`).
+ */
+internal fun stashMixIdOf(mix: WebLibraryExportDao.StashMixKey): String {
+    if (!mix.isBuiltin) return "stash-mix-c${mix.createdAt}"
+    val slug = mix.name.lowercase().replace(NOT_SLUG, "-").trim('-')
+    return if (slug.isNotEmpty() && DESKTOP_ID.matches("stash-mix-$slug")) "stash-mix-$slug" else hashedId("stash-mix", mix.name)
+}
+
+/** What a built-in Stash Mix's name loses in its id: anything but lower-case letters and digits, each run one `-`. */
+private val NOT_SLUG = Regex("[^a-z0-9]+")
+
+/** `<prefix>-h` and the first 128 bits of [key]'s SHA-256, in hex: the same for the same key on every install. */
+internal fun hashedId(prefix: String, key: String): String {
+    val digest = MessageDigest.getInstance("SHA-256").digest(key.toByteArray(Charsets.UTF_8))
+    return "$prefix-h" + digest.take(16).joinToString("") { "%02x".format(it) }
 }

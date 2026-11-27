@@ -335,6 +335,18 @@ class SendToComputerCoordinatorTest {
         assertThat(folder.names()).isEmpty()
     }
 
+    @Test fun `a send of the library alone with another copy's library file in the way says so, not to tap again`() {
+        allOnComputer()
+        folder.libraryFails = LibraryInTheWayException()
+        runBlocking { coordinator.copy { _, _ -> } }
+        val error = coordinator.state.value as SendToComputerState.Error
+        assertThat(error.libraryInTheWay).isTrue()
+        assertThat(error.listInTheWay).isFalse()
+        assertThat(error.copiesLeft).isFalse()
+        assertThat(error.message).doesNotContain("again")
+        assertThat(folder.names()).isEmpty()
+    }
+
     @Test fun `a send of the library alone with another list in the way offers no copies to remove`() {
         allOnComputer()
         folder.listInTheWay = true

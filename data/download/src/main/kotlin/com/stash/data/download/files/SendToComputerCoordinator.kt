@@ -89,14 +89,16 @@ sealed interface SendToComputerState {
     /**
      * The send stopped: [message] says why. [copiesLeft]: copies of the send are left in the folder with no list (there
      * was no room, or another list is in the way), and a [SendToComputerCoordinator.cancel] removes them. [listInTheWay]:
-     * another copy of Stash's list is in the folder ([ListInTheWayException]). [noAnswer]: the phone's storage did not
-     * answer ([NoAnswerException]).
+     * another copy of Stash's list is in the folder ([ListInTheWayException]). [libraryInTheWay]: a send of the library
+     * alone found another copy of Stash's library file there ([LibraryInTheWayException]). [noAnswer]: the phone's storage
+     * did not answer ([NoAnswerException]).
      */
     data class Error(
         val message: String,
         val copiesLeft: Boolean = false,
         val listInTheWay: Boolean = false,
         val noAnswer: Boolean = false,
+        val libraryInTheWay: Boolean = false,
     ) : SendToComputerState
 }
 
@@ -416,6 +418,12 @@ class SendToComputerCoordinator @Inject constructor(
             // the work, not this): carried out, rather than the send left waiting for the computer.
             currentCoroutineContext().ensureActive()
             if (result.entries.isEmpty() && !result.library) {
+                // Another copy of Stash's library file is in the folder: sending again can't help while it is, so the card
+                // says how to clear it, as for another list in the way. There are no copies to remove.
+                if (libraryAlone && noLibrary == NoLibrary.IN_THE_WAY) {
+                    _state.value = SendToComputerState.Error(LibraryInTheWayException().message.orEmpty(), libraryInTheWay = true)
+                    return
+                }
                 _state.value = SendToComputerState.Error(
                     when {
                         !libraryAlone -> "None of the songs could be copied."
@@ -592,7 +600,7 @@ class SendToComputerCoordinator @Inject constructor(
     }
 
     /** Why a send's library file wasn't written: it is too big to send, the phone has no room for it, or it failed. */
-    private enum class NoLibrary { TOO_BIG, NO_ROOM, FAILED }
+    private enum class NoLibrary { TOO_BIG, NO_ROOM, IN_THE_WAY, FAILED }
 
     /**
      * Writes the library file of the send numbered [sentAtMs] ([SongSender.LIBRARY_NAME]: likes, playlists and plays, as
@@ -620,6 +628,7 @@ class SendToComputerCoordinator @Inject constructor(
         Log.w(TAG, "The library file was not written, so the songs go without it", why)
         return when {
             why is OutOfMemoryError -> NoLibrary.TOO_BIG
+            why is LibraryInTheWayException -> NoLibrary.IN_THE_WAY
             SongSender.full(why) -> NoLibrary.NO_ROOM
             else -> NoLibrary.FAILED
         }
