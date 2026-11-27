@@ -103,7 +103,7 @@ sealed interface SendToComputerState {
 }
 
 /** What a send would copy: [songs] downloaded songs, [bytes] in all, leaving out the [onComputer] the computer has. */
-data class SendCount(val songs: Int, val bytes: Long, val onComputer: Int)
+data class SendCount(val songs: Int, val bytes: Long, val onComputer: Int, val leftOut: Int = 0)
 
 /**
  * "Send to computer": copies every downloaded song into `Download/Stash transfer/`, where a computer sees it over USB
@@ -181,12 +181,23 @@ class SendToComputerCoordinator @Inject constructor(
     /** A test's folder, in place of MediaStore's. */
     @VisibleForTesting internal var folderForTest: SendFolder? = null
 
-    /** What a send would copy: the downloaded songs the computer doesn't have, their size, and how many it has. */
+    /**
+     * What a send would copy: the downloaded songs the computer doesn't have and didn't leave out before, their size, how
+     * many it has, and how many it left out.
+     */
     suspend fun count(): SendCount {
         val songs = trackDao.getAllDownloaded().filter { !it.filePath.isNullOrBlank() }
-        val has = withContext(Dispatchers.IO) { runCatching { memory.onComputer() }.getOrDefault(emptySet()) }
-        val (there, toSend) = songs.partition { it.id in has }
-        return SendCount(toSend.size, toSend.sumOf { it.fileSizeBytes.coerceAtLeast(0) }, there.size)
+        val (has, leftOut) = withContext(Dispatchers.IO) {
+            runCatching { memory.onComputer() to memory.leftOut() }.getOrDefault(emptySet<Long>() to emptySet())
+        }
+        val (there, notThere) = songs.partition { it.id in has }
+        val (left, toSend) = notThere.partition { it.id in leftOut }
+        return SendCount(toSend.size, toSend.sumOf { it.fileSizeBytes.coerceAtLeast(0) }, there.size, left.size)
+    }
+
+    /** The songs the computer left out before are copied again from the next send on. */
+    suspend fun includeLeftOut() {
+        withContext(Dispatchers.IO) { runCatching { memory.sendLeftOutAgain() } }
     }
 
     /** From now on a send copies every song again, the ones the computer has too. */
@@ -382,8 +393,11 @@ class SendToComputerCoordinator @Inject constructor(
                 return
             }
             val has = runCatching { memory.onComputer() }.getOrDefault(emptySet())
-            // None when the computer has every song: the send is then the library alone, with a list of no songs.
-            val songs = downloaded.filter { it.id !in has }
+            // Nor those the computer left out of a send before (the listener didn't want them there), until asked again.
+            val leftOut = runCatching { memory.leftOut() }.getOrDefault(emptySet())
+            // None when the computer has every song (or left the rest out): the send is then the library alone, with a list
+            // of no songs.
+            val songs = downloaded.filter { it.id !in has && it.id !in leftOut }
             libraryAlone = songs.isEmpty()
             // Each song's playlists, for choosing on the computer; a send goes without them rather than not at all.
             val playlists = if (songs.isEmpty()) emptyMap() else {
@@ -532,7 +546,12 @@ class SendToComputerCoordinator @Inject constructor(
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun clearCopies(marker: File, present: List<SentFile>? = null) {
         mark(marker)
-        if (!clearBegun()) noteTaken(present)
+        if (!clearBegun()) {
+            noteTaken(present)
+            // The computer's own end (not a cancel): the songs whose copies it left were not chosen there, so the next
+            // sends don't copy them again.
+            if (marker.name == LEFT_FILE) runCatching { memory.leaveOut() }
+        }
         runCatching { memory.doneSending() }
         // From here on a copy gone is this clear-up's own.
         mark(clearedMark)

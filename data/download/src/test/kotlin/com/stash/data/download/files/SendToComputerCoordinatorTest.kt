@@ -614,10 +614,43 @@ class SendToComputerCoordinatorTest {
         awaitTrue { folder.names().isEmpty() && !marked() }
         assertThat(marks.get()).containsExactly(0L, 0L, null).inOrder()
         assertThat(memory().onComputer()).containsExactly(1L)
+        // Song 2, left on the phone, was left out there: the next sends don't copy it again.
+        assertThat(memory().leftOut()).containsExactly(2L)
         assertThat(memory().sending()).isEmpty()
         // The computer finished: nothing was stopped, and the end is shown as the copies go.
         assertThat(shown.get()).isEqualTo(SendToComputerState.Finished(1, 2, chosen = true))
         assertThat(seen.none { it is SendToComputerState.Cancelling }).isTrue()
+    }
+
+    @Test fun `a song the computer left out is not copied again until Send them too`() {
+        runBlocking { coordinator.copy { _, _ -> } }
+        // The computer took song 1 and was done: song 2 was not chosen there.
+        folder.take("1.flac")
+        folder.take(SongSender.LIST_NAME)
+        awaitTrue { folder.names().isEmpty() && !marked() }
+        coordinator.dismiss()
+        assertThat(runBlocking { coordinator.count() }).isEqualTo(SendCount(0, 0, onComputer = 1, leftOut = 1))
+        // The next send is the library alone: song 2 is not copied.
+        runBlocking { coordinator.copy { _, _ -> } }
+        assertThat(folder.names()).doesNotContain("2.flac")
+        assertThat(folder.names()).contains(SongSender.LIST_NAME)
+        folder.take(SongSender.LIST_NAME)
+        folder.take(SongSender.LIBRARY_NAME)
+        awaitTrue { folder.names().isEmpty() && !marked() }
+        coordinator.dismiss()
+        // Send them too: it is copied again.
+        runBlocking { coordinator.includeLeftOut() }
+        val again = runBlocking { coordinator.count() }
+        assertThat(again.songs to again.leftOut).isEqualTo(1 to 0)
+        runBlocking { coordinator.copy { _, _ -> } }
+        assertThat(folder.names()).contains("2.flac")
+    }
+
+    @Test fun `a cancel leaves nothing out`() {
+        runBlocking { coordinator.copy { _, _ -> } }
+        coordinator.cancel()
+        awaitTrue { coordinator.state.value == SendToComputerState.Idle && folder.names().isEmpty() && !marked() }
+        assertThat(memory().leftOut()).isEmpty()
     }
 
     @Test fun `a send the computer finished while the app was away is cleared in a way that outlives the app`() {
@@ -635,6 +668,7 @@ class SendToComputerCoordinatorTest {
         coordinator.resume()
         awaitTrue { wasMarked.get() && folder.names().isEmpty() && !marked() }
         assertThat(memory().onComputer()).containsExactly(1L)
+        assertThat(memory().leftOut()).containsExactly(2L)
         assertThat(memory().sending()).isEmpty()
         assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Idle)
         // Nothing was stopped: nothing is shown as the copies go.
@@ -674,8 +708,11 @@ class SendToComputerCoordinatorTest {
         coordinator.resume()
         assertThat(clearingNow.await(10, TimeUnit.SECONDS)).isTrue()
 
-        // Send is tapped during the clear-up: the copy waits for it.
-        val send = scope.launch { coordinator.copy { _, _ -> } }
+        // Song 2 was left out there; Send them too is tapped during the clear-up: the copy waits for it.
+        val send = scope.launch {
+            coordinator.includeLeftOut()
+            coordinator.copy { _, _ -> }
+        }
         Thread.sleep(500)
         assertThat(send.isActive).isTrue()
         assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Idle)
@@ -704,9 +741,12 @@ class SendToComputerCoordinatorTest {
         assertThat(awaitState { it is SendToComputerState.Finished }).isEqualTo(SendToComputerState.Finished(1, 2, chosen = true))
         assertThat(clearingNow.await(10, TimeUnit.SECONDS)).isTrue()
 
-        // Dismissed, and Send tapped during the clear-up: the copy waits for it.
+        // Dismissed, and Send them too tapped during the clear-up: the copy waits for it.
         coordinator.dismiss()
-        val send = scope.launch { coordinator.copy { _, _ -> } }
+        val send = scope.launch {
+            coordinator.includeLeftOut()
+            coordinator.copy { _, _ -> }
+        }
         Thread.sleep(500)
         assertThat(send.isActive).isTrue()
         assertThat(coordinator.state.value).isEqualTo(SendToComputerState.Idle)

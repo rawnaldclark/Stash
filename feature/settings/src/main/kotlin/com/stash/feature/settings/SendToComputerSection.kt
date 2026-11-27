@@ -53,6 +53,12 @@ class SendToComputerViewModel @Inject constructor(
 
     suspend fun count(): SendCount = coordinator.count()
     suspend fun forget() = coordinator.forget()
+
+    /** "Send them too": a send with the songs the computer left out before. */
+    suspend fun sendLeftOutToo() {
+        coordinator.includeLeftOut()
+        coordinator.start()
+    }
     fun start() = coordinator.start()
     fun cancel() = coordinator.cancel()
     fun dismiss() = coordinator.dismiss()
@@ -131,6 +137,14 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
         strong = usb == Usb.FileTransfer,
     )
 
+    /** The songs the computer left out before, which a send doesn't copy again ("Send them too" does). */
+    @Composable
+    fun LeftOutLine(songs: Int) {
+        if (songs <= 0) return
+        Spacer(modifier = Modifier.height(4.dp))
+        Line(pluralStringResource(R.plurals.settings_send_computer_left_out, songs, songs))
+    }
+
     @Composable
     fun Bar(progress: Float?) {
         Spacer(modifier = Modifier.height(8.dp))
@@ -163,7 +177,7 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
         when (val s = state) {
             SendToComputerState.Idle -> {
                 val c = count ?: return@Column
-                if (c.songs == 0 && c.onComputer == 0) return@Column
+                if (c.songs == 0 && c.onComputer == 0 && c.leftOut == 0) return@Column
                 Text(
                     text = stringResource(R.string.settings_send_computer_title),
                     style = MaterialTheme.typography.labelMedium,
@@ -171,12 +185,14 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 if (c.songs == 0) {
-                    // The computer has every song: a send carries the latest likes, playlists and plays alone, unless asked
-                    // to send the songs again too.
-                    Line(stringResource(R.string.settings_send_computer_library_only))
+                    // The computer has every song (or left the rest out): a send carries the latest likes, playlists and
+                    // plays alone, unless asked to send the songs again too.
+                    Line(stringResource(if (c.leftOut > 0) R.string.settings_send_computer_library_only_chosen else R.string.settings_send_computer_library_only))
+                    LeftOutLine(c.leftOut)
                     Spacer(modifier = Modifier.height(6.dp))
                     UsbLine()
                     Action(stringResource(R.string.settings_send_computer_button), filled = true, onClick = viewModel::start)
+                    if (c.leftOut > 0) Action(stringResource(R.string.settings_send_computer_left_out_too), filled = false) { scope.launch { viewModel.sendLeftOutToo() } }
                     Action(stringResource(R.string.settings_send_computer_send_again), filled = false) {
                         scope.launch {
                             viewModel.forget()
@@ -192,9 +208,11 @@ internal fun SendToComputerSection(viewModel: SendToComputerViewModel = hiltView
                         Spacer(modifier = Modifier.height(4.dp))
                         Line(pluralStringResource(R.plurals.settings_send_computer_there, c.onComputer, c.onComputer))
                     }
+                    LeftOutLine(c.leftOut)
                     Spacer(modifier = Modifier.height(6.dp))
                     UsbLine()
                     Action(stringResource(R.string.settings_send_computer_button), filled = true, onClick = viewModel::start)
+                    if (c.leftOut > 0) Action(stringResource(R.string.settings_send_computer_left_out_too), filled = false) { scope.launch { viewModel.sendLeftOutToo() } }
                     if (c.onComputer > 0) {
                         Action(stringResource(R.string.settings_send_computer_copy_too), filled = false) {
                             scope.launch {

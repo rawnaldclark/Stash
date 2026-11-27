@@ -801,6 +801,12 @@
         <item quantity="one">%1$d song is on your computer already, so it isn\'t copied again.</item>
         <item quantity="other">%1$d songs are on your computer already, so they aren\'t copied again.</item>
     </plurals>
+    <string name="settings_send_computer_library_only_chosen">Your computer has every download you chose. Send your latest likes, playlists and plays to it.</string>
+    <plurals name="settings_send_computer_left_out">
+        <item quantity="one">%1$d song you left out on your computer isn\'t sent again.</item>
+        <item quantity="other">%1$d songs you left out on your computer aren\'t sent again.</item>
+    </plurals>
+    <string name="settings_send_computer_left_out_too">Send them too</string>
     <string name="settings_send_computer_library_only">Your computer has all your downloads. Send your latest likes, playlists and plays to it.</string>
     <string name="settings_send_computer_library_too">Your likes, playlists and plays go with them.</string>
     <string name="settings_send_computer_copy_too">Copy those too</string>
