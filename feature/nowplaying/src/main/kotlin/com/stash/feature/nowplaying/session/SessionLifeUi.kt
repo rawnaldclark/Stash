@@ -4,34 +4,48 @@ import androidx.annotation.StringRes
 import com.stash.feature.nowplaying.R
 
 /**
- * The room's life (Sessions step 4), as plain rules: what an animated reaction is drawn as, what a phrase id reads
- * as, and the feed under the crowd.
+ * The room's life (Sessions step 4), as plain rules: what a reaction is drawn as, what a phrase id reads as, and the
+ * feed under the crowd.
  */
 
 /**
- * What a reaction is drawn with: one of the six emoji as itself, an animated one ([com.stash.core.model.listen.RoomProtocol.ANIMS])
- * as its glyph, drawn larger and moving. Null for an id this app doesn't know (a newer app's): nothing is shown.
+ * A reaction's text face ([com.stash.core.model.listen.RoomProtocol.FACES]) as its frames: one for most, two for a
+ * big one, which steps between them as it climbs, drawn larger. The last frame is the face at rest, as the tray shows
+ * it. Null for an id this app doesn't know (a newer app's, or an emoji, which a session never passes on): nothing is
+ * shown.
  */
-internal fun reactionGlyph(emoji: String): String? = if (emoji.startsWith(ANIM_PREFIX)) ANIM_GLYPHS[emoji] else emoji
+internal fun faceFrames(id: String): List<String>? = FACE_FRAMES[id]
 
-internal fun isAnimated(emoji: String): Boolean = emoji.startsWith(ANIM_PREFIX)
+/** The face at rest, or null for an id this app doesn't know. */
+internal fun faceText(id: String): String? = FACE_FRAMES[id]?.last()
 
-private const val ANIM_PREFIX = "a:"
+/** A big one: it plays over everyone's screen, larger, stepping between its frames. */
+internal fun isBigFace(id: String): Boolean = (FACE_FRAMES[id]?.size ?: 0) > 1
 
-/** Each differs from the six emoji and from the others, so the tray never shows the same picture twice. */
-private val ANIM_GLYPHS = mapOf(
-    "a:applause" to "🎉", // party popper
-    "a:fire" to "💥", // burst
-    "a:hearts" to "💕", // two hearts
-    "a:dancing" to "🕺", // dancer
-    "a:mindblown" to "🤯",
-    "a:lighter" to "🕯️", // candle: a lighter held up
-    "a:headphones" to "🎧",
-    "a:rewind" to "⏪",
-    "a:laughing" to "🤣", // rolling on the floor
-    "a:bassdrop" to "🔊", // speaker, loud
-    "a:wave" to "👋",
-    "a:clap" to "🙌", // raised hands: clapping along
+/** Its name, as the tray shows it under the face: "/shrug". Also what a screen reader says, without the slash. */
+internal fun faceName(id: String): String = "/" + id.removePrefix(FACE_PREFIX)
+
+private const val FACE_PREFIX = "k:"
+
+/** Raw strings where a face has a backslash, so it is written as it shows. */
+private val FACE_FRAMES: Map<String, List<String>> = mapOf(
+    "k:shrug" to listOf("""¯\_(ツ)_/¯"""),
+    "k:lenny" to listOf("( ͡° ͜ʖ ͡°)"),
+    "k:yay" to listOf("""\(^o^)/"""),
+    "k:love" to listOf("(♥‿♥)"),
+    "k:cool" to listOf("(⌐■_■)"),
+    "k:look" to listOf("ಠ_ಠ"),
+    "k:wow" to listOf("(⊙_⊙)"),
+    "k:cry" to listOf("(╥﹏╥)"),
+    "k:wave" to listOf("( ﾟ◡ﾟ)/"),
+    "k:notes" to listOf("♪♫♪"),
+    "k:heart" to listOf("<3"),
+    "k:bear" to listOf("ʕ•ᴥ•ʔ"),
+    "k:tableflip" to listOf("(°□°) ┬─┬", "(╯°□°)╯︵ ┻━┻"),
+    "k:unflip" to listOf("┻━┻ ( º _ º)", "┬─┬ノ( º _ ºノ)"),
+    "k:dance" to listOf("┏(･o･)┛♪", "♪┗(･o･)┓"),
+    "k:rockon" to listOf("""\m/ (>_<) \m/""", """\m/ (^o^) \m/"""),
+    "k:sparkle" to listOf("(ﾉ◕ヮ◕)ﾉ", "(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧"),
 )
 
 /** A phrase id's words, or null for one this app doesn't know. */

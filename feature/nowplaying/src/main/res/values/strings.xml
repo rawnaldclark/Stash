@@ -226,6 +226,8 @@
 
     <!-- Sessions: the React tray, quick phrases, the feed, a song\'s crowd -->
     <string name="life_say">SAY</string>
+    <!-- Over the React tray's last row: text faces that play big, over everyone's screen -->
+    <string name="life_big">BIG ONES · PLAY OVER EVERYONE\'S SCREEN</string>
     <string name="phrase_hi">Hi all</string>
     <string name="phrase_who">Who is this?</string>
     <string name="phrase_tune">Tune!</string>
