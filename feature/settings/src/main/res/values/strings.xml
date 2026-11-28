@@ -619,6 +619,15 @@
     <!-- Settings > Audio & Quality > LosslessRoutingStatus -->
     <string name="settings_lossless_routing_header">ROUTING</string>
     <string name="settings_lossless_routing_footer">Lossless comes from the sources above. Misses try JioSaavn before falling back to YouTube, shown as \"via YT\" while it plays.</string>
+    <string name="settings_sources_check_again">Check again</string>
+    <string name="settings_sources_checking">Checking</string>
+    <string name="source_state_ready">Ready</string>
+    <string name="source_state_off">Off</string>
+    <string name="source_state_not_answering">Not answering</string>
+    <string name="source_state_paused">Paused</string>
+    <string name="source_state_limit_reached">Limit reached</string>
+    <string name="source_limit_resets_today">Resets at %1$s</string>
+    <string name="source_limit_resets_tomorrow">Resets tomorrow at %1$s</string>
 
     <!-- Settings > Playback -->
     <!-- The one mode switch. Online: everything plays, and songs that aren't downloaded stream. Offline: only downloaded songs play (Sync still downloads over the network). -->
