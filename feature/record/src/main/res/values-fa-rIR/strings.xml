@@ -114,7 +114,7 @@
     </plurals>
     <string name="record_preview_liked_download_title">آهنگ‌های پسندیده روی این گوشی بارگیری می‌شوند</string>
     <plurals name="record_preview_liked_download">
-        <item quantity="one">این%1$s آهنگ هم بارگیری می‌شود.</item>
+        <item quantity="one">این آهنگ هم بارگیری می‌شود.</item>
         <item quantity="other">این %1$s آهنگ هم بارگیری می‌شوند.</item>
     </plurals>
     <string name="record_preview_import">وارد کردن</string>

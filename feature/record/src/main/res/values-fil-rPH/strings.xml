@@ -82,7 +82,7 @@
     </plurals>
     <plurals name="record_preview_plays">
         <item quantity="one">play</item>
-        <item quantity="other">plays</item>
+        <item quantity="other">play</item>
     </plurals>
     <plurals name="record_preview_here">
         <item quantity="one">%1$s play ang nandito na at isang beses lang mabibilang.</item>
@@ -92,7 +92,7 @@
     <string name="record_preview_account_body">Darating ang buong history mo sa isa pang email, Extended streaming history. Idagdag dito ang zip na iyon pagdating nito.</string>
     <plurals name="record_preview_songs">
         <item quantity="one">%1$d kanta</item>
-        <item quantity="other">%1$d kantas</item>
+        <item quantity="other">%1$d kanta</item>
     </plurals>
     <string name="record_preview_liked">Mga nagustuhang kanta</string>
     <plurals name="record_preview_all_here_file">
@@ -115,7 +115,7 @@
     <string name="record_preview_liked_download_title">Nada-download sa phone na ito ang mga nagustuhang kanta</string>
     <plurals name="record_preview_liked_download">
         <item quantity="one">Mada-download din ang %1$s kantang ito.</item>
-        <item quantity="other">Mada-download din ang %1$s na kantangs ito.</item>
+        <item quantity="other">Mada-download din ang %1$s na kantang ito.</item>
     </plurals>
     <string name="record_preview_import">I-import</string>
     <string name="record_preview_cancel">Kanselahin</string>

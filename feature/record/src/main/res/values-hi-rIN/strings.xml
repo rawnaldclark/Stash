@@ -114,7 +114,7 @@
     </plurals>
     <string name="record_preview_liked_download_title">पसंद किए गए गाने इस फ़ोन पर डाउनलोड होते हैं</string>
     <plurals name="record_preview_liked_download">
-        <item quantity="one">यह %1$sगाना भी डाउनलोड होगा।</item>
+        <item quantity="one">यह गाना भी डाउनलोड होगा।</item>
         <item quantity="other">ये %1$s गाने भी डाउनलोड होंगे।</item>
     </plurals>
     <string name="record_preview_import">इंपोर्ट करें</string>

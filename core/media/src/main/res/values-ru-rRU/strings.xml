@@ -2,11 +2,11 @@
 <resources>
     <string name="notification_action_like">Добавить в любимые треки</string>
     <string name="notification_action_unlike">Удалить из любимых треков</string>
-    <string name="notification_action_repeat_off">Повтор выключен</string>
+    <string name="notification_action_repeat_off">Повтор выкл.</string>
     <string name="notification_action_repeat_all">Повторять</string>
     <string name="notification_action_repeat_one">Повторять один трек</string>
-    <string name="notification_action_shuffle_on">Случайный порядок включен</string>
-    <string name="notification_action_shuffle_off">Случайный порядок выключен</string>
+    <string name="notification_action_shuffle_on">Случайный порядок вкл.</string>
+    <string name="notification_action_shuffle_off">Случайный порядок выкл.</string>
     <string name="shuffle_play">Случайный порядок</string>
     <string name="resuming_channel_name">Воспроизведение</string>
     <string name="resuming_notification_title">Возобновление…</string>

@@ -41,7 +41,7 @@ class TidalWiresOwnServerTest {
     }
 
     private fun wires(own: OwnTidalServer) =
-        TidalWires(config, FixedRegistry(), mockk<LegacyRelayWire>(relaxed = true), mockk(relaxed = true), TidalDebugSettings.off(), own, mockk(relaxed = true))
+        TidalWires(config, FixedRegistry(), mockk<LegacyRelayWire>(relaxed = true), mockk(relaxed = true), TidalDebugSettings.off(), own)
 
     private val sealed = UserAddonEntry("https://tidal.mine.example/path", "own-token", kind = UserAddonKind.OWN_TIDAL_SERVER)
 
