@@ -32,7 +32,7 @@ private val FACE_FRAMES: Map<String, List<String>> = mapOf(
     "k:shrug" to listOf("""¯\_(ツ)_/¯"""),
     "k:lenny" to listOf("( ͡° ͜ʖ ͡°)"),
     "k:yay" to listOf("""\(^o^)/"""),
-    "k:love" to listOf("(♥‿♥)"),
+    "k:love" to listOf("(♥\uFE0E‿♥\uFE0E)"), // U+FE0E: the text heart, not a red emoji
     "k:cool" to listOf("(⌐■_■)"),
     "k:look" to listOf("ಠ_ಠ"),
     "k:wow" to listOf("(⊙_⊙)"),
