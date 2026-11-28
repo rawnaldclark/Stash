@@ -113,7 +113,7 @@ interface MusicRepository {
     /** Most-played tracks. */
     fun getMostPlayed(limit: Int = 20): Flow<List<Track>>
 
-    /** Full-text search across title, artist, and album. */
+    /** Full-text search across title, artist, and album, over the library as the mode shows it (Online: songs that stream too). */
     fun search(query: String): Flow<List<Track>>
 
     /**
