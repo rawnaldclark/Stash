@@ -1,5 +1,6 @@
 package com.stash.feature.settings
 
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
@@ -69,6 +70,9 @@ fun SettingsLosslessSourcesScreen(
     val qobuzConnectError by viewModel.qobuzConnectError.collectAsStateWithLifecycle()
     val quotaViewModel: LosslessQuotaViewModel = hiltViewModel()
     val losslessToday by quotaViewModel.line.collectAsStateWithLifecycle()
+    val sourceProbe by viewModel.sourceProbeResults.collectAsStateWithLifecycle()
+    val sourceProbing by viewModel.sourceProbing.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { viewModel.onCheckSources() }
 
     SettingsScaffold(title = stringResource(R.string.settings_lossless_sources_title), onBack = onBack, modifier = modifier) {
         GlassCard {
@@ -76,7 +80,12 @@ fun SettingsLosslessSourcesScreen(
                 // ROUTING block — one row per configured lossless path,
                 // built in LosslessAvailability so this list and the
                 // resolver read the same predicates.
-                LosslessRoutingStatus(rows = losslessRouting)
+                LosslessRoutingStatus(
+                    rows = losslessRouting,
+                    probe = sourceProbe,
+                    checking = sourceProbing,
+                    onCheck = viewModel::onCheckSources,
+                )
 
                 // The daily lossless allowance (300 free a day, counted by Stash's Tidal
                 // relay). Hidden when no Tidal relay is configured or nothing is known yet.
@@ -88,8 +97,11 @@ fun SettingsLosslessSourcesScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                // Unlimited for Ko-fi supporters: the claim, or the relay's "supporter" status.
-                SupporterSection()
+                // Their own Tidal login: unlimited, so the supporter unlock stops applying.
+                val tidalLogin: TidalLoginViewModel = hiltViewModel()
+                val tidalLoggedIn by tidalLogin.loggedIn.collectAsStateWithLifecycle()
+                if (!tidalLoggedIn) SupporterSection()
+                TidalAccountSection(tidalLogin)
 
                 // Direct Qobuz — the listener's own account, signed
                 // locally against www.qobuz.com. The warning shows when no
@@ -182,6 +194,31 @@ fun SettingsLosslessSourcesScreen(
                                 Text(stringResource(R.string.settings_connecting))
                             } else {
                                 Text(stringResource(R.string.settings_connect))
+                            }
+                        }
+                        var showTokenField by remember { mutableStateOf(false) }
+                        var qobuzToken by remember { mutableStateOf("") }
+                        TextButton(onClick = { showTokenField = !showTokenField }) {
+                            Text(stringResource(R.string.settings_qobuz_use_token))
+                        }
+                        AnimatedVisibility(visible = showTokenField) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                OutlinedTextField(
+                                    value = qobuzToken,
+                                    onValueChange = { qobuzToken = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text(stringResource(R.string.settings_qobuz_token_label)) },
+                                    supportingText = { Text(stringResource(R.string.settings_qobuz_token_hint)) },
+                                    singleLine = true,
+                                    visualTransformation = PasswordVisualTransformation(),
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Button(
+                                    onClick = { viewModel.onConnectQobuzToken(qobuzToken) },
+                                    enabled = !qobuzConnecting && qobuzToken.isNotBlank(),
+                                ) {
+                                    Text(stringResource(R.string.settings_connect))
+                                }
                             }
                         }
                     }

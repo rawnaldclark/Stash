@@ -161,7 +161,7 @@ class TidalClient @Inject constructor(
         if (cachedMiss(readCache(key), aac, now)) return TidalLookup.NoMatch
         // AAC mode's own "no AAC" stamp: its retry sweep skips the song for free.
         if (aacOnly && aacOnlyMissed(key, now)) return TidalLookup.NoMatch
-        if (quota.isSpent() && !wires.ownServerSet()) return TidalLookup.Spent(quota.resetsAtMs())
+        if (quota.isSpent() && !wires.ownServerSet() && !wires.loginActive()) return TidalLookup.Spent(quota.resetsAtMs())
         // A look-ahead asks only what is cached. With no route at all (Tidal switched off in Settings ›
         // Add-ons, or an applied config that names no server) the real play asks nothing either: that is
         // Off, not "ask it later", or every look-ahead stops here and nothing behind Tidal is fetched

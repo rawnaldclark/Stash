@@ -167,7 +167,7 @@
     <string name="record_lastfm_heading">तुमचे Last.fm scrobble जोडा</string>
     <plurals name="record_lastfm_scrobbles">
         <item quantity="one">%1$s scrobble</item>
-        <item quantity="other">%1$s scrobble</item>
+        <item quantity="other">%1$s scrobbles</item>
     </plurals>
     <string name="record_lastfm_asking">Last.fm ला विचारत आहोत…</string>
     <string name="record_lastfm_progress">पेज %2$s पैकी %1$s · %3$s</string>

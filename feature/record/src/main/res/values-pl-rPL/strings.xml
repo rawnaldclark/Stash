@@ -5,13 +5,13 @@
         <item quantity="one">godzina</item>
         <item quantity="few">godziny</item>
         <item quantity="many">godzin</item>
-        <item quantity="other">godziny</item>
+        <item quantity="other">godzin</item>
     </plurals>
     <plurals name="record_plays">
         <item quantity="one">%1$s odtworzenie</item>
         <item quantity="few">%1$s odtworzenia</item>
         <item quantity="many">%1$s odtworzeń</item>
-        <item quantity="other">%1$s odtworzenia</item>
+        <item quantity="other">%1$s odtworzeń</item>
     </plurals>
     <string name="record_since">od %1$d · %2$s</string>
     <string name="record_most_played">Najczęściej słuchane: %1$s</string>
@@ -33,7 +33,7 @@
         <item quantity="one">Odtwarzanie %1$d utworu</item>
         <item quantity="few">Odtwarzanie %1$d utworów</item>
         <item quantity="many">Odtwarzanie %1$d utworów</item>
-        <item quantity="other">Odtwarzanie %1$d utworu</item>
+        <item quantity="other">Odtwarzanie %1$d utworów</item>
     </plurals>
     <string name="record_note_none_found">Nie znaleziono tych utworów.</string>
     <string name="record_note_none_downloaded">Żaden z tych utworów nie jest pobrany. Połącz się z siecią, aby ich posłuchać.</string>
@@ -82,25 +82,25 @@
         <item quantity="one">godzina</item>
         <item quantity="few">godziny</item>
         <item quantity="many">godzin</item>
-        <item quantity="other">godziny</item>
+        <item quantity="other">godzin</item>
     </plurals>
     <plurals name="record_preview_years">
         <item quantity="one">rok</item>
         <item quantity="few">lata</item>
         <item quantity="many">lat</item>
-        <item quantity="other">roku</item>
+        <item quantity="other">lat</item>
     </plurals>
     <plurals name="record_preview_plays">
         <item quantity="one">odtworzenie</item>
         <item quantity="few">odtworzenia</item>
         <item quantity="many">odtworzeń</item>
-        <item quantity="other">odtworzenia</item>
+        <item quantity="other">odtworzeń</item>
     </plurals>
     <plurals name="record_preview_here">
         <item quantity="one">%1$s odtworzenie już tu jest i liczy się tylko raz.</item>
         <item quantity="few">%1$s odtworzenia już tu są i liczą się tylko raz.</item>
         <item quantity="many">%1$s odtworzeń już tu jest i liczy się tylko raz.</item>
-        <item quantity="other">%1$s odtworzenia już tu jest i liczy się tylko raz.</item>
+        <item quantity="other">%1$s odtworzeń już tu jest i liczy się tylko raz.</item>
     </plurals>
     <string name="record_preview_account_title">Masz tu tylko ostatni rok</string>
     <string name="record_preview_account_body">Cała historia przyjdzie w drugim e-mailu, Rozszerzona historia streamingu. Dodaj ten plik zip tutaj, gdy przyjdzie.</string>
@@ -108,20 +108,20 @@
         <item quantity="one">%1$d utwór</item>
         <item quantity="few">%1$d utwory</item>
         <item quantity="many">%1$d utworów</item>
-        <item quantity="other">%1$d utworu</item>
+        <item quantity="other">%1$d utworów</item>
     </plurals>
     <string name="record_preview_liked">Polubione utwory</string>
     <plurals name="record_preview_all_here_file">
         <item quantity="one">%1$s odtworzenie z tego pliku już tu jest.</item>
         <item quantity="few">Wszystkie %1$s odtworzenia z tego pliku już tu są.</item>
         <item quantity="many">Wszystkie %1$s odtworzeń z tego pliku już tu jest.</item>
-        <item quantity="other">Wszystkie %1$s odtworzenia z tego pliku już tu są.</item>
+        <item quantity="other">Wszystkie %1$s odtworzeń z tego pliku już tu jest.</item>
     </plurals>
     <plurals name="record_preview_all_here_files">
         <item quantity="one">%1$s odtworzenie z tych plików już tu jest.</item>
         <item quantity="few">Wszystkie %1$s odtworzenia z tych plików już tu są.</item>
         <item quantity="many">Wszystkie %1$s odtworzeń z tych plików już tu jest.</item>
-        <item quantity="other">Wszystkie %1$s odtworzenia z tych plików już tu są.</item>
+        <item quantity="other">Wszystkie %1$s odtworzeń z tych plików już tu jest.</item>
     </plurals>
     <string name="record_preview_no_plays">W tym pliku nie ma odtworzeń.</string>
     <string name="record_preview_still">Twoje playlisty i polubienia mogą i tak tu trafić.</string>
@@ -132,14 +132,14 @@
         <item quantity="one">%1$s utwór, dodany do polubionych</item>
         <item quantity="few">%1$s utwory, dodane do polubionych</item>
         <item quantity="many">%1$s utworów, dodanych do polubionych</item>
-        <item quantity="other">%1$s utworu, dodane do polubionych</item>
+        <item quantity="other">%1$s utworów, dodanych do polubionych</item>
     </plurals>
     <string name="record_preview_liked_download_title">Polubione utwory są pobierane na ten telefon</string>
     <plurals name="record_preview_liked_download">
         <item quantity="one">Ten utwór też zostanie pobrany.</item>
         <item quantity="few">Te %1$s utwory też zostaną pobrane.</item>
         <item quantity="many">Tych %1$s utworów też zostanie pobranych.</item>
-        <item quantity="other">Te %1$s utworu też zostaną pobrane.</item>
+        <item quantity="other">Tych %1$s utworów też zostanie pobranych.</item>
     </plurals>
     <string name="record_preview_import">Importuj</string>
     <string name="record_preview_cancel">Anuluj</string>
@@ -174,19 +174,19 @@
         <item quantity="one">%1$s odtworzenie</item>
         <item quantity="few">%1$s odtworzenia</item>
         <item quantity="many">%1$s odtworzeń</item>
-        <item quantity="other">%1$s odtworzenia</item>
+        <item quantity="other">%1$s odtworzeń</item>
     </plurals>
     <plurals name="record_done_playlists">
         <item quantity="one">%1$s playlista</item>
         <item quantity="few">%1$s playlisty</item>
         <item quantity="many">%1$s playlist</item>
-        <item quantity="other">%1$s playlisty</item>
+        <item quantity="other">%1$s playlist</item>
     </plurals>
     <plurals name="record_done_likes">
         <item quantity="one">%1$s polubiony utwór</item>
         <item quantity="few">%1$s polubione utwory</item>
         <item quantity="many">%1$s polubionych utworów</item>
-        <item quantity="other">%1$s polubionego utworu</item>
+        <item quantity="other">%1$s polubionych utworów</item>
     </plurals>
     <string name="record_done_nothing">Twoja płyta jest aktualna</string>
     <string name="record_way_spotify_what">Cała historia, playlisty i polubienia. Bez logowania.</string>
@@ -199,7 +199,7 @@
         <item quantity="one">%1$s scrobble</item>
         <item quantity="few">%1$s scrobble</item>
         <item quantity="many">%1$s scrobbli</item>
-        <item quantity="other">%1$s scrobble</item>
+        <item quantity="other">%1$s scrobbli</item>
     </plurals>
     <string name="record_lastfm_asking">Pytamy Last.fm…</string>
     <string name="record_lastfm_progress">Strona %1$s z %2$s · %3$s</string>
@@ -308,7 +308,7 @@
         <item quantity="one">%1$d utwór</item>
         <item quantity="few">%1$d utwory</item>
         <item quantity="many">%1$d utworów</item>
-        <item quantity="other">%1$d utworu</item>
+        <item quantity="other">%1$d utworów</item>
     </plurals>
     <string name="record_mix_card_with">z %1$s</string>
     <string name="record_mix_card_share">%1$d%% tego, czego słuchasz</string>
@@ -317,14 +317,14 @@
         <item quantity="one">%1$s, nawet przez %2$d rok</item>
         <item quantity="few">%1$s, nawet przez %2$d lata</item>
         <item quantity="many">%1$s, nawet przez %2$d lat</item>
-        <item quantity="other">%1$s, nawet przez %2$d roku</item>
+        <item quantity="other">%1$s, nawet przez %2$d lat</item>
     </plurals>
     <string name="record_mix_card_repeat">Obsesje</string>
     <plurals name="record_mix_card_obsession">
         <item quantity="one">%1$s: %2$d odtworzenie w dwa tygodnie, %3$s</item>
         <item quantity="few">%1$s: %2$d odtworzenia w dwa tygodnie, %3$s</item>
         <item quantity="many">%1$s: %2$d odtworzeń w dwa tygodnie, %3$s</item>
-        <item quantity="other">%1$s: %2$d odtworzenia w dwa tygodnie, %3$s</item>
+        <item quantity="other">%1$s: %2$d odtworzeń w dwa tygodnie, %3$s</item>
     </plurals>
     <string name="record_mix_card_week">Dziś w Twoich latach</string>
     <string name="record_mix_card_year_now">Ten rok do tej pory</string>
@@ -333,7 +333,7 @@
         <item quantity="one">%1$s godzina słuchania</item>
         <item quantity="few">%1$s godziny słuchania</item>
         <item quantity="many">%1$s godzin słuchania</item>
-        <item quantity="other">%1$s godziny słuchania</item>
+        <item quantity="other">%1$s godzin słuchania</item>
     </plurals>
     <string name="record_mix_card_started">Gdzie to się zaczęło</string>
     <string name="record_mix_card_from_to">Od %1$s w %2$d do %3$s w %4$d</string>
@@ -366,13 +366,13 @@
         <item quantity="one">%1$s godzina</item>
         <item quantity="few">%1$s godziny</item>
         <item quantity="many">%1$s godzin</item>
-        <item quantity="other">%1$s godziny</item>
+        <item quantity="other">%1$s godzin</item>
     </plurals>
     <plurals name="record_mixes_artist_plays">
         <item quantity="one">%1$s odtworzenie</item>
         <item quantity="few">%1$s odtworzenia</item>
         <item quantity="many">%1$s odtworzeń</item>
-        <item quantity="other">%1$s odtworzenia</item>
+        <item quantity="other">%1$s odtworzeń</item>
     </plurals>
     <string name="record_mixes_artist_open">Otwórz swoje najczęściej słuchane utwory: %1$s</string>
     <string name="record_mixes_artist_play">Odtwórz swoje najczęściej słuchane utwory: %1$s</string>
@@ -382,7 +382,7 @@
         <item quantity="one">%1$d ulubiony utwór, którego nie słuchasz od roku. Polub go, aby go zachować.</item>
         <item quantity="few">%1$d ulubione utwory, których nie słuchasz od roku. Polub jeden, aby go zachować.</item>
         <item quantity="many">%1$d ulubionych utworów, których nie słuchasz od roku. Polub jeden, aby go zachować.</item>
-        <item quantity="other">%1$d ulubionego utworu, którego nie słuchasz od roku. Polub go, aby go zachować.</item>
+        <item quantity="other">%1$d ulubionych utworów, których nie słuchasz od roku. Polub jeden, aby go zachować.</item>
     </plurals>
     <string name="record_mixes_lost_play">Odtwórz „Jeszcze nie w Twoim Stashu” (%1$s)</string>
     <string name="record_mixes_show_more">Pokaż więcej</string>

@@ -46,7 +46,10 @@ class TidalWiresRouteTest {
 
     private val firstPartyTidal = InstalledAddon(base = ADDON_BASE, manifest = manifest(), firstParty = true)
 
-    private fun wires(debug: TidalDebugSettings = TidalDebugSettings.off()): TidalWires {
+    private fun wires(
+        debug: TidalDebugSettings = TidalDebugSettings.off(),
+        login: TidalLoginStore = mockk(relaxed = true),
+    ): TidalWires {
         val prefs: LosslessSourcePreferences = mockk {
             every { bitchordEndpoint } returns ownEndpoint
             coEvery { bitchordEndpointNow() } answers { ownEndpoint.value }
@@ -61,8 +64,8 @@ class TidalWiresRouteTest {
         val quota = LosslessQuota.inMemory()
         val http = OkHttpClient()
         val addonClient = HttpAddonClient(http, TestAddonHost(), TestAddonHost(), TestAddonHost(), LocalHttp)
-        val legacy = LegacyRelayWire(http, RelaySigner(config, supporter(), appVersionProvider()), quota)
-        return TidalWires(config, registry, legacy, AddonV1Wire(addonClient, quota), debug, OwnTidalServer(NoUserAddons, prefs))
+        val legacy = LegacyRelayWire(http, RelaySigner(config, supporter(), appVersionProvider()), quota, login)
+        return TidalWires(config, registry, legacy, AddonV1Wire(addonClient, quota), debug, OwnTidalServer(NoUserAddons, prefs), login)
     }
 
     // ------------------------------------------------------------------------------------------ route()
@@ -232,6 +235,20 @@ class TidalWiresRouteTest {
         // And the route's own text, which can reach a log, names neither.
         configRelay.value = TidalRelay(RELAY, "relay-token")
         assertThat(wires.route().toString()).isEqualTo("Relay(userOwned=false)")
+    }
+
+    @Test fun `a stored Tidal login replaces Stash's relay and the add-on, but not the user's own server`() = runBlocking<Unit> {
+        val login: TidalLoginStore = mockk { coEvery { hasLoginNow() } returns true }
+        val wires = wires(login = login)
+        registry.state.value = listOf(firstPartyTidal)
+        val route = wires.route() as TidalWires.Route.Relay
+        assertThat(route.relay).isEqualTo(TidalRelay(RELAY, "relay-token", login = true))
+        assertThat(wires.loginActive()).isTrue()
+        assertThat(wires.describe()).isEqualTo("legacy relay (your Tidal account)")
+
+        ownEndpoint.value = OWN
+        assertThat((wires.route() as TidalWires.Route.Relay).relay.userOwned).isTrue()
+        assertThat(wires.loginActive()).isFalse()
     }
 
     private companion object {

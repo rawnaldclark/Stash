@@ -70,6 +70,8 @@ private val NEVER_BACKED_UP = listOf(
     SupporterRepository.DATASTORE_FILE,
     com.stash.core.data.sync.DownloadQueueState.DATASTORE_FILE,
     "user_addons.preferences_pb",
+    "tidal_login.preferences_pb",
+    "qbdlx_creds.preferences_pb",
     "addon_manifests.preferences_pb",
     "addon_index.preferences_pb",
 )

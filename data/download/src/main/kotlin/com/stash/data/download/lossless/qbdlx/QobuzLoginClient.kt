@@ -16,7 +16,7 @@ import okhttp3.Request
 /** Outcome of a Qobuz account login. */
 sealed interface QobuzLoginResult {
     /** Logged in with an eligible (paid) account. Carries the pair to sign its requests with. */
-    data class Success(val token: String, val appId: String, val appSecret: String) : QobuzLoginResult
+    data class Success(val token: String, val appId: String, val appSecret: String, val email: String? = null) : QobuzLoginResult
     /** Wrong email/password (HTTP 401). */
     object InvalidCredentials : QobuzLoginResult
     /** Logged in, but the account has no lossless subscription — no FLAC to serve. */
@@ -66,6 +66,40 @@ class QobuzLoginClient @Inject constructor(
         }.getOrDefault(QobuzLoginResult.Error)
     }
 
+    /** Validates a pasted `user_auth_token` against the scraped app creds; same result shape as [login]. */
+    suspend fun loginWithToken(token: String): QobuzLoginResult = withContext(Dispatchers.IO) {
+        val creds = fetchCreds() ?: return@withContext QobuzLoginResult.Error
+        val url = "$baseUrl/api.json/0.2/user/get".toHttpUrl().newBuilder()
+            .addQueryParameter("app_id", creds.appId)
+            .build()
+        val req = Request.Builder().url(url.toString())
+            .header("X-App-Id", creds.appId)
+            .header("X-User-Auth-Token", token.trim())
+            .header("Accept", "application/json")
+            .header("User-Agent", UA)
+            .get().build()
+        runCatching {
+            httpClient.newCall(req).execute().use { resp ->
+                classifyToken(resp.code, resp.body?.string().orEmpty(), token.trim(), creds)
+            }
+        }.getOrDefault(QobuzLoginResult.Error)
+    }
+
+    internal fun classifyToken(code: Int, body: String, token: String, creds: QobuzWebCreds): QobuzLoginResult {
+        if (code == 401 || code == 400) return QobuzLoginResult.InvalidCredentials
+        if (code != 200) return QobuzLoginResult.Error
+        val parsed = runCatching { json.decodeFromString<QobuzUserResponse>(body) }.getOrNull()
+            ?: return QobuzLoginResult.Error
+        val params = parsed.credential?.parameters
+        if (params.isNullOrEmpty()) return QobuzLoginResult.FreeAccount
+        return QobuzLoginResult.Success(
+            token = token,
+            appId = creds.appId,
+            appSecret = creds.appSecret,
+            email = parsed.email?.takeIf { it.isNotBlank() },
+        )
+    }
+
     internal fun classify(code: Int, body: String, creds: QobuzWebCreds): QobuzLoginResult {
         if (code == 401) return QobuzLoginResult.InvalidCredentials
         if (code != 200) return QobuzLoginResult.Error
@@ -98,6 +132,13 @@ internal data class QobuzLoginResponse(
 
 @Serializable
 internal data class QobuzLoginUser(val credential: QobuzLoginCredentialField? = null)
+
+/** `user/get` returns the user object itself, not wrapped like the login response. */
+@Serializable
+internal data class QobuzUserResponse(
+    val email: String? = null,
+    val credential: QobuzLoginCredentialField? = null,
+)
 
 @Serializable
 internal data class QobuzLoginCredentialField(
