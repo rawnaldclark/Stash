@@ -94,13 +94,16 @@ export const MAX_PUBLIC_MEMBERS = 1 + MAX_COHOSTS + MAX_LISTENERS;
 /** What a session speaks, and the least an app must say in its hello to join one (build plan, decision 5). */
 export const PUBLIC_V = 3;
 /**
- * A session's animated reactions and quick phrases (UX spec §4.3, design §5): ids only, never text, so each app says
- * them in its own language. Keep in sync with RoomProtocol.ANIMS and RoomProtocol.PHRASES in core/model. An app that
- * doesn't know an id shows nothing, so later sets can be added here first.
+ * A session's reactions and quick phrases (UX spec §4.3, design §5): ids only, never text. Reactions are old-school
+ * text faces (owner 2026-11-27: "get rid of emoji reactions they look cheap"): `k:shrug` is ¯\_(ツ)_/¯, and each app
+ * draws them from its own copy of the list, the last five big. A session takes only these, a private room only the six
+ * EMOJI (the store app sends them). Keep in sync with RoomProtocol.FACES and RoomProtocol.PHRASES in core/model, the
+ * web player's and the desktop's lists. An app that doesn't know an id shows nothing, so later sets can be added here
+ * first.
  */
-export const ANIMS = [
-    "a:applause", "a:fire", "a:hearts", "a:dancing", "a:mindblown", "a:lighter",
-    "a:headphones", "a:rewind", "a:laughing", "a:bassdrop", "a:wave", "a:clap",
+export const FACES = [
+    "k:shrug", "k:lenny", "k:yay", "k:love", "k:cool", "k:look", "k:wow", "k:cry", "k:wave", "k:notes", "k:heart",
+    "k:bear", "k:tableflip", "k:unflip", "k:dance", "k:rockon", "k:sparkle",
 ];
 export const PHRASES = ["hi", "who", "tune", "again", "louder", "more", "chills", "thanks", "morning", "night"];
 /** One phrase a person every this long: held by the shell, a socket at a time, as reactions are. */
@@ -1233,8 +1236,8 @@ const MESSAGES = {
 
     react(ctx) {
         const { s, msg, event, now } = ctx;
-        // A session also takes the animated ones, by id.
-        if (!EMOJI.includes(msg.emoji) && !(s.pub && ANIMS.includes(msg.emoji))) return false;
+        // A session takes its text faces, by id; a private room the six emoji.
+        if (!(s.pub ? FACES : EMOJI).includes(msg.emoji)) return false;
         // A session keeps no reaction clock: 53 listeners reacting once a second would store the whole room 53 times a
         // second (the load check). The shell holds each socket to REACT_GAP_MS instead (src/listen-room.js).
         if (s.pub) {

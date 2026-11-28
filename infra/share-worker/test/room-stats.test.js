@@ -10,7 +10,8 @@ import { sess } from "./stations-helpers.js";
 const T0 = Date.UTC(2026, 10, 22, 12, 0, 0);
 const MIN = 60_000;
 const TRACK = { t: "Avril 14th", a: "Aphex Twin", d: 125000 };
-const FIRE = "\u{1F525}";
+/** A session's reaction: a text face, by id. */
+const FIRE = "k:yay";
 const kh = (id) => `kh-${id}`;
 const hello = (s, id, { host = false, at = T0 } = {}) =>
     step(s, { type: "hello", msg: { t: "hello", name: id, v: PUBLIC_V }, hostKeyOk: host, listenerHash: host ? undefined : kh(id), newId: id, newToken: `tok-${id}` }, at);

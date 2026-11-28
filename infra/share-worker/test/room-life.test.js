@@ -1,12 +1,14 @@
 // Sessions step 4: quick phrases, animated reactions, a song's crowd counts and the crowd favourite.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { step, publicState, nextAlarm, PUBLIC_V, ANIMS, PHRASES, STATS_GAP_MS, FAVOURITE_MIN } from "../src/room.js";
+import { step, publicState, nextAlarm, PUBLIC_V, FACES, EMOJI, PHRASES, STATS_GAP_MS, FAVOURITE_MIN } from "../src/room.js";
 
 const T0 = 1_000_000;
 const TRACK = { t: "Avril 14th", a: "Aphex Twin", d: 125000 };
 const NEXT = { t: "Xtal", a: "Aphex Twin", d: 290000 };
 const FIRE = "\u{1F525}";
+/** A session's reaction: a text face, by id. */
+const FACE = "k:yay";
 
 const hello = (s, id, { host = false, at = T0 } = {}) =>
     step(s, { type: "hello", msg: { t: "hello", name: id, v: PUBLIC_V }, hostKeyOk: host, listenerHash: host ? undefined : `kh-${id}`, newId: id, newToken: `tok-${id}` }, at);
@@ -29,11 +31,11 @@ const privateRoom = () => {
 
 // ── Phrases ───────────────────────────────────────────────────────────────────
 
-test("there are 10 phrases and 12 animated reactions, as ids", () => {
+test("there are 10 phrases and 17 text faces, as ids", () => {
     assert.equal(PHRASES.length, 10);
-    assert.equal(ANIMS.length, 12);
-    assert.ok(ANIMS.every((a) => a.startsWith("a:")));
-    assert.equal(new Set([...PHRASES, ...ANIMS]).size, 22);
+    assert.equal(FACES.length, 17);
+    assert.ok(FACES.every((a) => a.startsWith("k:")));
+    assert.equal(new Set([...PHRASES, ...FACES]).size, 27);
 });
 
 test("a phrase reaches everyone under the sender's id, and only a listener's first is stored", () => {
@@ -56,33 +58,34 @@ test("only the fixed phrases pass: no text, no unknown id", () => {
     }
 });
 
-test("a private room has no phrases, saves or animated reactions", () => {
+test("a private room has no phrases, saves or text faces", () => {
     const s = privateRoom();
     assert.deepEqual(send(s, "g", { t: "say", phrase: "tune" }).out, []);
     assert.deepEqual(send(s, "g", { t: "saved", trackKey: 0 }).out, []);
-    assert.deepEqual(send(s, "g", { t: "react", emoji: "a:fire" }).out, []);
+    assert.deepEqual(send(s, "g", { t: "react", emoji: "k:shrug" }).out, []);
     assert.equal(send(s, "g", { t: "react", emoji: FIRE }).out.length, 1, "the six emoji as before");
 });
 
-// ── Animated reactions ────────────────────────────────────────────────────────
+// ── Text faces ────────────────────────────────────────────────────────────────
 
-test("a session passes on each of the 12 animated reactions, and nothing that isn't one", () => {
+test("a session passes on each of the 17 text faces, and nothing else: no emoji, no text, no old animated id", () => {
     const s = playing();
-    for (const anim of ANIMS) {
-        assert.deepEqual(sent(send(s, "l1", { t: "react", emoji: anim }), "reaction"), [{ t: "reaction", from: "l1", emoji: anim }]);
+    for (const face of FACES) {
+        assert.deepEqual(sent(send(s, "l1", { t: "react", emoji: face }), "reaction"), [{ t: "reaction", from: "l1", emoji: face }]);
     }
-    assert.deepEqual(send(s, "l1", { t: "react", emoji: "a:nope" }).out, []);
-    assert.deepEqual(send(s, "l1", { t: "react", emoji: "fire" }).out, []);
+    for (const emoji of [...EMOJI, "k:nope", "shrug", "¯\\_(ツ)_/¯", "a:fire", "", null]) {
+        assert.deepEqual(send(s, "l1", { t: "react", emoji }).out, [], String(emoji));
+    }
 });
 
 // ── A song's counts ───────────────────────────────────────────────────────────
 
 test("a person's first reaction to a song counts and is stored; their next ones only pass through", () => {
     const s = playing();
-    const first = send(s, "l1", { t: "react", emoji: FIRE }, T0 + 10);
+    const first = send(s, "l1", { t: "react", emoji: FACE }, T0 + 10);
     assert.deepEqual(sent(first, "songStats"), [{ t: "songStats", trackKey: 1, reactions: 1, saves: 0, favourite: false }]);
     assert.notEqual(first.state, s);
-    const again = send(first.state, "l1", { t: "react", emoji: "a:hearts" }, T0 + 2000);
+    const again = send(first.state, "l1", { t: "react", emoji: "k:love" }, T0 + 2000);
     assert.equal(sent(again, "reaction").length, 1);
     assert.deepEqual(sent(again, "songStats"), []);
     assert.equal(again.state, first.state, "nothing new to store");
@@ -92,7 +95,7 @@ test("before any song there is nothing to count", () => {
     let s = step(null, { type: "create", code: "ABCDEFGH", hostName: "Rawn", keyHash: "h", stationId: "STATION1" }, T0).state;
     s = hello(s, "h", { host: true }).state;
     s = hello(s, "l1").state;
-    const r = send(s, "l1", { t: "react", emoji: FIRE });
+    const r = send(s, "l1", { t: "react", emoji: FACE });
     assert.equal(r.out.length, 1);
     assert.equal(r.state, s);
     assert.ok(!("stats" in r.state.pub));
@@ -111,8 +114,8 @@ test("a save counts once a person, for the song that's playing only", () => {
 
 test("counts go out at most once every 2 s: a change inside the gap waits for the alarm", () => {
     let s = playing(3);
-    s = send(s, "l1", { t: "react", emoji: FIRE }, T0 + 100).state;
-    const quiet = send(s, "l2", { t: "react", emoji: FIRE }, T0 + 600);
+    s = send(s, "l1", { t: "react", emoji: FACE }, T0 + 100).state;
+    const quiet = send(s, "l2", { t: "react", emoji: FACE }, T0 + 600);
     assert.deepEqual(sent(quiet, "songStats"), []);
     assert.equal(sent(quiet, "reaction").length, 1, "the reaction itself is never held");
     assert.equal(nextAlarm(quiet.state), T0 + 100 + STATS_GAP_MS);
@@ -122,19 +125,19 @@ test("counts go out at most once every 2 s: a change inside the gap waits for th
     assert.deepEqual(sent(flushed, "songStats"), [{ t: "songStats", trackKey: 1, reactions: 2, saves: 1, favourite: false }]);
     assert.notEqual(nextAlarm(flushed.state), T0 + 100 + STATS_GAP_MS, "nothing left to send");
     // After the gap a change goes at once again.
-    const later = send(flushed.state, "l3", { t: "react", emoji: FIRE }, T0 + 100 + 2 * STATS_GAP_MS);
+    const later = send(flushed.state, "l3", { t: "react", emoji: FACE }, T0 + 100 + 2 * STATS_GAP_MS);
     assert.equal(sent(later, "songStats").length, 1);
 });
 
 test("the next song starts from nothing, and a late count for the old one is dropped", () => {
     let s = playing();
-    s = send(s, "l1", { t: "react", emoji: FIRE }, T0 + 100).state;
+    s = send(s, "l1", { t: "react", emoji: FACE }, T0 + 100).state;
     s = send(s, "l2", { t: "saved", trackKey: 1 }, T0 + 200).state; // inside the gap: waiting
     s = send(s, "h", { t: "load", track: NEXT, positionMs: 0, queue: [] }, T0 + 300).state;
     assert.ok(!("songStats" in publicState(s)) || publicState(s).songStats.reactions === 0);
     const alarm = step(s, { type: "alarm" }, T0 + 100 + STATS_GAP_MS);
     assert.deepEqual(sent(alarm, "songStats"), [], "the old song's waiting counts never go out");
-    const r = send(s, "l1", { t: "react", emoji: FIRE }, T0 + 5000);
+    const r = send(s, "l1", { t: "react", emoji: FACE }, T0 + 5000);
     assert.deepEqual(sent(r, "songStats"), [{ t: "songStats", trackKey: 2, reactions: 1, saves: 0, favourite: false }]);
     assert.deepEqual(send(r.state, "l1", { t: "saved", trackKey: 1 }, T0 + 9000).out, [], "a save for the song before");
 });
@@ -142,7 +145,7 @@ test("the next song starts from nothing, and a late count for the old one is dro
 test("someone joining mid-song gets its counts in the welcome's state", () => {
     let s = playing();
     assert.ok(!("songStats" in publicState(s)), "none until someone reacts or saves");
-    s = send(s, "l1", { t: "react", emoji: FIRE }, T0 + 100).state;
+    s = send(s, "l1", { t: "react", emoji: FACE }, T0 + 100).state;
     const r = hello(s, "late", { at: T0 + 200 });
     assert.deepEqual(sent(r, "welcome")[0].state.songStats, { trackKey: 1, reactions: 1, saves: 0, favourite: false });
 });
@@ -153,27 +156,27 @@ test("a favourite needs 3 people and a third of the room", () => {
     assert.equal(FAVOURITE_MIN, 3);
     // 4 in the room (host + 3): two reacting is over a third but under 3 people.
     let s = playing(3);
-    s = send(s, "l1", { t: "react", emoji: FIRE }, T0 + 10).state;
-    let r = send(s, "l2", { t: "react", emoji: FIRE }, T0 + 3000);
+    s = send(s, "l1", { t: "react", emoji: FACE }, T0 + 10).state;
+    let r = send(s, "l2", { t: "react", emoji: FACE }, T0 + 3000);
     assert.equal(sent(r, "songStats")[0].favourite, false);
-    r = send(r.state, "l3", { t: "react", emoji: FIRE }, T0 + 6000);
+    r = send(r.state, "l3", { t: "react", emoji: FACE }, T0 + 6000);
     assert.equal(sent(r, "songStats")[0].favourite, true);
 
     // 13 in the room: 3 people is under a third, 5 is over.
     s = playing(12);
     let at = T0 + 10;
     for (const id of ["l1", "l2", "l3", "l4"]) {
-        r = send(s, id, { t: "react", emoji: FIRE }, (at += 3000));
+        r = send(s, id, { t: "react", emoji: FACE }, (at += 3000));
         s = r.state;
         assert.equal(sent(r, "songStats")[0].favourite, false, id);
     }
-    r = send(s, "l5", { t: "react", emoji: FIRE }, (at += 3000));
+    r = send(s, "l5", { t: "react", emoji: FACE }, (at += 3000));
     assert.equal(sent(r, "songStats")[0].favourite, true);
 });
 
 test("once a favourite, a song stays one as people come in, and saves don't make one", () => {
     let s = playing(3);
-    for (const [i, id] of ["l1", "l2", "l3"].entries()) s = send(s, id, { t: "react", emoji: FIRE }, T0 + 10 + i * 3000).state;
+    for (const [i, id] of ["l1", "l2", "l3"].entries()) s = send(s, id, { t: "react", emoji: FACE }, T0 + 10 + i * 3000).state;
     for (let i = 4; i <= 12; i++) s = hello(s, `l${i}`, { at: T0 + 9000 + i }).state;
     assert.equal(publicState(s).songStats.favourite, true);
 
@@ -187,7 +190,7 @@ test("reactions while the song is paused count, but don't make a favourite", () 
     let s = playing(3);
     s = send(s, "h", { t: "pause" }, T0 + 5).state;
     let r;
-    for (const [i, id] of ["l1", "l2", "l3"].entries()) { r = send(s, id, { t: "react", emoji: FIRE }, T0 + 10 + i * 3000); s = r.state; }
+    for (const [i, id] of ["l1", "l2", "l3"].entries()) { r = send(s, id, { t: "react", emoji: FACE }, T0 + 10 + i * 3000); s = r.state; }
     assert.deepEqual(sent(r, "songStats"), [{ t: "songStats", trackKey: 1, reactions: 3, saves: 0, favourite: false }]);
 });
 

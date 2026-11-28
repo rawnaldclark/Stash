@@ -948,8 +948,8 @@ class StationSessionTest {
 
     @Test fun `an animated reaction is sent as its id`() = runTest {
         listening()
-        controller.send(Command.React("a:fire")); runCurrent()
-        assertThat(sent<ClientMessage.React>()).containsExactly(ClientMessage.React("a:fire"))
+        controller.send(Command.React("k:shrug")); runCurrent()
+        assertThat(sent<ClientMessage.React>()).containsExactly(ClientMessage.React("k:shrug"))
     }
 
     @Test fun `a save is told to the room once a song`() = runTest {

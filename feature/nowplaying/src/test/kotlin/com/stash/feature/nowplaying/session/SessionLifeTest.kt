@@ -40,20 +40,27 @@ class SessionLifeTest {
 
     // ── the rules ───────────────────────────────────────────────────────
 
-    @Test fun `every animated reaction and every phrase this app can send has something to show`() {
-        for (id in RoomProtocol.ANIMS) assertThat(reactionGlyph(id)).isNotNull()
-        assertThat(RoomProtocol.ANIMS.map(::reactionGlyph).toSet()).hasSize(12)
-        // None looks like one of the six emoji: the tray shows 18 different pictures.
-        assertThat((RoomProtocol.EMOJI + RoomProtocol.ANIMS).map(::reactionGlyph).toSet()).hasSize(18)
+    @Test fun `every face and every phrase this app can send has something to show, each different`() {
+        for (id in RoomProtocol.FACES) assertThat(faceText(id)).isNotNull()
+        assertThat(RoomProtocol.FACES.map(::faceText).toSet()).hasSize(17)
+        assertThat(RoomProtocol.FACES.map(::faceName).toSet()).hasSize(17)
+        // The big ones are the tray's last row, five of them, each with two frames.
+        assertThat(RoomProtocol.FACES.filter(::isBigFace)).containsExactly("k:tableflip", "k:unflip", "k:dance", "k:rockon", "k:sparkle").inOrder()
+        assertThat(RoomProtocol.FACES.filter(::isBigFace).map { faceFrames(it)!!.size }.toSet()).containsExactly(2)
         for (id in RoomProtocol.PHRASES) assertThat(phraseRes(id)).isNotNull()
         assertThat(RoomProtocol.PHRASES.map(::phraseRes).toSet()).hasSize(10)
     }
 
-    @Test fun `an emoji is drawn as itself, and an id from a newer app as nothing`() {
-        assertThat(reactionGlyph("🔥")).isEqualTo("🔥")
-        assertThat(isAnimated("🔥")).isFalse()
-        assertThat(isAnimated("a:fire")).isTrue()
-        assertThat(reactionGlyph("a:from-next-year")).isNull()
+    @Test fun `a face is drawn as its text, named as its command, and an emoji or an id from a newer app as nothing`() {
+        assertThat(faceText("k:shrug")).isEqualTo("""¯\_(ツ)_/¯""")
+        assertThat(faceName("k:shrug")).isEqualTo("/shrug")
+        assertThat(faceText("k:tableflip")).isEqualTo("(╯°□°)╯︵ ┻━┻")
+        assertThat(isBigFace("k:shrug")).isFalse()
+        assertThat(isBigFace("k:tableflip")).isTrue()
+        // A session passes on only faces, so an emoji (a private room's) shows nothing here.
+        assertThat(faceFrames("🔥")).isNull()
+        assertThat(faceFrames("k:from-next-year")).isNull()
+        assertThat(isBigFace("k:from-next-year")).isFalse()
         assertThat(phraseRes("from-next-year")).isNull()
     }
 
@@ -198,7 +205,7 @@ class SessionLifeTest {
         reactions.tryEmit(ServerMessage.Reaction("me", "🔥")); runCurrent() // this phone's own isn't the crowd's
         advanceTimeBy(20_000); runCurrent()
         said.tryEmit(ServerMessage.Said("b", "tune")); runCurrent()
-        reactions.tryEmit(ServerMessage.Reaction("x", "a:fire")); runCurrent()
+        reactions.tryEmit(ServerMessage.Reaction("x", "k:tableflip")); runCurrent()
         assertThat(vm.energy.value).isEqualTo(3)
         advanceTimeBy(40_000); runCurrent() // the first is a minute old
         assertThat(vm.energy.value).isEqualTo(2)

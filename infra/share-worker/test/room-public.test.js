@@ -503,7 +503,7 @@ test("a listener's command, an unknown one, and any in a private room do nothing
 
 test("a booted listener is told first, then put out: slot, requests and reaction clock gone, everyone updated", () => {
     let s = request(session(), "a", A, "r1").state;
-    s = send(s, "a", { t: "react", emoji: "\u{1F525}" }, T0 + 5).state;
+    s = send(s, "a", { t: "react", emoji: "k:yay" }, T0 + 5).state;
     const r = send(s, "h", { t: "boot", memberId: "a" }, T0 + 10);
     assert.deepEqual(r.out[0], { to: "a", msg: { t: "ended", reason: "booted" } }, "told before anything else");
     assert.deepEqual(r.kick, ["a"]);
@@ -673,10 +673,11 @@ test("a private room never writes to the directory, nor wakes for it", () => {
 
 test("in a session a reaction reaches everyone and leaves the room as it was: nothing to store", () => {
     const s = session();
-    const r = send(s, "a", { t: "react", emoji: "\u{1F525}" }, T0 + 5);
-    assert.deepEqual(r.out, [{ to: "all", msg: { t: "reaction", from: "a", emoji: "\u{1F525}" } }]);
+    const r = send(s, "a", { t: "react", emoji: "k:yay" }, T0 + 5);
+    assert.deepEqual(r.out, [{ to: "all", msg: { t: "reaction", from: "a", emoji: "k:yay" } }]);
     assert.equal(r.state, s, "the same state: the shell stores nothing");
-    assert.deepEqual(send(s, "a", { t: "react", emoji: "x" }).out, [], "still one of the six");
+    assert.deepEqual(send(s, "a", { t: "react", emoji: "x" }).out, [], "still one of the faces");
+    assert.deepEqual(send(s, "a", { t: "react", emoji: "\u{1F525}" }).out, [], "a session takes no emoji");
     // The once-a-second limit is the shell's (src/listen-room.js) in a session: the room passes each one on.
-    assert.equal(send(r.state, "a", { t: "react", emoji: "\u{1F525}" }, T0 + 6).out.length, 1);
+    assert.equal(send(r.state, "a", { t: "react", emoji: "k:yay" }, T0 + 6).out.length, 1);
 });

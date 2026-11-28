@@ -50,6 +50,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddReaction
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -1192,7 +1193,7 @@ fun NowPlayingScreen(
                     onSeek = viewModel::onSeekTo,
                     onEnd = together::end,
                     onGoToArtist = viewModel::onTrackInfoTapped,
-                    hostControls = {
+                    hostControls = { openTray ->
                         PlaybackControls(
                             isPlaying = uiState.playWhenReady || uiState.isPlaying,
                             isBuffering = uiState.isBuffering && (uiState.playWhenReady || uiState.isPlaying),
@@ -1204,6 +1205,7 @@ fun NowPlayingScreen(
                             onToggleShuffle = viewModel::onToggleShuffle,
                             onCycleRepeatMode = viewModel::onCycleRepeatMode,
                             onReact = together::react,
+                            onOpenReact = openTray,
                             canSkip = true,
                         )
                     },
@@ -2169,6 +2171,8 @@ private fun PlaybackControls(
     onToggleShuffle: () -> Unit,
     onCycleRepeatMode: () -> Unit,
     onReact: ((String) -> Unit)? = null,
+    /** A session's host: React opens the room's tray (text faces, phrases) instead of the six emoji. */
+    onOpenReact: (() -> Unit)? = null,
     /** False for a Listen Together listener: the room skips, so the slots stay empty rather than dead. */
     canSkip: Boolean = true,
 ) {
@@ -2245,7 +2249,11 @@ private fun PlaybackControls(
         }
 
         // Repeat; in a session, React.
-        if (onReact != null) {
+        if (onOpenReact != null) {
+            IconButton(onClick = onOpenReact) {
+                Icon(Icons.Default.AddReaction, contentDescription = "React", tint = npInk())
+            }
+        } else if (onReact != null) {
             com.stash.feature.nowplaying.listen.ReactionButton(onReact = onReact)
         } else IconButton(onClick = onCycleRepeatMode) {
             Icon(

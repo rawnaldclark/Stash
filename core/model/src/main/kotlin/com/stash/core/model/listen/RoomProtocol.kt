@@ -15,12 +15,15 @@ object RoomProtocol {
     val EMOJI: List<String> = listOf("❤️", "🔥", "😂", "😮", "👏", "🎶")
 
     /**
-     * A session's 12 animated reactions, sent in [ClientMessage.React] as their id, in the tray's order. Keep in sync
-     * with ANIMS in infra/share-worker/src/room.js. An id this app doesn't know is shown as nothing.
+     * A session's 17 reactions: old-school text faces (owner 2026-11-27: "get rid of emoji reactions they look cheap…
+     * an assortment of oldschool text/symbol emojies like /shrug"), sent in [ClientMessage.React] as their id, in the
+     * tray's order. A session takes only these; the six [EMOJI] are a private room's (the store app sends them). The
+     * last five are big ones that play over everyone's screen. Keep in sync with FACES in
+     * infra/share-worker/src/room.js. An id this app doesn't know is shown as nothing.
      */
-    val ANIMS: List<String> = listOf(
-        "a:applause", "a:fire", "a:hearts", "a:dancing", "a:mindblown", "a:lighter",
-        "a:headphones", "a:rewind", "a:laughing", "a:bassdrop", "a:wave", "a:clap",
+    val FACES: List<String> = listOf(
+        "k:shrug", "k:lenny", "k:yay", "k:love", "k:cool", "k:look", "k:wow", "k:cry", "k:wave", "k:notes", "k:heart",
+        "k:bear", "k:tableflip", "k:unflip", "k:dance", "k:rockon", "k:sparkle",
     )
 
     /**

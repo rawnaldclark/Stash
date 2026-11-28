@@ -124,7 +124,8 @@ internal fun SessionRoom(
     onLike: () -> Unit,
     onSeek: (Long) -> Unit,
     onEnd: () -> Unit,
-    hostControls: @Composable () -> Unit,
+    /** The host's player controls; their React opens the room's tray ([openTray]). */
+    hostControls: @Composable (openTray: () -> Unit) -> Unit,
     modifier: Modifier = Modifier,
     /** Opens the playing song's artist page (the song card's Go to artist). */
     onGoToArtist: () -> Unit = {},
@@ -344,7 +345,7 @@ internal fun SessionRoom(
         // ── The bar ───────────────────────────────────────────────────────────────
         Spacer(Modifier.height(12.dp))
         if (room.isHost) {
-            hostControls()
+            hostControls { showTray = true }
         } else {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 // A listener asks for a song; a co-host's own adds go straight in from any song menu, and they

@@ -40,6 +40,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -61,10 +62,39 @@ private fun TrayLabel(text: String) {
     )
 }
 
+/** One text face in the tray, over its name ("/shrug"). A screen reader says the name, not the face's characters. */
+@Composable
+private fun FaceButton(id: String, onClick: () -> Unit) {
+    val face = faceText(id)
+    if (face != null) {
+        val name = faceName(id)
+        Column(
+            Modifier
+                .heightIn(min = 52.dp)
+                .clip(MaterialTheme.shapes.medium)
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                .clickable(role = Role.Button, onClick = onClick)
+                .semantics { contentDescription = name.drop(1) }
+                .padding(horizontal = 12.dp, vertical = 7.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(face, style = MaterialTheme.typography.titleSmall, maxLines = 1, softWrap = false, modifier = Modifier.clearAndSetSemantics { })
+            Text(
+                name,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                modifier = Modifier.clearAndSetSemantics { },
+            )
+        }
+    }
+}
+
 /**
- * The React tray (UX spec §4.1): everything a person can send in one place. The six emoji, the 12 animated
- * reactions, and the 10 phrases. It stays open after a reaction (people send several) and closes after a phrase.
- * [greet]: "Hi all" is lit, for a newcomer's first seconds.
+ * The React tray (UX spec §4.1): everything a person can send in one place. The text faces, each over its name
+ * ("/shrug"), the big ones in their own row, then the 10 phrases. It stays open after a reaction (people send
+ * several) and closes after a phrase. [greet]: "Hi all" is lit, for a newcomer's first seconds.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -79,24 +109,13 @@ internal fun ReactTray(greet: Boolean, onReact: (String) -> Unit, onSay: (String
     ) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 20.dp)) {
             Text(stringResource(R.string.room_react), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+            val (big, small) = RoomProtocol.FACES.partition(::isBigFace)
             FlowRow(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                (RoomProtocol.EMOJI + RoomProtocol.ANIMS).forEach { id ->
-                    // No early return here: a labelled return inside a composable lambda breaks dexing.
-                    val glyph = reactionGlyph(id)
-                    if (glyph != null) {
-                        Box(
-                            Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-                                .clickable(role = Role.Button) {
-                                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                                    onReact(id)
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) { Text(glyph, fontSize = 22.sp) }
-                    }
-                }
+                small.forEach { id -> FaceButton(id) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onReact(id) } }
+            }
+            TrayLabel(stringResource(R.string.life_big))
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                big.forEach { id -> FaceButton(id) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onReact(id) } }
             }
             TrayLabel(stringResource(R.string.life_say))
             FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

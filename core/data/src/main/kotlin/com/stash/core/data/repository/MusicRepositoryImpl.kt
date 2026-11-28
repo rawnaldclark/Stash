@@ -425,11 +425,15 @@ class MusicRepositoryImpl @Inject constructor(
     override fun getMostPlayed(limit: Int): Flow<List<Track>> =
         trackDao.getMostPlayed(limit).map { entities -> entities.map { it.toDomain() } }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun search(query: String): Flow<List<Track>> {
         val sanitized = "\"${query.replace("\"", "").trim()}\""
         if (sanitized == "\"\"") return flowOf(emptyList())
-        return trackDao.search(sanitized, includeStreamable = false)
-            .map { entities -> entities.map { it.toDomain() } }
+        // What the library shows: Online, a song that streams is in it too; Offline, only what is on the phone
+        // (2026-10-29). Downloaded only, a library that streams found nothing (a session's Request sheet, 11-27).
+        return streamingPreference.enabled.flatMapLatest { streamOnly ->
+            trackDao.search(sanitized, includeStreamable = streamOnly)
+        }.map { entities -> entities.map { it.toDomain() } }
     }
 
     override suspend fun findByYoutubeIds(videoIds: Collection<String>): List<Track> =
