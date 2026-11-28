@@ -4,4 +4,22 @@
     <string name="resume_playback_short">继续</string>
     <string name="resume_playback_long">继续播放</string>
     <string name="like_mirror_signed_out">你的喜欢无法同步到 %1$s。请在设置中重新登录。</string>
+    <string name="widget_preview_title">歌曲名称</string>
+    <plurals name="tidied_duplicates">
+        <item quantity="other">已整理 %d 首重复歌曲</item>
+    </plurals>
+    <plurals name="clips_downloading_again">
+        <item quantity="other">正在重新下载 %d 首歌曲，已保存为短片</item>
+    </plurals>
+    <string name="cast_connect_failed">无法连接到 %1$s</string>
+    <string name="widget_now_playing_label">正在播放</string>
+    <string name="widget_open_stash">打开 Stash</string>
+    <string name="widget_now_playing_square_label">正在播放（封面）</string>
+    <string name="widget_now_playing_description">正在播放的歌曲，可播放/暂停和切歌</string>
+    <string name="widget_now_playing_square_description">正在播放歌曲的封面，可播放/暂停和切歌</string>
+    <string name="widget_nothing_playing">没有播放内容</string>
+    <string name="widget_play">播放</string>
+    <string name="widget_pause">暂停</string>
+    <string name="widget_next">下一首</string>
+    <string name="widget_preview_artist">艺术家</string>
 </resources>

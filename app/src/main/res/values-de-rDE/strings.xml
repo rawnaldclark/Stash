@@ -2,7 +2,26 @@
 <resources>
     <string name="app_name">Stash</string>
     <string name="resume_playback_short">Weiter</string>
-    <string name="resume_playback_long">Resume playback</string>
+    <string name="resume_playback_long">[\'Wiedergabe fortsetzen\']</string>
     <string name="cast_connect_failed">Verbindung zu %1$s fehlgeschlagen</string>
     <string name="like_mirror_signed_out">Deine Likes erreichen %1$s nicht. Melde dich in den Einstellungen erneut an.</string>
+    <plurals name="tidied_duplicates">
+        <item quantity="one">%d doppelter Song bereinigt</item>
+        <item quantity="other">%d doppelte Songs bereinigt</item>
+    </plurals>
+    <string name="widget_open_stash">Stash öffnen</string>
+    <string name="widget_play">Abspielen</string>
+    <string name="widget_pause">Pause</string>
+    <string name="widget_now_playing_description">Der aktuell laufende Song mit Schaltflächen für Wiedergabe/Pause und Weiter</string>
+    <string name="widget_nothing_playing">Keine Wiedergabe</string>
+    <plurals name="clips_downloading_again">
+        <item quantity="one">%d Song wird erneut heruntergeladen: als kurzer Clip gespeichert</item>
+        <item quantity="other">%d Songs werden erneut heruntergeladen: als kurze Clips gespeichert</item>
+    </plurals>
+    <string name="widget_now_playing_square_description">Das Cover des aktuell laufenden Songs mit Schaltflächen für Wiedergabe/Pause und Weiter</string>
+    <string name="widget_preview_title">Songtitel</string>
+    <string name="widget_next">Nächster Song</string>
+    <string name="widget_now_playing_square_label">Wird wiedergegeben (mit Cover)</string>
+    <string name="widget_now_playing_label">Wird wiedergegeben</string>
+    <string name="widget_preview_artist">Künstler</string>
 </resources>

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_action_like">Tambahkan ke Lagu yang Disukai</string>
+    <string name="radio_failed_download_mode">Siaran radio. Beralih ke Online untuk memulainya.</string>
+    <string name="notification_action_unlike">Hapus dari Lagu yang Disukai</string>
+    <string name="lt_added_next">Memainkan lagu selanjutnya dalam sesi ini</string>
+    <string name="notification_action_repeat_all">Ulangi Semua</string>
+    <string name="shuffle_play">Putar Acak</string>
+    <string name="cast_no_wifi">Tidak dapat melakukan casting: hubungkan ponsel Anda ke jaringan Wi-Fi yang sama dengan speaker</string>
+    <string name="radio_failed_no_station">Tidak dapat menemukan lagu yang serupa untuk ini.</string>
+    <string name="lt_added_queue">Ditambahkan ke antrian sesi</string>
+    <string name="lt_suggested">Disarankan kepada host</string>
+    <string name="cast_on_browser_line">Di %1$s</string>
+    <string name="lt_suggested_to">Disarankan untuk %1$s</string>
+    <string name="notification_action_shuffle_on">Acak Aktif</string>
+    <string name="radio_start_artist">Mulai radio %1$s</string>
+    <string name="radio_failed_player_not_ready">Pemutar masih memulai. Coba lagi.</string>
+    <string name="notification_action_repeat_one">Ulangi Satu</string>
+    <string name="notification_action_shuffle_off">Acak Nonaktif</string>
+    <string name="resuming_channel_name">Pemutaran</string>
+    <string name="notification_action_repeat_off">Ulangi Nonaktif</string>
+    <string name="resuming_notification_title">Melanjutkan…</string>
+    <string name="lt_suggestions_full">Host masih memiliki lagu-lagu yang Anda sarankan. Coba lagi setelah host memberikan tanggapan.</string>
+    <string name="lt_add_waiting">Anda sedang tidak terhubung. Lagu akan ditambahkan ke antrean setelah Anda terhubung kembali.</string>
+    <string name="lt_your_song_skipped">%1$s dilewati: host tidak dapat memutarnya</string>
+    <plurals name="lt_guest_cap">
+        <item quantity="other">Anda dapat memiliki hingga %1$d lagu dalam antrean. Tambahkan lagu lainnya saat lagu mulai diputar.</item>
+    </plurals>
+    <string name="lt_your_song_skipped_by">%1$s dilewati: %2$s tidak dapat memutarnya</string>
+    <string name="lt_stopped_cant_play">Sesi dijeda: Anda tidak dapat memutar %1$s</string>
+    <string name="lt_stopped_cant_play_more">Sesi dijeda: Anda tidak dapat memutar %1$s. Ketuk Putar untuk mencoba lagu berikutnya.</string>
+    <string name="lt_only_host_changes_song">Hanya host yang dapat mengganti lagu. Gunakan Putar Berikutnya untuk menambahkannya ke antrean.</string>
+    <string name="lt_queue_full">Antrean sesi sudah penuh</string>
+</resources>

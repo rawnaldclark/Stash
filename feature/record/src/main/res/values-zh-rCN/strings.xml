@@ -10,15 +10,15 @@
     <string name="record_since">自 %1$d 年起 · %2$s</string>
     <string name="record_most_played">最常听：%1$s</string>
     <string name="record_open">打开你的唱片</string>
-    <string name="record_invite_title">压制你的唱片</string>
+    <string name="record_invite_title">按下你的唱片</string>
     <string name="record_invite_body">你听过的每一年，汇聚一处：来自 Spotify、Last.fm 或 Stash。</string>
     <string name="record_invite_start">开始</string>
-    <string name="record_invite_hide">隐藏“压制你的唱片”</string>
+    <string name="record_invite_hide">隐藏“按下你的唱片”</string>
     <string name="record_close">关闭</string>
     <string name="record_webview_old_title">需要更新版本的 Android System WebView</string>
     <string name="record_webview_old_body">请从 Google Play 更新 Android System WebView，然后重新打开你的唱片。</string>
     <string name="record_stopped_title">你的唱片已停止</string>
-    <string name="record_stopped_body">页面内存不足或已崩溃。你的播放记录是安全的。</string>
+    <string name="record_stopped_body">页面空间不足或已崩溃。你的播放记录是安全的。</string>
     <string name="record_open_again">重新打开</string>
     <string name="record_note_archive_failed">部分播放记录无法读取。</string>
     <string name="record_note_play_failed">无法在这里播放。</string>
@@ -37,9 +37,9 @@
     <string name="record_waiting_body">已于 %1$s 申请。在此期间，可以先导入 Last.fm。</string>
     <string name="record_waiting_bring">添加 zip 文件</string>
     <string name="record_waiting_how">其他方式</string>
-    <string name="record_pressing_title">正在压制你的唱片</string>
+    <string name="record_pressing_title">正在按下你的唱片</string>
     <string name="record_pressing_open">打开</string>
-    <string name="record_ready_title">准备压制</string>
+    <string name="record_ready_title">准备按下你的唱片</string>
     <string name="record_ready_body">导入前不会保存任何内容。</string>
     <string name="record_ready_review">查看</string>
     <string name="record_import_intro">你听过的每一年，汇聚一处。你在 Stash 的播放记录已经在这里了：从 Spotify 或 Last.fm 开始，另一个随时都能添加。</string>
@@ -229,7 +229,7 @@
     <string name="record_mix_late">%1$d 年末</string>
     <string name="record_mix_dot">%1$s · %2$s</string>
     <string name="record_mix_and">%1$s和%2$s</string>
-    <string name="record_mix_comma">、</string>
+    <string name="record_mix_comma">"、 "</string>
     <string name="record_mix_constants">一直都在</string>
     <string name="record_mix_constants_sub">年复一年你总会回来听的歌</string>
     <string name="record_mix_lost">重新发现</string>
@@ -323,4 +323,11 @@
     <string name="record_song_playlist_failed">无法添加到歌单</string>
     <string name="record_song_radio_failed">无法从这首歌开启电台，请稍后再试。</string>
     <string name="record_song_blocked">无法添加已屏蔽的歌曲</string>
+    <string name="record_card_hide_keep_mixes">隐藏此卡片（你的混音会保留）</string>
+    <string name="record_card_hidden_keep_mixes">卡片已隐藏。你的混音仍保留在“首页”。可在“设置 › 外观 › 首页布局”中恢复。</string>
+    <string name="record_card_hidden">卡片已隐藏。可在“设置 › 外观 › 首页布局”中恢复。</string>
+    <string name="record_card_more">显示选项</string>
+    <string name="record_in_mixes_page_label">你的唱片</string>
+    <string name="record_card_hide">隐藏此卡片</string>
+    <string name="record_most_played_label">播放最多</string>
 </resources>

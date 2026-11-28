@@ -5,4 +5,15 @@
     <string name="resume_playback_long">Возобновить воспроизведение</string>
     <string name="cast_connect_failed">Не удалось подключиться к %1$s</string>
     <string name="like_mirror_signed_out">Ваши лайки не доходят до %1$s. Войдите снова в настройках.</string>
+    <string name="widget_now_playing_label">Сейчас воспроизводится</string>
+    <string name="widget_now_playing_description">Текущий трек с кнопками воспроизведения/паузы и переключения на следующий трек</string>
+    <string name="widget_now_playing_square_description">Обложка текущего трека с кнопками воспроизведения/паузы и переключения на следующий трек</string>
+    <string name="widget_nothing_playing">Ничего не воспроизводится</string>
+    <string name="widget_open_stash">Открыть Stash</string>
+    <string name="widget_next">Следующий трек</string>
+    <string name="widget_preview_title">Название трека</string>
+    <string name="widget_preview_artist">Исполнитель</string>
+    <string name="widget_pause">Пауза</string>
+    <string name="widget_now_playing_square_label">Сейчас воспроизводится (обложка)</string>
+    <string name="widget_play">Воспроизвести</string>
 </resources>

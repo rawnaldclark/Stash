@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sync_section_library">Biblioteca</string>
+    <string name="sync_blocked_songs_none">Non hai cancións bloqueadas</string>
+    <string name="sync_source_stat_playlists">LISTAS DE REPRODUCCIÓN</string>
+    <string name="sync_undo_dialog_title">¿Desface-la derradeira sincronización?</string>
+    <string name="sync_section_recent_syncs">Sincronizacións recentes</string>
+    <string name="sync_downloads_keep">Manter</string>
+    <string name="sync_downloads_phase_failed">Fallida</string>
+    <string name="sync_downloads_msg_queued">Descarga en cola</string>
+    <string name="sync_undo_last_sync_title">Desface-la derradeira sincronización</string>
+    <string name="sync_undo">Desfacer</string>
+    <string name="sync_downloads_cd">Abrir descargas</string>
+    <string name="sync_downloads_msg_cancelled">Descarga cancelada</string>
+    <string name="sync_downloads_msg_cancel_failed">A descarga non puido ser cancelada</string>
+    <string name="sync_downloads_empty_queue_title">Non hai descargas en proceso</string>
+    <string name="sync_downloads_empty_queue_subtitle">As novas descargas aparecerán aquí.</string>
+    <string name="sync_downloads_clear_queue_confirm">Tódalas descargas agardando serán canceladas e as que se están a executar deteranse. As cancións canceladas voltarán a proxima vez que as descargues.</string>
+    <string name="sync_downloads_section_downloading">Descargando</string>
+    <string name="sync_review_sub_unmatched">Preme para revisar</string>
+    <string name="sync_failed_downloads_title">Descargas fallidas</string>
+    <string name="sync_failed_downloads_empty_title">¡Todo feito!</string>
+    <string name="sync_failed_downloads_empty_subtitle">Non hai descargas fallidas.</string>
+    <plurals name="sync_failed_downloads_count_subtitle">
+        <item quantity="one">%d pista non puido ser descargada.</item>
+        <item quantity="other">%d pistas non puideron ser descargadas.</item>
+    </plurals>
+    <plurals name="sync_failed_downloads_retry_tracks">
+        <item quantity="one">Volver a tentar %d canción</item>
+        <item quantity="other">Volver a tentar %d cancións</item>
+    </plurals>
+    <string name="sync_failed_downloads_cd_block">Bloquear</string>
+    <string name="sync_cd_expand">Expandir</string>
+    <string name="sync_cd_collapse">Contraer</string>
+    <string name="sync_log_title">REXISTRO DE SINCRONIZACIÓN</string>
+    <string name="sync_ok">De acordo</string>
+    <string name="sync_downloads_title">Descargas</string>
+    <string name="sync_section_schedule">Programar</string>
+    <string name="sync_downloads_queue_position">#%1$d · %2$s</string>
+    <string name="sync_downloads_cd_cancel">Cancelar %s</string>
+    <string name="sync_auto_sync_paused_note">Auto sincronización pausada tras Desfacer. Preme Sincronizar para reanudar.</string>
+    <string name="sync_log_copy">Copiar</string>
+    <string name="sync_downloads_subtitle">Ver as descargas actuais, cola e historial</string>
+    <string name="sync_downloads_section_up_next">A continuación</string>
+    <string name="sync_downloads_section_recent">Recente</string>
+    <string name="sync_failed_downloads_cd_retry">Volver a tentar</string>
+    <string name="sync_downloads_empty_history_title">Ainda non hai historial de descargas</string>
+    <string name="sync_downloads_empty_history_subtitle">Descargas completas e fallidas aparecerán aquí.</string>
+    <string name="sync_downloads_clear_history">Limpar historial</string>
+    <string name="sync_downloads_clear_confirm_title">%s?</string>
+    <string name="sync_downloads_cd_retry">Volver a tentar %s</string>
+    <string name="sync_downloads_waiting_generic">Agardando</string>
+    <string name="sync_downloads_waiting_aac">Non dispoñoble en AAC ainda</string>
+    <string name="sync_downloads_waiting_reset">Agardando polo reseteo diario</string>
+    <string name="sync_downloads_waiting_tidal">Agardando por Tidal</string>
+    <string name="sync_downloads_waiting_fallback">Agardando o Respaldo con pérdida</string>
+    <string name="sync_downloads_waiting_lossless">Agardando a versión sen pérdida</string>
+    <string name="sync_downloads_waiting_aac_item">Ainda non dispoñible como AAC</string>
+    <string name="sync_downloads_waiting_reset_item">Agardando polo reseteo diario</string>
+    <string name="sync_downloads_waiting_tidal_item">Tidal está ocupado. Téntao de novo nun chisco.</string>
+    <string name="sync_downloads_phase_in_progress">En progreso</string>
+    <string name="sync_downloads_phase_queued">Na cola</string>
+    <string name="sync_downloads_phase_downloaded">Descargado</string>
+    <string name="sync_downloads_phase_needs_review">Precisa revisión</string>
+    <string name="sync_downloads_msg_nothing_to_cancel">Nada para cancelar</string>
+    <string name="sync_downloads_msg_history_cleared">Historial borrado</string>
+    <string name="sync_source_stat_mixes">MESTURAS</string>
+    <string name="sync_source_empty_spotify">As túas listas de reproducción e mesturas diarias de Spotify aparecerán aquí unha vez que se sincronice por primeira vez. Preme Sincronizar Agora para cargalas - nada se descargará ata que ti o actives.</string>
+    <string name="sync_source_empty_youtube">As túas Mesturas de Inicio, Cancións que che Gustan e listas de reproducción da túa biblioteca de Youtube Music aparecerán aquí tra-la primeira sincronización. Nada se descargará ata que ti escollas o que queiras - non hai descargas sorpresa.</string>
+    <plurals name="sync_blocked_songs_count">
+        <item quantity="one">%d canción nunca sera descargada de novo</item>
+        <item quantity="other">%d cancións nunca serán descargadas de novo</item>
+    </plurals>
+    <plurals name="sync_review_need_review">
+        <item quantity="one">%d canción precisa revisión</item>
+        <item quantity="other">%d cancións precisan revisión</item>
+    </plurals>
+    <string name="sync_review_sub_flagged">Preme para escoller un reemplazo</string>
+    <string name="sync_undoing">Desfacendo…</string>
+    <plurals name="sync_downloads_msg_cancelled_count">
+        <item quantity="one">Cancelada %d descarga</item>
+        <item quantity="other">Canceladas %d descargas</item>
+    </plurals>
+    <plurals name="sync_failed_downloads_count">
+        <item quantity="one">%d pista precisa atención</item>
+        <item quantity="other">%d pistas precisan atención</item>
+    </plurals>
+    <string name="sync_source_stat_liked">GÚSTAME</string>
+    <string name="sync_source_stat_recommended">RECOMENDADO</string>
+    <string name="sync_downloads_tab_queue">Cola (%d)</string>
+    <string name="sync_downloads_tab_history">Historial (%d)</string>
+    <string name="sync_downloads_clear_queue">Limpar cola</string>
+    <string name="sync_downloads_phase_tagging">Engadindo metadatos</string>
+    <string name="sync_title">Sincronización</string>
+    <string name="sync_cancel">Cancelar</string>
+    <string name="sync_section_sources">Fontes</string>
+    <string name="sync_blocked_songs_title">Cancións bloqueadas</string>
+</resources>

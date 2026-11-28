@@ -10,4 +10,53 @@
     <string name="shuffle_play">随机播放</string>
     <string name="resuming_channel_name">播放</string>
     <string name="resuming_notification_title">继续…</string>
+    <string name="lt_only_host_changes_song">只有主持人才能更换歌曲，使用“下一首播放”来添加。</string>
+    <string name="cast_on_browser_line">在 %1$s 上</string>
+    <string name="lt_added_next">将在本次会话中接着播放</string>
+    <string name="lt_your_song_skipped_by">已跳过 %1$s：%2$s 无法播放</string>
+    <string name="session_not_your_station">那不是你的电台</string>
+    <string name="session_slow_down">请稍等片刻再试</string>
+    <string name="session_only_host_changes_song">只有主持人才能更换歌曲，请改为点歌。</string>
+    <string name="lt_added_queue">已添加到会话队列</string>
+    <string name="session_removed">你已被移出此会话</string>
+    <string name="session_ended_named">%1$s 的会话已结束</string>
+    <string name="lt_suggested_to">已推荐给 %1$s</string>
+    <string name="lt_suggested">已推荐给主持人</string>
+    <string name="radio_failed_no_station">找不到相似的歌曲。</string>
+    <string name="session_update_needed">请更新 Stash 以加入此会话</string>
+    <string name="session_ended">会话已结束</string>
+    <string name="lt_add_waiting">当前未连接，等你回来后会自动加入。</string>
+    <string name="session_leave_first">请先离开此会话</string>
+    <string name="session_live_off">暂时无法开始直播</string>
+    <string name="session_live_offline">无法开始直播，请检查网络连接后重试。</string>
+    <plurals name="session_requests_sent">
+        <item quantity="other">已发送 %1$d 条点歌请求</item>
+    </plurals>
+    <string name="session_your_station_off_air">你的电台已停止播出</string>
+    <string name="session_live_blocked">你无法在“社区”中开始直播</string>
+    <string name="session_live_failed">无法开始直播，请重试。</string>
+    <plurals name="session_requests_sent_to">
+        <item quantity="other">已向 %2$s 发送 %1$d 条点歌请求</item>
+    </plurals>
+    <plurals name="session_requests_cap">
+        <item quantity="other">你有 %1$d 条点歌请求等待处理</item>
+    </plurals>
+    <string name="session_requests_full">此会话暂时无法接收更多点歌请求</string>
+    <string name="session_request_passed_unnamed">主持人跳过了 %1$s</string>
+    <string name="cast_no_wifi">无法投屏：请让设备与音箱连接到同一 Wi-Fi</string>
+    <string name="radio_start_artist">开始播放 %1$s 电台</string>
+    <string name="radio_failed_player_not_ready">播放器仍在启动，请重试。</string>
+    <string name="session_couldnt_join">无法加入此会话</string>
+    <string name="lt_your_song_skipped">已跳过 %1$s：主持人无法播放</string>
+    <string name="lt_stopped_cant_play">会话已暂停：你无法播放 %1$s</string>
+    <string name="lt_stopped_cant_play_more">会话已暂停：你无法播放 %1$s。点按“播放”尝试下一首。</string>
+    <plurals name="lt_guest_cap">
+        <item quantity="other">你可以有 %1$d 首歌在等待，播放后可以继续添加。</item>
+    </plurals>
+    <string name="lt_queue_full">会话队列已满</string>
+    <string name="session_request_passed">已从 %1$s 切换到 %2$s</string>
+    <string name="lt_suggestions_full">主持人还没处理你的推荐，等对方回复后再试。</string>
+    <string name="session_end_private_first">请先结束“一起听”</string>
+    <string name="session_off_air">该电台已停止播出</string>
+    <string name="radio_failed_download_mode">电台需要在线播放，请切换到“在线”模式后再开始。</string>
 </resources>

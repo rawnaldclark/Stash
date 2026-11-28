@@ -5,4 +5,18 @@
     <string name="resume_playback_long">재생 재개</string>
     <string name="cast_connect_failed">%1$s에 연결할 수 없습니다</string>
     <string name="like_mirror_signed_out">좋아요가 %1$s에 전달되지 않습니다. 설정에서 다시 로그인하세요.</string>
+    <string name="widget_now_playing_square_label">지금 재생 중 (표지)</string>
+    <string name="widget_now_playing_description">재생 중인 노래와 재생/일시 정지 및 다음 곡 버튼</string>
+    <string name="widget_play">재생</string>
+    <string name="widget_open_stash">Stash 열기</string>
+    <plurals name="tidied_duplicates">
+        <item quantity="other">%d 개의 중복된 노래가 정리됨</item>
+    </plurals>
+    <string name="widget_nothing_playing">재생 중인 노래 없음</string>
+    <string name="widget_pause">일시 정지</string>
+    <string name="widget_next">다음 곡</string>
+    <string name="widget_preview_artist">아티스트</string>
+    <string name="widget_now_playing_label">지금 재생 중</string>
+    <string name="widget_preview_title">노래 제목</string>
+    <string name="widget_now_playing_square_description">재생 중인 노래의 앨범 표지와 재생/일시 정지 및 다음 곡 버튼</string>
 </resources>

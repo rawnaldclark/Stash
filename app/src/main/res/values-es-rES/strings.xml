@@ -5,4 +5,25 @@
     <string name="resume_playback_long">Reanudar la reproducción</string>
     <string name="cast_connect_failed">No se pudo conectar a %1$s</string>
     <string name="like_mirror_signed_out">Tus Me gusta no llegan a %1$s. Vuelve a iniciar sesión en Ajustes.</string>
+    <plurals name="clips_downloading_again">
+        <item quantity="one">Descargando de nuevo %d canción: se guardó como un clip corto</item>
+        <item quantity="many">Descargando de nuevo %d canciones: se guardaron como clips cortos</item>
+        <item quantity="other">Descargando de nuevo %d canciones: se guardaron como clips cortos</item>
+    </plurals>
+    <string name="widget_play">Reproducir</string>
+    <string name="widget_pause">Pausar</string>
+    <plurals name="tidied_duplicates">
+        <item quantity="one">Se ordenó %d canción duplicada</item>
+        <item quantity="many">Se ordenaron %d canciones duplicadas</item>
+        <item quantity="other">Se ordenaron %d canciones duplicadas</item>
+    </plurals>
+    <string name="widget_now_playing_description">La canción actual, con controles de reproducción y siguiente</string>
+    <string name="widget_preview_title">Título de la canción</string>
+    <string name="widget_nothing_playing">No se reproduce nada</string>
+    <string name="widget_open_stash">Abrir Stash</string>
+    <string name="widget_now_playing_label">Reproduciendo</string>
+    <string name="widget_now_playing_square_label">Reproduciendo (con portada)</string>
+    <string name="widget_next">Siguiente canción</string>
+    <string name="widget_now_playing_square_description">La portada de la canción que se está reproduciendo, con reproducir, pausar y siguiente</string>
+    <string name="widget_preview_artist">Artista</string>
 </resources>

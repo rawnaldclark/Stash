@@ -5,13 +5,13 @@
         <item quantity="one">час</item>
         <item quantity="few">часа</item>
         <item quantity="many">часов</item>
-        <item quantity="other">часа</item>
+        <item quantity="other">часов</item>
     </plurals>
     <plurals name="record_plays">
         <item quantity="one">%1$s прослушивание</item>
         <item quantity="few">%1$s прослушивания</item>
         <item quantity="many">%1$s прослушиваний</item>
-        <item quantity="other">%1$s прослушивания</item>
+        <item quantity="other">%1$s прослушиваний</item>
     </plurals>
     <string name="record_since">с %1$d · %2$s</string>
     <string name="record_most_played">Чаще всего: %1$s</string>
@@ -33,7 +33,7 @@
         <item quantity="one">Играет %1$d песня</item>
         <item quantity="few">Играют %1$d песни</item>
         <item quantity="many">Играют %1$d песен</item>
-        <item quantity="other">Играют %1$d песни</item>
+        <item quantity="other">Играют %1$d песен</item>
     </plurals>
     <string name="record_note_none_found">Не удалось найти эти песни.</string>
     <string name="record_note_none_downloaded">Ни одна из этих песен не скачана. Подключитесь к сети, чтобы их послушать.</string>
@@ -82,25 +82,25 @@
         <item quantity="one">час</item>
         <item quantity="few">часа</item>
         <item quantity="many">часов</item>
-        <item quantity="other">часа</item>
+        <item quantity="other">часов</item>
     </plurals>
     <plurals name="record_preview_years">
         <item quantity="one">год</item>
         <item quantity="few">года</item>
         <item quantity="many">лет</item>
-        <item quantity="other">года</item>
+        <item quantity="other">лет</item>
     </plurals>
     <plurals name="record_preview_plays">
         <item quantity="one">прослушивание</item>
         <item quantity="few">прослушивания</item>
         <item quantity="many">прослушиваний</item>
-        <item quantity="other">прослушивания</item>
+        <item quantity="other">прослушиваний</item>
     </plurals>
     <plurals name="record_preview_here">
         <item quantity="one">%1$s прослушивание уже здесь и учитывается один раз.</item>
         <item quantity="few">%1$s прослушивания уже здесь и учитываются один раз.</item>
         <item quantity="many">%1$s прослушиваний уже здесь и учитываются один раз.</item>
-        <item quantity="other">%1$s прослушивания уже здесь и учитываются один раз.</item>
+        <item quantity="other">%1$s прослушиваний уже здесь и учитываются один раз.</item>
     </plurals>
     <string name="record_preview_account_title">Здесь только последний год</string>
     <string name="record_preview_account_body">Вся история придёт в другом письме, «Расширенная история прослушиваний». Добавьте этот zip-архив сюда, когда он придёт.</string>
@@ -108,7 +108,7 @@
         <item quantity="one">%1$d песня</item>
         <item quantity="few">%1$d песни</item>
         <item quantity="many">%1$d песен</item>
-        <item quantity="other">%1$d песни</item>
+        <item quantity="other">%1$d песен</item>
     </plurals>
     <string name="record_preview_liked">Любимые треки</string>
     <plurals name="record_preview_all_here_file">
@@ -132,7 +132,7 @@
         <item quantity="one">%1$s трек, добавится в лайки</item>
         <item quantity="few">%1$s трека, добавятся в лайки</item>
         <item quantity="many">%1$s треков, добавятся в лайки</item>
-        <item quantity="other">%1$s трека, добавятся в лайки</item>
+        <item quantity="other">%1$s треков, добавятся в лайки</item>
     </plurals>
     <string name="record_preview_liked_download_title">Любимые треки скачиваются на этот телефон</string>
     <plurals name="record_preview_liked_download">
@@ -174,19 +174,19 @@
         <item quantity="one">%1$s прослушивание</item>
         <item quantity="few">%1$s прослушивания</item>
         <item quantity="many">%1$s прослушиваний</item>
-        <item quantity="other">%1$s прослушивания</item>
+        <item quantity="other">%1$s прослушиваний</item>
     </plurals>
     <plurals name="record_done_playlists">
         <item quantity="one">%1$s плейлист</item>
         <item quantity="few">%1$s плейлиста</item>
         <item quantity="many">%1$s плейлистов</item>
-        <item quantity="other">%1$s плейлиста</item>
+        <item quantity="other">%1$s плейлистов</item>
     </plurals>
     <plurals name="record_done_likes">
         <item quantity="one">%1$s любимый трек</item>
         <item quantity="few">%1$s любимых трека</item>
         <item quantity="many">%1$s любимых треков</item>
-        <item quantity="other">%1$s любимого трека</item>
+        <item quantity="other">%1$s любимых треков</item>
     </plurals>
     <string name="record_done_nothing">Ваша пластинка актуальна</string>
     <string name="record_way_spotify_what">Вся история, плейлисты и лайки. Без входа в аккаунт.</string>
@@ -264,7 +264,7 @@
         <item quantity="one">Пропущен %1$s из %2$s раза</item>
         <item quantity="few">Пропущен %1$s из %2$s раз</item>
         <item quantity="many">Пропущен %1$s из %2$s раз</item>
-        <item quantity="other">Пропущен %1$s из %2$s раза</item>
+        <item quantity="other">Пропущен %1$s из %2$s раз</item>
     </plurals>
     <string name="record_kept_out_interlude">Интерлюдия, которую вы пропускаете</string>
     <string name="record_kept_out_put_back">Вернуть</string>
@@ -299,7 +299,7 @@
         <item quantity="one">Около %1$s, за %2$d прошедший год</item>
         <item quantity="few">Около %1$s, за %2$d прошедших года</item>
         <item quantity="many">Около %1$s, за %2$d прошедших лет</item>
-        <item quantity="other">Около %1$s, за %2$d прошедших года</item>
+        <item quantity="other">Около %1$s, за %2$d прошедших лет</item>
     </plurals>
     <string name="record_mix_about_min">около %1$d мин</string>
     <string name="record_mix_about_hr">около %1$d ч</string>
@@ -308,7 +308,7 @@
         <item quantity="one">%1$d песня</item>
         <item quantity="few">%1$d песни</item>
         <item quantity="many">%1$d песен</item>
-        <item quantity="other">%1$d песни</item>
+        <item quantity="other">%1$d песен</item>
     </plurals>
     <string name="record_mix_card_with">а ещё %1$s</string>
     <string name="record_mix_card_share">%1$d%% всего, что вы слушали</string>
@@ -317,14 +317,14 @@
         <item quantity="one">%1$s, до %2$d года</item>
         <item quantity="few">%1$s, до %2$d лет</item>
         <item quantity="many">%1$s, до %2$d лет</item>
-        <item quantity="other">%1$s, до %2$d года</item>
+        <item quantity="other">%1$s, до %2$d лет</item>
     </plurals>
     <string name="record_mix_card_repeat">Одержимости</string>
     <plurals name="record_mix_card_obsession">
         <item quantity="one">%1$s: %2$d прослушивание за две недели, %3$s</item>
         <item quantity="few">%1$s: %2$d прослушивания за две недели, %3$s</item>
         <item quantity="many">%1$s: %2$d прослушиваний за две недели, %3$s</item>
-        <item quantity="other">%1$s: %2$d прослушивания за две недели, %3$s</item>
+        <item quantity="other">%1$s: %2$d прослушиваний за две недели, %3$s</item>
     </plurals>
     <string name="record_mix_card_week">Сегодня в ваших годах</string>
     <string name="record_mix_card_year_now">Этот год на сегодня</string>
@@ -333,7 +333,7 @@
         <item quantity="one">%1$s час прослушивания</item>
         <item quantity="few">%1$s часа прослушивания</item>
         <item quantity="many">%1$s часов прослушивания</item>
-        <item quantity="other">%1$s часа прослушивания</item>
+        <item quantity="other">%1$s часов прослушивания</item>
     </plurals>
     <string name="record_mix_card_started">Где всё началось</string>
     <string name="record_mix_card_from_to">От %1$s в %2$d до %3$s в %4$d</string>
@@ -366,13 +366,13 @@
         <item quantity="one">%1$s час</item>
         <item quantity="few">%1$s часа</item>
         <item quantity="many">%1$s часов</item>
-        <item quantity="other">%1$s часа</item>
+        <item quantity="other">%1$s часов</item>
     </plurals>
     <plurals name="record_mixes_artist_plays">
         <item quantity="one">%1$s прослушивание</item>
         <item quantity="few">%1$s прослушивания</item>
         <item quantity="many">%1$s прослушиваний</item>
-        <item quantity="other">%1$s прослушивания</item>
+        <item quantity="other">%1$s прослушиваний</item>
     </plurals>
     <string name="record_mixes_artist_open">Открыть ваши самые прослушиваемые песни: %1$s</string>
     <string name="record_mixes_artist_play">Включить ваши самые прослушиваемые песни: %1$s</string>
@@ -382,7 +382,7 @@
         <item quantity="one">%1$d любимая песня, которую вы не слушали уже год. Поставьте лайк, чтобы сохранить её.</item>
         <item quantity="few">%1$d любимые песни, которые вы не слушали уже год. Поставьте лайк одной из них, чтобы сохранить её.</item>
         <item quantity="many">%1$d любимых песен, которые вы не слушали уже год. Поставьте лайк одной из них, чтобы сохранить её.</item>
-        <item quantity="other">%1$d любимой песни, которую вы не слушали уже год. Поставьте лайк, чтобы сохранить её.</item>
+        <item quantity="other">%1$d любимых песен, которые вы не слушали уже год. Поставьте лайк одной из них, чтобы сохранить её.</item>
     </plurals>
     <string name="record_mixes_lost_play">Включить «Ещё не в вашем Stash» (%1$s)</string>
     <string name="record_mixes_show_more">Показать ещё</string>

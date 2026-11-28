@@ -11,4 +11,21 @@
     <string name="resuming_channel_name">재생</string>
     <string name="resuming_notification_title">재개하는 중…</string>
     <string name="cast_no_wifi">캐스팅할 수 없습니다. 스피커와 동일한 Wi-Fi에 휴대폰을 연결하세요</string>
+    <string name="lt_added_queue">세션 대기열에 추가됨</string>
+    <string name="lt_suggestions_full">호스트가 아직 회원님의 제안을 확인하지 않았습니다. 호스트가 응답한 후 다시 시도해 주세요.</string>
+    <string name="radio_start_artist">%1$s 라디오 시작</string>
+    <string name="lt_queue_full">세션 대기열이 가득 찼습니다</string>
+    <string name="lt_suggested">호스트에게 제안됨</string>
+    <string name="lt_added_next">세션에서 다음에 재생</string>
+    <string name="cast_on_browser_line">\'%1$s\'에서</string>
+    <string name="lt_stopped_cant_play">세션이 일시중지됨: \'%1$s\'을 재생할 수 없습니다</string>
+    <string name="lt_stopped_cant_play_more">세션이 일시중지됨: \'%1$s\'을 재생할 수 없습니다. 재생을 탭하여 다음 노래를 시도하세요.</string>
+    <string name="lt_only_host_changes_song">호스트만 노래를 변경할 수 있습니다. 곡을 추가하려면 \'다음에 재생\'을 선택하세요.</string>
+    <string name="lt_your_song_skipped">\'%1$s\'을 건너뜀: 호스트가 재생할 수 없습니다</string>
+    <string name="radio_failed_player_not_ready">플레이어가 아직 시작 중입니다. 다시 시도하세요.</string>
+    <string name="radio_failed_no_station">이와 유사한 노래를 찾을 수 없습니다.</string>
+    <string name="lt_suggested_to">\'%1$s\'에게 제안됨</string>
+    <string name="lt_your_song_skipped_by">\'%1$s\'을 건너뜀: \'%2$s\'가 재생할 수 없습니다</string>
+    <string name="radio_failed_download_mode">라디오 스트림. 온라인으로 전환하여 시작하세요.</string>
+    <string name="lt_add_waiting">현재 연결되어 있지 않습니다. 다시 연결되면 자동으로 추가됩니다.</string>
 </resources>

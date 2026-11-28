@@ -2,13 +2,69 @@
 <resources>
     <string name="notification_action_like">Añadir a tus me gusta</string>
     <string name="notification_action_unlike">Eliminar de tus me gusta</string>
-    <string name="notification_action_repeat_off">En bucle apagado</string>
+    <string name="notification_action_repeat_off">Repetir desactivado</string>
     <string name="notification_action_repeat_all">Repetir todo</string>
     <string name="notification_action_repeat_one">Repetir una vez</string>
-    <string name="notification_action_shuffle_on">Mezclas activadas</string>
-    <string name="notification_action_shuffle_off">Mezclas desactivadas</string>
+    <string name="notification_action_shuffle_on">Aleatorio activado</string>
+    <string name="notification_action_shuffle_off">Aleatorio desactivado</string>
     <string name="shuffle_play">Aleatorio</string>
     <string name="resuming_channel_name">Reproducción</string>
     <string name="resuming_notification_title">Resumir…</string>
-    <string name="cast_no_wifi">No se puede transmitir: conecta tu teléfono a la misma Wi‑Fi que el altavoz</string>
+    <string name="cast_no_wifi">No se puede transmitir: conecta tu dispositivo a la misma Wi‑Fi que el altavoz</string>
+    <string name="lt_suggestions_full">El anfitrión aún tiene tus sugerencias. Inténtalo de nuevo cuando te responda.</string>
+    <string name="session_leave_first">Sal primero de esta sesión</string>
+    <string name="session_your_station_off_air">Tu emisión está fuera de antena</string>
+    <string name="session_live_blocked">No puedes emitir en directo en Comunidad</string>
+    <string name="radio_failed_download_mode">La radio se transmite. Cambia a En línea para iniciar una.</string>
+    <plurals name="lt_guest_cap">
+        <item quantity="one">Puedes tener %1$d canción en espera. Añade más mientras suenan.</item>
+        <item quantity="many">Puedes tener %1$d canciones en espera. Añade más mientras suenan.</item>
+        <item quantity="other">Puedes tener %1$d canciones en espera. Añade más mientras suenan.</item>
+    </plurals>
+    <string name="lt_queue_full">La cola de la sesión está llena</string>
+    <string name="lt_stopped_cant_play_more">Sesión en pausa: no puedes reproducir %1$s. Toca Reproducir para probar con la siguiente canción.</string>
+    <string name="session_end_private_first">Termina primero «Escuchar juntos»</string>
+    <string name="session_request_passed_unnamed">El anfitrión pasó por alto %1$s</string>
+    <string name="session_ended_named">La sesión de %1$s ha terminado</string>
+    <string name="session_ended">La sesión ha terminado</string>
+    <string name="session_removed">Te han expulsado de esta sesión</string>
+    <string name="session_not_your_station">Esa emisión no es tuya</string>
+    <plurals name="session_requests_cap">
+        <item quantity="one">Tienes %1$d petición en espera</item>
+        <item quantity="many">Tienes %1$d peticiones en espera</item>
+        <item quantity="other">Tienes %1$d peticiones en espera</item>
+    </plurals>
+    <string name="session_requests_full">La sesión no puede aceptar más peticiones ahora mismo</string>
+    <string name="session_update_needed">Actualiza Stash para unirte a esta sesión</string>
+    <string name="session_couldnt_join">No se pudo unir a esta sesión</string>
+    <string name="session_live_failed">No se pudo emitir en directo. Inténtalo de nuevo.</string>
+    <string name="radio_start_artist">Iniciar la radio de %1$s</string>
+    <plurals name="session_requests_sent_to">
+        <item quantity="one">%1$d petición enviada a %2$s</item>
+        <item quantity="many">%1$d peticiones enviadas a %2$s</item>
+        <item quantity="other">%1$d peticiones enviadas a %2$s</item>
+    </plurals>
+    <string name="session_request_passed">Se pasó de %1$s a %2$s</string>
+    <string name="lt_add_waiting">Ahora mismo no está conectado. Se añadirá cuando vuelvas.</string>
+    <string name="lt_your_song_skipped_by">Se saltó %1$s: %2$s no puede reproducirla</string>
+    <string name="lt_your_song_skipped">Se saltó %1$s: el anfitrión no puede reproducirla</string>
+    <string name="lt_stopped_cant_play">Sesión en pausa: no puedes reproducir %1$s</string>
+    <string name="lt_only_host_changes_song">Solo el anfitrión puede cambiar la canción. Usa «Reproducir a continuación» para añadirla.</string>
+    <string name="session_live_off">Ahora mismo no se puede emitir en directo</string>
+    <string name="session_slow_down">Ve más despacio un momento y vuelve a intentarlo</string>
+    <string name="session_live_offline">No se pudo emitir en directo. Comprueba tu conexión e inténtalo de nuevo.</string>
+    <string name="session_only_host_changes_song">Solo el anfitrión puede cambiar la canción. Pídelo tú.</string>
+    <string name="lt_added_queue">Añadido a la cola de la sesión</string>
+    <string name="lt_suggested_to">Sugerido a %1$s</string>
+    <string name="radio_failed_player_not_ready">El reproductor todavía se está iniciando. Inténtalo de nuevo.</string>
+    <string name="radio_failed_no_station">No se encontraron canciones similares para esto.</string>
+    <string name="session_off_air">Esta emisión está fuera de antena</string>
+    <plurals name="session_requests_sent">
+        <item quantity="one">%1$d petición enviada</item>
+        <item quantity="many">%1$d peticiones enviadas</item>
+        <item quantity="other">%1$d peticiones enviadas</item>
+    </plurals>
+    <string name="cast_on_browser_line">En %1$s</string>
+    <string name="lt_added_next">A continuación en la sesión</string>
+    <string name="lt_suggested">Sugerido al anfitrión</string>
 </resources>

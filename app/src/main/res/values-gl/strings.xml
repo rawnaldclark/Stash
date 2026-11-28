@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="resume_playback_long">Reanudar lista de reproducción</string>
+    <string name="widget_now_playing_description">A canción que está a soar, con reproducir/pausa e seguinte</string>
+    <string name="like_mirror_signed_out">Os teus Gústame non poden chegar a %1$s. Inicia sesión de novo en Axustes.</string>
+    <string name="widget_now_playing_label">Soando agora</string>
+    <string name="widget_now_playing_square_label">Soando agora (portada)</string>
+    <string name="widget_preview_artist">Artista</string>
+    <string name="app_name">Stash</string>
+    <string name="widget_open_stash">Abrir Stash</string>
+    <string name="cast_connect_failed">Non se puido conectar con %1$s</string>
+    <plurals name="tidied_duplicates">
+        <item quantity="one">Ordeada %d canción duplicada</item>
+        <item quantity="other">Ordeadas %d cancións duplicadas</item>
+    </plurals>
+    <string name="widget_pause">Pausar</string>
+    <plurals name="clips_downloading_again">
+        <item quantity="one">Descargando %d canción de novo: gardouse como un clip corto</item>
+        <item quantity="other">Descargando %d cancións de novo: gardáronse como clips cortos</item>
+    </plurals>
+    <string name="widget_play">Reproducir</string>
+    <string name="widget_next">Seguinte canción</string>
+    <string name="widget_preview_title">Título da canción</string>
+    <string name="widget_now_playing_square_description">A portada da canción que está a soar, con reproducir/pausa e seguinte</string>
+    <string name="resume_playback_short">Reanudar</string>
+    <string name="widget_nothing_playing">Nada reproducindo</string>
+</resources>

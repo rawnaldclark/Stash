@@ -18,9 +18,9 @@
     <string name="sync_source_stat_playlists">재생목록</string>
     <string name="sync_source_stat_liked">좋아요</string>
     <string name="sync_source_stat_recommended">추천</string>
-    <string name="sync_source_empty_spotify">첫 번째 동기화가 완료되면 Spotify의 재생목록과 데일리 믹스가 여기에 표시됩니다. \'지금 동기화\'를 탭하여 목록을 불러오세요. 다운로드는 다운로드 기능을 직접 활성화하기 전까지 진행되지 않습니다</string>
-    <string name="sync_source_empty_youtube">첫 번째 동기화가 완료되면 YouTube Music 라이브러리의 홈 믹스, 좋아요 표시한 노래, 재생목록이 여기에 표시됩니다. 원하는 항목을 직접 선택하기 전까지는 아무것도 다운로드되지 않으므로, 예상되지 않은 다운로드가 발생하지 않습니다</string>
-    <string name="sync_source_empty_lastfm">평소 듣는 노래를 바탕으로 Last.fm이 추천하는 노래들의 재생목록 다음 동기화 때 생성됩니다. 지금 동기화를 탭하여 시작하세요</string>
+    <string name="sync_source_empty_spotify">첫 번째 동기화가 완료되면 Spotify의 재생목록과 데일리 믹스가 여기에 표시됩니다. \'지금 동기화\'를 탭하여 목록을 불러오세요. 다운로드는 다운로드 기능을 직접 활성화하기 전까지 진행되지 않습니다.</string>
+    <string name="sync_source_empty_youtube">첫 번째 동기화가 완료되면 YouTube Music 라이브러리의 홈 믹스, 좋아요 표시한 노래, 재생목록이 여기에 표시됩니다. 원하는 항목을 직접 선택하기 전까지는 아무것도 다운로드되지 않으므로, 예상되지 않은 다운로드가 발생하지 않습니다.</string>
+    <string name="sync_source_empty_lastfm">평소 듣는 노래를 바탕으로 Last.fm이 추천하는 노래들의 재생목록 다음 동기화 때 생성됩니다. 지금 동기화를 탭하여 시작하세요.</string>
     <!-- Library Maintenance Card -->
     <string name="sync_blocked_songs_title">차단된 노래</string>
     <string name="sync_blocked_songs_none">차단된 노래가 없습니다</string>
@@ -53,9 +53,9 @@
     <string name="sync_undo_last_sync_subtitle">변경된 %1$s를 %2$s로 되돌립니다</string>
     <string name="sync_undo">실행 취소</string>
     <string name="sync_undoing">실행 취소하는 중…</string>
-    <string name="sync_auto_sync_paused_note">실행 취소 후 자동 동기화가 일시 중지되었습니다. 동기화를 탭하여 다시 시작하세요</string>
+    <string name="sync_auto_sync_paused_note">실행 취소 후 자동 동기화가 일시 중지되었습니다. 동기화를 탭하여 다시 시작하세요.</string>
     <string name="sync_undo_dialog_title">마지막 동기화를 실행 취소하시겠습니까?</string>
-    <string name="sync_undo_dialog_body">마지막 동기화 이전 상태로 라이브러리를 복원합니다. 숨겨졌던 재생목록은 다시 표시되고, 새로 추가된 재생목록은 숨겨지며, 비워졌던 재생목록은 원래 순서대로 항목이 복원됩니다%1$s\n\n직접 추가하거나 삭제한 트랙과 변경한 다운로드 설정은 그대로 유지됩니다. 이미 삭제된 다운로드 파일은 복구할 수 없습니다\n\n이후 자동 동기화가 일시 중지되며, 다시 동기화하려면 동기화를 직접 탭해야 합니다. 따라서 변경 사항이 자동으로 다시 적용되는 것을 방지할 수 있습니다</string>
+    <string name="sync_undo_dialog_body">마지막 동기화 이전 상태로 라이브러리를 복원합니다. 숨겨졌던 재생목록은 다시 표시되고, 새로 추가된 재생목록은 숨겨지며, 비워졌던 재생목록은 원래 순서대로 항목이 복원됩니다%1$s.\n\n직접 추가하거나 삭제한 트랙과 변경한 다운로드 설정은 그대로 유지됩니다. 이미 삭제된 다운로드 파일은 복구할 수 없습니다.\n\n이후 자동 동기화가 일시 중지되며, 다시 동기화하려면 동기화를 직접 탭해야 합니다. 따라서 변경 사항이 자동으로 다시 적용되는 것을 방지할 수 있습니다.</string>
     <string name="sync_undo_sync_confirm">동기화 실행 취소</string>
     <string name="sync_undone_title">동기화 실행 취소됨</string>
     <plurals name="sync_playlists_count">
@@ -70,7 +70,7 @@
     </plurals>
     <!-- Refresh Mode Dialog & Chips -->
     <string name="sync_switch_to_refresh_title">새로 고침으로 전환하시겠습니까?</string>
-    <string name="sync_switch_to_refresh_body">새로고침을 설정하면 동기화할 때마다 새로운 트랙을 가져옵니다 — 여기에는 매일 자동 생성되는 믹스, 주간 음악 추천 및 기타 주기적으로 바뀌는 재생목록이 포함됩니다. 재생목록에서 제외된 트랙은 믹스에서 제거되며, 라이브러리를 깔끔하게 유지하기 위해 해당 트랙의 다운로드 파일도 삭제됩니다. 모든 소스가 새로고침으로 설정된 경우에만 정리 작업이 실행됩니다 — 하나라도 계속 누적하는 소스가 있다면 트랙이 삭제되지 않습니다. 직접 추가한 트랙은 그대로 유지됩니다</string>
+    <string name="sync_switch_to_refresh_body">새로고침을 설정하면 동기화할 때마다 새로운 트랙을 가져옵니다 — 여기에는 매일 자동 생성되는 믹스, 주간 음악 추천 및 기타 주기적으로 바뀌는 재생목록이 포함됩니다. 재생목록에서 제외된 트랙은 믹스에서 제거되며, 라이브러리를 깔끔하게 유지하기 위해 해당 트랙의 다운로드 파일도 삭제됩니다. 모든 소스가 새로고침으로 설정된 경우에만 정리 작업이 실행됩니다 — 하나라도 계속 누적하는 소스가 있다면 트랙이 삭제되지 않습니다. 직접 추가한 트랙은 그대로 유지됩니다.</string>
     <string name="sync_switch_to_refresh_confirm">새로고침으로 전환</string>
     <string name="sync_mix_mode_title">믹스 동기화 모드</string>
     <string name="sync_mode_refresh">새로고침</string>
@@ -86,7 +86,7 @@
         <item quantity="other">%d 개의 트랙</item>
     </plurals>
     <string name="sync_studio_only_title">스튜디오 녹음만</string>
-    <string name="sync_studio_only_desc">좋아요 표시한 노래에서 커버곡, 라이브 녹음 및 사용자 업로드 콘텐츠(UGC)를 제외합니다. 다른 YouTube 재생목록에는 영향을 주지 않습니다</string>
+    <string name="sync_studio_only_desc">좋아요 표시한 노래에서 커버곡, 라이브 녹음 및 사용자 업로드 콘텐츠(UGC)를 제외합니다. 다른 YouTube 재생목록에는 영향을 주지 않습니다.</string>
     <!-- Sync tab overhaul (2026-10-29): first-sync sheet -->
     <!-- Sync tab overhaul: nothing connected / ready -->
     <!-- Sync tab overhaul: synced -->
@@ -94,4 +94,334 @@
     <!-- Sync tab overhaul: Download mode -->
     <!-- Sync tab overhaul: History screen -->
     <!-- Sync tab overhaul: an account's playlists -->
+<string name="sync_stack">스택</string>
+    <string name="sync_saved_albums_on">Spotify에 저장한 앨범은 라이브러리 &gt; 앨범에 순서대로 표시됩니다. 저장을 탭하기 전까지는 아무것도 다운로드되지 않습니다.</string>
+    <string name="sync_arrival_save_body">다운로드할 재생목록을 선택하세요.</string>
+    <string name="sync_history_row">기록, 차단된 노래, 실행 취소</string>
+    <string name="sync_accounts_row">계정</string>
+    <string name="sync_syncing_title">내 음악 불러오기</string>
+    <plurals name="sync_history_and_more">
+        <item quantity="other">%1$s 및 %2$d 더</item>
+    </plurals>
+    <string name="sync_history_downloaded">다운로드됨</string>
+    <string name="sync_history_cancelled">취소됨</string>
+    <string name="sync_history_failed">동기화 실패</string>
+    <plurals name="sync_history_failed_tracks">
+        <item quantity="other">%d 개 실패</item>
+    </plurals>
+    <string name="sync_manage_tab_albums">앨범 %1$d</string>
+    <string name="sync_manage_on_phone">%1$s · 이 휴대폰에서</string>
+    <string name="sync_in_library_on">내 라이브러리에 있음</string>
+    <string name="sync_state_expanded">펼쳐짐</string>
+    <string name="sync_lastfm_connect_to_enable">\'설정 → 계정\'에서 Last.fm 연결을 활성화하세요</string>
+    <string name="sync_failed_matches_searching">\'%s\'를 검색하는 중…</string>
+    <string name="sync_auth_expired_both_headline">로그인이 만료됨</string>
+    <string name="sync_auth_expired_youtube_btn">YouTube 다시 인증</string>
+    <string name="sync_phase_error">오류</string>
+    <string name="sync_download_title">이 휴대폰에서</string>
+    <string name="sync_downloads_waiting_aac_item">아직 AAC 형식으로 제공되지 않습니다</string>
+    <string name="sync_downloads_msg_cancelled">다운로드 취소됨</string>
+    <string name="sync_downloads_msg_nothing_to_cancel">취소할 항목 없음</string>
+    <plurals name="sync_downloads_msg_cancelled_count">
+        <item quantity="other">%d 개의 다운로드가 취소됨</item>
+    </plurals>
+    <string name="sync_downloads_phase_cancelled">취소됨</string>
+    <string name="sync_downloads_phase_matching">일치하는 항목을 찾는 중</string>
+    <string name="sync_downloads_phase_processing">처리하는 중</string>
+    <string name="sync_button">동기화</string>
+    <string name="sync_play_new">새로운 노래 재생</string>
+    <string name="sync_ready_body">동기화를 탭하면 모든 재생목록, 믹스 및 좋아요 표시한 노래가 홈 화면 및 라이브러리에 표시됩니다.</string>
+    <string name="sync_home_title">내 음악이 여기에 있음</string>
+    <string name="sync_home_summary">%1$s · %2$s · %3$s</string>
+    <string name="failed_matches_find_label">직접 찾기</string>
+    <string name="failed_matches_find_label_or">또는 직접 찾기</string>
+    <string name="failed_matches_find_placeholder">아티스트 및 노래</string>
+    <string name="failed_matches_find_detail">%1$s · %2$s</string>
+    <string name="sync_time_set">설정</string>
+    <string name="sync_manage_save_all">모두 저장</string>
+    <string name="sync_discover_mixes_title">믹스 자동 검색</string>
+    <string name="sync_source_connected">연결됨</string>
+    <string name="failed_matches_find_song">노래</string>
+    <string name="sync_undo_result">실행 취소됨 — \'%1$s\'가 해당 동기화 이전 상태로 복원되었습니다.%2$s</string>
+    <string name="sync_schedule_daily">매일</string>
+    <string name="sync_stack_off">이번 주 노래만 표시합니다</string>
+    <string name="sync_home_visibility_default">홈 업데이트 시 켜짐</string>
+    <string name="sync_downloads_waiting_fallback">손실 압축 음질로 대체를 기다리는 중</string>
+    <string name="sync_downloads_waiting_lossless">무손실 음질을 기다리는 중</string>
+    <string name="sync_downloads_waiting_reset_item">일일 초기화를 기다리는 중</string>
+    <string name="sync_arrival_save_title">이 휴대폰에 저장</string>
+    <plurals name="sync_downloads_downloading">
+        <item quantity="other">%d 개 다운로드 중</item>
+    </plurals>
+    <plurals name="sync_downloads_failed">
+        <item quantity="other">%d 개 실패</item>
+    </plurals>
+    <string name="sync_download_choose">저장할 항목 선택</string>
+    <string name="sync_download_note">오프라인 모드에서는 다운로드한 곡만 재생되며, 나머지 곡은 표시되지 않습니다. 동기화와 다운로드에는 여전히 네트워크 연결이 필요합니다.</string>
+    <string name="sync_download_none">아직 저장된 항목이 없습니다.</string>
+    <plurals name="sync_history_not_read">
+        <item quantity="other">%d 개의 재생목록을 읽지 못하였습니다</item>
+    </plurals>
+    <string name="sync_manage_remove_all">모두 제거</string>
+    <string name="sync_manage_not_in_library">내 라이브러리에 없음</string>
+    <string name="sync_manage_out_section">내 라이브러리에 없음 · %1$d</string>
+    <string name="sync_in_library">내 라이브러리에 있음</string>
+    <string name="sync_in_library_off">내 라이브러리에 없음</string>
+    <string name="sync_state_collapsed">접어짐</string>
+    <plurals name="sync_lastfm_synced_tracks">
+        <item quantity="other">켜짐 · %d 개의 트랙 동기화됨</item>
+    </plurals>
+    <string name="sync_lastfm_find_it_hint">\'라이브러리 → 믹스\'에서 \'Last.fm 추천\'으로 찾을 수 있습니다.</string>
+    <string name="sync_failed_matches_title_review">검토할 노래</string>
+    <plurals name="sync_failed_matches_count_flagged">
+        <item quantity="other">%d개의 플래그가 지정된 트랙</item>
+    </plurals>
+    <string name="sync_flagged_cd_swap">이 항목으로 교체</string>
+    <plurals name="sync_approved_downloads_title">
+        <item quantity="other">%d 개의 승인된 노래를 다운로드하는 중</item>
+    </plurals>
+    <string name="sync_approved_downloads_detail_base">%2$d 개 중 %1$d 개 완료</string>
+    <plurals name="sync_approved_downloads_detail_failed">
+        <item quantity="other">%2$d 개 중 %1$d 개 완료, %3$d 개 다운로드 안 됨</item>
+    </plurals>
+    <string name="sync_approved_downloads_keep_downloading_note">%1$s. 종료해도 계속 다운로드됩니다.</string>
+    <string name="sync_failed_matches_msg_no_new_matches">새로운 일치 항목을 찾을 수 없습니다.</string>
+    <string name="sync_failed_matches_msg_invalid_video">승인할 수 없음 — 이 일치 항목은 유효한 YouTube 동영상이 아닙니다.</string>
+    <string name="sync_failed_matches_msg_blocked">승인할 수 없음 — 이 트랙은 차단 목록에 있습니다.</string>
+    <string name="sync_failed_matches_msg_already_linked">승인할 수 없음 — \'%1$s\'는 이미 %2$s — %3$s에 연결되어 있습니다. 대신 닫기를 시도하세요.</string>
+    <string name="sync_failed_matches_msg_download_error">\'%s\'를 다운로드하지 못하였습니다. 다시 시도할 수 있도록 목록에 다시 추가되었습니다.</string>
+    <string name="sync_flagged_msg_choose_different">이 트랙에 대한 다른 대체 항목을 선택하세요.</string>
+    <string name="sync_flagged_msg_already_linked">교체할 수 없음 — \'%1$s\'는 이미 %2$s에 연결되어 있습니다.</string>
+    <string name="sync_flagged_msg_blocked">교체할 수 없음 — 이 노래는 차단 목록에 있습니다.</string>
+    <string name="sync_failed_matches_msg_focus_not_found">매치 실패에서 해당 노래를 찾을 수 없습니다</string>
+    <string name="sync_failed_matches_msg_preview_failed">미리 보기를 불러올 수 없습니다. 다시 시도하거나 전체 트랙을 들으려면 승인하세요.</string>
+    <string name="sync_auth_expired_both_body">Spotify와 YouTube 모두 동기화를 재개하려면 새로 로그인해야 합니다.</string>
+    <string name="sync_auth_expired_both_btn">다시 인증</string>
+    <string name="sync_auth_expired_spotify_headline">Spotify 세션이 만료됨</string>
+    <string name="sync_hero_download">다운로드</string>
+    <string name="sync_hero_download_off">꺼짐 — 켜진 재생목록은 스트리밍으로 재생됩니다</string>
+    <string name="sync_hero_download_on">켜짐 — 켜진 재생목록과 믹스가 이 휴대폰에 저장됩니다</string>
+    <string name="sync_hero_btn_download">기기로 트랙 다운로드</string>
+    <string name="sync_phase_waiting_network">네트워크를 기다리는 중…</string>
+    <string name="sync_phase_authenticating">인증하는 중…</string>
+    <plurals name="sync_phase_fetching_playlists">
+        <item quantity="other">%d 개의 재생목록을 가져오는 중…</item>
+    </plurals>
+    <string name="sync_phase_fetching_playlists_init">재생목록을 가져오는 중…</string>
+    <string name="sync_phase_comparing_changes_count">변경 사항을 비교하는 중 (%1$d/%2$d)…</string>
+    <string name="sync_phase_comparing_changes">변경 사항을 비교하는 중…</string>
+    <string name="sync_phase_downloading_deferred">%1$d/%2$d를 다운로드 중 · %3$d를 기다리는 중…</string>
+    <string name="sync_phase_finalizing">마무리하는 중…</string>
+    <string name="sync_phase_complete">완료</string>
+    <string name="sync_phase_syncing">동기화하는 중…</string>
+    <string name="sync_undo_nothing">되돌릴 것이 없습니다.</string>
+    <string name="sync_open_library">라이브러리 열기</string>
+    <string name="sync_history_title">기록</string>
+    <string name="sync_history_mixes_section">내 재생목록</string>
+    <string name="sync_discover_mixes_on">데일리 믹스 및 유사 믹스가 나타나는 대로 추가됩니다</string>
+    <string name="sync_discover_mixes_off">꺼짐 — 새 믹스가 추가되지 않고 동기화 시간이 단축됩니다</string>
+    <string name="sync_home_visibility_hidden">홈에서 숨겨짐</string>
+    <string name="sync_home_visibility_pinned">홈에서 고정됨</string>
+    <string name="sync_lastfm_recommendations_header">추천</string>
+    <string name="sync_downloads_msg_cancel_failed">다운로드를 취소할 수 없습니다</string>
+    <string name="sync_downloads_msg_history_cleared">기록이 지워졌습니다</string>
+    <string name="sync_downloads_msg_queued">다운로드 대기열에 추가됨</string>
+    <string name="sync_arrival_recommended">추천</string>
+    <string name="sync_source_disconnected">연결 해제됨</string>
+    <string name="sync_saved_cd">저장됨</string>
+    <string name="sync_save">저장</string>
+    <string name="sync_schedule_prefix">"동기화 "</string>
+    <string name="sync_hero_btn_stream">스트리밍 인덱스 업데이트</string>
+    <string name="sync_downloads_tab_history">기록 (%d)</string>
+    <string name="sync_downloads_empty_queue_title">진행 중인 다운로드가 없습니다</string>
+    <string name="sync_downloads_phase_tagging">메타데이터를 추가하는 중</string>
+    <string name="sync_downloads_phase_in_progress">진행하는 중</string>
+    <string name="sync_downloads_phase_queued">대기하는 중</string>
+    <string name="sync_downloads_phase_downloaded">다운로드됨</string>
+    <string name="sync_downloads_phase_needs_review">검토 필요</string>
+    <string name="sync_downloads_phase_failed">실패</string>
+    <string name="sync_failed_downloads_title_artist">%1$s — %2$s</string>
+    <string name="sync_arrival_title">음악은 어떻게 도착해야 할까요?</string>
+    <string name="sync_stacking">스택킹</string>
+    <string name="sync_stack_explainer">여러 음악을 조합하여 믹스를 만들고, 새롭게 발견한 모든 노래를 계속 보관하세요. 동기화할 때마다 새로운 노래만 추가되며, 기존 곡은 삭제되지 않습니다.</string>
+    <string name="sync_other_account_mixes_title">이 계정의 믹스 동기화</string>
+    <plurals name="sync_history_not_read_detail">
+        <item quantity="other">%1$d 개의 재생목록을 읽을 수 없습니다: %2$s (원래대로 유지됨)</item>
+    </plurals>
+    <string name="sync_history_error">오류: %s</string>
+    <string name="sync_history_diagnostics">진단</string>
+    <string name="sync_manage_all_in_library">내 라이브러리의 모든 항목</string>
+    <string name="sync_manage_pick_to_save">라이브러리의 모든 항목</string>
+    <plurals name="sync_manage_save_all_albums_title">
+        <item quantity="other">%d 개의 앨범을 저장하시겠습니까?</item>
+    </plurals>
+    <string name="sync_manage_search">재생목록 및 믹스 검색</string>
+    <string name="sync_manage_tab_playlists">재생목록 %1$d</string>
+    <string name="failed_matches_find_clear">검색 지우기</string>
+    <string name="failed_matches_find_searching">검색하는 중…</string>
+    <string name="failed_matches_find_nothing">찾을 수 없습니다. 다른 단어를 시도하세요.</string>
+    <string name="failed_matches_find_failed">지금 검색할 수 없습니다. 연결 상태를 확인한 후 다시 시도하세요.</string>
+    <string name="failed_matches_find_video">동영상</string>
+    <string name="failed_matches_find_preview">이 버전 미리보기</string>
+    <string name="failed_matches_find_stop_preview">미리보기 중지</string>
+    <string name="failed_matches_find_use">이 버전 사용</string>
+    <string name="sync_failed_matches_empty_subtitle">일치하는 노래가 없습니다.</string>
+    <string name="failed_matches_find_searching_youtube">YouTube 전체 검색 중…</string>
+    <plurals name="sync_downloads_waiting">
+        <item quantity="other">%d 개 기다리는 중</item>
+    </plurals>
+    <string name="sync_stack_on">모든 노래를 유지합니다</string>
+    <string name="sync_home_synced_ago">%1$s 동기화됨</string>
+    <string name="sync_account_summary">%1$s · %2$s</string>
+    <string name="sync_lastfm_recommended_title">Last.fm 추천</string>
+    <string name="sync_downloads_clear_queue">대기열 지우기</string>
+    <string name="sync_downloads_clear_queue_confirm">대기 중인 모든 다운로드가 취소되고 현재 진행 중인 다운로드도 중단됩니다. 취소된 곡은 다음에 다운로드할 때 다시 대기열에 추가됩니다.</string>
+    <string name="sync_downloads_section_downloading">다운로드하는 중</string>
+    <string name="sync_downloads_section_up_next">다음 재생 항목</string>
+    <string name="sync_downloads_section_recent">최근 항목</string>
+    <string name="sync_downloads_empty_history_title">아직 다운로드 기록이 없습니다</string>
+    <string name="sync_downloads_empty_history_subtitle">다운로드가 완료되거나 실패한 항목이 여기에 표시됩니다.</string>
+    <string name="sync_downloads_clear_history">기록 지우기</string>
+    <string name="sync_downloads_clear_confirm_title">%s?</string>
+    <string name="sync_downloads_keep">유지</string>
+    <string name="sync_downloads_queue_position">#%1$d · %2$s</string>
+    <string name="sync_downloads_cd_cancel">%s 취소</string>
+    <string name="sync_downloads_cd_retry">%s 다시 시도</string>
+    <string name="sync_downloads_waiting_generic">기다리는 중</string>
+    <string name="sync_downloads_waiting_tidal_item">Tidal 사용량이 많습니다. 나중에 다시 시도하세요.</string>
+    <string name="sync_downloads_waiting_fallback_item">손실 압축 대체 기능이 켜질 때까지 기다리는 중</string>
+    <string name="sync_downloads_waiting_lossless_item">무손실 소스를 기다리는 중</string>
+    <string name="sync_failed_downloads_empty_title">모두 완료되었습니다!</string>
+    <string name="sync_failed_downloads_playlist_reason">%1$s · %2$s</string>
+    <string name="sync_failed_downloads_cd_retry">다시 시도</string>
+    <string name="sync_failed_downloads_cd_block">차단</string>
+    <string name="sync_cd_collapse">접기</string>
+    <string name="sync_saved_albums_off">끄기: 저장된 앨범을 읽지 않습니다. 이미 있는 앨범은 삭제할 때까지 유지됩니다.</string>
+    <string name="sync_arrival_stream_body">스트리밍을 위해 라이브러리를 표시합니다.</string>
+    <string name="sync_arrival_sync_now">지금 동기화</string>
+    <string name="sync_arrival_change_later">동기화 상단에서 언제든지 변경할 수 있습니다.</string>
+    <string name="sync_firstrun_body">계정을 연결하고 동기화하세요. 모든 재생목록, 믹스 및 좋아요를 누른 노래가 홈 화면 및 라이브러리에 표시됩니다.</string>
+    <string name="sync_connect_spotify">Spotify 연결</string>
+    <string name="sync_connect_soundcloud">SoundCloud 연결</string>
+    <string name="sync_connect_youtube">YouTube Music 연결</string>
+    <string name="sync_connect_lastfm">스크로블을 위해 Last.fm 사용</string>
+    <string name="sync_other_account_mixes_on">동기화할 때마다 데일리 믹스 및 이와 유사한 믹스가 함께 표시됩니다.</string>
+    <string name="sync_other_account_mixes_off">끄기: 해당 믹스를 불러오지 않으므로 홈 화면에 동일한 항목이 두 개씩 표시되지 않습니다.</string>
+    <plurals name="sync_songs_count">
+        <item quantity="other">%d 개의 노래</item>
+    </plurals>
+    <plurals name="sync_mixes_count">
+        <item quantity="other">%d 개의 믹스</item>
+    </plurals>
+    <string name="sync_auto_sync_at_wifi">%1$s 에서 · Wi-Fi</string>
+    <string name="sync_count_in_library">내 라이브러리의 음악</string>
+    <string name="sync_count_downloaded">다운로드된 노래</string>
+    <string name="sync_count_on_phone">이 휴대폰에서</string>
+    <string name="sync_count_flac">%1$s 개의 FLAC</string>
+    <string name="sync_count_other">기타</string>
+    <string name="sync_downloads_none">실행 중인 항목 없음</string>
+    <string name="sync_history_mode_online">온라인</string>
+    <string name="sync_history_mode_offline">오프라인</string>
+    <string name="sync_history_surfaced">발생</string>
+    <string name="sync_history_no_details">추가 세부 정보가 기록되지 않았습니다</string>
+    <string name="sync_manage_save_all_albums_body">노래들이 이 휴대폰에 하나씩 차례대로 다운로드됩니다.</string>
+    <string name="sync_manage_tab_liked">좋아요 표시한 노래</string>
+    <string name="sync_manage_no_match">\'%1$s\'와 일치하는 재생 목록이 없습니다</string>
+    <string name="sync_manage_empty">아직 아무것도 없습니다. Sync가 계정을 읽으면 채워집니다.</string>
+    <string name="sync_manage_add_all">모두 추가</string>
+    <string name="sync_lastfm_explainer">Last.fm이 가장 많이 재생하고 스크로블한 트랙을 기반으로 추천하는 트랙으로 구성된 순환 재생 목록을 만듭니다. 새로 고칠 때마다 새로운 추천 트랙으로 교체되며, 각 트랙은 YouTube Music/Spotify에서 일반적인 동기화 방식으로 다운로드됩니다. 네트워크 설정도 그대로 적용됩니다.</string>
+    <string name="failed_matches_dismiss_body">\'%1$s — %2$s\'는 향후 동기화 시 다운로드되지 않습니다. 대신 올바른 버전을 선택하려면 노래를 탭하여 직접 찾아보세요.</string>
+    <string name="sync_failed_matches_title_flagged">플래그가 지정된 노래</string>
+    <string name="sync_failed_matches_sub_review">이 노래들은 동기화 중에 일치하지 않았거나 잘못되었다고 플래그가 지정되었습니다.</string>
+    <string name="sync_failed_matches_sub_flagged">지금 재생 중일 때 플래그가 지정된 노래입니다. 아래에서 대체곡을 선택하세요.</string>
+    <string name="sync_failed_matches_sub_unmatched">동기화 중 YouTube에서 이 노래를 찾을 수 없습니다.</string>
+    <string name="sync_failed_matches_resync">다시 동기화</string>
+    <string name="sync_failed_matches_approve_all">모두 승인 (%d)</string>
+    <string name="sync_failed_matches_dismiss_all">모두 닫기</string>
+    <string name="sync_failed_matches_no_match_found">일치하는 항목을 찾을 수 없음</string>
+    <string name="sync_failed_matches_cd_preview_match">일치 항목 미리 보기</string>
+    <string name="sync_failed_matches_cd_approve_match">일치 항목 승인</string>
+    <string name="sync_failed_matches_cd_dismiss">닫기</string>
+    <string name="sync_dismiss_dialog_title">이 노래 재시도를 중지하시겠습니까?</string>
+    <string name="sync_confirm">확인</string>
+    <string name="sync_flagged_section_title">다음 항목을 잘못 표시하였습니다</string>
+    <string name="sync_flagged_section_subtitle">위의 \'다시 동기화\'를 탭하여 대체 항목을 찾은 다음, 승인하여 교체하세요.</string>
+    <string name="sync_flagged_swapping">교체하는 중…</string>
+    <string name="sync_flagged_replacement_format">→ %1$s — %2$s</string>
+    <string name="sync_flagged_no_replacement">대체 항목을 찾을 수 없음</string>
+    <string name="sync_flagged_cd_preview_replacement">대체 항목 미리 보기</string>
+    <string name="sync_failed_matches_msg_approve_error">이 일치 항목을 승인할 수 없습니다. 다시 시도하세요.</string>
+    <string name="sync_auth_expired_spotify_body">Spotify 라이브러리를 동기화에 포함하려면 다시 인증하세요.</string>
+    <string name="sync_auth_expired_spotify_btn">Spotify 다시 인증</string>
+    <string name="sync_auth_expired_youtube_headline">YouTube 세션이 만료됨</string>
+    <string name="sync_auth_expired_youtube_body">동기화에 YouTube 라이브러리를 포함하려면 다시 인증하세요.</string>
+    <string name="sync_schedule_not_scheduled">예약되지 않음 — 최소 하루 이상을 선택하세요</string>
+    <string name="sync_schedule_at_time">" 에서 "</string>
+    <string name="sync_schedule_on_network">" 에서 "</string>
+    <string name="sync_schedule_wifi_only">Wi-Fi 전용</string>
+    <string name="sync_schedule_any_network">모든 네트워크</string>
+    <string name="sync_schedule_repeat_on">반복 켜기</string>
+    <string name="sync_schedule_preset_daily">매일</string>
+    <string name="sync_schedule_none">없음</string>
+    <string name="sync_phase_downloading_progress">%1$d/%2$d를 다운로드 중…</string>
+    <string name="sync_undo_error">동기화를 취소할 수 없습니다. 아무것도 변경되지 않았습니다.</string>
+    <string name="sync_stop">정지</string>
+    <string name="sync_back">뒤로</string>
+    <string name="sync_manage_in_library_count">라이브러리의 %2$d 개 중 %1$d 개</string>
+    <plurals name="sync_approved_downloads_finished">
+        <item quantity="other">%d 개의 승인된 노래를 다운로드하였습니다.</item>
+    </plurals>
+    <string name="sync_schedule_preset_weekends">주말</string>
+    <string name="sync_schedule_weekdays">평일</string>
+    <string name="sync_schedule_weekends">주말</string>
+    <string name="sync_account_spotify_named">Spotify · %1$s</string>
+    <string name="sync_downloads_empty_queue_subtitle">새 다운로드 항목이 여기에 표시됩니다.</string>
+    <string name="sync_auto_sync_off">끄기</string>
+    <string name="sync_downloads_waiting_aac">아직 AAC 형식으로 제공되지 않습니다</string>
+    <string name="sync_downloads_waiting_reset">일일 초기화를 기다리는 중</string>
+    <string name="sync_downloads_waiting_tidal">Tidal을 기다리는 중</string>
+    <string name="sync_downloads_phase_downloading">다운로드하는 중</string>
+    <string name="sync_failed_downloads_empty_subtitle">실패한 다운로드가 없습니다.</string>
+    <plurals name="sync_failed_downloads_count_subtitle">
+        <item quantity="other">%d 개의 트랙을 다운로드할 수 없습니다.</item>
+    </plurals>
+    <plurals name="sync_failed_downloads_retry_tracks">
+        <item quantity="other">%d 개의 트랙 다시 시도</item>
+    </plurals>
+    <plurals name="sync_failed_downloads_more_count">
+        <item quantity="other">+ %1$d 개 더 (처음 %2$d 개 표시 중)</item>
+    </plurals>
+    <string name="sync_saved_albums_title">저장된 앨범 동기화</string>
+    <string name="sync_arrival_stream_title">모든 스트리밍</string>
+    <string name="sync_firstrun_title">음악 가져오기</string>
+    <string name="sync_auto_sync">자동 동기화</string>
+    <string name="sync_auto_sync_at">%1$s 에서</string>
+    <string name="sync_saved_state">저장됨</string>
+    <string name="sync_failed_matches_title_unmatched">일치하지 않는 노래</string>
+    <string name="sync_flagged_tap_resync_hint">대체 항목을 찾으려면 다시 동기화를 탭하세요</string>
+    <string name="sync_time_title">동기화 시간</string>
+    <string name="sync_source_manage_playlists">재생목록 관리</string>
+    <string name="sync_source_cd_manage_playlists">%s 개의 재생목록 관리</string>
+    <string name="sync_hero_last_sync">마지막 동기화</string>
+    <string name="sync_hero_never_synced">동기화되지 않음</string>
+    <string name="sync_hero_no_new_songs">%s · 새 노래 없음</string>
+    <plurals name="sync_hero_new_songs">
+        <item quantity="other">%1$s · %2$d 개의 새 노래</item>
+    </plurals>
+    <string name="sync_phase_verifying_library">내 라이브러리를 확인하는 중 (%1$d/%2$d)…</string>
+    <string name="sync_downloads_row">다운로드</string>
+    <string name="sync_flagged_cd_unflag">플래그 해제 (현재 항목 유지)</string>
+    <string name="sync_not_saved_state">저장되지 않음</string>
+    <string name="sync_schedule_preset_weekdays">평일</string>
+    <string name="sync_downloads_tab_queue">대기열 (%d)</string>
+    <string name="sync_cd_expand">펼치기</string>
+    <string name="sync_syncing_body">다운로드된 모든 콘텐츠를 재생하세요. 이 화면을 나가도 됩니다.</string>
+    <string name="sync_manage_tab_mixes">믹스 %1$d</string>
+    <string name="sync_failed_matches_count_both">%1$d 개 일치하지 않음 · %2$d 개 플래그 지정됨 · %3$d 개 총계</string>
+    <plurals name="sync_failed_matches_msg_found_replacements">
+        <item quantity="other">%d 개의 대체 항목을 찾았습니다.</item>
+    </plurals>
+    <string name="sync_schedule_tap_hint">칩을 탭하여 변경하세요</string>
+    <string name="sync_undo_paused_suffix">" 동기화를 탭할 때까지 자동 동기화가 일시 중지됩니다."</string>
+    <string name="failed_matches_find_hint">노래를 탭하여 직접 찾으세요.</string>
 </resources>

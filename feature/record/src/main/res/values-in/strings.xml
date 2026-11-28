@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="record_card_hidden">Kartu disembunyikan. Anda dapat menampilkannya kembali melalui Pengaturan › Tampilan › Tata Letak Beranda.</string>
+    <string name="record_invite_body">Semua tahun perjalanan mendengarkan musik Anda, dalam satu tempat: dari Spotify, Last.fm, atau Stash.</string>
+    <string name="record_note_none_downloaded">Tidak ada satu pun lagu ini yang telah diunduh. Hubungkan untuk memutarnya.</string>
+    <string name="record_note_too_many_saves">Terlalu banyak file dalam satu kunjungan. Tutup Rekaman Anda, lalu buka kembali untuk menyimpan lebih banyak file.</string>
+    <string name="record_note_share_dropped">Menu berbagi tidak terbuka karena Rekaman Anda sudah ditutup terlebih dahulu.</string>
+    <string name="record_waiting_bring">Impor zip</string>
+    <string name="record_waiting_how">Cara lainnya</string>
+    <string name="record_pressing_title">Menyiapkan Rekaman Anda</string>
+    <string name="record_ready_title">Siap untuk dibuat</string>
+    <string name="record_ready_body">Tidak ada data yang disimpan sebelum Anda mengimpor.</string>
+    <string name="record_waiting_body">Permintaan dikirim pada %1$s. Data dari Last.fm dapat ditambahkan sementara menunggu.</string>
+    <string name="record_share">Bagikan</string>
+    <plurals name="record_hours">
+        <item quantity="other">jam</item>
+    </plurals>
+    <string name="record_most_played">Paling sering diputar: %1$s</string>
+    <string name="record_note_saved">Disimpan ke Unduhan</string>
+    <string name="record_invite_start">Mulai</string>
+    <string name="record_close">Tutup</string>
+    <string name="record_since">sejak %1$d · %2$s</string>
+    <string name="record_most_played_label">Paling sering diputar</string>
+    <string name="record_card_more">Tampilkan opsi</string>
+    <string name="record_invite_title">Ketuk untuk melihat rekaman Anda</string>
+    <string name="record_ready_review">Tinjau</string>
+    <string name="record_webview_old_title">Fitur ini memerlukan Android System WebView versi yang lebih baru</string>
+    <string name="record_open">Buka rekaman Anda</string>
+    <string name="record_waiting_title">Menunggu Spotify</string>
+    <string name="record_pressing_open">Buka</string>
+    <plurals name="record_note_playing_songs">
+        <item quantity="other">Memutar %1$d lagu</item>
+    </plurals>
+    <plurals name="record_plays">
+        <item quantity="other">%1$s kali diputar</item>
+    </plurals>
+    <string name="record_note_archive_failed">Beberapa riwayat pemutaran Anda tidak dapat dibaca.</string>
+    <string name="record_note_playing">Memutar %1$s</string>
+    <string name="record_note_none_found">Tidak dapat menemukan lagu-lagu ini untuk diputar.</string>
+    <string name="record_webview_old_body">Perbarui Android System WebView melalui Google Play, lalu buka kembali Rekaman Anda.</string>
+    <string name="record_stopped_title">Rekaman Anda dihentikan</string>
+    <string name="record_eyebrow">Rekaman Anda</string>
+    <string name="record_card_hide_keep_mixes">Sembunyikan kartu ini — mix Anda tetap tersimpan</string>
+    <string name="record_card_hide">Sembunyikan kartu ini</string>
+    <string name="record_card_hidden_keep_mixes">Kartu disembunyikan. Mix Anda tetap tersedia di Beranda. Anda dapat menampilkannya kembali melalui Pengaturan › Tampilan › Tata letak Beranda.</string>
+    <string name="record_note_save_failed">Gagal menyimpan.</string>
+    <string name="record_invite_hide">Sembunyikan rekaman Anda</string>
+    <string name="record_note_play_failed">Tidak dapat memutar lagu tersebut di sini.</string>
+    <string name="record_open_again">Buka kembali</string>
+    <string name="record_stopped_body">Halaman kehabisan memori atau mengalami error. Riwayat pemutaran Anda tetap aman.</string>
+</resources>

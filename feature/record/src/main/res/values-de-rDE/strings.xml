@@ -20,7 +20,7 @@
     <string name="record_webview_old_title">Dafür ist eine neuere Android System WebView nötig</string>
     <string name="record_webview_old_body">Aktualisiere Android System WebView über Google Play und öffne dann deine Platte erneut.</string>
     <string name="record_stopped_title">Deine Platte wurde beendet</string>
-    <string name="record_stopped_body">Der Seite ging der Speicher aus oder sie ist abgestürzt. Deine Wiedergaben sind sicher.</string>
+    <string name="record_stopped_body">Auf der Seite war kein Platz mehr oder sie ist abgestürzt. Deine Wiedergaben sind sicher.</string>
     <string name="record_open_again">Erneut öffnen</string>
     <string name="record_note_archive_failed">Einige deiner Wiedergaben konnten nicht gelesen werden.</string>
     <string name="record_note_play_failed">Das lässt sich hier nicht abspielen.</string>
@@ -30,14 +30,14 @@
         <item quantity="other">Spielt %1$d Songs</item>
     </plurals>
     <string name="record_note_none_found">Diese Songs wurden nicht gefunden.</string>
-    <string name="record_note_none_downloaded">Keiner dieser Songs ist heruntergeladen. Verbinde dich, um sie abzuspielen.</string>
+    <string name="record_note_none_downloaded">Keiner dieser Songs ist heruntergeladen. Stelle eine Internetverbindung her, um sie abzuspielen.</string>
     <string name="record_note_saved">In Downloads gespeichert</string>
-    <string name="record_note_save_failed">Konnte nicht gespeichert werden.</string>
-    <string name="record_note_too_many_saves">Das sind viele Dateien für einen Besuch. Schließe die Platte und öffne sie erneut, um mehr zu speichern.</string>
-    <string name="record_note_share_dropped">Das Teilen wurde nicht geöffnet: Die Platte wurde vorher geschlossen.</string>
+    <string name="record_note_save_failed">Das konnte nicht gespeichert werden.</string>
+    <string name="record_note_too_many_saves">Das sind viele Dateien für einen einzigen Aufruf. Schließe die Platte und öffne sie erneut, um weitere Dateien zu speichern.</string>
+    <string name="record_note_share_dropped">Der Freigabedialog wurde nicht geöffnet: Die Platte wurde vorher geschlossen.</string>
     <string name="record_share">Teilen</string>
     <string name="record_waiting_title">Warten auf Spotify</string>
-    <string name="record_waiting_body">Angefragt am %1$s. Last.fm kann in der Zwischenzeit schon dazukommen.</string>
+    <string name="record_waiting_body">%1$s wurde angefragt. Last.fm kann in der Zwischenzeit ebenfalls eintreffen.</string>
     <string name="record_waiting_bring">Zip-Datei hinzufügen</string>
     <string name="record_waiting_how">Andere Wege</string>
     <string name="record_pressing_title">Deine Platte wird gepresst</string>
@@ -53,9 +53,9 @@
     <string name="record_import_ask_button">Datenschutzseite von Spotify öffnen</string>
     <string name="record_import_asked">Angefragt am %1$s</string>
     <string name="record_import_email_title">Spotify schickt dir eine Zip-Datei</string>
-    <string name="record_import_email_body">Eine pro Anfrage. Lade sie herunter, sobald sie da ist; öffnen musst du sie nicht.</string>
+    <string name="record_import_email_body">Für jede gibt es eine. Lade sie herunter, sobald sie da ist; öffnen musst du sie nicht.</string>
     <string name="record_import_open_title">Öffne die Zip-Datei mit Stash</string>
-    <string name="record_import_open_body">Nutze in der E-Mail oder in deinen Dateien „Öffnen mit“ oder „Teilen“ und wähle Stash. Oder wähle sie hier aus.</string>
+    <string name="record_import_open_body">Wähle in der E-Mail oder in deinen Dateien „Öffnen mit“ oder „Teilen“ und dann Stash. Oder wähle die Datei hier aus.</string>
     <string name="record_import_choose">Dateien auswählen</string>
     <string name="record_import_each">Füge jede hinzu, sobald sie da ist.</string>
     <string name="record_import_private">Stash liest die Datei auf diesem Handy. Nichts wird hochgeladen.</string>
@@ -67,7 +67,7 @@
     <string name="record_import_saving">Deine Wiedergaben werden gespeichert: %1$s von %2$s</string>
     <string name="record_import_saving_start">Wird gespeichert…</string>
     <string name="record_import_library">Deine Playlists und Likes kommen dazu: %1$s von %2$s Songs</string>
-    <string name="record_import_library_start">Deine Playlists und Likes kommen dazu…</string>
+    <string name="record_import_library_start">Deine Playlists und Likes werden hinzugefügt…</string>
     <string name="record_import_year">%1$d wird gelesen</string>
     <string name="record_import_channel">Deine Platte</string>
     <string name="record_preview_title">Das ist dein Spotify</string>
@@ -96,11 +96,11 @@
     </plurals>
     <string name="record_preview_liked">Lieblingssongs</string>
     <plurals name="record_preview_all_here_file">
-        <item quantity="one">Die %1$s Wiedergabe in dieser Datei ist schon da.</item>
+        <item quantity="one">Die Wiedergabe in dieser Datei ist schon da.</item>
         <item quantity="other">Alle %1$s Wiedergaben in dieser Datei sind schon da.</item>
     </plurals>
     <plurals name="record_preview_all_here_files">
-        <item quantity="one">Die %1$s Wiedergabe in diesen Dateien ist schon da.</item>
+        <item quantity="one">Die Wiedergabe in diesen Dateien ist schon da.</item>
         <item quantity="other">Alle %1$s Wiedergaben in diesen Dateien sind schon da.</item>
     </plurals>
     <string name="record_preview_no_plays">In dieser Datei sind keine Wiedergaben.</string>
@@ -112,7 +112,7 @@
         <item quantity="one">%1$s Song, zu deinen Likes hinzugefügt</item>
         <item quantity="other">%1$s Songs, zu deinen Likes hinzugefügt</item>
     </plurals>
-    <string name="record_preview_liked_download_title">Lieblingssongs werden auf dieses Telefon geladen</string>
+    <string name="record_preview_liked_download_title">Lieblingssongs werden auf dieses Handy geladen</string>
     <plurals name="record_preview_liked_download">
         <item quantity="one">Dieser Song wird auch heruntergeladen.</item>
         <item quantity="other">Diese %1$s Songs werden auch heruntergeladen.</item>
@@ -129,7 +129,7 @@
     <string name="record_error_unreadable_title">Die Zip-Datei ließ sich nicht öffnen</string>
     <string name="record_error_unreadable_body">Vielleicht wurde sie nicht ganz heruntergeladen. Lade sie erneut aus der E-Mail von Spotify herunter und füge die neue Kopie hinzu.</string>
     <string name="record_error_storage_title">Auf diesem Handy ist kein Platz mehr</string>
-    <string name="record_error_storage_body">Gib etwas Speicher frei und versuch es dann noch einmal. Es wurde nichts Neues hinzugefügt.</string>
+    <string name="record_error_storage_body">Gib etwas Speicherplatz frei und versuch es dann noch einmal. Es wurde nichts Neues hinzugefügt.</string>
     <string name="record_error_storage_saving_body">Gib etwas Speicher frei und versuch es dann noch einmal: Nichts wird doppelt gezählt.</string>
     <string name="record_error_other_title">Etwas ist schiefgelaufen</string>
     <string name="record_error_other_body">Es wurde nichts Neues hinzugefügt. Versuch es noch einmal oder füge die Zip-Datei erneut hinzu.</string>
@@ -164,14 +164,14 @@
     <string name="record_way_spotify_waiting">Warten auf Spotify · angefragt am %1$s</string>
     <string name="record_way_lastfm_what">Alle deine Scrobbel-Einträge.</string>
     <string name="record_way_lastfm_time">Ein paar Minuten, sobald du verbunden bist</string>
-    <string name="record_lastfm_heading">Füge deine Scrobbel-Einträge von Last.fm hinzu</string>
+    <string name="record_lastfm_heading">Füge deine Last.fm-Scrobbles hinzu</string>
     <plurals name="record_lastfm_scrobbles">
-        <item quantity="one">%1$s Scrobbel-Eintrag</item>
-        <item quantity="other">%1$s Scrobbel-Einträge</item>
+        <item quantity="one">%1$s Scrobble</item>
+        <item quantity="other">%1$s Scrobbles</item>
     </plurals>
     <string name="record_lastfm_asking">Last.fm wird gefragt…</string>
     <string name="record_lastfm_progress">Seite %1$s von %2$s · %3$s</string>
-    <string name="record_lastfm_done">%1$s importiert. Wiedergaben, die Spotify oder Stash schon hatten, wurden nur einmal gezählt.</string>
+    <string name="record_lastfm_done">%1$s importiert. Wiedergaben, die Spotify oder Stash bereits erfasst hatten, wurden nur einmal gezählt.</string>
     <string name="record_lastfm_done_none">Seit dem letzten Mal nichts Neues auf Last.fm. Du bist auf dem neuesten Stand.</string>
     <string name="record_lastfm_done_part">%1$s importiert, %2$s davon diesmal. Wiedergaben, die Spotify oder Stash schon hatten, wurden nur einmal gezählt.</string>
     <string name="record_lastfm_done_none_yet">Noch keine Scrobbel-Einträge auf Last.fm. Alles, was du ab jetzt scrobbelst, kommt beim nächsten Mal dazu.</string>
@@ -201,15 +201,15 @@
     <string name="record_lastfm_other_body">Was schon da ist, bleibt. Versuch es noch einmal.</string>
     <string name="record_lastfm_working_title">Deine Scrobbel-Einträge von Last.fm kommen dazu</string>
     <string name="record_lastfm_settings_title">Aus Last.fm importieren</string>
-    <string name="record_lastfm_remove">Deine Scrobbel-Einträge von Last.fm entfernen</string>
+    <string name="record_lastfm_remove">Deine Last.fm-Scrobbles entfernen</string>
     <string name="record_lastfm_remove_subtitle">Dein Spotify-Verlauf und deine Wiedergaben in Stash bleiben.</string>
-    <string name="record_lastfm_remove_title">Deine Scrobbel-Einträge von Last.fm entfernen?</string>
+    <string name="record_lastfm_remove_title">Deine Last.fm-Scrobbles entfernen?</string>
     <string name="record_lastfm_remove_body">Sie werden auf diesem Handy von deiner Platte entfernt. Dein Spotify-Verlauf und dein Last.fm-Profil bleiben, wie sie sind.</string>
     <string name="record_lastfm_remove_confirm">Entfernen</string>
     <string name="record_lastfm_removing">Wird entfernt…</string>
     <string name="record_lastfm_cancel">Abbrechen</string>
     <string name="record_lastfm_removed">Deine Scrobbel-Einträge von Last.fm wurden entfernt. Dein Spotify-Verlauf bleibt.</string>
-    <string name="record_lastfm_remove_failed">Konnte gerade nicht entfernt werden. Versuch es noch einmal.</string>
+    <string name="record_lastfm_remove_failed">Das Entfernen hat gerade nicht geklappt. Versuch es noch einmal.</string>
     <string name="record_lastfm_remove_busy">Gerade läuft ein Import. Entferne sie danach.</string>
     <string name="record_sources_label">Quellen deiner Platte</string>
     <string name="record_source_described">%1$s, %2$s</string>
@@ -218,9 +218,9 @@
     <string name="record_intake_busy">Gerade läuft ein Import. Füge die Datei danach hinzu.</string>
     <string name="record_import_taste">Dein Geschmack wird ermittelt…</string>
     <string name="record_in_mixes_title">Deine Platte in Mixes nutzen</string>
-    <string name="record_in_mixes_subtitle">Deine Mixes, Daily Discover und deine Stash-Mixes, setzen auf die Künstler, die du seit Jahren liebst, und lassen die Songs weg, die du überspringst. Aus, richten sie sich nach dem, was du hier hörst.</string>
+    <string name="record_in_mixes_subtitle">Deine Mixes, Daily Discover und deine Stash-Mixes setzen auf die Künstler, die du seit Jahren liebst, und lassen die Songs weg, die du überspringst. Wenn sie ausgeschaltet sind, richten sie sich danach, was du hier hörst.</string>
     <string name="record_kept_out_title">Aus deinen Mixes gelassen (%1$s)</string>
-    <string name="record_kept_out_on">Songs, die du auf Spotify ausgeblendet hast oder immer wieder überspringst, bleiben aus deinen Mixes. Hol einen zurück, und er kann in deinen nächsten Mixes laufen.</string>
+    <string name="record_kept_out_on">Songs, die du auf Spotify ausgeblendet hast oder immer wieder überspringst, bleiben aus deinen Mixes draußen. Hol einen zurück, dann kann er in deine Mixes.</string>
     <string name="record_kept_out_off">Diese bleiben aus den Mixes deiner Platte. Hol einen zurück, und er kann dort wieder laufen.</string>
     <string name="record_kept_out_empty">Gerade nichts: Jeder Song deiner Platte kann in deinen Mixes laufen.</string>
     <string name="record_kept_out_show">Songs zeigen</string>
@@ -237,7 +237,7 @@
     <string name="record_kept_out_putting_back">Wird zurückgeholt…</string>
     <string name="record_kept_out_put_back_label">%1$s von %2$s zurückholen</string>
     <string name="record_kept_out_put_back_done">%1$s kann in deinen nächsten Mixes laufen</string>
-    <string name="record_kept_out_put_back_failed">Konnte gerade nicht zurückgeholt werden. Versuch es noch einmal.</string>
+    <string name="record_kept_out_put_back_failed">Konnte gerade nicht wieder hinzugefügt werden. Versuch es noch einmal.</string>
     <!-- Your record's history mixes (phase 5c). -->
     <string name="record_mix_locale">de-DE</string>
     <string name="record_mix_span">%1$s – %2$s</string>
@@ -251,7 +251,7 @@
     <string name="record_mix_constants_sub">Songs, zu denen du Jahr für Jahr zurückkehrst</string>
     <string name="record_mix_lost">Wiederentdecken</string>
     <string name="record_mix_lost_sub">Lieblingssongs, die du lange nicht gehört hast</string>
-    <string name="record_mix_repeat">Damals in Dauerschleife</string>
+    <string name="record_mix_repeat">Damals ständig wiederholt</string>
     <string name="record_mix_repeat_sub">Die Songs, von denen du nicht lassen konntest</string>
     <string name="record_mix_started">Wie alles anfing</string>
     <string name="record_mix_started_sub">Der erste Song, den du von jedem deiner Lieblingskünstler gehört hast</string>
@@ -265,9 +265,9 @@
         <item quantity="one">Um den %1$s, in %2$d vergangenen Jahr</item>
         <item quantity="other">Um den %1$s, in %2$d vergangenen Jahren</item>
     </plurals>
-    <string name="record_mix_about_min">etwa %1$d Min.</string>
-    <string name="record_mix_about_hr">etwa %1$d Std.</string>
-    <string name="record_mix_about_hr_min">etwa %1$d Std. %2$d Min.</string>
+    <string name="record_mix_about_min">etwa %1$d Minuten</string>
+    <string name="record_mix_about_hr">etwa %1$d Stunden</string>
+    <string name="record_mix_about_hr_min">etwa %1$d Stunden %2$d Minuten</string>
     <plurals name="record_mix_songs">
         <item quantity="one">%1$d Song</item>
         <item quantity="other">%1$d Songs</item>
@@ -298,21 +298,21 @@
     <string name="record_mixes_show_all">Alle anzeigen</string>
     <string name="record_mixes_open">%1$s öffnen</string>
     <string name="record_mix_play_label">%1$s abspielen</string>
-    <string name="record_mix_shuffle_label">%1$s zufällig abspielen</string>
+    <string name="record_mix_shuffle_label">%1$s in Zufallswiedergabe</string>
     <string name="record_tab_record">Die Platte</string>
     <string name="record_tab_mixes">Mixes</string>
     <string name="record_mixes_from_years">Mixes aus deinen Jahren</string>
     <string name="record_mixes_your_years">Deine Jahre</string>
-    <string name="record_mixes_none">Sie entstehen aus Jahren des Hörens. Bring deinen Spotify-Verlauf oder deine Last.fm-Scrobbles mit, dann erscheinen sie hier.</string>
+    <string name="record_mixes_none">Diese Mixes entstehen aus Jahren des Hörens. Bring deinen Spotify-Verlauf oder deine Last.fm-Scrobbles mit, dann erscheinen sie hier.</string>
     <string name="record_mixes_none_action">Dein Hören mitbringen</string>
     <string name="record_mix_eyebrow">Mix aus deiner Platte</string>
     <string name="record_mix_play">Abspielen</string>
-    <string name="record_mix_shuffle">Zufällig</string>
+    <string name="record_mix_shuffle">Zufallswiedergabe</string>
     <string name="record_mix_save">Als Playlist speichern</string>
     <string name="record_mix_saving">Wird gespeichert…</string>
     <string name="record_mix_open_saved">„%1$s“ öffnen</string>
     <string name="record_mix_saved">„%1$s“ in deinen Playlists gespeichert</string>
-    <string name="record_mix_save_failed">Konnte gerade nicht gespeichert werden. Versuch es noch mal.</string>
+    <string name="record_mix_save_failed">Das Speichern hat gerade nicht geklappt. Versuch es noch mal.</string>
     <string name="record_mix_gone">Diesen Mix gibt es in deiner Platte nicht mehr: Mixes ändern sich mit dem, was du hörst.</string>
     <string name="record_mix_gone_back">Zurück zu deiner Platte</string>
     <string name="record_mix_failed">Deine Platte konnte gerade nicht gelesen werden.</string>
@@ -348,4 +348,11 @@
     <string name="record_song_playlist_failed">Konnte nicht zur Playlist hinzugefügt werden</string>
     <string name="record_song_radio_failed">Radio konnte nicht gestartet werden. Versuch es gleich noch mal.</string>
     <string name="record_song_blocked">Ein blockierter Song kann nicht hinzugefügt werden</string>
+    <string name="record_in_mixes_page_label">Deine Platte</string>
+    <string name="record_most_played_label">Am meisten gespielt</string>
+    <string name="record_card_more">Optionen anzeigen</string>
+    <string name="record_card_hidden">Karte ausgeblendet. Einstellungen › Darstellung › Startseiten-Layout blendet sie wieder ein.</string>
+    <string name="record_card_hide_keep_mixes">Diese Karte ausblenden – deine Mixes bleiben</string>
+    <string name="record_card_hide">Diese Karte ausblenden</string>
+    <string name="record_card_hidden_keep_mixes">Karte ausgeblendet. Deine Mixes bleiben auf der Startseite. Einstellungen › Darstellung › Startseiten-Layout blendet sie wieder ein.</string>
 </resources>

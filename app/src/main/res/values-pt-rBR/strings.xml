@@ -5,4 +5,25 @@
     <string name="resume_playback_long">Retomar Reprodução</string>
     <string name="cast_connect_failed">Não foi possível conectar ao %1$s</string>
     <string name="like_mirror_signed_out">Suas curtidas não estão chegando ao %1$s. Entre de novo em Configurações.</string>
+    <string name="widget_preview_title">Título da música</string>
+    <string name="widget_now_playing_description">A música atual, com controles de reprodução e próxima</string>
+    <string name="widget_nothing_playing">Nada tocando</string>
+    <string name="widget_pause">Pausar</string>
+    <string name="widget_play">Tocar</string>
+    <plurals name="clips_downloading_again">
+        <item quantity="one">Baixando %d música de novo: ela foi salva como um clipe curto</item>
+        <item quantity="many">Baixando %d músicas de novo: elas foram salvas como clipes curtos</item>
+        <item quantity="other">Baixando %d músicas de novo: elas foram salvas como clipes curtos</item>
+    </plurals>
+    <string name="widget_next">Próxima música</string>
+    <string name="widget_now_playing_square_label">Tocando agora (capa)</string>
+    <string name="widget_now_playing_square_description">A capa da música que está tocando, com tocar, pausar e próxima</string>
+    <plurals name="tidied_duplicates">
+        <item quantity="one">%d música duplicada arrumada</item>
+        <item quantity="many">%d músicas duplicadas arrumadas</item>
+        <item quantity="other">%d músicas duplicadas arrumadas</item>
+    </plurals>
+    <string name="widget_now_playing_label">Tocando agora</string>
+    <string name="widget_preview_artist">Artista</string>
+    <string name="widget_open_stash">Abrir o Stash</string>
 </resources>

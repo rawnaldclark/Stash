@@ -20,4 +20,44 @@
     <!-- Sync tab overhaul: Download mode -->
     <!-- Sync tab overhaul: History screen -->
     <!-- Sync tab overhaul: an account's playlists -->
+<string name="sync_blocked_songs_title">Заблокированные треки</string>
+    <string name="sync_downloads_msg_history_cleared">История очищена</string>
+    <string name="sync_source_stat_liked">ПОНРАВИВШИЕСЯ</string>
+    <string name="sync_section_schedule">Расписание</string>
+    <string name="sync_downloads_empty_history_subtitle">Завершённые и неудачные загрузки появятся здесь.</string>
+    <string name="sync_time_just_now">только что</string>
+    <string name="sync_source_stat_mixes">МИКСЫ</string>
+    <string name="sync_downloads_queue_position">#%1$d · %2$s</string>
+    <string name="sync_downloads_empty_queue_subtitle">Новые загрузки появятся здесь.</string>
+    <string name="sync_section_recent_syncs">Недавние синхронизации</string>
+    <string name="sync_downloads_title">Загрузки</string>
+    <string name="sync_downloads_subtitle">Текущие загрузки, очередь и история</string>
+    <string name="sync_downloads_cd">Открыть загрузки</string>
+    <string name="sync_downloads_clear_confirm_title">%s?</string>
+    <string name="sync_downloads_clear_history">Очистить историю</string>
+    <string name="sync_blocked_songs_none">Нет заблокированных треков</string>
+    <string name="sync_title">Синхронизация</string>
+    <string name="sync_cancel">Отменить</string>
+    <string name="sync_ok">ОК</string>
+    <string name="sync_downloads_clear_queue">Очистить очередь</string>
+    <string name="sync_downloads_section_recent">Недавние</string>
+    <string name="sync_source_stat_recommended">РЕКОМЕНДОВАННЫЕ</string>
+    <string name="sync_time_hours_ago">%d час. назад</string>
+    <string name="sync_downloads_clear_queue_confirm">Все ожидающие загрузки будут отменены, а текущие остановлены. Треки из ваших плейлистов скачаются снова при следующей синхронизации или когда вы нажмёте «Скачать» в плейлисте.</string>
+    <string name="sync_downloads_tab_history">История (%d)</string>
+    <plurals name="sync_time_days_ago">
+        <item quantity="one">%d день назад</item>
+        <item quantity="few">%d дня назад</item>
+        <item quantity="many">%d дней назад</item>
+        <item quantity="other">%d дней назад</item>
+    </plurals>
+    <string name="sync_section_sources">Источники</string>
+    <string name="sync_source_stat_playlists">ПЛЕЙЛИСТЫ</string>
+    <string name="sync_time_mins_ago">%d мин. назад</string>
+    <string name="sync_arrival_recommended">Рекомендованные</string>
+    <string name="sync_downloads_tab_queue">В очереди (%d)</string>
+    <string name="sync_downloads_empty_queue_title">Нет текущих загрузок</string>
+    <string name="sync_downloads_empty_history_title">Истории загрузок пока нет</string>
+    <string name="sync_downloads_keep">Оставить</string>
+    <string name="sync_section_library">Медиатека</string>
 </resources>

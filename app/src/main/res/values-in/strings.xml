@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_now_playing_description">Lagu yang sedang diputar, dengan tombol putar/jeda dan selanjutnya</string>
+    <string name="widget_open_stash">Buka Stash</string>
+    <string name="cast_connect_failed">Tidak dapat terhubung ke %1$s</string>
+    <plurals name="clips_downloading_again">
+        <item quantity="other">Mengunduh %d lagu lagi: lagu-lagu tersebut tersimpan sebagai klip pendek</item>
+    </plurals>
+    <string name="widget_now_playing_square_description">Lagu cover yang sedang diputar, dengan tombol putar/jeda dan selanjutnya</string>
+    <string name="widget_play">Putar</string>
+    <string name="widget_next">Lagu selanjutnya</string>
+    <string name="widget_preview_artist">Artis</string>
+    <plurals name="tidied_duplicates">
+        <item quantity="other">Merapikan %d lagu duplikat</item>
+    </plurals>
+    <string name="widget_now_playing_label">Sedang diputar</string>
+    <string name="widget_now_playing_square_label">Sedang diputar (cover)</string>
+    <string name="widget_nothing_playing">Tidak ada yang diputar</string>
+    <string name="app_name">Stash</string>
+    <string name="like_mirror_signed_out">Jumlah suka Anda tidak mencapai %1$s. Masuk kembali di Pengaturan.</string>
+    <string name="resume_playback_long">Lanjutkan pemutaran</string>
+    <string name="resume_playback_short">Lanjutkan</string>
+    <string name="widget_pause">Jeda</string>
+    <string name="widget_preview_title">Judul lagu</string>
+</resources>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="cast_connect_failed">Impossibile connettersi a %1$s</string>
+    <string name="like_mirror_signed_out">I tuoi \"Mi piace\" non possono raggiungere %1$s. Accedi di nuovo nelle Impostazioni.</string>
+    <string name="widget_now_playing_square_label">Ora in riproduzione (cover)</string>
+    <string name="widget_open_stash">Apri Stash</string>
+    <string name="app_name">Stash</string>
+    <string name="widget_now_playing_description">La canzone in riproduzione, con play/pausa e successiva</string>
+    <string name="widget_pause">Pausa</string>
+    <string name="resume_playback_short">Riprendi</string>
+    <string name="widget_preview_title">Titolo del brano</string>
+    <string name="resume_playback_long">Riprendi la riproduzione</string>
+    <string name="widget_now_playing_square_description">La copertina del brano in riproduzione, con riproduzione/pausa e successivo</string>
+    <string name="widget_nothing_playing">Niente in riproduzione</string>
+    <string name="widget_next">Prossimo brano</string>
+    <plurals name="tidied_duplicates">
+        <item quantity="one">Riordinato %d brano duplicato</item>
+        <item quantity="many">Riordinati %d brani duplicati</item>
+        <item quantity="other">Riordinati %d brani duplicati</item>
+    </plurals>
+    <plurals name="clips_downloading_again">
+        <item quantity="one">Progresso scaricamento del nuovo brano %d: è stato salvato come traccia breve</item>
+        <item quantity="many">Progresso scaricamento dei nuovi brani %d: sono stati salvati come tracce brevi</item>
+        <item quantity="other">Progresso scaricamento dei nuovi brani %d: sono stati salvati come tracce brevi</item>
+    </plurals>
+    <string name="widget_now_playing_label">In riproduzione</string>
+    <string name="widget_preview_artist">Artista</string>
+    <string name="widget_play">Riproduci</string>
+</resources>

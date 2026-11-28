@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="session_slow_down">Rallenta un attimo, poi riprova</string>
+    <string name="lt_suggested">Suggerito all\'ospite</string>
+    <string name="lt_added_queue">Aggiunto alla coda della sessione</string>
+    <string name="session_live_offline">Impossibile avviare la diretta. Verifica la connessione e riprova.</string>
+    <string name="notification_action_like">Aggiungi ai brani preferiti</string>
+    <string name="radio_failed_no_station">Non sono riuscito a trovare brani simili a questo.</string>
+    <string name="session_request_passed_unnamed">L\'host ha trasmesso %1$s</string>
+    <string name="notification_action_unlike">Rimuovi dai brani preferiti</string>
+    <string name="resuming_notification_title">Riprendi…</string>
+    <string name="radio_start_artist">Avvia radio %1$s</string>
+    <string name="radio_failed_player_not_ready">Il lettore non è ancora in fase di avvio. Riprova.</string>
+    <string name="radio_failed_download_mode">Trasmissioni radio. Passa alla modalità Online per avviarne una.</string>
+    <string name="lt_added_next">Prossimamente in riproduzione nella sessione</string>
+    <string name="lt_suggested_to">Suggerito al %1$s</string>
+    <string name="session_live_failed">Impossibile avviare la diretta. Riprova.</string>
+    <string name="session_request_passed">%1$s trasmesso a %2$s</string>
+    <string name="notification_action_repeat_off">Disinserisci \"ripeti\"</string>
+    <string name="notification_action_shuffle_off">Riproduzione casuale disattiva</string>
+    <string name="resuming_channel_name">Riproduzione</string>
+    <string name="cast_no_wifi">Impossibile trasmettere: collega il telefono alla stessa rete Wi-Fi dell\'altoparlante</string>
+    <string name="cast_on_browser_line">On %1$s</string>
+    <string name="session_couldnt_join">Impossibile partecipare a questa sessione</string>
+    <string name="lt_stopped_cant_play_more">Sessione in pausa: non puoi riprodurre %1$s. Tocca Riproduci per provare il brano successivo.</string>
+    <string name="lt_only_host_changes_song">Solo l\'organizzatore può cambiare il brano. Fai clic su Riproduci accanto per aggiungerlo.</string>
+    <string name="session_update_needed">Aggiorna Stash per partecipare a questa sessione</string>
+    <string name="session_only_host_changes_song">Solo chi ospita la trasmissione può cambiare la canzone. Richiedilo invece.</string>
+    <string name="session_requests_full">La sessione non può accettare altre richieste in questo momento</string>
+    <string name="notification_action_repeat_one">Ripeti un brano</string>
+    <string name="notification_action_shuffle_on">Riproduzione casuale attiva</string>
+    <string name="session_ended_named">La sessione di %1$s è terminata</string>
+    <plurals name="lt_guest_cap">
+        <item quantity="one">Puoi avere %1$d brano in attesa. Aggiungine altre man mano che vengono riprodotte.</item>
+        <item quantity="many">Puoi avere %1$d brani in attesa. Aggiungine altre man mano che vengono riprodotte.</item>
+        <item quantity="other">Puoi avere %1$d brani in attesa. Aggiungine altre man mano che vengono riprodotte.</item>
+    </plurals>
+    <string name="lt_queue_full">La coda della sessione è piena</string>
+    <string name="lt_suggestions_full">L\'host ha già ricevuto i tuoi suggerimenti. Riprova dopo che avrà risposto.</string>
+    <string name="lt_add_waiting">Al momento non sei connesso. Verrà configurato al ripristino della connessione.</string>
+    <string name="lt_your_song_skipped_by">Saltato %1$s: %2$s non si può riprodurre</string>
+    <string name="session_end_private_first">Termina prima l\'ascolto insieme</string>
+    <plurals name="session_requests_sent_to">
+        <item quantity="one">%1$d richiesta inviata a %2$s</item>
+        <item quantity="many">%1$d richieste inviate a %2$s</item>
+        <item quantity="other">%1$d richieste inviate a %2$s</item>
+    </plurals>
+    <string name="notification_action_repeat_all">Ripeti tutti i brani</string>
+    <string name="lt_your_song_skipped">Saltato %1$s: l\'host non può riprodurlo</string>
+    <string name="session_live_off">La modalità live non è disponibile al momento</string>
+    <plurals name="session_requests_sent">
+        <item quantity="one">%1$d richiesta inviata</item>
+        <item quantity="many">%1$d richieste inviate</item>
+        <item quantity="other">%1$d richieste inviate</item>
+    </plurals>
+    <string name="session_not_your_station">Quella stazione non è tua</string>
+    <string name="lt_stopped_cant_play">Sessione in pausa: non puoi riprodurre a %1$s</string>
+    <string name="session_removed">Sei stato rimosso da questa sessione</string>
+    <string name="session_leave_first">Prima di uscire da questa sessione</string>
+    <string name="session_your_station_off_air">La tua stazione è fuori onda</string>
+    <string name="session_live_blocked">Non puoi andare in diretta nella Community</string>
+    <plurals name="session_requests_cap">
+        <item quantity="one">Hai %1$d richiesta in attesa</item>
+        <item quantity="many">Hai %1$d richieste in attesa</item>
+        <item quantity="other">Hai %1$d richieste in attesa</item>
+    </plurals>
+    <string name="session_ended">La sessione è terminata</string>
+    <string name="session_off_air">Questa stazione non è più in onda</string>
+    <string name="shuffle_play">Riproduzione casuale</string>
+</resources>

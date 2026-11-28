@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="notification_action_like">Ajouter à mes morceaux préférés</string>
-    <string name="notification_action_unlike">Supprimer de la liste des morceaux préférés</string>
+    <string name="notification_action_like">Ajouter à vos mentions « J’aime »</string>
+    <string name="notification_action_unlike">Supprimer de vos mentions « J’aime »</string>
     <string name="notification_action_repeat_off">Répéter désactivé</string>
     <string name="notification_action_repeat_all">Tout répéter</string>
     <string name="notification_action_repeat_one">Répéter une fois</string>
@@ -10,5 +10,61 @@
     <string name="shuffle_play">Lecture aléatoire</string>
     <string name="resuming_channel_name">Lecture</string>
     <string name="resuming_notification_title">Reprise…</string>
-    <string name="cast_no_wifi">Impossible de diffuser : connectez votre téléphone au même réseau Wi-Fi que l\'enceinte</string>
+    <string name="cast_no_wifi">Impossible de diffuser : connectez votre téléphone au même réseau Wi-Fi que l\'enceinte</string>
+    <string name="lt_your_song_skipped_by">%1$s ignoré : %2$s ne peut pas la jouer</string>
+    <string name="lt_your_song_skipped">%1$s ignoré : l’hôte ne peut pas le lire</string>
+    <string name="lt_stopped_cant_play">Session en pause : vous ne pouvez pas écouter %1$s</string>
+    <string name="lt_stopped_cant_play_more">Session en pause : vous ne pouvez pas écouter %1$s. Touchez « Lecture » pour essayer le titre suivant.</string>
+    <string name="lt_added_queue">Ajouté à la file d’attente de la session</string>
+    <string name="session_live_off">La diffusion en direct n’est pas disponible pour le moment</string>
+    <string name="session_your_station_off_air">Votre diffusion est hors antenne</string>
+    <string name="session_only_host_changes_song">Seul l’hôte peut changer de titre. Demandez-le.</string>
+    <string name="session_end_private_first">Terminez d’abord « Écouter ensemble »</string>
+    <string name="session_leave_first">Quitter d’abord cette session</string>
+    <string name="session_not_your_station">Cette diffusion n’est pas la vôtre</string>
+    <string name="session_live_blocked">Vous ne pouvez pas diffuser en direct dans Communauté</string>
+    <string name="session_slow_down">Ralentissez un instant, puis réessayez</string>
+    <string name="session_live_failed">Impossible de diffuser en direct. Réessayez.</string>
+    <string name="session_live_offline">Impossible de diffuser en direct. Vérifiez votre connexion, puis réessayez.</string>
+    <string name="radio_failed_no_station">Aucun titre similaire n’a été trouvé pour ceci.</string>
+    <string name="radio_failed_download_mode">Les flux radio nécessitent une connexion. Passez en mode En ligne pour en lancer un.</string>
+    <string name="cast_on_browser_line">Sur %1$s</string>
+    <string name="session_requests_full">La session ne peut pas accepter d’autres demandes pour le moment</string>
+    <string name="session_ended_named">La session de %1$s est terminée</string>
+    <string name="lt_suggested">Suggéré à l’hôte</string>
+    <string name="session_removed">Vous avez été retiré de cette session</string>
+    <plurals name="session_requests_sent_to">
+        <item quantity="one">%1$d demande envoyée à %2$s</item>
+        <item quantity="many">%1$d demandes envoyées à %2$s</item>
+        <item quantity="other">%1$d demandes envoyées à %2$s</item>
+    </plurals>
+    <plurals name="session_requests_cap">
+        <item quantity="one">Vous avez %1$d demande en attente</item>
+        <item quantity="many">Vous avez %1$d demandes en attente</item>
+        <item quantity="other">Vous avez %1$d demandes en attente</item>
+    </plurals>
+    <string name="session_request_passed">Passage de %1$s à %2$s</string>
+    <plurals name="lt_guest_cap">
+        <item quantity="one">Vous pouvez avoir %1$d titre en attente. Ajoutez-en d’autres au fur et à mesure de leur lecture.</item>
+        <item quantity="many">Vous pouvez avoir %1$d titres en attente. Ajoutez-en d’autres au fur et à mesure de leur lecture.</item>
+        <item quantity="other">Vous pouvez avoir %1$d titres en attente. Ajoutez-en d’autres au fur et à mesure de leur lecture.</item>
+    </plurals>
+    <string name="lt_suggestions_full">L’hôte a toujours vos suggestions. Réessayez dès qu’il aura répondu.</string>
+    <string name="radio_start_artist">Démarrer la radio de %1$s</string>
+    <string name="lt_added_next">Joué ensuite dans la session</string>
+    <string name="lt_queue_full">La file d’attente de la session est pleine</string>
+    <string name="lt_add_waiting">Pas connecté pour le moment. Ce sera ajouté quand vous reviendrez.</string>
+    <string name="session_ended">La session est terminée</string>
+    <string name="session_update_needed">Mettez Stash à jour pour rejoindre cette session</string>
+    <string name="session_couldnt_join">Impossible de rejoindre cette session</string>
+    <string name="lt_suggested_to">Suggéré à %1$s</string>
+    <string name="lt_only_host_changes_song">Seul l’hôte peut changer de titre. Utilisez « Lire ensuite » pour l’ajouter.</string>
+    <plurals name="session_requests_sent">
+        <item quantity="one">%1$d demande envoyée</item>
+        <item quantity="many">%1$d demandes envoyées</item>
+        <item quantity="other">%1$d demandes envoyées</item>
+    </plurals>
+    <string name="radio_failed_player_not_ready">Le lecteur démarre encore. Réessayez.</string>
+    <string name="session_request_passed_unnamed">L’hôte a passé %1$s</string>
+    <string name="session_off_air">Cette diffusion est hors antenne</string>
 </resources>

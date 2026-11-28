@@ -4,4 +4,24 @@
     <string name="resume_playback_short">استئناف</string>
     <string name="resume_playback_long">استئناف التشغيل</string>
     <string name="like_mirror_signed_out">لا يمكن أن تصل إعجاباتك إلى %1$s. سجّل الدخول إليه مجددًا من الإعدادات.</string>
+    <string name="widget_nothing_playing">لا توجد أغنية قيد التشغيل</string>
+    <string name="widget_preview_title">عنوان الأغنية</string>
+    <string name="widget_now_playing_square_description">غلاف الأغنية قيد التشغيل، مع أزرار التشغيل والإيقاف المؤقت والانتقال إلى الأغنية التالية</string>
+    <string name="widget_pause">إيقاف مؤقت</string>
+    <string name="widget_open_stash">فتح Stash</string>
+    <string name="widget_now_playing_square_label">قيد التشغيل الآن (الغلاف)</string>
+    <string name="widget_now_playing_description">الأغنية قيد التشغيل، مع أزرار التشغيل والإيقاف المؤقت والانتقال إلى الأغنية التالية</string>
+    <plurals name="tidied_duplicates">
+        <item quantity="zero">لم تُدمج أي أغانٍ مكررة</item>
+        <item quantity="one">تم دمج أغنية مكررة واحدة</item>
+        <item quantity="two">تم دمج أغنيتين مكررتين</item>
+        <item quantity="few">تم دمج %d أغانٍ مكررة</item>
+        <item quantity="many">تم دمج %d أغنية مكررة</item>
+        <item quantity="other">تم دمج %d من الأغاني المكررة</item>
+    </plurals>
+    <string name="widget_next">الأغنية التالية</string>
+    <string name="widget_preview_artist">الفنان</string>
+    <string name="cast_connect_failed">تعذّر الاتصال بـ %1$s</string>
+    <string name="widget_play">تشغيل</string>
+    <string name="widget_now_playing_label">قيد التشغيل الآن</string>
 </resources>

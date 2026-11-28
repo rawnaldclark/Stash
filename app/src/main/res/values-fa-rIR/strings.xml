@@ -1,3 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>    <string name="like_mirror_signed_out">پسندهای شما به %1$s نمی‌رسند. در تنظیمات دوباره وارد آن شوید.</string>
+<resources>
+    <string name="like_mirror_signed_out">پسندهای شما به %1$s نمی‌رسند. در تنظیمات دوباره وارد آن شوید.</string>
+    <string name="app_name">Stash</string>
+    <string name="cast_connect_failed">اتصال به %1$s ممکن نشد</string>
 </resources>
