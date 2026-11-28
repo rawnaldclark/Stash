@@ -88,8 +88,11 @@ fun SettingsLosslessSourcesScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                // Unlimited for Ko-fi supporters: the claim, or the relay's "supporter" status.
-                SupporterSection()
+                // Their own Tidal login: unlimited, so the supporter unlock stops applying.
+                val tidalLogin: TidalLoginViewModel = hiltViewModel()
+                val tidalLoggedIn by tidalLogin.loggedIn.collectAsStateWithLifecycle()
+                if (!tidalLoggedIn) SupporterSection()
+                TidalAccountSection(tidalLogin)
 
                 // Direct Qobuz — the listener's own account, signed
                 // locally against www.qobuz.com. The warning shows when no
@@ -182,6 +185,31 @@ fun SettingsLosslessSourcesScreen(
                                 Text(stringResource(R.string.settings_connecting))
                             } else {
                                 Text(stringResource(R.string.settings_connect))
+                            }
+                        }
+                        var showTokenField by remember { mutableStateOf(false) }
+                        var qobuzToken by remember { mutableStateOf("") }
+                        TextButton(onClick = { showTokenField = !showTokenField }) {
+                            Text(stringResource(R.string.settings_qobuz_use_token))
+                        }
+                        AnimatedVisibility(visible = showTokenField) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                OutlinedTextField(
+                                    value = qobuzToken,
+                                    onValueChange = { qobuzToken = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text(stringResource(R.string.settings_qobuz_token_label)) },
+                                    supportingText = { Text(stringResource(R.string.settings_qobuz_token_hint)) },
+                                    singleLine = true,
+                                    visualTransformation = PasswordVisualTransformation(),
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Button(
+                                    onClick = { viewModel.onConnectQobuzToken(qobuzToken) },
+                                    enabled = !qobuzConnecting && qobuzToken.isNotBlank(),
+                                ) {
+                                    Text(stringResource(R.string.settings_connect))
+                                }
                             }
                         }
                     }

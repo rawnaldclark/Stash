@@ -32,6 +32,20 @@ class QobuzAccountConnector @Inject constructor(
         return result
     }
 
+    /** Validate a pasted user_auth_token and, on success, persist it like a password login. */
+    suspend fun connectWithToken(token: String): QobuzLoginResult {
+        val result = loginClient.loginWithToken(token)
+        if (result is QobuzLoginResult.Success) {
+            credentialStore.setUserCredential(
+                token = result.token,
+                appId = result.appId,
+                appSecret = result.appSecret,
+                email = result.email,
+            )
+        }
+        return result
+    }
+
     /** Forget the connected account. */
     suspend fun disconnect() = credentialStore.clearUserCredential()
 

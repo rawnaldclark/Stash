@@ -46,7 +46,7 @@ class TidalSwitchTest {
 
     private fun wires(entries: List<UserAddonEntry> = emptyList()) = TidalWires(
         config, FixedRegistry(), mockk<LegacyRelayWire>(relaxed = true), mockk(relaxed = true), TidalDebugSettings.off(),
-        OwnTidalServer(Users(entries), prefs), switches,
+        OwnTidalServer(Users(entries), prefs), mockk(relaxed = true), switches,
     )
 
     @Test fun `switched off, Stash's Tidal has no route, and back on it has`() = runBlocking<Unit> {
@@ -102,7 +102,7 @@ class TidalSwitchTest {
         }
         val wires = TidalWires(
             cold, FixedRegistry(), mockk<LegacyRelayWire>(relaxed = true), mockk(relaxed = true), TidalDebugSettings.off(),
-            OwnTidalServer(Users(emptyList()), prefs), switches,
+            OwnTidalServer(Users(emptyList()), prefs), mockk(relaxed = true), switches,
         )
         val client = TidalClient(prefs, FakeAddonRefDao(), mockk(relaxed = true), wires)
         val song = TrackQuery(artist = "Artist", title = "Title")

@@ -56,6 +56,7 @@ class TidalWires @Inject constructor(
     private val v1: AddonV1Wire,
     private val debug: TidalDebugSettings,
     private val own: OwnTidalServer,
+    private val login: TidalLoginStore,
     /** Settings › Add-ons' switch on the Tidal row (add-ons plan phase 4 §2.8); everything on in hand-built tests. */
     private val switches: PlayOrderSwitches = PlayOrderSwitches.allOn(),
 ) {
@@ -77,6 +78,9 @@ class TidalWires @Inject constructor(
 
     /** The user's own server is set (a spent day never stops it: its answers never touch Stash's relay). */
     suspend fun ownServerSet(): Boolean = own.now() != null
+
+    /** Tidal plays through the user's own Tidal login now: no daily allowance applies. */
+    suspend fun loginActive(): Boolean = (route() as? Route.Relay)?.relay?.login == true
 
     /** The user switched Tidal off in Settings › Add-ons: the rung asks nothing, whichever server it has. */
     suspend fun switchedOff(): Boolean = switches.isOff(PlayOrder.TIDAL)
@@ -106,6 +110,8 @@ class TidalWires @Inject constructor(
             own.now()?.let { return Route.Relay(TidalRelay(it.base, it.token, userOwned = true)) }
         }
         val relay = ownerRelay()
+        // Their own Tidal login replaces Stash's relay and the v1 add-on alike: their account, their limits.
+        if (relay != null && forced != TidalDebugSettings.Wire.V1 && login.hasLoginNow()) return Route.Relay(relay.copy(login = true))
         val setAside = forced == TidalDebugSettings.Wire.AUTO && relay != null && v1SetAside()
         if (forced != TidalDebugSettings.Wire.LEGACY && !setAside) tidalAddon()?.let { return Route.Addon(it) }
         if (forced == TidalDebugSettings.Wire.V1) return null
@@ -161,7 +167,11 @@ class TidalWires @Inject constructor(
         val r = route()
         val what = when (r) {
             is Route.Addon -> TidalWire.Kind.V1.label
-            is Route.Relay -> TidalWire.Kind.LEGACY.label + if (r.relay.userOwned) " (your own server)" else ""
+            is Route.Relay -> TidalWire.Kind.LEGACY.label + when {
+                r.relay.userOwned -> " (your own server)"
+                r.relay.login -> " (your Tidal account)"
+                else -> ""
+            }
             null -> if (switchedOff()) "off (switched off in Add-ons)" else "off"
         }
         val notes = listOfNotNull(
